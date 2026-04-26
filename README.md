@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/Digimuoto/cortex/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Digimuoto/cortex/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://github.com/Digimuoto/cortex/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/Digimuoto/cortex/actions/workflows/docs.yml/badge.svg" /></a>
+  <a href="https://digimuoto.github.io/cortex/"><img alt="Docs" src="https://github.com/Digimuoto/cortex/actions/workflows/docs.yml/badge.svg" /></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
   <img alt="Build: Nix" src="https://img.shields.io/badge/build-Nix-5277C3" />
 </p>
@@ -47,17 +47,16 @@ plan => gather => write
 
 ## Documentation
 
-- [Docs landing](docs/index.md) - architecture, reference, ADRs, roadmap, and
-  consumer bindings.
-- [Architecture overview](docs/Architecture/01-overview.md) - system frame and
-  ownership boundary.
-- [Wire language](docs/Architecture/05-wire-language.md) - authoring model and
-  language architecture.
-- [Wire grammar v1](docs/Reference/Wire/grammar-v1.md) - normative grammar.
-- [Pulse runtime](docs/Architecture/06-pulse-runtime.md) - durable execution
-  model.
-- [Development workflow](docs/Reference/development.md) - build, test, docs,
-  formatting, and local validation commands.
+- [Docs landing](https://digimuoto.github.io/cortex/) - architecture,
+  reference, ADRs, roadmap, and consumer bindings.
+- [Stable canon](https://digimuoto.github.io/cortex/#stable-canon) -
+  architecture, reference, ADRs, and canonical docs.
+- [Working artifacts](https://digimuoto.github.io/cortex/#working-artifacts) -
+  roadmap, research notes, experiments, handoffs, and templates.
+- [Start here](https://digimuoto.github.io/cortex/#start-here) - the intended
+  first reading path through the published docs.
+- [Consumer examples](https://digimuoto.github.io/cortex/#consumer-examples) -
+  downstream bindings, including Portman.
 
 ## Repository
 

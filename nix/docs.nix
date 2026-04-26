@@ -21,7 +21,7 @@
           title = "Cortex";
           tagline = "Research wiki";
           description = "Cortex engineering specifications, ADRs, research notes, and publications";
-          publicBaseUrl = "https://crispy-barnacle-j1kepz8.pages.github.io";
+          publicBaseUrl = "https://digimuoto.github.io/cortex";
           routeBase = "/";
         };
 
