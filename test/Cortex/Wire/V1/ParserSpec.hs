@@ -181,6 +181,14 @@ spec = describe "Cortex.Wire.V1.Parser" $ do
           length fields `shouldBe` 2
         other -> expectationFailure ("unexpected: " <> show other)
 
+    it "parses comma-separated executor config fields" $ do
+      case parseWireExpr
+        "test"
+        "@llm.analyst { prompt = \"Find current evidence.\", tools = [webSearch], }" of
+        Right (ExprApply (QName ("llm" :| ["analyst"])) (Record fields)) ->
+          length fields `shouldBe` 2
+        other -> expectationFailure ("unexpected: " <> show other)
+
     it "parses a bare @llm executor reference as a single-segment qname" $ do
       case parseWireExpr "test" "@llm {}" of
         Right (ExprApply (QName ("llm" :| [])) (Record [])) ->
