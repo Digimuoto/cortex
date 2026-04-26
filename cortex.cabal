@@ -1,0 +1,391 @@
+cabal-version:      3.0
+name:               cortex
+version:            0.1.0.0
+synopsis:           Durable AI runtime + structured reasoning substrate
+description:
+    Cortex is a durable runtime substrate for typed-dataflow programs:
+    Graph algebra, Circuit validation, Wire source language, Pulse
+    executor, memory substrate, and capability abstractions. A structured
+    reasoning library (Cortex.Logos) sits on top of the substrate and
+    depends on it, not the other way round (ADR 0015).
+
+license:            Apache-2.0
+license-file:       LICENSE
+author:             Julius Koskela
+maintainer:         julius@koskela.dev
+copyright:          2026 Digimuoto Oy
+category:           AI, Runtime
+build-type:         Simple
+extra-source-files:
+    README.md
+    NOTICE
+data-files:
+    config/cortex/memory-ranking.yaml
+
+common shared-properties
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        DeriveAnyClass
+        DeriveGeneric
+        DerivingStrategies
+        DerivingVia
+        DuplicateRecordFields
+        GeneralizedNewtypeDeriving
+        LambdaCase
+        OverloadedStrings
+        RecordWildCards
+        TemplateHaskell
+        TypeApplications
+        TypeFamilies
+        TypeOperators
+    ghc-options:
+        -Wall
+        -Wextra
+        -Werror
+        -Wcompat
+        -Widentities
+        -Wincomplete-record-updates
+        -Wincomplete-uni-patterns
+        -Wmissing-export-lists
+        -Wmissing-home-modules
+        -Wpartial-fields
+        -Wredundant-constraints
+        -Werror=missing-fields
+        -fno-warn-orphans
+
+common runtime-library-deps
+    build-depends:
+        base >=4.16 && <5,
+        -- General Utilities
+        text >=2.0,
+        bytestring >=0.11,
+        deepseq >=1.4,
+        base16-bytestring >=1.0,
+        base64-bytestring >=1.2,
+        uuid >=1.3,
+        uuid-types >=1.0,
+        time >=1.12,
+        scientific >=0.3,
+        containers >=0.6,
+        vector >=0.13,
+        insert-ordered-containers >=0.2,
+        unordered-containers >=0.2,
+        mtl >=2.2,
+        transformers >=0.6,
+        exceptions >=0.10,
+        async >=2.2,
+        stm >=2.5,
+        random >=1.2,
+        unix >=2.8,
+        retry >=0.9,
+        filepath >=1.4,
+        directory >=1.3,
+        temporary >=1.3,
+        process >=1.6,
+        -- JSON / YAML
+        aeson >=2.1,
+        aeson-pretty >=0.8,
+        yaml >=0.11,
+
+        -- Database (used by Platform.Database and downstream Cortex modules)
+        rel8 >=1.4,
+        hasql >=1.6,
+        hasql-pool >=0.10,
+        hasql-transaction >=1.0,
+        resource-pool >=0.4,
+
+        -- HTTP client + WAI middleware
+        -- (Platform.HTTP.Retry, Cortex.Provider.OpenRouter, Platform.Observability.Wai)
+        servant-server >=0.20,
+        servant-client-core >=0.20,
+        openapi3 >=3.2,
+        http-client >=0.7,
+        http-client-tls >=0.3,
+        http-api-data >=0.5,
+        http-types >=0.12,
+        case-insensitive >=1.2,
+        wai >=3.2,
+        warp >=3.3,
+
+        -- Crypto (Platform.Crypto: AES-256-GCM, HKDF, SHA256).
+        -- Keep `Data.ByteArray.Bytes` aligned with crypton's AuthTag type.
+        crypton >=0.34 && <1,
+        memory >=0.18,
+
+        -- Money (Cortex value modules)
+        safe-money >=0.9,
+        safe-money-aeson >=0.1,
+
+        -- CLI / terminal
+        optparse-applicative >=0.17,
+        ansi-terminal >=1.0,
+        prettyprinter >=1.7,
+
+        -- Template Haskell & Lenses
+        template-haskell >=2.18,
+        lens >= 5.2,
+        microlens >=0.4,
+        microlens-th >=0.4,
+
+        -- Logging & Config
+        fast-logger >=3.1,
+        monad-logger >=0.3,
+        configurator >=0.3,
+
+        -- Markdown rendering (Cortex.Text)
+        cmark-gfm >=0.2.5
+
+-- Public sub-library: the Platform runtime substrate.
+-- Cortex imports this; downstream consumers can too.
+library platform-runtime
+    import:           shared-properties, runtime-library-deps
+    visibility:       public
+    hs-source-dirs:   src-platform
+    exposed-modules:
+        Platform.Database
+        Platform.Database.Encode
+        Platform.Database.Rel8TH
+        Platform.Observability
+        Platform.Observability.Context
+        Platform.Observability.Emit
+        Platform.Observability.Fields
+        Platform.Observability.Redaction
+        Platform.Observability.Runtime
+        Platform.Observability.Store
+        Platform.Observability.Types
+        Platform.Observability.Wai
+        Platform.DurableTask.Cron
+        Platform.DurableTask.Checkpoint
+        Platform.DurableTask.Error
+        Platform.DurableTask.Polling
+        Platform.DurableTask.Pool
+        Platform.DurableTask.Types
+        Platform.DurableTask.Schedule
+        Platform.DurableTask.Workflow
+        Platform.Text
+        Platform.Config
+        Platform.Crypto
+        Platform.Error
+        Platform.Error.Servant
+        Platform.HTTP.Retry
+        Platform.Patch
+        Platform.Require
+
+-- Main library: Cortex substrate.
+library
+    import:           shared-properties, runtime-library-deps
+    hs-source-dirs:   src
+    autogen-modules:  Paths_cortex
+    build-depends:
+        cortex:platform-runtime,
+        megaparsec >=9.2
+    other-modules:
+        Paths_cortex
+        Cortex.Graph.Core
+        Cortex.Graph.Modify
+        Cortex.Graph.Search
+        Cortex.Graph.Decompose
+        Cortex.Graph.Influence
+        Cortex.Graph.Validate
+        Cortex.Wire.AST
+        Cortex.Wire.Contracts
+        Cortex.Wire.Proposal
+        Cortex.Wire.Runtime
+        Cortex.Wire.Value
+        Cortex.Wire.V1.AST
+        Cortex.Wire.V1.Compiler
+        Cortex.Wire.V1.Parser
+    exposed-modules:
+        Cortex.Agent.Definition
+        Cortex.Agent.Config
+        Cortex.Agent.Policy
+        Cortex.Document.IR
+        Cortex.Document.Metadata
+        Cortex.Capability.Model.Client
+        Cortex.Capability.Model.Message
+        Cortex.Capability.Model.Output
+        Cortex.Capability.Model.Types
+        Cortex.Capability.Tool.Definition
+        Cortex.Capability.Tool.Record
+        Cortex.Document.Host
+        Cortex.Events
+        Cortex.Graph
+        Cortex.Json.Object
+        Cortex.Json.Preview
+        Cortex.Json.Text
+        Cortex.Provider.OpenRouter
+        Cortex.Provider.OpenRouter.Client
+        Cortex.Provider.OpenRouter.Embeddings
+        Cortex.Provider.OpenRouter.Wire
+        Cortex.Memory.Candidates
+        Cortex.Memory.Conflict
+        Cortex.Memory.Document
+        Cortex.Memory.Host
+        Cortex.Memory.Pack
+        Cortex.Memory.Query
+        Cortex.Memory.Rank
+        Cortex.Memory.Retrieve
+        Cortex.Memory.Source
+        Cortex.Memory.Types
+        Cortex.MemoryCompaction
+        Cortex.Research.Runtime
+        Cortex.Research.Section
+        Cortex.Run.Engine
+        Cortex.Run.Types
+        Cortex.Task.Gather
+        Cortex.Task.Host
+        Cortex.Task.Plan
+        Cortex.Task.Report
+        Cortex.Task.Runtime
+        Cortex.Task.StructuredOutput
+        Cortex.Task.ToolHost
+        Cortex.Task.ToolLoop
+        Cortex.Text
+        Cortex.Pulse
+        Cortex.Pulse.Executor
+        Cortex.Pulse.Executor.Attempt
+        Cortex.Pulse.Executor.Events
+        Cortex.Pulse.Executor.Frontier
+        Cortex.Pulse.Executor.Loop
+        Cortex.Pulse.Executor.Outcome
+        Cortex.Pulse.Executor.Persistence
+        Cortex.Pulse.Executor.ReplayPolicy
+        Cortex.Pulse.Executor.Resume
+        Cortex.Pulse.Executor.Types
+        Cortex.Circuit
+        Cortex.Wire
+        Cortex.Wire.V1
+        Cortex.Circuit.Compiled
+        Cortex.Circuit.Compiler
+        Cortex.Pulse.GraphRuntime
+        Cortex.Pulse.Health
+        Cortex.Pulse.Materialization
+        Cortex.Pulse.Memory
+        Cortex.Pulse.Memory.Query
+        Cortex.Pulse.Memory.Score
+        Cortex.Pulse.Memory.Tool
+        Cortex.Pulse.Memory.Types
+        Cortex.Pulse.Memory.Walk
+        Cortex.Pulse.Node
+        Cortex.Pulse.Plan
+        Cortex.Pulse.PlanHydration
+        Cortex.Pulse.Query
+        Cortex.Pulse.Rewrite
+        Cortex.Pulse.Schema
+        Cortex.Pulse.Signal
+        Cortex.Pulse.Scheduler
+        Cortex.Pulse.Types
+        Cortex.Circuit.IR
+        Cortex.Circuit.Lowering
+        Cortex.Circuit.NodeKind
+
+-- Pulse executor binary: substrate shell.
+-- Ships with an empty task registry; downstream consumers link their own.
+executable cortex-pulse
+    import:           shared-properties
+    hs-source-dirs:   app/cortex-pulse
+    main-is:          Main.hs
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        cortex:platform-runtime,
+        optparse-applicative >=0.17,
+        text >=2.0,
+        bytestring >=0.11,
+        containers >=0.6
+    ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+
+-- Cortex-only test suite (hspec-discover).
+-- Filtered from portman-test to Cortex.* and Platform.DurableTask.* specs.
+test-suite cortex-test
+    import:           shared-properties
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Spec.hs
+    build-tool-depends:
+        hspec-discover:hspec-discover >=2.10
+    other-modules:
+        Cortex.Agent.ConfigSpec
+        Cortex.Circuit.CompilerSpec
+        Cortex.Circuit.IRSpec
+        Cortex.Document.IRSpec
+        Cortex.GraphSpec
+        Cortex.Memory.CandidatesSpec
+        Cortex.Memory.ConflictSpec
+        Cortex.Memory.DocumentSpec
+        Cortex.Memory.PackSpec
+        Cortex.Memory.QuerySpec
+        Cortex.Memory.RankSpec
+        Cortex.Memory.RetrieveSpec
+        Cortex.Memory.SourceSpec
+        Cortex.MemoryCompactionSpec
+        Cortex.Provider.OpenRouterSpec
+        Cortex.Pulse.DIG447Spec
+        Cortex.Pulse.DIG448Spec
+        Cortex.Pulse.DIG449Spec
+        Cortex.Pulse.Executor.EventsSpec
+        Cortex.Pulse.ExecutorSpec
+        Cortex.Pulse.GraphRewriteSpec
+        Cortex.Pulse.MemoryIntegrationSpec
+        Cortex.Pulse.MemorySpec
+        Cortex.Pulse.MemoryToolSpec
+        Cortex.Pulse.SchedulerSpec
+        Cortex.Pulse.TypesSpec
+        Cortex.Research.RuntimeSpec
+        Cortex.Research.SectionSpec
+        Cortex.Task.GatherSpec
+        Cortex.Task.PlanSpec
+        Cortex.Task.ReportSpec
+        Cortex.Task.StructuredOutputSpec
+        Cortex.Task.ToolLoopSpec
+        Cortex.TestSupport.Database
+        Cortex.Wire.V1.CompilerSpec
+        Cortex.Wire.V1.ParserSpec
+        Platform.DurableTask.CheckpointSpec
+        Platform.DurableTask.CronSpec
+        Platform.DurableTask.ErrorSpec
+        Platform.DurableTask.PollingSpec
+        Platform.DurableTask.PoolSpec
+        Platform.DurableTask.ScheduleSpec
+        Platform.DurableTask.TypesSpec
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        cortex:platform-runtime,
+        -- Test frameworks
+        hspec >=2.10,
+        hspec-discover >=2.10,
+        HUnit >=1.6,
+        QuickCheck >=2.14,
+        hedgehog >=1.2,
+
+        -- JSON
+        aeson >=2.1,
+        aeson-qq >=0.8,
+
+        -- Database (required by integration specs)
+        hasql >=1.6,
+        hasql-pool >=0.10,
+        hasql-transaction >=1.0,
+        rel8 >=1.4,
+        postgresql-simple >=0.7,
+
+        -- Text and data
+        text >=2.0,
+        bytestring >=0.11,
+        time >=1.12,
+        containers >=0.6,
+        uuid >=1.3,
+        uuid-types >=1.0,
+        scientific >=0.3,
+        raw-strings-qq >=1.1,
+
+        -- Utilities
+        mtl >=2.3,
+        transformers >=0.6,
+        filepath >=1.4,
+        directory >=1.3,
+        stm >=2.5,
+        async >=2.2
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N

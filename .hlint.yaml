@@ -1,0 +1,125 @@
+# =============================================================================
+# HLINT CONFIGURATION
+# =============================================================================
+# Strict rules to catch unsafe patterns and enforce consistency.
+# Severity levels: error (fails CI), warn (shows warning), suggest (hint)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# BANNED: Partial Functions (error - these WILL fail at runtime)
+# -----------------------------------------------------------------------------
+- error: {name: head, within: [], message: "Use listToMaybe, headMay, or pattern match"}
+- error: {name: tail, within: [], message: "Use drop 1, tailMay, or pattern match"}
+- error: {name: init, within: [], message: "Use initMay or pattern match"}
+- error: {name: last, within: [], message: "Use lastMay or pattern match"}
+- error: {name: "!!", within: [], message: "Use !!? or explicit bounds checking"}
+- error: {name: fromJust, within: [], message: "Use fromMaybe or pattern match"}
+- error: {name: read, within: [], message: "Use readMaybe from Text.Read"}
+- error: {name: undefined, within: [], message: "Remove before commit"}
+- error: {name: error, within: [], message: "Use proper error type or throwError"}
+- error: {name: throw, within: [], message: "Use throwError or ExceptT"}
+- error: {name: minimum, within: [], message: "Use minimumMay - empty list crashes"}
+- error: {name: maximum, within: [], message: "Use maximumMay - empty list crashes"}
+- error: {name: foldr1, within: [], message: "Use foldr with explicit base case"}
+- error: {name: foldl1, within: [], message: "Use foldl' with explicit base case"}
+
+# -----------------------------------------------------------------------------
+# BANNED: Debug Functions (error - must not ship)
+# -----------------------------------------------------------------------------
+- error: {name: trace, within: [], message: "Remove debug trace before commit"}
+- error: {name: traceShow, within: [], message: "Remove debug trace before commit"}
+- error: {name: traceShowId, within: [], message: "Remove debug trace before commit"}
+- error: {name: traceM, within: [], message: "Remove debug trace before commit"}
+- error: {name: traceIO, within: [], message: "Remove debug trace before commit"}
+
+# -----------------------------------------------------------------------------
+# BANNED: Unsafe IO
+# -----------------------------------------------------------------------------
+- error: {name: unsafePerformIO, within: [], message: "Unsafe - refactor to pure or IO"}
+- error: {name: unsafeInterleaveIO, within: [], message: "Unsafe - use explicit streaming"}
+- error: {name: unsafeDupablePerformIO, within: [], message: "Unsafe - refactor"}
+
+# -----------------------------------------------------------------------------
+# WARN: Lazy accumulation (space leaks)
+# -----------------------------------------------------------------------------
+- warn: {name: foldl, within: [], message: "Use foldl' (strict) to avoid space leaks"}
+- warn: {name: sum, within: [], message: "Consider foldl' (+) 0 for large lists"}
+- warn: {name: product, within: [], message: "Consider foldl' (*) 1 for large lists"}
+
+# -----------------------------------------------------------------------------
+# WARN: String inefficiency
+# -----------------------------------------------------------------------------
+- warn: {lhs: "show x ++ show y", rhs: "show x <> show y", note: "Use <> for efficiency"}
+
+# -----------------------------------------------------------------------------
+# SUGGEST: Style improvements
+# -----------------------------------------------------------------------------
+- suggest: {lhs: "return ()", rhs: "pure ()"}
+- suggest: {lhs: "return x", rhs: "pure x"}
+- suggest: {lhs: "fmap f (pure x)", rhs: "pure (f x)"}
+- suggest: {lhs: "x == Nothing", rhs: "isNothing x"}
+- suggest: {lhs: "x /= Nothing", rhs: "isJust x"}
+- suggest: {lhs: "maybe False (const True)", rhs: "isJust"}
+- suggest: {lhs: "maybe True (const False)", rhs: "isNothing"}
+- suggest: {lhs: "length xs == 0", rhs: "null xs"}
+- suggest: {lhs: "length xs /= 0", rhs: "not (null xs)"}
+
+# -----------------------------------------------------------------------------
+# IGNORED: Rules that conflict with our style
+# -----------------------------------------------------------------------------
+- ignore: {name: "Use newtype instead of data"}
+- ignore: {name: "Redundant bracket"}  # Sometimes brackets aid readability
+
+# =============================================================================
+# TIER 1: GENERALISE & COMPOSITION
+# =============================================================================
+
+# Enable generalise group: map→fmap, ++→<>, mappend→<>
+- group: {name: generalise, enabled: true}
+
+# Enable dollar group: a $ b $ c → a . b $ c
+- group: {name: dollar, enabled: true}
+
+# Require explicit module export lists
+- warn: {name: Use explicit module export list}
+
+# Additional dangerous infinite list functions
+- warn: {name: cycle, within: [], message: "Infinite list - be explicit about length with take"}
+- warn: {name: repeat, within: [], message: "Infinite list - use replicate n for finite"}
+
+# =============================================================================
+# TIER 2: PERFORMANCE & EFFICIENCY
+# =============================================================================
+
+# O(n²) operations
+- warn: {name: nub, within: [], message: "O(n²) - use Data.Set.toList . Data.Set.fromList or ordNub"}
+
+# Fusion opportunities
+- warn: {lhs: "concat (map f xs)", rhs: "concatMap f xs"}
+- warn: {lhs: "map f (map g xs)", rhs: "map (f . g) xs"}
+- warn: {lhs: "filter p (filter q xs)", rhs: "filter (liftA2 (&&) p q) xs"}
+- warn: {lhs: "reverse (reverse xs)", rhs: "xs"}
+
+# =============================================================================
+# MONETARY ARITHMETIC SAFETY
+# =============================================================================
+# NOTE: Raw division (/) on Scientific can diverge with non-terminating decimals.
+# Always use scientificDiv from Portman.Core.Money for safe division.
+# This cannot be enforced by HLint (requires type information), so rely on code review.
+#
+# UNSAFE: x / y                    (can hang on 1/3, etc.)
+# SAFE:   scientificDiv x y        (uses Double intermediate, always terminates)
+#
+# See DIG-121 for details on the safe-money migration.
+
+# =============================================================================
+# IMPORT ALIAS ENFORCEMENT
+# =============================================================================
+- modules:
+  - {name: Data.Map.Strict, as: Map}
+  - {name: Data.Map, as: Map}
+  - {name: Data.Set, as: Set}
+  - {name: Data.Text, as: T}
+  - {name: Data.Text.Lazy, as: TL}
+  - {name: Data.ByteString, as: BS}
+  - {name: Data.ByteString.Lazy, as: BSL}

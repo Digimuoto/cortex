@@ -1,0 +1,8 @@
+Cortex
+Copyright 2026 Digimuoto Oy
+
+This product includes software developed at Digimuoto Oy.
+
+The Cortex substrate (durable runtime, graph algebra, Wire DSL, Pulse
+executor, memory substrate) was originally extracted from the Portman
+monorepo at https://github.com/Digimuoto/portman.

@@ -1,0 +1,74 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+-- |
+-- Module: Platform.Require
+-- Description: Combinators for requiring values or throwing HTTP errors
+--
+-- This module provides combinators for common error-handling patterns in
+-- HTTP handlers, such as converting Maybe/Either values to HTTP errors.
+module Platform.Require
+  ( -- * Basic require combinators
+    requireMaybe,
+    requireEither,
+    requireEitherWith,
+
+    -- * Re-exports from Servant for convenience
+    Handler,
+  )
+where
+
+import Data.Text (Text)
+import Data.Text qualified as T
+import Platform.Error
+  ( internalError,
+    notFoundError,
+    throwAppError,
+    withContext,
+  )
+import Servant.Server (Handler)
+
+-- | Require a Maybe value or throw a 404 Not Found error.
+--
+-- @
+-- requireMaybe "Asset" (Just asset)  -- returns asset
+-- requireMaybe "Asset" Nothing       -- throws notFoundError "Asset" (HTTP 404)
+-- @
+requireMaybe :: Text -> Maybe a -> Handler a
+requireMaybe resource = maybe (throwAppError $ notFoundError resource) pure
+
+-- | Require an Either value or throw a 500 Internal Server Error.
+--
+-- The Left value is converted to a string using the provided function,
+-- logged internally via AppError, and a safe message is sent to the client.
+--
+-- @
+-- requireEither id (Right asset)       -- returns asset
+-- requireEither show (Left "Parse error")
+-- -- logs: "Internal error: Parse error"
+-- -- throws: internalError (HTTP 500), client sees generic message
+-- @
+requireEither :: (e -> String) -> Either e a -> Handler a
+requireEither toMsg = either handleError pure
+  where
+    handleError e =
+      throwAppError
+        . withContext "requireEither" Nothing
+        $ internalError (T.pack $ toMsg e)
+
+-- | Require an Either value or throw a 500 Internal Server Error with custom body.
+--
+-- Similar to 'requireEither', but includes the error message as context.
+-- The message is logged internally; the client sees a safe generic error.
+--
+-- @
+-- requireEitherWith id (Right asset)  -- returns asset
+-- requireEitherWith id (Left "Invalid asset type")
+-- -- logs with context, throws internalError (HTTP 500)
+-- @
+requireEitherWith :: (e -> String) -> Either e a -> Handler a
+requireEitherWith toMsg = either handleError pure
+  where
+    handleError e =
+      throwAppError
+        . withContext "requireEitherWith" Nothing
+        $ internalError (T.pack $ toMsg e)

@@ -1,0 +1,99 @@
+# =============================================================================
+# WHITELIST GITIGNORE
+# =============================================================================
+#
+# Pattern: Ignore everything (*), then explicitly allow tracked items (!path).
+# =============================================================================
+
+*
+
+# === Directories ===
+
+# Haskell library source
+!src/
+!src/**
+!src-platform/
+!src-platform/**
+!app/
+!app/**
+!test/
+!test/**
+
+# agents/ — slash-command skills for AI coding agents
+!agents/
+!agents/**
+
+# theory/ — Lean 4 mechanization (lake-managed; .lake/ is the build cache)
+!theory/
+!theory/**
+theory/.lake/
+
+# docs/ — flat markdown tree consumed by repo-docs
+!docs/
+!docs/**
+
+# assets/ — tracked images used by README and docs
+!assets/
+!assets/**
+
+# nix/ — includes materialized/ for reproducible builds
+!nix/
+!nix/**
+
+# config/ — substrate-side runtime config (memory ranking weights, etc.)
+!config/
+!config/**
+
+# editors/ — tree-sitter-wire grammar + editor integrations
+!editors/
+!editors/**
+editors/tree-sitter-wire/node_modules
+editors/tree-sitter-wire/build
+editors/tree-sitter-wire/target
+
+# CI
+!/.github/
+!/.github/**
+
+# === Root Files (anchored with /) ===
+!/.envrc
+!/.gitignore
+!/.hlint.yaml
+!/LICENSE
+!/NOTICE
+!/README.md
+!/CONTRIBUTING.md
+!/cabal.project
+!/cortex.cabal
+!/flake.lock
+!/flake.nix
+!/fourmolu.yaml
+!/justfile
+
+# === Exclusions (re-ignore in whitelisted dirs) ===
+
+# Generated provider context symlinks. Canonical context lives in agents/.
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+
+*.local.json
+*.hi
+*.o
+*.dyn_hi
+*.dyn_o
+
+# Documentation build artifacts
+docs/dist/
+docs/.astro/
+docs/node_modules/
+docs/package-lock.json
+
+# Cabal / GHC
+dist-newstyle/
+dist/
+.ghc.environment.*
+.hie/
+
+# Tree-sitter cache
+.cache/

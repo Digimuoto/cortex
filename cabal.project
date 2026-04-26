@@ -1,0 +1,7 @@
+packages: .
+
+-- Cabal index pinned via haskell.nix (see nix/haskell.nix).
+-- This file primarily exists so `cabal repl` works inside the dev shell.
+
+tests: True
+benchmarks: False
