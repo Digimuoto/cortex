@@ -1,0 +1,106 @@
+# Cortex agent context
+
+Provider-neutral context and slash-command skills for AI coding agents
+working on this repo. Provider-specific files such as `CLAUDE.md` and
+`AGENTS.md` are generated, gitignored symlinks; do not edit them
+directly.
+
+```
+agents/
+├── README.md
+├── context.md                  # Root agent handbook
+├── scripts/
+│   └── link-provider           # Builds Codex/Claude symlinks
+├── src-platform/
+│   └── Platform/
+│       ├── context.md
+│       ├── Database/context.md
+│       └── DurableTask/context.md
+└── skills/
+    ├── impl/                   # Start implementation (branch, draft PR, plan)
+    ├── publish/                # Commit + push the current branch
+    ├── ci-fix/                 # Diagnose & fix a red CI run
+    ├── pr-resolve-review/      # Address PR review comments
+    ├── haskell-code-style/     # Opinionated Haskell review (+ references/)
+    ├── doc-review/             # Docs review (+ references/)
+    └── doc-review-and-fix/     # Review and edit docs in one pass
+```
+
+Each skill lives in its own directory with a `SKILL.md` entrypoint. Each
+source-tree context file mirrors the repo path it governs under
+`agents/<repo-path>/context.md`.
+
+## Provider links
+
+Regenerate provider-specific symlinks with one command per provider:
+
+```bash
+just agent-link-codex
+just agent-link-claude
+```
+
+`agent-link-codex` links:
+
+- `agents/context.md` -> `AGENTS.md`
+- `agents/<repo-path>/context.md` -> `<repo-path>/AGENTS.md`
+- `agents/skills/<name>` -> `.codex/skills/<name>`
+
+`agent-link-claude` links:
+
+- `agents/context.md` -> `CLAUDE.md`
+- `agents/<repo-path>/context.md` -> `<repo-path>/CLAUDE.md`
+- `agents/skills/<name>/SKILL.md` -> `.claude/commands/<name>.md`
+
+Gemini-specific files are intentionally not generated. Add a provider
+only when the repo has a maintained setup command for it.
+
+## Commit Policy For Agents
+
+Agent tooling may help produce patches, but it must not appear in commit
+authorship metadata.
+
+- Do not author commits as an LLM or coding agent.
+- Do not add `Co-authored-by:` trailers for AI tools.
+- Do not mention AI tools as legal commit authors.
+- All commits created from agent workflows must use `git commit -s -S`.
+- All commits must verify locally before publish.
+
+Human authorship and verifiable signatures are mandatory repository
+policy, not optional workflow preferences.
+
+## History Policy For Agents
+
+Treat Git history as a maintained artifact. Rebase-first development is
+the default for ordinary feature work: private feature branches may be
+rebased, squashed, fixed up, or reordered so the branch reads as a
+semantic sequence of changes.
+
+- Never force-push `main`.
+- Never use raw `git push --force`.
+- Use `git push --force-with-lease` only when history was deliberately
+  rewritten and the remote still points where you expect.
+- Make CI pass after the final rebase.
+- Prefer fast-forward or squash integration into trunk.
+- Use merge commits only when the existence of parallel development
+  lines is itself meaningful.
+
+## Scope
+
+Cortex is a durable runtime substrate plus a structured reasoning
+library on top (per ADR 0015). Skills here assume that substrate scope:
+
+- No finance/tax/IBKR/portfolio domain knowledge.
+- No database migrations, web-UI, or deployment workflows.
+- Build commands go through `just` → `nix`; no direct `cabal` or `ghc`.
+- Repo-level docs live flat under `docs/`, not `docs/cortex/`.
+
+Skills that deal in Portman-specific workflows (Linear `issue` CLI,
+MicroVM deploy, Clerk soak, finance tests) are deliberately absent.
+Portman keeps its own fuller `agents/` tree.
+
+## Adding a skill
+
+1. Create `agents/skills/<name>/SKILL.md` with YAML frontmatter
+   (`name`, `description`, optional `date`/`status`).
+2. Supporting references go under `agents/skills/<name>/references/`.
+3. Run the provider link command for the runtime that should expose it.

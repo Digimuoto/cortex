@@ -1,0 +1,83 @@
+#!/usr/bin/env sh
+set -eu
+
+usage() {
+  echo "usage: agents/scripts/link-provider codex|claude" >&2
+  exit 2
+}
+
+provider="${1:-}"
+[ "$provider" = "codex" ] || [ "$provider" = "claude" ] || usage
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+link_rel() {
+  target="$1"
+  link="$2"
+  link_dir="$(dirname "$link")"
+
+  if [ ! -e "$target" ]; then
+    echo "missing target: ${target#$repo_root/}" >&2
+    exit 1
+  fi
+
+  mkdir -p "$link_dir"
+
+  if [ -L "$link" ] || [ -f "$link" ]; then
+    rm "$link"
+  elif [ -d "$link" ]; then
+    echo "refusing to replace directory: ${link#$repo_root/}" >&2
+    exit 1
+  fi
+
+  rel_target="$(realpath --relative-to="$link_dir" "$target")"
+  ln -s "$rel_target" "$link"
+  echo "${link#$repo_root/} -> $rel_target"
+}
+
+link_contexts() {
+  provider_file="$1"
+
+  link_rel "$repo_root/agents/context.md" "$repo_root/$provider_file"
+
+  for context_dir in \
+    src-platform/Platform \
+    src-platform/Platform/Database \
+    src-platform/Platform/DurableTask
+  do
+    link_rel \
+      "$repo_root/agents/$context_dir/context.md" \
+      "$repo_root/$context_dir/$provider_file"
+  done
+}
+
+link_codex() {
+  link_contexts AGENTS.md
+
+  skill_dest="$repo_root/.codex/skills"
+  mkdir -p "$skill_dest"
+
+  for skill_dir in "$repo_root"/agents/skills/*; do
+    [ -d "$skill_dir" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    link_rel "$skill_dir" "$skill_dest/$skill_name"
+  done
+}
+
+link_claude() {
+  link_contexts CLAUDE.md
+
+  command_dest="$repo_root/.claude/commands"
+  mkdir -p "$command_dest"
+
+  for skill_dir in "$repo_root"/agents/skills/*; do
+    [ -d "$skill_dir" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    link_rel "$skill_dir/SKILL.md" "$command_dest/$skill_name.md"
+  done
+}
+
+case "$provider" in
+  codex) link_codex ;;
+  claude) link_claude ;;
+esac
