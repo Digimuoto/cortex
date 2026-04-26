@@ -116,7 +116,7 @@ polish.
 Apply this aggressively in `canonical` docs.
 
 - Cortex should read as an independent system, not as a subsystem of
-  any consumer (Portman or otherwise).
+  any consumer.
 - Downstream products may appear as consumers, integration examples, or
   motivating use cases, but not as the frame through which Cortex is
   defined.
@@ -174,9 +174,33 @@ finding.
 
 Mermaid standard:
 
-- use the right diagram type for the concept
-- avoid anonymous gray-box diagrams when typed structure or styled
-  grouping would clarify meaning
+- use the right diagram type for the concept: `flowchart LR` for
+  pipelines, `flowchart TB` for hierarchies, `BT` and `RL` almost
+  never, `stateDiagram-v2` for explicit state machines, `sequenceDiagram`
+  for protocol exchanges
+- the Cortex docs site renders dark mode through the `cortex-slate`
+  theme, which cycles node fills through indigo, teal, amber, rose,
+  sage in **node declaration order**, then wraps; light/dark fall back
+  to Mermaid's stock palettes
+- compose for the cycle: declare the conceptual primary node first so
+  it lands on indigo (the accent), declare the terminal or settled
+  node last so it lands on sage; for research-style traces this means
+  inputs first, outputs last
+- aim for diagrams whose node count is a small multiple of 5 (one or
+  two full cycles); 4 leaves the cycle short, 6 wraps with one
+  discordant repeat; 3 also reads cleanly on its own
+- chunk anything past 8 nodes into `subgraph` blocks rather than
+  letting it sprawl flat
+- labels are short — roughly 20 characters or fewer per node;
+  sentences belong in the surrounding prose, not in the diagram
+- sequence diagrams stay at 4 actors or fewer because the docs prose
+  width is roughly 720px
+- use `classDef` only for *semantically* coloured nodes such as error
+  or danger states; cosmetic `classDef` and per-node `style` overrides
+  defeat the cycling palette and should be a finding
+- diagrams should also flip cleanly between the light theme and slate;
+  edge labels and subgraph titles are the usual under-contrast
+  failures
 - diagrams should be clean enough to survive printing or design review
 
 ## Implementation and claim checks

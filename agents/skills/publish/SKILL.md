@@ -36,7 +36,8 @@ git diff --cached --stat
 
 Confirm:
 
-- which branch is active (not `main` unless intentional)
+- which branch is active; `publish` is for feature branches, not
+  direct `main` integration
 - whether there are staged/unstaged changes worth pushing
 - whether the branch has an upstream
 
@@ -89,6 +90,11 @@ just check-commit-provenance origin/main..HEAD
 Cortex `main` is integrated by fast-forwarding to exact signed branch
 commits after PR review and CI. Do not assume the branch will be merged
 with a GitHub squash, merge, or rebase button.
+
+If the active branch is `main`, stop unless the user explicitly asked
+for an approved lease-protected history repair. To land a ready PR, use
+the `ship` skill / `just integrate-pr <branch-or-pr-number>` instead of
+publishing `main` directly.
 
 ### 4. Verify
 

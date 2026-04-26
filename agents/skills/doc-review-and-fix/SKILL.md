@@ -48,7 +48,10 @@ Fix directly when intent is clear:
   product instead of an independent system
 - canonical docs that can be cleanly rewritten from repo-local paths
   and issue references to stable conceptual names
-- malformed or weak Mermaid blocks
+- malformed or weak Mermaid blocks, including diagrams that violate
+  the slate cycle composition rules in the doc-review skill (cosmetic
+  `classDef`, awkward node counts, oversized labels, flat sprawl past
+  eight nodes)
 - math notation cleanup when the intended meaning is clear
 - code-fence languages, obviously broken examples, canonical example
   drift

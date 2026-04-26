@@ -78,7 +78,7 @@ of independent 30-line handlers is healthier than a 400-line file with one
 - Servant route wiring: mechanical dispatch, low complexity per line
 - Type definition modules: one type per API endpoint, naturally long
 - Handler registries: independent handlers sharing `ServerContext` + patterns
-- Domain-coherent modules: all portfolio operations in one file is correct
+- Domain-coherent modules: all run-lifecycle operations in one file is correct
 
 **When size IS the problem** (consider splitting):
 - Individual functions exceed 80 lines (the function is too big, not the file)
@@ -218,9 +218,9 @@ is known at compile time:
 ```haskell
 -- BAD: stringly-typed dispatch over a closed set
 case taskType of
-  "portfolio_cycle" -> handlePortfolioCycle
+  "pulse_run"       -> handlePulseRun
   "response_eval"   -> handleResponseEval
-  "data_import"     -> handleDataImport
+  "artifact_export" -> handleArtifactExport
   _                 -> handleUnknown taskType
 
 -- GOOD: ADT dispatch — compiler enforces exhaustiveness
@@ -548,12 +548,12 @@ language rather than transformer plumbing:
 
 ```haskell
 -- BAD: repeated at every call site
-withExceptT (\e -> externalError "IBKR" (T.pack e)) (ExceptT $ fetchFlexQuery mgr cfg)
+withExceptT (\e -> externalError "host-api" (T.pack e)) (ExceptT $ fetchExternalPayload mgr cfg)
 
 -- GOOD: extract once
-fetchFlexQueryE :: Manager -> FlexQueryConfig -> ExceptT AppError IO ByteString
-fetchFlexQueryE mgr cfg = withExceptT (\e -> externalError "IBKR" (T.pack e)) $
-  ExceptT (fetchFlexQuery mgr cfg)
+fetchExternalPayloadE :: Manager -> ExternalConfig -> ExceptT AppError IO ByteString
+fetchExternalPayloadE mgr cfg = withExceptT (\e -> externalError "host-api" (T.pack e)) $
+  ExceptT (fetchExternalPayload mgr cfg)
 ```
 
 **4. Convert external/string errors into domain errors early.**
@@ -875,11 +875,11 @@ All by-ID sub-routes get named types in the API module:
 
 ```haskell
 -- In API module:
-type PortfolioByIdAPI = Get '[JSON] PortfolioResponse :<|> ...
+type RunByIdAPI = Get '[JSON] RunResponse :<|> ...
 
 -- In Server module:
-portfolioByIdRoutes :: ServerContext -> AuthenticatedUser -> PortfolioId
-                    -> Server PortfolioByIdAPI
+runByIdRoutes :: ServerContext -> AuthenticatedUser -> RunId
+              -> Server RunByIdAPI
 ```
 
 Never inline a multi-line type signature in the server wiring module.
@@ -962,7 +962,7 @@ Codify the minimum structured fields per log domain:
 | Domain | Required fields |
 |---|---|
 | **Pulse operations** | `run_id`, `task_id`, `stage_name`, `attempt` |
-| **Finance operations** | `portfolio_id`, `symbol`, `operation` |
+| **Host-action operations** | `host_action_id`, `operation`, `attempt` |
 | **API handlers** | `request_id`, `handler_name`, `user_id` |
 
 Define a `LogContext` record per domain and a helper that attaches all

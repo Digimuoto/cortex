@@ -14,8 +14,8 @@ It is not a separate research playground.
 
 ## Boundaries
 
-- Lean should model the substrate, not Portman product behavior.
-- Portman examples may appear only as downstream examples, never as the
+- Lean should model the substrate, not downstream product behavior.
+- Consumer examples may appear only as downstream examples, never as the
   identity of Cortex.
 - Haskell executable modules are the implementation counterpart; Lean
   modules are the proof counterpart. Cross-reference exact Haskell files

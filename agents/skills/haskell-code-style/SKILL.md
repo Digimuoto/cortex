@@ -97,10 +97,10 @@ Before reviewing, read the references that are in scope for the change:
   in scope (property tests, golden tests, roundtrip tests, algebraic
   laws).
 
-Cortex's Haskell style is inherited from the Portman exemplar. The
-references are generic production-Haskell guidance — examples
-occasionally cite Portman modules for historical reasons; substitute
-`src/Cortex/...` or `src-platform/Platform/...` mentally.
+Cortex's Haskell style is repo-local production-Haskell guidance. The
+references should read as Cortex and Platform guidance; examples should
+use `src/Cortex/...` or `src-platform/Platform/...` shapes unless they
+are explicitly downstream consumer examples.
 
 ### 4. Read the code
 
@@ -331,5 +331,5 @@ outcomeLogLevel = \case
 Per ADR 0015, Cortex is a runtime substrate with a structured-reasoning
 library (`Cortex.Logos`, future) on top. The runtime **never** imports
 the reasoning layer, and neither the runtime nor the reasoning layer
-ever imports a consumer-specific module (Portman, Clerk, product
-bindings). A cross-layer import is a **[P1]** finding.
+ever imports a consumer-specific module, product binding, or host-edge
+module. A cross-layer import is a **[P1]** finding.

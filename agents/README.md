@@ -19,6 +19,8 @@ agents/
 └── skills/
     ├── impl/                   # Start implementation (branch, draft PR, plan)
     ├── publish/                # Commit + push the current branch
+    ├── squash/                 # Rebase PR history into semantic commits
+    ├── ship/                   # Verify and fast-forward-integrate a PR
     ├── ci-fix/                 # Diagnose & fix a red CI run
     ├── pr-resolve-review/      # Address PR review comments
     ├── haskell-code-style/     # Opinionated Haskell review (+ references/)
@@ -93,14 +95,16 @@ semantic sequence of changes.
 Cortex is a durable runtime substrate plus a structured reasoning
 library on top (per ADR 0015). Skills here assume that substrate scope:
 
-- No finance/tax/IBKR/portfolio domain knowledge.
+- No downstream product or domain-specific knowledge.
 - No database migrations, web-UI, or deployment workflows.
+- Active Cortex planning uses GitHub Issues and GitHub Pull Requests.
 - Build commands go through `just` → `nix`; no direct `cabal` or `ghc`.
 - Repo-level docs live flat under `docs/`, not `docs/cortex/`.
 
-Skills that deal in Portman-specific workflows (Linear `issue` CLI,
-MicroVM deploy, Clerk soak, finance tests) are deliberately absent.
-Portman keeps its own fuller `agents/` tree.
+Skills that deal in downstream product workflows (external issue
+trackers, deployment, product soak, domain-specific tests) are
+deliberately absent. Downstream products keep their own fuller
+`agents/` trees.
 
 ## Adding a skill
 

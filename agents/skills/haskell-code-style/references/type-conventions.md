@@ -211,8 +211,8 @@ buildStagePlan (first :| rest) = ...
 
 **When to use**:
 - Stage definitions (a plan always has at least one stage)
-- Portfolio positions (a portfolio always has at least one holding)
-- Signal rules (a strategy always has at least one signal)
+- Signal rules (a suspended node always has at least one awaited signal)
+- Rewrite proposals (a batch always has at least one proposed edit)
 - Batch groups (each batch has at least one item)
 
 **[P2] Flag**: A function that takes `[a]` and immediately `case xs of
@@ -285,7 +285,7 @@ constructor that validates invariants. The export list is the enforcement
 mechanism.
 
 ```haskell
-module Portman.Types.TaskType
+module Cortex.Task.Type
   ( TaskType        -- type, no constructor
   , mkTaskType      -- smart constructor
   , unTaskType      -- accessor
@@ -405,18 +405,18 @@ payloads) must have explicit `ToJSON`/`FromJSON` instances, not
 
 ```haskell
 -- BAD: renaming a field silently changes the API
-data PortfolioResponse = PortfolioResponse
-  { prPortfolioId :: UUID
-  , prName :: Text
+data RunResponse = RunResponse
+  { rrRunId :: UUID
+  , rrName :: Text
   }
   deriving stock (Generic)
   deriving anyclass (ToJSON, FromJSON)  -- uses field names with prefix
 
 -- GOOD: explicit instance with stable field names
-instance ToJSON PortfolioResponse where
+instance ToJSON RunResponse where
   toJSON r = Aeson.object
-    [ "portfolio_id" .= r.prPortfolioId
-    , "name" .= r.prName
+    [ "run_id" .= r.rrRunId
+    , "name" .= r.rrName
     ]
 ```
 

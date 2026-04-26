@@ -8,7 +8,7 @@ docs optimize for.
 Canonical docs should optimize for concept stability, not current repo shape.
 
 - write as if Cortex already stands alone
-- frame Portman as a downstream example, not as the system boundary
+- frame downstream products as examples, not as the system boundary
 - prefer stable conceptual names over file paths and module names
 - keep issue IDs, PR links, commit hashes, and repo-layout trivia out of canon
 - keep prose compact and scannable

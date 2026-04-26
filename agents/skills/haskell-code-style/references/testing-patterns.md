@@ -99,19 +99,19 @@ alter serialization break the golden test, forcing explicit acknowledgment.
 | `ToJSON`/`FromJSON` on public API types | JSON file → decode → re-encode → compare |
 | Hasql encoder/decoder pairs | Known row → decode → compare to expected record |
 | Report IR → markdown compilation | Known IR → compile → compare to expected markdown |
-| Flex Query XML parsing | Known XML → parse → compare to expected domain type |
+| External XML parsing | Known XML → parse → compare to expected boundary type |
 
 ### Pattern
 
 ```haskell
--- Golden file: test/golden/portfolio-response-v1.json
+-- Golden file: test/golden/run-response-v1.json
 -- Contains: the exact JSON shape the API serves
 
 spec :: Spec
-spec = describe "PortfolioResponse serialization" $ do
+spec = describe "RunResponse serialization" $ do
   it "matches golden file" $ do
-    golden <- BSL.readFile "test/golden/portfolio-response-v1.json"
-    let decoded = Aeson.decode golden :: Maybe PortfolioResponse
+    golden <- BSL.readFile "test/golden/run-response-v1.json"
+    let decoded = Aeson.decode golden :: Maybe RunResponse
     decoded `shouldSatisfy` isJust
     Aeson.encode (fromJust decoded) `shouldBe` golden
 ```
