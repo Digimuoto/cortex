@@ -2,12 +2,15 @@
 set -eu
 
 usage() {
-  echo "usage: agents/scripts/link-provider codex|claude" >&2
+  echo "usage: agents/scripts/link-provider codex|claude|opencode" >&2
   exit 2
 }
 
 provider="${1:-}"
-[ "$provider" = "codex" ] || [ "$provider" = "claude" ] || usage
+case "$provider" in
+  codex|claude|opencode) ;;
+  *) usage ;;
+esac
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
@@ -77,7 +80,21 @@ link_claude() {
   done
 }
 
+link_opencode() {
+  link_contexts AGENTS.md
+
+  skill_dest="$repo_root/.opencode/skills"
+  mkdir -p "$skill_dest"
+
+  for skill_dir in "$repo_root"/agents/skills/*; do
+    [ -d "$skill_dir" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    link_rel "$skill_dir" "$skill_dest/$skill_name"
+  done
+}
+
 case "$provider" in
   codex) link_codex ;;
   claude) link_claude ;;
+  opencode) link_opencode ;;
 esac

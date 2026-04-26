@@ -158,6 +158,10 @@ agent-link-codex:
 agent-link-claude:
     agents/scripts/link-provider claude
 
+# Link repo-local agent context and skills for OpenCode
+agent-link-opencode:
+    agents/scripts/link-provider opencode
+
 # Start Nix REPL
 repl:
     nix repl -f flake:nixpkgs

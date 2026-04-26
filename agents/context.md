@@ -146,7 +146,8 @@ Repo-local agent context lives under `agents/`.
 - Source-tree context: `agents/<repo-path>/context.md`.
 - Skills: `agents/skills/<name>/SKILL.md`.
 - Provider symlinks are gitignored and regenerated with
-  `just agent-link-codex` or `just agent-link-claude`.
+  `just agent-link-codex`, `just agent-link-claude`, or
+  `just agent-link-opencode`.
 
 Do not edit generated provider files directly. Move reusable guidance
 back into provider-neutral context or skills.
