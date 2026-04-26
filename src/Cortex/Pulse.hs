@@ -1,10 +1,22 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Cortex Pulse: standalone durable execution runtime.
--- Entry point for the cortex-pulse daemon.
+-- | Cortex Pulse public facade and daemon entry point.
 module Cortex.Pulse
   ( runPulse,
+    module Cortex.Pulse.Executor,
+    module Cortex.Pulse.Hydrate,
+    module Cortex.Pulse.Materialize,
+    module Cortex.Pulse.Memory,
+    module Cortex.Pulse.Memory.Tool,
+    module Cortex.Pulse.Node,
+    module Cortex.Pulse.Persistence,
+    module Cortex.Pulse.Query,
+    module Cortex.Pulse.Rewrite,
+    module Cortex.Pulse.Runtime,
+    module Cortex.Pulse.Schema,
+    module Cortex.Pulse.Signal,
+    module Cortex.Pulse.Types,
   )
 where
 
@@ -14,9 +26,19 @@ import Control.Exception (SomeException, catch, displayException)
 import Cortex.Pulse.Executor (TaskContext (..), TaskRegistry)
 import Cortex.Pulse.Executor qualified as Executor
 import Cortex.Pulse.Health (PulseHealthState (..), initialHealthState, runHealthServer)
+import Cortex.Pulse.Hydrate
+import Cortex.Pulse.Materialize
+import Cortex.Pulse.Memory
+import Cortex.Pulse.Memory.Tool
+import Cortex.Pulse.Node
+import Cortex.Pulse.Persistence
+import Cortex.Pulse.Query hiding (recordRunEvent)
 import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Scheduler (finalizeTaskSchedule, recoverExpiredRuns, runSchedulerLoop, withLeaseRenewal)
-import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
+import Cortex.Pulse.Rewrite
+import Cortex.Pulse.Runtime
+import Cortex.Pulse.Scheduler qualified as Scheduler
+import Cortex.Pulse.Schema
+import Cortex.Pulse.Signal
 import Cortex.Pulse.Types
 import Data.Aeson qualified as Aeson
 import Data.Int (Int32)
@@ -119,7 +141,7 @@ runPulse registry rawConfig = do
       pure ids
 
   -- 4b. Recover expired foreign-owner runs
-  expiredResult <- recoverExpiredRuns pool leaseOwner now
+  expiredResult <- Scheduler.recoverExpiredRuns pool leaseOwner now
   expiredCount <- case expiredResult of
     Left err -> do
       emitEvent (Just obsRuntime) $
@@ -165,7 +187,7 @@ runPulse registry rawConfig = do
           link healthAsync
           withAsync (resumeReclaimedRuns registry taskContext leaseDuration reclaimedRunIds) $ \reclaimAsync -> do
             link reclaimAsync
-            runSchedulerLoop registry taskContext healthState
+            Scheduler.runSchedulerLoop registry taskContext healthState
 
   -- The scheduler loop exits when shutdownFlag is set (by signal handler).
   -- Catch unexpected exceptions only.
@@ -294,10 +316,10 @@ resumeOneRun registry taskContext leaseDuration runId = do
               ]
             pure Nothing
       outcome <-
-        withLeaseRenewal pool runId leaseDuration $
+        Scheduler.withLeaseRenewal pool runId leaseDuration $
           Executor.resumeTask registry taskContext runId task
       endTime <- getCurrentTime
-      finalizeTaskSchedule pool (Just runId) task triggerSource endTime outcome
+      Scheduler.finalizeTaskSchedule pool (Just runId) task triggerSource endTime outcome
   where
     emitEvent' level op msg extra =
       emitGlobalEvent $

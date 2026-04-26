@@ -48,6 +48,27 @@ flowchart LR
 
 The placement rule: if a module would be reusable outside the host as generic AI infrastructure, it belongs in the Cortex substrate, even when the product binding is currently the only caller. If it knows about host domain semantics, product-specific artifacts, truth policy, or host tool authority, it stays downstream.
 
+## Public import boundary
+
+Downstream products consume Cortex and Platform through two umbrella modules:
+
+```haskell
+import Cortex
+import Platform
+```
+
+Those modules are the supported public API boundary. They re-export the
+stable Cortex substrate surface, the public reasoning/workflow surface, and
+the generic Platform runtime utilities that downstream products are expected
+to use directly.
+
+Area modules such as `Cortex.Wire`, `Cortex.Pulse`, `Cortex.Memory`, or
+`Platform.Observability` remain available for advanced imports, examples, and
+focused tests. Implementation-era roots are not the downstream contract. A
+consumer that reaches past the umbrella modules should do so deliberately and
+expect that import to be reviewed when Cortex tightens its internal module
+layout.
+
 ## Ownership breakdown
 
 ### Cortex substrate

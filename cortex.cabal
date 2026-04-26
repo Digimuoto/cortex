@@ -144,6 +144,7 @@ library platform-runtime
     visibility:       public
     hs-source-dirs:   src-platform
     exposed-modules:
+        Platform
         Platform.Database
         Platform.Database.Encode
         Platform.Database.Rel8TH
@@ -203,6 +204,7 @@ library
         Cortex.Wire.V1.Compiler
         Cortex.Wire.V1.Parser
     exposed-modules:
+        Cortex
         Cortex.Agent.Config
         Cortex.Agent.Definition
         Cortex.Agent.Policy
@@ -237,6 +239,7 @@ library
         Cortex.Json.Object
         Cortex.Json.Preview
         Cortex.Json.Text
+        Cortex.Logoi
         Cortex.Provider.OpenRouter
         Cortex.Provider.OpenRouter.Client
         Cortex.Provider.OpenRouter.Embeddings
@@ -350,6 +353,7 @@ test-suite cortex-test
     build-tool-depends:
         hspec-discover:hspec-discover >=2.10
     other-modules:
+        Cortex.PublicPreludeSpec
         Cortex.Agent.ConfigSpec
         Cortex.Circuit.CompilerSpec
         Cortex.Circuit.IRSpec
