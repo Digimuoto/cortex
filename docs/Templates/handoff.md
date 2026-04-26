@@ -6,7 +6,7 @@ from: "{who or which PR/phase}"
 to: "{who or which PR/phase}"
 status: active   # active | completed | superseded
 related:
-  - DIG-NNN
+  - "GitHub #NNN"
 ---
 
 # Handoff: {Topic}
@@ -30,7 +30,7 @@ open PRs, ticket status.
 
 - **Code:** `src/Cortex/...` — current state and what branch it's on.
 - **PRs:** #{num} {status}, #{num} {status}.
-- **Tickets:** DIG-{NNN} ({status}).
+- **Issues:** GitHub #{NNN} ({status}).
 - **Docs:** {which docs were updated or left stale}.
 
 ## What was decided

@@ -6,7 +6,7 @@ sidebar:
   order: N
 status: proposed   # proposed | active | blocked | completed
 related:
-  - DIG-NNN
+  - "GitHub #NNN"
   - docs/Architecture/...
 ---
 
@@ -78,6 +78,6 @@ What is not yet decided, and what could derail the epic.
 
 ## Related
 
-- DIG-{epic issue}
+- GitHub #{epic issue}
 - [../Plans/](../Plans/) — implementation plans under this epic.
 - [../../Architecture/...](../../Architecture/...) — canonical chapters the epic shapes.

@@ -199,8 +199,8 @@ just test-match "<pattern>"  # filtered hspec run
 For deeper investigation of Pulse execution, bring up a local Postgres
 (separate setup — Cortex does not manage database lifecycle) and
 exercise the substrate-shell binary with `--db-host` / `--db-name` flags
-pointing at it. Consumers (Portman) test the integration surface in
-their own repo.
+pointing at it. Downstream consumers test their own integration surfaces
+in their own repos.
 
 ## Principles
 

@@ -5,7 +5,7 @@ date: YYYY-MM-DD
 scope: "{foundation | runtime | wire | applications}"
 status: active   # active | superseded | archived
 related:
-  - DIG-NNN
+  - "GitHub #NNN"
   - docs/Research-notes/{scope}/...
 ---
 
@@ -37,7 +37,7 @@ investigation path.
 
 - `src/Cortex/...`
 - `docs/...`
-- DIG-NNN, DIG-MMM
+- GitHub #NNN, GitHub #MMM
 - external: {papers, specs, standards}
 
 ## Findings
@@ -49,7 +49,7 @@ conclusions. Flag speculation explicitly.
 
 ### Finding 1 — {Title}
 
-**Primary evidence:** `src/Cortex/...:L:L`, `DIG-NNN`, `docs/...`.
+**Primary evidence:** `src/Cortex/...:L:L`, GitHub #NNN, `docs/...`.
 
 <!--
 Two or three sentences stating what was found and what it implies.

@@ -1,0 +1,15 @@
+# Cortex issue intake.
+#
+# Labels are minimal and orthogonal:
+#   * exactly one type label: bug | enhancement | epic | research | documentation | question
+#   * zero or one component label: pulse | wire | memory
+# See CONTRIBUTING.md for the full label policy.
+
+blank_issues_enabled: false
+contact_links:
+  - name: Architecture and reference docs
+    url: https://github.com/Digimuoto/cortex/tree/main/docs
+    about: Read the canonical Cortex docs before filing a design question.
+  - name: Contributing guide
+    url: https://github.com/Digimuoto/cortex/blob/main/CONTRIBUTING.md
+    about: Commit signing, PR integration, label policy, and scope discipline.

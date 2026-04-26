@@ -9,7 +9,7 @@ date: YYYY-MM-DD
 superseded_by: null   # if superseded, path to the replacing ADR
 related:
   - docs/Architecture/...
-  - DIG-NNN
+  - "GitHub #NNN"
 ---
 
 # ADR NNNN — {Decision title}

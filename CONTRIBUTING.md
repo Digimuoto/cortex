@@ -12,6 +12,47 @@ verifiable.
 4. `main` advances only by fast-forwarding already signed commits.
 5. Builds and checks go through the repo's `just` and Nix surfaces.
 
+## Issue Tracking
+
+Cortex uses GitHub Issues as its active project tracker. Use GitHub
+issues for implementation scope, bugs, roadmap slices, and follow-up
+work. Pull requests should link the issue they resolve when one exists
+(`Closes #123`) and should use GitHub review threads for review
+discussion.
+
+Do not use Linear or any downstream product tracker as the source of
+truth for Cortex work. Historical docs may mention external issue IDs
+when they explain migration context, but new Cortex planning belongs in
+this repository's GitHub issue system.
+
+### Issue Templates
+
+`.github/ISSUE_TEMPLATE/` ships four canonical intakes: bug report,
+feature or change request, epic, and a `config.yml` that disables blank
+issues and points new contributors at the docs. Pick the template that
+matches the work; do not file ad-hoc issues outside the templates.
+
+### Label Policy
+
+Labels are deliberately minimal so triage stays mechanical.
+
+- **Type labels** (apply exactly one):
+  - `bug` — substrate regression or incorrect behavior
+  - `enhancement` — feature, refinement, or design change
+  - `epic` — long-running initiative coordinating child issues
+  - `research` — research-track work feeding a paper or formal note
+  - `documentation` — docs-only change
+  - `question` — clarification or discussion request
+- **Component labels** (apply zero or one):
+  - `pulse` — Pulse runtime, execution, graph-state durability
+  - `wire` — Wire language, compiler, workflow authoring
+  - `memory` — memory, retrieval, topological state
+- **Triage labels** (`duplicate`, `invalid`, `wontfix`, `good first issue`,
+  `help wanted`) are GitHub defaults and may be applied as needed.
+
+New labels need a written justification in the PR that adds them. Prefer
+splitting an issue over inventing a new label.
+
 ## Authorship and Copyright
 
 Commits in this repository must be authored and committed by a human
@@ -167,10 +208,10 @@ Repo-local agent workflows live under `agents/`. If you use an agent:
 
 ## Scope Discipline
 
-Cortex is substrate code, not Portman product code.
+Cortex is upstream substrate code, not downstream product code.
 
 - `Cortex.*` and `Platform.*` belong here
-- Portman-specific product logic does not
+- product-specific logic does not
 - canonical docs live under `docs/`
 
 ## Before You Push

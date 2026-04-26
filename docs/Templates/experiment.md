@@ -5,7 +5,7 @@ date: YYYY-MM-DD
 scope: "{wire | runtime | foundation | applications}"
 status: complete   # complete | ongoing | abandoned
 related:
-  - DIG-NNN
+  - "GitHub #NNN"
 ---
 
 # Experiment: {Topic}
@@ -70,5 +70,5 @@ memos to write.
 
 ## Related
 
-- DIG-{issue}
+- GitHub #{issue}
 - [../../Research-notes/{scope}/...](../../Research-notes/{scope}/...)

@@ -32,8 +32,8 @@ frontmatter, section shape, and placement discipline.
 - Status values follow a closed vocabulary: `draft`, `active`, `accepted`,
   `completed`, `superseded`, `archived`, `deprecated`.
 - Dates in frontmatter are ISO dates (`YYYY-MM-DD`).
-- Canonical docs should frame Cortex directly. Portman and other downstream
-  consumers can appear as examples, not as the system boundary.
+- Canonical docs should frame Cortex directly. Downstream consumers can appear
+  as examples, not as the system boundary.
 - Dated artifacts should be retained only while they explain current canon,
   active work, or a live research thread.
 

@@ -88,6 +88,18 @@ Follow this policy:
   branches may use merge commits deliberately when the topology itself
   carries meaning.
 
+## Issue And PR Tracking
+
+Cortex uses GitHub Issues and GitHub Pull Requests for active project
+tracking. When starting non-trivial work, prefer an existing GitHub
+issue or open one before implementation. Link PRs to issues with
+`Closes #<number>` when the PR completes the scope.
+
+Do not use Linear, downstream issue IDs, or downstream product trackers as
+active Cortex planning state. Historical research notes and handoffs may
+retain those references for provenance, but new Cortex work is tracked
+in this repository.
+
 ## Commit And Authorship Policy
 
 Every commit in this repo must be signed and verifiable.
@@ -116,8 +128,11 @@ docs:
 - Architecture chapters describe the substrate. Keep reasoning-layer
   content explicitly attributed to `Cortex.Logos`.
 - ADRs are numbered and append-only. New decisions get new ADR files.
-- `docs/Consumers/Portman/` documents Portman as a reference downstream
-  consumer and integration contract, not as the frame for Cortex itself.
+- `docs/Consumers/<consumer>/` documents downstream consumer bindings
+  and integration contracts, not the frame for Cortex itself.
+- Public and canonical docs must present Cortex as the upstream
+  substrate. Downstream products may appear as examples only after the
+  generic contract is clear.
 - `docs/Templates/` is excluded from the docs-site build.
 
 ## Agentic Tooling
@@ -151,9 +166,11 @@ back into provider-neutral context or skills.
 
 ## Non-Goals
 
-- No Portman product code. Cortex and Platform code only; downstream
+- No downstream product code. Cortex and Platform code only; downstream
   consumers live in their own repos.
 - No UI, frontend, or REST server. Cortex is a library plus a Pulse
   executor binary.
-- No cross-link to Portman docs from Cortex docs unless the document is
-  explicitly a consumer integration note.
+- No cross-link to consumer docs from Cortex canon unless the document
+  is explicitly discussing downstream integration examples.
+- No Linear or downstream product tracker workflow for active Cortex
+  issues. Use GitHub Issues.
