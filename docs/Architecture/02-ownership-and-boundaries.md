@@ -44,12 +44,6 @@ flowchart LR
 
     C --> F[Domain core<br/>product semantics]
     S --> D[Persistence<br/>schemas + storage]
-
-    style S fill:#e0f2fe,stroke:#0284c7,color:#0f172a
-    style C fill:#fef3c7,stroke:#d97706,color:#0f172a
-    style X fill:#dcfce7,stroke:#16a34a,color:#0f172a
-    style F fill:#ede9fe,stroke:#7c3aed,color:#0f172a
-    style D fill:#fce7f3,stroke:#db2777,color:#0f172a
 ```
 
 The placement rule: if a module would be reusable outside the host as generic AI infrastructure, it belongs in the Cortex substrate, even when the product binding is currently the only caller. If it knows about host domain semantics, product-specific artifacts, truth policy, or host tool authority, it stays downstream.

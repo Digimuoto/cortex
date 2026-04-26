@@ -195,9 +195,15 @@ Mermaid standard:
   sentences belong in the surrounding prose, not in the diagram
 - sequence diagrams stay at 4 actors or fewer because the docs prose
   width is roughly 720px
-- use `classDef` only for *semantically* coloured nodes such as error
-  or danger states; cosmetic `classDef` and per-node `style` overrides
-  defeat the cycling palette and should be a finding
+- **prefer the default theme colours.** No `style X fill:…`, no
+  `classDef` cosmetic colour, no inline hex on nodes or edges. Mermaid
+  bakes inline fills into the SVG, so any pinned colour overrides the
+  per-theme palette and the diagram stops responding to the
+  light/slate toggle. This is the single most common diagram-review
+  finding in this repo
+- the only legitimate use of `classDef` is *semantic* colour — an
+  error or danger state that must read as such regardless of theme.
+  Treat any other use as a finding and strip it
 - diagrams should also flip cleanly between the light theme and slate;
   edge labels and subgraph titles are the usual under-contrast
   failures

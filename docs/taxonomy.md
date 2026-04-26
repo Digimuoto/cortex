@@ -22,10 +22,6 @@ flowchart TD
 
     W -->|compiles to| C
     C -->|runs on| P
-
-    style W fill:#fef3c7,stroke:#d97706,color:#0f172a
-    style C fill:#dcfce7,stroke:#16a34a,color:#0f172a
-    style P fill:#dbeafe,stroke:#2563eb,color:#0f172a
 ```
 
 Graph is the pure algebraic substrate that Wire authors over and Circuit validates.

@@ -67,12 +67,6 @@ flowchart LR
 
     B --> D[Downstream domain logic<br/>product-specific semantics]
     T --> P[Downstream persistence and delivery<br/>storage, streaming, notifications]
-
-    style T fill:#e0f2fe,stroke:#0284c7,color:#0f172a
-    style B fill:#fef3c7,stroke:#d97706,color:#0f172a
-    style X fill:#dcfce7,stroke:#16a34a,color:#0f172a
-    style D fill:#ede9fe,stroke:#7c3aed,color:#0f172a
-    style P fill:#fce7f3,stroke:#db2777,color:#0f172a
 ```
 
 Ownership rules:
