@@ -69,7 +69,7 @@ contract   node   let   import   from   select   true   false
 
 **Lists.** `[a, b, c]`. Trailing comma permitted. Empty list: `[]`.
 
-**Records.** `{ k1 = v1; k2 = v2; }`. Fields separated by `;`. Trailing `;` permitted. Empty record: `{}`.
+**Records.** `{ k1 = v1; k2 = v2; }`. Fields separated by `;` or `,`. Trailing separator permitted. Empty record: `{}`.
 
 **Numbers.** Decimal integers and floats: `42`, `3.14`, `-7`. Leading `-` is part of the numeric literal, not an operator — Wire has no arithmetic in v1. No hex, octal, or scientific notation.
 
@@ -498,7 +498,7 @@ selector select(
 { title = "Report"; maxTokens = 16384; tools = [webSearch, getDate]; }
 ```
 
-Fields separated by `;`. Trailing `;` permitted. Field names are unqualified identifiers; values are arbitrary expressions.
+Fields are separated by `;` or `,`. A trailing separator is permitted. Field names are unqualified identifiers; values are arbitrary expressions.
 
 ### 8.2 `//` — right-biased shallow merge
 
@@ -914,7 +914,9 @@ partial_expr      ::= "@" qualified_ident record_expr
 
 constructor_expr  ::= qualified_ident record_expr   # config-value constructor, no @
 
-record_expr       ::= "{" [ field { ";" field } [ ";" ] ] "}"
+record_expr       ::= "{" [ field { record_sep field } [ record_sep ] ] "}"
+
+record_sep        ::= ";" | ","
 
 field             ::= path "=" expr
 
