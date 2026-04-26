@@ -137,7 +137,7 @@ looks a lot like a projection checkpoint in event-sourced systems, where the
 read model is rebuilt from an append-only stream up to a known durable offset.
 
 Possible write-up directions:
-- Rewrite materialization and recovery plan (`DIG-433`): recovery semantics and determinism burden
+- Rewrite materialization and recovery plan: recovery semantics and determinism burden
 - a shorter design note comparing rewrite-watermark recovery with event-sourced
   projection rebuilds
 
@@ -160,5 +160,5 @@ This suggests a useful research boundary:
 - non-local rewrites may require migration semantics, not just replay
 
 Possible write-up directions:
-- Paper 2 (`DIG-432`): extension boundary of the algebra
-- Rewrite materialization and recovery plan (`DIG-433`): recovery and migration semantics for broader graph changes
+- Paper 2: extension boundary of the algebra
+- Rewrite materialization and recovery plan: recovery and migration semantics for broader graph changes

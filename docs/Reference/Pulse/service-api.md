@@ -92,7 +92,7 @@ The error category and retryable flag are persisted in the stage log and emitted
 - [./host-actions.md](./host-actions.md) — the inverse direction: Pulse → host callouts.
 - [./events.md](./events.md) — run-event catalog.
 - [../../Architecture/06-pulse-runtime.md](../../Architecture/06-pulse-runtime.md) — runtime framing.
-- [../../Consumers/Portman/pulse-host-actions.md](../../Consumers/Portman/pulse-host-actions.md) — Portman's concrete binding of the host-action contract.
+- [../../Consumers/](../../Consumers/) — downstream binding examples.
 
 ---
 

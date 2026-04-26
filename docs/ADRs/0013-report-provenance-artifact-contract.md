@@ -10,7 +10,6 @@ superseded_by: null
 related:
   - docs/ADRs/0001-structured-report-ir.md
   - docs/Architecture/08-artifacts-and-provenance.md
-  - docs/Consumers/Portman/report-provenance.md
 ---
 
 # ADR 0013 - Artifact Provenance Contract
@@ -31,7 +30,7 @@ Markdown normalization, and HTML transformations can move spans even when the
 artifact's semantic nodes stay stable. Provenance needs to attach before final
 presentation.
 
-Portman report provenance is the first consumer of this contract, but the
+Downstream report provenance is one concrete consumer of this contract, but the
 underlying rule applies to any host that turns Cortex workflow outputs into
 auditable artifacts.
 
@@ -87,4 +86,3 @@ Costs and obligations:
 
 - [ADR 0001 - Structured Document IR](0001-structured-report-ir.md)
 - [Chapter 08 - Artifacts and provenance](../Architecture/08-artifacts-and-provenance.md)
-- [Portman report provenance](../Consumers/Portman/report-provenance.md)

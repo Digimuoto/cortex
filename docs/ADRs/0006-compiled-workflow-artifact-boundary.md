@@ -11,15 +11,13 @@ related:
   - docs/Architecture/04-graph-and-circuit.md
   - docs/Architecture/05-wire-language.md
   - docs/Publications/Paper-3-graph-substitution-semantics/manuscript.md
-  - DIG-450
-  - DIG-457
 ---
 
 # ADR 0006 — Compiled Workflow Artifact Boundary
 
 ## Status
 
-Accepted — the workflow compiler boundary landed in DIG-450 and DIG-457 and is the basis for current workflow architecture language.
+Accepted — the workflow compiler boundary is the basis for current workflow architecture language.
 
 ## Context
 

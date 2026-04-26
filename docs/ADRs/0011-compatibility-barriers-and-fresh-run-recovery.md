@@ -9,10 +9,6 @@ date: 2026-04-23
 superseded_by: null
 related:
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Consumers/Portman/response-eval-run.md
-  - DIG-331
-  - DIG-346
-  - DIG-396
 ---
 
 # ADR 0011 — Compatibility Barriers and Fresh-Run Recovery
@@ -67,5 +63,3 @@ Fresh-run recovery preserves operator intent and parent provenance while avoidin
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)
-- [../Consumers/Portman/response-eval-run.md](../Consumers/Portman/response-eval-run.md)
-

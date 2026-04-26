@@ -12,7 +12,7 @@ related:
 
 This note keeps the proof work for Paper 1 next to the manuscript.
 
-The portfolio-level plan in [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) still matters, but this file is the paper-local contract: what must be mechanized before the manuscript should stop calling itself a draft.
+The program-level plan in [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) still matters, but this file is the paper-local contract: what must be mechanized before the manuscript should stop calling itself a draft.
 
 ## Goal
 
@@ -138,4 +138,4 @@ Once the mechanization lands:
 
 - [manuscript.md](manuscript.md) — Paper 1 manuscript.
 - [index.md](index.md) — paper landing page.
-- [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) — portfolio-level plan shared with Paper 2.
+- [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) — program-level plan shared with Paper 2.

@@ -11,8 +11,6 @@ related:
   - docs/Architecture/06-pulse-runtime.md
   - docs/Reference/Pulse/events.md
   - docs/Reference/Pulse/service-api.md
-  - DIG-347
-  - DIG-420
 ---
 
 # ADR 0008 — Pulse Operator Visibility Surfaces
@@ -45,7 +43,7 @@ These surfaces supplement mutable runtime state rather than being inferred from 
 
 - **Infer operator history from mutable run rows and stage logs only** — rejected because rewrite-capable graph execution loses too much explanatory structure when collapsed to latest state plus attempt history.
 - **Rely on observability logs outside the runtime contract** — rejected because operators need queryable per-run facts, not just external log streams.
-- **Build task-specific inspection paths in Portman for each workflow kind** — rejected because graph-native visibility belongs to the generic runtime, not to each downstream product task.
+- **Build task-specific inspection paths in each host product for each workflow kind** — rejected because graph-native visibility belongs to the generic runtime, not to each downstream product task.
 
 ## Consequences
 

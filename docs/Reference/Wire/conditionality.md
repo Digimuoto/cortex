@@ -442,7 +442,7 @@ load_brief
        PlanIssue: (gather_missing_constraints => repair_plan)
      )
   => (load_positions, load_option_chains, load_filings, load_macro_context)
-  => (analyze_equities, analyze_options, analyze_portfolio_risk)
+  => (analyze_equities, analyze_options, analyze_risk)
   => gather_report
   => review_report select(
        ReviewedReport: (),

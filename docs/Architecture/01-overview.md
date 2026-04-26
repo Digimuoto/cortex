@@ -9,12 +9,11 @@ status: active
 
 # Chapter 01 — Overview
 
-Cortex is a standalone AI substrate. Portman is one downstream system built on
-it. This chapter sets the core architectural frame: Graph, Circuit, and Wire
-are separate layers; Cortex owns reusable substrate concerns; downstream
-products own domain semantics and the operator edge. Use this page to orient
-yourself. Use the later chapters for subsystem detail and the ADRs for settled
-decisions.
+Cortex is a standalone AI substrate. This chapter sets the core architectural
+frame: Graph, Circuit, and Wire are separate layers; Cortex owns reusable
+substrate concerns; downstream products own domain semantics and the operator
+edge. Use this page to orient yourself. Use the later chapters for subsystem
+detail and the ADRs for settled decisions.
 
 ## Three Layers
 
@@ -48,9 +47,6 @@ The core architectural split is:
   adapters.
 - A downstream product owns domain semantics, product policy, operator
   surfaces, transport, and persistence.
-- Portman is one downstream example. In Portman, Clerk binds Cortex to finance
-  and report workflows, while the server layer owns HTTP, auth, and
-  persistence.
 
 Chapter 02 turns this into concrete ownership rules. This overview keeps the
 boundary at the architectural level.
@@ -110,15 +106,13 @@ end:
 
 ## What Stays Downstream
 
-Downstream products configure Cortex for their own domain. Portman is the
-reference example in this repository.
+Downstream products configure Cortex for their own domain.
 
 Downstream ownership includes:
 
 - domain prompts, tool registries, and policy
 - grounding and truth rules specific to a domain
-- product-specific artifact assembly such as Portman report flows and
-  `ReportIR`
+- product-specific artifact assembly, report flows, and work-product schemas
 - approval behavior and operator choices tied to a specific product UX
 - transport, auth, delivery, persistence, and edge error translation
 
@@ -159,19 +153,18 @@ Read in order:
 ## Related
 
 - [../Reference/terminology.md](../Reference/terminology.md)
-- [../ADRs/0002-cortex-portman-ownership-boundary.md](../ADRs/0002-cortex-portman-ownership-boundary.md)
+- [../ADRs/0002-cortex-downstream-ownership-boundary.md](../ADRs/0002-cortex-downstream-ownership-boundary.md)
 - [../ADRs/0003-pulse-service-and-host-action-boundary.md](../ADRs/0003-pulse-service-and-host-action-boundary.md)
 - [../ADRs/0004-graph-native-pulse-execution.md](../ADRs/0004-graph-native-pulse-execution.md)
 - [../ADRs/0010-wire-closed-authority-and-three-layer-stack.md](../ADRs/0010-wire-closed-authority-and-three-layer-stack.md)
-- [../Consumers/Portman/deep-report-v2.md](../Consumers/Portman/deep-report-v2.md)
-- [../Consumers/Portman/report-provenance.md](../Consumers/Portman/report-provenance.md)
+- [../Consumers/](../Consumers/)
 - [../ADRs/0001-structured-report-ir.md](../ADRs/0001-structured-report-ir.md)
 
 ## Success Criteria
 
 The Cortex architecture is structurally correct when:
 
-- Cortex concepts stand on their own without Portman framing
+- Cortex concepts stand on their own without downstream-product framing
 - reusable authoring, topology, runtime, and capability concerns live in
   Cortex
 - downstream products own domain policy, artifact meaning, and operator

@@ -11,15 +11,13 @@ related:
   - docs/Architecture/04-graph-and-circuit.md
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/07-rewrites-and-materialization.md
-  - DIG-345
-  - DIG-416
 ---
 
 # ADR 0004 — Graph-Native Pulse Execution
 
 ## Status
 
-Accepted — DIG-345 replaced linear stage plans with graph-native execution semantics and the later runtime work builds on that substrate.
+Accepted — graph-native execution semantics replaced linear stage plans and the later runtime work builds on that substrate.
 
 ## Context
 

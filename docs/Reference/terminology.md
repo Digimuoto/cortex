@@ -7,9 +7,6 @@ related:
   - docs/Architecture/01-overview.md
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar-v1.md
-  - DIG-482
-  - DIG-540
-  - DIG-541
 ---
 
 # Cortex Terminology
@@ -106,7 +103,7 @@ Each layer owns a specific set of terms. This page groups them by layer.
 
 - **Wire composes registered authority.** Wire source references registered nodes, contract IDs, prompts, and wiring. It does not invent executors, tools, payload types, or domain authority.
 - **Haskell owns what the authority means.** Executors, contracts, codecs, payload kinds, and registry schemas are Haskell-defined and live outside Wire.
-- **Product concepts stay downstream.** Launch fields, report sections, model-policy choices, user-facing workflow labels — these live in Portman (or another consumer). They can wrap a Circuit; they are not part of the generic Cortex Circuit layer.
+- **Product concepts stay downstream.** Launch fields, report sections, model-policy choices, user-facing workflow labels — these live in consumer bindings. They can wrap a Circuit; they are not part of the generic Cortex Circuit layer.
 
 See [Architecture/01-overview.md](../Architecture/01-overview.md) and [Architecture/02-ownership-and-boundaries.md](../Architecture/02-ownership-and-boundaries.md) for the full ownership story.
 

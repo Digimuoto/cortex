@@ -197,19 +197,16 @@ Pulse owns runtime policy.
 
 ## Downstream bindings
 
-Portman is the downstream example in this repository, not the definition of
-Wire.
+A consumer may register its own vocabulary around Wire, but it should not make
+Wire itself product-specific.
 
-In Portman:
+Downstream bindings own:
 
-- domain prompts, finance tools, and report policy stay downstream
-- Portman-specific artifact contracts such as report flows stay downstream
-- Cortex still owns the source language, composition rules, and substrate
-  runtime
+- domain prompts, tools, and product policy
+- product-specific artifact contracts and workflow templates
+- registry entries that bind Cortex's generic composition model to one host
 
-The same pattern should hold for any other host system. A consumer may register
-its own vocabulary around Wire, but it should not make Wire itself product
-specific.
+Cortex still owns the source language, composition rules, and substrate runtime.
 
 ## Related
 
@@ -225,5 +222,4 @@ specific.
   payload, artifact, and provenance surfaces
 - [Wire Grammar v1](../Reference/Wire/grammar-v1.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
-- [Portman deep-report v2](../Consumers/Portman/deep-report-v2.md) — downstream
-  integration example
+- [Consumer examples](../Consumers/) — downstream binding examples

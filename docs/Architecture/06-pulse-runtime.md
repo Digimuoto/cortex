@@ -15,8 +15,8 @@ standalone service that owns scheduling, stage execution, checkpoint
 persistence, cancellation, lease recovery, and rewrite materialization for
 long-lived Cortex runs. This chapter covers the runtime model, Pulse-owned
 state, stage execution, the memory surface, and the contract Pulse presents
-to downstream consumers. Portman is cited as the reference consumer; the
-contract does not depend on Portman-specific semantics.
+to downstream consumers. The contract is generic; consumer-specific bindings
+live outside the substrate.
 
 If you are evaluating Cortex rather than implementing against Pulse directly,
 the core model and service boundary are the key sections. The later sections
@@ -44,9 +44,8 @@ of persisted state. The service owns six concerns:
 
 Pulse does not define task semantics. Consumers register task types and
 provide the stage actions; Pulse executes them. The generic contract is
-captured in [`../Reference/Pulse/`](../Reference/Pulse/). Portman's
-binding is in
-[`../Consumers/Portman/pulse-host-actions.md`](../Consumers/Portman/pulse-host-actions.md).
+captured in [`../Reference/Pulse/`](../Reference/Pulse/). Consumer-specific
+bindings live under [`../Consumers/`](../Consumers/).
 
 ## Service boundary
 
@@ -394,6 +393,5 @@ thread is the rewrite materialization and recovery plan.
 - [./01-overview.md](./01-overview.md), [./03-formalism-stack.md](./03-formalism-stack.md), [./04-graph-and-circuit.md](./04-graph-and-circuit.md), [./07-rewrites-and-materialization.md](./07-rewrites-and-materialization.md), [./08-artifacts-and-provenance.md](./08-artifacts-and-provenance.md)
 - [../Reference/Pulse/](../Reference/Pulse/) — schema, types, service API.
 - [../Reference/terminology.md](../Reference/terminology.md) — normative vocabulary.
-- [../Consumers/Portman/pulse-host-actions.md](../Consumers/Portman/pulse-host-actions.md) — Portman's host-action contract and task types.
-- [../Consumers/Portman/response-eval-run.md](../Consumers/Portman/response-eval-run.md) — ResponseEvalRun detailed design.
+- [../Consumers/](../Consumers/) — downstream binding examples.
 - [../Roadmap/Plans/rewrite-materialization-and-recovery.md](../Roadmap/Plans/rewrite-materialization-and-recovery.md) — rewrite and recovery research plan.

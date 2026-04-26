@@ -1,6 +1,6 @@
 ---
 title: Cortex Documentation
-description: Cortex architecture, reference, ADRs, roadmap, consumer bindings, publications, and research artifacts for the Wire language, Circuit layer, Pulse runtime, and artifact substrate.
+description: "Cortex as an upstream AI substrate: Wire authoring, Circuit topology, Pulse execution, controlled rewrites, artifacts, provenance, and downstream bindings."
 sidebar:
   label: Cortex
   order: 2
@@ -8,10 +8,25 @@ sidebar:
 
 # Cortex Documentation
 
-Cortex is a standalone Haskell AI substrate. It owns reusable authoring,
-topology, runtime, capability, memory, provenance, and artifact mechanics.
-Downstream products, including Portman, bind those mechanics to domain
-semantics, product policy, tools, operators, transport, and persistence.
+Cortex is a standalone Haskell substrate for graph-shaped AI systems. It gives
+you a small language for authoring workflows, a typed graph layer for validating
+their topology, a durable runtime for executing them, and artifact/provenance
+surfaces for explaining what happened.
+
+The boundary is deliberate: Cortex owns reusable mechanics; downstream products
+own domain semantics, policy, tools, operators, transport, and persistence.
+
+## What Cortex Does
+
+| Capability | What it gives you |
+|---|---|
+| **Wire authoring** | A real `.wire` language for composing registered executors into typed dataflow graphs. |
+| **Graph and Circuit semantics** | Pure graph structure plus validated executable topology before a run starts. |
+| **Pulse execution** | Durable graph execution with checkpoints, signals, run events, cancellation, retry, and inspection. |
+| **Controlled rewrites** | Runtime topology changes are proposals admitted through explicit rewrite rules and budgets. |
+| **Topological memory** | Nodes can query settled upstream graph state without turning memory into hidden mutable state. |
+| **Artifacts and provenance** | Structured outputs carry stable artifact-local provenance instead of relying on generated prose. |
+| **Host-action boundary** | Product-specific side effects stay behind authenticated, idempotent host APIs. |
 
 ## System Layers
 
@@ -26,18 +41,89 @@ The core rule: **Wire composes registered authority; implementations own what
 that authority means.** Wire references registered executors, contracts, tools,
 prompts, memory strategies, and wiring. It does not invent host authority.
 
-## Stable Canon
+## Wire Is The Front Door
 
-- **[Architecture/](Architecture/)** - canonical chapters. Start with the
-  overview, then read ownership, formalism, graph/circuit, Wire, Pulse,
-  rewrites, and artifacts.
+Wire is not pseudocode. It is the source language Cortex uses to describe
+workflow topology over a closed executor alphabet.
+
+```wire
+contract Topic;
+contract Outline;
+contract Draft;
+contract ReportArtifactRef;
+
+node plan : <- Topic -> Outline = @llm.planner {
+  prompt = ''Build a concise research outline.'';
+};
+
+node write : <- Outline -> Draft = @llm.writer {
+  memory = topological { preset = "writer"; };
+};
+
+node publish : <- Draft -> ReportArtifactRef = @artifact.report {};
+
+plan => write => publish
+```
+
+The same source is compiled into a graph-shaped executable artifact. Pulse then
+executes the materialized graph and records run state, events, and artifacts.
+
+```mermaid
+flowchart LR
+    W[Wire source<br/>.wire] --> C[Compiled circuit]
+    C --> Plan
+
+    subgraph Topology[Example topology]
+        Plan[plan] --> Write[write]
+        Write --> Publish[publish]
+    end
+
+    Publish --> P[Pulse run]
+    P --> E[Run events]
+    P --> A[Artifacts + provenance]
+```
+
+## Architectural Ideas
+
+- **Graphs are the semantic object.** Cortex treats topology as execution
+  structure, not as a visualization over a hidden linear plan.
+- **Authority is closed.** Wire composes registered executors and contracts; it
+  cannot invent host tools, side effects, or domain semantics.
+- **Adaptation is admitted, not arbitrary.** Rewrites change topology only after
+  runtime validation, budgeting, and materialization.
+- **Runtime and host stay separate.** Pulse owns durable execution; hosts own
+  domain mutation and product policy through host actions.
+- **Artifacts explain themselves.** Provenance is attached to structured
+  artifact nodes before rendering, so explanation does not depend on brittle
+  text spans.
+
+## Read First
+
+1. **[Architecture overview](Architecture/01-overview.md)** - system frame and
+   ownership boundary.
+2. **[Ownership and boundaries](Architecture/02-ownership-and-boundaries.md)** -
+   what belongs in Cortex versus a downstream product.
+3. **[Wire language](Architecture/05-wire-language.md)** - how source programs
+   describe executable topology.
+4. **[Wire grammar v1](Reference/Wire/grammar-v1.md)** - the normative language
+   surface.
+5. **[Pulse runtime](Architecture/06-pulse-runtime.md)** - durable execution,
+   events, signals, retries, and host actions.
+6. **[Rewrites and materialization](Architecture/07-rewrites-and-materialization.md)** -
+   controlled topology evolution.
+7. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** -
+   structured outputs and explanation.
+
+## Explore The Canon
+
+- **[Architecture/](Architecture/)** - conceptual chapters for the substrate.
 - **[Reference/](Reference/)** - normative specifications for Wire, Pulse,
   rewrites, terminology, and contributor workflow.
 - **[ADRs/](ADRs/)** - numbered architecture decisions.
-- **[Consumers/](Consumers/)** - downstream bindings. Portman is the main
-  concrete consumer documented here.
 - **[Publications/](Publications/)** - formal paper drafts, figures, and
   publication roadmap.
+- **[Consumers/](Consumers/)** - downstream binding examples after the core
+  model is clear.
 
 ## Working Artifacts
 
@@ -49,27 +135,12 @@ prompts, memory strategies, and wiring. It does not invent host authority.
   current enough to keep in the tree.
 - **[Templates/](Templates/)** - frontmatter and section shapes for new docs.
 
-## Start Here
-
-1. [Architecture/01-overview.md](Architecture/01-overview.md) - system frame and
-   ownership boundary.
-2. [Architecture/05-wire-language.md](Architecture/05-wire-language.md) - Wire
-   architecture and source-language model.
-3. [Reference/Wire/grammar-v1.md](Reference/Wire/grammar-v1.md) - normative Wire
-   grammar.
-4. [Architecture/06-pulse-runtime.md](Architecture/06-pulse-runtime.md) - Pulse
-   execution model.
-5. [Architecture/08-artifacts-and-provenance.md](Architecture/08-artifacts-and-provenance.md) -
-   artifact and provenance substrate.
-6. [Reference/development.md](Reference/development.md) - contributor build,
-   docs, theory, and validation commands.
-
 ## Consumer Examples
 
-Portman appears in this tree as a downstream consumer, not as Cortex's
-definition. Use [Consumers/Portman/](Consumers/Portman/) for concrete binding
-examples such as report provenance, Pulse host actions, and report workflows.
-Generic rules should live in architecture, reference, or ADR docs.
+Consumer docs show how a downstream system can bind Cortex to product-specific
+policy, tools, artifacts, and operator surfaces. They are examples, not
+prerequisites for understanding Cortex. Generic rules belong in architecture,
+reference, or ADR docs.
 
 ## Source Of Truth
 

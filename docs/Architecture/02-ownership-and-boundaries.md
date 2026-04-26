@@ -10,9 +10,8 @@ status: active
 # Chapter 02 — Ownership and Boundaries
 
 Cortex is a generic AI substrate. A host application embeds Cortex and supplies
-domain semantics, transport, and persistence. Portman is the reference example
-in this repository, but the boundary described here is meant to survive any
-particular host.
+domain semantics, transport, and persistence. The boundary described here is
+meant to survive any particular host.
 
 This chapter states which subsystems own which responsibilities, which
 direction dependencies run, and what may and may not cross each boundary.
@@ -24,12 +23,12 @@ Three subsystems carry the bulk of the weight on either side of the boundary:
 | Subsystem | Role |
 |---|---|
 | **Cortex substrate** | Reusable AI substrate: provider integrations, capability abstractions, the Graph / Circuit / Wire layers, and the Pulse runtime. |
-| **Product binding** | Host-specific configuration of Cortex: prompts, grounding policy, tool registries, artifact assembly, and product policy. Portman calls this layer `Clerk`. |
+| **Product binding** | Host-specific configuration of Cortex: prompts, grounding policy, tool registries, artifact assembly, and product policy. |
 | **Server edge** | Transport and persistence: HTTP, auth, streaming, request/response conversion, and persistence wiring. |
 
 Two further subsystems are host-internal and do not interact with Cortex directly:
 
-- **Domain core** — host domain types and finance logic.
+- **Domain core** — host domain types and product logic.
 - **Persistence** — schemas, queries, and storage.
 
 Dependency direction is fixed:
@@ -43,7 +42,7 @@ flowchart LR
     S[Server edge<br/>HTTP + auth + persistence adapters] --> C[Product binding<br/>host-specific Cortex configuration]
     C --> X[Cortex substrate<br/>generic AI substrate]
 
-    C --> F[Domain core<br/>finance + domain logic]
+    C --> F[Domain core<br/>product semantics]
     S --> D[Persistence<br/>schemas + storage]
 
     style S fill:#e0f2fe,stroke:#0284c7,color:#0f172a
@@ -53,7 +52,7 @@ flowchart LR
     style D fill:#fce7f3,stroke:#db2777,color:#0f172a
 ```
 
-The placement rule: if a module would be reusable outside the host as generic AI infrastructure, it belongs in the Cortex substrate, even when the product binding is currently the only caller. If it knows about finance semantics, host report artifacts, market-truth policy, or host tool authority, it stays downstream.
+The placement rule: if a module would be reusable outside the host as generic AI infrastructure, it belongs in the Cortex substrate, even when the product binding is currently the only caller. If it knows about host domain semantics, product-specific artifacts, truth policy, or host tool authority, it stays downstream.
 
 ## Ownership breakdown
 
@@ -73,8 +72,8 @@ Cortex is not a thin provider wrapper. It owns the generic substrate end to end,
 The product binding is host-specific behavior. It configures Cortex for one product's use case and nothing more:
 
 - prompts and model-catalog policy
-- domain-specific grounding and truth policy (in Portman, finance market-truth)
-- report assembly and report IR
+- domain-specific grounding and truth policy
+- artifact assembly and product-specific IR
 - product-specific tool registries
 - approval and policy behavior tied to product UX
 
@@ -90,7 +89,7 @@ Each boundary has a closed allow-list and an explicit forbid-list. Violations ar
 
 Allowed: generic provider integrations; provider-neutral capability abstractions; Wire / Graph / Circuit / Pulse primitives; generic JSON, text, time, and runtime helpers; generic AI observability hooks.
 
-Forbidden: any host-specific import; server transport types; host durable-task scheduling; database queries and schemas; finance-specific imports; host report or workspace artifact contracts.
+Forbidden: any host-specific import; server transport types; host durable-task scheduling; database queries and schemas; domain-specific imports; host artifact contracts.
 
 The graph layer has a tighter rule than the rest of Cortex: it must contain no Pulse node identity, no rewrite lineage, no task scheduler coupling, no run-outcome semantics. It is pure graph algebra.
 

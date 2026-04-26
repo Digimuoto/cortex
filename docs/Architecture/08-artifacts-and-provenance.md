@@ -38,15 +38,11 @@ It does not own:
 
 ```mermaid
 flowchart LR
-    C[Circuit and Pulse<br/>produce runtime values] --> E[Envelope<br/>contract, producer, value, provenance]
-    E --> R[Contract registry<br/>payload meaning, validation, rendering]
-    E --> D[Downstream artifact surfaces<br/>reports, audit views, work products]
-    R --> D
-
-    style C fill:#dcfce7,stroke:#16a34a,color:#0f172a
-    style E fill:#dbeafe,stroke:#2563eb,color:#0f172a
-    style R fill:#fef3c7,stroke:#d97706,color:#0f172a
-    style D fill:#fce7f3,stroke:#db2777,color:#0f172a
+    C[Circuit + Pulse] --> E[Envelope]
+    E --> R[Contract registry]
+    E --> V[Provenance]
+    R --> D[Downstream surfaces]
+    V --> D
 ```
 
 ## Runtime envelopes
@@ -171,7 +167,7 @@ Downstream systems build richer artifact surfaces by layering on top of:
 
 That layered design is what allows the substrate to stay generic. Cortex does
 not need to know about a particular consumer's report layout, annotation model,
-HTML rendering, or workspace UX in order to provide trustworthy provenance.
+HTML rendering, or consumer presentation UX in order to provide trustworthy provenance.
 
 ## Artifact references
 
@@ -186,14 +182,11 @@ contract identity attached.
 
 ## Downstream bindings
 
-Portman is the downstream example in this repository.
+Consumer-specific artifact surfaces are downstream bindings on top of the
+generic envelope and provenance surfaces described here. Those bindings belong
+in consumer docs and ADRs, not in the substrate chapter itself.
 
-In Portman, report provenance, report-local annotation, and report artifact
-presentation are downstream bindings on top of the generic envelope and
-provenance surfaces described here. Those bindings belong in consumer docs and
-ADRs, not in the substrate chapter itself.
-
-The same pattern should hold for any other consumer:
+The pattern is:
 
 - Cortex owns the generic runtime envelope and provenance model
 - the consumer owns its presentation model, audit UX, and domain-specific
@@ -221,5 +214,4 @@ The same pattern should hold for any other consumer:
   envelope, payload kind, contract registry, and provenance
 - [ADR 0013 — Artifact Provenance Contract](../ADRs/0013-report-provenance-artifact-contract.md) —
   artifact provenance contract decision
-- [Portman report provenance](../Consumers/Portman/report-provenance.md) —
-  downstream binding example
+- [Consumer examples](../Consumers/) — downstream binding examples

@@ -36,11 +36,11 @@ A single Wire value often wears multiple hats. The roles are:
 
 | Role | What it is | Examples |
 |---|---|---|
-| **Executor** | Registered recipe. Turns config + inputs into outputs. Referenced via `@name`. | `@llm.analyst`, `@artifact.log`, `@cortex.deep_report`, `@pure` |
+| **Executor** | Registered recipe. Turns config + inputs into outputs. Referenced via `@name`. | `@llm.analyst`, `@artifact.log`, `@cortex.report_run`, `@pure` |
 | **Partial node** | Executor applied to config, no ports pinned. `let`-bindable, `//`-mergeable. | `@llm.gatherer { memory = topological { preset = "analyst" }; }` |
 | **Node** | Partial node with ports pinned. Has boundary. Has identity. | `node analyst : <- EvidenceBundle -> AnalysisFragment | ExecutorError = @llm.analyst { prompt = "..."; };` |
 | **Composed wire** | Result of applying a graph operator. Has a derived boundary. | `planner => gatherer => analyst` |
-| **Runtime wrapper** | A node whose role is to host a whole wire and provide runtime services. | `@cortex.deep_report { title = ...; }` |
+| **Runtime wrapper** | A node whose role is to host a whole wire and provide runtime services. | `@cortex.report_run { title = ...; }` |
 
 ## Artifacts a contract can carry
 
@@ -78,7 +78,8 @@ Docs are classified on two axes:
 | **Historical** | `Roadmap/Completed/`, `Roadmap/Archive/` | `Experiments/`, `Handoffs/` |
 
 Cross-cutting canon: `Templates/`, `index.md`, `map.md`, `glossary.md`, `taxonomy.md`
-Consumer-specific: `Consumers/{consumer}/`
+Consumer-specific: `Consumers/{consumer}.md`, or `Consumers/{consumer}/` for a
+larger public binding
 Papers: `Publications/paper-N-*/`
 
 ## Related

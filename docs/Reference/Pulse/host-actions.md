@@ -9,7 +9,7 @@ status: accepted
 
 # Pulse Host-Action Contract
 
-Pulse does not execute domain work. When a stage needs host-owned state — to read, validate, or mutate — it calls the host through a host-action endpoint the host provides. This page states the generic contract. A specific host's endpoint catalog is its own binding; the canonical example is [`../../Consumers/Portman/pulse-host-actions.md`](../../Consumers/Portman/pulse-host-actions.md).
+Pulse does not execute domain work. When a stage needs host-owned state — to read, validate, or mutate — it calls the host through a host-action endpoint the host provides. This page states the generic contract. A specific host's endpoint catalog is its own downstream binding.
 
 Architectural framing is in [chapter 06](../../Architecture/06-pulse-runtime.md). Service-API fundamentals (auth, idempotency) repeat in both directions and are specified here for the Pulse → host direction.
 
@@ -57,7 +57,7 @@ Host-action failures surface as `host_action_failure` in Pulse's error taxonomy 
 
 Success responses return the JSON body the stage action expects. There is no success envelope — the response schema is bilateral between the stage's declared output type and the host endpoint.
 
-Failure handling is host-negotiated today: Cortex has no generic host-action response decoder, so the stage action itself interprets the host's error response and surfaces the resulting `host_action_failure` to the taxonomy ([`service-api.md §6`](./service-api.md#6-error-taxonomy)). The recommended error shape — and the one used in the canonical Portman binding — is:
+Failure handling is host-negotiated today: Cortex has no generic host-action response decoder, so the stage action itself interprets the host's error response and surfaces the resulting `host_action_failure` to the taxonomy ([`service-api.md §6`](./service-api.md#6-error-taxonomy)). The recommended error shape is:
 
 ```json
 {
@@ -86,7 +86,7 @@ A host must not proxy these. Model and tool usage is tracked in Pulse's own reco
 - [./service-api.md](./service-api.md) — the inverse direction (host → Pulse).
 - [./types.md](./types.md) — `StageAction`, `StageContext`, stage-result alphabet.
 - [../../Architecture/06-pulse-runtime.md](../../Architecture/06-pulse-runtime.md) — runtime framing.
-- [../../Consumers/Portman/pulse-host-actions.md](../../Consumers/Portman/pulse-host-actions.md) — Portman's concrete binding of this contract.
+- [../../Consumers/](../../Consumers/) — downstream binding examples.
 
 ---
 

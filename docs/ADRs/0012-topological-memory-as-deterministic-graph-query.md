@@ -10,8 +10,6 @@ superseded_by: null
 related:
   - docs/Architecture/06-pulse-runtime.md
   - docs/Reference/Wire/partials-and-execution-boundary.md
-  - DIG-529
-  - DIG-530
 ---
 
 # ADR 0012 — Topological Memory as Deterministic Graph Query
@@ -65,4 +63,3 @@ Classic direct-input reads remain valid, but topological memory is the graph-nat
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)
 - [../Reference/Wire/partials-and-execution-boundary.md](../Reference/Wire/partials-and-execution-boundary.md)
-

@@ -13,7 +13,6 @@ related:
   - docs/Architecture/04-graph-and-circuit.md
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar-v1.md
-  - DIG-498
 ---
 
 # ADR 0010 — Wire as Closed-Authority Language over the Graph/Circuit/Wire Stack
@@ -75,4 +74,3 @@ The design rule is: Wire composes registered authority, and Haskell owns what th
 - [../Architecture/04-graph-and-circuit.md](../Architecture/04-graph-and-circuit.md)
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md)
 - [../Reference/Wire/grammar-v1.md](../Reference/Wire/grammar-v1.md)
-

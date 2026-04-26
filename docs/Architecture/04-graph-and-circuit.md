@@ -30,14 +30,10 @@ Circuits. The boundary looks like this:
 
 ```mermaid
 flowchart LR
-    W[Wire source<br/>authoring and composition] --> G[Graph<br/>pure topology]
-    G --> C[Circuit<br/>validated executable topology]
-    C --> P[Pulse<br/>durable execution]
-
-    style W fill:#fef3c7,stroke:#d97706,color:#0f172a
-    style G fill:#dbeafe,stroke:#2563eb,color:#0f172a
-    style C fill:#dcfce7,stroke:#16a34a,color:#0f172a
-    style P fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    W[Wire source] --> G[Graph]
+    G --> C[Circuit]
+    C --> P[Pulse]
+    P --> R[Run state]
 ```
 
 Each boundary narrows freedom:
@@ -46,6 +42,8 @@ Each boundary narrows freedom:
 - Graph carries only denotational topology.
 - Circuit checks that the topology is executable.
 - Pulse schedules and persists the resulting executable object over time.
+- Run state is the durable record of that execution, owned by Pulse and read by
+  downstream artifact and provenance surfaces.
 
 ## Graph
 
@@ -162,6 +160,6 @@ and they should not use Circuit as a hiding place for product policy.
 - [./06-pulse-runtime.md](./06-pulse-runtime.md) — durable scheduling and execution over a compiled Circuit.
 - [./07-rewrites-and-materialization.md](./07-rewrites-and-materialization.md) — dynamic rewrites admitted during execution.
 - [./08-artifacts-and-provenance.md](./08-artifacts-and-provenance.md) — envelopes and payload kinds on edges.
-- [./02-ownership-and-boundaries.md](./02-ownership-and-boundaries.md) — Cortex ↔ Portman boundary.
+- [./02-ownership-and-boundaries.md](./02-ownership-and-boundaries.md) — Cortex ↔ host boundary.
 - [../Reference/terminology.md](../Reference/terminology.md) — normative vocabulary.
 - [../Reference/Wire/grammar-v1.md](../Reference/Wire/grammar-v1.md) — Wire v1 normative grammar.

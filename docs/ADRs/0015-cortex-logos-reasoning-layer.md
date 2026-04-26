@@ -64,7 +64,7 @@ This ADR fixes the split and the naming. Decisions that follow from the split â€
 
 - **Logos as a peer substrate layer beside Graph / Circuit / Wire / Pulse.** Rejected because the sketch duplicated ownership of executors, contracts, and memory mechanics that the substrate already owns. The useful residue is not a new layer but a library of opinionated patterns on top of the closed authority already defined.
 - **No separation â€” keep the reasoning stack unnamed inside the substrate narrative.** Rejected because the runtime story (extraction, non-reasoning workflow reuse, third-party integration) becomes incoherent when reasoning-specific taxonomy sits inside substrate chapters.
-- **Multiple peer reasoning namespaces** (for example `Cortex.Clerk`, `Cortex.Logos`, `Cortex.Reasoning.Finance` at the same level). Rejected because reasoning is one layer with product bindings below it. Horizontal fragmentation at the reasoning level hides the single registration model integrators need.
+- **Multiple peer reasoning namespaces** (for example `Cortex.Assistant`, `Cortex.Logos`, `Cortex.Reasoning.Domain` at the same level). Rejected because reasoning is one layer with product bindings below it. Horizontal fragmentation at the reasoning level hides the single registration model integrators need.
 - **Introduce a new Logos-specific registry** for templates, presets, and role tags. Rejected because it duplicates the runtime registration surface without adding semantics; library-owned catalogs referenced by stable name are simpler and sufficient.
 
 ## Consequences
@@ -74,7 +74,7 @@ This ADR fixes the split and the naming. Decisions that follow from the split â€
 - Runtime stays extractable for non-reasoning durable workflows; the chapter 02 extraction story remains coherent.
 - Public framing crystallizes: *Cortex is a durable runtime substrate; Cortex.Logos is its structured reasoning library.*
 - The library-owned-catalog model explains how third parties extend reasoning without opening a new registration surface: ship Haskell values and `.wire` modules; consumers import by name.
-- Portman's Clerk splits cleanly in follow-up work: a generic conversational pattern lives in Logos; finance persona, finance tools, and product policy stay in Portman.
+- Downstream assistants split cleanly in follow-up work: generic conversational patterns live in Logos; domain persona, domain tools, and product policy stay in the product binding.
 
 ### Negative
 

@@ -15,7 +15,7 @@ Each ADR captures one committed design decision. Files use `NNNN-kebab-slug.md` 
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-structured-report-ir.md) | Structured Document IR | accepted |
-| [0002](0002-cortex-portman-ownership-boundary.md) | Cortex and Downstream Ownership Boundary | accepted |
+| [0002](0002-cortex-downstream-ownership-boundary.md) | Cortex and Downstream Ownership Boundary | accepted |
 | [0003](0003-pulse-service-and-host-action-boundary.md) | Pulse Service and Host-Action Boundary | accepted |
 | [0004](0004-graph-native-pulse-execution.md) | Graph-Native Pulse Execution | accepted |
 | [0005](0005-budgeted-rewrite-admission-and-materialization.md) | Budgeted Rewrite Admission and Materialization | accepted |

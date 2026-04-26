@@ -32,8 +32,8 @@ semantics, not merely a replay story. Fourth, concurrency of node execution and
 concurrency of substitutions are distinct questions and should be treated by
 different laws.
 
-The running examples use Cortex and downstream systems such as Portman as
-motivating contexts, but the theory is stated independently of any particular
+The running examples use Cortex and downstream host applications as motivating
+contexts, but the theory is stated independently of any particular
 implementation.
 
 ---
@@ -110,21 +110,10 @@ The theory is organized around a strict stack:
 
 ```mermaid
 flowchart TD
-    A["Workflow Source"] --> B["Typed Workflow IR"]
-    B --> C["Compiled Workflow Artifact"]
-    C --> D["Phase-Based Durable Execution"]
-    D --> E["Lineage and Materialization"]
-    E --> F["Recovery and Explanation"]
-
-    classDef semantic fill:#eef7f2,stroke:#1f6b4f,color:#103827,stroke-width:1.5px;
-    classDef compiled fill:#f6f1e8,stroke:#8a5a00,color:#4b3200,stroke-width:1.5px;
-    classDef runtime fill:#eef2fb,stroke:#315ea8,color:#19325a,stroke-width:1.5px;
-    classDef durability fill:#f8ebf2,stroke:#9b3d6d,color:#5f2342,stroke-width:1.5px;
-
-    class A,B semantic;
-    class C compiled;
-    class D runtime;
-    class E,F durability;
+    A["Workflow semantics"] --> B["Compiled artifact"]
+    B --> C["Phase-based execution"]
+    C --> D["Lineage"]
+    D --> E["Recovery"]
 ```
 
 The stack matters because different correctness questions live at different
@@ -413,25 +402,15 @@ The execution discipline is phase-based:
 
 ```mermaid
 flowchart TD
-    A["Compute Ready Frontier"] --> B["Concurrent Node Execution"]
-    B --> C["Accumulate Node Facts"]
-    C --> D["Close and Classify"]
-    D --> E{"Substitution pending?"}
-    E -- Yes --> F["Admit and Materialize"]
+    A["Ready frontier"] --> B["Node execution"]
+    B --> C["Accumulate facts"]
+    C --> D["Close + classify"]
+    D --> E{"Substitution<br/>pending?"}
+    E -- Yes --> F["Admit + materialize"]
     F --> A
-    E -- No --> G{"Ready frontier empty?"}
+    E -- No --> G{"Frontier<br/>empty?"}
     G -- No --> A
     G -- Yes --> H["Terminal"]
-
-    classDef runtime fill:#eef2fb,stroke:#315ea8,color:#19325a,stroke-width:1.5px;
-    classDef substitution fill:#f8ebf2,stroke:#9b3d6d,color:#5f2342,stroke-width:1.5px;
-    classDef decision fill:#f6f1e8,stroke:#8a5a00,color:#4b3200,stroke-width:1.5px;
-    classDef terminal fill:#eef7f2,stroke:#1f6b4f,color:#103827,stroke-width:1.5px;
-
-    class A,B,C,D runtime;
-    class E,G decision;
-    class F substitution;
-    class H terminal;
 ```
 
 This picture clarifies a subtle but important point:
@@ -1070,7 +1049,7 @@ vertex-anchored substitution is the right core abstraction, why concurrency of
 execution and concurrency of substitution are different problems, and why
 durability requires more than replay alone.
 
-For motivating contexts such as Cortex and downstream systems such as Portman,
+For motivating contexts such as Cortex and its downstream host applications,
 this theory offers a principled route to dynamic workflow execution without
 collapsing workflow semantics, runtime execution, and graph evolution into a
 single informal notion.

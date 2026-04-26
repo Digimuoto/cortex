@@ -56,7 +56,7 @@ plan => gather => write
 - [Start here](https://digimuoto.github.io/cortex/#start-here) - the intended
   first reading path through the published docs.
 - [Consumer examples](https://digimuoto.github.io/cortex/#consumer-examples) -
-  downstream bindings, including Portman.
+  downstream binding examples.
 
 ## Repository
 

@@ -10,7 +10,6 @@ superseded_by: null
 related:
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/Reference/rewrites.md
-  - DIG-419
 ---
 
 # ADR 0009 — Rewrite Provenance and Topology Integrity

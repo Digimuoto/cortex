@@ -100,7 +100,7 @@ One `foldTopSort` pass; α = 0.85 hardcoded; returns empty on cyclic input. `com
 
 - `runReviewerTopological` (DeepReport reviewer) uses `runToolLoop` with `cortex_memory_query` in `cortexChoiceTools`; `runReviewerClassic` is single-shot, no tools. Gating is at the tool catalog, not via system-prompt language.
 - `reviewerMemoryToolNudge` tells the model about the Markov-boundary semantics and names the tool.
-- Legacy env override `PORTMAN_DIG529_MEMORY` retired.
+- A legacy product-specific memory-strategy environment override was retired.
 
 **Reversed in review:**
 

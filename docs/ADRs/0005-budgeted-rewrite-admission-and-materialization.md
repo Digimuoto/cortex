@@ -11,9 +11,6 @@ related:
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/Roadmap/Plans/rewrite-materialization-and-recovery.md
   - docs/Reference/rewrites.md
-  - DIG-417
-  - DIG-418
-  - DIG-419
 ---
 
 # ADR 0005 — Budgeted Rewrite Admission and Materialization

@@ -10,7 +10,6 @@ superseded_by: null
 related:
   - docs/Architecture/01-overview.md
   - docs/Architecture/02-ownership-and-boundaries.md
-  - docs/Consumers/Portman/
 ---
 
 # ADR 0002 - Cortex and Downstream Ownership Boundary
@@ -61,8 +60,8 @@ Positive consequences:
   architectural boundary.
 - Code review has a clear placement rule for reusable runtime and provider
   work.
-- Consumer-specific docs can stay under `docs/Consumers/<consumer>/` without
-  polluting canonical architecture chapters.
+- Consumer-specific docs can stay under `docs/Consumers/` without polluting
+  canonical architecture chapters.
 
 Costs and obligations:
 
@@ -85,4 +84,3 @@ Costs and obligations:
 
 - [Chapter 01 - Overview](../Architecture/01-overview.md)
 - [Chapter 02 - Ownership and boundaries](../Architecture/02-ownership-and-boundaries.md)
-- [Portman consumer docs](../Consumers/Portman/)

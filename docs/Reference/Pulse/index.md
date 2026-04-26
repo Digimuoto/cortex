@@ -24,4 +24,4 @@ Consultable normative material for the Pulse runtime. Architectural framing live
 
 - [../../Architecture/06-pulse-runtime.md](../../Architecture/06-pulse-runtime.md) — Pulse runtime architecture.
 - [../terminology.md](../terminology.md) — normative vocabulary.
-- [../../Consumers/Portman/pulse-host-actions.md](../../Consumers/Portman/pulse-host-actions.md) — Portman's concrete binding of the host-action contract.
+- [../../Consumers/](../../Consumers/) — downstream binding examples.

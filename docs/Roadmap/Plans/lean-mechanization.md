@@ -191,7 +191,7 @@ The paper set should share the same names for:
 - structural persistence safety
 - piecewise determinism assumption
 
-If the names drift, the portfolio becomes incoherent again.
+If the names drift, the proof program becomes incoherent again.
 
 ## Internal Value
 

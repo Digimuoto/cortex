@@ -31,5 +31,5 @@ The manuscript presents a durable workflow runtime organized as a staged pure re
 
 - [manuscript.md](manuscript.md) — full manuscript.
 - [lean-mechanization.md](lean-mechanization.md) — paper-local Lean 4 plan and draft exit criteria.
-- [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) — portfolio-level mechanization plan shared with Paper 2.
+- [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) — program-level mechanization plan shared with Paper 2.
 - [../Paper-2-algebraic-foundations/](../Paper-2-algebraic-foundations/) — companion algebraic foundations paper.

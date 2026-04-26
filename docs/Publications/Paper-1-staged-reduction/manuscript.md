@@ -46,7 +46,7 @@ The architectural insight is that persistence boundaries align with algebraic ph
 
 ### 1.1 Context
 
-The model is implemented in Cortex Pulse, a durable execution runtime for financial portfolio automation and AI agent orchestration. Pulse manages workflows with 4-20 stages per plan, including stages that call external APIs, evaluate LLM responses, and execute multi-step portfolio operations. The staged-reduction model replaced an earlier imperative design that used per-worker atomic state mutation and ad hoc recovery logic; that design produced persist races, duplicated failure propagation, and exception-handling ambiguity that motivated the redesign.
+The model is implemented in Cortex Pulse, a durable execution runtime for graph-shaped AI and host-action workflows. Pulse manages workflows with 4-20 stages per plan, including stages that call external APIs, evaluate model responses, and execute multi-step host actions. The staged-reduction model replaced an earlier imperative design that used per-worker atomic state mutation and ad hoc recovery logic; that design produced persist races, duplicated failure propagation, and exception-handling ambiguity that motivated the redesign.
 
 ### 1.2 Assumptions and Scope
 

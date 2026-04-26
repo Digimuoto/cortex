@@ -10,7 +10,6 @@ superseded_by: null
 related:
   - docs/Architecture/08-artifacts-and-provenance.md
   - docs/ADRs/0013-report-provenance-artifact-contract.md
-  - docs/Consumers/Portman/report-provenance.md
 ---
 
 # ADR 0001 - Structured Document IR
@@ -33,9 +32,9 @@ The architectural problem is generic: a host may want a Cortex workflow to
 produce a durable document artifact, while the host still owns the artifact's
 domain meaning and publication policy.
 
-Portman report generation is the first substantial consumer of this surface,
-but the decision belongs to Cortex because the rendering and validation
-contract is reusable.
+Downstream report generation is one concrete consumer of this surface, but the
+decision belongs to Cortex because the rendering and validation contract is
+reusable.
 
 ## Decision
 
@@ -95,4 +94,3 @@ Costs and obligations:
 
 - [Chapter 08 - Artifacts and provenance](../Architecture/08-artifacts-and-provenance.md)
 - [ADR 0013 - Artifact Provenance Contract](0013-report-provenance-artifact-contract.md)
-- [Portman report provenance](../Consumers/Portman/report-provenance.md)

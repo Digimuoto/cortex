@@ -170,7 +170,7 @@ The prelude registry typically includes families like:
 
 - **`@llm.*`** — agent executors backed by an LLM: `@llm.planner`, `@llm.gatherer`, `@llm.analyst`, `@llm.review`, `@llm.rewriter`. Provider is picked via config (`provider = "openrouter"`), not the executor name.
 - **`@artifact.*`** — side-effecting persistence: `@artifact.log`, `@artifact.report`. Typically sinks (no output).
-- **`@cortex.*`** — runtime wrappers: `@cortex.deep_report`, `@cortex.portfolio_analysis`. Consume a wire's output, produce a report reference.
+- **`@cortex.*`** — runtime wrappers: `@cortex.report_run`, `@cortex.analysis_run`. Consume a wire's output, produce an artifact reference.
 - **`@pure`, `@identity`, `@const`** — contract-polymorphic utilities.
 
 These names are conventions of the registry, not grammar. Wire itself only requires that executors be qualified identifiers.
@@ -211,7 +211,7 @@ A partial node may appear directly as an operand of a graph operator iff its exe
 
 This rule keeps partial-node well-formedness **local**. Whether `@executor { config }` is admissible at a given graph-position is a property of the partial and the executor registry — the type-checker does not walk the enclosing expression tree, and no distant edit can silently change whether an upstream partial is well-typed. Implementers can decide admissibility by inspecting only the partial and the registry.
 
-`@cortex.deep_report { ... }` works in graph position because its structural constraints fix its port signature from its config (for instance, by declaring the expected upstream contract as a config field or by having a single registered signature regardless of config). A chained polymorphic partial like `a => @poly {} => c` is rejected at `@poly` because `@poly` is port-polymorphic and has no local pin; the author must declare the node explicitly:
+`@cortex.report_run { ... }` works in graph position because its structural constraints fix its port signature from its config (for instance, by declaring the expected upstream contract as a config field or by having a single registered signature regardless of config). A chained polymorphic partial like `a => @poly {} => c` is rejected at `@poly` because `@poly` is port-polymorphic and has no local pin; the author must declare the node explicitly:
 
 ```wire
 node poly_pinned : <- ContractA -> ContractC = @poly {};
@@ -221,7 +221,7 @@ a => poly_pinned => c
 
 The same rule applies to `<>` position: partial nodes in `<>` position must be port-determined (locally self-pinning), because `<>` has no contract-matching mechanism that could drive inference even if the spec allowed whole-expression solving.
 
-Authors wanting local reasoning and predictable errors should prefer explicit `node` declarations for any executor whose signature is not trivially fixed. The graph-position form is sugar for the common case where a runtime wrapper like `@cortex.deep_report` is pinned entirely by its config; it is not a general inference mechanism.
+Authors wanting local reasoning and predictable errors should prefer explicit `node` declarations for any executor whose signature is not trivially fixed. The graph-position form is sugar for the common case where a runtime wrapper like `@cortex.report_run` is pinned entirely by its config; it is not a general inference mechanism.
 
 Rewrite producers use the same surface as authored workflows: explicit `node`
 declarations plus a final graph expression. There is no separate template-use
@@ -691,8 +691,7 @@ A parallel-claim-branches thesis stress-test wire, exercising the core graph, co
 # PlannerOutput, EvidenceBundle, AnalysisFragment, ReviewConcerns,
 # ReviewBundle, and ExecutorError are declared by the @llm.* and
 # prelude executor vocabularies — no local assertion needed.
-# ReportArtifactRef is specific to @cortex.deep_report's output
-# and comes from @cortex.* vocabulary.
+# ReportArtifactRef comes from the @cortex.* vocabulary.
 
 # ---- shared prompt blocks (ordinary values) ----
 
@@ -770,18 +769,12 @@ let thesis =
   <> (merge => rewriter);
 
 (thesis => error_sink)
-  => @cortex.deep_report {
+  => @cortex.report_run {
        title = "Thesis Parallel Claim Branches";
        description = "Structural experiment in claim-scoped analyst branching.";
-       match.skill = "deep-report";
-       match.priority = 105;
-       match.requestContainsAny = [
-         "parallel claim branches",
-         "claim-scoped analysts"
-       ];
+       output.contract = ReportArtifactRef;
        render.aggregateOpenGaps = true;
        render.allowExtraSectionHeadings = true;
-       workspace.sourceKind = "deep-report";
      }
 ```
 
@@ -789,12 +782,12 @@ let thesis =
 
 - **Ambient contracts.** No local `contract` declarations needed; every contract name comes from an executor vocabulary (`@llm.*`, `@artifact.*`, `@cortex.*`, prelude).
 - **Top-level declarations.** Uses `let` and `node`; no `circuit`, no meta blocks. Local `contract` declarations are omitted because executor vocabularies declare the contracts.
-- **Executor families.** `@llm.*` for agent executors, `@artifact.log` for side-effecting sink, `@cortex.deep_report` for the runtime wrapper at the tail.
+- **Executor families.** `@llm.*` for agent executors, `@artifact.log` for side-effecting sink, `@cortex.report_run` for the runtime wrapper at the tail.
 - **Partial-node bases with `//` merge.** `gatherer_base` and `analyst_base` capture shared config; per-node deltas merge on top.
 - **Sum-grouped outputs.** `T | ExecutorError` on every impure node. Mutual exclusion is grammar-level.
 - **List-valued input.** `<- fragments: [AnalysisFragment]` on `merge`; `<- [ExecutorError]` on `error_sink`.
 - **Strict port matching driving all edges.** `(thesis => error_sink)` routes every `ExecutorError` boundary variant into the list-valued sink while leaving the terminal success output available for the runtime wrapper.
-- **Partial node in graph position.** The final `=> @cortex.deep_report { ... }` is admissible only because the executor registry makes that partial port-determined (§5.4); composition context does not infer its signature.
+- **Partial node in graph position.** The final `=> @cortex.report_run { ... }` is admissible only because the executor registry makes that partial port-determined (§5.4); composition context does not infer its signature.
 - **Node alias semantics.** The second `merge` and second `rewriter` inside `<> merge => rewriter` are the same nodes as earlier occurrences.
 - **File-return.** The final composition is the file-return expression, no trailing `;`.
 

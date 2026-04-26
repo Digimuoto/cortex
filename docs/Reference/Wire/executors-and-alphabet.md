@@ -30,7 +30,7 @@ Executor *kinds* (model-mediated generation vs registered external call) and the
 
 - **Executors are a closed alphabet registered outside Wire.** User code cannot define new executors; it composes them.
 - **Each registered executor declares** a config schema, a contract vocabulary (or open-vocabulary for contract-polymorphic executors), structural constraints on port signatures, and a purity class.
-- **Application form is `@qualified.name { ... }`.** The leading `@` distinguishes executor references from bare identifiers; qualified names (`@llm.analyst`, `@artifact.log`, `@cortex.deep_report`) resolve against the global registry.
+- **Application form is `@qualified.name { ... }`.** The leading `@` distinguishes executor references from bare identifiers; qualified names (`@llm.analyst`, `@artifact.log`, `@cortex.report_run`) resolve against the global registry.
 - **Application produces a partial node** — a staged value with no ports pinned. Partial nodes are `let`-bindable, mergeable with `//`, and pinnable via a `node` declaration.
 - **Partial-node config merge is right-biased and shallow.** `base // { k = v; }` creates a new partial with the config record merged; the executor is unchanged.
 - **Ambient identifiers inside config values** (tool references, config constructors like `topological { preset = "analyst" }`) are drawn from sibling registries. The grammar admits qualified identifiers and tagged records opaquely; the executor schema decides which are meaningful.

@@ -11,7 +11,6 @@ related:
   - docs/Reference/Wire/conditionality.md
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/Publications/Paper-3-graph-substitution-semantics/manuscript.md
-  - DIG-466
 ---
 
 # ADR 0007 — Latent-Branch Conditional Lowering
