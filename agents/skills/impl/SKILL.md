@@ -62,14 +62,14 @@ your plan:
 - `Cortex.Wire` / `Cortex.Wire.V1` — source language + rewrite algebra
 - `Cortex.Pulse.*` — durable execution runtime
 - `Cortex.Memory.*` — memory substrate
-- `Cortex.Capability.*` / `Cortex.Provider.*` — model + tool abstractions
-- `Cortex.Task.*` — task orchestration primitives
+- `Cortex.Capability.*` — model + tool abstractions
+- `Cortex.Document.*` — structured artifacts and reports
 - `Platform.*` — generic runtime substrate (observability, durable task,
   database, crypto, HTTP retry). Lives in `src-platform/`.
 
 If the work would introduce reasoning-layer concerns (role taxonomies,
 reasoning templates, memory presets), it probably belongs in a future
-`Cortex.Logos` module set — not in the runtime substrate. Flag this and
+`Cortex.Logoi` module set — not in the runtime substrate. Flag this and
 stop to discuss before coding.
 
 ### 3. Prerequisites

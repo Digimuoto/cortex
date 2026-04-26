@@ -6,11 +6,6 @@ module Cortex.Capability.Tool.Record
   )
 where
 
-import Cortex.Json.Preview
-  ( toolCallPayloadPreview,
-    truncateJsonValue,
-    truncateText,
-  )
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Maybe (fromMaybe)
@@ -19,6 +14,11 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
+import Platform.Serde.Json.Preview
+  ( toolCallPayloadPreview,
+    truncateJsonValue,
+    truncateText,
+  )
 
 data CortexToolCallRecord = CortexToolCallRecord
   { cortexToolCallRecordId :: Text,

@@ -1,23 +1,7 @@
+-- | Compatibility facade for downstream consumers migrating to 'Platform.Text'.
 module Cortex.Text
-  ( showText,
-    stripNonEmptyMaybeText,
-    stripNonEmptyText,
+  ( module Platform.Text,
   )
 where
 
-import Data.Text (Text)
-import Data.Text qualified as T
-
-showText :: (Show a) => a -> Text
-showText = T.pack . show
-
-stripNonEmptyText :: Text -> Maybe Text
-stripNonEmptyText rawText
-  | T.null stripped = Nothing
-  | otherwise = Just stripped
-  where
-    stripped = T.strip rawText
-
-stripNonEmptyMaybeText :: Maybe Text -> Maybe Text
-stripNonEmptyMaybeText =
-  (>>= stripNonEmptyText)
+import Platform.Text

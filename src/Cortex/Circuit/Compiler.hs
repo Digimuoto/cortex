@@ -9,7 +9,7 @@ module Cortex.Circuit.Compiler
 where
 
 import Control.Monad ((>=>))
-import Cortex.Circuit.Compiled
+import Cortex.Circuit.Artifact
   ( CircuitCompatibilityWitness (..),
     CircuitConditionNode (..),
     CompiledCircuit (..),

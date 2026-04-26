@@ -19,7 +19,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (when)
-import Cortex.Circuit.Compiled (CircuitConditionNode (..), CompiledCircuit (..), CompiledCircuitNode (..))
+import Cortex.Circuit.Artifact (CircuitConditionNode (..), CompiledCircuit (..), CompiledCircuitNode (..))
 import Cortex.Circuit.IR
   ( CircuitArtifactBoundary (..),
     CircuitNodeRef (..),
@@ -27,8 +27,8 @@ import Cortex.Circuit.IR
     CircuitSignalBoundary (..),
     CircuitTaskNode (..),
   )
-import Cortex.Wire.AST
-import Cortex.Wire.Contracts (WireCompileEnv, wirePortsFromMetadataValue)
+import Cortex.Wire.Contract (WireCompileEnv, wirePortsFromMetadataValue)
+import Cortex.Wire.Syntax
 import Cortex.Wire.V1 qualified as WireV1
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key

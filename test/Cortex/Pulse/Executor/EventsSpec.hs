@@ -2,7 +2,7 @@
 
 module Cortex.Pulse.Executor.EventsSpec (spec) where
 
-import Cortex.Pulse.Executor.Events
+import Cortex.Pulse.Event
   ( ExecutorEvent (..),
     RewriteRejectionInfo (..),
   )

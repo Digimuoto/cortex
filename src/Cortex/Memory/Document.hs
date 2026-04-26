@@ -11,8 +11,8 @@ module Cortex.Memory.Document
   )
 where
 
+import Cortex.Memory.Compact (estimateTextTokens)
 import Cortex.Memory.Types (CortexMemoryEntityConfig (..))
-import Cortex.MemoryCompaction (estimateTextTokens)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)

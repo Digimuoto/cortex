@@ -29,11 +29,11 @@ import Cortex.Graph
     edges,
     toRelation,
   )
-import Cortex.Pulse.GraphRuntime (GraphState (..), NodeStatus (..))
-import Cortex.Pulse.Materialization (PersistedGraphState (..))
+import Cortex.Pulse.Materialize (PersistedGraphState (..))
 import Cortex.Pulse.Memory
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Rewrite (RewriteBudget (..))
+import Cortex.Pulse.Runtime (GraphState (..), NodeStatus (..))
 import Cortex.Wire (unwrapWireStageValue)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap

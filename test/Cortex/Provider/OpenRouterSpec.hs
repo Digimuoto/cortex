@@ -12,16 +12,16 @@ import Cortex.Capability.Model.Types
     CortexGroundingMode (..),
     CortexResponseFormat (..),
   )
-import Cortex.Provider.OpenRouter
+import Cortex.Capability.Provider.OpenRouter
   ( buildOpenRouterRequestPayload,
     defaultMaxOutputTokens,
     sourceLinksFromAnnotations,
   )
-import Cortex.Provider.OpenRouter.Client
+import Cortex.Capability.Provider.OpenRouter.Client
   ( openRouterRequestPayload,
     openRouterResolvedMaxOutputTokens,
   )
-import Cortex.Provider.OpenRouter.Wire
+import Cortex.Capability.Provider.OpenRouter.Wire
   ( OpenRouterChoice (..),
     OpenRouterCompletion (..),
     OpenRouterUsage (..),

@@ -17,9 +17,6 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (join, unless, (>=>))
-import Cortex.Json.Text
-  ( jsonValueText,
-  )
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -31,6 +28,9 @@ import Data.Scientific qualified as Scientific
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Vector qualified as V
+import Platform.Serde.Json.Text
+  ( jsonValueText,
+  )
 import Text.Read (readMaybe)
 
 data OpenRouterCompletion = OpenRouterCompletion

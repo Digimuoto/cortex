@@ -13,9 +13,6 @@ import Control.Exception (throwIO, try)
 import Control.Monad (void, when)
 import Control.Monad.Catch qualified as MC
 import Control.Retry (recovering)
-import Cortex.Json.Text
-  ( decodeLazyUtf8,
-  )
 import Cortex.Provider.OpenRouter.Client
   ( OpenRouterHttpErrorDetails (httpErrorProviderMessage),
     decodeOpenRouterHttpErrorDetails,
@@ -45,6 +42,9 @@ import Network.HTTP.Types.Status (status429, status500, status503, status504, st
 import Platform.HTTP.Retry
   ( retryPolicy,
     shouldRetry,
+  )
+import Platform.Serde.Json.Text
+  ( decodeLazyUtf8,
   )
 
 openRouterEmbeddingsUrl :: String

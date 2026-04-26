@@ -21,10 +21,10 @@ import Cortex.Graph
     edges,
     toRelation,
   )
-import Cortex.Pulse.GraphRuntime (NodeStatus (..))
 import Cortex.Pulse.Memory
 import Cortex.Pulse.Memory.Tool
 import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Runtime (NodeStatus (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap

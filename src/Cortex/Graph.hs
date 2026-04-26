@@ -3,7 +3,7 @@
 -- Re-exports all submodules so downstream consumers import only
 -- @Cortex.Graph@.
 module Cortex.Graph
-  ( module Cortex.Graph.Core,
+  ( module Cortex.Graph.Algebra,
     module Cortex.Graph.Modify,
     module Cortex.Graph.Search,
     module Cortex.Graph.Decompose,
@@ -12,7 +12,7 @@ module Cortex.Graph
   )
 where
 
-import Cortex.Graph.Core
+import Cortex.Graph.Algebra
 import Cortex.Graph.Decompose
 import Cortex.Graph.Influence
 import Cortex.Graph.Modify

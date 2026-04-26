@@ -27,7 +27,7 @@ import Cortex.Pulse.Executor
     stageActionId,
     stageTemplateId,
   )
-import Cortex.Pulse.Materialization (computeTopologyHash)
+import Cortex.Pulse.Materialize (computeTopologyHash)
 import Cortex.Pulse.Memory (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Rewrite

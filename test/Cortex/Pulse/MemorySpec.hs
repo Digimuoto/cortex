@@ -17,7 +17,6 @@ import Cortex.Graph
     toRelation,
     vertices,
   )
-import Cortex.Pulse.GraphRuntime (NodeStatus (..))
 import Cortex.Pulse.Memory
 import Cortex.Pulse.Memory.Score
   ( clamp01,
@@ -26,6 +25,7 @@ import Cortex.Pulse.Memory.Score
     tokenJaccard,
   )
 import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Runtime (NodeStatus (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict (Map)

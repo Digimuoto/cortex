@@ -25,9 +25,12 @@ import Cortex.Graph
     relEdges,
     relVertices,
   )
-import Cortex.Pulse.GraphRuntime
-  ( GraphState (..),
-    NodeStatus (..),
+import Cortex.Pulse.Hydrate
+  ( RewriteError (..),
+    SerializableStageDefinition (..),
+    decodeSerializableRewrite,
+    hydrateRewrite,
+    planRewriteDelta,
   )
 import Cortex.Pulse.Memory.Types (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
@@ -36,13 +39,6 @@ import Cortex.Pulse.Plan
     StageAction,
     StageDefinition (..),
     StagePlan (..),
-  )
-import Cortex.Pulse.PlanHydration
-  ( RewriteError (..),
-    SerializableStageDefinition (..),
-    decodeSerializableRewrite,
-    hydrateRewrite,
-    planRewriteDelta,
   )
 import Cortex.Pulse.Rewrite
   ( GraphRewrite (..),
@@ -53,6 +49,10 @@ import Cortex.Pulse.Rewrite
     admitRewriteDelta,
     admittedDelta,
     admittedRemainingBudget,
+  )
+import Cortex.Pulse.Runtime
+  ( GraphState (..),
+    NodeStatus (..),
   )
 import Crypto.Hash (SHA256, hashlazy)
 import Data.Aeson (FromJSON, ToJSON)

@@ -16,7 +16,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (unless, when)
-import Cortex.Circuit.Compiled
+import Cortex.Circuit.Artifact
   ( CircuitCompatibilityWitness (..),
     CircuitConditionNode (..),
     CompiledCircuit (..),
@@ -31,7 +31,7 @@ import Cortex.Circuit.IR
     CircuitSignalBoundary (..),
     CircuitTaskNode (..),
   )
-import Cortex.Circuit.NodeKind (CircuitNodeKind (Act))
+import Cortex.Circuit.Node (CircuitNodeKind (Act))
 import Cortex.Graph
   ( Relation,
     edges,
@@ -45,13 +45,13 @@ import Cortex.Graph
     vertices,
   )
 import Cortex.Pulse.Memory.Types (MemoryStrategy (..))
-import Cortex.Wire.AST qualified as WireCore
-import Cortex.Wire.Contracts
+import Cortex.Wire.Contract
   ( WireCompileEnv (..),
     WireContractRegistry (..),
     emptyWireCompileEnv,
     portsMetadataValue,
   )
+import Cortex.Wire.Syntax qualified as WireCore
 import Cortex.Wire.V1.AST
 import Cortex.Wire.V1.Parser (parseWireFile, renderParseError)
 import Crypto.Hash (Digest, SHA256, hashlazy)

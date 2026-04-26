@@ -3,7 +3,7 @@
 
 module Cortex.MemoryCompactionSpec (spec) where
 
-import Cortex.MemoryCompaction
+import Cortex.Memory.Compact
   ( CheckpointSourceReference (..),
     CheckpointSummary (..),
     CompactionConfig (..),

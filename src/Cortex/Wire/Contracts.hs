@@ -17,7 +17,7 @@ where
 
 import Control.Monad (void)
 import Cortex.Circuit.IR (CircuitNodeRef (..))
-import Cortex.Wire.AST
+import Cortex.Wire.Syntax
 import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
 import Data.Aeson (ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson

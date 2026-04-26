@@ -4,7 +4,7 @@
 
 module Cortex.Wire.V1.CompilerSpec (spec) where
 
-import Cortex.Circuit.Compiled
+import Cortex.Circuit.Artifact
   ( CircuitConditionNode (..),
     CompiledCircuit (..),
     CompiledCircuitFragment (..),

@@ -20,8 +20,8 @@ import Cortex.Pulse.Plan
     StageDefinition (..),
     StageResult (..),
   )
-import Cortex.Wire.AST (WireOutputPort (..), WirePorts (..))
-import Cortex.Wire.Contracts (WireContractRegistry (..), WireContractSpec (..))
+import Cortex.Wire.Contract (WireContractRegistry (..), WireContractSpec (..))
+import Cortex.Wire.Syntax (WireOutputPort (..), WirePorts (..))
 import Cortex.Wire.Value
   ( WirePayloadKind (..),
     WireValue (..),

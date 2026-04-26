@@ -24,10 +24,6 @@ import Cortex.Capability.Model.Types
   )
 import Cortex.Capability.Tool.Definition (toolDefinitionName)
 import Cortex.Capability.Tool.Record (CortexToolCallRecord (..))
-import Cortex.Json.Object
-  ( hasObjectBool,
-    lookupObjectText,
-  )
 import Cortex.Run.Types (CortexStageDescriptor (..))
 import Cortex.Task.Gather
   ( CortexGatherRepairTaskConfig (..),
@@ -42,6 +38,10 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Text (Text)
 import Data.Text qualified as T
+import Platform.Serde.Json.Object
+  ( hasObjectBool,
+    lookupObjectText,
+  )
 
 data CortexToolCallResultStatus
   = CortexToolCallResultSuccess

@@ -1,14 +1,14 @@
 module Cortex.Circuit
-  ( module Cortex.Circuit.Compiled,
-    module Cortex.Circuit.Compiler,
+  ( module Cortex.Circuit.Artifact,
+    module Cortex.Circuit.Compile,
     module Cortex.Circuit.IR,
-    module Cortex.Circuit.Lowering,
-    module Cortex.Circuit.NodeKind,
+    module Cortex.Circuit.Lower,
+    module Cortex.Circuit.Node,
   )
 where
 
-import Cortex.Circuit.Compiled
-import Cortex.Circuit.Compiler
+import Cortex.Circuit.Artifact
+import Cortex.Circuit.Compile
 import Cortex.Circuit.IR
-import Cortex.Circuit.Lowering
-import Cortex.Circuit.NodeKind
+import Cortex.Circuit.Lower
+import Cortex.Circuit.Node

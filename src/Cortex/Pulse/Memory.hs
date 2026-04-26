@@ -46,11 +46,11 @@ where
 
 import Control.Concurrent.STM (TVar, atomically, readTVar)
 import Cortex.Graph (Relation)
-import Cortex.Pulse.GraphRuntime (GraphState (..))
-import Cortex.Pulse.Materialization (PersistedGraphState (..))
+import Cortex.Pulse.Materialize (PersistedGraphState (..))
 import Cortex.Pulse.Memory.Query (pureQueryMemory)
 import Cortex.Pulse.Memory.Types
 import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Runtime (GraphState (..))
 import Data.Map.Strict (Map)
 import Data.Time (UTCTime, getCurrentTime)
 

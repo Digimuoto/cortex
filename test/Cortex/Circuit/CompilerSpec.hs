@@ -34,6 +34,7 @@ import Cortex.Graph
     successors,
     toRelation,
   )
+import Cortex.Pulse.Hydrate (planRewriteDelta)
 import Cortex.Pulse.Memory (defaultMemoryStrategy, discardMemoryHandle)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
@@ -53,7 +54,6 @@ import Cortex.Pulse.Plan
     stageActionId,
     stageTemplateId,
   )
-import Cortex.Pulse.PlanHydration (planRewriteDelta)
 import Cortex.Pulse.Rewrite (BudgetContext (..), PlannedRewriteDelta (..))
 import Cortex.Pulse.Types (defaultRewriteBudget)
 import Data.Aeson qualified as Aeson

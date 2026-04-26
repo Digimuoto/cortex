@@ -10,12 +10,12 @@ module Cortex.Document.Metadata
 where
 
 import Cortex.Document.IR qualified as IR
-import Cortex.Text (stripNonEmptyText)
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Platform.Text (stripNonEmptyText)
 
 documentTitleFromIr :: IR.ReportIR -> Maybe Text
 documentTitleFromIr ir =

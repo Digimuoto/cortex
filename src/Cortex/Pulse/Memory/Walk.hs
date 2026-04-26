@@ -27,12 +27,12 @@ import Cortex.Graph
     successors,
     transposeRelation,
   )
-import Cortex.Pulse.GraphRuntime (NodeStatus (..))
 import Cortex.Pulse.Memory.Types
   ( WalkDirection (..),
     WalkScope (..),
   )
 import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Runtime (NodeStatus (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)

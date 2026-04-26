@@ -2,6 +2,9 @@
 
 module Cortex.Memory.DocumentSpec (spec) where
 
+import Cortex.Memory.Compact
+  ( estimateTextTokens,
+  )
 import Cortex.Memory.Document
   ( CortexMemoryDocument (..),
     CortexMemoryPassageDraft (..),
@@ -14,9 +17,6 @@ import Cortex.Memory.Pack
   )
 import Cortex.Memory.Types
   ( defaultCortexMemoryEntityConfig,
-  )
-import Cortex.MemoryCompaction
-  ( estimateTextTokens,
   )
 import Data.Text qualified as T
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)

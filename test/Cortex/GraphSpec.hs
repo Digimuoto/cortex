@@ -3,8 +3,8 @@
 module Cortex.GraphSpec (spec) where
 
 import Cortex.Graph
-import Cortex.Pulse.GraphRuntime
 import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Runtime
 import Data.Aeson qualified as Aeson
 import Data.List (sort, sortOn)
 import Data.Map.Strict qualified as Map

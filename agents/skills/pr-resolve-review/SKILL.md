@@ -151,7 +151,7 @@ Formulate the answer, post the reply. Link the authoritative source
 when one exists — ADRs, architecture chapters, or other docs:
 
 ```bash
-reply_body=$'Short answer: <n>.\n\nSee [ADR 0015](docs/ADRs/0015-cortex-logos-reasoning-layer.md) for the full reasoning.'
+reply_body=$'Short answer: <n>.\n\nSee [ADR 0015](docs/ADRs/0015-cortex-logoi-reasoning-layer.md) for the full reasoning.'
 jq -n --arg body "$reply_body" '{body: $body}' \
   | gh api "repos/Digimuoto/cortex/pulls/$PR/comments/<comment-id>/replies" \
       --method POST --input -

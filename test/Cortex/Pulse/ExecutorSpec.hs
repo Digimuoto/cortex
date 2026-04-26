@@ -14,12 +14,12 @@ import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, tryPutMVar)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, writeTVar)
 import Control.Exception (AsyncException (ThreadKilled), SomeException, displayException, finally, throwIO, try)
 import Control.Monad (void, when)
-import Cortex.Circuit.Compiled (CompiledCircuit (..))
+import Cortex.Circuit.Artifact (CompiledCircuit (..))
 import Cortex.Circuit.IR
   ( CircuitNodeRef (..),
     CircuitTaskNode (..),
   )
-import Cortex.Circuit.Lowering
+import Cortex.Circuit.Lower
   ( CircuitLoweringError (..),
     CircuitPulseBinder (..),
     CircuitPulseConfig (..),
@@ -66,15 +66,7 @@ import Cortex.Pulse.Executor
     stageTemplateId,
   )
 import Cortex.Pulse.Executor qualified as Executor
-import Cortex.Pulse.GraphRuntime
-  ( GraphState (..),
-    InterruptReason (..),
-    NodeStatus (..),
-    initialGraphState,
-    markCompleted,
-    markFailed,
-  )
-import Cortex.Pulse.Materialization (NodeProvenanceEntry (..))
+import Cortex.Pulse.Materialize (NodeProvenanceEntry (..))
 import Cortex.Pulse.Memory (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Query (PulseRunEvent (..), PulseStageAttemptLogDetail (..), PulseStageLogDetail (..))
@@ -88,6 +80,14 @@ import Cortex.Pulse.Rewrite
     RewriteRejectionContext (..),
     SubgraphSpec (..),
     budgetFraction,
+  )
+import Cortex.Pulse.Runtime
+  ( GraphState (..),
+    InterruptReason (..),
+    NodeStatus (..),
+    initialGraphState,
+    markCompleted,
+    markFailed,
   )
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
 import Cortex.Pulse.Signal (SignalName (..))

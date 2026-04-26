@@ -17,7 +17,6 @@ module Cortex.Pulse.Memory.Query
 where
 
 import Cortex.Graph (Relation, dagRandomWalkInfluence)
-import Cortex.Pulse.GraphRuntime (NodeStatus (..))
 import Cortex.Pulse.Memory.Score (composeScore)
 import Cortex.Pulse.Memory.Types
   ( ExtractedFields (..),
@@ -30,6 +29,7 @@ import Cortex.Pulse.Memory.Types
   )
 import Cortex.Pulse.Memory.Walk (directionRelations, walkCandidates)
 import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Runtime (NodeStatus (..))
 import Data.List (sortOn)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map

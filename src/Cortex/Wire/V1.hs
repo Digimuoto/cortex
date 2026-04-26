@@ -1,9 +1,7 @@
--- | Wire v1 public surface.
+-- | Compatibility surface for the current Wire grammar implementation.
 --
--- Re-exports the parts of the v1 language implementation that consumers
--- and tests legitimately depend on. Internal helpers stay behind
--- 'Cortex.Wire.V1.AST' and 'Cortex.Wire.V1.Parser' (hidden under the
--- @cortex-runtime@ library).
+-- New code should prefer the unversioned canonical modules:
+-- 'Cortex.Wire.Syntax', 'Cortex.Wire.Parser', and 'Cortex.Wire.Compile'.
 module Cortex.Wire.V1
   ( -- * AST (re-exports)
     module Cortex.Wire.V1.AST,

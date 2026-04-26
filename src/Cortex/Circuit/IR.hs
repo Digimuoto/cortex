@@ -18,7 +18,7 @@ module Cortex.Circuit.IR
 where
 
 import Control.Lens ((&), (?~))
-import Cortex.Circuit.NodeKind (CircuitNodeKind)
+import Cortex.Circuit.Node (CircuitNodeKind)
 import Data.Aeson
   ( FromJSON,
     FromJSONKey,

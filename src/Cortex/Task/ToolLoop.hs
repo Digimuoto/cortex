@@ -22,8 +22,6 @@ import Cortex.Capability.Model.Types
 import Cortex.Capability.Tool.Record
   ( CortexToolCallRecord (..),
   )
-import Cortex.Json.Preview (truncateText)
-import Cortex.Json.Text (decodeLazyUtf8)
 import Cortex.Run.Types
   ( CortexStageDescriptor (..),
   )
@@ -39,6 +37,8 @@ import Data.Aeson qualified as Aeson
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (defaultTimeLocale, formatTime)
+import Platform.Serde.Json.Preview (truncateText)
+import Platform.Serde.Json.Text (decodeLazyUtf8)
 
 data CortexToolLoopConfig = CortexToolLoopConfig
   { cortexToolLoopDescriptor :: CortexStageDescriptor,

@@ -34,12 +34,6 @@ import Cortex.Capability.Model.Types
     CortexChoiceTimeoutClass (..),
     CortexUsage,
   )
-import Cortex.Json.Preview
-  ( truncateText,
-  )
-import Cortex.Json.Text
-  ( decodeLazyUtf8,
-  )
 import Cortex.Provider.OpenRouter qualified as OpenRouterProvider
 import Cortex.Provider.OpenRouter.Wire
   ( OpenRouterCompletion (..),
@@ -69,6 +63,12 @@ import Network.HTTP.Client
   )
 import Network.HTTP.Types.Status (status429, status500, status503, status504, statusCode)
 import Platform.HTTP.Retry (retryPolicy, shouldRetry)
+import Platform.Serde.Json.Preview
+  ( truncateText,
+  )
+import Platform.Serde.Json.Text
+  ( decodeLazyUtf8,
+  )
 import System.Timeout (timeout)
 
 openRouterChatUrl :: String

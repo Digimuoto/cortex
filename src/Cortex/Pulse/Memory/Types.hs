@@ -54,8 +54,8 @@ module Cortex.Pulse.Memory.Types
 where
 
 import Cortex.Graph (Relation)
-import Cortex.Pulse.GraphRuntime (NodeStatus)
 import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Runtime (NodeStatus)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonT
 import Data.Map.Strict (Map)

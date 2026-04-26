@@ -1,6 +1,5 @@
 module Cortex.Wire
-  ( module Cortex.Wire.AST,
-    module Cortex.Wire.V1.AST,
+  ( module Cortex.Wire.Syntax,
     WireCompileEnv (..),
     WireContractSpec (..),
     WireContractRegistry (..),
@@ -52,8 +51,17 @@ module Cortex.Wire
   )
 where
 
-import Cortex.Wire.AST
-import Cortex.Wire.Contracts
+import Cortex.Wire.Compile
+  ( compileWireFile,
+    compileWireFileWithEnv,
+    compileWireFragmentFile,
+    compileWireFragmentFileWithEnv,
+    compileWireFragmentText,
+    compileWireFragmentTextWithEnv,
+    compileWireText,
+    compileWireTextWithEnv,
+  )
+import Cortex.Wire.Contract
   ( WireCompileEnv (..),
     WireContractRegistry (..),
     WireContractSpec (..),
@@ -61,6 +69,12 @@ import Cortex.Wire.Contracts
     emptyWireContractRegistry,
     wireContractRegistryFromList,
     wirePortsFromMetadataValue,
+  )
+import Cortex.Wire.Parser
+  ( ParseError,
+    parseWireExpr,
+    parseWireFile,
+    renderParseError,
   )
 import Cortex.Wire.Proposal
   ( WireAppendHole (..),
@@ -85,23 +99,7 @@ import Cortex.Wire.Runtime
     wrapWireStageOutput,
     wrapWireStageResult,
   )
-import Cortex.Wire.V1.AST
-import Cortex.Wire.V1.Compiler
-  ( compileWireFile,
-    compileWireFileWithEnv,
-    compileWireFragmentFile,
-    compileWireFragmentFileWithEnv,
-    compileWireFragmentText,
-    compileWireFragmentTextWithEnv,
-    compileWireText,
-    compileWireTextWithEnv,
-  )
-import Cortex.Wire.V1.Parser
-  ( ParseError,
-    parseWireExpr,
-    parseWireFile,
-    renderParseError,
-  )
+import Cortex.Wire.Syntax
 import Cortex.Wire.Value
   ( WirePayloadKind (..),
     WireValue (..),

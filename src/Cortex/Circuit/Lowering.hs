@@ -14,14 +14,14 @@ module Cortex.Circuit.Lowering
   )
 where
 
-import Cortex.Circuit.Compiled
+import Cortex.Circuit.Artifact
   ( CircuitConditionNode (..),
     CompiledCircuit (..),
     CompiledCircuitFragment (..),
     CompiledCircuitNode (..),
     compiledCircuitNodeRef,
   )
-import Cortex.Circuit.Compiler
+import Cortex.Circuit.Compile
   ( CircuitCompileError,
     compileCircuitIR,
   )

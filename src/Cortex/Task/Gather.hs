@@ -36,11 +36,11 @@ import Cortex.Task.ToolLoop
     CortexToolLoopResult (..),
     runToolLoop,
   )
-import Cortex.Text (showText)
 import Data.Aeson qualified as Aeson
 import Data.List (nub)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Platform.Text (showText)
 
 data CortexGatherTaskConfig = CortexGatherTaskConfig
   { cortexGatherTaskModelId :: Text,

@@ -23,13 +23,13 @@ module Cortex.Agent.Config
 where
 
 import Control.Applicative ((<|>))
-import Cortex.Text (stripNonEmptyMaybeText)
 import Data.Aeson qualified as Aeson
 import Data.Maybe (isNothing, maybeToList)
 import Data.OpenApi (ToSchema)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Platform.Text (stripNonEmptyMaybeText)
 
 data CortexAgentBudget = CortexAgentBudget
   { maxToolSteps :: Maybe Int,
