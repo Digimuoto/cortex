@@ -130,6 +130,18 @@ ci-check:
     @echo "🚀 Running CI-aligned checks..."
     nix run .#_ci-check
 
+# Check commit signatures, signoffs, and authorship for a revision range
+check-commit-provenance RANGE="origin/main..HEAD":
+    scripts/check-commit-provenance "{{ RANGE }}"
+
+# Check that GitHub merge settings cannot manufacture squash/merge commits
+check-github-merge-policy:
+    nix develop -c scripts/check-github-merge-policy
+
+# Fast-forward main to an already reviewed and signed branch or PR number
+integrate-pr TARGET:
+    scripts/integrate-pr "{{ TARGET }}"
+
 # Regenerate haskell.nix materialized plans (after editing cortex.cabal)
 update-materialized:
     nix run .#update-materialized

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/integrate-pr <branch-or-pr-number>
+
+Fast-forward main to an already reviewed and signed branch tip.
+
+This command does not create merge, squash, or rebase commits. It preserves
+the exact commit objects that CI and reviewers saw on the PR branch.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+target="${1:?branch name or PR number required}"
+remote="${CORTEX_REMOTE:-origin}"
+base_branch="${CORTEX_BASE_BRANCH:-main}"
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Worktree has local changes; integrate from a clean tree" >&2
+  exit 1
+fi
+
+if [[ "$target" =~ ^[0-9]+$ ]]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "PR-number integration requires gh" >&2
+    exit 1
+  fi
+  target_branch="$(gh pr view "$target" --json headRefName --jq .headRefName)"
+else
+  target_branch="${target#refs/heads/}"
+  target_branch="${target_branch#${remote}/}"
+fi
+
+base_ref="refs/remotes/${remote}/${base_branch}"
+target_ref="refs/remotes/${remote}/${target_branch}"
+
+git fetch "$remote" \
+  "${base_branch}:${base_ref}" \
+  "${target_branch}:${target_ref}"
+
+scripts/check-commit-provenance "${base_ref}..${target_ref}"
+
+git switch "$base_branch"
+git pull --ff-only "$remote" "$base_branch"
+
+if ! git merge-base --is-ancestor HEAD "$target_ref"; then
+  echo "${target_branch} is not a fast-forward from ${base_branch}" >&2
+  echo "Rebase the branch onto ${base_branch}, verify CI, then retry." >&2
+  exit 1
+fi
+
+git merge --ff-only "$target_ref"
+git push "$remote" "$base_branch"
+
+echo "Integrated ${target_branch} into ${base_branch} by fast-forward."

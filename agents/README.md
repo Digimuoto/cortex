@@ -80,7 +80,10 @@ semantic sequence of changes.
 - Use `git push --force-with-lease` only when history was deliberately
   rewritten and the remote still points where you expect.
 - Make CI pass after the final rebase.
-- Prefer fast-forward or squash integration into trunk.
+- Integrate by fast-forwarding `main` to the exact signed branch tip.
+- Do not use GitHub's merge, squash, or rebase buttons for Cortex
+  `main`; use `just integrate-pr <branch-or-pr-number>` after PR
+  review and CI.
 - Use merge commits only when the existence of parallel development
   lines is itself meaningful.
 

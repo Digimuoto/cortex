@@ -41,6 +41,7 @@
           # Dev tooling
           git
           jq
+          python3
           ripgrep
           fd
           just

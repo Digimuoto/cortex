@@ -81,6 +81,49 @@ jobs:
               - 'flake.nix'
               - 'nix/**'
 
+  commit-provenance:
+    name: Commit Provenance
+    runs-on: [self-hosted, nix, mercury, cortex]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Check commit provenance
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            RANGE="origin/${GITHUB_BASE_REF}..HEAD"
+          else
+            if [[ "${BEFORE:-}" =~ ^0+$ || -z "${BEFORE:-}" ]]; then
+              RANGE="$GITHUB_SHA"
+            else
+              RANGE="${BEFORE}..${GITHUB_SHA}"
+            fi
+          fi
+
+          scripts/check-commit-provenance "$RANGE"
+
+  repository-merge-policy:
+    name: Repository Merge Policy
+    runs-on: [self-hosted, nix, mercury, cortex]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check GitHub merge policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: nix develop -c scripts/check-github-merge-policy
+
   conventional-commits:
     name: Conventional commits
     if: github.event_name == 'pull_request'
@@ -283,6 +326,8 @@ jobs:
     if: always()
     needs:
       - changes
+      - commit-provenance
+      - repository-merge-policy
       - conventional-commits
       - conventional-pr-title
       - format-check
@@ -300,6 +345,8 @@ jobs:
 
           results=(
             "${{ needs.changes.result }}"
+            "${{ needs.commit-provenance.result }}"
+            "${{ needs.repository-merge-policy.result }}"
             "${{ needs.conventional-commits.result }}"
             "${{ needs.conventional-pr-title.result }}"
             "${{ needs.format-check.result }}"
