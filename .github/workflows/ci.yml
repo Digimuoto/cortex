@@ -1,0 +1,321 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NIX_CONFIG: |
+    accept-flake-config = true
+    experimental-features = nix-command flakes
+    extra-substituters = https://cache.digimuoto.com/digimuoto https://cache.iog.io https://cache.nixos.org
+    extra-trusted-public-keys = digimuoto:GwbeTccfYk+oeV3BLGKC5gzqDJmbHYetR5x0TOBEBCA= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGkljaxJfsF5+0= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: [self-hosted, nix, mercury, cortex]
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      docs: ${{ steps.filter.outputs.docs }}
+      haskell: ${{ steps.filter.outputs.haskell }}
+      theory: ${{ steps.filter.outputs.theory }}
+      editor: ${{ steps.filter.outputs.editor }}
+      nix: ${{ steps.filter.outputs.nix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+            docs:
+              - 'docs/**'
+              - 'nix/docs.nix'
+            haskell:
+              - 'app/**'
+              - 'config/cortex/**'
+              - 'src/**'
+              - 'src-platform/**'
+              - 'test/**'
+              - '.hlint.yaml'
+              - 'cabal.project'
+              - 'cortex.cabal'
+              - 'flake.lock'
+              - 'flake.nix'
+              - 'nix/**'
+            theory:
+              - 'theory/**'
+              - 'nix/lean.nix'
+              - 'flake.lock'
+              - 'flake.nix'
+            editor:
+              - 'editors/**'
+              - 'nix/editors.nix'
+              - 'flake.lock'
+              - 'flake.nix'
+            nix:
+              - 'flake.lock'
+              - 'flake.nix'
+              - 'nix/**'
+
+  conventional-commits:
+    name: Conventional commits
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, nix, mercury, cortex]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check commit messages
+        uses: webiny/action-conventional-commits@v1.4.2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  conventional-pr-title:
+    name: Conventional PR title
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, nix, mercury, cortex]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check PR title
+        uses: CondeNast/conventional-pull-request-action@v0.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  format-check:
+    name: Format Check
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes]
+    if: needs.changes.outputs.code != 'false'
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check disk space
+        run: |
+          echo "## Disk Space" >> "$GITHUB_STEP_SUMMARY"
+          df -h / >> "$GITHUB_STEP_SUMMARY"
+          DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+          if [ "$DISK_USAGE" -gt 90 ]; then
+            echo "Warning: disk usage is at ${DISK_USAGE}%" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check formatting
+        run: nix run '.#_check-format' --print-build-logs
+
+  supported-build:
+    name: Build Supported Outputs
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, format-check]
+    if: |
+      always() &&
+      (needs.format-check.result == 'success' || needs.format-check.result == 'skipped') &&
+      (
+        needs.changes.outputs.haskell != 'false' ||
+        needs.changes.outputs.theory != 'false' ||
+        needs.changes.outputs.editor != 'false' ||
+        needs.changes.outputs.nix != 'false'
+      )
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build all supported outputs
+        run: |
+          set -euo pipefail
+
+          for pkg in \
+            cortex \
+            platform-runtime \
+            cortex-pulse \
+            cortex-tests \
+            cortex-theory \
+            tree-sitter-wire \
+            tree-sitter-wire-plugin
+          do
+            nix build ".#$pkg" -o "result-$pkg" --print-build-logs
+          done
+
+          echo "All supported Cortex outputs built" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push build outputs to Attic
+        if: success()
+        continue-on-error: true
+        env:
+          ATTIC_AUTH_TOKEN: ${{ secrets.ATTIC_AUTH_TOKEN }}
+          ATTIC_CACHE_NAME: ${{ secrets.ATTIC_CACHE_NAME }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${ATTIC_AUTH_TOKEN:-}" ] || [ -z "${ATTIC_CACHE_NAME:-}" ]; then
+            echo "Attic cache secrets are not configured; skipping cache push." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          nix run github:zhaofengli/attic -- \
+            login digimuoto http://localhost:8088 "$ATTIC_AUTH_TOKEN"
+          nix run github:zhaofengli/attic -- \
+            push "$ATTIC_CACHE_NAME" \
+              result-cortex \
+              result-platform-runtime \
+              result-cortex-pulse \
+              result-cortex-tests \
+              result-cortex-theory \
+              result-tree-sitter-wire \
+              result-tree-sitter-wire-plugin
+
+          echo "Build artifacts pushed to Attic" >> "$GITHUB_STEP_SUMMARY"
+
+  lint:
+    name: Lint Haskell
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, supported-build]
+    if: |
+      always() &&
+      (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
+      needs.changes.outputs.haskell != 'false'
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run HLint
+        run: nix run '.#lint-haskell' --print-build-logs
+
+  lean-theory:
+    name: Lean Theory
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, supported-build]
+    if: |
+      always() &&
+      (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
+      (needs.changes.outputs.theory != 'false' || needs.changes.outputs.nix != 'false')
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Lean theory
+        run: nix run '.#_check-theory' --print-build-logs
+
+  flake-check:
+    name: Flake Check
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, supported-build]
+    if: |
+      always() &&
+      (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
+      (
+        needs.changes.outputs.haskell != 'false' ||
+        needs.changes.outputs.theory != 'false' ||
+        needs.changes.outputs.editor != 'false' ||
+        needs.changes.outputs.nix != 'false'
+      )
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run flake checks
+        run: nix flake check --print-build-logs
+
+  test:
+    name: Test Haskell
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, supported-build]
+    if: |
+      always() &&
+      (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
+      needs.changes.outputs.haskell != 'false'
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Cortex test suite
+        run: nix run '.#cortex-tests' --print-build-logs
+
+  docs-build:
+    name: Build Docs
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes]
+    if: needs.changes.outputs.docs != 'false' || needs.changes.outputs.nix != 'false'
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build documentation site
+        run: nix build '.#default-site' --print-build-logs
+
+  ci-success:
+    name: CI Success
+    runs-on: [self-hosted, nix, mercury, cortex]
+    if: always()
+    needs:
+      - changes
+      - conventional-commits
+      - conventional-pr-title
+      - format-check
+      - supported-build
+      - lint
+      - lean-theory
+      - flake-check
+      - test
+      - docs-build
+    timeout-minutes: 5
+    steps:
+      - name: Check all jobs
+        run: |
+          set -euo pipefail
+
+          results=(
+            "${{ needs.changes.result }}"
+            "${{ needs.conventional-commits.result }}"
+            "${{ needs.conventional-pr-title.result }}"
+            "${{ needs.format-check.result }}"
+            "${{ needs.supported-build.result }}"
+            "${{ needs.lint.result }}"
+            "${{ needs.lean-theory.result }}"
+            "${{ needs.flake-check.result }}"
+            "${{ needs.test.result }}"
+            "${{ needs.docs-build.result }}"
+          )
+
+          for result in "${results[@]}"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "One or more CI jobs failed"
+              exit 1
+            fi
+          done
+
+          echo "All CI jobs passed successfully"
