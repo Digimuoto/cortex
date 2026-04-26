@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lean Code Style"
+  short_description: "Strict Lean 4 proof style review"
+  default_prompt: "Use $lean-code-style to review the Lean 4 changes on this branch."
