@@ -72,15 +72,18 @@ private staging areas for a coherent change.
 
 Follow this policy:
 
-- `main` is immutable. Never force-push the shared trunk.
+- `main` is immutable. Never force-push the shared trunk except for an
+  explicit, lease-protected history repair approved by the maintainer.
 - Feature branches are rewriteable by their owner. Rebase, squash,
   fixup, and reorder before integration when that makes the branch read
   as a semantic argument.
 - Shared feature branches require protocol. Use
   `git push --force-with-lease`, never raw `git push --force`.
 - CI must pass after the final rebase or rewrite.
-- Integration should be fast-forward or squash merge by default. Avoid
-  arbitrary merge commits into trunk.
+- Integration is fast-forward-only from an already signed branch tip.
+  Do not use GitHub's merge, squash, or rebase buttons for Cortex
+  `main`. The maintainer ruleset bypass exists only for
+  `just integrate-pr <branch-or-pr-number>` after PR review and CI.
 - Long-running collaborative, release, vendor, backport, or integration
   branches may use merge commits deliberately when the topology itself
   carries meaning.
@@ -93,6 +96,8 @@ Every commit in this repo must be signed and verifiable.
 - Do not create unsigned commits.
 - After rewriting or creating commits, verify them with
   `git log --show-signature` or `git verify-commit`.
+- Before publishing a branch for integration, run
+  `just check-commit-provenance origin/main..HEAD`.
 
 LLMs and coding agents are not authors for copyright purposes.
 

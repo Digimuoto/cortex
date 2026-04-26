@@ -204,8 +204,8 @@ their own repo.
 
 ## Principles
 
-1. **Small commits, one concern each.** Reviewers can follow a story;
-   squash-merge compresses it cleanly.
+1. **Small commits, one concern each.** Reviewers can follow a story,
+   and the exact signed branch tip may become `main`.
 2. **Plan before coding.** Plan mode surfaces the shape before you sink
    hours into the wrong one.
 3. **Respect the layer boundary.** Runtime never imports reasoning or

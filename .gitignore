@@ -55,6 +55,10 @@ editors/tree-sitter-wire/target
 !/.github/
 !/.github/**
 
+# Repo-local maintenance scripts
+!scripts/
+!scripts/**
+
 # === Root Files (anchored with /) ===
 !/.envrc
 !/.gitignore

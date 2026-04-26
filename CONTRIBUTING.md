@@ -9,7 +9,8 @@ verifiable.
 1. All commits must be signed and verifiable.
 2. LLMs and coding agents must not be listed as authors or co-authors.
 3. Human git identity must be real and stable.
-4. Builds and checks go through the repo's `just` and Nix surfaces.
+4. `main` advances only by fast-forwarding already signed commits.
+5. Builds and checks go through the repo's `just` and Nix surfaces.
 
 ## Authorship and Copyright
 
@@ -46,6 +47,7 @@ Recommended checks:
 ```bash
 git log --show-signature --max-count=5
 git verify-commit HEAD
+just check-commit-provenance origin/main..HEAD
 ```
 
 For SSH signing, configure an allowed signers file so Git can verify
@@ -67,16 +69,66 @@ Default policy:
 
 - Rebase ordinary feature branches before integration when that makes
   the commit sequence easier to review, bisect, or audit.
-- Keep `main` immutable. Never force-push trunk.
+- Keep `main` immutable. Never force-push trunk except for an explicit,
+  lease-protected history repair approved by the maintainer.
 - Use `git push --force-with-lease` after deliberate branch rewrites.
   Do not use raw `git push --force`.
 - CI must pass after the final rebase or rewrite.
-- Prefer fast-forward or squash integration into trunk.
+- Integrate PRs by fast-forwarding `main` to the exact signed branch tip.
+  Do not use GitHub's merge, squash, or rebase buttons as the Cortex
+  integration protocol.
 - Use merge commits deliberately for release branches, vendor branches,
   backports, long-running integration branches, large collaborative
   features, or audit cases where the parallel topology matters.
 
 Merge is not forbidden. Uncontrolled merge is the antipattern.
+
+## PR Integration
+
+GitHub's PR buttons manufacture commit objects for merge and squash
+flows. Rebase-and-merge also rewrites commits on GitHub's side. Those
+objects do not preserve the local author, committer, signature, and
+signoff that Cortex requires for `main`.
+
+The repository therefore keeps GitHub's merge settings in a deliberately
+constrained state:
+
+- merge commits disabled
+- squash merge disabled
+- rebase merge left enabled only because GitHub requires at least one
+  merge method for PRs
+- branch rules require signed commits, linear history, PR checks, and
+  rebase-only PR integration
+- branch rules grant an explicit maintainer/integration bypass so the
+  reviewed branch tip can be pushed by local fast-forward after checks
+
+With signed commits required, the remaining GitHub rebase button should
+not be used. Integration is local fast-forward:
+
+```bash
+just integrate-pr <branch-or-pr-number>
+```
+
+The helper verifies the commits introduced by the branch, checks that
+the branch is a fast-forward from `main`, merges with `--ff-only`, and
+pushes `main`.
+
+That bypass is only for this integration path or an explicit
+lease-protected history repair. It is not permission to bypass CI,
+signature checks, signoff checks, or review.
+
+Hard checks:
+
+```bash
+just check-commit-provenance origin/main..HEAD
+just check-github-merge-policy
+```
+
+`check-commit-provenance` rejects GitHub/web-flow identities,
+non-Digimuoto author or committer emails, missing matching
+`Signed-off-by` trailers, unverifiable signatures, and merge commits.
+`check-github-merge-policy` rejects repository settings or branch rules
+that would re-enable GitHub-manufactured merge or squash commits.
 
 ## Build and Check Workflow
 
@@ -130,4 +182,5 @@ Cortex is substrate code, not Portman product code.
 - relevant build/test commands pass
 - commits are signed
 - `git log --show-signature` verifies the commits you are pushing
+- `just check-commit-provenance origin/main..HEAD` passes
 - no AI authorship or co-authorship appears anywhere in commit metadata

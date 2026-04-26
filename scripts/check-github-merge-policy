@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+
+API = "https://api.github.com"
+
+
+def get_token() -> str:
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+    try:
+        return subprocess.check_output(
+            ["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        print(
+            "GH_TOKEN or GITHUB_TOKEN is required to check GitHub merge policy",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def api_get(path: str, token: str):
+    request = urllib.request.Request(
+        f"{API}{path}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        print(f"GitHub API request failed: {path}: {error.code} {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def fail(message: str, failures: list[str]) -> None:
+    failures.append(message)
+    print(f"github merge policy violation: {message}", file=sys.stderr)
+
+
+def warn(message: str) -> None:
+    print(f"github merge policy warning: {message}", file=sys.stderr)
+
+
+def ruleset_matches_default_branch(ruleset, default_branch: str) -> bool:
+    ref_name = ruleset.get("conditions", {}).get("ref_name")
+    if not ref_name:
+        return True
+    included = set(ref_name.get("include", []))
+    return bool(
+        included
+        & {
+            "~DEFAULT_BRANCH",
+            default_branch,
+            f"refs/heads/{default_branch}",
+        }
+    )
+
+
+def main() -> int:
+    repository = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("GITHUB_REPOSITORY")
+    if not repository:
+        repository = "Digimuoto/cortex"
+
+    token = get_token()
+    failures: list[str] = []
+
+    repo = api_get(f"/repos/{repository}", token)
+    default_branch = repo["default_branch"]
+
+    expected_repo_flags = {
+        "allow_merge_commit": False,
+        "allow_squash_merge": False,
+        "allow_rebase_merge": True,
+    }
+    limited_repository_payload = False
+    for key, expected in expected_repo_flags.items():
+        if key not in repo:
+            limited_repository_payload = True
+            warn(f"repository setting {key} is not exposed by this token; skipping")
+            continue
+        actual = repo[key]
+        if actual is not expected:
+            fail(f"repository setting {key} is {actual}, expected {expected}", failures)
+
+    summaries = api_get(f"/repos/{repository}/rulesets", token)
+    matching_rulesets = []
+    for summary in summaries:
+        if summary.get("enforcement") != "active" or summary.get("target") != "branch":
+            continue
+        full = api_get(f"/repos/{repository}/rulesets/{summary['id']}", token)
+        if ruleset_matches_default_branch(full, default_branch):
+            matching_rulesets.append(full)
+
+    if not matching_rulesets:
+        fail(f"no active branch ruleset applies to {default_branch}", failures)
+
+    for ruleset in matching_rulesets:
+        name = ruleset.get("name", f"ruleset {ruleset.get('id')}")
+        rules = ruleset.get("rules", [])
+        rule_types = {rule.get("type") for rule in rules}
+        bypass_actors = ruleset.get("bypass_actors", [])
+
+        for required in {
+            "non_fast_forward",
+            "pull_request",
+            "required_linear_history",
+            "required_signatures",
+            "required_status_checks",
+        }:
+            if required not in rule_types:
+                fail(f"{name} is missing rule {required}", failures)
+
+        pull_request_rules = [rule for rule in rules if rule.get("type") == "pull_request"]
+        for rule in pull_request_rules:
+            methods = rule.get("parameters", {}).get("allowed_merge_methods")
+            if methods != ["rebase"]:
+                fail(
+                    f"{name} allows merge methods {methods}; expected ['rebase']",
+                    failures,
+                )
+
+        if limited_repository_payload and not bypass_actors:
+            warn(
+                f"{name} bypass actors are not exposed by this token; "
+                "skipping fast-forward bypass check"
+            )
+        else:
+            has_fast_forward_bypass = any(
+                actor.get("bypass_mode") == "always"
+                and actor.get("actor_type")
+                in {"Integration", "OrganizationAdmin", "RepositoryRole"}
+                for actor in bypass_actors
+            )
+            if not has_fast_forward_bypass:
+                fail(
+                    f"{name} has no maintainer or integration bypass for local fast-forward pushes",
+                    failures,
+                )
+
+    if failures:
+        return 1
+
+    if limited_repository_payload:
+        print(f"GitHub merge policy OK for {repository} (limited token)")
+    else:
+        print(f"GitHub merge policy OK for {repository}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -80,6 +80,16 @@ history was intentionally rewritten (rebase, squash, fixup, amend after
 review) and a normal push is rejected. Never use raw `--force` against
 shared branches; never force-push `main`.
 
+Before pushing, verify the branch's commit provenance:
+
+```bash
+just check-commit-provenance origin/main..HEAD
+```
+
+Cortex `main` is integrated by fast-forwarding to exact signed branch
+commits after PR review and CI. Do not assume the branch will be merged
+with a GitHub squash, merge, or rebase button.
+
 ### 4. Verify
 
 ```bash
@@ -105,9 +115,9 @@ Expected end state:
 3. **Preserve user changes.** Don't auto-stage unrelated drift. When in
    doubt, ask.
 4. **Semantic history.** Prefer a small number of meaningful commits.
-   Rebase or fix up private branch history when it removes process noise.
-   The branch usually gets squash-merged; optimize for review clarity,
-   bisectability, and the final artifact.
+   Rebase or fix up private branch history when it removes process
+   noise. The branch tip may become `main` by fast-forward, so optimize
+   for review clarity, bisectability, and the final artifact.
 
 ## Output
 

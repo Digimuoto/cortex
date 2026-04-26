@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/check-commit-provenance [<rev-list-range>]
+
+Checks Cortex commit provenance for the selected commits.
+
+Default range:
+  origin/main..HEAD
+
+Policy:
+  - no merge commits
+  - no GitHub/web-flow authored or committed commits
+  - author and committer email must match CORTEX_ALLOWED_COMMIT_EMAIL_REGEX
+  - every commit must have a matching Signed-off-by trailer
+  - every commit must verify against CORTEX_ALLOWED_SIGNERS_FILE
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+range="${1:-origin/main..HEAD}"
+allowed_email_regex="${CORTEX_ALLOWED_COMMIT_EMAIL_REGEX:-^[^@]+@digimuoto\.com$}"
+allowed_signers_file="${CORTEX_ALLOWED_SIGNERS_FILE:-.github/allowed_signers}"
+
+if [[ ! -f "$allowed_signers_file" ]]; then
+  echo "Missing allowed signers file: $allowed_signers_file" >&2
+  exit 1
+fi
+
+if [[ "$range" == *..* || "$range" == *" "* || "$range" == ^* ]]; then
+  mapfile -t commits < <(git rev-list --reverse "$range")
+else
+  mapfile -t commits < <(git rev-parse --verify "${range}^{commit}")
+fi
+
+if [[ "${#commits[@]}" -eq 0 ]]; then
+  echo "No commits to check for range: $range"
+  exit 0
+fi
+
+failed=0
+
+fail_commit() {
+  local commit="$1"
+  local message="$2"
+  printf 'commit provenance violation: %s %s\n' "$commit" "$message" >&2
+  failed=1
+}
+
+for commit in "${commits[@]}"; do
+  short="$(git rev-parse --short "$commit")"
+  subject="$(git show -s --format=%s "$commit")"
+  author_name="$(git show -s --format=%an "$commit")"
+  author_email="$(git show -s --format=%ae "$commit")"
+  committer_name="$(git show -s --format=%cn "$commit")"
+  committer_email="$(git show -s --format=%ce "$commit")"
+  parent_count="$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')"
+  message="$(git show -s --format=%B "$commit")"
+
+  echo "Checking $short $subject"
+
+  if [[ "$parent_count" -gt 1 ]]; then
+    fail_commit "$short" "is a merge commit; main is fast-forward-only"
+  fi
+
+  if [[ "$author_email" =~ @users\.noreply\.github\.com$ ||
+        "$author_email" == "noreply@github.com" ||
+        "$committer_email" =~ @users\.noreply\.github\.com$ ||
+        "$committer_email" == "noreply@github.com" ||
+        "$committer_name" == "GitHub" ]]; then
+    fail_commit "$short" "uses GitHub/web-flow identity ($author_name <$author_email> / $committer_name <$committer_email>)"
+  fi
+
+  if ! [[ "$author_email" =~ $allowed_email_regex ]]; then
+    fail_commit "$short" "author email is not allowed: $author_email"
+  fi
+
+  if ! [[ "$committer_email" =~ $allowed_email_regex ]]; then
+    fail_commit "$short" "committer email is not allowed: $committer_email"
+  fi
+
+  signoff="Signed-off-by: $author_name <$author_email>"
+  if ! grep -Fqx "$signoff" <<<"$message"; then
+    fail_commit "$short" "is missing matching trailer: $signoff"
+  fi
+
+  if ! verify_output="$(git -c "gpg.ssh.allowedSignersFile=$allowed_signers_file" verify-commit "$commit" 2>&1)"; then
+    fail_commit "$short" "does not verify against $allowed_signers_file"
+    printf '%s\n' "$verify_output" >&2
+  fi
+done
+
+if [[ "$failed" -ne 0 ]]; then
+  exit 1
+fi
+
+echo "Commit provenance OK for range: $range"
