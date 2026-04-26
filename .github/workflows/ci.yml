@@ -318,7 +318,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build documentation site
-        run: nix build '.#default-site' --print-build-logs
+        run: nix build '.#docs-site' --print-build-logs
 
   ci-success:
     name: CI Success

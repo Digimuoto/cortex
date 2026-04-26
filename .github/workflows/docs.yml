@@ -35,7 +35,7 @@ jobs:
 
       - name: Build documentation
         run: |
-          nix build .#default-site
+          nix build .#docs-site
           mkdir -p _site
           cp -a result/. _site/
 

@@ -38,14 +38,26 @@ nix develop
 
 | Command | Purpose |
 |---|---|
-| `just docs-build` | Build the static documentation site. |
+| `just docs-build` / `nix build .#docs-site` | Build the static documentation site. |
 | `just docs-check` | Validate docs by building the site. |
-| `just docs-dev` | Run the docs development server. |
-| `just docs-preview` | Build and preview the static docs site. |
+| `just docs-dev` / `nix run .#docs-dev` | Run the docs development server. |
+| `just docs-preview` / `nix run .#docs-preview` | Build and preview the static docs site. |
 
 The published docs are built from `docs/` by the GitHub Pages workflow. Keep
 README prose brief and move detailed build, reference, and architecture material
 into this documentation tree.
+
+## Issues And Pull Requests
+
+Cortex uses GitHub Issues for active work tracking. Use issues for bugs,
+implementation scopes, roadmap slices, and follow-up work. Pull requests
+should link the issue they complete with `Closes #<number>` when the scope
+has a tracker.
+
+Do not use Linear or a downstream product tracker as active Cortex planning
+state. Historical docs may retain external issue IDs when they explain past
+migration context, but new Cortex work belongs in this repository's GitHub
+issue system.
 
 ## Lean Theory
 

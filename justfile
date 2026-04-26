@@ -73,18 +73,18 @@ lint:
 
 # Build documentation site (static output via repo-docs)
 docs-build:
-    nix build .#default-site
+    nix build .#docs-site
 
 # Validate documentation by attempting a full site build (frontmatter + links)
 docs-check: docs-build
 
 # Run documentation dev server (HOST=127.0.0.1 PORT=4321 by default)
 docs-dev:
-    nix run .#default-dev
+    nix run .#docs-dev
 
 # Build and preview documentation site (HOST=127.0.0.1 PORT=4322 by default)
 docs-preview:
-    nix run .#default-preview
+    nix run .#docs-preview
 
 # ============================================================================
 # LEAN 4 THEORY (theory/)

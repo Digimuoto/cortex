@@ -2,7 +2,7 @@
 #
 # Outputs: packages.docs-site, apps.docs-{dev,preview}.
 {
-  perSystem = {...}: {
+  perSystem = {config, ...}: {
     docsSite = {
       enable = true;
 
@@ -12,6 +12,10 @@
       sites.default = {
         contentDir = ../docs;
         theme = "cortex-light";
+        themeModes = {
+          light = "cortex-light";
+          dark = "cortex-slate";
+        };
 
         # Templates are authoring skeletons with placeholder frontmatter
         # that intentionally fails the content schema. Exclude them.
@@ -33,15 +37,17 @@
         # glossary, taxonomy, and map.md read better as a flush list.
         navigation.rootSectionLabel = null;
 
-        # NOTE: Wire grammar registration is currently disabled because
-        # repo-docs' WASM compilation step downloads wasi-sdk from the
-        # network mid-build, which the nix build sandbox blocks. Re-enable
-        # once repo-docs ships a sandbox-friendly path (e.g. wasi-sdk
-        # provided as a fixed-output derivation or pre-bundled binary).
-        # languages.wire = {
-        #   grammarSrc = ../editors/tree-sitter-wire;
-        # };
+        languages.wire = {
+          grammarSrc = ../editors/tree-sitter-wire;
+        };
       };
+    };
+
+    packages.docs-site = config.packages.default-site;
+
+    apps = {
+      docs-dev = config.apps.default-dev;
+      docs-preview = config.apps.default-preview;
     };
   };
 }

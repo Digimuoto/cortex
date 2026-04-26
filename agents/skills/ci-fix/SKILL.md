@@ -71,7 +71,7 @@ modes:
 | `Test failed: …` | Haskell tests | Behavior regression | Run the single spec locally: `just test-match "<name>"` |
 | `HLint: …` | Lint | Banned partial function, style rule | Fix the flagged expression or add a targeted `{-# ANN … #-}` if truly unavoidable |
 | `hash mismatch … got: …` | haskell.nix | `nix/materialized/` drift after a cabal edit | `just update-materialized`, commit the regenerated cache |
-| `default-site: Downloading wasi-sdk …` | docs-site | Network-blocked sandbox (known issue) | Not a real regression — skip in CI or use a builder with network |
+| `docs-site: Downloading wasi-sdk …` | docs-site | Wrapped `tree-sitter` not in use | Check `nix/nixpkgs.nix`; the CLI must receive `TREE_SITTER_WASI_SDK_PATH` |
 | `hlint: exit 1` / style rules | HLint | Banned `head`, `fromJust`, `undefined`, partial function | Replace with safe variant (`listToMaybe`, pattern match, etc.) |
 
 If the signature does not match anything above, surface the first error
@@ -90,7 +90,7 @@ the issue may be environmental (cache, materialization, index-state).
 | Library build | `nix build .#cortex` |
 | Platform build | `nix build .#platform-runtime` |
 | Executable build | `nix build .#cortex-pulse` |
-| Docs site | `nix build .#default-site` (needs network for wasi-sdk) |
+| Docs site | `nix build .#docs-site` |
 | Tests | `just test` or `just test-match "<pattern>"` |
 | HLint | `just lint` |
 
