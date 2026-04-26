@@ -1,0 +1,16 @@
+flowchart TD
+    A["Workflow Source"] --> B["Typed Workflow IR"]
+    B --> C["Compiled Workflow Artifact"]
+    C --> D["Phase-Based Durable Execution"]
+    D --> E["Lineage and Materialization"]
+    E --> F["Recovery and Explanation"]
+
+    classDef semantic fill:#eef7f2,stroke:#1f6b4f,color:#103827,stroke-width:1.5px;
+    classDef compiled fill:#f6f1e8,stroke:#8a5a00,color:#4b3200,stroke-width:1.5px;
+    classDef runtime fill:#eef2fb,stroke:#315ea8,color:#19325a,stroke-width:1.5px;
+    classDef durability fill:#f8ebf2,stroke:#9b3d6d,color:#5f2342,stroke-width:1.5px;
+
+    class A,B semantic;
+    class C compiled;
+    class D runtime;
+    class E,F durability;

@@ -1,0 +1,18 @@
+flowchart TD
+    C["computeTargetAllocations"] --> EQ["Equity branch"]
+    C --> FI["Fixed income branch"]
+    C --> DER["Derivatives branch"]
+    C --> CR1["proposeCryptoLiquidation"]
+    CR1 --> CR2["awaitCustodianConfirmation"]
+    EQ --> A["aggregateExecutionPlan"]
+    FI --> A
+    DER --> A
+    CR2 --> A
+
+    classDef anchor fill:#f6f1e8,stroke:#8a5a00,color:#4b3200,stroke-width:2px;
+    classDef branch fill:#eef2fb,stroke:#315ea8,color:#19325a,stroke-width:1.5px;
+    classDef inserted fill:#eef7f2,stroke:#1f6b4f,color:#103827,stroke-width:1.5px;
+
+    class C anchor;
+    class EQ,FI,DER,A branch;
+    class CR1,CR2 inserted;
