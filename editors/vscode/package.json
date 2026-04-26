@@ -1,0 +1,31 @@
+{
+  "name": "cortex-wire",
+  "displayName": "Cortex Wire",
+  "description": "Syntax highlighting for the Cortex Wire DSL (.wire files)",
+  "version": "0.1.0",
+  "publisher": "digimuoto",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "wire",
+        "aliases": ["Cortex Wire", "wire"],
+        "extensions": [".wire"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "wire",
+        "scopeName": "source.wire",
+        "path": "./syntaxes/wire.tmLanguage.json"
+      }
+    ]
+  }
+}

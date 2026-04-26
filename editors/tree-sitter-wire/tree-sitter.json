@@ -1,0 +1,34 @@
+{
+  "grammars": [
+    {
+      "name": "wire",
+      "camelcase": "Wire",
+      "scope": "source.wire",
+      "path": ".",
+      "file-types": ["wire"],
+      "highlights": ["queries/highlights.scm"],
+      "folds": ["queries/folds.scm"],
+      "indents": ["queries/indents.scm"],
+      "injection-regex": "^wire$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "Apache-2.0",
+    "description": "Tree-sitter grammar for the Cortex Wire DSL",
+    "authors": [
+      { "name": "Digimuoto" }
+    ],
+    "links": {
+      "repository": "https://github.com/Digimuoto/cortex"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": true,
+    "python": false,
+    "rust": true,
+    "swift": false
+  }
+}

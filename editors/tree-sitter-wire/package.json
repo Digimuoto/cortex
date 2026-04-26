@@ -1,0 +1,46 @@
+{
+  "name": "tree-sitter-wire",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Cortex Wire DSL",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "keywords": ["parser", "tree-sitter", "wire", "cortex"],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "node-addon-api": "^8.3.0",
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.25.0"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.25.0"
+  },
+  "peerDependenciesMeta": {
+    "tree-sitter": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "build": "tree-sitter generate && node-gyp rebuild",
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.wire",
+      "file-types": ["wire"],
+      "highlights": "queries/highlights.scm",
+      "folds": "queries/folds.scm",
+      "indents": "queries/indents.scm"
+    }
+  ],
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "bindings/node/*",
+    "queries/*",
+    "src/*"
+  ]
+}

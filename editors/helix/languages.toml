@@ -1,0 +1,20 @@
+# Helix language configuration for the Cortex Wire DSL.
+# Append this to ~/.config/helix/languages.toml.
+
+[[language]]
+name = "wire"
+scope = "source.wire"
+file-types = ["wire"]
+roots = []
+comment-tokens = ["#"]
+block-comment-tokens = [{ start = "/*", end = "*/" }]
+indent = { tab-width = 2, unit = "  " }
+auto-format = false
+
+[[grammar]]
+name = "wire"
+# Option A: local clone. Replace the path with your checkout.
+source = { path = "/absolute/path/to/cortex/editors/tree-sitter-wire" }
+
+# Option B: once published, replace the above with a git source:
+# source = { git = "https://github.com/Digimuoto/cortex", rev = "HEAD", subpath = "editors/tree-sitter-wire" }

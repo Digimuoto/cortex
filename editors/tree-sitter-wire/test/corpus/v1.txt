@@ -1,0 +1,34 @@
+==================
+v1 node with sum output and file return
+==================
+
+contract EvidenceBundle;
+node planner : -> PlannerOutput | ExecutorError = @llm.planner {};
+planner
+
+---
+
+(source_file
+  (contract_decl
+    name: (contract_name
+      (contract)))
+  (node_decl
+    name: (identifier)
+    ports: (port_signature
+      (output_port
+        body: (output_body
+          (output_variant
+            contract: (contract_name
+              (contract)))
+          (output_variant
+            contract: (contract_name
+              (contract))))))
+    body: (expression
+      (executor_apply
+        name: (qualified_ident
+          (identifier)
+          (identifier))
+        config: (record))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))

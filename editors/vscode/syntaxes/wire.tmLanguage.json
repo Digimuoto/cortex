@@ -1,0 +1,139 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Cortex Wire",
+  "scopeName": "source.wire",
+  "fileTypes": ["wire"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#operators" },
+    { "include": "#executors" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#contracts" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.wire",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.block.wire",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.wire",
+          "match": "\\b(if|else|between)\\b"
+        },
+        {
+          "name": "keyword.declaration.wire",
+          "match": "\\b(node|circuit|meta|use)\\b"
+        },
+        {
+          "name": "keyword.other.wire",
+          "match": "\\b(connect|path|fanout|fanin|clique|signal)\\b"
+        },
+        {
+          "name": "storage.modifier.wire",
+          "match": "\\b(act|await|emit)\\b"
+        },
+        {
+          "name": "entity.other.attribute-name.wire",
+          "match": "\\b(role|label|executor|prompt|config|tools|ports|timeout|retry|stepBudget|maxOutputTokens|on|kind|to)\\s*(?==)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.graph.wire",
+          "match": "=>|<>|<-|->"
+        },
+        {
+          "name": "keyword.operator.assignment.wire",
+          "match": "="
+        },
+        {
+          "name": "punctuation.separator.wire",
+          "match": "[,;:.]"
+        }
+      ]
+    },
+    "executors": {
+      "patterns": [
+        {
+          "name": "meta.executor.wire",
+          "begin": "\\b(native|llm)\\b",
+          "end": "(?=[;,)\\]])",
+          "beginCaptures": {
+            "1": { "name": "support.function.executor.wire" }
+          },
+          "patterns": [
+            {
+              "name": "string.quoted.double.executor-target.wire",
+              "match": "\"[^\"]*\""
+            },
+            { "include": "#strings" }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.wire",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.wire",
+          "match": "\\\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)"
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.wire",
+      "match": "\\b-?[0-9]+\\b"
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.wire",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.wire",
+          "match": "\\bnull\\b"
+        }
+      ]
+    },
+    "contracts": {
+      "patterns": [
+        {
+          "comment": "Contract names appear after <-/-> arrows or inside bracketed alternatives. Capitalized identifier heuristic.",
+          "name": "entity.name.type.contract.wire",
+          "match": "(?<=<-|->)\\s*\\b([A-Z][A-Za-z0-9_]*)\\b"
+        },
+        {
+          "name": "entity.name.type.contract.wire",
+          "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.wire",
+          "match": "\\b[a-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}
