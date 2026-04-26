@@ -318,12 +318,12 @@ constructorExpr = do
 recordExpr :: Parser Record
 recordExpr = do
   _ <- symbol "{"
-  fields <- field `sepEndBy` recordFieldSeparator
+  fields <- many terminatedField
   _ <- symbol "}"
   pure (Record fields)
 
-recordFieldSeparator :: Parser Text
-recordFieldSeparator = symbol ";" <|> symbol ","
+terminatedField :: Parser Field
+terminatedField = field <* symbol ";"
 
 field :: Parser Field
 field = do
