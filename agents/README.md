@@ -22,6 +22,7 @@ agents/
     ├── ci-fix/                 # Diagnose & fix a red CI run
     ├── pr-resolve-review/      # Address PR review comments
     ├── haskell-code-style/     # Opinionated Haskell review (+ references/)
+    ├── lean-code-style/        # Strict Lean 4 proof review (+ references/)
     ├── doc-review/             # Docs review (+ references/)
     └── doc-review-and-fix/     # Review and edit docs in one pass
 ```
@@ -104,6 +105,6 @@ Portman keeps its own fuller `agents/` tree.
 ## Adding a skill
 
 1. Create `agents/skills/<name>/SKILL.md` with YAML frontmatter
-   (`name`, `description`, optional `date`/`status`).
+   (`name`, `description`).
 2. Supporting references go under `agents/skills/<name>/references/`.
 3. Run the provider link command for the runtime that should expose it.
