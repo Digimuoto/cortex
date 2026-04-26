@@ -7,6 +7,7 @@ exposes the full surface (Graph algebra, Pulse frontier, Wire rewrites).
 
 -- Track 1 — Graph algebra (Mokhov)
 import Cortex.Graph.Core
+import Cortex.Graph.Relation
 import Cortex.Graph.Laws
 
 -- Track 2 — Pulse runtime, frontier safety

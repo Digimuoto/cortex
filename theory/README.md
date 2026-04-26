@@ -2,8 +2,8 @@
 
 Lean 4 mechanization of the Cortex substrate. This directory builds as
 its own Lake project (`lakefile.lean`, `lean-toolchain`) and is wired
-into the repo's nix flake under `packages.cortex-theory` and
-`apps.cortex-theory` via `nix/lean.nix`.
+into the repo's nix flake under `packages.cortex-theory` via
+`nix/lean.nix`.
 
 The point of having a Lean track at all is to turn the substrate
 guarantees from prose into proof:
@@ -30,15 +30,19 @@ each track is then a sequence of obligations to discharge.
 ### Track 1 — Graph algebra (Mokhov)
 
 `Cortex.Graph.Core` defines the inductive `Graph α` with constructors
-`empty`, `vertex`, `overlay`, `connect`. `Cortex.Graph.Laws` states
-the eight Mokhov laws as theorems and admits the algebraic ones as
-axioms. The proof discharges via a denotational quotient
-(`Cortex.Graph.Quotient`, TODO) that defines `vertexSet` and `edgeSet`
-and proves the laws hold on the denotation.
+`empty`, `vertex`, `overlay`, `connect`. `Cortex.Graph.Relation`
+defines the finite relation denotation used by the Haskell
+`toRelation` implementation and proves the Mokhov laws on that
+denotation with mathlib `Finset`s. `Cortex.Graph.Laws` still states the
+AST-facing laws as axioms because raw syntax trees are not definitionally
+equal; discharging those axioms requires the next quotient step
+(`Cortex.Graph.Quotient`, TODO).
 
 **Headline obligation:** `connect_decomposition`
 (`g · h · k = g · h ⊕ g · k ⊕ h · k`). This is what licenses circuit
-simplification and the executor's compatibility-edge derivation.
+simplification and the executor's compatibility-edge derivation. The
+relation-level theorem now exists; the remaining obligation is lifting it
+through graph equivalence.
 
 ### Track 2 — Frontier safety
 
@@ -91,7 +95,7 @@ substrate and external nondeterminism.
 ## Build
 
 The Lean toolchain version lives in `lean-toolchain` (currently
-`leanprover/lean4:v4.14.0`). The standard Lake commands work:
+`leanprover/lean4:v4.29.0`). The standard Lake commands work:
 
 ```
 cd theory
@@ -106,7 +110,6 @@ Through the repo's nix flake:
 
 ```
 nix build .#cortex-theory
-nix run .#cortex-theory
 just lean-check
 ```
 
@@ -119,7 +122,8 @@ local commits and CI agree on the Lean gate.
 
 | Track | Statements | Proved | Axiomatized |
 |---|---|---|---|
-| 1. Graph algebra | 10 | 1 | 9 |
+| 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
+| 1b. Graph quotient laws | AST laws over graph equivalence | pending | 9 |
 | 2. Frontier safety | 4 | 1 | 3 |
 | 3. Rewrite soundness | 3 | 0 | 3 |
 | 4. Provider / sparks | — | — | not started |

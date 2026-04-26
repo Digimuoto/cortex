@@ -5,6 +5,9 @@ package «cortex-theory» where
   -- Lean 4 mechanization of the Cortex substrate.
   -- See ./README.md for the proof-track roadmap.
 
+require mathlib from git
+  "https://github.com/leanprover-community/mathlib4.git" @ "v4.29.0"
+
 @[default_target]
 lean_lib «Cortex» where
   -- Reachable from `import Cortex`. Submodules are pulled in by Cortex.lean
@@ -12,6 +15,7 @@ lean_lib «Cortex» where
   roots := #[
     `Cortex,
     `Cortex.Graph.Core,
+    `Cortex.Graph.Relation,
     `Cortex.Graph.Laws,
     `Cortex.Pulse.Frontier,
     `Cortex.Wire.Rewrite
