@@ -1,0 +1,95 @@
+# Grammar v1 §12 flagship example — parallel-claim-branches thesis
+# stress-test. Exercises ambient contracts, @llm.* executor family,
+# partial-node bases with // merge, sum-grouped outputs, list-valued
+# inputs, runtime wrapper at the tail, node alias semantics, and
+# file-return.
+
+# ---- shared prompt blocks (ordinary values) ----
+
+let topo_awareness = ''
+  You have access to the full upstream substrate via topological memory.
+  Claim discipline is enforced by this prompt, not by information availability.
+'';
+
+let weak_evidence_rule = ''
+  If contrary evidence is genuinely weak across the substrate, state
+  that explicitly as a finding with its own section.
+'';
+
+let citation_rule = ''Cite evidenceRefs by toolCallId for every concrete claim.'';
+
+let analyst_suffix = topo_awareness ++ weak_evidence_rule ++ citation_rule;
+
+# ---- partial-node bases ----
+
+let gatherer_base = @llm.gatherer {
+  memory = topological { preset = "analyst"; };
+};
+
+let analyst_base = @llm.analyst {
+  maxOutputTokens = 16384;
+  memory = topological { preset = "analyst"; };
+};
+
+# ---- nodes ----
+
+node planner : -> PlannerOutput | ExecutorError = @llm.planner {};
+
+node gatherer_mechanism : <- PlannerOutput -> EvidenceBundle | ExecutorError =
+  gatherer_base // { tools = [getDate, searchAssets, getAssetFundamentals, webSearch]; };
+
+node gatherer_timing : <- PlannerOutput -> EvidenceBundle | ExecutorError =
+  gatherer_base // { tools = [getDate, searchAssets, getAssetNews, webSearch]; };
+
+node gatherer_beneficiaries : <- PlannerOutput -> EvidenceBundle | ExecutorError =
+  gatherer_base // { tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch]; };
+
+node analyst_mechanism : <- EvidenceBundle -> AnalysisFragment | ExecutorError =
+  analyst_base // { prompt = ''Attack the mechanism leg.'' ++ analyst_suffix; };
+
+node analyst_timing : <- EvidenceBundle -> AnalysisFragment | ExecutorError =
+  analyst_base // { prompt = ''Attack the timing leg.'' ++ analyst_suffix; };
+
+node analyst_beneficiaries : <- EvidenceBundle -> AnalysisFragment | ExecutorError =
+  analyst_base // { prompt = ''Attack the beneficiary leg.'' ++ analyst_suffix; };
+
+node merge : <- fragments: [AnalysisFragment] -> AnalysisFragment =
+  @llm.report_merge {};
+
+node review : <- AnalysisFragment -> ReviewConcerns | ExecutorError =
+  @llm.review {};
+
+node rewriter : <- AnalysisFragment <- ReviewConcerns -> ReviewBundle | ExecutorError =
+  @llm.rewriter {};
+
+# Aggregates every ExecutorError variant from every impure node.
+# List-valued input because there are many potential error sources.
+
+node error_sink : <- [ExecutorError] = @artifact.log {};
+
+# ---- the wire ----
+
+let thesis =
+  (   planner
+   => ( gatherer_mechanism     => analyst_mechanism
+      , gatherer_timing        => analyst_timing
+      , gatherer_beneficiaries => analyst_beneficiaries )
+   => merge
+   => review
+   => rewriter )
+  <> (merge => rewriter);
+
+(thesis => error_sink)
+  => @cortex.deep_report {
+     title = "Thesis Parallel Claim Branches";
+     description = "Structural experiment in claim-scoped analyst branching.";
+     match.skill = "deep-report";
+     match.priority = 105;
+     match.requestContainsAny = [
+       "parallel claim branches",
+       "claim-scoped analysts"
+     ];
+     render.aggregateOpenGaps = true;
+     render.allowExtraSectionHeadings = true;
+     workspace.sourceKind = "deep-report";
+   }

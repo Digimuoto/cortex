@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "blocks": [
+    {
+      "type": "paragraph",
+      "content": [
+        {"type": "text", "value": "Current price: "},
+        {"type": "embed", "embedType": "price", "symbol": "AAPL"}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {"type": "embed", "embedType": "chart", "symbol": "NVDA", "range": "1M"}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {"type": "embed", "embedType": "chart", "symbol": "MSFT", "range": "3M", "style": "area"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "blocks": [
+    {
+      "type": "paragraph",
+      "content": [
+        {"type": "text", "value": "The formula "},
+        {"type": "math", "value": "\\frac{a}{b}"},
+        {"type": "text", "value": " is inline."}
+      ]
+    },
+    {
+      "type": "math_block",
+      "content": "E = mc^2"
+    }
+  ]
+}

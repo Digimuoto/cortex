@@ -1,0 +1,49 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+module Cortex.Pulse.TypesSpec (spec) where
+
+import Cortex.Pulse.Types
+import Data.Aeson ((.=))
+import Data.Aeson qualified as Aeson
+import Test.Hspec
+
+spec :: Spec
+spec = describe "Cortex.Pulse.Types" $ do
+  describe "TaskKind" $ do
+    it "wraps and unwraps text" $ do
+      unTaskKind (TaskKind "my_task") `shouldBe` "my_task"
+
+    it "roundtrips through JSON" $ do
+      Aeson.fromJSON (Aeson.toJSON (TaskKind "my_task"))
+        `shouldBe` Aeson.Success (TaskKind "my_task")
+
+  describe "CortexTaskEnvelope JSON" $ do
+    it "decodes a task envelope with an arbitrary task kind" $ do
+      let rawEnvelope =
+            Aeson.object
+              [ "cortexTaskType" .= ("strategy_distillation_cycle" :: String),
+                "cortexTaskVersion" .= (2 :: Int),
+                "cortexTaskConfig" .= Aeson.object []
+              ]
+      Aeson.fromJSON rawEnvelope
+        `shouldBe` Aeson.Success
+          CortexTaskEnvelope
+            { cortexTaskType = TaskKind "strategy_distillation_cycle",
+              cortexTaskVersion = 2,
+              cortexTaskConfig = Aeson.object []
+            }
+
+    it "decodes a legacy constructor-style task kind" $ do
+      let rawEnvelope =
+            Aeson.object
+              [ "cortexTaskType" .= ("StrategyDistillationCycle" :: String),
+                "cortexTaskVersion" .= (2 :: Int),
+                "cortexTaskConfig" .= Aeson.object []
+              ]
+      Aeson.fromJSON rawEnvelope
+        `shouldBe` Aeson.Success
+          CortexTaskEnvelope
+            { cortexTaskType = TaskKind "StrategyDistillationCycle",
+              cortexTaskVersion = 2,
+              cortexTaskConfig = Aeson.object []
+            }
