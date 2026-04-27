@@ -40,6 +40,8 @@
         languages.wire = {
           grammarSrc = ../editors/tree-sitter-wire;
         };
+
+        lean4.theoryDir = "theory";
       };
     };
 
