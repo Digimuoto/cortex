@@ -51,9 +51,10 @@ through graph equivalence.
 and `Recovery` model the Paper 1 fixed-topology staged-reduction kernel.
 The current model is extensional: a finite node type, an edge-derived DAG
 reachability relation, abstract payloads, node-local facts,
-reachability-level readiness, topology-domain validity, and failure
-closure over the DAG. It avoids runtime UUID/database shapes and keeps
-payload and failure details abstract.
+reachability-level readiness, direct-predecessor runtime readiness,
+topology-domain validity, and failure closure over the DAG. It avoids
+runtime UUID/database shapes and keeps payload and failure details
+abstract.
 
 Mechanized results now include:
 
@@ -72,24 +73,33 @@ Mechanized results now include:
 - `propagateFailure_idempotent`: failure propagation is idempotent.
 - `directReady_sound`: executable direct-predecessor readiness implies
   proof-level reachability readiness under causal-history closure.
+- `readyNodes_eq_directReadyNodes`: proof and runtime frontiers coincide
+  under closure and causal-history invariants.
+- `NodeResult.Admissible`: node facts must target the topology and come
+  from the executable frontier before preservation theorems apply.
+- `frontierFacts_recovered_wellFormedGraphState`: admissible fact folds
+  become structurally well-formed again after failure closure.
 - `persistence_safety`: recovered states are structurally well-formed,
-  parameterized by persisted topology-domain, output, and causal-history
-  invariants that recovery preserves.
+  conditional on explicit persisted topology-domain, output, and
+  causal-history preconditions that recovery preserves.
 
 Remaining obligations include permutation invariance for whole frontier
-result folds, full executable frontier classification, classification
-exhaustiveness, and quotient lifting for the graph algebra laws.
+result folds, Haskell-side establishment of the persisted recovery
+preconditions, classification exhaustiveness, and quotient lifting for the
+graph algebra laws.
 
 ### Track 3 — Rewrite soundness
 
 `Cortex.Wire.Rewrite` sketches the admission predicate from
-`src/Cortex/Pulse/Rewrite.hs`. Three obligations:
+`src/Cortex/Pulse/Rewrite.hs`. The current Lean surface is
+proof-carrying rather than vacuous: an admitted `Rewrite` carries
+preservation evidence for graph acyclicity, the caller-supplied contract
+predicate, and positive budget consumption. Remaining obligations:
 
-- `admissible_preserves_acyclic`: rewrites can't introduce cycles.
-- `admissible_preserves_contracts`: rewrites can't violate the
-  registry's boundary invariants.
-- `apply_admissible_terminates`: rewrite chains are bounded by the
-  per-run budget.
+- connect those proof-carrying certificates to the Haskell admission path;
+- instantiate the contract predicate from the registry boundary model;
+- lift local positive-cost consumption to a full rewrite-chain
+  termination proof.
 
 This is the "sandbox by proof" story for dynamic graph rewriting.
 
@@ -143,12 +153,12 @@ local commits and CI agree on the Lean gate.
 | 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
 | 1b. Graph denotational AST laws | AST laws over graph equivalence | denotational law surface | none |
 | 1c. Graph quotient laws | lifted quotient equality laws | pending | none |
-| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, fact commutativity, closure idempotence, topology-domain/output/causal preservation, structural recovery predicate | none |
-| 3. Rewrite soundness | 3 | 0 | 3 |
+| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/causal preservation, structural recovery predicate | none |
+| 3. Rewrite soundness | proof-carrying rewrite certificate | acyclicity/contract/budget projections | none |
 | 4. Provider / sparks | — | — | not started |
 | 5. Substrate / consumer boundary | — | — | not started |
 
-Discharging the remaining axioms is the actual work. The scaffold's only
+Discharging the remaining obligations is the actual work. The scaffold's
 job is to make the obligation graph compile and run end-to-end so that
-proof debt is visible and each axiom-to-theorem promotion has a home to
-land in.
+proof debt is visible and each abstract certificate or predicate can be
+connected to executable Cortex code.

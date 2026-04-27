@@ -92,6 +92,13 @@ theorem unblocks_terminal {status : NodeStatus}
     terminal status := by
   cases status <;> simp [unblocksSuccessors, terminal] at hUnblocks ⊢
 
+/-- `terminal_unblocks_of_not_failed` recovers runtime-unblocking terminal statuses. -/
+theorem terminal_unblocks_of_not_failed {status : NodeStatus}
+    (hTerminal : terminal status)
+    (hNotFailed : status ≠ failed) :
+    unblocksSuccessors status := by
+  cases status <;> simp [terminal, unblocksSuccessors] at hTerminal hNotFailed ⊢
+
 /-- `pending_not_terminal` states that a pending node is not terminal. -/
 theorem pending_not_terminal :
     ¬ terminal pending := by

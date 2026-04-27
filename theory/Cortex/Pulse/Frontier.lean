@@ -17,9 +17,9 @@ by DAG reachability.
 ## Context
 
 The executable frontier is derived from direct predecessors. This proof
-module works at strict-reachability level so frontier antichain reasoning
-is local to the DAG laws; a later refinement can connect direct
-predecessors to this stronger readiness predicate.
+module keeps both direct-predecessor readiness and strict-reachability
+readiness visible, so later validity theorems can bridge the executable
+frontier to the proof-facing antichain argument.
 
 ## Theorem Split
 
@@ -77,6 +77,13 @@ noncomputable def readyNodes
   classical
   exact G.nodes.filter (Ready G state)
 
+/-- `directReadyNodes G state` mirrors the runtime direct-predecessor frontier. -/
+noncomputable def directReadyNodes
+    (G : DAG ν)
+    (state : GraphState ν payload) : Finset ν := by
+  classical
+  exact G.nodes.filter (DirectReady G state)
+
 /-- `mem_readyNodes` states that frontier membership is exactly readiness. -/
 theorem mem_readyNodes
     (G : DAG ν)
@@ -85,6 +92,15 @@ theorem mem_readyNodes
     node ∈ readyNodes G state ↔ node ∈ G.nodes ∧ Ready G state node := by
   classical
   simp [readyNodes]
+
+/-- `mem_directReadyNodes` states runtime frontier membership exactly. -/
+theorem mem_directReadyNodes
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (node : ν) :
+    node ∈ directReadyNodes G state ↔ node ∈ G.nodes ∧ DirectReady G state node := by
+  classical
+  simp [directReadyNodes]
 
 /-- `frontier_only_ready` states that every frontier node is ready. -/
 theorem frontier_only_ready

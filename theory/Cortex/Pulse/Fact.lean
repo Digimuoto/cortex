@@ -1,4 +1,4 @@
-import Cortex.Pulse.State
+import Cortex.Pulse.Frontier
 
 /-!
 ## Overview
@@ -18,7 +18,9 @@ keys.
 
 The page defines abstract worker outcomes, packages them as durable node
 results, and proves the disjoint-key commutativity lemma used by later
-frontier-fold proofs.
+frontier-fold proofs. Arbitrary node facts are not assumed safe: the
+`Admissible` predicate records the frontier precondition needed by
+preservation theorems.
 -/
 
 namespace Cortex.Pulse
@@ -74,6 +76,12 @@ theorem output_respects_status
     NodeStatus.mayHaveOutput (status outcome) := by
   cases outcome <;> simp [output, status, NodeStatus.mayHaveOutput] at hOutput ⊢
 
+/-- `status_ne_running` says durable worker outcomes never write `running`. -/
+theorem status_ne_running
+    (outcome : NodeOutcome payload) :
+    status outcome ≠ NodeStatus.running := by
+  cases outcome <;> simp [status]
+
 end NodeOutcome
 
 /-! ## Durable Node Facts -/
@@ -92,6 +100,41 @@ variable {ν : Type u} {payload : Type v}
 /-- `InTopology G result` says a durable node fact targets a topology node. -/
 def InTopology (G : DAG ν) (result : NodeResult ν payload) : Prop :=
   result.node ∈ G.nodes
+
+/-- `Admissible G state result` says a node fact came from the executable frontier. -/
+def Admissible
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (result : NodeResult ν payload) : Prop :=
+  InTopology G result ∧ DirectReady G state result.node
+
+/-- `admissible_inTopology` extracts the topology target precondition. -/
+theorem admissible_inTopology
+    {G : DAG ν}
+    {state : GraphState ν payload}
+    {result : NodeResult ν payload}
+    (hResult : Admissible G state result) :
+    InTopology G result :=
+  hResult.1
+
+/-- `admissible_directReady` extracts the executable-frontier precondition. -/
+theorem admissible_directReady
+    {G : DAG ν}
+    {state : GraphState ν payload}
+    {result : NodeResult ν payload}
+    (hResult : Admissible G state result) :
+    DirectReady G state result.node :=
+  hResult.2
+
+/-- `admissible_ready` turns an admissible runtime fact into proof-level readiness. -/
+theorem admissible_ready
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (result : NodeResult ν payload)
+    (hCausal : CausalHistoryClosed G state)
+    (hResult : Admissible G state result) :
+    Ready G state result.node :=
+  directReady_ready_of_causalHistoryClosed G state hCausal hResult.2
 
 /-- `applyNodeFact result state` applies a node-local fact to the graph state. -/
 def applyNodeFact [DecidableEq ν]
@@ -137,6 +180,132 @@ theorem applyNodeFact_preserves_outputsRespectStatuses [DecidableEq ν]
     have hMayHaveOutput : NodeStatus.mayHaveOutput (state.status node) :=
       hOutputs node value hOriginalOutput
     simpa [applyNodeFact, hNode] using hMayHaveOutput
+
+/-- `applyNodeFact_preserves_noRunning` preserves the absence of running nodes. -/
+theorem applyNodeFact_preserves_noRunning [DecidableEq ν]
+    (result : NodeResult ν payload)
+    (state : GraphState ν payload)
+    (hNoRunning : GraphState.noRunningNodes state) :
+    GraphState.noRunningNodes (applyNodeFact result state) := by
+  intro node
+  by_cases hNode : node = result.node
+  · subst node
+    simpa [applyNodeFact] using NodeOutcome.status_ne_running result.outcome
+  · simpa [applyNodeFact, hNode] using hNoRunning node
+
+/-- `applyNodeFact_preserves_causalHistoryClosed` preserves causal history for admissible facts. -/
+theorem applyNodeFact_preserves_causalHistoryClosed [DecidableEq ν]
+    (G : DAG ν)
+    (result : NodeResult ν payload)
+    (state : GraphState ν payload)
+    (hCausal : CausalHistoryClosed G state)
+    (hResult : Admissible G state result) :
+    CausalHistoryClosed G (applyNodeFact result state) := by
+  classical
+  have hReady : Ready G state result.node :=
+    admissible_ready G state result hCausal hResult
+  intro node hUnblocks predecessor hReach
+  by_cases hNode : node = result.node
+  · subst node
+    by_cases hPred : predecessor = result.node
+    · subst predecessor
+      exact False.elim (G.not_reaches_self result.node hReach)
+    · have hOriginalTerminal : NodeStatus.terminal (state.status predecessor) :=
+        hReady.2 predecessor hReach
+      simpa [applyNodeFact, hPred] using hOriginalTerminal
+  · have hOriginalUnblocks : NodeStatus.unblocksSuccessors (state.status node) := by
+      simpa [applyNodeFact, hNode] using hUnblocks
+    by_cases hPred : predecessor = result.node
+    · subst predecessor
+      have hOriginalTerminal : NodeStatus.terminal (state.status result.node) :=
+        hCausal node hOriginalUnblocks result.node hReach
+      have hPendingTerminal : NodeStatus.terminal NodeStatus.pending := by
+        simpa [hReady.1] using hOriginalTerminal
+      exact False.elim (NodeStatus.pending_not_terminal hPendingTerminal)
+    · have hOriginalTerminal : NodeStatus.terminal (state.status predecessor) :=
+        hCausal node hOriginalUnblocks predecessor hReach
+      simpa [applyNodeFact, hPred] using hOriginalTerminal
+
+/-! ## Frontier-Fold Accumulation -/
+
+/-- `applyNodeFacts results state` folds node-local facts in list order. -/
+def applyNodeFacts [DecidableEq ν]
+    (results : List (NodeResult ν payload))
+    (state : GraphState ν payload) : GraphState ν payload :=
+  results.foldl (fun current result => applyNodeFact result current) state
+
+/-- `AllAdmissibleFold G state results` requires each folded fact to be frontier-admissible. -/
+def AllAdmissibleFold [DecidableEq ν]
+    (G : DAG ν) : GraphState ν payload → List (NodeResult ν payload) → Prop
+  | _state, [] => True
+  | state, result :: rest =>
+      Admissible G state result ∧
+        AllAdmissibleFold G (applyNodeFact result state) rest
+
+/-- `applyNodeFacts_preserves_topologyDomain` preserves off-topology absence. -/
+theorem applyNodeFacts_preserves_topologyDomain [DecidableEq ν]
+    (G : DAG ν)
+    (results : List (NodeResult ν payload))
+    (state : GraphState ν payload)
+    (hDomain : GraphState.topologyDomain G state)
+    (hResults : AllAdmissibleFold G state results) :
+    GraphState.topologyDomain G (applyNodeFacts results state) := by
+  induction results generalizing state with
+  | nil => simpa [applyNodeFacts] using hDomain
+  | cons result rest ih =>
+      rcases hResults with ⟨hResult, hRest⟩
+      have hStep : GraphState.topologyDomain G (applyNodeFact result state) :=
+        applyNodeFact_preserves_topologyDomain G result state hDomain hResult.1
+      simpa [applyNodeFacts] using ih (applyNodeFact result state) hStep hRest
+
+/-- `applyNodeFacts_preserves_outputsRespectStatuses` preserves output ownership. -/
+theorem applyNodeFacts_preserves_outputsRespectStatuses [DecidableEq ν]
+    (G : DAG ν)
+    (results : List (NodeResult ν payload))
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsRespectStatuses state)
+    (hResults : AllAdmissibleFold G state results) :
+    GraphState.outputsRespectStatuses (applyNodeFacts results state) := by
+  induction results generalizing state with
+  | nil => simpa [applyNodeFacts] using hOutputs
+  | cons result rest ih =>
+      rcases hResults with ⟨_hResult, hRest⟩
+      have hStep :
+          GraphState.outputsRespectStatuses (applyNodeFact result state) :=
+        applyNodeFact_preserves_outputsRespectStatuses result state hOutputs
+      simpa [applyNodeFacts] using ih (applyNodeFact result state) hStep hRest
+
+/-- `applyNodeFacts_preserves_noRunning` preserves the absence of running nodes. -/
+theorem applyNodeFacts_preserves_noRunning [DecidableEq ν]
+    (G : DAG ν)
+    (results : List (NodeResult ν payload))
+    (state : GraphState ν payload)
+    (hNoRunning : GraphState.noRunningNodes state)
+    (hResults : AllAdmissibleFold G state results) :
+    GraphState.noRunningNodes (applyNodeFacts results state) := by
+  induction results generalizing state with
+  | nil => simpa [applyNodeFacts] using hNoRunning
+  | cons result rest ih =>
+      rcases hResults with ⟨_hResult, hRest⟩
+      have hStep : GraphState.noRunningNodes (applyNodeFact result state) :=
+        applyNodeFact_preserves_noRunning result state hNoRunning
+      simpa [applyNodeFacts] using ih (applyNodeFact result state) hStep hRest
+
+/-- `applyNodeFacts_preserves_causalHistoryClosed` preserves causal history. -/
+theorem applyNodeFacts_preserves_causalHistoryClosed [DecidableEq ν]
+    (G : DAG ν)
+    (results : List (NodeResult ν payload))
+    (state : GraphState ν payload)
+    (hCausal : CausalHistoryClosed G state)
+    (hResults : AllAdmissibleFold G state results) :
+    CausalHistoryClosed G (applyNodeFacts results state) := by
+  induction results generalizing state with
+  | nil => simpa [applyNodeFacts] using hCausal
+  | cons result rest ih =>
+      rcases hResults with ⟨hResult, hRest⟩
+      have hStep : CausalHistoryClosed G (applyNodeFact result state) :=
+        applyNodeFact_preserves_causalHistoryClosed G result state hCausal hResult
+      simpa [applyNodeFacts] using ih (applyNodeFact result state) hStep hRest
 
 /-! ## Disjoint-Key Accumulation -/
 

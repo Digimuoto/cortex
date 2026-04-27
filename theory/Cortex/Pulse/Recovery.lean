@@ -18,8 +18,8 @@ the Lean counterpart of that recovery normalization pipeline.
 ## Theorem Split
 
 The page defines the recovered state, proves each structural invariant,
-and packages them into `persistence_safety` under persisted topology,
-output, and causal-history invariants.
+and packages them into `persistence_safety` under explicit persisted
+topology, output, and causal-history preconditions.
 -/
 
 namespace Cortex.Pulse
@@ -72,6 +72,13 @@ theorem recovered_frontierExact
     (state : GraphState ν payload) :
     frontierExact G (recoveredState G state) := by
   exact frontierExact_readyNodes G (recoveredState G state)
+
+/-- `recovered_directFrontierExact` proves recovery exposes an exact runtime frontier. -/
+theorem recovered_directFrontierExact
+    (G : DAG ν)
+    (state : GraphState ν payload) :
+    directFrontierExact G (recoveredState G state) := by
+  exact directFrontierExact_directReadyNodes G (recoveredState G state)
 
 /-- `resetRunning_preserves_causalHistoryClosed` preserves causal history closure. -/
 theorem resetRunning_preserves_causalHistoryClosed
@@ -141,19 +148,25 @@ theorem recovered_outputsRespectStatuses
 
 /-! ## Structural Safety -/
 
+/-- `persistedRecoveryPreconditions G state` is what recovery must trust or validate. -/
+def persistedRecoveryPreconditions
+    (G : DAG ν)
+    (state : GraphState ν payload) : Prop :=
+  GraphState.topologyDomain G state ∧
+    GraphState.outputsRespectStatuses state ∧ CausalHistoryClosed G state
+
 /-- `persistence_safety` packages structural recovery safety.
 
-Structural recovery safety is parameterized by persisted topology-domain,
-payload/output, and causal-history invariants. Recovery then preserves
-those invariants while establishing no-running, failure-closure, and
+Structural recovery safety is conditional on persisted topology-domain,
+payload/output, and causal-history preconditions. Recovery then preserves
+those preconditions while establishing no-running, failure-closure, and
 frontier-exactness facts. -/
 theorem persistence_safety
     (G : DAG ν)
     (state : GraphState ν payload)
-    (hDomain : GraphState.topologyDomain G state)
-    (hOutputs : GraphState.outputsRespectStatuses state)
-    (hCausal : CausalHistoryClosed G state) :
+    (hPersisted : persistedRecoveryPreconditions G state) :
     wellFormedGraphState G (recoveredState G state) := by
+  rcases hPersisted with ⟨hDomain, hOutputs, hCausal⟩
   exact
     ⟨ recovered_topologyDomain G state hDomain
     , recovered_outputsRespectStatuses G state hOutputs
@@ -161,6 +174,53 @@ theorem persistence_safety
     , recovered_failureClosureComplete G state
     , recovered_causalHistoryClosed G state hCausal
     , recovered_frontierExact G state
+    , recovered_directFrontierExact G state
+    ⟩
+
+/-- `frontierFacts_recovered_wellFormedGraphState` safely re-closes admissible fact folds. -/
+theorem frontierFacts_recovered_wellFormedGraphState [DecidableEq ν]
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (results : List (NodeResult ν payload))
+    (hWellFormed : wellFormedGraphState G state)
+    (hResults : NodeResult.AllAdmissibleFold G state results) :
+    wellFormedGraphState G (propagateFailure G (NodeResult.applyNodeFacts results state)) := by
+  rcases hWellFormed with
+    ⟨hDomain, hOutputs, hNoRunning, _hClosure, hCausal, _hFrontier, _hDirectFrontier⟩
+  have hAccumulatedDomain :
+      GraphState.topologyDomain G (NodeResult.applyNodeFacts results state) :=
+    NodeResult.applyNodeFacts_preserves_topologyDomain G results state hDomain hResults
+  have hAccumulatedOutputs :
+      GraphState.outputsRespectStatuses (NodeResult.applyNodeFacts results state) :=
+    NodeResult.applyNodeFacts_preserves_outputsRespectStatuses G results state hOutputs hResults
+  have hAccumulatedNoRunning :
+      GraphState.noRunningNodes (NodeResult.applyNodeFacts results state) :=
+    NodeResult.applyNodeFacts_preserves_noRunning G results state hNoRunning hResults
+  have hAccumulatedCausal :
+      CausalHistoryClosed G (NodeResult.applyNodeFacts results state) :=
+    NodeResult.applyNodeFacts_preserves_causalHistoryClosed G results state hCausal hResults
+  exact
+    ⟨ propagateFailure_preserves_topologyDomain
+        G
+        (NodeResult.applyNodeFacts results state)
+        hAccumulatedDomain
+    , propagateFailure_preserves_outputsRespectStatuses
+        G
+        (NodeResult.applyNodeFacts results state)
+        hAccumulatedOutputs
+    , propagateFailure_preserves_noRunning
+        G
+        (NodeResult.applyNodeFacts results state)
+        hAccumulatedNoRunning
+    , propagateFailure_failureClosureComplete G (NodeResult.applyNodeFacts results state)
+    , propagateFailure_preserves_causalHistoryClosed
+        G
+        (NodeResult.applyNodeFacts results state)
+        hAccumulatedCausal
+    , frontierExact_readyNodes G (propagateFailure G (NodeResult.applyNodeFacts results state))
+    , directFrontierExact_directReadyNodes
+        G
+        (propagateFailure G (NodeResult.applyNodeFacts results state))
     ⟩
 
 end Cortex.Pulse
