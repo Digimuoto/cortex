@@ -31,6 +31,8 @@ Each ADR captures one committed design decision. Files use `NNNN-kebab-slug.md` 
 | [0015](0015-cortex-logoi-reasoning-layer.md) | Structured Reasoning Above the Cortex Substrate | superseded |
 | [0016](0016-canonical-cortex-epistemological-archetypes.md) | Canonical Cortex Nous Archetypes | proposed |
 | [0017](0017-cortex-roots-and-nous-pattern-extraction.md) | Cortex Roots and Nous Pattern Extraction | proposed |
+| [0018](0018-wire-executor-and-port-catalog-boundary.md) | Wire Executor and Port Catalog Boundary | proposed |
+| [0019](0019-wire-pure-nodes.md) | Wire Pure Nodes | proposed |
 
 ## Writing a new ADR
 

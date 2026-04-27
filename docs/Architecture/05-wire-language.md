@@ -214,6 +214,10 @@ Cortex still owns the source language, composition rules, and substrate runtime.
   runtime admission and realized topology
 - [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md) —
   payload, artifact, and provenance surfaces
+- [ADR 0018 — Wire Executor and Port Catalog Boundary](../ADRs/0018-wire-executor-and-port-catalog-boundary.md) —
+  contract, port, executor, and binding separation
+- [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md) —
+  deterministic expression nodes and same-contract labels
 - [Wire Grammar v1](../Reference/Wire/grammar-v1.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
 - [Consumer examples](../Consumers/) — downstream binding examples

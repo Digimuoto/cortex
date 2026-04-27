@@ -214,6 +214,8 @@ semantics, DB loading, and authorization.
 - [ADR 0015 — Structured Reasoning Above the Cortex Substrate](../ADRs/0015-cortex-logoi-reasoning-layer.md)
 - [ADR 0016 — Canonical Cortex Nous Archetypes](../ADRs/0016-canonical-cortex-epistemological-archetypes.md)
 - [ADR 0017 — Cortex Roots and Nous Pattern Extraction](../ADRs/0017-cortex-roots-and-nous-pattern-extraction.md)
+- [ADR 0018 — Wire Executor and Port Catalog Boundary](../ADRs/0018-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md)
 - [Chapter 02 — Ownership and boundaries](02-ownership-and-boundaries.md)
 - [Chapter 05 — Wire language](05-wire-language.md)
 - [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md)
