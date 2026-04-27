@@ -15,46 +15,22 @@ page packages the structural invariants that recovery can prove today.
 
 ## Theorem Split
 
-The page first records frontier exactness for both proof-level and
-runtime-frontier readiness, then combines topology-domain, output,
-running, closure, causal-history, and frontier obligations into
-`wellFormedGraphState`.
+The page first records the bridge between proof-level and executable
+frontiers, then combines topology-domain, output, running, closure,
+causal-history, and frontier obligations into `wellFormedGraphState`.
 -/
 
 namespace Cortex.Pulse
 
 variable {ν : Type u} {payload : Type v}
 
-/-! ## Frontier Exactness -/
+/-! ## Frontier Bridge -/
 
-/-- `frontierExact G state` says the finite frontier is exact for `Ready`. -/
-def frontierExact
+/-- `frontierBridge G state` says proof and runtime frontiers coincide. -/
+def frontierBridge
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
-  ∀ node : ν, node ∈ readyNodes G state ↔ node ∈ G.nodes ∧ Ready G state node
-
-/-- `directFrontierExact G state` says the runtime frontier is exact for `DirectReady`. -/
-def directFrontierExact
-    (G : DAG ν)
-    (state : GraphState ν payload) : Prop :=
-  ∀ node : ν,
-    node ∈ directReadyNodes G state ↔ node ∈ G.nodes ∧ DirectReady G state node
-
-/-- `frontierExact_readyNodes` proves `readyNodes` is definitionally exact for `Ready`. -/
-theorem frontierExact_readyNodes
-    (G : DAG ν)
-    (state : GraphState ν payload) :
-    frontierExact G state := by
-  intro node
-  exact mem_readyNodes G state node
-
-/-- `directFrontierExact_directReadyNodes` proves runtime frontier exactness. -/
-theorem directFrontierExact_directReadyNodes
-    (G : DAG ν)
-    (state : GraphState ν payload) :
-    directFrontierExact G state := by
-  intro node
-  exact mem_directReadyNodes G state node
+  readyNodes G state = directReadyNodes G state
 
 /-- `directReady_sound` proves executable-direct readiness implies proof readiness. -/
 theorem directReady_sound
@@ -74,10 +50,12 @@ theorem ready_directReady_of_failureClosureComplete
   intro node hReady
   constructor
   · exact hReady.1
+  constructor
+  · exact hReady.2.1
   · intro predecessor hEdge
     have hReach : G.reaches predecessor node := G.reaches_of_edge hEdge
     have hTerminal : NodeStatus.terminal (state.status predecessor) :=
-      hReady.2 predecessor hReach
+      hReady.2.2 predecessor hReach
     have hNotFailed : state.status predecessor ≠ NodeStatus.failed := by
       intro hFailed
       have hNodeFailed : state.status node = NodeStatus.failed :=
@@ -86,8 +64,8 @@ theorem ready_directReady_of_failureClosureComplete
           node
           hFailed
           hReach
-          (by simp [hReady.1, NodeStatus.propagatable])
-      rw [hReady.1] at hNodeFailed
+          (by simp [hReady.2.1, NodeStatus.propagatable])
+      rw [hReady.2.1] at hNodeFailed
       cases hNodeFailed
     exact NodeStatus.terminal_unblocks_of_not_failed hTerminal hNotFailed
 
@@ -124,6 +102,15 @@ theorem readyNodes_eq_directReadyNodes
       (mem_readyNodes G state node).mpr
         ⟨hMem, (ready_iff_directReady_of_closed_causal G state hClosure hCausal node).mpr hDirect⟩
 
+/-- `frontierBridge_of_closed_causal` packages the non-trivial frontier bridge. -/
+theorem frontierBridge_of_closed_causal
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hClosure : failureClosureComplete G state)
+    (hCausal : CausalHistoryClosed G state) :
+    frontierBridge G state :=
+  readyNodes_eq_directReadyNodes G state hClosure hCausal
+
 /-! ## Recovered-State Validity -/
 
 /-- `wellFormedGraphState G state` is validity for normalized recovered graph states. -/
@@ -135,6 +122,6 @@ def wellFormedGraphState
       GraphState.noRunningNodes state ∧
         failureClosureComplete G state ∧
           CausalHistoryClosed G state ∧
-            frontierExact G state ∧ directFrontierExact G state
+            frontierBridge G state
 
 end Cortex.Pulse

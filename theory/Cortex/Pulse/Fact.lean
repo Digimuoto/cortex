@@ -1,4 +1,6 @@
 import Cortex.Pulse.Frontier
+import Mathlib.Data.List.Pairwise
+import Mathlib.Data.List.Perm.Basic
 
 /-!
 ## Overview
@@ -211,7 +213,7 @@ theorem applyNodeFact_preserves_causalHistoryClosed [DecidableEq ν]
     · subst predecessor
       exact False.elim (G.not_reaches_self result.node hReach)
     · have hOriginalTerminal : NodeStatus.terminal (state.status predecessor) :=
-        hReady.2 predecessor hReach
+        hReady.2.2 predecessor hReach
       simpa [applyNodeFact, hPred] using hOriginalTerminal
   · have hOriginalUnblocks : NodeStatus.unblocksSuccessors (state.status node) := by
       simpa [applyNodeFact, hNode] using hUnblocks
@@ -220,7 +222,7 @@ theorem applyNodeFact_preserves_causalHistoryClosed [DecidableEq ν]
       have hOriginalTerminal : NodeStatus.terminal (state.status result.node) :=
         hCausal node hOriginalUnblocks result.node hReach
       have hPendingTerminal : NodeStatus.terminal NodeStatus.pending := by
-        simpa [hReady.1] using hOriginalTerminal
+        simpa [hReady.2.1] using hOriginalTerminal
       exact False.elim (NodeStatus.pending_not_terminal hPendingTerminal)
     · have hOriginalTerminal : NodeStatus.terminal (state.status predecessor) :=
         hCausal node hOriginalUnblocks predecessor hReach
@@ -334,6 +336,27 @@ theorem applyNodeFact_comm [DecidableEq ν]
     · by_cases h2 : n = r2.node
       · simp [applyNodeFact, h2, hDistinctSymm]
       · simp [applyNodeFact, h1, h2]
+
+/-- `applyNodeFacts_perm_invariant` lifts disjoint-key commutativity to fact folds. -/
+theorem applyNodeFacts_perm_invariant [DecidableEq ν]
+    {left right : List (NodeResult ν payload)}
+    (hPerm : left.Perm right)
+    (hDistinct : left.Pairwise (fun first second => first.node ≠ second.node))
+    (state : GraphState ν payload) :
+    applyNodeFacts left state = applyNodeFacts right state := by
+  unfold applyNodeFacts
+  refine hPerm.foldl_eq' ?_ state
+  intro first hFirst second hSecond current
+  by_cases hSame : first = second
+  · subst second
+    rfl
+  · have hSymm :
+        Symmetric (fun first second : NodeResult ν payload => first.node ≠ second.node) := by
+      intro a b hDistinctNodes hEq
+      exact hDistinctNodes hEq.symm
+    have hDistinctNodes : first.node ≠ second.node :=
+      List.Pairwise.forall hSymm hDistinct hFirst hSecond hSame
+    exact (applyNodeFact_comm first second current hDistinctNodes).symm
 
 end NodeResult
 

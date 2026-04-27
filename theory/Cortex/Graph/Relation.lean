@@ -24,12 +24,8 @@ semantic model for lifting the laws back to graph equivalence.
 
 The page first defines finite relation operations, then proves Mokhov's
 laws extensionally, and finally connects the AST syntax to the relation
-model through `Graph.denote`.
+model through `denote`.
 -/
-
--- Mathlib flags the existing `Cortex.Graph.Graph.*` namespace shape from
--- `Core`/`Laws`. Keep the suppression explicit until that API is renamed.
-set_option linter.dupNamespace false
 
 namespace Cortex.Graph
 
@@ -147,42 +143,41 @@ end Relation
 
 /-! ## AST Denotation -/
 
-namespace Graph
-
 variable {α : Type} [DecidableEq α]
 
 /-- `denote g` interprets a Mokhov graph expression as a finite relation. -/
 def denote : Graph α → Relation α
-  | empty => Relation.empty
-  | vertex v => Relation.vertex v
-  | overlay g h => Relation.overlay (denote g) (denote h)
-  | connect g h => Relation.connect (denote g) (denote h)
+  | Graph.empty => Relation.empty
+  | Graph.vertex v => Relation.vertex v
+  | Graph.overlay g h => Relation.overlay (denote g) (denote h)
+  | Graph.connect g h => Relation.connect (denote g) (denote h)
 
 @[simp]
 theorem denote_empty :
-    denote (α := α) empty = Relation.empty := rfl
+    denote (α := α) Graph.empty = Relation.empty := rfl
 
 @[simp]
 theorem denote_vertex (v : α) :
-    denote (vertex v) = Relation.vertex v := rfl
+    denote (Graph.vertex v) = Relation.vertex v := rfl
 
 @[simp]
 theorem denote_overlay (g h : Graph α) :
-    denote (overlay g h) = Relation.overlay (denote g) (denote h) := rfl
+    denote (Graph.overlay g h) = Relation.overlay (denote g) (denote h) := rfl
 
 @[simp]
 theorem denote_connect (g h : Graph α) :
-    denote (connect g h) = Relation.connect (denote g) (denote h) := rfl
+    denote (Graph.connect g h) = Relation.connect (denote g) (denote h) := rfl
 
 theorem denote_overlay_comm (g h : Graph α) :
-    denote (overlay g h) = denote (overlay h g) :=
+    denote (Graph.overlay g h) = denote (Graph.overlay h g) :=
   Relation.overlay_comm (denote g) (denote h)
 
 theorem denote_connect_decomposition (g h k : Graph α) :
-    denote (connect (connect g h) k) =
-      denote (overlay (overlay (connect g h) (connect g k)) (connect h k)) :=
+    denote (Graph.connect (Graph.connect g h) k) =
+      denote
+        (Graph.overlay
+          (Graph.overlay (Graph.connect g h) (Graph.connect g k))
+          (Graph.connect h k)) :=
   Relation.connect_decomposition (denote g) (denote h) (denote k)
-
-end Graph
 
 end Cortex.Graph

@@ -7,10 +7,9 @@ and support the small law set stated in `Cortex.Graph.Laws`.
 
 ## Context
 
-This is the abstract syntax tree of a graph. The denotation as a set of
-vertices plus a set of edges is given by `vertexSet` / `edgeSet`; the
-homomorphism into the relational model is given in
-`Cortex.Graph.Relation`.
+This is the abstract syntax tree of a graph. Lightweight syntax helpers
+live next to the type; the homomorphism into the relational model is
+given in `Cortex.Graph.Relation`.
 
 ## Theorem Split
 
@@ -45,37 +44,33 @@ inductive Graph (α : Type) : Type where
   | connect : Graph α → Graph α → Graph α
   deriving Repr
 
-namespace Graph
-
 variable {α : Type}
 
 /-! ## Structural Helpers -/
 
 /-- `vertexSet g` lists the vertices appearing in a graph expression. -/
 def vertexSet [DecidableEq α] : Graph α → List α
-  | empty       => []
-  | vertex v    => [v]
-  | overlay g h => vertexSet g ++ vertexSet h
-  | connect g h => vertexSet g ++ vertexSet h
+  | Graph.empty       => []
+  | Graph.vertex v    => [v]
+  | Graph.overlay g h => vertexSet g ++ vertexSet h
+  | Graph.connect g h => vertexSet g ++ vertexSet h
 
 /-- `size g` counts constructors and is useful as a structural recursion measure. -/
 def size : Graph α → Nat
-  | empty       => 1
-  | vertex _    => 1
-  | overlay g h => 1 + size g + size h
-  | connect g h => 1 + size g + size h
+  | Graph.empty       => 1
+  | Graph.vertex _    => 1
+  | Graph.overlay g h => 1 + size g + size h
+  | Graph.connect g h => 1 + size g + size h
 
 /-- `IsEdgeFree g` means `g` can be expressed without using `connect`. -/
 inductive IsEdgeFree : Graph α → Prop where
-  | empty   : IsEdgeFree empty
-  | vertex  : ∀ v, IsEdgeFree (vertex v)
-  | overlay : ∀ {g h}, IsEdgeFree g → IsEdgeFree h → IsEdgeFree (overlay g h)
+  | empty   : IsEdgeFree Graph.empty
+  | vertex  : ∀ v, IsEdgeFree (Graph.vertex v)
+  | overlay : ∀ {g h}, IsEdgeFree g → IsEdgeFree h → IsEdgeFree (Graph.overlay g h)
 
 /-- `edge u v` is the graph containing the directed edge `u → v`. -/
 def edge (u v : α) : Graph α :=
-  connect (vertex u) (vertex v)
-
-end Graph
+  Graph.connect (Graph.vertex u) (Graph.vertex v)
 
 /-! ## Canonical Operators
 

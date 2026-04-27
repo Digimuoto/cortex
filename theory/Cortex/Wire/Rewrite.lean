@@ -51,7 +51,7 @@ open Cortex.Graph
 
 /-- `GraphPath g a b` is non-empty reachability in the denotation of a graph. -/
 inductive GraphPath {α : Type} [DecidableEq α] (g : Graph α) : α → α → Prop where
-  | direct {a b : α} : (a, b) ∈ (Graph.denote g).edges → GraphPath g a b
+  | direct {a b : α} : (a, b) ∈ (denote g).edges → GraphPath g a b
   | trans {a b c : α} : GraphPath g a b → GraphPath g b c → GraphPath g a c
 
 /-- `Acyclic g` rules out non-empty paths from a vertex back to itself. -/

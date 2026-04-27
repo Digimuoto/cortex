@@ -52,7 +52,7 @@ variable {α : Type} [DecidableEq α]
 
 /-- `GraphEq g h` means two graph expressions have the same finite relation denotation. -/
 def GraphEq (g h : Graph α) : Prop :=
-  Graph.denote g = Graph.denote h
+  denote g = denote h
 
 /-! ## Unit Laws -/
 
@@ -79,21 +79,21 @@ theorem connect_empty_right (g : Graph α) :
 /-- `overlay_comm` states that overlay is denotationally commutative. Mokhov Theorem 1. -/
 theorem overlay_comm (g h : Graph α) :
     GraphEq (Graph.overlay g h) (Graph.overlay h g) := by
-  exact Relation.overlay_comm (Graph.denote g) (Graph.denote h)
+  exact Relation.overlay_comm (denote g) (denote h)
 
 /-- `overlay_assoc` states that overlay is denotationally associative. Mokhov Theorem 2. -/
 theorem overlay_assoc (g h k : Graph α) :
     GraphEq
       (Graph.overlay (Graph.overlay g h) k)
       (Graph.overlay g (Graph.overlay h k)) := by
-  exact Relation.overlay_assoc (Graph.denote g) (Graph.denote h) (Graph.denote k)
+  exact Relation.overlay_assoc (denote g) (denote h) (denote k)
 
 /-- `connect_assoc` states that connect is denotationally associative. Mokhov Theorem 4. -/
 theorem connect_assoc (g h k : Graph α) :
     GraphEq
       (Graph.connect (Graph.connect g h) k)
       (Graph.connect g (Graph.connect h k)) := by
-  exact Relation.connect_assoc (Graph.denote g) (Graph.denote h) (Graph.denote k)
+  exact Relation.connect_assoc (denote g) (denote h) (denote k)
 
 /-- `connect_distrib_overlay_left` states left denotational distribution.
 
@@ -104,9 +104,9 @@ theorem connect_distrib_overlay_left (g h k : Graph α) :
       (Graph.overlay (Graph.connect g h) (Graph.connect g k)) := by
   exact
     Relation.connect_distrib_overlay_left
-      (Graph.denote g)
-      (Graph.denote h)
-      (Graph.denote k)
+      (denote g)
+      (denote h)
+      (denote k)
 
 /-- `connect_distrib_overlay_right` states right denotational distribution. -/
 theorem connect_distrib_overlay_right (g h k : Graph α) :
@@ -115,9 +115,9 @@ theorem connect_distrib_overlay_right (g h k : Graph α) :
       (Graph.overlay (Graph.connect g k) (Graph.connect h k)) := by
   exact
     Relation.connect_distrib_overlay_right
-      (Graph.denote g)
-      (Graph.denote h)
-      (Graph.denote k)
+      (denote g)
+      (denote h)
+      (denote k)
 
 /-- `connect_decomposition` states decomposition denotationally.
 
@@ -129,7 +129,7 @@ theorem connect_decomposition (g h k : Graph α) :
       (Graph.overlay
         (Graph.overlay (Graph.connect g h) (Graph.connect g k))
         (Graph.connect h k)) := by
-  exact Relation.connect_decomposition (Graph.denote g) (Graph.denote h) (Graph.denote k)
+  exact Relation.connect_decomposition (denote g) (denote h) (denote k)
 
 /-! ## Operator Restatements
 

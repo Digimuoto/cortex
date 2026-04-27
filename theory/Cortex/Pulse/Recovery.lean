@@ -66,20 +66,6 @@ theorem recovered_failureClosureComplete
     failureClosureComplete G (recoveredState G state) := by
   exact propagateFailure_failureClosureComplete G (GraphState.resetRunningToPending state)
 
-/-- `recovered_frontierExact` proves recovery normalization has an exact frontier. -/
-theorem recovered_frontierExact
-    (G : DAG ν)
-    (state : GraphState ν payload) :
-    frontierExact G (recoveredState G state) := by
-  exact frontierExact_readyNodes G (recoveredState G state)
-
-/-- `recovered_directFrontierExact` proves recovery exposes an exact runtime frontier. -/
-theorem recovered_directFrontierExact
-    (G : DAG ν)
-    (state : GraphState ν payload) :
-    directFrontierExact G (recoveredState G state) := by
-  exact directFrontierExact_directReadyNodes G (recoveredState G state)
-
 /-- `resetRunning_preserves_causalHistoryClosed` preserves causal history closure. -/
 theorem resetRunning_preserves_causalHistoryClosed
     (G : DAG ν)
@@ -134,6 +120,19 @@ theorem recovered_causalHistoryClosed
       (GraphState.resetRunningToPending state)
       (resetRunning_preserves_causalHistoryClosed G state hCausal)
 
+/-- `recovered_frontierBridge` proves recovery aligns proof and runtime frontiers. -/
+theorem recovered_frontierBridge
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hCausal : CausalHistoryClosed G state) :
+    frontierBridge G (recoveredState G state) := by
+  exact
+    frontierBridge_of_closed_causal
+      G
+      (recoveredState G state)
+      (recovered_failureClosureComplete G state)
+      (recovered_causalHistoryClosed G state hCausal)
+
 /-- `recovered_outputsRespectStatuses` preserves output ownership through recovery. -/
 theorem recovered_outputsRespectStatuses
     (G : DAG ν)
@@ -160,7 +159,7 @@ def persistedRecoveryPreconditions
 Structural recovery safety is conditional on persisted topology-domain,
 payload/output, and causal-history preconditions. Recovery then preserves
 those preconditions while establishing no-running, failure-closure, and
-frontier-exactness facts. -/
+the proof/runtime frontier bridge. -/
 theorem persistence_safety
     (G : DAG ν)
     (state : GraphState ν payload)
@@ -173,8 +172,7 @@ theorem persistence_safety
     , recovered_noRunning G state
     , recovered_failureClosureComplete G state
     , recovered_causalHistoryClosed G state hCausal
-    , recovered_frontierExact G state
-    , recovered_directFrontierExact G state
+    , recovered_frontierBridge G state hCausal
     ⟩
 
 /-- `frontierFacts_recovered_wellFormedGraphState` safely re-closes admissible fact folds. -/
@@ -186,7 +184,7 @@ theorem frontierFacts_recovered_wellFormedGraphState [DecidableEq ν]
     (hResults : NodeResult.AllAdmissibleFold G state results) :
     wellFormedGraphState G (propagateFailure G (NodeResult.applyNodeFacts results state)) := by
   rcases hWellFormed with
-    ⟨hDomain, hOutputs, hNoRunning, _hClosure, hCausal, _hFrontier, _hDirectFrontier⟩
+    ⟨hDomain, hOutputs, hNoRunning, _hClosure, hCausal, _hBridge⟩
   have hAccumulatedDomain :
       GraphState.topologyDomain G (NodeResult.applyNodeFacts results state) :=
     NodeResult.applyNodeFacts_preserves_topologyDomain G results state hDomain hResults
@@ -199,6 +197,17 @@ theorem frontierFacts_recovered_wellFormedGraphState [DecidableEq ν]
   have hAccumulatedCausal :
       CausalHistoryClosed G (NodeResult.applyNodeFacts results state) :=
     NodeResult.applyNodeFacts_preserves_causalHistoryClosed G results state hCausal hResults
+  have hFinalClosure :
+      failureClosureComplete G
+        (propagateFailure G (NodeResult.applyNodeFacts results state)) :=
+    propagateFailure_failureClosureComplete G (NodeResult.applyNodeFacts results state)
+  have hFinalCausal :
+      CausalHistoryClosed G
+        (propagateFailure G (NodeResult.applyNodeFacts results state)) :=
+    propagateFailure_preserves_causalHistoryClosed
+      G
+      (NodeResult.applyNodeFacts results state)
+      hAccumulatedCausal
   exact
     ⟨ propagateFailure_preserves_topologyDomain
         G
@@ -212,15 +221,13 @@ theorem frontierFacts_recovered_wellFormedGraphState [DecidableEq ν]
         G
         (NodeResult.applyNodeFacts results state)
         hAccumulatedNoRunning
-    , propagateFailure_failureClosureComplete G (NodeResult.applyNodeFacts results state)
-    , propagateFailure_preserves_causalHistoryClosed
-        G
-        (NodeResult.applyNodeFacts results state)
-        hAccumulatedCausal
-    , frontierExact_readyNodes G (propagateFailure G (NodeResult.applyNodeFacts results state))
-    , directFrontierExact_directReadyNodes
+    , hFinalClosure
+    , hFinalCausal
+    , frontierBridge_of_closed_causal
         G
         (propagateFailure G (NodeResult.applyNodeFacts results state))
+        hFinalClosure
+        hFinalCausal
     ⟩
 
 end Cortex.Pulse

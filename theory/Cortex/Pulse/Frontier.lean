@@ -33,18 +33,20 @@ variable {ν : Type u} {payload : Type v}
 
 /-! ## Readiness Predicate -/
 
-/-- `Ready G state node` means the node is pending and every strict ancestor is terminal. -/
+/-- `Ready G state node` means a topology node is pending and every strict ancestor is terminal. -/
 def Ready (G : DAG ν) (state : GraphState ν payload) (node : ν) : Prop :=
-  state.status node = NodeStatus.pending ∧
-    ∀ predecessor : ν,
-      G.reaches predecessor node → NodeStatus.terminal (state.status predecessor)
+  node ∈ G.nodes ∧
+    state.status node = NodeStatus.pending ∧
+      ∀ predecessor : ν,
+        G.reaches predecessor node → NodeStatus.terminal (state.status predecessor)
 
 /-- `DirectReady G state node` mirrors the executable direct-predecessor frontier check. -/
 def DirectReady (G : DAG ν) (state : GraphState ν payload) (node : ν) : Prop :=
-  state.status node = NodeStatus.pending ∧
-    ∀ predecessor : ν,
-      G.predecessor predecessor node →
-        NodeStatus.unblocksSuccessors (state.status predecessor)
+  node ∈ G.nodes ∧
+    state.status node = NodeStatus.pending ∧
+      ∀ predecessor : ν,
+        G.predecessor predecessor node →
+          NodeStatus.unblocksSuccessors (state.status predecessor)
 
 /-- `CausalHistoryClosed G state` says unblocking nodes carry closed ancestor history. -/
 def CausalHistoryClosed (G : DAG ν) (state : GraphState ν payload) : Prop :=
@@ -63,10 +65,12 @@ theorem directReady_ready_of_causalHistoryClosed
     Ready G state node := by
   constructor
   · exact hDirect.1
+  constructor
+  · exact hDirect.2.1
   · intro predecessor hReach
     rcases EdgePath.last_step hReach with hEdge | ⟨direct, hPrefix, hEdge⟩
-    · exact NodeStatus.unblocks_terminal (hDirect.2 predecessor hEdge)
-    · exact hCausal direct (hDirect.2 direct hEdge) predecessor hPrefix
+    · exact NodeStatus.unblocks_terminal (hDirect.2.2 predecessor hEdge)
+    · exact hCausal direct (hDirect.2.2 direct hEdge) predecessor hPrefix
 
 /-! ## Finite Frontier -/
 
@@ -126,7 +130,7 @@ theorem ready_not_reaches_ready
     ¬ G.reaches a b := by
   intro hReach
   have hTerminal : NodeStatus.terminal NodeStatus.pending := by
-    simpa [hA.1] using hB.2 a hReach
+    simpa [hA.2.1] using hB.2.2 a hReach
   exact NodeStatus.pending_not_terminal hTerminal
 
 /-- `frontier_antichain` proves the fixed-DAG frontier is a reachability antichain. -/
