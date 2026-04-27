@@ -48,6 +48,17 @@ nix develop -c just lean-build
 just lean-check
 ```
 
+When Lean modules are rendered by the documentation site, also run:
+
+```bash
+just docs-build
+```
+
+Inspect the generated `result/Theory/` page for new public modules when
+the edit changes module prose, declarations, or import topology. The page
+should read as coherent reference material, not just as a compiled proof
+dump.
+
 Run this when executable, Lake target, dependency, or `Main.lean` wiring
 changes:
 
@@ -64,10 +75,17 @@ just fmt-check
 If pre-commit hooks run during commit, record their result in the final
 summary.
 
+Paper 1 Pulse kernel work is tracked by Issue #51. Implementation commits
+on that branch should use `git commit -s -S` and include an `Issue: #51`
+trailer unless the commit is pure process scaffolding.
+
 ## Review Expectations
 
 - A proof module should say which obligations it discharges and which
   remain.
+- A rendered theory page should have enough prose and declaration
+  docstrings for a reader to understand the model boundary without
+  opening the corresponding Haskell file or roadmap note first.
 - A scaffold module should make proof debt explicit and finite.
 - A completed mechanization should replace assumptions, not add another
   abstraction layer above them.

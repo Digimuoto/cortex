@@ -26,6 +26,8 @@ priority findings are what matter.
   break under harmless import or simp-set changes.
 - Missing explicit argument or result types on public definitions.
 - Public declarations without docstrings or unclear theorem names.
+- Rendered theory pages whose prose is too sparse to explain the model,
+  discharged obligations, or remaining proof boundary.
 - Unnecessary classical scope, global `open`, or broad variable scope.
 - Non-minimal imports, unpinned dependency changes, or generated
   manifest drift without an intentional Lake change.

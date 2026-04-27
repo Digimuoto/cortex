@@ -19,6 +19,10 @@ style, but Cortex is stricter about long-lived proof maintainability.
   - which results are real theorems,
   - which obligations remain,
   - which executable modules or papers it mirrors.
+- Theory modules are rendered into the docs site through Verso. Write
+  module prose as public documentation, not as scratch notes: introduce
+  the mathematical object, name the proof boundary, and keep the section
+  order readable when viewed as a book page.
 
 ## Namespaces
 
@@ -96,6 +100,8 @@ style, but Cortex is stricter about long-lived proof maintainability.
 ## Comments
 
 - Use docstrings for public API.
+- Public theorem docstrings should say why the result matters to the
+  substrate contract, not merely paraphrase the formal statement.
 - Use ordinary comments only for proof strategy, model limitations, or
   non-obvious correspondence to Haskell/docs.
 - Delete comments that narrate tactics or restate code.
