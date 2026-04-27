@@ -15,6 +15,11 @@ related:
 
 > **Stub.** This page is a scoped entry point into the type-surface rules in [grammar-v1.md](grammar-v1.md). Until it is fleshed out, jump directly to the grammar sections below.
 
+> **Implementation warning.** Current compiler behavior parses `contract X;` but
+> does not use it to populate registry membership. With an explicit
+> `WireContractRegistry`, only Haskell-registered contracts are enforced. Track
+> alignment in [GitHub #50](https://github.com/Digimuoto/cortex/issues/50).
+
 ## Where the rules live
 
 - **[§4 Contracts](grammar-v1.md#4-contracts)** — global ambient namespace, contract equality, what contracts are not.

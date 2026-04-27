@@ -118,6 +118,11 @@ All three — partial nodes, nodes, composed wires — are values. All can be `l
 
 ## 4. Contracts
 
+> **Implementation warning.** Current compiler behavior parses `contract X;` but
+> does not use it to populate registry membership. With an explicit
+> `WireContractRegistry`, only Haskell-registered contracts are enforced. Track
+> alignment in [GitHub #50](https://github.com/Digimuoto/cortex/issues/50).
+
 A **contract** is a named, typed interface. Contracts are the atoms the type-checker reasons about at port boundaries.
 
 ### 4.1 The global contract namespace

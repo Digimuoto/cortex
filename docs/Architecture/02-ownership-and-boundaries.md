@@ -62,7 +62,7 @@ stable Cortex substrate surface, the public reasoning/workflow surface, and
 the generic Platform runtime utilities that downstream products are expected
 to use directly.
 
-Area modules such as `Cortex.Wire`, `Cortex.Pulse`, `Cortex.Memory`, or
+Area modules such as `Cortex.Wire`, `Cortex.Pulse`, `Cortex.Nous.Memory`, or
 `Platform.Observability` remain available for advanced imports, examples, and
 focused tests. Implementation-era roots are not the downstream contract. A
 consumer that reaches past the umbrella modules should do so deliberately and

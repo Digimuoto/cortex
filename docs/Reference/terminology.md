@@ -96,7 +96,7 @@ Each layer owns a specific set of terms. This page groups them by layer.
 | **Rewire** | A bounded runtime topology modification over a live Circuit. Subject to vocabulary, endpoint-compatibility, topology, and resource (gas) bounds. Modules: `Cortex.Pulse.Rewrite` plus the Wire compiler. |
 | **Realized circuit** | The concrete Circuit topology that existed after admitted rewires during a run. A runtime artifact, not a grammar construct. |
 | **Gas** | The structural-change budget consumed by rewires: nodes added, edges added, depth, frontier breadth, rewrite operations. |
-| **Topological memory** | A node-addressable accumulated context from upstream evaluations. Declared on the node, consumed at evaluation time. |
+| **Topological memory** | A node-addressable accumulated context from upstream evaluations. Declared on the node, consumed at evaluation time. Canonical home: `Cortex.Nous.Memory.Topological`; Pulse supplies the settled event state. |
 | **Frontier** | The set of graph nodes ready to execute at a given point. Pulse schedules over the frontier. |
 
 ## Ownership boundary

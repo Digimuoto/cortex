@@ -15,18 +15,31 @@ casual lookup and orientation.
 ## Core substrate
 
 - **Cortex** — the standalone AI substrate described in these docs.
-- **Graph** — the pure topology layer: vertices, edges, overlay, and connect.
-- **Circuit** — validated executable topology; the artifact Pulse executes.
-- **Wire** — the source language for authoring Circuits. Grammar:
+- **Algebra** — the pure topology and relation layer: vertices, edges, overlay,
+  connect, and law-bearing graph operations.
+- **Wire** — the source language for authoring executable topology. Its compiled
+  circuit form is the artifact Pulse executes. Grammar:
   [Reference/Wire/grammar-v1.md](Reference/Wire/grammar-v1.md).
 - **Pulse** — the durable runtime that executes Circuits. See
   [Architecture/06-pulse-runtime.md](Architecture/06-pulse-runtime.md).
+- **Capability** — external authority surfaces available to execution: models,
+  tools, providers, and their neutral request/record types. Not the same as a
+  Nous activation bundle, formerly called a Nous capability bundle.
+- **Artifact** — generic durable outputs, provenance, metadata, rendering, and
+  artifact host boundaries.
 - **Cortex.Nous** — the structured reasoning library above the runtime
-  substrate. It owns canonical epistemological archetypes and templates, not
-  runtime authority.
-- **Logos** — the `Cortex.Nous.Logos` archetype for discursive reason,
-  argument, and symbolic reasoning.
-- **Nous capability bundle** — the operational implementation of an archetype:
+  substrate. It owns reusable LLM-shaped catalogs, not runtime authority.
+- **Cortex.Nous.Archetypes** — the canonical epistemological archetype catalog:
+  Logos, Sophia, Techne, Episteme, Kritikos, Themis, and Poiesis.
+- **Cortex.Nous.Thought** — one bounded model-mediated cognitive evaluation bound
+  to a graph node; not a durable persona.
+- **Cortex.Nous.Memory** — cognitive memory: retrieval, ranking, packing,
+  compaction, source selection, topological context, and memory tools.
+- **Cortex.Nous.Patterns** — planned reusable reasoning-program catalogs such as
+  the DeepReport extraction target.
+- **Logos** — the `Cortex.Nous.Archetypes.Logos` archetype for discursive
+  reason, argument, and symbolic reasoning.
+- **Nous activation bundle** — the operational implementation of an archetype:
   prompt discipline, retrieval corpus, embedding spaces, tools, memory policy,
   evaluation criteria, and runtime contract.
 
@@ -71,7 +84,8 @@ casual lookup and orientation.
 - **Rewrite** — a bounded topology edit admitted during runtime. See
   [Architecture/07-rewrites-and-materialization.md](Architecture/07-rewrites-and-materialization.md).
 - **Gas** — structural-change budget consumed by rewrites.
-- **Topological memory** — node-addressable accumulated context from upstream evaluations.
+- **Topological memory** — `Cortex.Nous.Memory` context built from settled
+  upstream Pulse state.
 
 ## Doc kinds
 

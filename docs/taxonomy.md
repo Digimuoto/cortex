@@ -12,19 +12,29 @@ Glossary ([glossary.md](glossary.md)) defines terms one at a time. This page sho
 
 ## Layers
 
-Cortex separates three orthogonal concerns:
+Cortex separates six canonical roots. Arrows here show operational relationships,
+not import or dependency direction:
 
 ```mermaid
 flowchart TD
-    W[Wire<br/>source language and authoring surface]
-    C[Circuit<br/>validated executable topology]
+    A[Algebra<br/>graph/relation laws]
+    W[Wire<br/>source, contracts, compiled circuit]
     P[Pulse<br/>durable runtime]
+    C[Capability<br/>models, tools, providers]
+    R[Artifact<br/>outputs and provenance]
+    N[Nous<br/>thought, memory, patterns]
 
-    W -->|compiles to| C
-    C -->|runs on| P
+    A -- "topology laws for" --> W
+    W -- "compiled circuit runs on" --> P
+    C -- "grants authority to" --> N
+    P -- "settled state feeds" --> N
+    N -- "emits outputs as" --> R
 ```
 
-Graph is the pure algebraic substrate that Wire authors over and Circuit validates.
+Algebra is the pure substrate Wire authors over. Wire owns the compiled circuit
+form. Pulse executes compiled circuits durably. Capability exposes external
+authority. Artifact owns durable outputs and provenance. Nous owns
+model-mediated cognition.
 
 ## Roles a value can play
 
@@ -63,27 +73,35 @@ Cortex has a small closed set of globally-ambient namespaces:
 
 Beyond these four, every name is local: introduced by `let`, `node`, or `import`.
 
-## Nous archetypes
+## Nous archetypes and patterns
 
-`Cortex.Nous` adds a reusable epistemological catalog above the substrate. These
-names classify modes of cognition; they do not grant executor authority or
-create new registries.
+`Cortex.Nous` adds reusable LLM-shaped catalogs above the substrate.
+`Cortex.Nous.Archetypes` classifies modes of cognition, `Cortex.Nous.Thought`
+names one bounded model-mediated node evaluation, `Cortex.Nous.Memory` owns
+cognitive context construction, and `Cortex.Nous.Patterns` names reusable
+reasoning programs. None of these grants executor authority or creates new
+runtime registries.
 
 | Archetype | Role |
 |---|---|
-| `Cortex.Nous.Logos` | Discursive reason, argument, symbolic reasoning |
-| `Cortex.Nous.Sophia` | Wisdom, judgment, synthesis |
-| `Cortex.Nous.Techne` | Craft, engineering, implementation |
-| `Cortex.Nous.Episteme` | Knowledge, evidence, research |
-| `Cortex.Nous.Kritikos` | Criticism, adversarial review |
-| `Cortex.Nous.Themis` | Audit, law, correctness, constraints |
-| `Cortex.Nous.Poiesis` | Creative generation, composition |
+| `Cortex.Nous.Archetypes.Logos` | Discursive reason, argument, symbolic reasoning |
+| `Cortex.Nous.Archetypes.Sophia` | Wisdom, judgment, synthesis |
+| `Cortex.Nous.Archetypes.Techne` | Craft, engineering, implementation |
+| `Cortex.Nous.Archetypes.Episteme` | Knowledge, evidence, research |
+| `Cortex.Nous.Archetypes.Kritikos` | Criticism, adversarial review |
+| `Cortex.Nous.Archetypes.Themis` | Audit, law, correctness, constraints |
+| `Cortex.Nous.Archetypes.Poiesis` | Creative generation, composition |
 
-Each archetype may have an operational capability bundle at
-`Cortex.Nous.<Archetype>.Capability`. The archetype is the semantic definition;
-the capability bundle is the concrete set of prompt discipline, retrieval
-corpus, embedding spaces, tool surface, memory policy, evaluation criteria, and
-runtime contract. Agent profiles compose one or more capability activations.
+Each archetype may have an operational activation bundle at
+`Cortex.Nous.Archetypes.<Archetype>.Activation`. The archetype is the semantic
+definition; the activation bundle is the concrete set of prompt discipline,
+retrieval corpus, embedding spaces, tool surface, memory policy, evaluation
+criteria, and runtime contract. Thought frames compose one or more archetype
+activations.
+
+`Cortex.Nous.Patterns.DeepReport` is the planned extraction target for reusable
+deep-report reasoning contracts, ports, templates, prompts, memory presets, and
+evaluation policy.
 
 ## Doc-kind taxonomy
 

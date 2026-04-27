@@ -37,7 +37,7 @@ Then read these for the deeper rationale and host-boundary contract:
 | 06 | [Pulse runtime](06-pulse-runtime.md) | Durable execution service, service boundary, task types, checkpoints. |
 | 07 | [Rewrites and materialization](07-rewrites-and-materialization.md) | Bounded dynamic graph evolution, gas, admission policy. |
 | 08 | [Artifacts and provenance](08-artifacts-and-provenance.md) | Runtime outputs, contract envelopes, provenance chains. |
-| 09 | [Nous reasoning library](09-nous-reasoning-library.md) | Epistemological archetypes above the runtime substrate. |
+| 09 | [Nous reasoning library](09-nous-reasoning-library.md) | Archetypes and reasoning patterns above the runtime substrate. |
 
 Normative grammar details (operators, port signatures, type-checking) live in [Reference/Wire/](../Reference/Wire/), not here. Chapters point into references where precision is needed.
 

@@ -216,20 +216,29 @@ policy, materialization, and structural provenance — belongs to
 
 ## Topological memory
 
-Memory is a query, not a store. A stage's view of upstream context is a
-deterministic graph query over the Pulse event substrate, scored by a
-composite of graph influence, wall-clock distance, and a pluggable
-semantic score. There is no parallel claim-assertion table; the substrate
-is already indexed by node, by completion time, and by output schema, and
-it is already append-only.
+Topological memory currently lives near Pulse because it queries Pulse event
+state. ADR 0017 makes the canonical target `Cortex.Nous.Memory.Topological`:
+Pulse remains the durable event/checkpoint substrate, while Nous owns the API
+that shapes settled graph state into model context.
+
+The split is **Pulse stores, Nous shapes**. Pulse persists the event substrate,
+frontier, checkpoints, materialized outputs, and snapshots that make the query
+deterministic. Nous owns the context-construction API that walks those settled
+outputs, scores them, packs them, and exposes them to a model-mediated thought.
+
+Memory is a query, not a store. A stage's view of upstream context is derived
+from the Pulse event substrate, scored by a composite of graph influence,
+wall-clock distance, and a pluggable semantic score. There is no parallel
+claim-assertion table; the substrate is already indexed by node, by completion
+time, and by output schema, and it is already append-only.
 
 ### Three graphs
 
 A running Circuit at any moment contains three graphs:
 
 - **Past** — settled nodes (`NodeCompleted`, `NodeSkipped`, `NodeRewritten`)
-  with materialized outputs. This is memory. Stable, searchable, the only
-  thing the memory API surfaces for domain queries.
+  with materialized outputs. This is the Pulse-owned source state that Nous
+  memory may surface for domain queries.
 - **Present** — the current frontier. Running and waiting nodes are
   deliberately excluded from memory: there is no observable artifact yet,
   and including them would leak sibling context into a stage that is
@@ -238,9 +247,9 @@ A running Circuit at any moment contains three graphs:
   Absent from memory by construction.
 
 The `WalkScope` type reflects this split: `SettledOnly` for domain code;
-`DebugAllStatuses` for operator inspection surfaces. Even when widened,
-the scoring stage drops nodes without materialized payloads, so widening
-never surfaces live-only statuses as memory matches.
+`DebugAllStatuses` for operator inspection surfaces. Even when widened, the Nous
+scoring stage drops nodes without materialized payloads, so widening never
+surfaces live-only statuses as memory matches.
 
 ### Stage-entry snapshot binding
 

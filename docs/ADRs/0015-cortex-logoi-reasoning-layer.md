@@ -22,7 +22,7 @@ related:
 ## Status
 
 Superseded by
-[ADR 0016 — Canonical Cortex Epistemological Archetypes](./0016-canonical-cortex-epistemological-archetypes.md).
+[ADR 0016 — Canonical Cortex Nous Archetypes](./0016-canonical-cortex-epistemological-archetypes.md).
 ADR 0015 recorded the first vertical split between the runtime substrate and a
 structured reasoning library. ADR 0016 keeps that split, replaces the `Logoi`
 namespace with `Cortex.Nous`, and defines the canonical archetypes.

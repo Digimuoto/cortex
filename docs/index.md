@@ -1,6 +1,6 @@
 ---
 title: Cortex Documentation
-description: "Cortex as an upstream AI substrate: Wire authoring, Circuit topology, Pulse execution, controlled rewrites, artifacts, provenance, and downstream bindings."
+description: "Cortex as an upstream AI substrate: algebraic topology, Wire authoring, Pulse execution, controlled rewrites, artifacts, provenance, Nous cognition, and downstream bindings."
 sidebar:
   label: Cortex
   order: 2
@@ -9,9 +9,9 @@ sidebar:
 # Cortex Documentation
 
 Cortex is a standalone Haskell substrate for graph-shaped AI systems. It gives
-you a small language for authoring workflows, a typed graph layer for validating
-their topology, a durable runtime for executing them, and artifact/provenance
-surfaces for explaining what happened.
+you algebraic topology, a small language for authoring workflows, a durable
+runtime for executing them, and artifact/provenance surfaces for explaining what
+happened.
 
 The boundary is deliberate: Cortex owns reusable mechanics; downstream products
 own domain semantics, policy, tools, operators, transport, and persistence.
@@ -21,22 +21,24 @@ own domain semantics, policy, tools, operators, transport, and persistence.
 | Capability | What it gives you |
 |---|---|
 | **Wire authoring** | A real `.wire` language for composing registered executors into typed dataflow graphs. |
-| **Graph and Circuit semantics** | Pure graph structure plus validated executable topology before a run starts. |
+| **Algebra and Wire semantics** | Pure graph algebra plus validated executable topology before a run starts. |
 | **Pulse execution** | Durable graph execution with checkpoints, signals, run events, cancellation, retry, and inspection. |
 | **Controlled rewrites** | Runtime topology changes are proposals admitted through explicit rewrite rules and budgets. |
-| **Topological memory** | Nodes can query settled upstream graph state without turning memory into hidden mutable state. |
+| **Nous memory** | Thoughts can query and pack settled upstream graph state without turning memory into hidden mutable state. |
 | **Artifacts and provenance** | Structured outputs carry stable artifact-local provenance instead of relying on generated prose. |
-| **Cortex.Nous** | A structured reasoning library above the substrate with canonical epistemological archetypes and templates. |
+| **Cortex.Nous** | A structured reasoning library above the substrate with canonical archetypes and reusable patterns. |
 | **Host-action boundary** | Product-specific side effects stay behind authenticated, idempotent host APIs. |
 
 ## System Layers
 
 | Layer | Responsibility | Primary artifact |
 |---|---|---|
-| **Graph** | Pure topology: vertices, edges, overlay, connect, DAG validation. | Graph topology |
-| **Circuit** | Validated executable topology: nodes plus compatible wires. | Circuit |
-| **Wire** | Source language and rewrite notation that authors circuit topology. | `.wire` source |
+| **Algebra** | Pure topology laws: vertices, edges, overlay, connect, DAG validation. | Graph/relation algebra |
+| **Wire** | Source language, contracts, compiled circuit form, and runtime envelopes. | `.wire` source and compiled circuit |
 | **Pulse** | Durable execution of compiled circuits. | Run state and events |
+| **Capability** | External authority surfaces: models, tools, providers. | Registered authority |
+| **Artifact** | Durable outputs, provenance, rendering, host boundary. | Artifact IR and metadata |
+| **Nous** | Model-mediated cognition, memory, and reusable reasoning patterns. | Thoughts and patterns |
 
 The core rule: **Wire composes registered authority; implementations own what
 that authority means.** Wire references registered executors, contracts, tools,
@@ -86,8 +88,8 @@ flowchart LR
 
 ## Architectural Ideas
 
-- **Graphs are the semantic object.** Cortex treats topology as execution
-  structure, not as a visualization over a hidden linear plan.
+- **Algebraic topology is the semantic object.** Cortex treats graph structure as
+  execution structure, not as a visualization over a hidden linear plan.
 - **Authority is closed.** Wire composes registered executors and contracts; it
   cannot invent host tools, side effects, or domain semantics.
 - **Adaptation is admitted, not arbitrary.** Rewrites change topology only after
@@ -115,7 +117,7 @@ flowchart LR
 7. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** -
    structured outputs and explanation.
 8. **[Nous reasoning library](Architecture/09-nous-reasoning-library.md)** -
-   epistemological archetypes above the substrate.
+   archetypes and reusable reasoning patterns above the substrate.
 
 ## Explore The Canon
 
