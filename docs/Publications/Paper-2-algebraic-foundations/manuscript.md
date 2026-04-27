@@ -46,11 +46,11 @@ The main validity predicate is defined only on normalized, closed states.
 
 1. $\operatorname{dom}(status) = V$
 2. $\operatorname{dom}(output) \subseteq V$
-3. outputs appear only on statuses that semantically carry outputs
-4. no node is $\text{Running}$
+3. outputs appear exactly on statuses that semantically carry outputs
+4. no node is $\text{Running}$ or $\text{Interrupted}$
 5. every $\text{Pending}$ or $\text{Waiting}$ descendant of a $\text{Failed}$ node is itself $\text{Failed}$
 6. $\operatorname{readyNodes}(G, s)$ is extensionally equal to the readiness predicate:
-   nodes that are $\text{Pending}$ and whose predecessors are all $\text{Completed}$ or $\text{Skipped}$
+   nodes that are $\text{Pending}$ and whose predecessors are all $\text{Completed}$, $\text{Skipped}$, or $\text{Rewritten}$
 
 This definition is intentionally relative to fixed topology. Once topology changes, the validity contract must be enriched with materialization and identity invariants.
 

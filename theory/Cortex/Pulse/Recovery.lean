@@ -19,7 +19,8 @@ the Lean counterpart of that recovery normalization pipeline.
 
 The page defines the recovered state, proves each structural invariant,
 and packages them into `persistence_safety` under explicit persisted
-topology, output, and causal-history preconditions.
+topology, output-ownership, output-completeness, and causal-history
+preconditions.
 -/
 
 namespace Cortex.Pulse
@@ -40,31 +41,39 @@ noncomputable def recoveredState
 theorem recovered_noRunning
     (G : DAG ν)
     (state : GraphState ν payload) :
-    GraphState.noRunningNodes (recoveredState G state) := by
-  exact
-    propagateFailure_preserves_noRunning
-      G
-      (GraphState.resetRunningToPending state)
-      (GraphState.resetRunning_no_running state)
+    GraphState.noRunningNodes (recoveredState G state) :=
+  propagateFailure_preserves_noRunning
+    G
+    (GraphState.resetRunningToPending state)
+    (GraphState.resetRunning_no_running state)
+
+/-- `recovered_noInterrupted` proves recovery normalization removes interrupted nodes. -/
+theorem recovered_noInterrupted
+    (G : DAG ν)
+    (state : GraphState ν payload) :
+    GraphState.noInterruptedNodes (recoveredState G state) :=
+  propagateFailure_preserves_noInterrupted
+    G
+    (GraphState.resetRunningToPending state)
+    (GraphState.resetRunning_no_interrupted state)
 
 /-- `recovered_topologyDomain` preserves the persisted topology-domain invariant. -/
 theorem recovered_topologyDomain
     (G : DAG ν)
     (state : GraphState ν payload)
     (hDomain : GraphState.topologyDomain G state) :
-    GraphState.topologyDomain G (recoveredState G state) := by
-  exact
-    propagateFailure_preserves_topologyDomain
-      G
-      (GraphState.resetRunningToPending state)
-      (GraphState.resetRunning_preserves_topologyDomain G state hDomain)
+    GraphState.topologyDomain G (recoveredState G state) :=
+  propagateFailure_preserves_topologyDomain
+    G
+    (GraphState.resetRunningToPending state)
+    (GraphState.resetRunning_preserves_topologyDomain G state hDomain)
 
 /-- `recovered_failureClosureComplete` proves recovery normalization is failure-closed. -/
 theorem recovered_failureClosureComplete
     (G : DAG ν)
     (state : GraphState ν payload) :
-    failureClosureComplete G (recoveredState G state) := by
-  exact propagateFailure_failureClosureComplete G (GraphState.resetRunningToPending state)
+    failureClosureComplete G (recoveredState G state) :=
+  propagateFailure_failureClosureComplete G (GraphState.resetRunningToPending state)
 
 /-- `resetRunning_preserves_causalHistoryClosed` preserves causal history closure. -/
 theorem resetRunning_preserves_causalHistoryClosed
@@ -113,121 +122,137 @@ theorem recovered_causalHistoryClosed
     (G : DAG ν)
     (state : GraphState ν payload)
     (hCausal : CausalHistoryClosed G state) :
-    CausalHistoryClosed G (recoveredState G state) := by
-  exact
-    propagateFailure_preserves_causalHistoryClosed
-      G
-      (GraphState.resetRunningToPending state)
-      (resetRunning_preserves_causalHistoryClosed G state hCausal)
+    CausalHistoryClosed G (recoveredState G state) :=
+  propagateFailure_preserves_causalHistoryClosed
+    G
+    (GraphState.resetRunningToPending state)
+    (resetRunning_preserves_causalHistoryClosed G state hCausal)
 
 /-- `recovered_frontierBridge` proves recovery aligns proof and runtime frontiers. -/
 theorem recovered_frontierBridge
     (G : DAG ν)
     (state : GraphState ν payload)
     (hCausal : CausalHistoryClosed G state) :
-    frontierBridge G (recoveredState G state) := by
-  exact
-    frontierBridge_of_closed_causal
-      G
-      (recoveredState G state)
-      (recovered_failureClosureComplete G state)
-      (recovered_causalHistoryClosed G state hCausal)
+    frontierBridge G (recoveredState G state) :=
+  frontierBridge_of_closed_causal
+    G
+    (recoveredState G state)
+    (recovered_failureClosureComplete G state)
+    (recovered_causalHistoryClosed G state hCausal)
 
 /-- `recovered_outputsRespectStatuses` preserves output ownership through recovery. -/
 theorem recovered_outputsRespectStatuses
     (G : DAG ν)
     (state : GraphState ν payload)
     (hOutputs : GraphState.outputsRespectStatuses state) :
-    GraphState.outputsRespectStatuses (recoveredState G state) := by
-  exact
-    propagateFailure_preserves_outputsRespectStatuses
-      G
-      (GraphState.resetRunningToPending state)
-      (GraphState.resetRunning_preserves_outputsRespectStatuses state hOutputs)
+    GraphState.outputsRespectStatuses (recoveredState G state) :=
+  propagateFailure_preserves_outputsRespectStatuses
+    G
+    (GraphState.resetRunningToPending state)
+    (GraphState.resetRunning_preserves_outputsRespectStatuses state hOutputs)
+
+/-- `recovered_outputsCompleteForStatuses` preserves required outputs through recovery. -/
+theorem recovered_outputsCompleteForStatuses
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsCompleteForStatuses state) :
+    GraphState.outputsCompleteForStatuses (recoveredState G state) :=
+  propagateFailure_preserves_outputsCompleteForStatuses
+    G
+    (GraphState.resetRunningToPending state)
+    (GraphState.resetRunning_preserves_outputsCompleteForStatuses state hOutputs)
 
 /-! ## Structural Safety -/
 
-/-- `persistedRecoveryPreconditions G state` is what recovery must trust or validate. -/
-def persistedRecoveryPreconditions
+/-- `PersistedRecoveryPreconditions G state` is what recovery must trust or validate. -/
+structure PersistedRecoveryPreconditions
+    (G : DAG ν)
+    (state : GraphState ν payload) : Prop where
+  /-- Persisted state has no status/output entries outside the topology. -/
+  topologyDomain : GraphState.topologyDomain G state
+  /-- Persisted outputs are attached only to statuses that may own payloads. -/
+  outputsRespectStatuses : GraphState.outputsRespectStatuses state
+  /-- Persisted payload-owning statuses have their required outputs present. -/
+  outputsCompleteForStatuses : GraphState.outputsCompleteForStatuses state
+  /-- Persisted terminal/unblocking history is causally closed. -/
+  causalHistoryClosed : CausalHistoryClosed G state
+
+/-- `persistedRecoveryPreconditions G state` keeps the published predicate name stable. -/
+abbrev persistedRecoveryPreconditions
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
-  GraphState.topologyDomain G state ∧
-    GraphState.outputsRespectStatuses state ∧ CausalHistoryClosed G state
+  PersistedRecoveryPreconditions G state
 
 /-- `persistence_safety` packages structural recovery safety.
 
 Structural recovery safety is conditional on persisted topology-domain,
-payload/output, and causal-history preconditions. Recovery then preserves
-those preconditions while establishing no-running, failure-closure, and
-the proof/runtime frontier bridge. -/
+payload/output, output-completeness, and causal-history preconditions.
+Recovery then preserves those preconditions while establishing
+no-running, no-interrupted, failure-closure, and the proof/runtime
+frontier bridge. -/
 theorem persistence_safety
     (G : DAG ν)
     (state : GraphState ν payload)
     (hPersisted : persistedRecoveryPreconditions G state) :
     wellFormedGraphState G (recoveredState G state) := by
-  rcases hPersisted with ⟨hDomain, hOutputs, hCausal⟩
   exact
-    ⟨ recovered_topologyDomain G state hDomain
-    , recovered_outputsRespectStatuses G state hOutputs
-    , recovered_noRunning G state
-    , recovered_failureClosureComplete G state
-    , recovered_causalHistoryClosed G state hCausal
-    , recovered_frontierBridge G state hCausal
-    ⟩
+    { topologyDomain := recovered_topologyDomain G state hPersisted.topologyDomain
+      outputsRespectStatuses :=
+        recovered_outputsRespectStatuses G state hPersisted.outputsRespectStatuses
+      outputsCompleteForStatuses :=
+        recovered_outputsCompleteForStatuses G state hPersisted.outputsCompleteForStatuses
+      noRunningNodes := recovered_noRunning G state
+      noInterruptedNodes := recovered_noInterrupted G state
+      failureClosureComplete := recovered_failureClosureComplete G state
+      causalHistoryClosed := recovered_causalHistoryClosed G state hPersisted.causalHistoryClosed
+      frontierBridge := recovered_frontierBridge G state hPersisted.causalHistoryClosed }
 
-/-- `frontierFacts_recovered_wellFormedGraphState` safely re-closes admissible fact folds. -/
+/-- `frontierFacts_recovered_wellFormedGraphState` safely recovers admissible fact folds. -/
 theorem frontierFacts_recovered_wellFormedGraphState [DecidableEq ν]
     (G : DAG ν)
     (state : GraphState ν payload)
     (results : List (NodeResult ν payload))
     (hWellFormed : wellFormedGraphState G state)
     (hResults : NodeResult.AllAdmissibleFold G state results) :
-    wellFormedGraphState G (propagateFailure G (NodeResult.applyNodeFacts results state)) := by
-  rcases hWellFormed with
-    ⟨hDomain, hOutputs, hNoRunning, _hClosure, hCausal, _hBridge⟩
+    wellFormedGraphState G (recoveredState G (NodeResult.applyNodeFacts results state)) := by
   have hAccumulatedDomain :
       GraphState.topologyDomain G (NodeResult.applyNodeFacts results state) :=
-    NodeResult.applyNodeFacts_preserves_topologyDomain G results state hDomain hResults
+    NodeResult.applyNodeFacts_preserves_topologyDomain
+      G
+      results
+      state
+      hWellFormed.topologyDomain
+      hResults
   have hAccumulatedOutputs :
       GraphState.outputsRespectStatuses (NodeResult.applyNodeFacts results state) :=
-    NodeResult.applyNodeFacts_preserves_outputsRespectStatuses G results state hOutputs hResults
-  have hAccumulatedNoRunning :
-      GraphState.noRunningNodes (NodeResult.applyNodeFacts results state) :=
-    NodeResult.applyNodeFacts_preserves_noRunning G results state hNoRunning hResults
+    NodeResult.applyNodeFacts_preserves_outputsRespectStatuses
+      G
+      results
+      state
+      hWellFormed.outputsRespectStatuses
+      hResults
+  have hAccumulatedOutputsComplete :
+      GraphState.outputsCompleteForStatuses (NodeResult.applyNodeFacts results state) :=
+    NodeResult.applyNodeFacts_preserves_outputsCompleteForStatuses
+      G
+      results
+      state
+      hWellFormed.outputsCompleteForStatuses
+      hResults
   have hAccumulatedCausal :
       CausalHistoryClosed G (NodeResult.applyNodeFacts results state) :=
-    NodeResult.applyNodeFacts_preserves_causalHistoryClosed G results state hCausal hResults
-  have hFinalClosure :
-      failureClosureComplete G
-        (propagateFailure G (NodeResult.applyNodeFacts results state)) :=
-    propagateFailure_failureClosureComplete G (NodeResult.applyNodeFacts results state)
-  have hFinalCausal :
-      CausalHistoryClosed G
-        (propagateFailure G (NodeResult.applyNodeFacts results state)) :=
-    propagateFailure_preserves_causalHistoryClosed
+    NodeResult.applyNodeFacts_preserves_causalHistoryClosed
       G
-      (NodeResult.applyNodeFacts results state)
-      hAccumulatedCausal
-  exact
-    ⟨ propagateFailure_preserves_topologyDomain
-        G
-        (NodeResult.applyNodeFacts results state)
-        hAccumulatedDomain
-    , propagateFailure_preserves_outputsRespectStatuses
-        G
-        (NodeResult.applyNodeFacts results state)
-        hAccumulatedOutputs
-    , propagateFailure_preserves_noRunning
-        G
-        (NodeResult.applyNodeFacts results state)
-        hAccumulatedNoRunning
-    , hFinalClosure
-    , hFinalCausal
-    , frontierBridge_of_closed_causal
-        G
-        (propagateFailure G (NodeResult.applyNodeFacts results state))
-        hFinalClosure
-        hFinalCausal
-    ⟩
+      results
+      state
+      hWellFormed.causalHistoryClosed
+      hResults
+  have hPersisted :
+      persistedRecoveryPreconditions G (NodeResult.applyNodeFacts results state) :=
+    { topologyDomain := hAccumulatedDomain
+      outputsRespectStatuses := hAccumulatedOutputs
+      outputsCompleteForStatuses := hAccumulatedOutputsComplete
+      causalHistoryClosed := hAccumulatedCausal }
+  exact persistence_safety G (NodeResult.applyNodeFacts results state) hPersisted
 
 end Cortex.Pulse

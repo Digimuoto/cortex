@@ -23,8 +23,6 @@ We present a durable workflow execution runtime organized as a staged pure reduc
 
 The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`; see [lean-mechanization.md](lean-mechanization.md) for the artifact mapping. The manuscript remains `draft` until the following obligations also land:
 
-- prove `propagateFailure_monotone` to round out the closure laws (extensiveness and idempotence are discharged)
-- prove permutation invariance of frontier-result folds (only pairwise disjoint-key commutativity is mechanized)
 - prove classification exhaustiveness on normalized, closed states
 - add a short artifact note describing the boundary between the Lean model and the live runtime
 
@@ -154,7 +152,7 @@ flowchart TB
 
 ### 3.1 Frontier Computation
 
-The execution frontier is the set of Pending nodes whose predecessors are all Completed or Skipped:
+The execution frontier is the set of Pending nodes whose predecessors are all Completed, Skipped, or Rewritten:
 
 ```haskell
 readyNodes :: Relation NodeId -> GraphState o -> [NodeId]
@@ -171,7 +169,7 @@ readyNodes rel state =
 $$
 B = v_0 \to v_1 \to \cdots \to v_k = A.
 $$
-For $A$ to be ready, $v_{k-1}$ must be `Completed` or `Skipped`. Inducting backward, each $v_i$ for $1 \le i < k$ must be `Completed` or `Skipped`; in particular, $B$ must be `Completed` or `Skipped`. But frontier membership requires $B$ to be `Pending`. Contradiction.
+For $A$ to be ready, $v_{k-1}$ must be `Completed`, `Skipped`, or `Rewritten`. Inducting backward, each $v_i$ for $1 \le i < k$ must be `Completed`, `Skipped`, or `Rewritten`; in particular, $B$ must have one of those statuses. But frontier membership requires $B$ to be `Pending`. Contradiction.
 
 **Consequence.** Frontier nodes update disjoint keys. Workers execute from the same predecessor-complete snapshot without sibling ordering dependence.
 
@@ -243,7 +241,7 @@ propagateFailure :: Relation NodeId -> GraphState o -> GraphState o
 - **extensive:** failures are only added, never removed
 - **idempotent:** applying closure twice yields the same result as once
 
-Extensiveness and idempotence are mechanized in Lean 4 as `propagateFailure_extensive` and `propagateFailure_idempotent` (see [lean-mechanization.md](lean-mechanization.md)). Monotonicity remains supported by QuickCheck and code inspection in this manuscript.
+Extensiveness, monotonicity, and idempotence are mechanized in Lean 4 as `propagateFailure_extensive`, `propagateFailure_monotone`, and `propagateFailure_idempotent` (see [lean-mechanization.md](lean-mechanization.md)).
 
 #### Definition 1 (Valid recovered graph state)
 
@@ -251,10 +249,10 @@ Let $G$ be a fixed DAG and $gs$ a graph state after recovery normalization and c
 
 1. $\operatorname{dom}(gsNodeStatuses) = V(G)$
 2. $\operatorname{dom}(gsNodeOutputs) \subseteq V(G)$
-3. if $nid \in \operatorname{dom}(gsNodeOutputs)$, then `gsNodeStatuses[nid] = NodeCompleted`
-4. no node is `NodeRunning`
+3. a node has an output iff its status is `NodeCompleted` or `NodeRewritten`
+4. no node is `NodeRunning` or `NodeInterrupted`
 5. every `Pending` or `Waiting` descendant of a `Failed` node is itself `Failed`
-6. $\texttt{readyNodes}(G, gs)$ is exactly the set of `Pending` nodes all of whose predecessors are `Completed` or `Skipped`
+6. $\texttt{readyNodes}(G, gs)$ is exactly the set of `Pending` nodes all of whose predecessors are `Completed`, `Skipped`, or `Rewritten`
 
 Items 5 and 6 are properties of the closed, normalized state used for classification and resume. Arbitrary mid-accumulation persisted snapshots need not satisfy them before normalization and closure.
 
@@ -272,14 +270,14 @@ Then `gsRecovered` is a valid recovered graph state. In particular, `readyNodes 
 *Proof sketch.* The proof obligation breaks into named parts:
 
 1. **Domain preservation.** `applyNodeFact` only updates keys already present in the topology-indexed status and output maps, so accumulation never introduces out-of-topology node ids.
-2. **Normalization.** `resetRunningToPending` preserves domains and outputs while removing the only transient status (`NodeRunning`) that may remain after a crash.
+2. **Normalization.** `resetRunningToPending` preserves domains and outputs while removing volatile `NodeRunning` and `NodeInterrupted` markers that may remain after a crash.
 3. **Closure completeness.** `propagateFailure` preserves domains and saturates all propagatable descendants of failed nodes, establishing item 5 of Definition 1.
 4. **Frontier correctness.** `readyNodes` is an extensional test of item 6: it selects exactly the Pending nodes whose predecessors are Completed or Skipped.
 5. **Resume safety under additional facts.** When unpersisted nodes re-execute, re-closing cannot invalidate already propagated failures because closure is idempotent and monotone.
 
 The proposition is therefore a structural statement: the recovered graph state is normalized, closed, and schedulable. It does not prove that replayed worker I/O yields the same business result as the pre-crash execution.
 
-Proposition 1 is mechanized in Lean 4 as `persistence_safety` in `theory/Cortex/Pulse/Recovery.lean` (see [lean-mechanization.md](lean-mechanization.md)). The Lean theorem is conditional on persisted topology-domain, output-ownership, and causal-history preconditions, which the runtime must establish at the persistence boundary.
+Proposition 1 is mechanized in Lean 4 as `persistence_safety` in `theory/Cortex/Pulse/Recovery.lean` (see [lean-mechanization.md](lean-mechanization.md)). The Lean theorem is conditional on persisted topology-domain, output-ownership, output-completeness, and causal-history preconditions, which the runtime must establish at the persistence boundary.
 
 ### 3.5 Phase 3: Classify
 
@@ -331,6 +329,8 @@ applyFrontierResults rel results gs =
 **Proposition 2 (Permutation invariance).** `applyFrontierResults` is invariant under permutation of `results`.
 
 *Proof.* By Lemma 2, the accumulation fold is permutation-invariant for distinct-key frontier results. `propagateFailure` and `classifyGraphState` are deterministic functions of the accumulated state. QED.
+
+The Lean theorem `NodeResult.applyNodeFacts_perm_invariant` mechanizes the fold-level accumulation claim for distinct node keys.
 
 ### 3.7 Crash Recovery
 
@@ -451,7 +451,7 @@ The implementation-level claims are backed by QuickCheck property tests on rando
 | Recovery normalization | §3.4, §3.7 | Partial frontier + `resetRunningToPending` + classify yields a valid closed state |
 | Sequential = batch | §3.6 | Fold of single-element `applyFrontierResults` matches batch application |
 
-Several of these properties are now mechanized in Lean 4 — frontier antichain, disjoint-key commutativity, closure extensiveness and idempotence, and recovery normalization — and the artifacts are listed in [lean-mechanization.md](lean-mechanization.md). The QuickCheck tests remain runtime evidence on the live Haskell implementation; for the still-open obligations (closure monotonicity, permutation invariance of full folds, classification exhaustiveness) they are not a substitute for proof.
+Several of these properties are now mechanized in Lean 4 — frontier antichain, disjoint-key commutativity and fold permutation, closure extensiveness, monotonicity, idempotence, and recovery normalization — and the artifacts are listed in [lean-mechanization.md](lean-mechanization.md). The QuickCheck tests remain runtime evidence on the live Haskell implementation; for the still-open classification exhaustiveness obligation, they are not a substitute for proof.
 
 ---
 

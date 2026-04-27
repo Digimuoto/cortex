@@ -75,6 +75,17 @@ def mayHaveOutput : NodeStatus → Prop
   | interrupted => False
   | waiting => False
 
+/-- `NodeStatus.requiresOutput status` means the status must carry a durable payload. -/
+def requiresOutput : NodeStatus → Prop
+  | completed => True
+  | rewritten => True
+  | failed => False
+  | skipped => False
+  | pending => False
+  | running => False
+  | interrupted => False
+  | waiting => False
+
 /-- `NodeStatus.unblocksSuccessors status` means direct successors may run past it. -/
 def unblocksSuccessors : NodeStatus → Prop
   | completed => True
@@ -85,6 +96,13 @@ def unblocksSuccessors : NodeStatus → Prop
   | running => False
   | interrupted => False
   | waiting => False
+
+/-- `failureLe before after` orders states by failure-propagation growth.
+
+A status can stay unchanged, or a still-propagatable status can become
+`failed`. This is the order used for monotonicity of failure closure. -/
+def failureLe : NodeStatus → NodeStatus → Prop
+  | before, after => before = after ∨ (propagatable before ∧ after = failed)
 
 /-- `unblocks_terminal` says successor-unblocking statuses are terminal. -/
 theorem unblocks_terminal {status : NodeStatus}
@@ -110,6 +128,58 @@ theorem failed_not_propagatable :
     ¬ propagatable failed := by
   intro hPropagatable
   exact hPropagatable
+
+/-- `failureLe_refl` says status failure-growth is reflexive. -/
+theorem failureLe_refl (status : NodeStatus) :
+    failureLe status status :=
+  Or.inl rfl
+
+/-- `failureLe_to_failed` turns a propagatable status into a failure-growth step. -/
+theorem failureLe_to_failed {status : NodeStatus}
+    (hPropagatable : propagatable status) :
+    failureLe status failed :=
+  Or.inr ⟨hPropagatable, rfl⟩
+
+/-- `failed_of_failureLe_failed` says failed statuses cannot grow to another status. -/
+theorem failed_of_failureLe_failed {after : NodeStatus}
+    (hLe : failureLe failed after) :
+    after = failed := by
+  rcases hLe with hSame | hFailure
+  · exact hSame.symm
+  · exact False.elim (failed_not_propagatable hFailure.1)
+
+/-- `failureLe_preserves_failed` says failure-growth preserves existing failures. -/
+theorem failureLe_preserves_failed {before after : NodeStatus}
+    (hLe : failureLe before after)
+    (hFailed : before = failed) :
+    after = failed := by
+  subst before
+  exact failed_of_failureLe_failed hLe
+
+/-- `failureLe_reflects_propagatable` pulls propagatability back through failure-growth. -/
+theorem failureLe_reflects_propagatable {before after : NodeStatus}
+    (hLe : failureLe before after)
+    (hPropagatable : propagatable after) :
+    propagatable before := by
+  rcases hLe with hSame | hFailure
+  · cases hSame
+    exact hPropagatable
+  · exact hFailure.1
+
+/-- `failureLe_trans` says status failure-growth is transitive. -/
+theorem failureLe_trans {left middle right : NodeStatus}
+    (hLeft : failureLe left middle)
+    (hRight : failureLe middle right) :
+    failureLe left right := by
+  rcases hLeft with hSame | hFailure
+  · cases hSame
+    exact hRight
+  · rcases hFailure with ⟨hPropagatable, hMiddleFailed⟩
+    cases hMiddleFailed
+    have hRightFailed : right = failed :=
+      failed_of_failureLe_failed hRight
+    cases hRightFailed
+    exact failureLe_to_failed hPropagatable
 
 end NodeStatus
 
@@ -145,6 +215,38 @@ def initial : GraphState ν payload where
   status := fun _ => NodeStatus.pending
   output := fun _ => none
 
+/-! ## Failure-Growth Order -/
+
+/-- `GraphState.failureLe left right` lifts status failure-growth pointwise.
+
+Outputs are intentionally outside this order because failure propagation
+does not inspect them; output ownership and preservation are separate
+invariants. -/
+def failureLe (left right : GraphState ν payload) : Prop :=
+  ∀ node : ν, NodeStatus.failureLe (left.status node) (right.status node)
+
+/-- `failureLe_refl` says graph-state failure-growth is reflexive. -/
+theorem failureLe_refl (state : GraphState ν payload) :
+    failureLe state state := by
+  intro node
+  exact NodeStatus.failureLe_refl (state.status node)
+
+/-- `failureLe_trans` says graph-state failure-growth is transitive. -/
+theorem failureLe_trans {left middle right : GraphState ν payload}
+    (hLeft : failureLe left middle)
+    (hRight : failureLe middle right) :
+    failureLe left right := by
+  intro node
+  exact NodeStatus.failureLe_trans (hLeft node) (hRight node)
+
+/-- `failureLe_preserves_failed` lifts failed-status preservation to graph states. -/
+theorem failureLe_preserves_failed {left right : GraphState ν payload}
+    (hLe : failureLe left right)
+    {node : ν}
+    (hFailed : left.status node = NodeStatus.failed) :
+    right.status node = NodeStatus.failed :=
+  NodeStatus.failureLe_preserves_failed (hLe node) hFailed
+
 /-! ## Recovery Normalization -/
 
 /-- `resetStatus status` resets only volatile execution statuses before resumption. -/
@@ -170,6 +272,12 @@ theorem resetStatus_reflects_unblocks {status : NodeStatus}
     NodeStatus.unblocksSuccessors status := by
   cases status <;> simp [resetStatus, NodeStatus.unblocksSuccessors] at hUnblocks ⊢
 
+/-- `resetStatus_reflects_requiresOutput` recovers original output requirements. -/
+theorem resetStatus_reflects_requiresOutput {status : NodeStatus}
+    (hRequiresOutput : NodeStatus.requiresOutput (resetStatus status)) :
+    NodeStatus.requiresOutput status := by
+  cases status <;> simp [resetStatus, NodeStatus.requiresOutput] at hRequiresOutput ⊢
+
 /-- `resetRunningToPending state` makes in-flight nodes pending again after a crash. -/
 def resetRunningToPending (s : GraphState ν payload) : GraphState ν payload where
   status := fun n => resetStatus (s.status n)
@@ -179,10 +287,18 @@ def resetRunningToPending (s : GraphState ν payload) : GraphState ν payload wh
 def noRunningNodes (s : GraphState ν payload) : Prop :=
   ∀ n : ν, s.status n ≠ NodeStatus.running
 
+/-- `noInterruptedNodes state` means recovery has removed interrupted markers. -/
+def noInterruptedNodes (s : GraphState ν payload) : Prop :=
+  ∀ n : ν, s.status n ≠ NodeStatus.interrupted
+
 /-- `outputsRespectStatuses state` constrains outputs to statuses that may retain them. -/
 def outputsRespectStatuses (s : GraphState ν payload) : Prop :=
   ∀ (n : ν) (value : payload),
     s.output n = some value → NodeStatus.mayHaveOutput (s.status n)
+
+/-- `outputsCompleteForStatuses state` requires payload-owning statuses to have outputs. -/
+def outputsCompleteForStatuses (s : GraphState ν payload) : Prop :=
+  ∀ n : ν, NodeStatus.requiresOutput (s.status n) → ∃ value : payload, s.output n = some value
 
 /-- `topologyDomain G state` says off-topology nodes are absent from durable state. -/
 def topologyDomain (G : DAG ν) (s : GraphState ν payload) : Prop :=
@@ -193,6 +309,13 @@ def topologyDomain (G : DAG ν) (s : GraphState ν payload) : Prop :=
 /-- `resetRunning_no_running` proves status reset removes every `running` marker. -/
 theorem resetRunning_no_running (s : GraphState ν payload) :
     noRunningNodes (resetRunningToPending s) := by
+  intro n
+  cases hStatus : s.status n <;>
+    simp [resetRunningToPending, resetStatus, hStatus]
+
+/-- `resetRunning_no_interrupted` proves status reset removes every `interrupted` marker. -/
+theorem resetRunning_no_interrupted (s : GraphState ν payload) :
+    noInterruptedNodes (resetRunningToPending s) := by
   intro n
   cases hStatus : s.status n <;>
     simp [resetRunningToPending, resetStatus, hStatus]
@@ -224,6 +347,17 @@ theorem resetRunning_preserves_outputsRespectStatuses
       , NodeStatus.mayHaveOutput
       , hStatus
       ] at hMayHaveOutput ⊢
+
+/-- `resetRunning_preserves_outputsCompleteForStatuses` preserves required outputs. -/
+theorem resetRunning_preserves_outputsCompleteForStatuses
+    (s : GraphState ν payload)
+    (hOutputs : outputsCompleteForStatuses s) :
+    outputsCompleteForStatuses (resetRunningToPending s) := by
+  intro node hRequiresOutput
+  have hResetRequires :
+      NodeStatus.requiresOutput (resetStatus (s.status node)) := by
+    simpa [resetRunningToPending] using hRequiresOutput
+  exact hOutputs node (resetStatus_reflects_requiresOutput hResetRequires)
 
 end GraphState
 

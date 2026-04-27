@@ -16,8 +16,9 @@ page packages the structural invariants that recovery can prove today.
 ## Theorem Split
 
 The page first records the bridge between proof-level and executable
-frontiers, then combines topology-domain, output, running, closure,
-causal-history, and frontier obligations into `wellFormedGraphState`.
+frontiers, then combines topology-domain, output, volatile-state,
+closure, causal-history, and frontier obligations into
+`wellFormedGraphState`.
 -/
 
 namespace Cortex.Pulse
@@ -113,15 +114,31 @@ theorem frontierBridge_of_closed_causal
 
 /-! ## Recovered-State Validity -/
 
-/-- `wellFormedGraphState G state` is validity for normalized recovered graph states. -/
-def wellFormedGraphState
+/-- `WellFormedGraphState G state` is validity for normalized recovered graph states. -/
+structure WellFormedGraphState
+    (G : DAG ν)
+    (state : GraphState ν payload) : Prop where
+  /-- Persisted status/output maps mention only topology nodes. -/
+  topologyDomain : GraphState.topologyDomain G state
+  /-- Existing outputs are attached only to statuses that may own payloads. -/
+  outputsRespectStatuses : GraphState.outputsRespectStatuses state
+  /-- Payload-owning statuses have their required outputs present. -/
+  outputsCompleteForStatuses : GraphState.outputsCompleteForStatuses state
+  /-- Recovery normalization removes in-flight running nodes. -/
+  noRunningNodes : GraphState.noRunningNodes state
+  /-- Recovery normalization removes interrupted nodes. -/
+  noInterruptedNodes : GraphState.noInterruptedNodes state
+  /-- Failed nodes have propagated through reachable propagatable descendants. -/
+  failureClosureComplete : failureClosureComplete G state
+  /-- Successor-unblocking nodes have terminal strict ancestors. -/
+  causalHistoryClosed : CausalHistoryClosed G state
+  /-- Proof-level and runtime-style frontiers coincide. -/
+  frontierBridge : frontierBridge G state
+
+/-- `wellFormedGraphState G state` keeps the published predicate name stable. -/
+abbrev wellFormedGraphState
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
-  GraphState.topologyDomain G state ∧
-    GraphState.outputsRespectStatuses state ∧
-      GraphState.noRunningNodes state ∧
-        failureClosureComplete G state ∧
-          CausalHistoryClosed G state ∧
-            frontierBridge G state
+  WellFormedGraphState G state
 
 end Cortex.Pulse

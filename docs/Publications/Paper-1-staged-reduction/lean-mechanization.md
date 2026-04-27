@@ -31,8 +31,8 @@ The target is structural safety, not end-to-end workflow correctness.
 Paper 1 should stay `draft` until all of the following exist in Lean 4:
 
 1. A machine-checked `wellFormedGraphState` predicate for normalized, closed recovered states. **Done** (`theory/Cortex/Pulse/Validity.lean`).
-2. Proofs of the three closure laws for `propagateFailure`: extensiveness, monotonicity, idempotence. **Partial** — extensiveness (`propagateFailure_extensive`) and idempotence (`propagateFailure_idempotent`) are discharged in `theory/Cortex/Pulse/Closure.lean`; monotonicity remains.
-3. A machine-checked structural recovery theorem matching Proposition 1 in the manuscript. **Done** (`persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`), conditional on persisted topology-domain, output, and causal-history preconditions.
+2. Proofs of the three closure laws for `propagateFailure`: extensiveness, monotonicity, idempotence. **Done** — `propagateFailure_extensive`, `propagateFailure_monotone`, and `propagateFailure_idempotent` are discharged in `theory/Cortex/Pulse/Closure.lean`.
+3. A machine-checked structural recovery theorem matching Proposition 1 in the manuscript. **Done** (`persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`), conditional on persisted topology-domain, output-ownership, output-completeness, and causal-history preconditions.
 4. A short artifact note explaining the modeling boundary between the Lean kernel and the live Haskell runtime. **Open**.
 
 ## What Must Be Proved
@@ -41,12 +41,12 @@ Load-bearing theorems for the paper, with their current Lean status:
 
 - `frontier_antichain` — done (`theory/Cortex/Pulse/Frontier.lean`)
 - `applyNodeFact_comm` — done (`theory/Cortex/Pulse/Fact.lean`)
-- permutation invariance of accumulation over frontier results — open (only pairwise commutativity is mechanized)
+- `NodeResult.applyNodeFacts_perm_invariant` — done (`theory/Cortex/Pulse/Fact.lean`)
 - `propagateFailure_extensive` — done (`theory/Cortex/Pulse/Closure.lean`)
-- `propagateFailure_monotone` — open
+- `propagateFailure_monotone` — done (`theory/Cortex/Pulse/Closure.lean`)
 - `propagateFailure_idempotent` — done (`theory/Cortex/Pulse/Closure.lean`)
 - normalization lemmas for `resetRunningToPending` — done (`theory/Cortex/Pulse/State.lean`, `Recovery.lean`)
-- `frontierExact` on normalized, closed states — done (`theory/Cortex/Pulse/Validity.lean`); the non-trivial bridge `readyNodes_eq_directReadyNodes` lives in the same file
+- `frontierBridge` on normalized, closed states — done (`theory/Cortex/Pulse/Validity.lean`); the non-trivial bridge `readyNodes_eq_directReadyNodes` lives in the same file
 - classification exhaustiveness on normalized, closed states — open (no `Classify.lean` yet)
 - structural persistence safety after persisted-prefix crashes — done (`persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`)
 
@@ -85,7 +85,7 @@ theory/Cortex/Pulse/
   State.lean      -- NodeStatus, GraphState, resetRunningToPending
   Fact.lean       -- NodeOutcome, NodeResult, applyNodeFact, Admissible
   Frontier.lean   -- Ready / DirectReady, antichain
-  Closure.lean    -- propagateFailure, extensiveness, idempotence
+  Closure.lean    -- propagateFailure, extensiveness, monotonicity, idempotence
   Validity.lean   -- wellFormedGraphState, frontier-bridge theorems
   Recovery.lean   -- recoveredState, persistence_safety
   -- Classify.lean -- pending: classification exhaustiveness
@@ -106,8 +106,8 @@ Build order followed by the existing artifacts:
 | Manuscript section | Lean artifact |
 |---|---|
 | Lemma 1: frontier antichain | `frontier_antichain` in `theory/Cortex/Pulse/Frontier.lean` |
-| Lemma 2: disjoint-key accumulation commutativity | `NodeResult.applyNodeFact_comm` in `theory/Cortex/Pulse/Fact.lean` |
-| Phase 2 closure laws | `propagateFailure_extensive`, `propagateFailure_idempotent` in `theory/Cortex/Pulse/Closure.lean` (monotonicity pending) |
+| Lemma 2: disjoint-key accumulation commutativity | `NodeResult.applyNodeFact_comm` and `NodeResult.applyNodeFacts_perm_invariant` in `theory/Cortex/Pulse/Fact.lean` |
+| Phase 2 closure laws | `propagateFailure_extensive`, `propagateFailure_monotone`, `propagateFailure_idempotent` in `theory/Cortex/Pulse/Closure.lean` |
 | Definition 1: valid recovered graph state | `wellFormedGraphState` in `theory/Cortex/Pulse/Validity.lean` |
 | Proposition 1: structural persistence safety | `persistence_safety` in `theory/Cortex/Pulse/Recovery.lean` |
 | Phase 3 classification split | pending `Classify.lean` |
@@ -116,22 +116,18 @@ Build order followed by the existing artifacts:
 
 The mechanized obligations now have direct Lean references in the manuscript body. Remaining manuscript-side guidance:
 
-- keep Proposition 1's preconditions explicit — the Lean theorem is conditional on persisted topology-domain, output-ownership, and causal-history invariants that the runtime must establish
-- keep monotonicity described as an implementation lemma (QuickCheck plus code inspection) until `propagateFailure_monotone` is discharged
-- keep permutation invariance of frontier-result folds as a paper-level argument until the Lean fold-level theorem exists; the disjoint-key pairwise theorem is mechanized
+- keep Proposition 1's preconditions explicit — the Lean theorem is conditional on persisted topology-domain, output-ownership, output-completeness, and causal-history invariants that the runtime must establish
+- keep classification exhaustiveness as proof-sketch wording until `Classify.lean` exists
 
 When the remaining work lands:
 
-- promote `propagateFailure_monotone` and the fold-level permutation theorem to direct Lean references
 - once `Classify.lean` exists, retire the proof-sketch wording around classification exhaustiveness
 - write the artifact note explaining the Lean ↔ Haskell modeling boundary (status, output, payload, and persistence assumptions) and link it from the manuscript
 
 ## Immediate Next Steps
 
-1. Prove `propagateFailure_monotone` to close the third closure law.
-2. Lift `applyNodeFact_comm` to a fold-level permutation-invariance theorem under disjoint frontier keys.
-3. Add `Classify.lean` with the four-way classification and an exhaustiveness theorem on `wellFormedGraphState`.
-4. Draft the Lean ↔ Haskell artifact note and link it from the manuscript and landing page.
+1. Add `Classify.lean` with the four-way classification and an exhaustiveness theorem on `wellFormedGraphState`.
+2. Draft the Lean ↔ Haskell artifact note and link it from the manuscript and landing page.
 
 ## Related
 

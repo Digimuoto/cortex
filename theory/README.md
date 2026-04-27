@@ -63,13 +63,19 @@ Mechanized results now include:
   strict reachability.
 - `NodeResult.applyNodeFact_comm`: node-local facts for distinct nodes
   commute.
+- `NodeResult.applyNodeFacts_perm_invariant`: disjoint-key fact folds
+  are invariant under list permutation.
 - `propagateFailure_extensive`: propagation preserves failed nodes.
+- `propagateFailure_monotone`: failure propagation is monotone over
+  pointwise failure-growth.
 - `propagateFailure_failureClosureComplete`: one propagation pass closes
   failure over propagatable descendants.
 - `propagateFailure_preserves_topologyDomain`: propagation preserves the
   absence of off-topology durable state.
 - `propagateFailure_preserves_outputsRespectStatuses`: propagation
   preserves output ownership.
+- `propagateFailure_preserves_outputsCompleteForStatuses`: propagation
+  preserves required outputs for completed and rewritten nodes.
 - `propagateFailure_idempotent`: failure propagation is idempotent.
 - `directReady_sound`: executable direct-predecessor readiness implies
   proof-level reachability readiness under causal-history closure.
@@ -78,15 +84,16 @@ Mechanized results now include:
 - `NodeResult.Admissible`: node facts must target the topology and come
   from the executable frontier before preservation theorems apply.
 - `frontierFacts_recovered_wellFormedGraphState`: admissible fact folds
-  become structurally well-formed again after failure closure.
+  become structurally well-formed again after recovery normalization and
+  failure closure.
 - `persistence_safety`: recovered states are structurally well-formed,
-  conditional on explicit persisted topology-domain, output, and
-  causal-history preconditions that recovery preserves.
+  conditional on explicit persisted topology-domain, output ownership,
+  output-completeness, and causal-history preconditions that recovery
+  preserves.
 
-Remaining obligations include permutation invariance for whole frontier
-result folds, Haskell-side establishment of the persisted recovery
-preconditions, classification exhaustiveness, and quotient lifting for the
-graph algebra laws.
+Remaining obligations include Haskell-side establishment of the persisted
+recovery preconditions, classification exhaustiveness, the Lean-Haskell
+modeling-boundary note, and quotient lifting for the graph algebra laws.
 
 ### Track 3 — Rewrite soundness
 
@@ -153,7 +160,7 @@ local commits and CI agree on the Lean gate.
 | 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
 | 1b. Graph denotational AST laws | AST laws over graph equivalence | denotational law surface | none |
 | 1c. Graph quotient laws | lifted quotient equality laws | pending | none |
-| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/causal preservation, structural recovery predicate | none |
+| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate | none |
 | 3. Rewrite soundness | proof-carrying rewrite certificate | acyclicity/contract/budget projections | none |
 | 4. Provider / sparks | — | — | not started |
 | 5. Substrate / consumer boundary | — | — | not started |

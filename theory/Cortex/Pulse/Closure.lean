@@ -140,7 +140,22 @@ theorem hasFailedAncestor_of_failed_after_reaches
   · rcases hAncestor with ⟨root, hRootFailed, hRootReach⟩
     exact ⟨root, hRootFailed, G.reaches_trans hRootReach hReach⟩
 
-/-- `propagateFailure_extensive` proves propagation is extensive over failed nodes. -/
+/-- `hasFailedAncestor_monotone` lifts failed ancestors through failure-growth. -/
+theorem hasFailedAncestor_monotone
+    (G : DAG ν)
+    {left right : GraphState ν payload}
+    (hLe : GraphState.failureLe left right)
+    {node : ν}
+    (hAncestor : hasFailedAncestor G left node) :
+    hasFailedAncestor G right node := by
+  rcases hAncestor with ⟨failedNode, hFailed, hReach⟩
+  exact ⟨failedNode, GraphState.failureLe_preserves_failed hLe hFailed, hReach⟩
+
+/-- `propagateFailure_extensive` proves propagation is extensive over failed nodes.
+
+Use this closure-law theorem when a proof only needs preservation of the
+already-failed set. Use `propagateFailure_monotone` for whole-state
+failure-growth reasoning through `GraphState.failureLe`. -/
 theorem propagateFailure_extensive
     (G : DAG ν)
     (state : GraphState ν payload) :
@@ -149,6 +164,48 @@ theorem propagateFailure_extensive
         (propagateFailure G state).status node = NodeStatus.failed := by
   intro node hFailed
   exact propagateFailure_preserves_failed G state hFailed
+
+/-- `propagateStatus_monotone` proves node-local failure propagation is monotone. -/
+theorem propagateStatus_monotone
+    (G : DAG ν)
+    {left right : GraphState ν payload}
+    (hLe : GraphState.failureLe left right)
+    (node : ν) :
+    NodeStatus.failureLe (propagateStatus G left node) (propagateStatus G right node) := by
+  classical
+  by_cases hLeftClosed :
+    NodeStatus.propagatable (left.status node) ∧ hasFailedAncestor G left node
+  · have hRightFailed : propagateStatus G right node = NodeStatus.failed := by
+      rcases hLe node with hSame | hFailure
+      · have hRightClosed :
+          NodeStatus.propagatable (right.status node) ∧ hasFailedAncestor G right node := by
+          constructor
+          · simpa [hSame] using hLeftClosed.1
+          · exact hasFailedAncestor_monotone G hLe hLeftClosed.2
+        simp [propagateStatus, hRightClosed]
+      · rcases hFailure with ⟨_hLeftPropagatable, hRightStatus⟩
+        simp [propagateStatus, hRightStatus, NodeStatus.propagatable]
+    have hLeftFailed : propagateStatus G left node = NodeStatus.failed := by
+      simp [propagateStatus, hLeftClosed]
+    rw [hLeftFailed, hRightFailed]
+    exact NodeStatus.failureLe_refl NodeStatus.failed
+  · by_cases hRightClosed :
+      NodeStatus.propagatable (right.status node) ∧ hasFailedAncestor G right node
+    · have hLeftPropagatable :
+          NodeStatus.propagatable (left.status node) :=
+        NodeStatus.failureLe_reflects_propagatable (hLe node) hRightClosed.1
+      simpa [propagateStatus, hLeftClosed, hRightClosed] using
+        NodeStatus.failureLe_to_failed hLeftPropagatable
+    · simpa [propagateStatus, hLeftClosed, hRightClosed] using hLe node
+
+/-- `propagateFailure_monotone` proves failure closure is monotone over failure-growth. -/
+theorem propagateFailure_monotone
+    (G : DAG ν)
+    {left right : GraphState ν payload}
+    (hLe : GraphState.failureLe left right) :
+    GraphState.failureLe (propagateFailure G left) (propagateFailure G right) := by
+  intro node
+  exact propagateStatus_monotone G hLe node
 
 /-- `propagateFailure_failureClosureComplete` proves propagation reaches closure. -/
 theorem propagateFailure_failureClosureComplete
@@ -177,6 +234,20 @@ theorem propagateFailure_preserves_noRunning
   · intro hRunning
     simp [propagateFailure, propagateStatus, hClosed] at hRunning
   · simpa [propagateFailure, propagateStatus, hClosed] using hNoRunning node
+
+/-- `propagateFailure_preserves_noInterrupted` preserves the absence of interrupted nodes. -/
+theorem propagateFailure_preserves_noInterrupted
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hNoInterrupted : GraphState.noInterruptedNodes state) :
+    GraphState.noInterruptedNodes (propagateFailure G state) := by
+  classical
+  intro node
+  by_cases hClosed :
+    NodeStatus.propagatable (state.status node) ∧ hasFailedAncestor G state node
+  · intro hInterrupted
+    simp [propagateFailure, propagateStatus, hClosed] at hInterrupted
+  · simpa [propagateFailure, propagateStatus, hClosed] using hNoInterrupted node
 
 /-- `propagateFailure_preserves_topologyDomain` preserves off-topology absence. -/
 theorem propagateFailure_preserves_topologyDomain
@@ -215,6 +286,28 @@ theorem propagateFailure_preserves_outputsRespectStatuses
         , hStatus
         ] at hClosed hMayHaveOutput ⊢
   · simpa [propagateFailure, propagateStatus, hClosed] using hOutputs node value hOutput
+
+/-- `propagateFailure_preserves_outputsCompleteForStatuses` preserves required outputs. -/
+theorem propagateFailure_preserves_outputsCompleteForStatuses
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsCompleteForStatuses state) :
+    GraphState.outputsCompleteForStatuses (propagateFailure G state) := by
+  classical
+  intro node hRequiresOutput
+  by_cases hClosed :
+    NodeStatus.propagatable (state.status node) ∧ hasFailedAncestor G state node
+  · simp
+      [ propagateFailure
+      , propagateStatus
+      , NodeStatus.requiresOutput
+      , hClosed
+      ] at hRequiresOutput
+  · have hOriginalRequires :
+        NodeStatus.requiresOutput (state.status node) := by
+      simpa [propagateFailure, propagateStatus, hClosed] using hRequiresOutput
+    rcases hOutputs node hOriginalRequires with ⟨value, hOutput⟩
+    exact ⟨value, by simpa [propagateFailure] using hOutput⟩
 
 /-! ## Idempotence -/
 

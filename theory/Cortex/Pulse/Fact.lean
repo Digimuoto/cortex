@@ -183,6 +183,74 @@ theorem applyNodeFact_preserves_outputsRespectStatuses [DecidableEq ν]
       hOutputs node value hOriginalOutput
     simpa [applyNodeFact, hNode] using hMayHaveOutput
 
+/-- `applyNodeFact_preserves_outputsCompleteForStatuses` preserves required outputs. -/
+theorem applyNodeFact_preserves_outputsCompleteForStatuses [DecidableEq ν]
+    (result : NodeResult ν payload)
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsCompleteForStatuses state) :
+    GraphState.outputsCompleteForStatuses (applyNodeFact result state) := by
+  intro node hRequiresOutput
+  by_cases hNode : node = result.node
+  · subst node
+    cases hOutcome : result.outcome with
+    | succeeded value =>
+        exact ⟨value, by simp [applyNodeFact, NodeOutcome.output, hOutcome]⟩
+    | skipped =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | suspended =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | failed =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | timedOut =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | cancelled =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | shutdown =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | runCancelled =>
+        simp
+          [ applyNodeFact
+          , NodeOutcome.status
+          , NodeStatus.requiresOutput
+          , hOutcome
+          ] at hRequiresOutput
+    | rewritten value =>
+        exact ⟨value, by simp [applyNodeFact, NodeOutcome.output, hOutcome]⟩
+  · have hOriginalRequires : NodeStatus.requiresOutput (state.status node) := by
+      simpa [applyNodeFact, hNode] using hRequiresOutput
+    rcases hOutputs node hOriginalRequires with ⟨value, hOutput⟩
+    exact ⟨value, by simpa [applyNodeFact, hNode] using hOutput⟩
+
 /-- `applyNodeFact_preserves_noRunning` preserves the absence of running nodes. -/
 theorem applyNodeFact_preserves_noRunning [DecidableEq ν]
     (result : NodeResult ν payload)
@@ -275,6 +343,23 @@ theorem applyNodeFacts_preserves_outputsRespectStatuses [DecidableEq ν]
       have hStep :
           GraphState.outputsRespectStatuses (applyNodeFact result state) :=
         applyNodeFact_preserves_outputsRespectStatuses result state hOutputs
+      simpa [applyNodeFacts] using ih (applyNodeFact result state) hStep hRest
+
+/-- `applyNodeFacts_preserves_outputsCompleteForStatuses` preserves required outputs. -/
+theorem applyNodeFacts_preserves_outputsCompleteForStatuses [DecidableEq ν]
+    (G : DAG ν)
+    (results : List (NodeResult ν payload))
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsCompleteForStatuses state)
+    (hResults : AllAdmissibleFold G state results) :
+    GraphState.outputsCompleteForStatuses (applyNodeFacts results state) := by
+  induction results generalizing state with
+  | nil => simpa [applyNodeFacts] using hOutputs
+  | cons result rest ih =>
+      rcases hResults with ⟨_hResult, hRest⟩
+      have hStep :
+          GraphState.outputsCompleteForStatuses (applyNodeFact result state) :=
+        applyNodeFact_preserves_outputsCompleteForStatuses result state hOutputs
       simpa [applyNodeFacts] using ih (applyNodeFact result state) hStep hRest
 
 /-- `applyNodeFacts_preserves_noRunning` preserves the absence of running nodes. -/

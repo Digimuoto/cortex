@@ -25,9 +25,10 @@ contract the runtime actually relies on: commutative accumulation of node-local
 facts, idempotent failure closure, deterministic classification, and recovery
 safety after persisted-prefix crashes.
 
-The central artifact is an explicit `wellFormedGraphState` predicate for
-normalized, closed states. Without that predicate, Paper 1's recovery claim and
-Paper 2's algebraic presentation remain too rhetorical.
+The central artifact is an explicit `WellFormedGraphState` structure, exposed
+under the published `wellFormedGraphState` predicate name, for normalized,
+closed states. Without that predicate, Paper 1's recovery claim and Paper 2's
+algebraic presentation remain too rhetorical.
 
 ## Core Definitions
 
@@ -45,17 +46,19 @@ Mechanization starts by fixing the objects the paper set depends on:
 The hub predicate should be:
 
 ```lean
-def wellFormedGraphState (G : DAG) (s : GraphState) : Prop :=
-  statusDomainExact G s
-  ∧ outputDomainWithinTopology G s
-  ∧ outputsRespectStatuses s
-  ∧ noRunningNodes s
-  ∧ failureClosureComplete G s
-  ∧ frontierExact G s
+structure WellFormedGraphState (G : DAG) (s : GraphState) : Prop where
+  topologyDomain : topologyDomain G s
+  outputsRespectStatuses : outputsRespectStatuses s
+  outputsCompleteForStatuses : outputsCompleteForStatuses s
+  noRunningNodes : noRunningNodes s
+  noInterruptedNodes : noInterruptedNodes s
+  failureClosureComplete : failureClosureComplete G s
+  causalHistoryClosed : CausalHistoryClosed G s
+  frontierBridge : frontierBridge G s
 ```
 
-Here `frontierExact` means `readyNodes G s` is sound and complete for the
-readiness predicate.
+Here `frontierBridge` means proof-level `readyNodes G s` coincides with the
+runtime-style direct-predecessor frontier `directReadyNodes G s`.
 
 ## Theorem Stack
 
@@ -74,7 +77,7 @@ theorem applyNodeFact_comm (r1 r2 : NodeResult) (s : GraphState)
 ```
 
 ```lean
-theorem fold_applyNodeFact_perm
+theorem NodeResult.applyNodeFacts_perm_invariant
   (results1 results2 : List NodeResult) (s : GraphState)
   (h_perm : results1 ~ results2)
   (h_distinct : results1.Pairwise (fun a b => a.nid ≠ b.nid)) :
@@ -90,9 +93,9 @@ theorem propagateFailure_extensive (G : DAG) (s : GraphState) :
 ```
 
 ```lean
-theorem propagateFailure_monotone (G : DAG) (s1 s2 : GraphState)
-  (h : s1 ≤ s2) :
-  propagateFailure G s1 ≤ propagateFailure G s2
+theorem propagateFailure_monotone (G : DAG) {s1 s2 : GraphState}
+  (h : GraphState.failureLe s1 s2) :
+  GraphState.failureLe (propagateFailure G s1) (propagateFailure G s2)
 ```
 
 ```lean
@@ -118,10 +121,10 @@ theorem closure_failure_complete (G : DAG) (s : GraphState) :
 ```
 
 ```lean
-theorem frontier_exact_closed (G : DAG) (s : GraphState)
-  (h_norm : noRunningNodes s)
-  (h_closed : failureClosureComplete G s) :
-  frontierExact G s
+theorem frontierBridge_of_closed_causal (G : DAG) (s : GraphState)
+  (h_closed : failureClosureComplete G s)
+  (h_causal : CausalHistoryClosed G s) :
+  frontierBridge G s
 ```
 
 ### Tier 4: Structural recovery safety
@@ -176,7 +179,7 @@ plan is to make valid graph state a first-class theorem object.
 - Finite DAG representation may need an adapter from the runtime's relation-style graph model.
 - Closure idempotence is the hardest proof burden in the current stack.
 - `Waiting(signal)` complicates any local status order because waiting carries data.
-- `outputsRespectStatuses` should be stated so later rewrite theory can extend it without contradiction.
+- Output ownership is two-sided in the fixed-topology kernel: outputs must appear only where statuses own them, and completed/rewritten statuses must carry outputs.
 
 ## Relationship to the Paper Set
 
