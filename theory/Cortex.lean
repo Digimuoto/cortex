@@ -1,10 +1,3 @@
-/-
-# Cortex — root mechanization module
-
-Imports every proof track. Pulling `import Cortex` into a downstream file
-exposes the full surface (Graph algebra, Pulse frontier, Wire rewrites).
--/
-
 -- Track 1 — Graph algebra (Mokhov)
 import Cortex.Graph.Core
 import Cortex.Graph.Relation
@@ -21,3 +14,23 @@ import Cortex.Pulse.Recovery
 
 -- Track 3 — Wire rewrite soundness
 import Cortex.Wire.Rewrite
+
+/-!
+## Overview
+
+This is the root mechanization module. Pulling `import Cortex` into a
+downstream file exposes the full proof surface: graph algebra, the
+fixed-topology Pulse kernel, and Wire rewrite obligations.
+
+## Context
+
+The page is intentionally short. Its purpose is publication and build
+wiring: repo-docs can render the whole theory tree from here, and Lake can
+check that every proof track remains importable together.
+
+## Theorem Split
+
+The imported tracks are the theorem split: `Cortex.Graph.*` for algebra,
+`Cortex.Pulse.*` for fixed-topology runtime safety, and
+`Cortex.Wire.*` for rewrite admission.
+-/

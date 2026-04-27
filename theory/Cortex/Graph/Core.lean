@@ -1,14 +1,22 @@
-/-
-# Graph Algebra — Core
+/-!
+## Overview
 
 Mechanization of Mokhov's algebra of graphs. The four constructors
 (`empty`, `vertex`, `overlay`, `connect`) generate every directed graph
-and satisfy a small set of laws (proved in `Cortex.Graph.Laws`).
+and support the small law set stated in `Cortex.Graph.Laws`.
+
+## Context
 
 This is the abstract syntax tree of a graph. The denotation as a set of
 vertices plus a set of edges is given by `vertexSet` / `edgeSet`; the
 homomorphism into the relational model is given in
-`Cortex.Graph.Relation` (TODO).
+`Cortex.Graph.Relation`.
+
+## Theorem Split
+
+This page defines the graph syntax, a few structural helpers used by
+later proofs, and the canonical operator notation that makes theorem
+statements read like Mokhov's algebra.
 
 ## References
 
@@ -21,13 +29,15 @@ homomorphism into the relational model is given in
 
 namespace Cortex.Graph
 
-/-- The free graph algebra over a vertex type `α`.
+/-! ## Free Graph Syntax -/
 
-    Four constructors:
-    - `empty`        : the empty graph
-    - `vertex v`     : a single isolated vertex
-    - `overlay g h`  : disjoint union — `vertexSet (overlay g h) = vertexSet g ∪ vertexSet h`
-    - `connect g h`  : `g` plus `h` plus every edge from `g`'s vertices to `h`'s -/
+/-- `Graph α` is the free graph algebra over a vertex type `α`.
+
+Four constructors:
+- `empty`: the empty graph
+- `vertex v`: a single isolated vertex
+- `overlay g h`: disjoint union of graph expressions
+- `connect g h`: `g` plus `h` plus every edge from `g`'s vertices to `h`'s -/
 inductive Graph (α : Type) : Type where
   | empty   : Graph α
   | vertex  : α → Graph α
@@ -39,33 +49,35 @@ namespace Graph
 
 variable {α : Type}
 
-/-- Vertex set of a graph. -/
+/-! ## Structural Helpers -/
+
+/-- `vertexSet g` lists the vertices appearing in a graph expression. -/
 def vertexSet [DecidableEq α] : Graph α → List α
   | empty       => []
   | vertex v    => [v]
   | overlay g h => vertexSet g ++ vertexSet h
   | connect g h => vertexSet g ++ vertexSet h
 
-/-- Number of distinct constructors used. Useful as a structural recursion measure. -/
+/-- `size g` counts constructors and is useful as a structural recursion measure. -/
 def size : Graph α → Nat
   | empty       => 1
   | vertex _    => 1
   | overlay g h => 1 + size g + size h
   | connect g h => 1 + size g + size h
 
-/-- A graph has *no* edges iff it can be expressed without using `connect`. -/
+/-- `IsEdgeFree g` means `g` can be expressed without using `connect`. -/
 inductive IsEdgeFree : Graph α → Prop where
   | empty   : IsEdgeFree empty
   | vertex  : ∀ v, IsEdgeFree (vertex v)
   | overlay : ∀ {g h}, IsEdgeFree g → IsEdgeFree h → IsEdgeFree (overlay g h)
 
-/-- Convenience: smart constructor for an edge `u → v`. -/
+/-- `edge u v` is the graph containing the directed edge `u → v`. -/
 def edge (u v : α) : Graph α :=
   connect (vertex u) (vertex v)
 
 end Graph
 
-/-! ## Canonical operators
+/-! ## Canonical Operators
 
 Mokhov's paper uses `+` (overlay) and `*` (connect). In Lean we keep
 the surface exactly that small:

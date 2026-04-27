@@ -20,6 +20,13 @@ It is not a separate research playground.
 - Haskell executable modules are the implementation counterpart; Lean
   modules are the proof counterpart. Cross-reference exact Haskell files
   when a definition mirrors runtime behavior.
+- repo-docs renders each Lean file under `theory/` as a separate Theory
+  document. Module organization is therefore also publication structure:
+  split or section files so each rendered page has one coherent proof
+  topic.
+- Rendered pages get their title from the Lean module path. The first
+  module doc block should begin with an overview section and explain the
+  page's proof context rather than repeating the module name as an H1.
 
 ## Build Files
 
@@ -86,6 +93,9 @@ trailer unless the commit is pure process scaffolding.
 - A rendered theory page should have enough prose and declaration
   docstrings for a reader to understand the model boundary without
   opening the corresponding Haskell file or roadmap note first.
+- Longer rendered theory pages should be divided with Markdown section
+  prose so they read like theorem notes rather than unstructured code
+  dumps.
 - A scaffold module should make proof debt explicit and finite.
 - A completed mechanization should replace assumptions, not add another
   abstraction layer above them.

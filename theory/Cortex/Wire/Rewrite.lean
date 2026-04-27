@@ -1,5 +1,7 @@
-/-
-# Wire — Rewrite Admission Soundness
+import Cortex.Graph.Core
+
+/-!
+## Overview
 
 Sketches the soundness obligation for runtime graph rewriting:
 
@@ -11,6 +13,18 @@ The Haskell side (`src/Cortex/Pulse/Rewrite.hs`,
 `src/Cortex/Wire/Proposal.hs`) implements an admission predicate; this
 file mechanizes its specification and admits the soundness theorem
 as an obligation.
+
+## Context
+
+This module is a tracked scaffold. It names the proof obligations for
+rewrite admission without pretending the dynamic rewrite story is already
+mechanized.
+
+## Theorem Split
+
+The page defines the abstract rewrite shape, states the admission
+predicate, and then lists the three soundness obligations that future
+work must discharge.
 
 ## Roadmap
 
@@ -30,36 +44,41 @@ as an obligation.
 - `docs/publications/paper-3-graph-substitution-semantics/manuscript.md`.
 -/
 
-import Cortex.Graph.Core
-
 namespace Cortex.Wire
 
 open Cortex.Graph
 
-/-- A rewrite is a partial function on graphs. The full Haskell shape
-    carries provenance, a budget cost, and contract metadata; we keep
-    just the transformation here for the soundness sketch. -/
+/-! ## Rewrite Model -/
+
+/-- `Rewrite α` is a partial function on graphs. The full Haskell shape
+carries provenance, a budget cost, and contract metadata; we keep just
+the transformation here for the soundness sketch. -/
 structure Rewrite (α : Type) where
-  /-- The transformation. `none` means "this rewrite does not apply
+  /-- `apply` is the transformation. `none` means "this rewrite does not apply
       to this graph". -/
   apply : Graph α → Option (Graph α)
-  /-- The fixed budget cost of attempting this rewrite. -/
+  /-- `cost` is the fixed budget cost of attempting this rewrite. -/
   cost  : Nat
 
-/-- A rewrite is **admissible** with respect to a graph and a remaining
-    budget if applying it produces a well-formed result and the cost
-    fits within the budget. The full predicate also requires
-    acyclicity preservation and contract boundary preservation;
-    those are stated separately as obligations below. -/
+/-! ## Admission Predicate -/
+
+/-- `admissible r g budget` says a rewrite fits the remaining budget and applies.
+
+The full predicate also requires acyclicity preservation and contract
+boundary preservation; those are stated separately as obligations below. -/
 def admissible {α : Type} (r : Rewrite α) (g : Graph α) (budget : Nat) : Prop :=
   r.cost ≤ budget ∧ (r.apply g).isSome
 
-/-- **Soundness — acyclicity preservation.** If `g` is acyclic and `r`
-    is admissible at `g`, then `r.apply g` (when defined) is acyclic.
+/-! ## Soundness Obligations -/
 
-    Acyclicity itself needs a concrete predicate over `Graph α`
-    (TODO: lift from `Cortex.Graph.Decompose.hs`). For now the
-    statement is shape-only and admitted. -/
+/-- `admissible_preserves_acyclic` is the acyclicity preservation obligation.
+
+If `g` is acyclic and `r` is admissible at `g`, then `r.apply g`
+(when defined) is acyclic.
+
+Acyclicity itself needs a concrete predicate over `Graph α` (TODO: lift
+from `Cortex.Graph.Decompose.hs`). For now the statement is shape-only
+and admitted. -/
 axiom admissible_preserves_acyclic
     {α : Type}
     (r : Rewrite α) (g : Graph α) (budget : Nat) :
@@ -67,11 +86,12 @@ axiom admissible_preserves_acyclic
   -- placeholder: should read `IsAcyclic g → IsAcyclic g'`
   True
 
-/-- **Soundness — contract preservation.** Admissible rewrites preserve
-    the contract registry's boundary invariants (every port still
-    references a registered contract; every cross-fragment edge is
-    still typed-compatible). Sketched here; concrete predicate
-    pending the registry mechanization. -/
+/-- `admissible_preserves_contracts` is the contract preservation obligation.
+
+Admissible rewrites preserve the contract registry's boundary invariants:
+every port still references a registered contract, and every cross-fragment
+edge is still typed-compatible. Sketched here; concrete predicate pending
+the registry mechanization. -/
 axiom admissible_preserves_contracts
     {α : Type}
     (r : Rewrite α) (g : Graph α) (budget : Nat) :
@@ -79,10 +99,11 @@ axiom admissible_preserves_contracts
   -- placeholder
   True
 
-/-- **Termination — bounded rewrite chains.** A sequence of admissible
-    rewrites terminates because each consumes ≥ 1 unit of the
-    per-run budget. Stated as a shape; the proof reduces to
-    well-founded induction on the budget. -/
+/-- `apply_admissible_terminates` is the bounded rewrite-chain obligation.
+
+A sequence of admissible rewrites terminates because each consumes at
+least one unit of the per-run budget. Stated as a shape; the proof reduces
+to well-founded induction on the budget. -/
 axiom apply_admissible_terminates
     {α : Type}
     (rs : List (Rewrite α)) (g : Graph α) (budget : Nat) :

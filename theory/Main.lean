@@ -1,12 +1,23 @@
-/-
-# Cortex theory — smoke entry point
-
-Imports every track's root module so that `lake build` exercises the
-whole proof tree. The executable just prints a banner; the value is in
-`#check`-able definitions and theorems compiling.
--/
-
 import Cortex
+
+/-!
+## Overview
+
+This executable is the Lean smoke entry point. It imports `Cortex` so
+`lake build` exercises the whole proof tree before producing a small
+diagnostic binary.
+
+## Context
+
+The executable is not the proof artifact. The proof value is that every
+definition and theorem exposed through `import Cortex` type-checks under
+the pinned Lean, Lake, mathlib, and Nix setup.
+
+## Theorem Split
+
+There are no local theorems on this page. The printed lines summarize the
+proof tracks imported by the root module.
+-/
 
 def main : IO Unit := do
   IO.println "Cortex theory — Lean 4 mechanization (scaffold)"

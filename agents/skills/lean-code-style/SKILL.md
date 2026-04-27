@@ -132,6 +132,9 @@ Apply the rubric and make findings concrete. Prioritize:
 - Minimal imports and correct dependency management.
 - Namespace/API shape suitable for later theorem reuse.
 - `simp`/attribute discipline.
+- Rendered Theory page quality: each Lean file should read as a
+  standalone Markdown-backed theorem note with useful `/-! ... -/` prose
+  and sectioning where needed.
 - Elimination of scaffold debt rather than normalization of new debt.
 - Validation through both Lake and Nix where relevant.
 

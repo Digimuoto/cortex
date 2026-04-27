@@ -1,4 +1,17 @@
 import Lake
+
+/-!
+## Overview
+
+Lake configuration for the Cortex Lean theory package.
+
+## Context
+
+The package pins the proof dependencies and names the library roots that
+repo-docs and Nix should build. Treat changes here as proof-surface
+changes because they alter which modules are checked and rendered.
+-/
+
 open Lake DSL
 
 package «cortex-theory» where

@@ -28,6 +28,11 @@ priority findings are what matter.
 - Public declarations without docstrings or unclear theorem names.
 - Rendered theory pages whose prose is too sparse to explain the model,
   discharged obligations, or remaining proof boundary.
+- Public Lean files that fail as standalone rendered documents: missing
+  `/-! ... -/` page prose, no useful sectioning for a long theorem stack,
+  or comments that do not make the proof narrative auditable.
+- Redundant module-level H1 headings that fight the repo-docs generated
+  title instead of starting the page with overview/context prose.
 - Unnecessary classical scope, global `open`, or broad variable scope.
 - Non-minimal imports, unpinned dependency changes, or generated
   manifest drift without an intentional Lake change.
@@ -84,6 +89,11 @@ is not finished.
 Reviewers should be able to follow the proof state transitions from the
 source. Use comments only for proof strategy or non-obvious mathematical
 intent.
+
+Because repo-docs renders Lean files as Theory pages, also review the
+file as a standalone document. The prose should motivate the model,
+section the theorem paper, and explain why the code-level declarations
+matter to the substrate contract.
 
 ### Build Integrity
 

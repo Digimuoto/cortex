@@ -19,10 +19,35 @@ style, but Cortex is stricter about long-lived proof maintainability.
   - which results are real theorems,
   - which obligations remain,
   - which executable modules or papers it mirrors.
-- Theory modules are rendered into the docs site through Verso. Write
-  module prose as public documentation, not as scratch notes: introduce
-  the mathematical object, name the proof boundary, and keep the section
-  order readable when viewed as a book page.
+- Use `/-! ... -/` for module-level prose that should render as Markdown
+  in Theory pages, and place it after the file's imports because Lean
+  requires imports at the beginning of the file. Ordinary `/- ... -/`
+  comments remain code comments in the rendered page and should not carry
+  the page introduction.
+
+## Rendered Document Shape
+
+- repo-docs renders each Lean file as its own Markdown-backed Theory
+  document. Treat every public `.lean` file as a standalone proof note
+  that should make sense when opened directly from the docs site.
+- repo-docs supplies the document title from the Lean module path. Do not
+  start module prose with a redundant `#` heading; after imports, start
+  the module document with `/-! ## Overview ... -/` and then add context
+  and theorem-section headings as needed.
+- Write `/-! ... -/` prose like a short theorem paper, not like source
+  decoration: introduce the object being modeled, state the proof
+  boundary, name the main theorem obligations, and explain what remains
+  outside the current mechanization.
+- Use Markdown headings in `/-! ... -/` blocks to split longer files into
+  coherent sections when that makes the rendered page easier to read.
+  Prefer sections such as model, definitions, invariants, theorem stack,
+  proof support, and remaining obligations over a flat wall of Lean code.
+- Lean code itself must remain legible. Use docstrings and sparse prose
+  comments to explain context, proof intent, and model correspondence;
+  do not rely on tactics or declaration names alone to carry the story.
+- The rendered page should read as reference-quality mathematics: prose
+  motivates the declarations, declarations state precise facts, and proof
+  scripts are organized so a reader can audit the argument locally.
 
 ## Namespaces
 
@@ -102,6 +127,16 @@ style, but Cortex is stricter about long-lived proof maintainability.
 - Use docstrings for public API.
 - Public theorem docstrings should say why the result matters to the
   substrate contract, not merely paraphrase the formal statement.
+- repo-docs renders declaration docstrings as prose immediately before
+  the declaration. Start short docstrings with the declaration name or
+  notation, such as `` `cross left right` is ... ``, so the rendered text
+  cannot read as a caption for the previous code block.
+- Avoid four-space-indented continuation lines inside rendered docstrings,
+  especially after blank lines. Markdown treats those as code blocks in
+  the generated Theory page.
+- Use `/-! ## ... -/` section comments when a file has multiple theorem
+  clusters or the proof narrative benefits from visible rendered
+  structure.
 - Use ordinary comments only for proof strategy, model limitations, or
   non-obvious correspondence to Haskell/docs.
 - Delete comments that narrate tactics or restate code.
