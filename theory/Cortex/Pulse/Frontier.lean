@@ -1,5 +1,7 @@
-/-
-# Pulse Kernel — Frontier Safety
+import Cortex.Pulse.State
+
+/-!
+## Overview
 
 The Paper 1 fixed-topology kernel computes a frontier from an extensional
 state over a finite DAG. A ready node is pending and has every strict
@@ -11,28 +13,42 @@ invariants.
 The key result in this module is real, not axiomatized: all nodes in the
 frontier are ready, and any two distinct frontier nodes are incomparable
 by DAG reachability.
--/
 
-import Cortex.Pulse.State
+## Context
+
+The executable frontier is derived from direct predecessors. This proof
+module works at strict-reachability level so frontier antichain reasoning
+is local to the DAG laws; a later refinement can connect direct
+predecessors to this stronger readiness predicate.
+
+## Theorem Split
+
+The page defines readiness, constructs the finite frontier, proves the
+frontier membership theorem, and then derives the antichain result.
+-/
 
 namespace Cortex.Pulse
 
 variable {ν : Type u} {payload : Type v}
 
-/-- A node is ready when it is pending and every strict ancestor is terminal. -/
+/-! ## Readiness Predicate -/
+
+/-- `Ready G state node` means the node is pending and every strict ancestor is terminal. -/
 def Ready (G : DAG ν) (state : GraphState ν payload) (node : ν) : Prop :=
   state.status node = NodeStatus.pending ∧
     ∀ predecessor : ν,
       G.reaches predecessor node → NodeStatus.terminal (state.status predecessor)
 
-/-- Frontier nodes for a finite topology. -/
+/-! ## Finite Frontier -/
+
+/-- `readyNodes G state` is the finite frontier for a topology and state. -/
 noncomputable def readyNodes
     (G : DAG ν)
     (state : GraphState ν payload) : Finset ν := by
   classical
   exact G.nodes.filter (Ready G state)
 
-/-- Membership in `readyNodes` is exactly the readiness predicate. -/
+/-- `mem_readyNodes` states that frontier membership is exactly readiness. -/
 theorem mem_readyNodes
     (G : DAG ν)
     (state : GraphState ν payload)
@@ -41,7 +57,7 @@ theorem mem_readyNodes
   classical
   simp [readyNodes]
 
-/-- The frontier contains only ready nodes. -/
+/-- `frontier_only_ready` states that every frontier node is ready. -/
 theorem frontier_only_ready
     (G : DAG ν)
     (state : GraphState ν payload) :
@@ -49,11 +65,13 @@ theorem frontier_only_ready
   intro node hNode
   exact ((mem_readyNodes G state node).mp hNode).2
 
-/-- Distinct frontier members are mutually unreachable. -/
+/-! ## Antichain Theorem -/
+
+/-- `PairwiseReachabilityIncomparable G nodes` means frontier members are mutually unreachable. -/
 def PairwiseReachabilityIncomparable (G : DAG ν) (nodes : Finset ν) : Prop :=
   ∀ a ∈ nodes, ∀ b ∈ nodes, a ≠ b → ¬ G.reaches a b ∧ ¬ G.reaches b a
 
-/-- Two ready nodes cannot be ordered by strict reachability. -/
+/-- `ready_not_reaches_ready` rules out strict reachability between ready nodes. -/
 theorem ready_not_reaches_ready
     (G : DAG ν)
     (state : GraphState ν payload)
@@ -66,7 +84,7 @@ theorem ready_not_reaches_ready
     simpa [hA.1] using hB.2 a hReach
   exact NodeStatus.pending_not_terminal hTerminal
 
-/-- The frontier of a fixed DAG is an antichain under reachability. -/
+/-- `frontier_antichain` proves the fixed-DAG frontier is a reachability antichain. -/
 theorem frontier_antichain
     (G : DAG ν)
     (state : GraphState ν payload) :

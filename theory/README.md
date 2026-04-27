@@ -23,9 +23,9 @@ stochastic; the substrate it runs on does not.
 
 ## Tracks
 
-The five tracks are sketched below. The current scaffold lands the
-type signatures and admits the load-bearing theorems as `axiom`s;
-each track is then a sequence of obligations to discharge.
+The five tracks are sketched below. Each track begins as an explicit
+obligation surface; completed slices replace scaffold assumptions with
+theorems, while unfinished tracks keep proof debt visible.
 
 ### Track 1 — Graph algebra (Mokhov)
 
@@ -48,10 +48,11 @@ through graph equivalence.
 
 `Cortex.Pulse.DAG`, `State`, `Fact`, `Frontier`, `Closure`, `Validity`,
 and `Recovery` model the Paper 1 fixed-topology staged-reduction kernel.
-The current model is extensional: a finite node type, abstract payloads,
-node-local facts, reachability-level readiness, and failure closure over
-the DAG. It avoids runtime UUID/database shapes and keeps payload and
-failure details abstract.
+The current model is extensional: a finite node type, an edge-derived DAG
+reachability relation, abstract payloads, node-local facts,
+reachability-level readiness, topology-domain validity, and failure
+closure over the DAG. It avoids runtime UUID/database shapes and keeps
+payload and failure details abstract.
 
 Mechanized results now include:
 
@@ -63,14 +64,18 @@ Mechanized results now include:
 - `propagateFailure_extensive`: propagation preserves failed nodes.
 - `propagateFailure_failureClosureComplete`: one propagation pass closes
   failure over propagatable descendants.
+- `propagateFailure_preserves_topologyDomain`: propagation preserves the
+  absence of off-topology durable state.
 - `propagateFailure_idempotent`: failure propagation is idempotent.
 - `persistence_safety`: recovered states are structurally well-formed,
-  parameterized by the abstract payload/output invariant.
+  parameterized by the persisted topology-domain invariant and the
+  abstract payload/output invariant.
 
 Remaining obligations include permutation invariance for whole frontier
 result folds, a direct-predecessor refinement for the executable runtime
 frontier, classification exhaustiveness, and the payload-specific output
-invariant required to remove the assumption from `persistence_safety`.
+invariant required to remove the remaining output assumption from
+`persistence_safety`.
 
 ### Track 3 — Rewrite soundness
 
@@ -134,7 +139,7 @@ local commits and CI agree on the Lean gate.
 |---|---|---|---|
 | 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
 | 1b. Graph quotient laws | AST laws over graph equivalence | pending | 9 |
-| 2. Fixed-topology Pulse kernel | fixed DAG/state/fact/frontier/closure/recovery surface | frontier antichain, fact commutativity, closure idempotence, structural recovery predicate | none |
+| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, fact commutativity, closure idempotence, topology-domain preservation, structural recovery predicate | none |
 | 3. Rewrite soundness | 3 | 0 | 3 |
 | 4. Provider / sparks | — | — | not started |
 | 5. Substrate / consumer boundary | — | — | not started |

@@ -1,17 +1,31 @@
-/-
-# Pulse Kernel — Graph State
+import Cortex.Pulse.DAG
+
+/-!
+## Overview
 
 This module defines the extensional state used by the fixed-topology
 Pulse kernel. Runtime payloads, failure details, and signal contents stay
 abstract; the proofs only inspect lifecycle status and whether a node has
 an output.
--/
 
-import Cortex.Pulse.DAG
+## Context
+
+The Haskell runtime stores maps keyed by durable node identifiers. The
+Lean model uses total functions over the finite topology instead, so the
+proofs can focus on lifecycle invariants rather than map bookkeeping.
+
+## Theorem Split
+
+The page introduces the status lattice, the extensional graph state, the
+topology-domain invariant, and the recovery normalization lemma that
+removes volatile `running` marks.
+-/
 
 namespace Cortex.Pulse
 
-/-- Lifecycle status for a node in the fixed-topology kernel.
+/-! ## Node Status Lattice -/
+
+/-- `NodeStatus` is the lifecycle status for a node in the fixed-topology kernel.
 
 The constructors mirror the runtime states in `Cortex.Pulse.GraphRuntime`
 while erasing payload details that are irrelevant to structural safety. -/
@@ -28,7 +42,7 @@ inductive NodeStatus : Type where
 
 namespace NodeStatus
 
-/-- Terminal statuses cannot make another local transition. -/
+/-- `NodeStatus.terminal status` means the status cannot make another local transition. -/
 def terminal : NodeStatus → Prop
   | completed => True
   | failed => True
@@ -39,7 +53,7 @@ def terminal : NodeStatus → Prop
   | interrupted => False
   | waiting => False
 
-/-- Statuses that failure closure may overwrite with `failed`. -/
+/-- `NodeStatus.propagatable status` means failure closure may overwrite it with `failed`. -/
 def propagatable : NodeStatus → Prop
   | pending => True
   | waiting => True
@@ -50,24 +64,24 @@ def propagatable : NodeStatus → Prop
   | interrupted => False
   | rewritten => False
 
-/-- Statuses that may retain an output in the abstract state model. -/
+/-- `NodeStatus.mayHaveOutput status` means the status owns a durable payload. -/
 def mayHaveOutput : NodeStatus → Prop
   | completed => True
-  | failed => True
-  | skipped => True
+  | failed => False
+  | skipped => False
   | rewritten => True
   | pending => False
   | running => False
   | interrupted => False
   | waiting => False
 
-/-- A pending node is not terminal. -/
+/-- `pending_not_terminal` states that a pending node is not terminal. -/
 theorem pending_not_terminal :
     ¬ terminal pending := by
   intro hTerminal
   exact hTerminal
 
-/-- A failed node is not propagatable. -/
+/-- `failed_not_propagatable` states that a failed node is not propagatable. -/
 theorem failed_not_propagatable :
     ¬ propagatable failed := by
   intro hPropagatable
@@ -75,11 +89,13 @@ theorem failed_not_propagatable :
 
 end NodeStatus
 
-/-- Extensional graph state: node statuses plus optional node outputs. -/
+/-! ## Extensional Graph State -/
+
+/-- `GraphState ν payload` is node statuses plus optional node outputs. -/
 structure GraphState (ν : Type u) (payload : Type v) where
-  /-- Current lifecycle status for each node. -/
+  /-- `status node` is the current lifecycle status for a node. -/
   status : ν → NodeStatus
-  /-- Optional node output. Payload contents remain abstract. -/
+  /-- `output node` is the optional node output. Payload contents remain abstract. -/
   output : ν → Option payload
 
 namespace GraphState
@@ -100,12 +116,14 @@ theorem ext {s t : GraphState ν payload}
           cases funext hOutput
           rfl
 
-/-- Initial graph state: every node is pending and no output exists. -/
+/-- `GraphState.initial` sets every node to pending with no output. -/
 def initial : GraphState ν payload where
   status := fun _ => NodeStatus.pending
   output := fun _ => none
 
-/-- Reset only volatile execution statuses before resuming a persisted run. -/
+/-! ## Recovery Normalization -/
+
+/-- `resetStatus status` resets only volatile execution statuses before resumption. -/
 def resetStatus : NodeStatus → NodeStatus
   | NodeStatus.running => NodeStatus.pending
   | NodeStatus.interrupted => NodeStatus.pending
@@ -116,26 +134,44 @@ def resetStatus : NodeStatus → NodeStatus
   | NodeStatus.waiting => NodeStatus.waiting
   | NodeStatus.rewritten => NodeStatus.rewritten
 
-/-- Crash-recovery normalization: in-flight nodes become pending again. -/
+/-- `resetRunningToPending state` makes in-flight nodes pending again after a crash. -/
 def resetRunningToPending (s : GraphState ν payload) : GraphState ν payload where
   status := fun n => resetStatus (s.status n)
   output := s.output
 
-/-- A normalized state has no node still marked as running. -/
+/-- `noRunningNodes state` means no node is still marked as running. -/
 def noRunningNodes (s : GraphState ν payload) : Prop :=
   ∀ n : ν, s.status n ≠ NodeStatus.running
 
-/-- Outputs only appear at statuses where the abstract kernel permits them. -/
+/-- `outputsRespectStatuses state` constrains outputs to statuses that may retain them. -/
 def outputsRespectStatuses (s : GraphState ν payload) : Prop :=
   ∀ (n : ν) (value : payload),
     s.output n = some value → NodeStatus.mayHaveOutput (s.status n)
 
-/-- Resetting volatile execution statuses removes every `running` marker. -/
+/-- `topologyDomain G state` says off-topology nodes are absent from durable state. -/
+def topologyDomain (G : DAG ν) (s : GraphState ν payload) : Prop :=
+  ∀ n : ν, n ∉ G.nodes → s.status n = NodeStatus.pending ∧ s.output n = none
+
+/-! ## Normalization Theorem -/
+
+/-- `resetRunning_no_running` proves status reset removes every `running` marker. -/
 theorem resetRunning_no_running (s : GraphState ν payload) :
     noRunningNodes (resetRunningToPending s) := by
   intro n
   cases hStatus : s.status n <;>
     simp [resetRunningToPending, resetStatus, hStatus]
+
+/-- `resetRunning_preserves_topologyDomain` preserves the off-topology invariant. -/
+theorem resetRunning_preserves_topologyDomain
+    (G : DAG ν)
+    (s : GraphState ν payload)
+    (hDomain : topologyDomain G s) :
+    topologyDomain G (resetRunningToPending s) := by
+  intro node hNotMem
+  rcases hDomain node hNotMem with ⟨hStatus, hOutput⟩
+  constructor
+  · simp [resetRunningToPending, resetStatus, hStatus]
+  · simpa [resetRunningToPending] using hOutput
 
 end GraphState
 
