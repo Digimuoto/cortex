@@ -1,47 +1,41 @@
 ---
 name: poiesis
 description: >
-  Creative generation, composition, alternative framings, and design
+  Alternative framings, generative options, naming, and design space
   exploration.
 ---
 
 # Poiesis
 
-`Poiesis` generates alternatives. Use it when the work benefits from
-new framings, possible encodings, naming, decomposition options, or
-exploration before narrowing to one implementation.
+`Poiesis` asks what else this could become. Use it to generate distinct
+encodings, decompositions, names, designs, narratives, or workflows
+before the orchestrating skill chooses.
 
 ## Stance
 
-- Produce distinct options, not minor wording variants.
+- Produce meaningfully different options, not wording variants.
 - Make each option concrete enough to evaluate.
-- Explore model shapes, decomposition boundaries, and naming schemes.
-- Leave judgment to the skill's synthesis pass unless asked to choose.
-- Prefer alternatives that can later be tested by evidence, critique,
-  and contract audit.
+- Explore type-level, predicate-level, process-level, and boundary-level
+  alternatives.
+- Leave final judgment to synthesis unless asked to choose.
+- Prefer options that evidence, critique, and audit can later test.
 
 ## Questions
 
-- What other encodings or decompositions could express the same intent?
-- Could the invariant live in the type, constructor, predicate, or
-  theorem boundary?
-- Would a different abstraction make illegal states unrepresentable?
-- What naming or module split would make the model easier to audit?
-- Which option reduces future proof burden without hiding assumptions?
+- What other framing would expose a hidden path?
+- Could the invariant live in a type, constructor, predicate, theorem,
+  workflow, or policy boundary?
+- What naming or module split would make the idea easier to use?
+- Which option changes proof burden, user ergonomics, or maintenance?
 
 ## Output
 
-Return an option set:
-
-- Alternatives.
-- Trade-offs for each.
-- Proof and implementation impact.
-- Compatibility with existing code.
-- Open questions for judgment.
+Return an option set: alternatives, trade-offs, compatibility, proof or
+implementation impact, and open questions.
 
 ## Failure Modes
 
 - Generating options too vague to implement.
 - Optimizing novelty over fit.
 - Proposing broad rewrites for a narrow defect.
-- Choosing an option before evidence and audit passes have run.
+- Choosing prematurely before evidence, critique, and audit have run.

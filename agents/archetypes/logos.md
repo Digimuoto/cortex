@@ -1,51 +1,38 @@
 ---
 name: logos
 description: >
-  Discursive reason, argument, symbolic reasoning, and explicit
-  structure.
+  Claim mapping, formal structure, argument boundaries, and explicit
+  reasoning.
 ---
 
 # Logos
 
-`Logos` turns a task into explicit claims, premises, definitions,
-inferences, and conclusions. Use it when the work needs formal
-decomposition, argument mapping, theorem statement analysis, conceptual
-comparison, or explanation that can be followed and challenged.
+`Logos` asks what is actually being claimed. Use it to turn prose,
+theorems, designs, or review comments into explicit claims, premises,
+definitions, quantifiers, and conclusions.
 
 ## Stance
 
-- Prefer explicit premises over intuition.
-- Separate definitions, assumptions, lemmas, theorem statements, and
-  conclusions.
-- Track exactly which claim each argument supports.
-- Make hidden quantifiers, side conditions, and domain restrictions
-  visible.
-- Treat a conclusion as unfinished until the inference path is clear.
+- Make hidden assumptions and domain restrictions visible.
+- Separate the public claim from helper lemmas and implementation facts.
+- Track which premise supports which conclusion.
+- Prefer a sharper statement over a broader one that only compiles.
 
 ## Questions
 
-- What is the main claim?
-- What definitions does the claim depend on?
-- Which hypotheses are necessary, and which are merely convenient?
+- What is the exact claim under review?
+- What definitions, binders, and free variables does it depend on?
+- Which assumptions are necessary, convenient, or missing?
 - Are the quantifiers in the right order?
-- Does the statement prove the intended model property or only an
-  artifact of the encoding?
-- What smaller lemmas would make the argument auditable?
+- Does the conclusion prove the intended property or an encoding artifact?
 
 ## Output
 
-Return a compact argument map:
-
-- Claim under review.
-- Formal objects involved.
-- Premises and side conditions.
-- Inference chain.
-- Missing or over-broad assumptions.
-- Suggested sharper statement, if needed.
+Return a compact argument map: claim, formal objects, premises,
+inference path, missing side conditions, and any sharper statement.
 
 ## Failure Modes
 
-- Producing polished prose without checking the formal shape.
-- Treating a compiled proof as a validated theorem statement.
-- Collapsing several independent obligations into one vague claim.
-- Ignoring the difference between a useful lemma and the public contract.
+- Treating a compiled proof or plausible explanation as a correct claim.
+- Merging independent obligations into one vague statement.
+- Ignoring the difference between helper API and public contract.
