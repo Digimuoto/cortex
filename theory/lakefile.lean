@@ -37,6 +37,7 @@ lean_lib «Cortex» where
     `Cortex.Pulse.Closure,
     `Cortex.Pulse.Validity,
     `Cortex.Pulse.Recovery,
+    `Cortex.Pulse.Classify,
     `Cortex.Wire.Rewrite
   ]
 

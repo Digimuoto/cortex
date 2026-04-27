@@ -90,10 +90,15 @@ Mechanized results now include:
   conditional on explicit persisted topology-domain, output ownership,
   output-completeness, and causal-history preconditions that recovery
   preserves.
+- `classifyClosedGraphState_exhaustive_of_wellFormed`: well-formed
+  closed states classify into failed, progressing, completed, or
+  suspended branches.
+- `classifyGraphState_not_stuck_of_wellFormed`: well-formed states
+  cannot classify as stuck after the runtime closure step.
 
 Remaining obligations include Haskell-side establishment of the persisted
-recovery preconditions, classification exhaustiveness, the Lean-Haskell
-modeling-boundary note, and quotient lifting for the graph algebra laws.
+recovery preconditions, the Lean-Haskell modeling-boundary note, and
+quotient lifting for the graph algebra laws.
 
 ### Track 3 — Rewrite soundness
 
@@ -160,7 +165,7 @@ local commits and CI agree on the Lean gate.
 | 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
 | 1b. Graph denotational AST laws | AST laws over graph equivalence | denotational law surface | none |
 | 1c. Graph quotient laws | lifted quotient equality laws | pending | none |
-| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate | none |
+| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none |
 | 3. Rewrite soundness | proof-carrying rewrite certificate | acyclicity/contract/budget projections | none |
 | 4. Provider / sparks | — | — | not started |
 | 5. Substrate / consumer boundary | — | — | not started |

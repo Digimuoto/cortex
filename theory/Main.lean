@@ -22,7 +22,7 @@ proof tracks imported by the root module.
 def main : IO Unit := do
   IO.println "Cortex theory — Lean 4 mechanization (scaffold)"
   IO.println "  Track 1 (Graph algebra) ......... import Cortex.Graph.Core / Laws"
-  IO.println "  Track 2 (Frontier safety) ....... import Cortex.Pulse.Frontier"
+  IO.println "  Track 2 (Pulse kernel) .......... import Cortex.Pulse.Classify"
   IO.println "  Track 3 (Rewrite soundness) ..... import Cortex.Wire.Rewrite"
   IO.println ""
   IO.println "Open obligations: see `theory/README.md`."

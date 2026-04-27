@@ -1,4 +1,5 @@
 import Mathlib.Data.Finset.Basic
+import Mathlib.Order.WellFoundedSet
 
 /-!
 ## Overview
@@ -135,6 +136,30 @@ theorem not_reaches_reverse {a b : ν} (hReach : G.reaches a b) :
     ¬ G.reaches b a := by
   intro hBack
   exact G.acyclic a (G.reaches_trans hReach hBack)
+
+/-- `exists_reaches_minimal` finds a reachability-minimal member of a finite set. -/
+theorem exists_reaches_minimal
+    (nodes : Finset ν)
+    (hNonempty : nodes.Nonempty) :
+    ∃ node ∈ nodes, ∀ predecessor ∈ nodes, ¬ G.reaches predecessor node := by
+  classical
+  let nodeSet : Set ν := {node | node ∈ nodes}
+  have hFinite : nodeSet.Finite := by
+    simp [nodeSet]
+  letI : IsStrictOrder ν G.reaches :=
+    { irrefl := fun node => G.not_reaches_self node
+      trans := fun _ _ _ hLeft hRight => G.reaches_trans hLeft hRight }
+  have hWFOn : nodeSet.WellFoundedOn G.reaches := hFinite.wellFoundedOn
+  rw [Set.wellFoundedOn_iff] at hWFOn
+  have hSetNonempty : nodeSet.Nonempty := by
+    rcases hNonempty with ⟨node, hNode⟩
+    exact ⟨node, by simpa [nodeSet] using hNode⟩
+  rcases hWFOn.has_min nodeSet hSetNonempty with ⟨node, hNode, hMinimal⟩
+  refine ⟨node, by simpa [nodeSet] using hNode, ?_⟩
+  intro predecessor hPredecessor hReach
+  have hPredecessorSet : predecessor ∈ nodeSet := by
+    simpa [nodeSet] using hPredecessor
+  exact hMinimal predecessor hPredecessorSet ⟨hReach, hPredecessorSet, hNode⟩
 
 end DAG
 

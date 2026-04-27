@@ -23,7 +23,6 @@ We present a durable workflow execution runtime organized as a staged pure reduc
 
 The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`; see [lean-mechanization.md](lean-mechanization.md) for the artifact mapping. The manuscript remains `draft` until the following obligations also land:
 
-- prove classification exhaustiveness on normalized, closed states
 - add a short artifact note describing the boundary between the Lean model and the live runtime
 
 ---
@@ -451,7 +450,7 @@ The implementation-level claims are backed by QuickCheck property tests on rando
 | Recovery normalization | §3.4, §3.7 | Partial frontier + `resetRunningToPending` + classify yields a valid closed state |
 | Sequential = batch | §3.6 | Fold of single-element `applyFrontierResults` matches batch application |
 
-Several of these properties are now mechanized in Lean 4 — frontier antichain, disjoint-key commutativity and fold permutation, closure extensiveness, monotonicity, idempotence, and recovery normalization — and the artifacts are listed in [lean-mechanization.md](lean-mechanization.md). The QuickCheck tests remain runtime evidence on the live Haskell implementation; for the still-open classification exhaustiveness obligation, they are not a substitute for proof.
+Several of these properties are now mechanized in Lean 4 — frontier antichain, disjoint-key commutativity and fold permutation, closure extensiveness, monotonicity, idempotence, recovery normalization, and classification exhaustiveness — and the artifacts are listed in [lean-mechanization.md](lean-mechanization.md). The QuickCheck tests remain runtime evidence on the live Haskell implementation; they are not a substitute for the Lean proof surface.
 
 ---
 

@@ -141,6 +141,19 @@ This is the load-bearing theorem for the crash-recovery model. It should match
 Paper 1's structural persistence-safety claim and Paper 2's recovery theorem in
 intent.
 
+### Tier 5: Classification exhaustiveness
+
+```lean
+theorem classifyClosedGraphState_exhaustive_of_wellFormed
+  (G : DAG) (s : GraphState)
+  (h : wellFormedGraphState G s) :
+  -- failed, progressing, completed, or suspended; never stuck
+  ...
+```
+
+The classifier sits above recovery: well-formed recovered states can resume,
+settle, or suspend, but they cannot enter the stuck diagnostic branch.
+
 ## Explicit Non-Goals
 
 Do not expand this plan into:

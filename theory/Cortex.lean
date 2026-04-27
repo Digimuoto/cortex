@@ -11,6 +11,7 @@ import Cortex.Pulse.Frontier
 import Cortex.Pulse.Closure
 import Cortex.Pulse.Validity
 import Cortex.Pulse.Recovery
+import Cortex.Pulse.Classify
 
 -- Track 3 — Wire rewrite soundness
 import Cortex.Wire.Rewrite
