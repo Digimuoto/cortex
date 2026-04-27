@@ -44,23 +44,33 @@ simplification and the executor's compatibility-edge derivation. The
 relation-level theorem now exists; the remaining obligation is lifting it
 through graph equivalence.
 
-### Track 2 — Frontier safety
+### Track 2 — Fixed-topology Pulse kernel
 
-`Cortex.Pulse.Frontier` models the runtime as a transition system
-over `State`. The headline invariant — every frontier node has
-terminal dependencies — is proved trivially from the filter
-definition. The interesting obligations are:
+`Cortex.Pulse.DAG`, `State`, `Fact`, `Frontier`, `Closure`, `Validity`,
+and `Recovery` model the Paper 1 fixed-topology staged-reduction kernel.
+The current model is extensional: a finite node type, abstract payloads,
+node-local facts, reachability-level readiness, and failure closure over
+the DAG. It avoids runtime UUID/database shapes and keeps payload and
+failure details abstract.
 
-- `step_independent`: parallel commutativity of frontier subsets.
-  Licenses the executor's parallel scheduling.
-- `progress`: every non-terminal reachable state advances or stalls
-  with a structural reason (cycle, missing executor, budget).
-- `determinism_modulo_sparks`: replayability under fixed external
-  sparks.
+Mechanized results now include:
 
-These admit the audit-trail story: given the same plan, same initial
-state, and same sequence of LLM/IO results, Pulse produces the same
-final state. This is the property finance regulators need.
+- `frontier_only_ready`: frontier membership implies readiness.
+- `frontier_antichain`: frontier nodes are mutually incomparable by
+  strict reachability.
+- `NodeResult.applyNodeFact_comm`: node-local facts for distinct nodes
+  commute.
+- `propagateFailure_extensive`: propagation preserves failed nodes.
+- `propagateFailure_failureClosureComplete`: one propagation pass closes
+  failure over propagatable descendants.
+- `propagateFailure_idempotent`: failure propagation is idempotent.
+- `persistence_safety`: recovered states are structurally well-formed,
+  parameterized by the abstract payload/output invariant.
+
+Remaining obligations include permutation invariance for whole frontier
+result folds, a direct-predecessor refinement for the executable runtime
+frontier, classification exhaustiveness, and the payload-specific output
+invariant required to remove the assumption from `persistence_safety`.
 
 ### Track 3 — Rewrite soundness
 
@@ -124,7 +134,7 @@ local commits and CI agree on the Lean gate.
 |---|---|---|---|
 | 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
 | 1b. Graph quotient laws | AST laws over graph equivalence | pending | 9 |
-| 2. Frontier safety | 4 | 1 | 3 |
+| 2. Fixed-topology Pulse kernel | fixed DAG/state/fact/frontier/closure/recovery surface | frontier antichain, fact commutativity, closure idempotence, structural recovery predicate | none |
 | 3. Rewrite soundness | 3 | 0 | 3 |
 | 4. Provider / sparks | — | — | not started |
 | 5. Substrate / consumer boundary | — | — | not started |

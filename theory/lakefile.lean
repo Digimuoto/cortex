@@ -17,7 +17,13 @@ lean_lib «Cortex» where
     `Cortex.Graph.Core,
     `Cortex.Graph.Relation,
     `Cortex.Graph.Laws,
+    `Cortex.Pulse.DAG,
+    `Cortex.Pulse.State,
+    `Cortex.Pulse.Fact,
     `Cortex.Pulse.Frontier,
+    `Cortex.Pulse.Closure,
+    `Cortex.Pulse.Validity,
+    `Cortex.Pulse.Recovery,
     `Cortex.Wire.Rewrite
   ]
 
