@@ -30,25 +30,25 @@ The target is structural safety, not end-to-end workflow correctness.
 
 Paper 1 should stay `draft` until all of the following exist in Lean 4:
 
-1. A machine-checked `wellFormedGraphState` predicate for normalized, closed recovered states.
-2. Proofs of the three closure laws for `propagateFailure`: extensiveness, monotonicity, idempotence.
-3. A machine-checked structural recovery theorem matching Proposition 1 in the manuscript.
-4. A short artifact note explaining the modeling boundary between the Lean kernel and the live Haskell runtime.
+1. A machine-checked `wellFormedGraphState` predicate for normalized, closed recovered states. **Done** (`theory/Cortex/Pulse/Validity.lean`).
+2. Proofs of the three closure laws for `propagateFailure`: extensiveness, monotonicity, idempotence. **Partial** — extensiveness (`propagateFailure_extensive`) and idempotence (`propagateFailure_idempotent`) are discharged in `theory/Cortex/Pulse/Closure.lean`; monotonicity remains.
+3. A machine-checked structural recovery theorem matching Proposition 1 in the manuscript. **Done** (`persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`), conditional on persisted topology-domain, output, and causal-history preconditions.
+4. A short artifact note explaining the modeling boundary between the Lean kernel and the live Haskell runtime. **Open**.
 
 ## What Must Be Proved
 
-These are the load-bearing theorems for the paper:
+Load-bearing theorems for the paper, with their current Lean status:
 
-- `frontier_antichain`
-- `applyNodeFact_comm`
-- permutation invariance of accumulation over frontier results
-- `propagateFailure_extensive`
-- `propagateFailure_monotone`
-- `propagateFailure_idempotent`
-- normalization lemmas for `resetRunningToPending`
-- `frontierExact` on normalized, closed states
-- classification exhaustiveness on normalized, closed states
-- structural persistence safety after persisted-prefix crashes
+- `frontier_antichain` — done (`theory/Cortex/Pulse/Frontier.lean`)
+- `applyNodeFact_comm` — done (`theory/Cortex/Pulse/Fact.lean`)
+- permutation invariance of accumulation over frontier results — open (only pairwise commutativity is mechanized)
+- `propagateFailure_extensive` — done (`theory/Cortex/Pulse/Closure.lean`)
+- `propagateFailure_monotone` — open
+- `propagateFailure_idempotent` — done (`theory/Cortex/Pulse/Closure.lean`)
+- normalization lemmas for `resetRunningToPending` — done (`theory/Cortex/Pulse/State.lean`, `Recovery.lean`)
+- `frontierExact` on normalized, closed states — done (`theory/Cortex/Pulse/Validity.lean`); the non-trivial bridge `readyNodes_eq_directReadyNodes` lives in the same file
+- classification exhaustiveness on normalized, closed states — open (no `Classify.lean` yet)
+- structural persistence safety after persisted-prefix crashes — done (`persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`)
 
 ## What May Stay Abstract
 
@@ -75,64 +75,63 @@ If these are assumed instead of proved, the mechanization adds too little:
 - `wellFormedGraphState`
 - the main recovery theorem
 
-## Suggested Lean Structure
+## Lean Structure
+
+The mechanization lives under `theory/Cortex/Pulse/` (rather than a separate `Paper1/` subtree, so it can share the substrate's `theory/Cortex/Graph/` algebra with Paper 2):
 
 ```text
-Paper1/
-  Graph.lean
-  State.lean
-  Fact.lean
-  Frontier.lean
-  Closure.lean
-  Classify.lean
-  Validity.lean
-  Recovery.lean
-  Examples.lean
+theory/Cortex/Pulse/
+  DAG.lean        -- finite topology, edge-derived reachability, acyclicity
+  State.lean      -- NodeStatus, GraphState, resetRunningToPending
+  Fact.lean       -- NodeOutcome, NodeResult, applyNodeFact, Admissible
+  Frontier.lean   -- Ready / DirectReady, antichain
+  Closure.lean    -- propagateFailure, extensiveness, idempotence
+  Validity.lean   -- wellFormedGraphState, frontier-bridge theorems
+  Recovery.lean   -- recoveredState, persistence_safety
+  -- Classify.lean -- pending: classification exhaustiveness
 ```
 
-The proofs should build in this order:
+Build order followed by the existing artifacts:
 
 1. finite DAG basics and reachability
 2. state representation and `applyNodeFact`
 3. frontier lemmas and antichain proof
 4. closure operator laws
 5. recovered-state validity
-6. classification correctness
-7. persisted-prefix recovery theorem
+6. persisted-prefix recovery theorem
+7. classification correctness *(pending)*
 
 ## Manuscript Mapping
 
-Map each paper claim to one Lean artifact:
-
-| Manuscript section | Lean target |
+| Manuscript section | Lean artifact |
 |---|---|
-| Lemma 1: frontier antichain | `Frontier.lean` |
-| Lemma 2: disjoint-key accumulation commutativity | `Fact.lean` |
-| Phase 2 closure laws | `Closure.lean` |
-| Definition 1: valid recovered graph state | `Validity.lean` |
-| Proposition 1: structural persistence safety | `Recovery.lean` |
-| Phase 3 classification split | `Classify.lean` |
+| Lemma 1: frontier antichain | `frontier_antichain` in `theory/Cortex/Pulse/Frontier.lean` |
+| Lemma 2: disjoint-key accumulation commutativity | `NodeResult.applyNodeFact_comm` in `theory/Cortex/Pulse/Fact.lean` |
+| Phase 2 closure laws | `propagateFailure_extensive`, `propagateFailure_idempotent` in `theory/Cortex/Pulse/Closure.lean` (monotonicity pending) |
+| Definition 1: valid recovered graph state | `wellFormedGraphState` in `theory/Cortex/Pulse/Validity.lean` |
+| Proposition 1: structural persistence safety | `persistence_safety` in `theory/Cortex/Pulse/Recovery.lean` |
+| Phase 3 classification split | pending `Classify.lean` |
 
 ## Draft Notes for the Manuscript
 
-Until the mechanization lands:
+The mechanized obligations now have direct Lean references in the manuscript body. Remaining manuscript-side guidance:
 
-- keep Proposition 1 conditional on the closure laws
-- keep the closure laws described as implementation lemmas, not settled theorems
-- keep QuickCheck evidence as implementation support, not proof replacement
+- keep Proposition 1's preconditions explicit — the Lean theorem is conditional on persisted topology-domain, output-ownership, and causal-history invariants that the runtime must establish
+- keep monotonicity described as an implementation lemma (QuickCheck plus code inspection) until `propagateFailure_monotone` is discharged
+- keep permutation invariance of frontier-result folds as a paper-level argument until the Lean fold-level theorem exists; the disjoint-key pairwise theorem is mechanized
 
-Once the mechanization lands:
+When the remaining work lands:
 
-- replace the “supported by QuickCheck and code inspection” wording with a direct pointer to the Lean artifact
-- upgrade the recovery theorem from proof sketch plus obligations to a theorem backed by mechanization
-- add a short artifact appendix or companion note summarizing the Lean model boundary
+- promote `propagateFailure_monotone` and the fold-level permutation theorem to direct Lean references
+- once `Classify.lean` exists, retire the proof-sketch wording around classification exhaustiveness
+- write the artifact note explaining the Lean ↔ Haskell modeling boundary (status, output, payload, and persistence assumptions) and link it from the manuscript
 
 ## Immediate Next Steps
 
-1. Choose the finite DAG representation and recovered-state predicate names.
-2. Write the extensional `GraphState` model before any theorem proofs.
-3. Prove the frontier and accumulation lemmas first.
-4. Only then attack closure idempotence and the recovery theorem.
+1. Prove `propagateFailure_monotone` to close the third closure law.
+2. Lift `applyNodeFact_comm` to a fold-level permutation-invariance theorem under disjoint frontier keys.
+3. Add `Classify.lean` with the four-way classification and an exhaustiveness theorem on `wellFormedGraphState`.
+4. Draft the Lean ↔ Haskell artifact note and link it from the manuscript and landing page.
 
 ## Related
 

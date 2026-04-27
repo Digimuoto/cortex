@@ -15,7 +15,7 @@ Staged reduction for durable workflow execution over fixed DAG topology. The pap
 
 Draft manuscript. See [manuscript.md](manuscript.md) for the full text.
 
-This paper stays `draft` until the fixed-topology kernel claims used by the manuscript are backed by the Lean 4 work tracked in [lean-mechanization.md](lean-mechanization.md).
+The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`, including the structural recovery theorem (`persistence_safety`), frontier antichain, disjoint-key accumulation commutativity, and the extensiveness and idempotence closure laws. The paper stays `draft` until the remaining obligations in [lean-mechanization.md](lean-mechanization.md) land: closure monotonicity, permutation invariance of full frontier folds, classification exhaustiveness, and the artifact note describing the Lean ↔ Haskell boundary.
 
 ## Abstract
 
