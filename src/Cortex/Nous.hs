@@ -11,6 +11,7 @@ module Cortex.Nous
     module Cortex.Nous.Kritikos.Capability,
     module Cortex.Nous.Logos,
     module Cortex.Nous.Logos.Capability,
+    module Cortex.Nous.Patterns.DeepReport.Contracts,
     module Cortex.Nous.Poiesis,
     module Cortex.Nous.Poiesis.Capability,
     module Cortex.Nous.Sophia,
@@ -47,6 +48,7 @@ import Cortex.Nous.Kritikos
 import Cortex.Nous.Kritikos.Capability
 import Cortex.Nous.Logos
 import Cortex.Nous.Logos.Capability
+import Cortex.Nous.Patterns.DeepReport.Contracts
 import Cortex.Nous.Poiesis
 import Cortex.Nous.Poiesis.Capability
 import Cortex.Nous.Sophia

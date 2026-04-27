@@ -247,6 +247,7 @@ library
         Cortex.Nous.Kritikos.Capability
         Cortex.Nous.Logos
         Cortex.Nous.Logos.Capability
+        Cortex.Nous.Patterns.DeepReport.Contracts
         Cortex.Nous.Poiesis
         Cortex.Nous.Poiesis.Capability
         Cortex.Nous.Sophia
@@ -383,6 +384,7 @@ test-suite cortex-test
         Cortex.Memory.RetrieveSpec
         Cortex.Memory.SourceSpec
         Cortex.MemoryCompactionSpec
+        Cortex.Nous.Patterns.DeepReport.ContractsSpec
         Cortex.Provider.OpenRouterSpec
         Cortex.Pulse.DIG447Spec
         Cortex.Pulse.DIG448Spec
