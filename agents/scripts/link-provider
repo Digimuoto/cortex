@@ -54,8 +54,15 @@ link_contexts() {
   done
 }
 
+link_archetypes() {
+  archetype_link="$1"
+
+  link_rel "$repo_root/agents/archetypes" "$archetype_link"
+}
+
 link_codex() {
   link_contexts AGENTS.md
+  link_archetypes "$repo_root/.codex/archetypes"
 
   skill_dest="$repo_root/.codex/skills"
   mkdir -p "$skill_dest"
@@ -69,6 +76,7 @@ link_codex() {
 
 link_claude() {
   link_contexts CLAUDE.md
+  link_archetypes "$repo_root/.claude/archetypes"
 
   command_dest="$repo_root/.claude/commands"
   mkdir -p "$command_dest"
@@ -82,6 +90,7 @@ link_claude() {
 
 link_opencode() {
   link_contexts AGENTS.md
+  link_archetypes "$repo_root/.opencode/archetypes"
 
   skill_dest="$repo_root/.opencode/skills"
   mkdir -p "$skill_dest"

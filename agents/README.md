@@ -9,6 +9,7 @@ directly.
 agents/
 ├── README.md
 ├── context.md                  # Root agent handbook
+├── archetypes/                 # Shared Nous-style reasoning profiles
 ├── scripts/
 │   └── link-provider           # Builds Codex/Claude symlinks
 ├── src-platform/
@@ -25,6 +26,7 @@ agents/
     ├── pr-resolve-review/      # Address PR review comments
     ├── haskell-code-style/     # Opinionated Haskell review (+ references/)
     ├── lean-code-style/        # Strict Lean 4 proof review (+ references/)
+    ├── lean-theorem-attack/    # Semantic theorem/model attack
     ├── doc-review/             # Docs review (+ references/)
     └── doc-review-and-fix/     # Review and edit docs in one pass
 ```
@@ -33,6 +35,11 @@ Each skill lives in its own directory with a `SKILL.md` entrypoint. Each
 source-tree context file mirrors the repo path it governs under
 `agents/<repo-path>/context.md`.
 
+Shared archetype profiles live under `agents/archetypes/`. Skills load
+these profiles as reusable reasoning lenses, for example `kritikos` for
+adversarial review or `themis` for contract audit. Archetypes do not
+grant tool authority and do not replace skill workflows.
+
 ## Provider links
 
 Regenerate provider-specific symlinks with one command per provider:
@@ -40,19 +47,29 @@ Regenerate provider-specific symlinks with one command per provider:
 ```bash
 just agent-link-codex
 just agent-link-claude
+just agent-link-opencode
 ```
 
 `agent-link-codex` links:
 
 - `agents/context.md` -> `AGENTS.md`
 - `agents/<repo-path>/context.md` -> `<repo-path>/AGENTS.md`
+- `agents/archetypes` -> `.codex/archetypes`
 - `agents/skills/<name>` -> `.codex/skills/<name>`
 
 `agent-link-claude` links:
 
 - `agents/context.md` -> `CLAUDE.md`
 - `agents/<repo-path>/context.md` -> `<repo-path>/CLAUDE.md`
+- `agents/archetypes` -> `.claude/archetypes`
 - `agents/skills/<name>/SKILL.md` -> `.claude/commands/<name>.md`
+
+`agent-link-opencode` links:
+
+- `agents/context.md` -> `AGENTS.md`
+- `agents/<repo-path>/context.md` -> `<repo-path>/AGENTS.md`
+- `agents/archetypes` -> `.opencode/archetypes`
+- `agents/skills/<name>` -> `.opencode/skills/<name>`
 
 Gemini-specific files are intentionally not generated. Add a provider
 only when the repo has a maintained setup command for it.
@@ -112,3 +129,13 @@ deliberately absent. Downstream products keep their own fuller
    (`name`, `description`).
 2. Supporting references go under `agents/skills/<name>/references/`.
 3. Run the provider link command for the runtime that should expose it.
+
+## Adding an archetype
+
+1. Create `agents/archetypes/<name>.md` with YAML frontmatter
+   (`name`, `description`).
+2. Keep the profile provider-neutral: role, stance, questions, output,
+   and failure modes.
+3. Reference it from skills by repo-root path, such as
+   `agents/archetypes/<name>.md`.
+4. Run the provider link command for the runtime that should expose it.

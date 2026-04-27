@@ -31,7 +31,7 @@ substrate and depends on it, not the other way round.
 - `docs/` - canonical Cortex docs. Flat layout, no `/cortex/` prefix.
   Keep product docs out.
 - `test/` - hspec-discover driven Cortex-only suite.
-- `agents/` - provider-neutral agent context, skills, and setup
+- `agents/` - provider-neutral agent context, archetypes, skills, and setup
   scripts. Provider-specific files are generated from here.
 
 ## Build System
@@ -144,13 +144,14 @@ Repo-local agent context lives under `agents/`.
 
 - Root context: `agents/context.md`.
 - Source-tree context: `agents/<repo-path>/context.md`.
+- Archetypes: `agents/archetypes/<name>.md`.
 - Skills: `agents/skills/<name>/SKILL.md`.
 - Provider symlinks are gitignored and regenerated with
   `just agent-link-codex`, `just agent-link-claude`, or
   `just agent-link-opencode`.
 
 Do not edit generated provider files directly. Move reusable guidance
-back into provider-neutral context or skills.
+back into provider-neutral context, archetypes, or skills.
 
 ## Principles For This Codebase
 
