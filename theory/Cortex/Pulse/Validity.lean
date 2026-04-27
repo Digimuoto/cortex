@@ -16,7 +16,7 @@ page packages the structural invariants that recovery can prove today.
 ## Theorem Split
 
 The page first records frontier exactness, then combines topology-domain,
-output, running, closure, and frontier obligations into
+output, running, closure, causal-history, and frontier obligations into
 `wellFormedGraphState`.
 -/
 
@@ -40,6 +40,15 @@ theorem frontierExact_readyNodes
   intro node
   exact mem_readyNodes G state node
 
+/-- `directReady_sound` proves executable-direct readiness implies proof readiness. -/
+theorem directReady_sound
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hCausal : CausalHistoryClosed G state) :
+    ∀ node : ν, DirectReady G state node → Ready G state node := by
+  intro node hDirect
+  exact directReady_ready_of_causalHistoryClosed G state hCausal hDirect
+
 /-! ## Recovered-State Validity -/
 
 /-- `wellFormedGraphState G state` is validity for normalized recovered graph states. -/
@@ -49,6 +58,7 @@ def wellFormedGraphState
   GraphState.topologyDomain G state ∧
     GraphState.outputsRespectStatuses state ∧
       GraphState.noRunningNodes state ∧
-        failureClosureComplete G state ∧ frontierExact G state
+        failureClosureComplete G state ∧
+          CausalHistoryClosed G state ∧ frontierExact G state
 
 end Cortex.Pulse

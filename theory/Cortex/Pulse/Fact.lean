@@ -66,6 +66,14 @@ def output : NodeOutcome payload → Option payload
   | shutdown => none
   | runCancelled => none
 
+/-- `output_respects_status` says emitted outputs match statuses that own payloads. -/
+theorem output_respects_status
+    (outcome : NodeOutcome payload)
+    (value : payload)
+    (hOutput : output outcome = some value) :
+    NodeStatus.mayHaveOutput (status outcome) := by
+  cases outcome <;> simp [output, status, NodeStatus.mayHaveOutput] at hOutput ⊢
+
 end NodeOutcome
 
 /-! ## Durable Node Facts -/
@@ -81,6 +89,10 @@ namespace NodeResult
 
 variable {ν : Type u} {payload : Type v}
 
+/-- `InTopology G result` says a durable node fact targets a topology node. -/
+def InTopology (G : DAG ν) (result : NodeResult ν payload) : Prop :=
+  result.node ∈ G.nodes
+
 /-- `applyNodeFact result state` applies a node-local fact to the graph state. -/
 def applyNodeFact [DecidableEq ν]
     (result : NodeResult ν payload)
@@ -89,6 +101,42 @@ def applyNodeFact [DecidableEq ν]
     if n = result.node then result.outcome.status else state.status n
   output := fun n =>
     if n = result.node then result.outcome.output else state.output n
+
+/-! ## Invariant Preservation -/
+
+/-- `applyNodeFact_preserves_topologyDomain` preserves off-topology absence. -/
+theorem applyNodeFact_preserves_topologyDomain [DecidableEq ν]
+    (G : DAG ν)
+    (result : NodeResult ν payload)
+    (state : GraphState ν payload)
+    (hDomain : GraphState.topologyDomain G state)
+    (hResult : InTopology G result) :
+    GraphState.topologyDomain G (applyNodeFact result state) := by
+  intro node hNotMem
+  by_cases hNode : node = result.node
+  · subst node
+    exact False.elim (hNotMem hResult)
+  · rcases hDomain node hNotMem with ⟨hStatus, hOutput⟩
+    constructor
+    · simp [applyNodeFact, hNode, hStatus]
+    · simp [applyNodeFact, hNode, hOutput]
+
+/-- `applyNodeFact_preserves_outputsRespectStatuses` preserves output ownership. -/
+theorem applyNodeFact_preserves_outputsRespectStatuses [DecidableEq ν]
+    (result : NodeResult ν payload)
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsRespectStatuses state) :
+    GraphState.outputsRespectStatuses (applyNodeFact result state) := by
+  intro node value hOutput
+  by_cases hNode : node = result.node
+  · subst node
+    simp [applyNodeFact] at hOutput ⊢
+    exact NodeOutcome.output_respects_status result.outcome value hOutput
+  · have hOriginalOutput : state.output node = some value := by
+      simpa [applyNodeFact, hNode] using hOutput
+    have hMayHaveOutput : NodeStatus.mayHaveOutput (state.status node) :=
+      hOutputs node value hOriginalOutput
+    simpa [applyNodeFact, hNode] using hMayHaveOutput
 
 /-! ## Disjoint-Key Accumulation -/
 

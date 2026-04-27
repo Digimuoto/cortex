@@ -195,6 +195,27 @@ theorem propagateFailure_preserves_topologyDomain
   · simp [propagateFailure, propagateStatus, hStatus, hNoAncestor]
   · simpa [propagateFailure] using hOutput
 
+/-- `propagateFailure_preserves_outputsRespectStatuses` preserves output ownership. -/
+theorem propagateFailure_preserves_outputsRespectStatuses
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (hOutputs : GraphState.outputsRespectStatuses state) :
+    GraphState.outputsRespectStatuses (propagateFailure G state) := by
+  classical
+  intro node value hOutput
+  by_cases hClosed :
+    NodeStatus.propagatable (state.status node) ∧ hasFailedAncestor G state node
+  · have hMayHaveOutput : NodeStatus.mayHaveOutput (state.status node) :=
+      hOutputs node value hOutput
+    cases hStatus : state.status node <;>
+      simp
+        [ NodeStatus.propagatable
+        , NodeStatus.mayHaveOutput
+        , hClosed
+        , hStatus
+        ] at hClosed hMayHaveOutput ⊢
+  · simpa [propagateFailure, propagateStatus, hClosed] using hOutputs node value hOutput
+
 /-! ## Idempotence -/
 
 /-- `propagateFailure_of_failureClosureComplete` makes failure-closed states fixed points. -/

@@ -75,6 +75,23 @@ def mayHaveOutput : NodeStatus → Prop
   | interrupted => False
   | waiting => False
 
+/-- `NodeStatus.unblocksSuccessors status` means direct successors may run past it. -/
+def unblocksSuccessors : NodeStatus → Prop
+  | completed => True
+  | skipped => True
+  | rewritten => True
+  | failed => False
+  | pending => False
+  | running => False
+  | interrupted => False
+  | waiting => False
+
+/-- `unblocks_terminal` says successor-unblocking statuses are terminal. -/
+theorem unblocks_terminal {status : NodeStatus}
+    (hUnblocks : unblocksSuccessors status) :
+    terminal status := by
+  cases status <;> simp [unblocksSuccessors, terminal] at hUnblocks ⊢
+
 /-- `pending_not_terminal` states that a pending node is not terminal. -/
 theorem pending_not_terminal :
     ¬ terminal pending := by
@@ -134,6 +151,18 @@ def resetStatus : NodeStatus → NodeStatus
   | NodeStatus.waiting => NodeStatus.waiting
   | NodeStatus.rewritten => NodeStatus.rewritten
 
+/-- `resetStatus_preserves_terminal` preserves terminal status through recovery reset. -/
+theorem resetStatus_preserves_terminal {status : NodeStatus}
+    (hTerminal : NodeStatus.terminal status) :
+    NodeStatus.terminal (resetStatus status) := by
+  cases status <;> simp [resetStatus, NodeStatus.terminal] at hTerminal ⊢
+
+/-- `resetStatus_reflects_unblocks` recovers original unblocking from reset unblocking. -/
+theorem resetStatus_reflects_unblocks {status : NodeStatus}
+    (hUnblocks : NodeStatus.unblocksSuccessors (resetStatus status)) :
+    NodeStatus.unblocksSuccessors status := by
+  cases status <;> simp [resetStatus, NodeStatus.unblocksSuccessors] at hUnblocks ⊢
+
 /-- `resetRunningToPending state` makes in-flight nodes pending again after a crash. -/
 def resetRunningToPending (s : GraphState ν payload) : GraphState ν payload where
   status := fun n => resetStatus (s.status n)
@@ -172,6 +201,22 @@ theorem resetRunning_preserves_topologyDomain
   constructor
   · simp [resetRunningToPending, resetStatus, hStatus]
   · simpa [resetRunningToPending] using hOutput
+
+/-- `resetRunning_preserves_outputsRespectStatuses` preserves output ownership. -/
+theorem resetRunning_preserves_outputsRespectStatuses
+    (s : GraphState ν payload)
+    (hOutputs : outputsRespectStatuses s) :
+    outputsRespectStatuses (resetRunningToPending s) := by
+  intro node value hOutput
+  have hMayHaveOutput : NodeStatus.mayHaveOutput (s.status node) :=
+    hOutputs node value hOutput
+  cases hStatus : s.status node <;>
+    simp
+      [ resetRunningToPending
+      , resetStatus
+      , NodeStatus.mayHaveOutput
+      , hStatus
+      ] at hMayHaveOutput ⊢
 
 end GraphState
 

@@ -39,6 +39,35 @@ def Ready (G : DAG ν) (state : GraphState ν payload) (node : ν) : Prop :=
     ∀ predecessor : ν,
       G.reaches predecessor node → NodeStatus.terminal (state.status predecessor)
 
+/-- `DirectReady G state node` mirrors the executable direct-predecessor frontier check. -/
+def DirectReady (G : DAG ν) (state : GraphState ν payload) (node : ν) : Prop :=
+  state.status node = NodeStatus.pending ∧
+    ∀ predecessor : ν,
+      G.predecessor predecessor node →
+        NodeStatus.unblocksSuccessors (state.status predecessor)
+
+/-- `CausalHistoryClosed G state` says unblocking nodes carry closed ancestor history. -/
+def CausalHistoryClosed (G : DAG ν) (state : GraphState ν payload) : Prop :=
+  ∀ node : ν,
+    NodeStatus.unblocksSuccessors (state.status node) →
+      ∀ predecessor : ν,
+        G.reaches predecessor node → NodeStatus.terminal (state.status predecessor)
+
+/-- `directReady_ready_of_causalHistoryClosed` bridges executable and proof frontiers. -/
+theorem directReady_ready_of_causalHistoryClosed
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    {node : ν}
+    (hCausal : CausalHistoryClosed G state)
+    (hDirect : DirectReady G state node) :
+    Ready G state node := by
+  constructor
+  · exact hDirect.1
+  · intro predecessor hReach
+    rcases EdgePath.last_step hReach with hEdge | ⟨direct, hPrefix, hEdge⟩
+    · exact NodeStatus.unblocks_terminal (hDirect.2 predecessor hEdge)
+    · exact hCausal direct (hDirect.2 direct hEdge) predecessor hPrefix
+
 /-! ## Finite Frontier -/
 
 /-- `readyNodes G state` is the finite frontier for a topology and state. -/

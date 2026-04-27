@@ -54,6 +54,17 @@ theorem target_mem
   | direct hEdge => exact hTarget hEdge
   | trans _ _ _ ihRight => exact ihRight
 
+/-- `last_step` decomposes a non-empty path into its final direct edge. -/
+theorem last_step {a b : ν}
+    (hPath : EdgePath edge a b) :
+    edge a b = true ∨ ∃ c : ν, EdgePath edge a c ∧ edge c b = true := by
+  induction hPath with
+  | direct hEdge => exact Or.inl hEdge
+  | trans hLeft hRight _ ihRight =>
+      rcases ihRight with hDirect | ⟨c, hPrefix, hEdge⟩
+      · exact Or.inr ⟨_, hLeft, hDirect⟩
+      · exact Or.inr ⟨c, EdgePath.trans hLeft hPrefix, hEdge⟩
+
 end EdgePath
 
 /-! ## Fixed Topology -/

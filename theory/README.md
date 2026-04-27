@@ -33,10 +33,11 @@ theorems, while unfinished tracks keep proof debt visible.
 `empty`, `vertex`, `overlay`, `connect`. `Cortex.Graph.Relation`
 defines the finite relation denotation used by the Haskell
 `toRelation` implementation and proves the Mokhov laws on that
-denotation with mathlib `Finset`s. `Cortex.Graph.Laws` still states the
-AST-facing laws as axioms because raw syntax trees are not definitionally
-equal; discharging those axioms requires the next quotient step
-(`Cortex.Graph.Quotient`, TODO).
+denotation with mathlib `Finset`s. `Cortex.Graph.Laws` now exposes the
+AST-facing laws as theorems over denotational equality (`GraphEq`),
+because raw syntax trees are not definitionally equal. The next quotient
+step (`Cortex.Graph.Quotient`, TODO) can lift those denotational laws to
+ordinary equality on a quotient carrier.
 
 **Headline obligation:** `connect_decomposition`
 (`g · h · k = g · h ⊕ g · k ⊕ h · k`). This is what licenses circuit
@@ -66,16 +67,18 @@ Mechanized results now include:
   failure over propagatable descendants.
 - `propagateFailure_preserves_topologyDomain`: propagation preserves the
   absence of off-topology durable state.
+- `propagateFailure_preserves_outputsRespectStatuses`: propagation
+  preserves output ownership.
 - `propagateFailure_idempotent`: failure propagation is idempotent.
+- `directReady_sound`: executable direct-predecessor readiness implies
+  proof-level reachability readiness under causal-history closure.
 - `persistence_safety`: recovered states are structurally well-formed,
-  parameterized by the persisted topology-domain invariant and the
-  abstract payload/output invariant.
+  parameterized by persisted topology-domain, output, and causal-history
+  invariants that recovery preserves.
 
 Remaining obligations include permutation invariance for whole frontier
-result folds, a direct-predecessor refinement for the executable runtime
-frontier, classification exhaustiveness, and the payload-specific output
-invariant required to remove the remaining output assumption from
-`persistence_safety`.
+result folds, full executable frontier classification, classification
+exhaustiveness, and quotient lifting for the graph algebra laws.
 
 ### Track 3 — Rewrite soundness
 
@@ -138,13 +141,14 @@ local commits and CI agree on the Lean gate.
 | Track | Statements | Proved | Axiomatized |
 |---|---|---|---|
 | 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
-| 1b. Graph quotient laws | AST laws over graph equivalence | pending | 9 |
-| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, fact commutativity, closure idempotence, topology-domain preservation, structural recovery predicate | none |
+| 1b. Graph denotational AST laws | AST laws over graph equivalence | denotational law surface | none |
+| 1c. Graph quotient laws | lifted quotient equality laws | pending | none |
+| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery surface | frontier antichain, fact commutativity, closure idempotence, topology-domain/output/causal preservation, structural recovery predicate | none |
 | 3. Rewrite soundness | 3 | 0 | 3 |
 | 4. Provider / sparks | — | — | not started |
 | 5. Substrate / consumer boundary | — | — | not started |
 
-Discharging the axioms is the actual work. The scaffold's only job is
-to make the obligation graph compile and run end-to-end so that the
-proof debt is visible and the first axiom-to-theorem promotion has a
-home to land in.
+Discharging the remaining axioms is the actual work. The scaffold's only
+job is to make the obligation graph compile and run end-to-end so that
+proof debt is visible and each axiom-to-theorem promotion has a home to
+land in.
