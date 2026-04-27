@@ -26,6 +26,7 @@ own domain semantics, policy, tools, operators, transport, and persistence.
 | **Controlled rewrites** | Runtime topology changes are proposals admitted through explicit rewrite rules and budgets. |
 | **Topological memory** | Nodes can query settled upstream graph state without turning memory into hidden mutable state. |
 | **Artifacts and provenance** | Structured outputs carry stable artifact-local provenance instead of relying on generated prose. |
+| **Cortex.Nous** | A structured reasoning library above the substrate with canonical epistemological archetypes and templates. |
 | **Host-action boundary** | Product-specific side effects stay behind authenticated, idempotent host APIs. |
 
 ## System Layers
@@ -113,6 +114,8 @@ flowchart LR
    controlled topology evolution.
 7. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** -
    structured outputs and explanation.
+8. **[Nous reasoning library](Architecture/09-nous-reasoning-library.md)** -
+   epistemological archetypes above the substrate.
 
 ## Explore The Canon
 

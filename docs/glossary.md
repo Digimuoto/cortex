@@ -21,6 +21,14 @@ casual lookup and orientation.
   [Reference/Wire/grammar-v1.md](Reference/Wire/grammar-v1.md).
 - **Pulse** — the durable runtime that executes Circuits. See
   [Architecture/06-pulse-runtime.md](Architecture/06-pulse-runtime.md).
+- **Cortex.Nous** — the structured reasoning library above the runtime
+  substrate. It owns canonical epistemological archetypes and templates, not
+  runtime authority.
+- **Logos** — the `Cortex.Nous.Logos` archetype for discursive reason,
+  argument, and symbolic reasoning.
+- **Nous capability bundle** — the operational implementation of an archetype:
+  prompt discipline, retrieval corpus, embedding spaces, tools, memory policy,
+  evaluation criteria, and runtime contract.
 
 ## Wire language
 

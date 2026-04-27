@@ -6,7 +6,7 @@ file instead.
 
 Cortex is a standalone substrate: a durable runtime plus a
 structured-reasoning library above it (see ADR 0015). The runtime is the
-canonical public surface. `Cortex.Logoi` is a library on top of the
+canonical public surface. `Cortex.Nous` is a library on top of the
 substrate and depends on it, not the other way round.
 
 ## Repository Shape
@@ -16,7 +16,7 @@ substrate and depends on it, not the other way round.
   `Cortex.Memory`, `Cortex.Capability`, `Cortex.Document`, and
   `Cortex.Event`. Implementation-era roots such as `Cortex.Task`,
   `Cortex.Provider`, `Cortex.Research`, and `Cortex.Run` remain only as
-  migration surfaces until the Logoi follow-up lands.
+  migration surfaces until the Nous follow-up lands.
 - `src-platform/Platform/` - runtime substrate library Cortex depends
   on: `Platform.Observability`, `Platform.DurableTask`,
   `Platform.Database`, `Platform.HTTP.Retry`, `Platform.Text`, etc.
@@ -129,7 +129,7 @@ Cortex docs are the source of truth for substrate design. When editing
 docs:
 
 - Architecture chapters describe the substrate. Keep reasoning-layer
-  content explicitly attributed to `Cortex.Logoi`.
+  content explicitly attributed to `Cortex.Nous`.
 - ADRs are numbered and append-only. New decisions get new ADR files.
 - `docs/Consumers/<consumer>/` documents downstream consumer bindings
   and integration contracts, not the frame for Cortex itself.

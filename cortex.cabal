@@ -6,7 +6,7 @@ description:
     Cortex is a durable runtime substrate for typed-dataflow programs:
     Graph algebra, Circuit validation, Wire source language, Pulse
     executor, memory substrate, and capability abstractions. A structured
-    reasoning library (Cortex.Logoi) sits on top of the substrate and
+    reasoning library (Cortex.Nous) sits on top of the substrate and
     depends on it, not the other way round (ADR 0015).
 
 license:            Apache-2.0
@@ -195,6 +195,7 @@ library
         Cortex.Graph.Decompose
         Cortex.Graph.Influence
         Cortex.Graph.Validate
+        Cortex.Nous.Types
         Cortex.Wire.AST
         Cortex.Wire.Contracts
         Cortex.Wire.Proposal
@@ -239,7 +240,21 @@ library
         Cortex.Json.Object
         Cortex.Json.Preview
         Cortex.Json.Text
-        Cortex.Logoi
+        Cortex.Nous
+        Cortex.Nous.Episteme
+        Cortex.Nous.Episteme.Capability
+        Cortex.Nous.Kritikos
+        Cortex.Nous.Kritikos.Capability
+        Cortex.Nous.Logos
+        Cortex.Nous.Logos.Capability
+        Cortex.Nous.Poiesis
+        Cortex.Nous.Poiesis.Capability
+        Cortex.Nous.Sophia
+        Cortex.Nous.Sophia.Capability
+        Cortex.Nous.Techne
+        Cortex.Nous.Techne.Capability
+        Cortex.Nous.Themis
+        Cortex.Nous.Themis.Capability
         Cortex.Provider.OpenRouter
         Cortex.Provider.OpenRouter.Client
         Cortex.Provider.OpenRouter.Embeddings

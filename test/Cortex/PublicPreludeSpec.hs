@@ -4,16 +4,32 @@ module Cortex.PublicPreludeSpec
 where
 
 import Cortex qualified
+import Data.Text qualified as T
 import Platform qualified
 import Test.Hspec
 
 spec :: Spec
 spec =
   describe "public preludes" $ do
-    it "exposes representative Cortex substrate and Logoi types" $ do
+    it "exposes representative Cortex substrate and Nous types" $ do
       Cortex.unNodeId (Cortex.NodeId "root") `shouldBe` "root"
       Cortex.researchChunkHasVisibleContent emptyChunk `shouldBe` False
       Cortex.emptyCortexAgentBudget `shouldBe` Cortex.CortexAgentBudget Nothing Nothing
+      Cortex.nousArchetypeDefinitionPath Cortex.logosDefinition
+        `shouldBe` "Cortex.Nous.Logos"
+      Cortex.nousCapabilityBundlePath Cortex.logosCapabilityBundle
+        `shouldBe` "Cortex.Nous.Logos.Capability"
+      Cortex.nousCapabilityBundleStatus Cortex.logosCapabilityBundle
+        `shouldBe` Cortex.NousCapabilityBundleStub
+
+    it "keeps Nous archetype paths and bundle component slots in sync" $ do
+      length Cortex.allNousArchetypeDefinitions `shouldBe` length Cortex.allNousArchetypes
+      fmap Cortex.nousArchetypeDefinitionArchetype Cortex.allNousArchetypeDefinitions
+        `shouldBe` Cortex.allNousArchetypes
+      mapM_ assertNousDefinitionPath Cortex.allNousArchetypeDefinitions
+      mapM_ assertNousCapabilityBundlePath Cortex.allNousArchetypes
+      fmap Cortex.nousCapabilityComponentKind (Cortex.nousCapabilityBundleComponents Cortex.logosCapabilityBundle)
+        `shouldBe` [minBound .. maxBound]
 
     it "exposes representative Platform runtime helpers" $ do
       Platform.runStatusToText Platform.Pending `shouldBe` "pending"
@@ -34,3 +50,15 @@ emptyChunk =
       Cortex.researchChunkExternalRefs = [],
       Cortex.researchChunkOpenGaps = []
     }
+
+assertNousDefinitionPath :: Cortex.NousArchetypeDefinition -> Expectation
+assertNousDefinitionPath definition =
+  Cortex.nousArchetypeDefinitionPath definition
+    `shouldBe` ("Cortex.Nous." <> T.pack (show (Cortex.nousArchetypeDefinitionArchetype definition)))
+
+assertNousCapabilityBundlePath :: Cortex.NousArchetype -> Expectation
+assertNousCapabilityBundlePath archetype =
+  let definition = Cortex.nousArchetypeDefinition archetype
+      bundle = Cortex.nousCapabilityBundle archetype
+   in Cortex.nousCapabilityBundlePath bundle
+        `shouldBe` (Cortex.nousArchetypeDefinitionPath definition <> ".Capability")

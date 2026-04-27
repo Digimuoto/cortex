@@ -28,7 +28,8 @@ Each ADR captures one committed design decision. Files use `NNNN-kebab-slug.md` 
 | [0012](0012-topological-memory-as-deterministic-graph-query.md) | Topological Memory as Deterministic Graph Query | accepted |
 | [0013](0013-report-provenance-artifact-contract.md) | Artifact Provenance Contract | accepted |
 | [0014](0014-executor-taxonomy-model-vs-external-call.md) | Model vs External Call | proposed |
-| [0015](0015-cortex-logoi-reasoning-layer.md) | Structured Reasoning Above the Cortex Substrate | proposed |
+| [0015](0015-cortex-logoi-reasoning-layer.md) | Structured Reasoning Above the Cortex Substrate | superseded |
+| [0016](0016-canonical-cortex-epistemological-archetypes.md) | Canonical Cortex Epistemological Archetypes | proposed |
 
 ## Writing a new ADR
 

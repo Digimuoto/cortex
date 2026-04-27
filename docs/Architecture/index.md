@@ -20,6 +20,7 @@ If you are evaluating Cortex as a system to adopt or build on, start here:
 3. [06-pulse-runtime.md](06-pulse-runtime.md)
 4. [07-rewrites-and-materialization.md](07-rewrites-and-materialization.md)
 5. [08-artifacts-and-provenance.md](08-artifacts-and-provenance.md)
+6. [09-nous-reasoning-library.md](09-nous-reasoning-library.md)
 
 Then read these for the deeper rationale and host-boundary contract:
 
@@ -36,6 +37,7 @@ Then read these for the deeper rationale and host-boundary contract:
 | 06 | [Pulse runtime](06-pulse-runtime.md) | Durable execution service, service boundary, task types, checkpoints. |
 | 07 | [Rewrites and materialization](07-rewrites-and-materialization.md) | Bounded dynamic graph evolution, gas, admission policy. |
 | 08 | [Artifacts and provenance](08-artifacts-and-provenance.md) | Runtime outputs, contract envelopes, provenance chains. |
+| 09 | [Nous reasoning library](09-nous-reasoning-library.md) | Epistemological archetypes above the runtime substrate. |
 
 Normative grammar details (operators, port signatures, type-checking) live in [Reference/Wire/](../Reference/Wire/), not here. Chapters point into references where precision is needed.
 

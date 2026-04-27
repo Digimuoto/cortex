@@ -11,8 +11,8 @@ module Cortex
     module Cortex.Event,
     module Cortex.Graph,
     GraphValidationError,
-    module Cortex.Logoi,
     module Cortex.Memory,
+    module Cortex.Nous,
     module Cortex.Pulse,
     module Cortex.Wire,
   )
@@ -25,8 +25,8 @@ import Cortex.Document qualified as Document
 import Cortex.Event
 import Cortex.Graph hiding (ValidationError)
 import Cortex.Graph qualified as Graph
-import Cortex.Logoi
 import Cortex.Memory
+import Cortex.Nous
 import Cortex.Pulse
 import Cortex.Wire
 

@@ -69,7 +69,7 @@ your plan:
 
 If the work would introduce reasoning-layer concerns (role taxonomies,
 reasoning templates, memory presets), it probably belongs in a future
-`Cortex.Logoi` module set — not in the runtime substrate. Flag this and
+`Cortex.Nous` module set — not in the runtime substrate. Flag this and
 stop to discuss before coding.
 
 ### 3. Prerequisites

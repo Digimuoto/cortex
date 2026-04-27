@@ -63,6 +63,28 @@ Cortex has a small closed set of globally-ambient namespaces:
 
 Beyond these four, every name is local: introduced by `let`, `node`, or `import`.
 
+## Nous archetypes
+
+`Cortex.Nous` adds a reusable epistemological catalog above the substrate. These
+names classify modes of cognition; they do not grant executor authority or
+create new registries.
+
+| Archetype | Role |
+|---|---|
+| `Cortex.Nous.Logos` | Discursive reason, argument, symbolic reasoning |
+| `Cortex.Nous.Sophia` | Wisdom, judgment, synthesis |
+| `Cortex.Nous.Techne` | Craft, engineering, implementation |
+| `Cortex.Nous.Episteme` | Knowledge, evidence, research |
+| `Cortex.Nous.Kritikos` | Criticism, adversarial review |
+| `Cortex.Nous.Themis` | Audit, law, correctness, constraints |
+| `Cortex.Nous.Poiesis` | Creative generation, composition |
+
+Each archetype may have an operational capability bundle at
+`Cortex.Nous.<Archetype>.Capability`. The archetype is the semantic definition;
+the capability bundle is the concrete set of prompt discipline, retrieval
+corpus, embedding spaces, tool surface, memory policy, evaluation criteria, and
+runtime contract. Agent profiles compose one or more capability activations.
+
 ## Doc-kind taxonomy
 
 Docs are classified on two axes:
