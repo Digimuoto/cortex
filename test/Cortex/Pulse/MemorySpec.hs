@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.MemorySpec
-Description : Pure tests for 'Cortex.Pulse.Memory' (DIG-529).
+Description : Pure tests for 'Cortex.Pulse.Memory'.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -55,7 +55,7 @@ nid :: Text -> NodeId
 nid = NodeId
 
 {- | Planner → {Analyst-A, Analyst-B, Analyst-C} → Reviewer.  The
-canonical DIG-507-shaped fan-out used across several specs.
+canonical planner/analyst/reviewer fan-out used across several specs.
 -}
 fanoutTopology :: Relation NodeId
 fanoutTopology =

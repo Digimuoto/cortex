@@ -62,12 +62,16 @@ jobs:
               - 'src/**'
               - 'src-platform/**'
               - 'test/**'
+              - '.license-header.txt'
               - '.hlint.yaml'
               - 'cabal.project'
               - 'cortex.cabal'
+              - 'fourmolu.yaml'
               - 'flake.lock'
               - 'flake.nix'
               - 'nix/**'
+              - 'scripts/check-language-pragma-allowlist.sh'
+              - 'scripts/check-module-haddock.sh'
             theory:
               - 'theory/**'
               - 'agents/skills/lean-code-style/**'
@@ -263,6 +267,9 @@ jobs:
 
       - name: Check language pragmas
         run: nix run '.#check-language-pragmas' --print-build-logs
+
+      - name: Check module Haddock
+        run: nix run '.#check-module-haddock' --print-build-logs
 
   lean-lint:
     name: Lint Lean

@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.MemoryIntegrationSpec
-Description : End-to-end integration spec for 'Cortex.Pulse.Memory' (DIG-529).
+Description : End-to-end integration spec for 'Cortex.Pulse.Memory'.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -62,7 +62,7 @@ tAt secs = addUTCTime (fromIntegral secs) t0
 nid :: Text -> NodeId
 nid = NodeId
 
--- | The DIG-507 fan-out shape: planner → three analysts → reviewer.
+-- | The canonical fan-out shape: planner → three analysts → reviewer.
 fanoutTopology :: Relation NodeId
 fanoutTopology =
   toRelation
@@ -98,8 +98,8 @@ budget =
 
 {- | A 'PersistedGraphState' shaped as if the planner and all three
 analysts have settled and the reviewer is still pending.  The
-analysts all share routing key @"analyst"@ — that's the DIG-529
-sibling-preservation scenario.
+analysts all share routing key @"analyst"@ — the sibling-preservation
+scenario for topological memory.
 -}
 initialPersistedState :: PersistedGraphState
 initialPersistedState =

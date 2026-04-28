@@ -3,8 +3,7 @@ title: "Thesis Stress Test Analyst Dogfood"
 description: Prompt and inspection checklist for the Analyst node-kind adaptive rewrite dogfood run
 date: 2026-04-16
 status: accepted
-related:
-  - DIG-498
+related: []
 ---
 
 # Thesis Stress Test Analyst Dogfood

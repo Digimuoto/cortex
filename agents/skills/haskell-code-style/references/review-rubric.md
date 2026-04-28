@@ -47,7 +47,8 @@ Then check:
 - Export list curated and intentional — every module has an explicit export list
 - Re-exports only re-export curated public APIs, not internal types
 - New code follows the module's existing import style (qualified vs unqualified)
-- Comment conventions: `-- |` Haddock on exports, `-- TODO(ticket):` with ticket ref, no naked TODOs
+- Comment conventions: `-- |` Haddock on exports, no downstream issue IDs in module names, Haddock,
+  test labels, or code comments, and no naked TODOs.
 
 ### Parameter safety (weight: medium)
 

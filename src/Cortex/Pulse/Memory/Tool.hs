@@ -1,12 +1,10 @@
 {- |
 Module      : Cortex.Pulse.Memory.Tool
-Description : @cortex_memory_query@ tool — agent-driven ad-hoc recall over the.
+Description : @cortex_memory_query@ tool for agent-driven ad-hoc recall.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
-
-DIG-529/530 topological memory (DIG-530 follow-up).
 
 This is the tool-surface complement to the declarative
 @meta.memory = …@ per-node knob.  Where the wire meta bakes a

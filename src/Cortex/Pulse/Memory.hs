@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.Memory
-Description : Umbrella module for the graph-native topological memory (DIG-529).
+Description : Umbrella module for graph-native topological memory.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com

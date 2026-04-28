@@ -1,6 +1,6 @@
 {- |
-Module      : Cortex.Pulse.DIG447Spec
-Description : Tests for Cortex.Pulse.DIG447.
+Module      : Cortex.Pulse.RewriteAnchorValidationSpec
+Description : Tests for rewrite anchor validation.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -10,7 +10,7 @@ The spec exercises public behavior through the same Nix-backed test surface used
 
 Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
-module Cortex.Pulse.DIG447Spec (spec) where
+module Cortex.Pulse.RewriteAnchorValidationSpec (spec) where
 
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
@@ -52,7 +52,7 @@ instance StableStageId TestStage where
 
 spec :: Spec
 spec = do
-  describe "DIG-447: Rewrite Anchor Validation" $ do
+  describe "rewrite anchor validation" $ do
     let mkDef sid =
           StageDefinition
             { sdStageId = sid

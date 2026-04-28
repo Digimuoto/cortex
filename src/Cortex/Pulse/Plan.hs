@@ -95,13 +95,13 @@ data StageContext = StageContext
   , scRewriteRejection :: !(Maybe RewriteRejectionContext)
   , scRetryFailure :: !(Maybe StageRetryFailureContext)
   , scMemory :: !MemoryHandle
-  {- ^ DIG-529 graph-native topological memory.  A stage queries the
+  {- ^ Graph-native topological memory.  A stage queries the
    substrate via this handle rather than reading a dedicated claim
    store.  Constructed once per run by the executor from the run's
    'PersistedGraphState' / node-completion / topology TVars.
   -}
   , scMemoryStrategy :: !MemoryStrategy
-  {- ^ DIG-530 per-stage memory read surface selector.  Copied from
+  {- ^ Per-stage memory read surface selector.  Copied from
    the bound 'StageDefinition.sdMemoryStrategy' so that stage
    actions can dispatch on the declared surface (classic vs.
    topological, future retrieval/hybrid) without re-reading the
@@ -235,7 +235,7 @@ data StageDefinition stageId = StageDefinition
   , sdRetryPolicy :: Maybe StageRetryPolicy
   , sdAction :: StageAction stageId
   , sdMemoryStrategy :: MemoryStrategy
-  {- ^ DIG-530: memory read surface the stage expects.  Defaults to
+  {- ^ Memory read surface the stage expects.  Defaults to
    'MemoryClassic' (scInputs only) so pre-existing plans stay on
    the historical chain-scoped path until a wire opts in.
   -}

@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.Memory.Score
-Description : Composite scoring for memory matches (DIG-529).
+Description : Composite scoring for memory matches.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com

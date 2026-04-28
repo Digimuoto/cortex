@@ -1,8 +1,8 @@
 ---
 title: "Topological Memory — Iteration Synthesis"
 description:
-  Research-grade retrospective on the DIG-538 / DIG-539 iteration round for Pulse topological memory
-  — what was tried, what was discarded, what shipped, and what we now understand about the system
+  Research-grade retrospective on the Pulse topological memory iteration round — what was tried,
+  what was discarded, what shipped, and what we now understand about the system
 ---
 
 # Topological Memory — Iteration Synthesis
@@ -15,17 +15,17 @@ iteration that introduced DAG random-walk influence and pull-based memory retrie
 
 ## 1. Executive summary
 
-Over two sub-tickets (DIG-538, DIG-539) we replaced a hop-count graph signal with DAG random-walk
-influence, reshaped reviewer recall from push to pull, and discarded a PFS-based stop-at-k design
-after review caught three distinct correctness bugs. The final system is structurally simpler than
-the intermediate state: `WalkAlgorithm` went away, `composeScore` takes a `Double` influence value
+Over two implementation slices we replaced a hop-count graph signal with DAG random-walk influence,
+reshaped reviewer recall from push to pull, and discarded a PFS-based stop-at-k design after review
+caught three distinct correctness bugs. The final system is structurally simpler than the
+intermediate state: `WalkAlgorithm` went away, `composeScore` takes a `Double` influence value
 instead of `Int` hops, and the reviewer gets Markov-prefill + `cortex_memory_query` tool access
 under `MemoryTopological`.
 
 Two durable lessons came out of the round:
 
 - _Enumeration and scoring are orthogonal axes._ `WalkAlgorithm` (how candidates are collected) must
-  not carry scoring model (how candidates are ranked). The DIG-538 v1 attempt conflated them and
+  not carry scoring model (how candidates are ranked). The first PFS attempt conflated them and
   produced a misleading API with a real correctness bug.
 - _Stop-at-k requires monotone priority._ Frontier best-first gives top-k only if the priority
   function is non-increasing along graph edges. Our `composeScore` isn't monotone — temporal and
@@ -62,14 +62,14 @@ bound handle.
 
 ## 3. Design frame evolution (chronological)
 
-### Frame 1 — DIG-529 / DIG-530: substrate + per-stage strategy _(inherited)_
+### Frame 1 — substrate + per-stage strategy _(inherited)_
 
 - Memory = snapshot + pure walk + score.
 - `MemoryHandle` binds once at stage entry → no frontier-sibling bleed.
 - Wire authors declare `memory = topological { preset = …; routingKey = …; limit = …; };` per node.
 - Evidence: `Memory.hs:5-16`, `Types.hs:523-566`, `docs/Architecture/cortex-pulse.md:683-906`.
 
-### Frame 2 — DIG-538 v1: PFS as stop-at-k enumerator _(tried, discarded)_
+### Frame 2 — PFS as stop-at-k enumerator _(tried, discarded)_
 
 **Hypothesis:** walk candidates in priority order (composite score as priority) and truncate at `k`
 to avoid scoring the full reachable set on large substrates.
@@ -115,7 +115,7 @@ enumeration strategy with scoring model — a category error that compounds.
   RandomWalkInfluence unconditionally; if A/B capability is needed later, add the selector with a
   real reason.
 
-### Frame 4 — DIG-538 v2 shipped: DAG random-walk influence
+### Frame 4 — DAG random-walk influence shipped
 
 Implementation at `src/Cortex/Graph/Influence.hs:56`:
 
@@ -142,7 +142,7 @@ the per-node influence map through. `Bidirectional` runs influence per-direction
 node is scored; ranking is a full sort. The remaining correctness question is whether the _signal_
 is meaningful — a separate question, tested in isolation.
 
-### Frame 5 — DIG-539 v1: Markov prefill + tool retrieval _(partially shipped, partially reversed)_
+### Frame 5 — Markov prefill + tool retrieval _(partially shipped, partially reversed)_
 
 **Original framing:** "reviewer recall shouldn't stuff the whole ancestor cone into the prompt; use
 `scInputs` for the Markov boundary + `cortex_memory_query` tool for deeper access under
@@ -217,8 +217,8 @@ let the reviewer detect a real concern?"
 
 ### F4 — "Memory strategy" isn't stage-role-keyed; it's `(role, wire-topology)`-keyed _(Observed; high confidence)_
 
-**Sharpened from original framing.** The original DIG-539 framing was "every review-shaped stage
-uses Markov prefill." Reality: every review-shaped stage has to ask what its Markov boundary
+**Sharpened from original framing.** The original review-memory framing was "every review-shaped
+stage uses Markov prefill." Reality: every review-shaped stage has to ask what its Markov boundary
 actually is, and the answer depends on wire topology, not stage name.
 
 `runReviewStage` and `runRewriterStage` share the "reviewer" stage role but sit in a wire where
@@ -256,7 +256,7 @@ correctly, and tests pin both behaviours.
    default — α mostly shifts decay sharpness rather than flipping orderings. Probably a distraction
    compared to (1).
 
-### F7 — Architecture alignment with DIG-488/490 is concrete at the `qExtractor` seam _(Observed; medium confidence)_
+### F7 — Typed-artifact alignment is concrete at the `qExtractor` seam _(Observed; medium confidence)_
 
 The typed-artifact / topology-bounded-retrieval direction asks downstream nodes to bind slices of
 upstream artifacts rather than receiving whole payloads. The memory system is the retrieval half of
@@ -279,7 +279,7 @@ data ExtractedFields = ExtractedFields
   }
 ```
 
-A typed-projection extractor slots in like this (pseudocode against the DIG-488 plan's vocabulary):
+A typed-projection extractor slots in like this:
 
 ```haskell
 -- Given a declared artifact type A and a projection π : A → Slice,
@@ -302,10 +302,9 @@ projectionExtractor projection sliceFields raw = do
     }
 ```
 
-Where `ArtifactProjection a slice` is the typed lens the DIG-488 plan wants to introduce (one full
-artifact, many narrow projections), and `SliceFields` carries the same three axes the scorer +
-router already consume. The full artifact stays in `msNodeOutputs`; only the projected slice enters
-the match record.
+Where `ArtifactProjection a slice` is the typed lens for one full artifact and many narrow
+projections, and `SliceFields` carries the same three axes the scorer + router already consume. The
+full artifact stays in `msNodeOutputs`; only the projected slice enters the match record.
 
 **What needs to exist for this to land:**
 
@@ -315,13 +314,13 @@ the match record.
 - `Cortex.Pulse.Memory.Tool` resolves the projection name at query time and builds the extractor.
 
 None of this touches the query pipeline, the scorer, the walk, or the influence computation. The
-abstraction boundary F1 gives us is exactly the place DIG-488 integration slots in.
+abstraction boundary F1 gives us is exactly the place typed projection integration slots in.
 
 ## 5. What we'd undo if we could
 
-Honest retrospective: given what we know now, we'd skip the DIG-538 v1 PFS implementation entirely
-and jump straight to the enumerate-then-sort + random-walk influence shape. The PFS detour cost one
-full review cycle and left behind three regression tests that exist only because of the mistake.
+Honest retrospective: given what we know now, we'd skip the first PFS implementation entirely and
+jump straight to the enumerate-then-sort + random-walk influence shape. The PFS detour cost one full
+review cycle and left behind three regression tests that exist only because of the mistake.
 
 What the detour _did_ produce that was worth keeping: the three regression tests themselves (now
 pinning correctness invariants future refactors will need), and the `Frontier` / `MinFrontier` /
@@ -344,9 +343,9 @@ that look flexible but aren't.
 - **The biggest quality lever is almost certainly semantic scorer sophistication, not graph axis
   tuning.** Swapping `tokenJaccard` for an embedding model would dominate any improvement from α
   tuning or influence-vs-hop.
-- **F4's "watch-item" may already be triggered.** If DIG-488/490's typed-artifact future means more
-  stages with merge-gated Markov boundaries, the "memory strategy parameterised by wire-structural
-  arguments" evolution could be forced sooner than expected.
+- **F4's "watch-item" may already be triggered.** If typed-artifact retrieval means more stages with
+  merge-gated Markov boundaries, the "memory strategy parameterised by wire-structural arguments"
+  evolution could be forced sooner than expected.
 
 ## 7. Prioritised next steps
 
@@ -395,7 +394,7 @@ The memo above reflects the revised stance. The deltas from the original draft, 
   preset catalog > cache > α. On DAGs with bounded hop distance, α mostly shifts decay sharpness
   rather than flipping orderings; `tokenJaccard` → embeddings is where the ranking-quality ceiling
   actually sits.
-- **F7 earned.** Original memo asserted DIG-488/490 alignment without showing mechanism. This
+- **F7 earned.** Original memo asserted typed-artifact alignment without showing mechanism. This
   revision includes the `qExtractor` typed-projection sketch (§4 F7) so the alignment claim is a
   demonstration, not an assertion.
 - **New §5: What we'd undo if we could.** Template improvement for future research memos — explicit

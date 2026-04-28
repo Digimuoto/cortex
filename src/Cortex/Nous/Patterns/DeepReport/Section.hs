@@ -126,9 +126,9 @@ data ResearchTableAlignment
 
 {- | Bounds the section compiler enforces on each research chunk. Only
 *count* caps survive — the per-content character caps were dropped
-(see DIG-507 dogfood 2026-04-22): they duplicated the JSON schema's
-own 'maxLength' hint with a post-hoc @T.take N@ that truncated mid-
-word when an LLM produced slightly longer output than expected. The
+(observed in dogfood on 2026-04-22): they duplicated the JSON schema's
+own 'maxLength' hint with a post-hoc @T.take N@ that truncated mid-word
+when an LLM produced slightly longer output than expected. The
 schema's 'maxLength' is retained as a courtesy hint to the provider,
 but is no longer enforced by a normalizing cut on our side. If the
 model ever produces genuinely runaway lengths we'll add a bound back

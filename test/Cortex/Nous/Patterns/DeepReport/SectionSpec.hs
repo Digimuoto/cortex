@@ -69,8 +69,8 @@ spec = do
       validateResearchChunk defaultResearchChunkLimits repaired `shouldBe` Right repaired
       -- Count caps still fire: paragraphs/findings/refs/open-gaps get
       -- truncated to the configured max. Character-length caps no longer
-      -- apply — long strings pass through untouched (DIG-507 dogfood
-      -- 2026-04-22: mid-word truncation was corrupting user output).
+      -- apply — long strings pass through untouched (2026-04-22
+      -- dogfood found mid-word truncation corrupting user output).
       length (researchChunkParagraphs repaired) `shouldBe` 4
       length (researchChunkEvidenceRefs repaired) `shouldBe` 16
       length (researchChunkOpenGaps repaired) `shouldBe` 5

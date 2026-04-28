@@ -48,6 +48,15 @@
       '';
     };
 
+    check-module-haddock = pkgs.writeShellApplication {
+      name = "check-module-haddock";
+      runtimeInputs = [pkgs.python3];
+      text = ''
+        set -euo pipefail
+        exec scripts/check-module-haddock.sh "$@"
+      '';
+    };
+
     lean-lint = pkgs.writeShellApplication {
       name = "lean-lint";
       runtimeInputs = [pkgs.python3];
@@ -104,19 +113,23 @@
         check-language-pragmas
         echo
 
-        echo "Step 5: Lean lint"
+        echo "Step 5: Haskell module Haddock"
+        check-module-haddock
+        echo
+
+        echo "Step 6: Lean lint"
         lean-lint
         echo
 
-        echo "Step 6: docs lint"
+        echo "Step 7: docs lint"
         docs-lint
         echo
 
-        echo "Step 7: Lean theory"
+        echo "Step 8: Lean theory"
         check-theory
         echo
 
-        echo "Step 8: flake checks"
+        echo "Step 9: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -127,6 +140,7 @@
       _ci-check = ci-check;
       check-haskell-format = check-haskell-format;
       check-language-pragmas = check-language-pragmas;
+      check-module-haddock = check-module-haddock;
       docs-lint = docs-lint;
       lean-lint = lean-lint;
       lint-haskell = lint-haskell;
@@ -155,6 +169,12 @@
         type = "app";
         program = "${check-language-pragmas}/bin/check-language-pragmas";
         meta.description = "Reject non-allowlisted file-local LANGUAGE pragmas";
+      };
+
+      check-module-haddock = {
+        type = "app";
+        program = "${check-module-haddock}/bin/check-module-haddock";
+        meta.description = "Require combined module Haddock frontmatter";
       };
 
       _ci-check = {

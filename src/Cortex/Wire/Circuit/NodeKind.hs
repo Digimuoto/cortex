@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Wire.Circuit.NodeKind
-Description : Semantic classification of circuit nodes (DIG-481).
+Description : Semantic classification of circuit nodes.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com

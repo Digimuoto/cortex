@@ -99,7 +99,7 @@ attemptStage env task stagePlan stageCall = do
       pure (StageTerminal OutcomeFailed)
     Right attemptLogId -> do
       currentBudget <- readTVarIO stageCall.scRewriteAdmission.rasRemainingBudget
-      -- DIG-529: bind a fresh memory snapshot at stage entry.  Every
+      -- Bind a fresh memory snapshot at stage entry.  Every
       -- read the stage makes during this attempt observes the same
       -- graph state, statuses, outputs, and timestamps; no
       -- frontier-sibling settling can bleed into the stage's view.

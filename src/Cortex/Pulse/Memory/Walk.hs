@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.Memory.Walk
-Description : Walk combinators for the graph-native topological memory (DIG-529).
+Description : Walk combinators for graph-native topological memory.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com

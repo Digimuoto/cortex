@@ -1,6 +1,6 @@
 {- |
-Module      : Cortex.Pulse.DIG449Spec
-Description : Tests for Cortex.Pulse.DIG449.
+Module      : Cortex.Pulse.RewriteRetryHydrationSpec
+Description : Tests for rewrite retry predicate hydration.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -10,7 +10,7 @@ The spec exercises public behavior through the same Nix-backed test surface used
 
 Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
-module Cortex.Pulse.DIG449Spec (spec) where
+module Cortex.Pulse.RewriteRetryHydrationSpec (spec) where
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -60,7 +60,7 @@ instance StableStageId TestStage where
 
 spec :: Spec
 spec = do
-  describe "DIG-449: Rewrite-Resume Retry Predicate Parity" $ do
+  describe "rewrite-resume retry predicate parity" $ do
     it "round-trips rewrite retry predicates through JSON and legacy payloads" $ do
       let customRetryPolicy =
             StageRetryPolicy

@@ -132,7 +132,7 @@ data StageEnv = StageEnv
   , seShutdownFlag :: TVar Bool
   , seMaxFrontierConcurrency :: Int
   , seMemoryFactory :: IO MemoryHandle
-  {- ^ DIG-529 factory that builds a /stage-entry-bound/
+  {- ^ Factory that builds a /stage-entry-bound/
    'MemoryHandle'.  'attemptStage' evaluates this once just before
    handing the stage action its 'StageContext', so every read
    during the attempt sees the same snapshot — no frontier-sibling

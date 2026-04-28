@@ -6,8 +6,6 @@ description:
 date: 2026-04-23
 status: research
 related:
-  - DIG-540
-  - DIG-541
   - docs/Reference/Wire/grammar.md
   - docs/Architecture/05-wire-language.md
 ---
@@ -163,8 +161,8 @@ Three questions decide each:
 
 - **Operators:** none foreseeable. Reject permanently.
 - **Templates:** the first time a production wire or rewrite proposal repeats a known-arity
-  composition pattern enough times that inlining feels painful. Probably arrives with DIG-478 or
-  similar dynamic-rewrite work.
+  composition pattern enough times that inlining feels painful. Probably arrives with dynamic
+  rewrite work.
 - **Lambdas:** the first time a planner-driven rewrite needs variable-arity wiring (N workers wired
   generically), or the first time the rewriter wants to factor a discovered pattern into a named
   abstraction.

@@ -5,8 +5,7 @@ description:
   thesis_stress_test
 date: 2026-04-15
 status: accepted
-related:
-  - DIG-498
+related: []
 ---
 
 # Wire Organic Rewrite Smoke

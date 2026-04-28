@@ -199,7 +199,7 @@ resumeStagePlan taskContext runId task stagePlan = do
         row
         ( \resumedPlan persistedState _frontier -> do
             gsVar <- newTVarIO persistedState
-            -- DIG-530: repopulate per-node completion timestamps from
+            -- Repopulate per-node completion timestamps from
             -- pulse.stage_log so the topological-memory temporal
             -- axis scores pre-restart matches consistently with how
             -- a fresh execution scored them.  Empty initial value is
@@ -263,7 +263,7 @@ applyRewriteChecked
 applyRewriteChecked rewrite plan =
   applyPlannedRewrite <$> planRewriteDelta rewrite plan <*> pure plan
 
-{- | DIG-530: read @(stage_name, completed_at)@ rows for a run from
+{- | Read @(stage_name, completed_at)@ rows for a run from
 @pulse.stage_log@ and turn them into the 'Map NodeId UTCTime' the
 executor binds into 'RunTVars.rvNodeCompletedAtVar'.
 

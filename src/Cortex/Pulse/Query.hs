@@ -1300,7 +1300,7 @@ countStageLogEntries rId =
 
 {- | Read @(stage_name, completed_at)@ pairs for every completed
 stage of a run.  Used at resume time to repopulate the
-DIG-529/530 memory subsystem's per-node completion-time TVar so
+Pulse memory subsystem's per-node completion-time TVar so
 temporal scoring survives a worker restart.
 
 Only rows with a non-null @completed_at@ are returned; running /

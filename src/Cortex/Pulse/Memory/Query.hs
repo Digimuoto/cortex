@@ -1,12 +1,10 @@
 {- |
 Module      : Cortex.Pulse.Memory.Query
-Description : Pure query engine for the graph-native topological memory.
+Description : Pure query engine for graph-native topological memory.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
-
-(DIG-529).
 
 Given an origin 'NodeId' (the caller's @scNodeId@), a
 'MemorySnapshot' frozen at stage entry, a 'WalkSpec', and a 'Query',

@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.MemoryToolSpec
-Description : Pure tests for 'Cortex.Pulse.Memory.Tool' (DIG-530 follow-up).
+Description : Pure tests for 'Cortex.Pulse.Memory.Tool'.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com

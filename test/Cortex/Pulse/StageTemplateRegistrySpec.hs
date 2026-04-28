@@ -1,6 +1,6 @@
 {- |
-Module      : Cortex.Pulse.DIG448Spec
-Description : Tests for Cortex.Pulse.DIG448.
+Module      : Cortex.Pulse.StageTemplateRegistrySpec
+Description : Tests for rewrite stage template registry invariants.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -10,7 +10,7 @@ The spec exercises public behavior through the same Nix-backed test surface used
 
 Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
-module Cortex.Pulse.DIG448Spec (spec) where
+module Cortex.Pulse.StageTemplateRegistrySpec (spec) where
 
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
@@ -52,7 +52,7 @@ instance StableStageId TestStage where
 
 spec :: Spec
 spec = do
-  describe "DIG-448: StageTemplateId Uniqueness" $ do
+  describe "stage template registry uniqueness" $ do
     let mkDef sid tid =
           StageDefinition
             { sdStageId = sid

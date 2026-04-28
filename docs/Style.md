@@ -57,6 +57,29 @@ Allowed file-local extensions are:
 - `UnboxedTuples`
 - `UndecidableInstances`
 
+## Module Haddock Headers
+
+Every `.hs` file under `src/`, `src-platform/`, `app/`, and `test/` carries a combined Hackage-style
+module Haddock block. The block provides both the module synopsis/context and the license metadata:
+
+```haskell
+{- |
+Module      : Cortex.Wire.Parser
+Description : One-line synopsis ending with a period.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+Context paragraph: cross-refs to specs, sister modules, ADRs, or the boundary this module preserves.
+-}
+module Cortex.Wire.Parser
+```
+
+Fourmolu keeps `LANGUAGE` and `OPTIONS_GHC` pragmas before the module Haddock block when a file
+needs them. `scripts/check-module-haddock.sh` skips those pragmas and then requires the Haddock
+block, non-empty metadata fields, a sentence-shaped description, and at least one context paragraph.
+
 The initial pragma inventory before centralization was:
 
 ```text

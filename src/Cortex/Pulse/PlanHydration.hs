@@ -131,8 +131,8 @@ hydrateRewrite templateRegistry rewrite =
               , sdTimeoutSeconds = ssd.ssdTimeoutSeconds
               , sdRetryPolicy = templateDef.sdRetryPolicy
               , sdAction = templateDef.sdAction
-              , -- DIG-530: inherit the memory strategy from the
-                -- template definition.  The wire's @memory = …@
+              , -- Inherit the memory strategy from the template
+                -- definition.  The wire's @memory = …@
                 -- declaration lands on the template; rewritten
                 -- stages that replay from persistence pick up the
                 -- same strategy the original authored node had, so

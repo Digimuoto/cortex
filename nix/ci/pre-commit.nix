@@ -57,6 +57,16 @@
             files = "^(src|src-platform|app|test)/.*\\.hs$|^cortex\\.cabal$|^scripts/check-language-pragma-allowlist\\.sh$";
           };
 
+          module-haddock = {
+            enable = true;
+            name = "module-haddock";
+            description = "Require combined module Haddock frontmatter";
+            entry = "${config.packages.check-module-haddock}/bin/check-module-haddock";
+            language = "system";
+            pass_filenames = true;
+            files = "^(src|src-platform|app|test)/.*\\.hs$|^scripts/check-module-haddock\\.sh$|^\\.license-header\\.txt$";
+          };
+
           lean-lint = {
             enable = true;
             name = "lean-lint";

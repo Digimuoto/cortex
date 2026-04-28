@@ -90,6 +90,10 @@ Do not use Linear, downstream issue IDs, or downstream product trackers as activ
 state. Historical research notes and handoffs may retain those references for provenance, but new
 Cortex work is tracked in this repository.
 
+Do not introduce downstream issue IDs into Haskell module names, test module names, module Haddock
+headers, code comments, or canonical docs. Use stable Cortex concepts in code and docs; use GitHub
+issue references only in PR bodies, changelogs, or historical notes where traceability is the point.
+
 ## Commit And Authorship Policy
 
 Every commit in this repo must be signed and verifiable.

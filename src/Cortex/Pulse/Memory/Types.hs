@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.Memory.Types
-Description : Types for the graph-native topological memory (DIG-529).
+Description : Types for graph-native topological memory.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -499,7 +499,7 @@ instance Aeson.FromJSON TopologicalStrategyConfig where
    wire itself is the information-architecture surface.  No walk,
    no query, cheapest possible.
 
- * 'MemoryTopological' — DIG-529 graph-native query at stage entry,
+ * 'MemoryTopological' — graph-native query at stage entry,
    scored and filtered per the config.  Broadcasts reads across
    the settled substrate; useful when the wire's upstream bundle
    doesn't already include every observation the stage needs.

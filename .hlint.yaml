@@ -110,7 +110,7 @@
 # UNSAFE: x / y                    (can hang on 1/3, etc.)
 # SAFE:   scientificDiv x y        (uses Double intermediate, always terminates)
 #
-# See DIG-121 for details on the safe-money migration.
+# Keep monetary arithmetic reviewable at the domain boundary.
 
 # =============================================================================
 # IMPORT ALIAS ENFORCEMENT

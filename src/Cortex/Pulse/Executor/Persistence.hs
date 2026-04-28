@@ -164,7 +164,7 @@ persistStageSuccess env attemptRef nodeId stageName stageEnd newState = do
   case cpResult of
     Nothing -> pure (StageTerminal OutcomeFailed)
     Just () -> do
-      -- DIG-529: record per-node settlement timestamp for memory
+      -- Record per-node settlement timestamp for memory
       -- queries.  Updated after the checkpoint write succeeds so a
       -- failed persist doesn't surface a "completed" node to memory.
       atomically $ modifyTVar' env.seNodeCompletedAtVar (Map.insert nodeId stageEnd)
@@ -303,7 +303,7 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
               Just rewriteId -> do
                 atomically $ do
                   writeTVar stageCall.scRewriteAdmission.rasRemainingBudget remainingBudget
-                  -- DIG-529: record per-node settlement timestamp.
+                  -- Record per-node settlement timestamp.
                   modifyTVar' env.seNodeCompletedAtVar (Map.insert stageCall.scNodeId stageEnd)
                 emitObsEvent $ EvtStageCompleted env.seRunId stageCall.scStageName attemptRef.sarAttempt
                 emitObsEvent $
