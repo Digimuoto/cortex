@@ -14,6 +14,25 @@ esac
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
+ensure_dir() {
+  dir="$1"
+
+  if [ -d "$dir" ]; then
+    return
+  fi
+
+  if [ -e "$dir" ] || [ -L "$dir" ]; then
+    if [ -f "$dir" ] && [ ! -s "$dir" ]; then
+      rm "$dir"
+    else
+      echo "refusing to replace non-directory: ${dir#$repo_root/}" >&2
+      exit 1
+    fi
+  fi
+
+  mkdir -p "$dir"
+}
+
 link_rel() {
   target="$1"
   link="$2"
@@ -24,7 +43,7 @@ link_rel() {
     exit 1
   fi
 
-  mkdir -p "$link_dir"
+  ensure_dir "$link_dir"
 
   if [ -L "$link" ] || [ -f "$link" ]; then
     rm "$link"
@@ -65,7 +84,7 @@ link_codex() {
   link_archetypes "$repo_root/.codex/archetypes"
 
   skill_dest="$repo_root/.codex/skills"
-  mkdir -p "$skill_dest"
+  ensure_dir "$skill_dest"
 
   for skill_dir in "$repo_root"/agents/skills/*; do
     [ -d "$skill_dir" ] || continue
@@ -79,7 +98,7 @@ link_claude() {
   link_archetypes "$repo_root/.claude/archetypes"
 
   command_dest="$repo_root/.claude/commands"
-  mkdir -p "$command_dest"
+  ensure_dir "$command_dest"
 
   for skill_dir in "$repo_root"/agents/skills/*; do
     [ -d "$skill_dir" ] || continue
@@ -93,7 +112,7 @@ link_opencode() {
   link_archetypes "$repo_root/.opencode/archetypes"
 
   skill_dest="$repo_root/.opencode/skills"
-  mkdir -p "$skill_dest"
+  ensure_dir "$skill_dest"
 
   for skill_dir in "$repo_root"/agents/skills/*; do
     [ -d "$skill_dir" ] || continue
