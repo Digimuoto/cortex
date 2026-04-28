@@ -21,6 +21,7 @@ agents/
     ├── publish/                # Commit + push the current branch
     ├── squash/                 # Rebase PR history into semantic commits
     ├── ship/                   # Verify and fast-forward-integrate a PR
+    ├── architecture/           # Triage hard design questions into inline / ADR / split paths
     ├── ci-fix/                 # Diagnose & fix a red CI run
     ├── pr-resolve-review/      # Address PR review comments
     ├── haskell-code-style/     # Opinionated Haskell review (+ references/)
