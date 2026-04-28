@@ -43,6 +43,7 @@ import Cortex.Wire.Pure
     pureWireExecutorId,
     pureWireExecutorProjection,
     renderPureEvalError,
+    validatePurePorts,
   )
 import Cortex.Wire.Runtime
   ( wireInputBundleFromStageInputs,
@@ -83,10 +84,14 @@ pureExecutorSpec =
     }
 
 pureTaskConfigFromMetadata :: CircuitTaskNode -> Either Text PureTaskConfig
-pureTaskConfigFromMetadata taskNode =
-  case AesonTypes.parseEither parsePureTaskMetadata taskNode.circuitTaskNodeMetadata of
-    Left err -> Left (T.pack err)
-    Right config -> Right config
+pureTaskConfigFromMetadata taskNode = do
+  config <-
+    case AesonTypes.parseEither parsePureTaskMetadata taskNode.circuitTaskNodeMetadata of
+      Left err -> Left (T.pack err)
+      Right parsedConfig -> Right parsedConfig
+  case validatePurePorts config.pureTaskConfigPorts of
+    Left err -> Left (renderPureEvalError err)
+    Right () -> Right config
 
 bindPureTaskNode :: Maybe WireContractRegistry -> CircuitTaskNode -> Either Text (StageDefinition NodeId)
 bindPureTaskNode maybeRegistry taskNode = do

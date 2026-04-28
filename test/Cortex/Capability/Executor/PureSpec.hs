@@ -4,7 +4,7 @@
 
 module Cortex.Capability.Executor.PureSpec (spec) where
 
-import Cortex.Capability.Executor (ExecutorSpec (..))
+import Cortex.Capability.Executor (ExecutorSpec (..), executorProjectionRegistry)
 import Cortex.Capability.Executor.Pure
   ( bindPureTaskNode,
     pureExecutorSpec,
@@ -24,11 +24,18 @@ import Cortex.Wire
     WireValue (..),
     mkWireValue,
   )
+import Cortex.Wire.Circuit.Artifact
+  ( CompiledCircuit (..),
+    CompiledCircuitNode (..),
+  )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
+import Cortex.Wire.Compile (compileWireTextWithEnv)
 import Cortex.Wire.Contract
-  ( WireContractRegistry,
+  ( WireCompileEnv,
+    WireContractRegistry,
     WireContractSpec (..),
     portsMetadataValue,
+    strictWireCompileEnv,
     wireContractRegistryFromList,
   )
 import Cortex.Wire.Executor (WireExecutorEffect (..))
@@ -42,6 +49,7 @@ import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Scientific (scientific)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.UUID qualified as UUID
 import Test.Hspec
 
@@ -68,6 +76,36 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
       other ->
         expectationFailure ("expected StageComplete, got " <> showStageResult other)
 
+  it "compiles, binds, and deterministically runs a strict @pure Wire node" $ do
+    compiled <- requireRight (compileWireTextWithEnv pureCompileEnv pureSourceText)
+    taskNode <- requireCompiledTask "score" compiled
+    stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) taskNode)
+    first <- stageDef.sdAction scoreStageContext
+    second <- stageDef.sdAction scoreStageContext
+    case (first, second) of
+      (StageComplete firstValue, StageComplete secondValue) -> do
+        firstValue `shouldBe` secondValue
+        wireValue <- requireAesonSuccess (Aeson.fromJSON firstValue :: Aeson.Result WireValue)
+        wireValue.wireValueContract `shouldBe` "Float"
+        wireValue.wireValuePort `shouldBe` Just "out"
+        wireValue.wireValuePayloadKind `shouldBe` WirePayloadJson
+        wireValue.wireValueValue `shouldBe` Aeson.Number (scientific 14 (-1))
+      (firstResult, secondResult) ->
+        expectationFailure
+          ( "expected two StageComplete results, got "
+              <> showStageResult firstResult
+              <> " and "
+              <> showStageResult secondResult
+          )
+
+  it "rejects invalid pure port declarations before binding a stage" $
+    case bindPureTaskNode (Just floatContractRegistry) noOutputTaskNode of
+      Left err ->
+        err
+          `shouldBe` "Pure output ports are unsupported: numeric pure executor requires exactly one output port, but declared 0."
+      Right _ ->
+        expectationFailure "expected pure task binding to reject missing output ports"
+
   it "rejects output payload-kind mismatches through the wrapper path" $ do
     stageDef <- requireRight (bindPureTaskNode (Just textFloatContractRegistry) weightedTaskNode)
     stageDef.sdAction weightedStageContext `shouldThrow` anyException
@@ -88,6 +126,21 @@ weightedTaskNode =
                     Aeson..= ( "0.5 * evidence_score + 0.3 * recency_score + 0.2 * authority_score" ::
                                  Text
                              )
+                ]
+          ]
+    }
+
+noOutputTaskNode :: CircuitTaskNode
+noOutputTaskNode =
+  weightedTaskNode
+    { circuitTaskNodeMetadata =
+        Aeson.object
+          [ "executor" Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)],
+            "ports" Aeson..= portsMetadataValue (weightedPorts {wirePortsOutputs = Map.empty}),
+            "config"
+              Aeson..= Aeson.object
+                [ "expr"
+                    Aeson..= ("evidence_score + recency_score + authority_score" :: Text)
                 ]
           ]
     }
@@ -145,6 +198,41 @@ weightedStageContext =
             }
         )
 
+scoreStageContext :: StageContext
+scoreStageContext =
+  weightedStageContext
+    { scNodeId = NodeId "score",
+      scInputs =
+        Map.fromList
+          [ (NodeId "evidence", wireValue "evidence_score" (scientific 8 (-1))),
+            (NodeId "recency", wireValue "recency_score" (scientific 6 (-1)))
+          ]
+    }
+  where
+    wireValue portName number =
+      Aeson.toJSON
+        ( (mkWireValue "Float" WirePayloadJson (Just portName) (Aeson.Number number))
+            { wireValuePort = Just portName
+            }
+        )
+
+pureCompileEnv :: WireCompileEnv
+pureCompileEnv =
+  strictWireCompileEnv
+    (executorProjectionRegistry [pureExecutorSpec])
+    floatContractRegistry
+
+pureSourceText :: Text
+pureSourceText =
+  T.unlines
+    [ "node score :",
+      "  <- evidence_score: Float",
+      "  <- recency_score: Float",
+      "  -> Float = @pure { expr = \"evidence_score + recency_score\"; };",
+      "",
+      "score"
+    ]
+
 floatContractRegistry :: WireContractRegistry
 floatContractRegistry =
   wireContractRegistryFromList [contractSpec WirePayloadJson]
@@ -172,6 +260,12 @@ requireAesonSuccess :: Aeson.Result a -> IO a
 requireAesonSuccess = \case
   Aeson.Success value -> pure value
   Aeson.Error err -> fail ("expected Aeson.Success, got " <> err)
+
+requireCompiledTask :: Text -> CompiledCircuit -> IO CircuitTaskNode
+requireCompiledTask nodeRef compiled =
+  case Map.lookup (CircuitNodeRef nodeRef) compiled.compiledCircuitNodes of
+    Just (CompiledCircuitTask taskNode) -> pure taskNode
+    other -> fail ("expected compiled task node, got " <> show other)
 
 showStageResult :: StageResult NodeId -> String
 showStageResult = \case

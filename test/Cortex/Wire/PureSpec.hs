@@ -15,6 +15,7 @@ import Cortex.Wire
     bindPureInputVariables,
     evaluatePureTaskOutput,
     mkWireValue,
+    validatePurePorts,
     wireInputBundleFromStageInputs,
   )
 import Data.Aeson qualified as Aeson
@@ -53,6 +54,9 @@ spec = describe "Cortex.Wire.Pure" $ do
               (Aeson.toJSON ((mkWireValue "Float" WirePayloadJson (Just "source") (Aeson.Number 4)) {wireValuePort = Just "out"}))
     evaluatePureTaskOutput ports inputBundle "in / 2"
       `shouldBe` Right (Aeson.Number 2)
+
+  it "accepts first-slice pure port declarations" $
+    validatePurePorts weightedScorePorts `shouldBe` Right ()
 
   it "rejects missing variables" $
     evaluatePureTaskOutput weightedScorePorts weightedScoreInputs "unknown + 1"
@@ -111,8 +115,53 @@ spec = describe "Cortex.Wire.Pure" $ do
               wirePortsOutputs =
                 Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
             }
-    bindPureInputVariables ports weightedScoreInputs
+    validatePurePorts ports
       `shouldBe` Left (PureInputPortRequiresLabel "Float_1" "Float")
+
+  it "rejects list and multi-contract inputs during port validation" $ do
+    let listInputPorts =
+          weightedScorePorts
+            { wirePortsInputs =
+                Map.singleton
+                  "values"
+                  WireInputPort
+                    { wireInputPortAccepts = ["Float"],
+                      wireInputPortCardinality = WireInputCardinalityMany,
+                      wireInputPortRequired = False
+                    }
+            }
+        multiContractPorts =
+          weightedScorePorts
+            { wirePortsInputs =
+                Map.singleton
+                  "value"
+                  WireInputPort
+                    { wireInputPortAccepts = ["Float", "Score"],
+                      wireInputPortCardinality = WireInputCardinalityOne,
+                      wireInputPortRequired = False
+                    }
+            }
+    validatePurePorts listInputPorts
+      `shouldBe` Left
+        (PureInputPortUnsupported "values" "list inputs are not supported in the first pure evaluator slice")
+    validatePurePorts multiContractPorts
+      `shouldBe` Left (PureInputPortUnsupported "value" "multiple accepted contracts")
+
+  it "requires exactly one output port during port validation" $ do
+    validatePurePorts (weightedScorePorts {wirePortsOutputs = Map.empty})
+      `shouldBe` Left
+        (PureOutputPortsUnsupported "numeric pure executor requires exactly one output port, but declared 0")
+    validatePurePorts
+      ( weightedScorePorts
+          { wirePortsOutputs =
+              Map.fromList
+                [ ("score", WireOutputPort {wireOutputPortContract = "Float"}),
+                  ("confidence", WireOutputPort {wireOutputPortContract = "Float"})
+                ]
+          }
+      )
+      `shouldBe` Left
+        (PureOutputPortsUnsupported "numeric pure executor requires exactly one output port, but declared 2")
 
 weightedScorePorts :: WirePorts
 weightedScorePorts =

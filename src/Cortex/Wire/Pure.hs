@@ -17,6 +17,7 @@ module Cortex.Wire.Pure
     parsePureExpr,
     evaluatePureExpr,
     evaluatePureExprText,
+    validatePurePorts,
     bindPureInputVariables,
     evaluatePureTaskOutput,
     pureWireExecutorId,
@@ -43,6 +44,7 @@ import Cortex.Wire.Syntax
 import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloadKind)
 import Data.Aeson qualified as Aeson
 import Data.Char qualified as Char
+import Data.Foldable (traverse_)
 import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -89,6 +91,7 @@ data PureEvalError
   | PureInputPortAmbiguous !Text !Int
   | PureInputPayloadKindMismatch !Text !WirePayloadKind
   | PureInputNonNumeric !Text !Aeson.Value
+  | PureOutputPortsUnsupported !Text
   deriving stock (Eq, Show, Generic)
 
 renderPureEvalError :: PureEvalError -> Text
@@ -131,6 +134,8 @@ renderPureEvalError = \case
       <> " expected a numeric JSON value but received "
       <> T.pack (show value)
       <> "."
+  PureOutputPortsUnsupported reason ->
+    "Pure output ports are unsupported: " <> reason <> "."
 
 parsePureExpr :: Text -> Either PureEvalError PureExpr
 parsePureExpr sourceText =
@@ -166,48 +171,79 @@ evaluatePureExpr variables = \case
       then Left PureDivisionByZero
       else Right (numerator / denominator)
 
+validatePurePorts :: WirePorts -> Either PureEvalError ()
+validatePurePorts ports =
+  validatePureInputPorts ports *> validatePureOutputPorts ports
+
+validatePureInputPorts :: WirePorts -> Either PureEvalError ()
+validatePureInputPorts ports =
+  traverse_
+    validateInputPort
+    (Map.toAscList ports.wirePortsInputs)
+  where
+    inputContractCounts = pureInputContractCounts ports
+
+    validateInputPort (portName, inputPort) = do
+      contractId <- exactPureInputContract portName inputPort
+      if repeatedGeneratedPurePortName inputContractCounts portName contractId
+        then Left (PureInputPortRequiresLabel portName contractId)
+        else Right ()
+
+validatePureOutputPorts :: WirePorts -> Either PureEvalError ()
+validatePureOutputPorts ports =
+  case Map.size ports.wirePortsOutputs of
+    1 -> Right ()
+    count ->
+      Left
+        ( PureOutputPortsUnsupported
+            ( "numeric pure executor requires exactly one output port, but declared "
+                <> T.pack (show count)
+            )
+        )
+
+pureInputContractCounts :: WirePorts -> Map Text Int
+pureInputContractCounts ports =
+  Map.fromListWith
+    (+)
+    [ (contractId, 1 :: Int)
+    | inputPort <- Map.elems ports.wirePortsInputs,
+      contractId <- inputPort.wireInputPortAccepts
+    ]
+
+exactPureInputContract :: Text -> WireInputPort -> Either PureEvalError Text
+exactPureInputContract portName inputPort =
+  case inputPort.wireInputPortAccepts of
+    [contractId]
+      | inputPort.wireInputPortCardinality == WireInputCardinalityOne ->
+          Right contractId
+      | otherwise ->
+          Left (PureInputPortUnsupported portName "list inputs are not supported in the first pure evaluator slice")
+    [] ->
+      Left (PureInputPortUnsupported portName "no accepted contract")
+    _ ->
+      Left (PureInputPortUnsupported portName "multiple accepted contracts")
+
+repeatedGeneratedPurePortName :: Map Text Int -> Text -> Text -> Bool
+repeatedGeneratedPurePortName inputContractCounts portName contractId =
+  Map.findWithDefault 0 contractId inputContractCounts > 1
+    && generatedPurePortName contractId portName
+
+generatedPurePortName :: Text -> Text -> Bool
+generatedPurePortName contractId portName =
+  let prefix = contractId <> "_"
+      suffix = T.drop (T.length prefix) portName
+   in prefix `T.isPrefixOf` portName && not (T.null suffix) && T.all Char.isDigit suffix
+
 bindPureInputVariables :: WirePorts -> WireInputBundle -> Either PureEvalError (Map Text Scientific)
-bindPureInputVariables ports inputBundle =
+bindPureInputVariables ports inputBundle = do
+  validatePureInputPorts ports
   Map.fromList <$> traverse bindInputPort (Map.toAscList ports.wirePortsInputs)
   where
-    inputContractCounts =
-      Map.fromListWith
-        (+)
-        [ (contractId, 1 :: Int)
-        | inputPort <- Map.elems ports.wirePortsInputs,
-          contractId <- inputPort.wireInputPortAccepts
-        ]
-
     bindInputPort (portName, inputPort) = do
-      contractId <- exactInputContract portName inputPort
-      if repeatedGeneratedPortName portName contractId
-        then Left (PureInputPortRequiresLabel portName contractId)
-        else do
-          wireValue <- singleMatchedValue portName contractId
-          number <- wireValueNumber portName wireValue
-          Right (portName, number)
-
-    exactInputContract portName inputPort =
-      case inputPort.wireInputPortAccepts of
-        [contractId]
-          | inputPort.wireInputPortCardinality == WireInputCardinalityOne ->
-              Right contractId
-          | otherwise ->
-              Left (PureInputPortUnsupported portName "list inputs are not supported in the first pure evaluator slice")
-        [] ->
-          Left (PureInputPortUnsupported portName "no accepted contract")
-        _ ->
-          Left (PureInputPortUnsupported portName "multiple accepted contracts")
-
-    repeatedGeneratedPortName portName contractId =
-      Map.findWithDefault 0 contractId inputContractCounts > 1
-        && portName == generatedPortNamePrefix contractId portName
-
-    generatedPortNamePrefix contractId portName =
-      let prefix = contractId <> "_"
-       in if prefix `T.isPrefixOf` portName && T.all Char.isDigit (T.drop (T.length prefix) portName)
-            then portName
-            else ""
+      contractId <- exactPureInputContract portName inputPort
+      wireValue <- singleMatchedValue portName contractId
+      number <- wireValueNumber portName wireValue
+      Right (portName, number)
 
     singleMatchedValue portName contractId =
       case matchedWireValues portName contractId of
@@ -239,6 +275,7 @@ wireValueNumber portName wireValue
 
 evaluatePureTaskOutput :: WirePorts -> WireInputBundle -> Text -> Either PureEvalError Aeson.Value
 evaluatePureTaskOutput ports inputBundle expressionText = do
+  validatePurePorts ports
   variables <- bindPureInputVariables ports inputBundle
   Aeson.Number <$> evaluatePureExprText variables expressionText
 

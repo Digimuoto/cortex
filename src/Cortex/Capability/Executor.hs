@@ -14,6 +14,7 @@ module Cortex.Capability.Executor
     ExecutorCodecBoundary (..),
     ExecutorBindingAuthority (..),
     executorProjection,
+    executorProjectionRegistry,
   )
 where
 
@@ -22,6 +23,8 @@ import Cortex.Wire.Executor
     WireExecutorEffect,
     WireExecutorId,
     WireExecutorProjection (..),
+    WireExecutorRegistry,
+    wireExecutorRegistryFromList,
   )
 import Data.Aeson qualified as Aeson
 import Data.Set (Set)
@@ -75,3 +78,7 @@ executorProjection spec =
       ExecutorConfigUnchecked -> WireExecutorConfigUnchecked
       ExecutorConfigJsonSchema schema -> WireExecutorConfigSchema schema
       ExecutorConfigDecoderName _ -> WireExecutorConfigUnchecked
+
+executorProjectionRegistry :: [ExecutorSpec] -> WireExecutorRegistry
+executorProjectionRegistry specs =
+  wireExecutorRegistryFromList (fmap executorProjection specs)
