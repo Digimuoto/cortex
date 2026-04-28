@@ -5,6 +5,8 @@ on:
     branches: [main, scaffold]
     paths:
       - "docs/**"
+      - "theory/**"
+      - "editors/tree-sitter-wire/**"
       - "nix/docs.nix"
       - "flake.nix"
       - "flake.lock"
