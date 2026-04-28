@@ -43,6 +43,11 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0024](0024-wire-node-clause-grammar.md)                        | Wire Node Clause Grammar                                            | proposed   |
 | [0025](0025-corepure-expression-surface.md)                     | CorePure Expression Surface                                         | proposed   |
 | [0026](0026-typed-executor-node-interface.md)                   | Typed Executor Node Interface                                       | proposed   |
+| [0027](0027-configured-executor-values.md)                      | Configured Executor Values                                          | proposed   |
+| [0028](0028-wire-failure-taxonomy.md)                           | Wire Failure Taxonomy                                               | proposed   |
+| [0029](0029-typed-llm-output-binding.md)                        | Typed LLM Output Binding                                            | proposed   |
+| [0030](0030-wire-topology-composition-and-boundary-labels.md)   | Wire Topology Composition and Boundary Labels                       | proposed   |
+| [0031](0031-corepure-structured-serialization.md)               | CorePure Structured Serialization                                   | proposed   |
 
 ## Writing a new ADR
 

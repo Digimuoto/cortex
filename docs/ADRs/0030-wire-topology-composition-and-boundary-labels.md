@@ -1,0 +1,184 @@
+---
+title: "ADR 0030 - Wire Topology Composition and Boundary Labels"
+description:
+  "Defines overlay and connect composition for Wire circuits and resolves file-level expression
+  port-label behavior."
+sidebar:
+  label: "0030. Topology composition"
+  order: 30
+status: proposed
+date: 2026-04-29
+superseded_by: null
+related:
+  - docs/Architecture/03-formalism-stack.md
+  - docs/Architecture/04-graph-and-circuit.md
+  - docs/Architecture/05-wire-language.md
+  - docs/Reference/Wire/grammar.md
+  - docs/Reference/Wire/contracts-ports-and-matching.md
+  - docs/ADRs/0009-rewrite-provenance-and-topology-integrity.md
+  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0024-wire-node-clause-grammar.md
+  - docs/ADRs/0026-typed-executor-node-interface.md
+---
+
+# ADR 0030 - Wire Topology Composition and Boundary Labels
+
+## Status
+
+Proposed - resolves the composition and file-level boundary-label questions deferred by ADR 0023.
+
+## Context
+
+ADR 0023 makes post-elaboration circuits the executable target for Wire source, but deliberately
+defers topology composition primitives. ADR 0024 reserves `let x = ...` for future composition
+expressions.
+
+The next non-trivial multi-node example needs a way to compose named node circuits without hiding
+topology inside executor config or prompt text. The same decision must settle what happens to
+file-level values such as:
+
+```wire
+let greeting = "Hello" ;
+```
+
+If such a binding implicitly creates a circuit with an inferred output label, composition becomes
+harder to reason about. If it remains a value helper, authors need an explicit way to create
+constant circuits.
+
+## Decision
+
+Wire should add two topology composition operators over circuit values:
+
+- `<>` for overlay, which places circuits side by side without adding edges;
+- `=>` for connect, which overlays two circuits and connects compatible exposed outputs from the
+  left circuit to compatible exposed inputs on the right circuit.
+
+```wire
+let review = (analystA <> analystB) => reviewer ;
+```
+
+Both operators are topology-only. They do not call executors, evaluate CorePure, or create runtime
+topology. They lower during elaboration to the graph/circuit overlay and connect operations before
+Pulse execution begins.
+
+### Overlay
+
+`lhs <> rhs` forms the parallel composition of two circuits:
+
+- vertices and edges from both operands are retained;
+- no new edges are added;
+- exposed boundaries are the union of both operands' unconnected boundaries;
+- node identity is preserved across references.
+
+Overlay is the way to express independent entry points, independent exits, and branches that should
+coexist before a later connect.
+
+### Connect
+
+`lhs => rhs` forms directional composition:
+
+- first overlay `lhs` and `rhs`;
+- then connect compatible exposed output ports from `lhs` to compatible exposed input ports on
+  `rhs`;
+- do not connect outputs from `rhs` back to inputs on `lhs`;
+- leave unmatched exposed ports on the composed boundary.
+
+Compatibility requires the same contract id and compatible payload kind. Labels are exact routing
+constraints:
+
+- unlabeled ports match only unlabeled ports;
+- labeled ports match only ports with the identical label;
+- there is no wildcard label.
+
+One output port may feed several compatible input ports. One singular input port may receive at most
+one incoming edge. If a connect expression would send several outputs to the same singular input, it
+is a topology failure. Packing several values into one list value remains explicit `pure (...)`
+work; `=>` does not perform implicit aggregation.
+
+### Associativity And Precedence
+
+Each operator is left-associative when repeated with itself:
+
+```wire
+a => b => c
+```
+
+parses as:
+
+```wire
+(a => b) => c
+```
+
+The first implementation should require parentheses when `<>` and `=>` are mixed. This avoids
+encoding a precedence rule before examples prove which grouping authors expect.
+
+### File-Level Values And Labels
+
+File-level `let` has kinded RHSs:
+
+- CorePure helper value;
+- configured executor value from ADR 0027;
+- circuit value produced by a node or composition expression.
+
+The binding name is never automatically an output port label.
+
+```wire
+let greeting = "Hello" ;
+```
+
+binds a CorePure value helper. It does not create a circuit, an anonymous output, or an output named
+`greeting`.
+
+To create a constant circuit, authors use an explicit node with an explicit output port:
+
+```wire
+node greeting
+  -> text: String = pure ("Hello") ;
+```
+
+The circuit's boundary label is `text`, not the file-level binding name. This keeps labels tied to
+ports rather than to source variable names.
+
+## Alternatives considered
+
+- **Use `>>>` as the primary composition operator.** Rejected for the first slice because Wire
+  already needs both overlay and directional connect, and `=>` maps directly to port matching.
+- **Let file-level literals become named constant circuits.** Rejected because it makes ordinary
+  helper bindings create topology and gives binding names hidden port-label meaning.
+- **Let connect perform fan-in aggregation.** Rejected because aggregation is computation and should
+  be expressed by an explicit pure node.
+- **Define precedence between `<>` and `=>` immediately.** Rejected because parentheses are cheaper
+  than committing a precedence rule before composition-heavy examples exist.
+
+## Consequences
+
+### Positive
+
+- Multi-entry, multi-exit, branch, merge, and review graphs become ordinary topology expressions.
+- Composition lowers to existing graph/circuit operations before runtime.
+- Port labels remain explicit boundary facts.
+- File-level helper bindings stay value-level unless their RHS is explicitly a circuit expression.
+
+### Negative
+
+- The parser and kind checker must distinguish CorePure, configured executor, and circuit expression
+  positions.
+- Mixed composition expressions require parentheses in the first slice.
+- Authors must write explicit constant nodes instead of relying on implicit literal circuits.
+
+### Obligations
+
+- Add parser tests for overlay, connect, associativity, and required mixed-operator parentheses.
+- Add topology tests for label matching, unmatched boundaries, fan-out, and fan-in ambiguity.
+- Add lowering tests that composition completes before runtime execution.
+- Update grammar docs to remove any implicit file-level output-label behavior.
+- Keep list construction and record packing as explicit pure nodes.
+
+## Related
+
+- [ADR 0009 - Rewrite Provenance and Topology Integrity](./0009-rewrite-provenance-and-topology-integrity.md)
+- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
+- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
+- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [Chapter 04 - Graph and Circuit](../Architecture/04-graph-and-circuit.md)
+- [Wire Contracts, Ports, and Matching Reference](../Reference/Wire/contracts-ports-and-matching.md)
