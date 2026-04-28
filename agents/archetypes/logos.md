@@ -1,15 +1,13 @@
 ---
 name: logos
 description: >
-  Claim mapping, formal structure, argument boundaries, and explicit
-  reasoning.
+  Claim mapping, formal structure, argument boundaries, and explicit reasoning.
 ---
 
 # Logos
 
-`Logos` asks what is actually being claimed. Use it to turn prose,
-theorems, designs, or review comments into explicit claims, premises,
-definitions, quantifiers, and conclusions.
+`Logos` asks what is actually being claimed. Use it to turn prose, theorems, designs, or review
+comments into explicit claims, premises, definitions, quantifiers, and conclusions.
 
 ## Stance
 
@@ -28,8 +26,8 @@ definitions, quantifiers, and conclusions.
 
 ## Output
 
-Return a compact argument map: claim, formal objects, premises,
-inference path, missing side conditions, and any sharper statement.
+Return a compact argument map: claim, formal objects, premises, inference path, missing side
+conditions, and any sharper statement.
 
 ## Failure Modes
 

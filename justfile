@@ -67,6 +67,16 @@ lint:
     @echo "🔍 Running HLint..."
     nix run .#lint-haskell
 
+# Run strict Lean theory lint checks
+lean-lint:
+    @echo "🔍 Running Lean lint..."
+    nix run .#lean-lint
+
+# Run strict Markdown/docs lint checks
+docs-lint:
+    @echo "🔍 Running docs lint..."
+    nix run .#docs-lint
+
 # ============================================================================
 # DOCUMENTATION SITE
 # ============================================================================

@@ -37,6 +37,16 @@
             files = "(^|/).+\\.(hs|lhs)$|(^|/)cortex\\.cabal$|(^|/)\\.hlint\\.yaml$";
           };
 
+          lean-lint = {
+            enable = true;
+            name = "lean-lint";
+            description = "Run strict Lean theory lint checks";
+            entry = "${config.packages.lean-lint}/bin/lean-lint";
+            language = "system";
+            pass_filenames = false;
+            files = "^theory/.*|^scripts/lean-lint$|^agents/skills/lean-code-style/.*|^nix/(lean\\.nix|ci/.*)$|^justfile$";
+          };
+
           lean-theory = {
             enable = true;
             name = "lean-theory";
@@ -45,6 +55,16 @@
             language = "system";
             pass_filenames = false;
             files = "^theory/.*\\.(lean|json)$|^theory/(lakefile\\.lean|lean-toolchain)$|^nix/lean\\.nix$";
+          };
+
+          docs-lint = {
+            enable = true;
+            name = "docs-lint";
+            description = "Run strict Markdown/docs lint checks";
+            entry = "${config.packages.docs-lint}/bin/docs-lint";
+            language = "system";
+            pass_filenames = false;
+            files = "^docs/.*|^scripts/docs-lint$|^agents/skills/doc-review.*|^nix/(docs\\.nix|ci/.*)$|^justfile$";
           };
         };
       };

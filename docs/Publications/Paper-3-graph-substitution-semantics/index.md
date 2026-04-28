@@ -1,6 +1,8 @@
 ---
 title: "Paper 3 — Graph Substitution Semantics"
-description: Landing page for the Graph Substitution Semantics paper. Abstract, status, figures, and related material.
+description:
+  Landing page for the Graph Substitution Semantics paper. Abstract, status, figures, and related
+  material.
 sidebar:
   label: Paper 3
   order: 3
@@ -21,11 +23,10 @@ Draft manuscript. See [manuscript.md](manuscript.md) for the full text.
 
 ## Abstract
 
-This paper develops the implementation-independent theory of dynamic durable
-workflow execution by graph substitution. It separates workflow meaning,
-compiled executable structure, and phase-based durable execution, then shows
-how lineage, materialization, and interface admissibility give topology change
-an explicit semantic boundary.
+This paper develops the implementation-independent theory of dynamic durable workflow execution by
+graph substitution. It separates workflow meaning, compiled executable structure, and phase-based
+durable execution, then shows how lineage, materialization, and interface admissibility give
+topology change an explicit semantic boundary.
 
 ## Figures
 
@@ -36,6 +37,9 @@ an explicit semantic boundary.
 ## Related
 
 - [manuscript.md](manuscript.md) — full manuscript.
-- [../Paper-2-algebraic-foundations/](../Paper-2-algebraic-foundations/) — algebraic base extended here.
-- [../../Roadmap/Plans/rewrite-materialization-and-recovery.md](../../Roadmap/Plans/rewrite-materialization-and-recovery.md) — runtime-grounded rewrite plan realizing this substitution model.
-- [../../Architecture/07-rewrites-and-materialization.md](../../Architecture/07-rewrites-and-materialization.md) — architecture chapter.
+- [../Paper-2-algebraic-foundations/](../Paper-2-algebraic-foundations/) — algebraic base extended
+  here.
+- [../../Roadmap/Plans/rewrite-materialization-and-recovery.md](../../Roadmap/Plans/rewrite-materialization-and-recovery.md)
+  — runtime-grounded rewrite plan realizing this substitution model.
+- [../../Architecture/07-rewrites-and-materialization.md](../../Architecture/07-rewrites-and-materialization.md)
+  — architecture chapter.

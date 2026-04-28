@@ -23,6 +23,24 @@
       '';
     };
 
+    lean-lint = pkgs.writeShellApplication {
+      name = "lean-lint";
+      runtimeInputs = [pkgs.python3];
+      text = ''
+        set -euo pipefail
+        exec python3 scripts/lean-lint
+      '';
+    };
+
+    docs-lint = pkgs.writeShellApplication {
+      name = "docs-lint";
+      runtimeInputs = [pkgs.python3];
+      text = ''
+        set -euo pipefail
+        exec python3 scripts/docs-lint
+      '';
+    };
+
     check-theory = pkgs.writeShellApplication {
       name = "check-theory";
       runtimeInputs = [pkgs.nix];
@@ -36,6 +54,8 @@
       name = "ci-check";
       runtimeInputs = [
         check-format
+        docs-lint
+        lean-lint
         lint-haskell
         check-theory
         pkgs.nix
@@ -51,11 +71,19 @@
         lint-haskell
         echo
 
-        echo "Step 3: Lean theory"
+        echo "Step 3: Lean lint"
+        lean-lint
+        echo
+
+        echo "Step 4: docs lint"
+        docs-lint
+        echo
+
+        echo "Step 5: Lean theory"
         check-theory
         echo
 
-        echo "Step 4: flake checks"
+        echo "Step 6: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -64,6 +92,8 @@
       _check-format = check-format;
       _check-theory = check-theory;
       _ci-check = ci-check;
+      docs-lint = docs-lint;
+      lean-lint = lean-lint;
       lint-haskell = lint-haskell;
     };
 
@@ -90,6 +120,18 @@
         type = "app";
         program = "${lint-haskell}/bin/lint-haskell";
         meta.description = "Run HLint across Cortex Haskell sources";
+      };
+
+      lean-lint = {
+        type = "app";
+        program = "${lean-lint}/bin/lean-lint";
+        meta.description = "Run strict mechanical lint checks over Lean theory files";
+      };
+
+      docs-lint = {
+        type = "app";
+        program = "${docs-lint}/bin/docs-lint";
+        meta.description = "Run strict mechanical lint checks over Markdown docs";
       };
     };
   };

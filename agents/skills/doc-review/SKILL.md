@@ -1,11 +1,11 @@
 ---
 name: doc-review
 description: >
-  Review Markdown docs in this repo with doc-type-aware standards. Use
-  when asked to review architecture/spec/reference/research/ADR/
-  publication/blog docs, check frontmatter and staleness, assess
-  Mermaid/math/code blocks, verify claims, improve compactness, or
-  enforce Cortex-first canonical docs.
+  Review Markdown docs in this repo with doc-type-aware standards. Use when asked to review
+  architecture/spec/reference/research/ADR/ publication/blog docs, check frontmatter and staleness,
+  assess Mermaid/math/code blocks, verify claims, improve compactness, or enforce Cortex-first
+  canonical docs.
+
 date: 2026-04-28
 status: active
 ---
@@ -14,12 +14,10 @@ status: active
 
 Read-only review passes over repo documentation under `docs/`.
 
-When the user asks for review **and** edits in one pass, use
-`doc-review-and-fix` instead.
+When the user asks for review **and** edits in one pass, use `doc-review-and-fix` instead.
 
-Read `references/writing-standards.md` when you need a compact reminder
-of the canonical-doc policy or publication/reference writing
-expectations.
+Read `references/writing-standards.md` when you need a compact reminder of the canonical-doc policy
+or publication/reference writing expectations.
 
 ## Review order
 
@@ -46,8 +44,7 @@ Classify both the document kind and its audience/stability class.
 
 **Audience and stability:**
 
-- `canonical` — stable Cortex docs that should survive repo moves and
-  downstream-product changes
+- `canonical` — stable Cortex docs that should survive repo moves and downstream-product changes
 - `internal` — historical, design-process, or implementation-facing
 
 Treat these as `canonical` by default unless the document says otherwise:
@@ -69,8 +66,7 @@ Tune strictness to the class:
 
 - **research notes** — loose; structure and clarity matter more than polish
 - **ADRs** — concise, decision-focused, historically grounded
-- **architecture and reference** — strict on scope, terminology,
-  examples, and internal consistency
+- **architecture and reference** — strict on scope, terminology, examples, and internal consistency
 - **publications** — strictest on claims, figures, notation, and prose
 
 ## Review mode
@@ -81,12 +77,11 @@ State one explicitly near the top of the review:
 - `target-design critique`
 - `historical or migration review`
 
-If the user doesn't specify, infer and say which mode you used. Don't
-collapse a target-design spec into an implementation audit.
+If the user doesn't specify, infer and say which mode you used. Don't collapse a target-design spec
+into an implementation audit.
 
-If the review is scoped to one section, still run a quick file-level
-metadata and staleness pass unless the user explicitly says
-section-only.
+If the review is scoped to one section, still run a quick file-level metadata and staleness pass
+unless the user explicitly says section-only.
 
 ## Frontmatter and staleness
 
@@ -103,71 +98,61 @@ Check first, report first.
 
 - status/date don't obviously contradict the body
 - the doc doesn't send readers to moved, deleted, or superseded docs
-- if a doc predates the canonical doc it points to, only call it stale
-  when the newer canon now overrides its claims and the older doc
-  doesn't say so
+- if a doc predates the canonical doc it points to, only call it stale when the newer canon now
+  overrides its claims and the older doc doesn't say so
 - if a doc is obsolete, it should say what replaced it
 
-For old canonical docs, focus on alignment and cleanup before stylistic
-polish.
+For old canonical docs, focus on alignment and cleanup before stylistic polish.
 
 **Publication frontmatter:**
 
-- `docs/Publications/**/manuscript.md` should declare
-  `kind: publication`, `authors`, `date`, `updated`, `status`, and
-  `related`.
-- Artifact notes under `docs/Publications/**` should at least carry
-  `title`, `description`, `date`, `status`, and `related` when they are
-  part of the publication bundle.
-- Do not duplicate rendered metadata immediately under the H1. Author,
-  status, venue, date, and update information should live in
-  frontmatter so `DocsTitle` owns the byline.
+- `docs/Publications/**/manuscript.md` should declare `kind: publication`, `authors`, `date`,
+  `updated`, `status`, and `related`.
+- Artifact notes under `docs/Publications/**` should at least carry `title`, `description`, `date`,
+  `status`, and `related` when they are part of the publication bundle.
+- Do not duplicate rendered metadata immediately under the H1. Author, status, venue, date, and
+  update information should live in frontmatter so `DocsTitle` owns the byline.
 
 ## Canonical Cortex policy
 
 Apply this aggressively in `canonical` docs.
 
-- Cortex should read as an independent system, not as a subsystem of
-  any consumer.
-- Downstream products may appear as consumers, integration examples, or
-  motivating use cases, but not as the frame through which Cortex is
-  defined.
-- Prefer stable subsystem names (`Pulse runtime`, `graph layer`,
-  `Wire language`, `memory substrate`) over repo-local module and file
-  paths.
-- Avoid issue IDs, PR references, commit hashes, branch names, live
-  repo paths, and transient package/module layout in canonical docs
-  unless the document is specifically about migration or repo
-  structure.
-- Avoid internal roadmap numbering such as "Track 3" in canonical
-  publication and reference prose. Prefer stable conceptual names such
-  as "rewrite materialization" or "dynamic-rewrite semantics".
-- If a canonical doc depends on those details, treat it as a real
-  content-placement issue, not a nit.
+- Cortex should read as an independent system, not as a subsystem of any consumer.
+- Downstream products may appear as consumers, integration examples, or motivating use cases, but
+  not as the frame through which Cortex is defined.
+- Prefer stable subsystem names (`Pulse runtime`, `graph layer`, `Wire language`,
+  `memory substrate`) over repo-local module and file paths.
+- Avoid issue IDs, PR references, commit hashes, branch names, live repo paths, and transient
+  package/module layout in canonical docs unless the document is specifically about migration or
+  repo structure.
+- Avoid internal roadmap numbering such as "Track 3" in canonical publication and reference prose.
+  Prefer stable conceptual names such as "rewrite materialization" or "dynamic-rewrite semantics".
+- If a canonical doc depends on those details, treat it as a real content-placement issue, not a
+  nit.
 
-In `internal` docs, issue links, repo paths, and implementation
-references are allowed when they improve traceability.
+In `internal` docs, issue links, repo paths, and implementation references are allowed when they
+improve traceability.
 
 ## Content checks
 
 Review with the strictness appropriate to the class.
 
 - scope fit for the doc kind
-- content placement: right content in the right doc, especially Cortex
-  canon vs. consumer notes vs. historical/internal records
+- content placement: right content in the right doc, especially Cortex canon vs. consumer notes vs.
+  historical/internal records
 - terminology consistency
 - factual claims vs. speculation vs. inferred design intent
 - contradictions with sibling docs or the file's own rules
 - compactness and scannability
 - whether examples actually support the surrounding prose
 
-Compactness serves clarity. Don't cut material if doing so would make
-the document harder to understand.
+Compactness serves clarity. Don't cut material if doing so would make the document harder to
+understand.
 
 ## Normative docs
 
-For specs, reference docs, and architecture chapters that declare rules,
-add an explicit example sanity pass.
+For specs, reference docs, and architecture chapters that declare rules, add an explicit example
+sanity pass.
 
 Check that canonical examples obey:
 
@@ -176,64 +161,67 @@ Check that canonical examples obey:
 - stated invariants and typing claims
 - module, import, and evaluation rules
 
-If the examples and the rules disagree, that's at least a **Major**
-finding.
+If the examples and the rules disagree, that's at least a **Major** finding.
 
 ## Format checks
 
+- Run `just docs-lint` when the review scope includes local files or when the user asks for
+  lint/format conformance. Treat failures as concrete findings before prose polish.
 - heading structure and section order
 - Mermaid syntax, diagram type choice, labeling, and styling
 - math notation, variable naming, display quality
 - code fence language tags and whether examples look plausible
 - link targets and cross-reference quality
-- publication reference blocks: `## References` should contain a
-  Markdown ordered list, italic titles, autolink URLs, and en-dash page
-  ranges where applicable
-- publication citations: use GFM footnotes (`[^name]`) when a reference
-  is tied to a specific sentence; standalone bibliographies belong
-  under `## References`
+- publication reference blocks: `## References` should contain a Markdown ordered list, italic
+  titles, autolink URLs, and en-dash page ranges where applicable
+- publication citations: use GFM footnotes (`[^name]`) when a reference is tied to a specific
+  sentence; standalone bibliographies belong under `## References`. When the manuscript style
+  requires numbered bracket citations (`[1]`, `[2]`) instead of footnotes, `[N]` is plain text in
+  CommonMark and will not render as a link. Use the portable pattern `[\[N\]](#ref-N)` in prose with
+  a matching `<a id="ref-N"></a>` marker on the corresponding numbered list item under
+  `## References`. No styling will rescue a bare `[N]`; the source needs an explicit anchor or
+  footnote
+- avoid explicit `---` thematic-break separators between top-level sections in publication,
+  reference, and architecture docs. The Cortex docs theme already renders a visual divider above
+  each `<h2>`, so an explicit `---` produces a doubled rule. Frontmatter delimiters (`---` at the
+  top and bottom of the YAML block) are the only legitimate horizontal rules; intentional in-body
+  separators inside a single section are rare and should be justified
+
+`docs-lint` is the build-gated subset of this checklist. It checks frontmatter shape, publication
+reference syntax, local link/anchor integrity, `related` targets, Mermaid cosmetic styling bans, and
+canonical-doc hygiene for transient issue/PR IDs, internal track numbers, and "Cortex Pulse"
+terminology.
 
 Mermaid standard:
 
-- use the right diagram type for the concept: `flowchart LR` for
-  pipelines, `flowchart TB` for hierarchies, `BT` and `RL` almost
-  never, `stateDiagram-v2` for explicit state machines, `sequenceDiagram`
-  for protocol exchanges
-- the Cortex docs site renders dark mode through the `cortex-slate`
-  theme, which cycles node fills through indigo, teal, amber, rose,
-  sage in **node declaration order**, then wraps; light/dark fall back
-  to Mermaid's stock palettes
-- compose for the cycle: declare the conceptual primary node first so
-  it lands on indigo (the accent), declare the terminal or settled
-  node last so it lands on sage; for research-style traces this means
-  inputs first, outputs last
-- aim for diagrams whose node count is a small multiple of 5 (one or
-  two full cycles); 4 leaves the cycle short, 6 wraps with one
-  discordant repeat; 3 also reads cleanly on its own
-- chunk anything past 8 nodes into `subgraph` blocks rather than
-  letting it sprawl flat
-- labels are short — roughly 20 characters or fewer per node;
-  sentences belong in the surrounding prose, not in the diagram
-- sequence diagrams stay at 4 actors or fewer because the docs prose
-  width is roughly 720px
-- **prefer the default theme colours.** No `style X fill:…`, no
-  `classDef` cosmetic colour, no inline hex on nodes or edges. Mermaid
-  bakes inline fills into the SVG, so any pinned colour overrides the
-  per-theme palette and the diagram stops responding to the
-  light/slate toggle. This is the single most common diagram-review
-  finding in this repo
-- the only legitimate use of `classDef` is *semantic* colour — an
-  error or danger state that must read as such regardless of theme.
-  Treat any other use as a finding and strip it
-- diagrams should also flip cleanly between the light theme and slate;
-  edge labels and subgraph titles are the usual under-contrast
-  failures
+- use the right diagram type for the concept: `flowchart LR` for pipelines, `flowchart TB` for
+  hierarchies, `BT` and `RL` almost never, `stateDiagram-v2` for explicit state machines,
+  `sequenceDiagram` for protocol exchanges
+- the Cortex docs site renders dark mode through the `cortex-slate` theme, which cycles node fills
+  through indigo, teal, amber, rose, sage in **node declaration order**, then wraps; light/dark fall
+  back to Mermaid's stock palettes
+- compose for the cycle: declare the conceptual primary node first so it lands on indigo (the
+  accent), declare the terminal or settled node last so it lands on sage; for research-style traces
+  this means inputs first, outputs last
+- aim for diagrams whose node count is a small multiple of 5 (one or two full cycles); 4 leaves the
+  cycle short, 6 wraps with one discordant repeat; 3 also reads cleanly on its own
+- chunk anything past 8 nodes into `subgraph` blocks rather than letting it sprawl flat
+- labels are short — roughly 20 characters or fewer per node; sentences belong in the surrounding
+  prose, not in the diagram
+- sequence diagrams stay at 4 actors or fewer because the docs prose width is roughly 720px
+- **prefer the default theme colours.** No `style X fill:…`, no `classDef` cosmetic colour, no
+  inline hex on nodes or edges. Mermaid bakes inline fills into the SVG, so any pinned colour
+  overrides the per-theme palette and the diagram stops responding to the light/slate toggle. This
+  is the single most common diagram-review finding in this repo
+- the only legitimate use of `classDef` is _semantic_ colour — an error or danger state that must
+  read as such regardless of theme. Treat any other use as a finding and strip it
+- diagrams should also flip cleanly between the light theme and slate; edge labels and subgraph
+  titles are the usual under-contrast failures
 - diagrams should be clean enough to survive printing or design review
 
 ## Implementation and claim checks
 
-When the review mode or doc class requires grounding, verify against
-the code instead of guessing.
+When the review mode or doc class requires grounding, verify against the code instead of guessing.
 
 For Cortex symbol checks, use targeted searches:
 
@@ -241,9 +229,8 @@ For Cortex symbol checks, use targeted searches:
 rg -n "SymbolName|OtherSymbol" src src-platform
 ```
 
-Mismatches between canonical docs and implementation are findings, but
-do not force implementation conformance when the document is clearly a
-target-design spec.
+Mismatches between canonical docs and implementation are findings, but do not force implementation
+conformance when the document is clearly a target-design spec.
 
 ## Severity ladder
 
@@ -274,5 +261,4 @@ Always include:
 - whether frontmatter was intact
 - whether the doc appears stale
 
-If no findings remain, say so explicitly and mention any residual risk
-or validation gap.
+If no findings remain, say so explicitly and mention any residual risk or validation gap.

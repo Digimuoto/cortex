@@ -1,6 +1,8 @@
 ---
 title: "ADR 0005 — Budgeted Rewrite Admission and Materialization"
-description: "Runtime graph evolution happens only through admitted rewrite deltas that fit a durable rewrite budget and materialize into graph state."
+description:
+  "Runtime graph evolution happens only through admitted rewrite deltas that fit a durable rewrite
+  budget and materialize into graph state."
 sidebar:
   label: "0005. Rewrite admission"
   order: 5
@@ -17,11 +19,15 @@ related:
 
 ## Status
 
-Accepted — structured rewrite admission, rewrite budgets, and durable materialization are implemented and now anchor the graph-execution architecture.
+Accepted — structured rewrite admission, rewrite budgets, and durable materialization are
+implemented and now anchor the graph-execution architecture.
 
 ## Context
 
-Static DAG execution is not enough for Cortex's target workflows. A running node may discover missing evidence, need to elaborate follow-up work, or need to prune and repair future topology. Allowing that kind of evolution without a law would turn the runtime into arbitrary mutable control flow.
+Static DAG execution is not enough for Cortex's target workflows. A running node may discover
+missing evidence, need to elaborate follow-up work, or need to prune and repair future topology.
+Allowing that kind of evolution without a law would turn the runtime into arbitrary mutable control
+flow.
 
 The runtime therefore needed a way to support dynamic topology while preserving:
 
@@ -37,15 +43,21 @@ Graph evolution during execution is allowed only through runtime-admitted rewrit
 - stages and planners may propose rewrites
 - only the runtime may admit them
 - admission requires validation against rewrite safety rules and a finite per-run rewrite budget
-- admitted rewrites materialize durably into the graph state and become part of the run's execution history
+- admitted rewrites materialize durably into the graph state and become part of the run's execution
+  history
 
-Budget is a runtime law, not a prompt convention. Structural change consumes explicit authority measured in bounded dimensions such as added nodes, edges, depth, frontier breadth, and rewrite operations.
+Budget is a runtime law, not a prompt convention. Structural change consumes explicit authority
+measured in bounded dimensions such as added nodes, edges, depth, frontier breadth, and rewrite
+operations.
 
 ## Alternatives considered
 
-- **Let planner prompts impose the growth limit informally** — rejected because prompt discipline is not a correctness boundary and cannot support replay or auditability.
-- **Allow arbitrary mutation of the materialized graph** — rejected because it destroys analyzability and makes runtime trust too expensive.
-- **Ban execution-time graph evolution entirely** — rejected because real repair, adaptation, and conditional elaboration would collapse back into ad hoc imperative stage logic.
+- **Let planner prompts impose the growth limit informally** — rejected because prompt discipline is
+  not a correctness boundary and cannot support replay or auditability.
+- **Allow arbitrary mutation of the materialized graph** — rejected because it destroys
+  analyzability and makes runtime trust too expensive.
+- **Ban execution-time graph evolution entirely** — rejected because real repair, adaptation, and
+  conditional elaboration would collapse back into ad hoc imperative stage logic.
 
 ## Consequences
 
@@ -57,7 +69,8 @@ Budget is a runtime law, not a prompt convention. Structural change consumes exp
 
 ### Negative
 
-- Rewrite-capable tasks must encode their changes through the runtime algebra rather than directly mutating future work.
+- Rewrite-capable tasks must encode their changes through the runtime algebra rather than directly
+  mutating future work.
 - Budget design becomes part of runtime correctness, not just tuning.
 
 ### Obligations

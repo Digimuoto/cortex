@@ -30,13 +30,16 @@ The repo exposes `nixvimModules.default` at the flake level. In your nixvim conf
 ```
 
 What you get:
+
 - Tree-sitter grammar package (`tree-sitter-wire`) added to `plugins.treesitter.grammarPackages`
 - `.wire` extension → `wire` filetype
 - `highlights.scm` / `folds.scm` / `indents.scm` installed into the nvim runtime
 
 No further config needed — open any `.wire` file and highlighting, folds, and indent kick in.
 
-The module lives at `nix/modules/nixvim-wire.nix` and is safe to import even into configs that manage treesitter differently: it only *adds* to `grammarPackages` and never force-enables treesitter itself.
+The module lives at `nix/modules/nixvim-wire.nix` and is safe to import even into configs that
+manage treesitter differently: it only _adds_ to `grammarPackages` and never force-enables
+treesitter itself.
 
 ## 2. Raw nix package (home-manager, custom nvim setup, overlay)
 
@@ -50,7 +53,8 @@ packages.tree-sitter-wire         # $out/parser (the .so file)
 packages.tree-sitter-wire-plugin  # $out/parser/wire.so + $out/queries/wire/*.scm
 ```
 
-Use `tree-sitter-wire-plugin` in home-manager's `programs.neovim.plugins` or any place that accepts vim plugins.
+Use `tree-sitter-wire-plugin` in home-manager's `programs.neovim.plugins` or any place that accepts
+vim plugins.
 
 ## 3. Manual nvim-treesitter install (non-nix setups)
 
@@ -90,9 +94,8 @@ cp editors/tree-sitter-wire/queries/*.scm ~/.config/nvim/queries/wire/
 
 ## Verification (all paths)
 
-Open a checked-in fixture such as
-`test/fixtures/wire-v1/thesis-parallel-claim-branches.wire`, or any local
-`.wire` file:
+Open a checked-in fixture such as `test/fixtures/wire-v1/thesis-parallel-claim-branches.wire`, or
+any local `.wire` file:
 
 - Keywords highlight (`contract`, `node`, `let`, `import`, `from`, `select`)
 - Contract types (capitalized identifiers after `<-` / `->`) highlight distinctly

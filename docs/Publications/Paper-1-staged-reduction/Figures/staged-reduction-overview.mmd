@@ -1,25 +1,20 @@
 flowchart TB
   subgraph Pure["Pure Graph Reduction"]
     A["Node results"]
-    B["Accumulate<br/>commutative point updates"]
-    C["Close<br/>idempotent failure closure"]
-    D["Classify<br/>lifecycle decision"]
+    B["Accumulate"]
+    C["Close"]
+    D["Classify"]
     A --> B --> C --> D
   end
 
   subgraph Runtime["Runtime Coordinator"]
-    E["Dispatch ready frontier"]
-    F["Mark run complete or failed"]
+    E["Dispatch frontier"]
+    F["Mark run done"]
     G["Persist and suspend"]
-    H["Emit diagnostic and fail run"]
+    H["Diagnose and fail"]
   end
 
   D -->|Progressing| E
   D -->|Settled| F
   D -->|Suspended| G
   D -->|Stuck| H
-
-  classDef pure fill:#eef6ff,stroke:#1d4ed8,color:#0f172a,stroke-width:1.5px;
-  classDef runtime fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:1.5px;
-  class A,B,C,D pure;
-  class E,F,G,H runtime;

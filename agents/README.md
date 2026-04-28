@@ -1,9 +1,8 @@
 # Cortex agent context
 
-Provider-neutral context and slash-command skills for AI coding agents
-working on this repo. Provider-specific files such as `CLAUDE.md` and
-`AGENTS.md` are generated, gitignored symlinks; do not edit them
-directly.
+Provider-neutral context and slash-command skills for AI coding agents working on this repo.
+Provider-specific files such as `CLAUDE.md` and `AGENTS.md` are generated, gitignored symlinks; do
+not edit them directly.
 
 ```
 agents/
@@ -31,14 +30,12 @@ agents/
     └── doc-review-and-fix/     # Review and edit docs in one pass
 ```
 
-Each skill lives in its own directory with a `SKILL.md` entrypoint. Each
-source-tree context file mirrors the repo path it governs under
-`agents/<repo-path>/context.md`.
+Each skill lives in its own directory with a `SKILL.md` entrypoint. Each source-tree context file
+mirrors the repo path it governs under `agents/<repo-path>/context.md`.
 
-Shared archetype profiles live under `agents/archetypes/`. Skills load
-these profiles as reusable reasoning lenses, for example `kritikos` for
-adversarial review or `themis` for contract audit. Archetypes do not
-grant tool authority and do not replace skill workflows.
+Shared archetype profiles live under `agents/archetypes/`. Skills load these profiles as reusable
+reasoning lenses, for example `kritikos` for adversarial review or `themis` for contract audit.
+Archetypes do not grant tool authority and do not replace skill workflows.
 
 ## Provider links
 
@@ -71,13 +68,12 @@ just agent-link-opencode
 - `agents/archetypes` -> `.opencode/archetypes`
 - `agents/skills/<name>` -> `.opencode/skills/<name>`
 
-Gemini-specific files are intentionally not generated. Add a provider
-only when the repo has a maintained setup command for it.
+Gemini-specific files are intentionally not generated. Add a provider only when the repo has a
+maintained setup command for it.
 
 ## Commit Policy For Agents
 
-Agent tooling may help produce patches, but it must not appear in commit
-authorship metadata.
+Agent tooling may help produce patches, but it must not appear in commit authorship metadata.
 
 - Do not author commits as an LLM or coding agent.
 - Do not add `Co-authored-by:` trailers for AI tools.
@@ -85,32 +81,29 @@ authorship metadata.
 - All commits created from agent workflows must use `git commit -s -S`.
 - All commits must verify locally before publish.
 
-Human authorship and verifiable signatures are mandatory repository
-policy, not optional workflow preferences.
+Human authorship and verifiable signatures are mandatory repository policy, not optional workflow
+preferences.
 
 ## History Policy For Agents
 
-Treat Git history as a maintained artifact. Rebase-first development is
-the default for ordinary feature work: private feature branches may be
-rebased, squashed, fixed up, or reordered so the branch reads as a
-semantic sequence of changes.
+Treat Git history as a maintained artifact. Rebase-first development is the default for ordinary
+feature work: private feature branches may be rebased, squashed, fixed up, or reordered so the
+branch reads as a semantic sequence of changes.
 
 - Never force-push `main`.
 - Never use raw `git push --force`.
-- Use `git push --force-with-lease` only when history was deliberately
-  rewritten and the remote still points where you expect.
+- Use `git push --force-with-lease` only when history was deliberately rewritten and the remote
+  still points where you expect.
 - Make CI pass after the final rebase.
 - Integrate by fast-forwarding `main` to the exact signed branch tip.
-- Do not use GitHub's merge, squash, or rebase buttons for Cortex
-  `main`; use `just integrate-pr <branch-or-pr-number>` after PR
-  review and CI.
-- Use merge commits only when the existence of parallel development
-  lines is itself meaningful.
+- Do not use GitHub's merge, squash, or rebase buttons for Cortex `main`; use
+  `just integrate-pr <branch-or-pr-number>` after PR review and CI.
+- Use merge commits only when the existence of parallel development lines is itself meaningful.
 
 ## Scope
 
-Cortex is a durable runtime substrate plus a structured reasoning
-library on top (per ADR 0015). Skills here assume that substrate scope:
+Cortex is a durable runtime substrate plus a structured reasoning library on top (per ADR 0015).
+Skills here assume that substrate scope:
 
 - No downstream product or domain-specific knowledge.
 - No database migrations, web-UI, or deployment workflows.
@@ -118,24 +111,19 @@ library on top (per ADR 0015). Skills here assume that substrate scope:
 - Build commands go through `just` → `nix`; no direct `cabal` or `ghc`.
 - Repo-level docs live flat under `docs/`, not `docs/cortex/`.
 
-Skills that deal in downstream product workflows (external issue
-trackers, deployment, product soak, domain-specific tests) are
-deliberately absent. Downstream products keep their own fuller
-`agents/` trees.
+Skills that deal in downstream product workflows (external issue trackers, deployment, product soak,
+domain-specific tests) are deliberately absent. Downstream products keep their own fuller `agents/`
+trees.
 
 ## Adding a skill
 
-1. Create `agents/skills/<name>/SKILL.md` with YAML frontmatter
-   (`name`, `description`).
+1. Create `agents/skills/<name>/SKILL.md` with YAML frontmatter (`name`, `description`).
 2. Supporting references go under `agents/skills/<name>/references/`.
 3. Run the provider link command for the runtime that should expose it.
 
 ## Adding an archetype
 
-1. Create `agents/archetypes/<name>.md` with YAML frontmatter
-   (`name`, `description`).
-2. Keep the profile provider-neutral: role, stance, questions, output,
-   and failure modes.
-3. Reference it from skills by repo-root path, such as
-   `agents/archetypes/<name>.md`.
+1. Create `agents/archetypes/<name>.md` with YAML frontmatter (`name`, `description`).
+2. Keep the profile provider-neutral: role, stance, questions, output, and failure modes.
+3. Reference it from skills by repo-root path, such as `agents/archetypes/<name>.md`.
 4. Run the provider link command for the runtime that should expose it.

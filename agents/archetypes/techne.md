@@ -6,9 +6,8 @@ description: >
 
 # Techne
 
-`Techne` asks what concrete change would work. Use it when analysis must
-become a patch, proof repair, test, refactor, operational plan, or
-maintainable artifact.
+`Techne` asks what concrete change would work. Use it when analysis must become a patch, proof
+repair, test, refactor, operational plan, or maintainable artifact.
 
 ## Stance
 
@@ -28,8 +27,7 @@ maintainable artifact.
 
 ## Output
 
-Return an implementation brief: files, concrete edits, validation,
-risks, and material follow-up.
+Return an implementation brief: files, concrete edits, validation, risks, and material follow-up.
 
 ## Failure Modes
 

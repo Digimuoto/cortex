@@ -1,15 +1,14 @@
 ---
 name: impl
 description: >
-  Start implementation on an issue: create a feature branch, open a draft
-  PR, and enter plan mode for design. Use when beginning new work on a
-  GitHub issue or a freshly defined piece of scope.
+  Start implementation on an issue: create a feature branch, open a draft PR, and enter plan mode
+  for design. Use when beginning new work on a GitHub issue or a freshly defined piece of scope.
 ---
 
 # Start Implementation
 
-Begin implementing a piece of work: create a branch, open a draft PR,
-and enter plan mode. This is the entrypoint for any non-trivial change.
+Begin implementing a piece of work: create a branch, open a draft PR, and enter plan mode. This is
+the entrypoint for any non-trivial change.
 
 ## Usage
 
@@ -18,12 +17,13 @@ and enter plan mode. This is the entrypoint for any non-trivial change.
 ```
 
 **Arguments:**
+
 - `[issue-number]` — GitHub issue number (e.g. `42`). PR will `Closes #42`.
-- `[description]` — If no issue exists yet, a short description
-  ("wire v1 error recovery"). You will be prompted whether to also open
-  a tracking issue.
+- `[description]` — If no issue exists yet, a short description ("wire v1 error recovery"). You will
+  be prompted whether to also open a tracking issue.
 
 **Examples:**
+
 ```
 /impl 42                              # Work against existing issue
 /impl "pulse timeout retry policy"    # New scope; no issue yet
@@ -49,14 +49,12 @@ Extract:
 - `labels` → area hints (`substrate`, `wire`, `pulse`, `docs`)
 - `assignees` → confirm you own this work
 
-If no issue was given and the user provides a description instead, ask
-whether to open a tracking issue first. For small fixes or
-experimentation, proceed without one.
+If no issue was given and the user provides a description instead, ask whether to open a tracking
+issue first. For small fixes or experimentation, proceed without one.
 
 ### 2. Classify the work by Cortex layer
 
-Cortex is vertically split per ADR 0015. Name the layer explicitly in
-your plan:
+Cortex is vertically split per ADR 0015. Name the layer explicitly in your plan:
 
 - `Cortex.Graph` / `Cortex.Circuit` — pure topology and compiled shape
 - `Cortex.Wire` / `Cortex.Wire.V1` — source language + rewrite algebra
@@ -64,13 +62,12 @@ your plan:
 - `Cortex.Memory.*` — memory substrate
 - `Cortex.Capability.*` — model + tool abstractions
 - `Cortex.Document.*` — structured artifacts and reports
-- `Platform.*` — generic runtime substrate (observability, durable task,
-  database, crypto, HTTP retry). Lives in `src-platform/`.
+- `Platform.*` — generic runtime substrate (observability, durable task, database, crypto, HTTP
+  retry). Lives in `src-platform/`.
 
-If the work would introduce reasoning-layer concerns (role taxonomies,
-reasoning templates, memory presets), it probably belongs in a future
-`Cortex.Nous` module set — not in the runtime substrate. Flag this and
-stop to discuss before coding.
+If the work would introduce reasoning-layer concerns (role taxonomies, reasoning templates, memory
+presets), it probably belongs in a future `Cortex.Nous` module set — not in the runtime substrate.
+Flag this and stop to discuss before coding.
 
 ### 3. Prerequisites
 
@@ -86,8 +83,8 @@ gh issue view <number> --json projectItems,body | jq '.body' | rg -i 'blocked by
 git branch -a | rg -i "<issue-number>|<slug>" | head
 ```
 
-If a branch already exists, ask whether to continue on it, start fresh
-(destructive — confirm before deleting), or cancel.
+If a branch already exists, ask whether to continue on it, start fresh (destructive — confirm before
+deleting), or cancel.
 
 **Clean working tree:**
 
@@ -144,26 +141,22 @@ EOF
 )"
 ```
 
-Prefix types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `ci`,
-`perf`. Keep the title under 70 characters; detail goes in the body.
+Prefix types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `ci`, `perf`. Keep the title under
+70 characters; detail goes in the body.
 
 ### 6. Enter plan mode
 
-Use `EnterPlanMode` to design the implementation before coding. In plan
-mode:
+Use `EnterPlanMode` to design the implementation before coding. In plan mode:
 
 1. Read the relevant Cortex layer(s) to understand existing patterns.
-2. Identify files to create or modify — list concrete paths, not vague
-   areas.
+2. Identify files to create or modify — list concrete paths, not vague areas.
 3. Note test-suite touch points (`test/Cortex/<area>/*Spec.hs`).
-4. Decide whether the change needs a new ADR (cross-layer design
-   decisions almost always do).
+4. Decide whether the change needs a new ADR (cross-layer design decisions almost always do).
 5. Write the plan for user approval.
 6. Exit plan mode to implement.
 
-Before exiting plan mode, verify the plan respects the substrate/reasoning
-split from ADR 0015: runtime never imports the reasoning layer or
-consumer-specific code.
+Before exiting plan mode, verify the plan respects the substrate/reasoning split from ADR 0015:
+runtime never imports the reasoning layer or consumer-specific code.
 
 ### 7. Implement incrementally
 
@@ -182,8 +175,7 @@ Issue: #<number>
 ```
 
 4. Run `just fmt` before every commit (pre-commit hooks enforce this).
-5. Run `just check` before marking the PR ready — or at minimum
-   `just build` + `just test`.
+5. Run `just check` before marking the PR ready — or at minimum `just build` + `just test`.
 
 ### 8. Debugging workflow
 
@@ -196,23 +188,19 @@ just test-match "<pattern>"  # filtered hspec run
 ./result/bin/cortex-pulse --help
 ```
 
-For deeper investigation of Pulse execution, bring up a local Postgres
-(separate setup — Cortex does not manage database lifecycle) and
-exercise the substrate-shell binary with `--db-host` / `--db-name` flags
-pointing at it. Downstream consumers test their own integration surfaces
-in their own repos.
+For deeper investigation of Pulse execution, bring up a local Postgres (separate setup — Cortex does
+not manage database lifecycle) and exercise the substrate-shell binary with `--db-host` /
+`--db-name` flags pointing at it. Downstream consumers test their own integration surfaces in their
+own repos.
 
 ## Principles
 
-1. **Small commits, one concern each.** Reviewers can follow a story,
-   and the exact signed branch tip may become `main`.
-2. **Plan before coding.** Plan mode surfaces the shape before you sink
-   hours into the wrong one.
-3. **Respect the layer boundary.** Runtime never imports reasoning or
-   consumer code. If a change tempts you across the line, it is a
-   design signal, not an implementation detail.
-4. **Cite the issue in every commit.** Future-you reading `git log`
-   will thank you.
+1. **Small commits, one concern each.** Reviewers can follow a story, and the exact signed branch
+   tip may become `main`.
+2. **Plan before coding.** Plan mode surfaces the shape before you sink hours into the wrong one.
+3. **Respect the layer boundary.** Runtime never imports reasoning or consumer code. If a change
+   tempts you across the line, it is a design signal, not an implementation detail.
+4. **Cite the issue in every commit.** Future-you reading `git log` will thank you.
 
 ## Report
 

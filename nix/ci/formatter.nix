@@ -11,6 +11,15 @@
         alejandra.enable = true; # Nix
         just.enable = true; # justfile
         ormolu.enable = true; # Haskell
+        prettier = {
+          enable = true; # Markdown
+          includes = ["*.md"];
+          settings = {
+            printWidth = 100;
+            proseWrap = "always";
+            tabWidth = 2;
+          };
+        };
       };
 
       settings = {
@@ -18,6 +27,9 @@
           excludes = [
             "nix/materialized/*"
             ".git/*"
+            "docs/Templates/*"
+            # Golden Markdown fixtures intentionally match renderer output.
+            "test/fixtures/ir/*"
             "theory/.lake/*"
             # Generated tree-sitter parser (do not reformat).
             "editors/*/src/parser.c"

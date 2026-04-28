@@ -1,32 +1,28 @@
 ---
 name: squash
 description: >
-  Rewrite a Cortex PR branch into the minimum coherent sequence of
-  signed, buildable commits before integration. Use when the user asks
-  to squash, clean up commits, rebase history, fix process-noise
+  Rewrite a Cortex PR branch into the minimum coherent sequence of signed, buildable commits before
+  integration. Use when the user asks to squash, clean up commits, rebase history, fix process-noise
   commits, or prepare a PR history for fast-forward shipping.
 ---
 
 # Squash
 
-Clean a PR branch by rebasing it into a small semantic commit sequence.
-Do not blindly squash the whole PR. The goal is the minimum number of
-commits that still tells the correct story and leaves `main` working at
-every commit.
+Clean a PR branch by rebasing it into a small semantic commit sequence. Do not blindly squash the
+whole PR. The goal is the minimum number of commits that still tells the correct story and leaves
+`main` working at every commit.
 
 ## Hard Rules
 
 - Ask before rewriting branch history.
 - Never rewrite `main`.
 - Never use GitHub squash, merge, or rebase buttons.
-- Never raw force-push. Use `git push --force-with-lease` after an
-  approved rewrite.
+- Never raw force-push. Use `git push --force-with-lease` after an approved rewrite.
 - Every final commit must be signed, signed off, and verifiable.
 - Every final commit must build with the relevant CI-aligned checks.
-- Keep tests and code together when separating them would leave an
-  intermediate commit broken.
-- If the PR is thematically mixed, propose splitting the PR and ask the
-  user. Do not split without approval.
+- Keep tests and code together when separating them would leave an intermediate commit broken.
+- If the PR is thematically mixed, propose splitting the PR and ask the user. Do not split without
+  approval.
 
 ## Usage
 
@@ -50,8 +46,8 @@ git branch --show-current
 git fetch origin main
 ```
 
-Stop if the worktree is dirty. Do not stash, commit, or discard local
-changes unless the user explicitly asks.
+Stop if the worktree is dirty. Do not stash, commit, or discard local changes unless the user
+explicitly asks.
 
 Confirm the active branch is not `main`:
 
@@ -88,8 +84,7 @@ Look for:
 - commits that only repair immediately previous commits
 - commits that mix unrelated docs, CI, source, and generated files
 - tests split after code in a way that leaves earlier commits untested
-- dependency or generated-output changes that must precede source
-  changes
+- dependency or generated-output changes that must precede source changes
 - merge commits, unsigned commits, or GitHub-authored commits
 
 ### 3. Propose a semantic commit plan
@@ -117,16 +112,14 @@ Rules for the plan:
 - Prefer one commit for one independently reviewable concern.
 - Use the fewest commits that preserve reviewability and bisectability.
 - Put enabling infrastructure before code that depends on it.
-- Put schema/type/API changes before implementations only when the
-  intermediate commit still builds.
-- Keep docs with the feature when the docs are part of the same semantic
-  change; use a separate docs commit when the docs are independent.
+- Put schema/type/API changes before implementations only when the intermediate commit still builds.
+- Keep docs with the feature when the docs are part of the same semantic change; use a separate docs
+  commit when the docs are independent.
 - Keep generated files with the source change that produced them.
-- Do not create a commit that knowingly breaks build, tests, docs, or
-  theory.
+- Do not create a commit that knowingly breaks build, tests, docs, or theory.
 
-If the branch contains two or more unrelated themes that would be better
-reviewed independently, stop and ask:
+If the branch contains two or more unrelated themes that would be better reviewed independently,
+stop and ask:
 
 ```markdown
 This PR is thematically mixed. I recommend splitting it before shipping.
@@ -134,28 +127,25 @@ This PR is thematically mixed. I recommend splitting it before shipping.
 - Chunk A: <scope>
 - Chunk B: <scope>
 
-Do you want me to split the PR, or keep it as one branch and squash into
-separate commits?
+Do you want me to split the PR, or keep it as one branch and squash into separate commits?
 ```
 
 ### 4. Rewrite only after approval
 
-After the user approves the plan, use local Git tools. Prefer
-interactive rebase for reordering/fixups:
+After the user approves the plan, use local Git tools. Prefer interactive rebase for
+reordering/fixups:
 
 ```bash
 git rebase -i origin/main
 ```
 
-For mechanical fixups, `--autosquash` is allowed when commits are
-already marked:
+For mechanical fixups, `--autosquash` is allowed when commits are already marked:
 
 ```bash
 git rebase -i --autosquash origin/main
 ```
 
-For a full manual regrouping, use a soft reset only on the feature
-branch:
+For a full manual regrouping, use a soft reset only on the feature branch:
 
 ```bash
 git reset --soft origin/main
@@ -169,8 +159,7 @@ git add <paths-for-chunk>
 git commit -s -S -m "<type>: <summary>"
 ```
 
-Do not use `--no-verify`. Do not include AI authorship or
-`Co-authored-by` trailers for tools.
+Do not use `--no-verify`. Do not include AI authorship or `Co-authored-by` trailers for tools.
 
 ### 5. Verify every final commit
 
@@ -180,8 +169,7 @@ First verify provenance for the whole rewritten range:
 just check-commit-provenance origin/main..HEAD
 ```
 
-Then verify each final commit in a temporary worktree so the current
-checkout remains stable:
+Then verify each final commit in a temporary worktree so the current checkout remains stable:
 
 ```bash
 for sha in $(git rev-list --reverse origin/main..HEAD); do
@@ -196,13 +184,12 @@ for sha in $(git rev-list --reverse origin/main..HEAD); do
 done
 ```
 
-If the branch is docs-only, `just docs-check` may replace `just check`.
-If the branch touches Lean theory, include `just lean-check`. If the
-branch touches docs rendering, include `just docs-check`. State any
-reduced check surface in the final report.
+If the branch is docs-only, `just docs-check` may replace `just check`. If the branch touches Lean
+theory, include `just lean-check`. If the branch touches docs rendering, include `just docs-check`.
+State any reduced check surface in the final report.
 
-If any intermediate commit fails, fix the plan and rewrite again. Do not
-publish a sequence where only the final tip works.
+If any intermediate commit fails, fix the plan and rewrite again. Do not publish a sequence where
+only the final tip works.
 
 ### 6. Publish the rewritten branch
 

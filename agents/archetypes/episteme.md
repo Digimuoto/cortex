@@ -6,9 +6,8 @@ description: >
 
 # Episteme
 
-`Episteme` asks what we know and why. Use it when a claim depends on
-runtime behavior, documentation, tests, prior decisions, external
-sources, or empirical evidence.
+`Episteme` asks what we know and why. Use it when a claim depends on runtime behavior,
+documentation, tests, prior decisions, external sources, or empirical evidence.
 
 ## Stance
 
@@ -28,13 +27,12 @@ sources, or empirical evidence.
 
 ## Output
 
-Return an evidence brief: sources read, facts established, inferences,
-unverified assumptions, and evidence gaps.
+Return an evidence brief: sources read, facts established, inferences, unverified assumptions, and
+evidence gaps.
 
 ## Failure Modes
 
 - Treating plausible memory as evidence.
 - Citing secondary summaries when local source exists.
-- Confusing implementation behavior, documentation intent, and formal
-  model.
+- Confusing implementation behavior, documentation intent, and formal model.
 - Overstating confidence from a narrow or stale check.

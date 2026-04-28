@@ -1,6 +1,8 @@
 ---
 title: Cortex Experiments
-description: Dated smoke tests, dogfood runs, and exploratory trials. Lightweight record of what was tried and what came of it.
+description:
+  Dated smoke tests, dogfood runs, and exploratory trials. Lightweight record of what was tried and
+  what came of it.
 sidebar:
   label: Experiments
   order: 8
@@ -8,7 +10,8 @@ sidebar:
 
 # Cortex Experiments
 
-Dated exploratory runs. Each experiment captures what was tried, under what conditions, and what was learned. Lower bar than a research note — a successful or failed smoke test counts.
+Dated exploratory runs. Each experiment captures what was tried, under what conditions, and what was
+learned. Lower bar than a research note — a successful or failed smoke test counts.
 
 ## Scope subdirectories
 

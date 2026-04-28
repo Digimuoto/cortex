@@ -1,150 +1,123 @@
 # Cortex theory
 
-Lean 4 mechanization of the Cortex substrate. This directory builds as
-its own Lake project (`lakefile.lean`, `lean-toolchain`) and is wired
-into the repo's nix flake under `packages.cortex-theory` via
-`nix/lean.nix`.
+Lean 4 mechanization of the Cortex substrate. This directory builds as its own Lake project
+(`lakefile.lean`, `lean-toolchain`) and is wired into the repo's nix flake under
+`packages.cortex-theory` via `nix/lean.nix`.
 
-The point of having a Lean track at all is to turn the substrate
-guarantees from prose into proof:
+The point of having a Lean track at all is to turn the substrate guarantees from prose into proof:
 
 - Wire / Graph laws aren't conventions — they're theorems.
-- Pulse frontier safety isn't a code review property — it's a
-  mechanized invariant.
-- Rewrite admission isn't a runtime check we hope is correct — it's
-  a soundness theorem we discharge.
-- Pulse determinism modulo external sparks is the audit-trail
-  property that makes runs replayable.
+- Pulse frontier safety isn't a code review property — it's a mechanized invariant.
+- Rewrite admission isn't a runtime check we hope is correct — it's a soundness theorem we
+  discharge.
+- Pulse determinism modulo external sparks is the audit-trail property that makes runs replayable.
 
-Together these put the substrate's correctness story under
-machine-checked assurance, leaving the LLM-driven layers above as the
-"untrusted user" of a "trusted system". The agent layer remains
+Together these put the substrate's correctness story under machine-checked assurance, leaving the
+LLM-driven layers above as the "untrusted user" of a "trusted system". The agent layer remains
 stochastic; the substrate it runs on does not.
 
 ## Tracks
 
-The five tracks are sketched below. Each track begins as an explicit
-obligation surface; completed slices replace scaffold assumptions with
-theorems, while unfinished tracks keep proof debt visible.
+The five tracks are sketched below. Each track begins as an explicit obligation surface; completed
+slices replace scaffold assumptions with theorems, while unfinished tracks keep proof debt visible.
 
 ### Track 1 — Graph algebra (Mokhov)
 
-`Cortex.Graph.Core` defines the inductive `Graph α` with constructors
-`empty`, `vertex`, `overlay`, `connect`. `Cortex.Graph.Relation`
-defines the finite relation denotation used by the Haskell
-`toRelation` implementation and proves the Mokhov laws on that
-denotation with mathlib `Finset`s. `Cortex.Graph.Laws` now exposes the
-AST-facing laws as theorems over denotational equality (`GraphEq`),
-because raw syntax trees are not definitionally equal. The next quotient
-step (`Cortex.Graph.Quotient`, TODO) can lift those denotational laws to
-ordinary equality on a quotient carrier.
+`Cortex.Graph.Core` defines the inductive `Graph α` with constructors `empty`, `vertex`, `overlay`,
+`connect`. `Cortex.Graph.Relation` defines the finite relation denotation used by the Haskell
+`toRelation` implementation and proves the Mokhov laws on that denotation with mathlib `Finset`s.
+`Cortex.Graph.Laws` now exposes the AST-facing laws as theorems over denotational equality
+(`GraphEq`), because raw syntax trees are not definitionally equal. The next quotient step
+(`Cortex.Graph.Quotient`, TODO) can lift those denotational laws to ordinary equality on a quotient
+carrier.
 
-**Headline obligation:** `connect_decomposition`
-(`g · h · k = g · h ⊕ g · k ⊕ h · k`). This is what licenses circuit
-simplification and the executor's compatibility-edge derivation. The
-relation-level theorem now exists; the remaining obligation is lifting it
-through graph equivalence.
+**Headline obligation:** `connect_decomposition` (`g · h · k = g · h ⊕ g · k ⊕ h · k`). This is what
+licenses circuit simplification and the executor's compatibility-edge derivation. The relation-level
+theorem now exists; the remaining obligation is lifting it through graph equivalence.
 
 ### Track 2 — Fixed-topology Pulse kernel
 
-`Cortex.Pulse.DAG`, `State`, `Fact`, `Frontier`, `Closure`, `Validity`,
-and `Recovery` model the Paper 1 fixed-topology staged-reduction kernel.
-The current model is extensional: a finite node type, an edge-derived DAG
-reachability relation, abstract payloads, node-local facts,
-reachability-level readiness, direct-predecessor runtime readiness,
-topology-domain validity, and failure closure over the DAG. It avoids
-runtime UUID/database shapes and keeps payload and failure details
-abstract.
+`Cortex.Pulse.DAG`, `State`, `Fact`, `Frontier`, `Closure`, `Validity`, and `Recovery` model the
+Paper 1 fixed-topology staged-reduction kernel. The current model is extensional: a finite node
+type, an edge-derived DAG reachability relation, abstract payloads, node-local facts,
+reachability-level readiness, direct-predecessor runtime readiness, topology-domain validity, and
+failure closure over the DAG. It avoids runtime UUID/database shapes and keeps payload and failure
+details abstract.
 
 Mechanized results now include:
 
 - `frontier_only_ready`: frontier membership implies readiness.
-- `frontier_antichain`: frontier nodes are mutually incomparable by
-  strict reachability.
-- `NodeResult.applyNodeFact_comm`: node-local facts for distinct nodes
-  commute.
-- `NodeResult.applyNodeFacts_perm_invariant`: disjoint-key fact folds
-  are invariant under list permutation.
+- `frontier_antichain`: frontier nodes are mutually incomparable by strict reachability.
+- `NodeResult.applyNodeFact_comm`: node-local facts for distinct nodes commute.
+- `NodeResult.applyNodeFacts_perm_invariant`: disjoint-key fact folds are invariant under list
+  permutation.
 - `propagateFailure_extensive`: propagation preserves failed nodes.
-- `propagateFailure_monotone`: failure propagation is monotone over
-  pointwise failure-growth.
-- `propagateFailure_failureClosureComplete`: one propagation pass closes
-  failure over propagatable descendants.
-- `propagateFailure_preserves_topologyDomain`: propagation preserves the
-  absence of off-topology durable state.
-- `propagateFailure_preserves_outputsRespectStatuses`: propagation
-  preserves output ownership.
-- `propagateFailure_preserves_outputsCompleteForStatuses`: propagation
-  preserves required outputs for completed and rewritten nodes.
+- `propagateFailure_monotone`: failure propagation is monotone over pointwise failure-growth.
+- `propagateFailure_failureClosureComplete`: one propagation pass closes failure over propagatable
+  descendants.
+- `propagateFailure_preserves_topologyDomain`: propagation preserves the absence of off-topology
+  durable state.
+- `propagateFailure_preserves_outputsRespectStatuses`: propagation preserves output ownership.
+- `propagateFailure_preserves_outputsCompleteForStatuses`: propagation preserves required outputs
+  for completed and rewritten nodes.
 - `propagateFailure_idempotent`: failure propagation is idempotent.
-- `directReady_sound`: executable direct-predecessor readiness implies
-  proof-level reachability readiness under causal-history closure.
-- `readyNodes_eq_directReadyNodes`: proof and runtime frontiers coincide
-  under closure and causal-history invariants.
-- `NodeResult.Admissible`: node facts must target the topology and come
-  from the executable frontier before preservation theorems apply.
-- `frontierFacts_recovered_wellFormedGraphState`: admissible fact folds
-  become structurally well-formed again after recovery normalization and
-  failure closure.
-- `persistence_safety`: recovered states are structurally well-formed,
-  conditional on explicit persisted topology-domain, output ownership,
-  output-completeness, and causal-history preconditions that recovery
-  preserves.
-- `classifyClosedGraphState_exhaustive_of_wellFormed`: well-formed
-  closed states classify into failed, progressing, completed, or
-  suspended branches.
-- `classifyGraphState_not_stuck_of_wellFormed`: well-formed states
-  cannot classify as stuck after the runtime closure step.
+- `directReady_sound`: executable direct-predecessor readiness implies proof-level reachability
+  readiness under causal-history closure.
+- `readyNodes_eq_directReadyNodes`: proof and runtime frontiers coincide under closure and
+  causal-history invariants.
+- `NodeResult.Admissible`: node facts must target the topology and come from the executable frontier
+  before preservation theorems apply.
+- `frontierFacts_recovered_wellFormedGraphState`: admissible fact folds become structurally
+  well-formed again after recovery normalization and failure closure.
+- `persistence_safety`: recovered states are structurally well-formed, conditional on explicit
+  persisted topology-domain, output ownership, output-completeness, and causal-history preconditions
+  that recovery preserves.
+- `classifyClosedGraphState_exhaustive_of_wellFormed`: well-formed closed states classify into
+  failed, progressing, completed, or suspended branches.
+- `classifyGraphState_not_stuck_of_wellFormed`: well-formed states cannot classify as stuck after
+  the runtime closure step.
 
 The Paper 1 Lean-Haskell modeling boundary is documented in
-`docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md`.
-Remaining obligations include Haskell-side establishment of the
-persisted recovery preconditions and quotient lifting for the graph
-algebra laws.
+`docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md`. Remaining obligations include
+Haskell-side establishment of the persisted recovery preconditions and quotient lifting for the
+graph algebra laws.
 
 ### Track 3 — Rewrite soundness
 
-`Cortex.Wire.Rewrite` sketches the admission predicate from
-`src/Cortex/Pulse/Rewrite.hs`. The current Lean surface is
-proof-carrying rather than vacuous: an admitted `Rewrite` carries
-preservation evidence for graph acyclicity, the caller-supplied contract
-predicate, and positive budget consumption. Remaining obligations:
+`Cortex.Wire.Rewrite` sketches the admission predicate from `src/Cortex/Pulse/Rewrite.hs`. The
+current Lean surface is proof-carrying rather than vacuous: an admitted `Rewrite` carries
+preservation evidence for graph acyclicity, the caller-supplied contract predicate, and positive
+budget consumption. Remaining obligations:
 
 - connect those proof-carrying certificates to the Haskell admission path;
-- instantiate the contract predicate from the Wire `@` registry boundary
-  model: every materialized executor node must come from a registered
-  executor reference, validated pure config, declared or derivable ports,
-  known contracts, explicit purity/effect metadata, and explicit host
-  authority;
-- lift local positive-cost consumption to a full rewrite-chain
-  termination proof.
+- instantiate the contract predicate from the Wire `@` registry boundary model: every materialized
+  executor node must come from a registered executor reference, validated pure config, declared or
+  derivable ports, known contracts, explicit purity/effect metadata, and explicit host authority;
+- lift local positive-cost consumption to a full rewrite-chain termination proof.
 
-This is the "sandbox by proof" story for dynamic graph rewriting.
-Rewrites may transform topology, but they cannot invent new `@` executor
-authority outside the registry boundary documented in
+This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
+but they cannot invent new `@` executor authority outside the registry boundary documented in
 `docs/Reference/Wire/executors-and-alphabet.md`.
 
 ### Track 4 — Provider / spark abstraction (TODO)
 
-A formal model of `Cortex.Capability.Model.Client` and its
-`spark`-shaped contract: an external call returns
-`Either CallError Result`. Discharging this lets us state determinism
-modulo sparks without hand-waving over LLM nondeterminism.
+A formal model of `Cortex.Capability.Model.Client` and its `spark`-shaped contract: an external call
+returns `Either CallError Result`. Discharging this lets us state determinism modulo sparks without
+hand-waving over LLM nondeterminism.
 
 ### Track 5 — Substrate / consumer boundary (TODO)
 
-Per ADR 0015, the Cortex runtime never imports the structured
-reasoning library or any consumer module. A Lean encoding of the
-import graph as a strict partial order makes this enforceable
+Per ADR 0015, the Cortex runtime never imports the structured reasoning library or any consumer
+module. A Lean encoding of the import graph as a strict partial order makes this enforceable
 mechanically rather than by code review.
 
-Track 5 sits inside the substrate proof; Track 4 sits between the
-substrate and external nondeterminism.
+Track 5 sits inside the substrate proof; Track 4 sits between the substrate and external
+nondeterminism.
 
 ## Build
 
-The Lean toolchain version lives in `lean-toolchain` (currently
-`leanprover/lean4:v4.29.0`). The standard Lake commands work:
+The Lean toolchain version lives in `lean-toolchain` (currently `leanprover/lean4:v4.29.0`). The
+standard Lake commands work:
 
 ```
 cd theory
@@ -162,24 +135,22 @@ nix build .#cortex-theory
 just lean-check
 ```
 
-For direct Lake workflows, `nix develop` still provides a working Lean
-toolchain in the repo shell. The repo's pre-commit hook checks theory
-changes through the flake surface (`nix build .#cortex-theory`) so that
-local commits and CI agree on the Lean gate.
+For direct Lake workflows, `nix develop` still provides a working Lean toolchain in the repo shell.
+The repo's pre-commit hook checks theory changes through the flake surface
+(`nix build .#cortex-theory`) so that local commits and CI agree on the Lean gate.
 
 ## Status
 
-| Track | Statements | Proved | Axiomatized |
-|---|---|---|---|
-| 1a. Graph relation semantics | finite relation denotation + Mokhov laws | relation-level laws | none |
-| 1b. Graph denotational AST laws | AST laws over graph equivalence | denotational law surface | none |
-| 1c. Graph quotient laws | lifted quotient equality laws | pending | none |
-| 2. Fixed-topology Pulse kernel | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none |
-| 3. Rewrite soundness | proof-carrying rewrite certificate | acyclicity/contract/budget projections | none |
-| 4. Provider / sparks | — | — | not started |
-| 5. Substrate / consumer boundary | — | — | not started |
+| Track                            | Statements                                                                   | Proved                                                                                                                                                                                                                                         | Axiomatized |
+| -------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                     | relation-level laws                                                                                                                                                                                                                            | none        |
+| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                              | denotational law surface                                                                                                                                                                                                                       | none        |
+| 1c. Graph quotient laws          | lifted quotient equality laws                                                | pending                                                                                                                                                                                                                                        | none        |
+| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none        |
+| 3. Rewrite soundness             | proof-carrying rewrite certificate                                           | acyclicity/contract/budget projections                                                                                                                                                                                                         | none        |
+| 4. Provider / sparks             | —                                                                            | —                                                                                                                                                                                                                                              | not started |
+| 5. Substrate / consumer boundary | —                                                                            | —                                                                                                                                                                                                                                              | not started |
 
-Discharging the remaining obligations is the actual work. The scaffold's
-job is to make the obligation graph compile and run end-to-end so that
-proof debt is visible and each abstract certificate or predicate can be
-connected to executable Cortex code.
+Discharging the remaining obligations is the actual work. The scaffold's job is to make the
+obligation graph compile and run end-to-end so that proof debt is visible and each abstract
+certificate or predicate can be connected to executable Cortex code.

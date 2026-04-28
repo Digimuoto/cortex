@@ -1,6 +1,8 @@
 ---
 title: "Chapter 05 — Wire Language"
-description: "Source-language architecture for Wire. Explains what Wire adds above Graph and Circuit, how it composes registered authority, and how it hands executable topology to Circuit and Pulse."
+description:
+  "Source-language architecture for Wire. Explains what Wire adds above Graph and Circuit, how it
+  composes registered authority, and how it hands executable topology to Circuit and Pulse."
 sidebar:
   label: "05. Wire language"
   order: 5
@@ -9,31 +11,29 @@ status: active
 
 # Chapter 05 — Wire Language
 
-Chapters 03 and 04 establish the algebraic and structural substrate. This
-chapter explains what Wire adds on top: an author-facing language for composing
-registered authority into executable topology, and a rewrite surface for
-proposing bounded structural change over the same model.
+Chapters 03 and 04 establish the algebraic and structural substrate. This chapter explains what Wire
+adds on top: an author-facing language for composing registered authority into executable topology,
+and a rewrite surface for proposing bounded structural change over the same model.
 
-Wire is not where Cortex defines new runtime authority. It is where authors and
-agents compose authority that has already been registered elsewhere.
+Wire is not where Cortex defines new runtime authority. It is where authors and agents compose
+authority that has already been registered elsewhere.
 
 ## Relationship to the reference
 
-This chapter is architectural. It explains what Wire is for and how it fits
-into Cortex.
+This chapter is architectural. It explains what Wire is for and how it fits into Cortex.
 
 The normative rules live in the reference:
 
-- [Wire Grammar](../Reference/Wire/grammar.md) — grammar, precedence,
-  type surface, composition semantics
-- [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md) —
-  contract namespace, port declarations, `=>` matching
-- [Partials and execution boundary](../Reference/Wire/partials-and-execution-boundary.md) —
-  partial nodes, port-determined rule, runnable-wire boundary
-- [Rewrites](../Reference/rewrites.md) — bounded dynamic rewrite algebra,
-  budget, admission, materialization, provenance
-- [Modules, imports, and file returns](../Reference/Wire/modules-imports-and-file-returns.md) —
-  file structure and import model
+- [Wire Grammar](../Reference/Wire/grammar.md) — grammar, precedence, type surface, composition
+  semantics
+- [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md) — contract
+  namespace, port declarations, `=>` matching
+- [Partials and execution boundary](../Reference/Wire/partials-and-execution-boundary.md) — partial
+  nodes, port-determined rule, runnable-wire boundary
+- [Rewrites](../Reference/rewrites.md) — bounded dynamic rewrite algebra, budget, admission,
+  materialization, provenance
+- [Modules, imports, and file returns](../Reference/Wire/modules-imports-and-file-returns.md) — file
+  structure and import model
 
 This chapter intentionally does not restate those rules in full.
 
@@ -44,12 +44,12 @@ Wire adds four things above the Graph and Circuit layers:
 - an authoring surface for naming nodes, declarations, and reusable values
 - endpoint-typed composition over registered contracts and ports
 - partial-node reuse and configuration layering
-- a rewrite surface that lets topology changes be proposed in the same
-  composition model used for initial authoring
+- a rewrite surface that lets topology changes be proposed in the same composition model used for
+  initial authoring
 
-Wire does not replace Graph or Circuit. It authors them. Graph remains the pure
-topology layer. Circuit remains the validated executable artifact. Wire is the
-surface that turns registered vocabulary into those artifacts.
+Wire does not replace Graph or Circuit. It authors them. Graph remains the pure topology layer.
+Circuit remains the validated executable artifact. Wire is the surface that turns registered
+vocabulary into those artifacts.
 
 ```mermaid
 flowchart LR
@@ -70,56 +70,52 @@ The implementation owns what that authority means.
 
 That yields three important consequences:
 
-- Wire may reference executors, contracts, prompts, tools, and config
-  constructors by name, but it does not define those authorities itself.
-- Composition meaning lives at endpoints, not on edges. Edges stay structurally
-  simple; contracts and ports determine whether a connection is valid.
-- Domain semantics stay downstream. Cortex provides the language and substrate;
-  host systems supply domain-specific vocabularies and policy.
+- Wire may reference executors, contracts, prompts, tools, and config constructors by name, but it
+  does not define those authorities itself.
+- Composition meaning lives at endpoints, not on edges. Edges stay structurally simple; contracts
+  and ports determine whether a connection is valid.
+- Domain semantics stay downstream. Cortex provides the language and substrate; host systems supply
+  domain-specific vocabularies and policy.
 
 ## Registered authority
 
-Wire is deliberately closed over authority. The language assumes an external
-registry surface for:
+Wire is deliberately closed over authority. The language assumes an external registry surface for:
 
 - executors
 - contracts
 - tool names and config constructors
 - payload codecs, validation, and rendering rules
 
-That closure is what keeps autonomous authoring and rewrites tractable. A Wire
-program can only compose within a known vocabulary. It cannot invent a new
-executor, contract, or tool at compile time.
+That closure is what keeps autonomous authoring and rewrites tractable. A Wire program can only
+compose within a known vocabulary. It cannot invent a new executor, contract, or tool at compile
+time.
 
-This is also where the downstream boundary stays clean. A host system extends
-Cortex by registering its own domain vocabulary around Wire rather than by
-changing Wire semantics.
+This is also where the downstream boundary stays clean. A host system extends Cortex by registering
+its own domain vocabulary around Wire rather than by changing Wire semantics.
 
 ## Boundary typing
 
-Wire composes through endpoint compatibility rather than through semantic edge
-labels.
+Wire composes through endpoint compatibility rather than through semantic edge labels.
 
 - ports declare what a node can accept or produce
 - contracts name the semantic interface flowing through those ports
 - `=>` connects compatible boundary ports
-- payload validation and rendering happen in the contract registry and runtime
-  surfaces, not in the graph operator itself
+- payload validation and rendering happen in the contract registry and runtime surfaces, not in the
+  graph operator itself
 
-This is why Wire can stay structurally simple while still carrying meaningful
-types. The language reasons about compatibility at the boundary. Rich payload
-meaning lives outside the composition algebra.
+This is why Wire can stay structurally simple while still carrying meaningful types. The language
+reasons about compatibility at the boundary. Rich payload meaning lives outside the composition
+algebra.
 
-One practical design rule follows from this split: use ports for stable
-structural roles, not for encoding graph-discovered collections. When a node
-aggregates a variable number of homogeneous fragments, the structural shape
-should usually be "many fragments of one contract" rather than "one separately
-named port per expected fragment."
+One practical design rule follows from this split: use ports for stable structural roles, not for
+encoding graph-discovered collections. When a node aggregates a variable number of homogeneous
+fragments, the structural shape should usually be "many fragments of one contract" rather than "one
+separately named port per expected fragment."
 
 ## Partial nodes and reuse
 
-Wire's reuse surface is the partial node: a configured executor value whose
-remaining structural choices are pinned later.
+Wire's reuse surface is the partial node: a configured executor value whose remaining structural
+choices are pinned later.
 
 The canonical authored unit is:
 
@@ -127,9 +123,9 @@ The canonical authored unit is:
 node = ports + executor(config)
 ```
 
-Ports stay first-class because the graph type-checker reasons about them.
-Everything behavioral belongs in executor config: prompt, tools, memory, model
-choice, timeouts, budgets, and domain-specific fields.
+Ports stay first-class because the graph type-checker reasons about them. Everything behavioral
+belongs in executor config: prompt, tools, memory, model choice, timeouts, budgets, and
+domain-specific fields.
 
 ```wire
 let section_writer_base = @native.report_section_writer {
@@ -146,29 +142,27 @@ node valuation_writer :
 };
 ```
 
-Rewrite producers use the same explicit `node ... = @executor { ... };` form as
-authored workflows. There is no separate template-use syntax in the Wire
-surface.
+Rewrite producers use the same explicit `node ... = @executor { ... };` form as authored workflows.
+There is no separate template-use syntax in the Wire surface.
 
 Architecturally, this matters for two reasons:
 
 - it keeps reuse inside the same value algebra as the rest of the language
-- it lets rewrites instantiate new nodes by authoring bounded executor configs
-  against already-registered authority
+- it lets rewrites instantiate new nodes by authoring bounded executor configs against
+  already-registered authority
 
-The precise typing rules for partial nodes belong in the reference. The
-architectural point is that reuse is compositional rather than template-like.
+The precise typing rules for partial nodes belong in the reference. The architectural point is that
+reuse is compositional rather than template-like.
 
-Workflow-level config may also provide defaults for executor config, for
-example default models or per-executor model policy on a runtime wrapper.
-Those defaults only fill gaps; an explicit field authored on a node remains
-authoritative.
+Workflow-level config may also provide defaults for executor config, for example default models or
+per-executor model policy on a runtime wrapper. Those defaults only fill gaps; an explicit field
+authored on a node remains authoritative.
 
 ## Rewrites and runtime handoff
 
-Wire is also the authoring surface for runtime topology evolution. A rewrite is
-not a different kind of object from the initial graph; it is another
-composition over the same registered vocabulary and compatibility rules.
+Wire is also the authoring surface for runtime topology evolution. A rewrite is not a different kind
+of object from the initial graph; it is another composition over the same registered vocabulary and
+compatibility rules.
 
 The generic pattern is:
 
@@ -176,9 +170,8 @@ The generic pattern is:
 Plan -> WorkItem* -> Fragment* -> Aggregate
 ```
 
-The mutable part is the realized topology and the node configuration, not the
-core composition law. That is why dynamic decomposition can stay bounded and
-checkable.
+The mutable part is the realized topology and the node configuration, not the core composition law.
+That is why dynamic decomposition can stay bounded and checkable.
 
 Wire does not admit rewrites by itself. The handoff is:
 
@@ -186,13 +179,13 @@ Wire does not admit rewrites by itself. The handoff is:
 - Circuit validates that the structure is still executable
 - Pulse decides admission, budgeting, materialization, and resume behavior
 
-That boundary keeps the language small. Wire describes candidate topology.
-Pulse owns runtime policy.
+That boundary keeps the language small. Wire describes candidate topology. Pulse owns runtime
+policy.
 
 ## Downstream bindings
 
-A consumer may register its own vocabulary around Wire, but it should not make
-Wire itself product-specific.
+A consumer may register its own vocabulary around Wire, but it should not make Wire itself
+product-specific.
 
 Downstream bindings own:
 
@@ -204,20 +197,17 @@ Cortex still owns the source language, composition rules, and substrate runtime.
 
 ## Related
 
-- [Chapter 01 — Overview](01-overview.md) — system overview and high-level
-  boundary
-- [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md) — the structural
-  layers Wire authors
-- [Chapter 06 — Pulse runtime](06-pulse-runtime.md) — durable execution over
-  Circuits
-- [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md) —
-  runtime admission and realized topology
-- [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md) —
-  payload, artifact, and provenance surfaces
-- [ADR 0018 — Wire Executor and Port Catalog Boundary](../ADRs/0018-wire-executor-and-port-catalog-boundary.md) —
-  contract, port, executor, and binding separation
-- [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md) —
-  deterministic expression nodes and same-contract labels
+- [Chapter 01 — Overview](01-overview.md) — system overview and high-level boundary
+- [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md) — the structural layers Wire authors
+- [Chapter 06 — Pulse runtime](06-pulse-runtime.md) — durable execution over Circuits
+- [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md) — runtime
+  admission and realized topology
+- [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md) — payload, artifact, and
+  provenance surfaces
+- [ADR 0018 — Wire Executor and Port Catalog Boundary](../ADRs/0018-wire-executor-and-port-catalog-boundary.md)
+  — contract, port, executor, and binding separation
+- [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md) — deterministic expression nodes and
+  same-contract labels
 - [Wire Grammar](../Reference/Wire/grammar.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
 - [Consumer examples](../Consumers/) — downstream binding examples

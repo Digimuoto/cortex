@@ -8,13 +8,3 @@ flowchart TD
     E -- No --> G{"Ready frontier empty?"}
     G -- No --> A
     G -- Yes --> H["Terminal"]
-
-    classDef runtime fill:#eef2fb,stroke:#315ea8,color:#19325a,stroke-width:1.5px;
-    classDef substitution fill:#f8ebf2,stroke:#9b3d6d,color:#5f2342,stroke-width:1.5px;
-    classDef decision fill:#f6f1e8,stroke:#8a5a00,color:#4b3200,stroke-width:1.5px;
-    classDef terminal fill:#eef7f2,stroke:#1f6b4f,color:#103827,stroke-width:1.5px;
-
-    class A,B,C,D runtime;
-    class E,G decision;
-    class F substitution;
-    class H terminal;

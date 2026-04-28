@@ -10,6 +10,6 @@ sidebar:
 
 No completed initiative docs are currently retained.
 
-Completed docs should stay in the tree only when they help readers understand
-the current architecture. Otherwise, the current architecture, reference, or ADR
-should carry the surviving idea.
+Completed docs should stay in the tree only when they help readers understand the current
+architecture. Otherwise, the current architecture, reference, or ADR should carry the surviving
+idea.

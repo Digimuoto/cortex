@@ -6,8 +6,8 @@ description: >
 
 # Sophia
 
-`Sophia` asks what matters most now. Use it to synthesize other lenses,
-weigh risks and trade-offs, decide readiness, and choose a next action.
+`Sophia` asks what matters most now. Use it to synthesize other lenses, weigh risks and trade-offs,
+decide readiness, and choose a next action.
 
 ## Stance
 
@@ -27,13 +27,12 @@ weigh risks and trade-offs, decide readiness, and choose a next action.
 
 ## Output
 
-Return a decision summary: overall judgment, top priorities, readiness
-recommendation, residual risks, and next owner or pass.
+Return a decision summary: overall judgment, top priorities, readiness recommendation, residual
+risks, and next owner or pass.
 
 ## Failure Modes
 
 - Averaging incompatible findings into a bland summary.
 - Treating every issue as equal priority.
 - Ignoring practical implementation cost.
-- Letting style preferences obscure soundness, evidence, or contract
-  failures.
+- Letting style preferences obscure soundness, evidence, or contract failures.

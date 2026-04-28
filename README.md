@@ -11,27 +11,25 @@
 
 # Cortex
 
-Cortex is a standalone AI substrate: a typed topology layer, a source language
-for composing that topology, and a durable runtime for executing it.
+Cortex is a standalone AI substrate: a typed topology layer, a source language for composing that
+topology, and a durable runtime for executing it.
 
 The core layers are:
 
-| Layer | Role |
-|---|---|
-| **Graph** | Pure topology: vertices, overlay, connect, and graph laws. |
-| **Circuit** | Validated executable topology with typed port compatibility. |
-| **Wire** | Source language and rewrite notation for authoring circuits. |
-| **Pulse** | Durable execution, checkpoints, events, memory, and rewrites. |
+| Layer       | Role                                                          |
+| ----------- | ------------------------------------------------------------- |
+| **Graph**   | Pure topology: vertices, overlay, connect, and graph laws.    |
+| **Circuit** | Validated executable topology with typed port compatibility.  |
+| **Wire**    | Source language and rewrite notation for authoring circuits.  |
+| **Pulse**   | Durable execution, checkpoints, events, memory, and rewrites. |
 
-Downstream products bind Cortex to their own domain semantics, tools, product
-policy, operators, transport, and persistence. Cortex owns the reusable
-substrate.
+Downstream products bind Cortex to their own domain semantics, tools, product policy, operators,
+transport, and persistence. Cortex owns the reusable substrate.
 
 ## Minimal Wire
 
-Wire composes registered authority. Executors, contracts, tools, and payload
-meaning are registered outside the language; Wire describes how those typed
-pieces connect.
+Wire composes registered authority. Executors, contracts, tools, and payload meaning are registered
+outside the language; Wire describes how those typed pieces connect.
 
 ```wire
 contract Plan;
@@ -47,16 +45,16 @@ plan => gather => write
 
 ## Documentation
 
-- [Docs landing](https://digimuoto.github.io/cortex/) - architecture,
-  reference, ADRs, roadmap, and consumer bindings.
-- [Stable canon](https://digimuoto.github.io/cortex/#stable-canon) -
-  architecture, reference, ADRs, and canonical docs.
-- [Working artifacts](https://digimuoto.github.io/cortex/#working-artifacts) -
-  roadmap, research notes, experiments, handoffs, and templates.
-- [Start here](https://digimuoto.github.io/cortex/#start-here) - the intended
-  first reading path through the published docs.
-- [Consumer examples](https://digimuoto.github.io/cortex/#consumer-examples) -
-  downstream binding examples.
+- [Docs landing](https://digimuoto.github.io/cortex/) - architecture, reference, ADRs, roadmap, and
+  consumer bindings.
+- [Stable canon](https://digimuoto.github.io/cortex/#stable-canon) - architecture, reference, ADRs,
+  and canonical docs.
+- [Working artifacts](https://digimuoto.github.io/cortex/#working-artifacts) - roadmap, research
+  notes, experiments, handoffs, and templates.
+- [Start here](https://digimuoto.github.io/cortex/#start-here) - the intended first reading path
+  through the published docs.
+- [Consumer examples](https://digimuoto.github.io/cortex/#consumer-examples) - downstream binding
+  examples.
 
 ## Repository
 

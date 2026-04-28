@@ -1,6 +1,8 @@
 ---
 title: "Wire Organic Rewrite Smoke"
-description: Canonical dogfood prompt and inspection checklist for live LLM-generated Wire append rewrites in thesis_stress_test
+description:
+  Canonical dogfood prompt and inspection checklist for live LLM-generated Wire append rewrites in
+  thesis_stress_test
 date: 2026-04-15
 status: accepted
 related:
@@ -11,13 +13,18 @@ related:
 
 Date: 2026-04-15
 
-This is the canonical small dogfood case for the first live LLM-generated Wire rewrite smoke. It is intentionally smaller than the semiconductor equipment thesis so failures are easy to attribute to rewrite context, grammar, template discovery, or gas handling.
+This is the canonical small dogfood case for the first live LLM-generated Wire rewrite smoke. It is
+intentionally smaller than the semiconductor equipment thesis so failures are easy to attribute to
+rewrite context, grammar, template discovery, or gas handling.
 
 ## Goal
 
-Run `thesis_stress_test` with one obvious thesis that should cause the analyst adaptation node to add focused `Analyst` node instances.
+Run `thesis_stress_test` with one obvious thesis that should cause the analyst adaptation node to
+add focused `Analyst` node instances.
 
-The deterministic test suite already covers raw Wire proposal compilation, append-hole validation, Pulse admission, over-budget rejection, materialization, and successor fan-in. This smoke covers the remaining live behavior: whether the model chooses a valid rewrite from the context it receives.
+The deterministic test suite already covers raw Wire proposal compilation, append-hole validation,
+Pulse admission, over-budget rejection, materialization, and successor fan-in. This smoke covers the
+remaining live behavior: whether the model chooses a valid rewrite from the context it receives.
 
 ## Workflow
 
@@ -83,9 +90,12 @@ In this proposal scope:
 
 - `@analyst` is the registered executor target for these proposal-local nodes.
 - `cuda_moat`, `custom_silicon`, and `valuation_break` are fresh proposal-local node instances.
-- `analyst` is the append anchor and `reviewer` is the original successor. They are supplied by the runtime and should not appear in the proposal graph.
-- `prompt = "..."` is ordinary executor config on the materialized node instance, for example `analyst:cuda_moat`.
-- Because `thesis_stress_test` sets `propagateRewriteAuthority = true`, materialized `Analyst` nodes may also propose follow-on local fragments when remaining rewrite gas allows it.
+- `analyst` is the append anchor and `reviewer` is the original successor. They are supplied by the
+  runtime and should not appear in the proposal graph.
+- `prompt = "..."` is ordinary executor config on the materialized node instance, for example
+  `analyst:cuda_moat`.
+- Because `thesis_stress_test` sets `propagateRewriteAuthority = true`, materialized `Analyst` nodes
+  may also propose follow-on local fragments when remaining rewrite gas allows it.
 
 ## Context The Node Must Receive
 
@@ -111,7 +121,8 @@ In the run UI or DB-backed admin view, inspect:
 - `pulse.graph_rewrites.budget_before` and `budget_after`.
 - Materialized node IDs, expected to be namespaced under `analyst:`.
 - Reviewer inputs, expected to include the rewritten stress nodes rather than only `analyst`.
-- Later rewrite rows whose `source_node_id` is a generated node such as `analyst:software_moat`; these prove recursive bounded rewriting beyond the initial analyst node.
+- Later rewrite rows whose `source_node_id` is a generated node such as `analyst:software_moat`;
+  these prove recursive bounded rewriting beyond the initial analyst node.
 
 ## Failure Diagnosis
 
@@ -123,9 +134,11 @@ If no rewrite happens:
 If the rewrite is rejected:
 
 - `proposal_parse_rejected` means the model did not return raw Wire.
-- `wire_scope_rejected` means the proposal referenced existing workflow nodes such as `analyst` or `reviewer`; append proposals may only reference proposal-local nodes.
+- `wire_scope_rejected` means the proposal referenced existing workflow nodes such as `analyst` or
+  `reviewer`; append proposals may only reference proposal-local nodes.
 - `wire_shape_rejected` means the proposal shape violates the workflow's current shape policy.
-- `wire_*_rejected` means the proposal parsed but failed template, port, hole, shape, or lowering validation.
+- `wire_*_rejected` means the proposal parsed but failed template, port, hole, shape, or lowering
+  validation.
 - `rewrite_budget_exceeded` means the proposal was valid but too large for remaining gas.
 
 If the rewritten nodes run but produce poor content:

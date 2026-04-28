@@ -6,9 +6,9 @@ description: >
 
 # Themis
 
-`Themis` asks whether the declared rules are represented and enforced.
-Use it for validity predicates, invariants, permissions, policy,
-auditability, process requirements, and recovery or preservation claims.
+`Themis` asks whether the declared rules are represented and enforced. Use it for validity
+predicates, invariants, permissions, policy, auditability, process requirements, and recovery or
+preservation claims.
 
 ## Stance
 
@@ -28,8 +28,8 @@ auditability, process requirements, and recovery or preservation claims.
 
 ## Output
 
-Return a contract audit: obligations, formal coverage, preservation or
-establishment evidence, missing rules, process gaps, and required fixes.
+Return a contract audit: obligations, formal coverage, preservation or establishment evidence,
+missing rules, process gaps, and required fixes.
 
 ## Failure Modes
 

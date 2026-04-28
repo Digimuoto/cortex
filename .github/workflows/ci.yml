@@ -53,7 +53,9 @@ jobs:
               - '!docs/**'
             docs:
               - 'docs/**'
+              - 'agents/skills/doc-review*/**'
               - 'nix/docs.nix'
+              - 'scripts/docs-lint'
             haskell:
               - 'app/**'
               - 'config/cortex/**'
@@ -68,7 +70,9 @@ jobs:
               - 'nix/**'
             theory:
               - 'theory/**'
+              - 'agents/skills/lean-code-style/**'
               - 'nix/lean.nix'
+              - 'scripts/lean-lint'
               - 'flake.lock'
               - 'flake.nix'
             editor:
@@ -156,7 +160,7 @@ jobs:
     name: Format Check
     runs-on: [self-hosted, nix, mercury, cortex]
     needs: [changes]
-    if: needs.changes.outputs.code != 'false'
+    if: needs.changes.outputs.code != 'false' || needs.changes.outputs.docs != 'false'
     timeout-minutes: 15
     steps:
       - name: Checkout repository
@@ -254,13 +258,30 @@ jobs:
       - name: Run HLint
         run: nix run '.#lint-haskell' --print-build-logs
 
-  lean-theory:
-    name: Lean Theory
+  lean-lint:
+    name: Lint Lean
     runs-on: [self-hosted, nix, mercury, cortex]
     needs: [changes, supported-build]
     if: |
       always() &&
       (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
+      (needs.changes.outputs.theory != 'false' || needs.changes.outputs.nix != 'false')
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Lean lint
+        run: nix run '.#lean-lint' --print-build-logs
+
+  lean-theory:
+    name: Lean Theory
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, supported-build, lean-lint]
+    if: |
+      always() &&
+      (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
+      (needs.lean-lint.result == 'success' || needs.lean-lint.result == 'skipped') &&
       (needs.changes.outputs.theory != 'false' || needs.changes.outputs.nix != 'false')
     timeout-minutes: 20
     steps:
@@ -307,11 +328,27 @@ jobs:
       - name: Run Cortex test suite
         run: nix run '.#cortex-tests' --print-build-logs
 
-  docs-build:
-    name: Build Docs
+  docs-lint:
+    name: Lint Docs
     runs-on: [self-hosted, nix, mercury, cortex]
     needs: [changes]
     if: needs.changes.outputs.docs != 'false' || needs.changes.outputs.nix != 'false'
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run docs lint
+        run: nix run '.#docs-lint' --print-build-logs
+
+  docs-build:
+    name: Build Docs
+    runs-on: [self-hosted, nix, mercury, cortex]
+    needs: [changes, docs-lint]
+    if: |
+      always() &&
+      (needs.docs-lint.result == 'success' || needs.docs-lint.result == 'skipped') &&
+      (needs.changes.outputs.docs != 'false' || needs.changes.outputs.nix != 'false')
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -333,9 +370,11 @@ jobs:
       - format-check
       - supported-build
       - lint
+      - lean-lint
       - lean-theory
       - flake-check
       - test
+      - docs-lint
       - docs-build
     timeout-minutes: 5
     steps:
@@ -352,9 +391,11 @@ jobs:
             "${{ needs.format-check.result }}"
             "${{ needs.supported-build.result }}"
             "${{ needs.lint.result }}"
+            "${{ needs.lean-lint.result }}"
             "${{ needs.lean-theory.result }}"
             "${{ needs.flake-check.result }}"
             "${{ needs.test.result }}"
+            "${{ needs.docs-lint.result }}"
             "${{ needs.docs-build.result }}"
           )
 

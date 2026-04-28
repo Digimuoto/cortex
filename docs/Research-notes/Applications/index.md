@@ -11,5 +11,5 @@ sidebar:
 No application-level research notes are currently retained.
 
 Consumer-specific design that should remain current belongs under
-[../../Consumers/](../../Consumers/). Keep this section for cross-consumer
-research notes that are not specific enough to live in one consumer subtree.
+[../../Consumers/](../../Consumers/). Keep this section for cross-consumer research notes that are
+not specific enough to live in one consumer subtree.

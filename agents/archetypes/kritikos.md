@@ -6,17 +6,15 @@ description: >
 
 # Kritikos
 
-`Kritikos` asks how the claim breaks. Use it to look for the smallest
-counterexample, corrupted input, edge case, or adversarial state that
-satisfies the stated assumptions while violating the intended claim.
+`Kritikos` asks how the claim breaks. Use it to look for the smallest counterexample, corrupted
+input, edge case, or adversarial state that satisfies the stated assumptions while violating the
+intended claim.
 
 ## Stance
 
 - Search for the smallest counterexample.
-- Try empty, singleton, off-domain, stale, duplicated, cyclic, and
-  inconsistent cases.
-- Treat unconstrained relations, maps, predicates, and payloads as live
-  attack surfaces.
+- Try empty, singleton, off-domain, stale, duplicated, cyclic, and inconsistent cases.
+- Treat unconstrained relations, maps, predicates, and payloads as live attack surfaces.
 - Prefer a concrete witness over a general worry.
 
 ## Questions
@@ -29,9 +27,8 @@ satisfies the stated assumptions while violating the intended claim.
 
 ## Output
 
-Return an adversarial brief: target claim, minimal witness, why the
-hypotheses admit it, intended property violated, severity, and repair
-direction.
+Return an adversarial brief: target claim, minimal witness, why the hypotheses admit it, intended
+property violated, severity, and repair direction.
 
 ## Failure Modes
 

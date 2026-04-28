@@ -1,13 +1,13 @@
 # Testing Patterns
 
-Property-based testing, golden tests, mock patterns, and algebraic law
-verification for production Haskell.
+Property-based testing, golden tests, mock patterns, and algebraic law verification for production
+Haskell.
 
 ## Algebraic laws for domain types
 
-When defining a domain type with operations, state the algebraic laws it
-must satisfy as comments or QuickCheck properties. Laws make the type's
-contract explicit and catch regressions that unit tests miss.
+When defining a domain type with operations, state the algebraic laws it must satisfy as comments or
+QuickCheck properties. Laws make the type's contract explicit and catch regressions that unit tests
+miss.
 
 ### Examples of laws in Cortex
 
@@ -36,19 +36,18 @@ prop_signal_deterministic cfg prices =
 ### When defining a new type
 
 For `computeIndicator` extensions and similar domain functions, require:
+
 1. State the algebraic properties of the output
 2. Write at least one property test per stated law
 3. Document any intentional violations (e.g., floating-point approximation)
 
-**[P2] Flag**: A domain type with operations but no stated algebraic
-properties. This is not about coverage — it's about making the contract
-explicit.
+**[P2] Flag**: A domain type with operations but no stated algebraic properties. This is not about
+coverage — it's about making the contract explicit.
 
 ## Property-based testing for pure decision functions
 
-Every pure decision function (layer 1 in the three-layer-cake) should
-have property tests, not just example-based unit tests. Properties catch
-edge cases that hand-picked examples miss.
+Every pure decision function (layer 1 in the three-layer-cake) should have property tests, not just
+example-based unit tests. Properties catch edge cases that hand-picked examples miss.
 
 ### Pattern: identify the contract as properties
 
@@ -88,18 +87,18 @@ prop_degrade_finite x =
 
 ## Golden test pattern for serialization boundaries
 
-Any type that crosses a serialization boundary should have golden tests:
-a known input, a known expected output, stored as files. Changes that
-alter serialization break the golden test, forcing explicit acknowledgment.
+Any type that crosses a serialization boundary should have golden tests: a known input, a known
+expected output, stored as files. Changes that alter serialization break the golden test, forcing
+explicit acknowledgment.
 
 ### What needs golden tests
 
-| Boundary | Test shape |
-|---|---|
-| `ToJSON`/`FromJSON` on public API types | JSON file → decode → re-encode → compare |
-| Hasql encoder/decoder pairs | Known row → decode → compare to expected record |
-| Report IR → markdown compilation | Known IR → compile → compare to expected markdown |
-| External XML parsing | Known XML → parse → compare to expected boundary type |
+| Boundary                                | Test shape                                            |
+| --------------------------------------- | ----------------------------------------------------- |
+| `ToJSON`/`FromJSON` on public API types | JSON file → decode → re-encode → compare              |
+| Hasql encoder/decoder pairs             | Known row → decode → compare to expected record       |
+| Report IR → markdown compilation        | Known IR → compile → compare to expected markdown     |
+| External XML parsing                    | Known XML → parse → compare to expected boundary type |
 
 ### Pattern
 
@@ -119,18 +118,17 @@ spec = describe "RunResponse serialization" $ do
 ### Updating golden files
 
 When a serialization change is intentional:
+
 1. Update the golden file
 2. Add a comment in the PR explaining why the format changed
 3. If the API is versioned, add a new golden file for the new version
 
-**[P2] Flag**: A public API type with `ToJSON`/`FromJSON` instances but
-no golden test.
+**[P2] Flag**: A public API type with `ToJSON`/`FromJSON` instances but no golden test.
 
 ## Mock record pattern for IO testing
 
-For any module that takes an environment record, define a `mockEnv` in
-test support that replaces IO actions with pure stubs or IORef-based
-recorders.
+For any module that takes an environment record, define a `mockEnv` in test support that replaces IO
+actions with pure stubs or IORef-based recorders.
 
 ### Pattern
 
@@ -174,9 +172,9 @@ spec = describe "attemptStage" $ do
 - The environment contains IO actions (DB, HTTP, logging)
 - You want to test business logic without infrastructure
 
-**[P2] Flag**: A module that's described as "hard to test" because it
-calls concrete IO functions directly instead of going through an env record.
-This is not a testing problem — it's a design problem.
+**[P2] Flag**: A module that's described as "hard to test" because it calls concrete IO functions
+directly instead of going through an env record. This is not a testing problem — it's a design
+problem.
 
 ## Decoder/encoder roundtrip testing
 
@@ -197,8 +195,8 @@ prop_roundtrip view =
 
 ### Practical approach
 
-For raw Hasql statements where you can't easily unit-test the roundtrip
-in-memory, use integration tests:
+For raw Hasql statements where you can't easily unit-test the roundtrip in-memory, use integration
+tests:
 
 ```haskell
 spec :: Spec
@@ -210,10 +208,9 @@ spec = describe "PulseRunAdminView roundtrip" $ do
     result `shouldBe` Just original
 ```
 
-**Why this matters especially for raw Hasql**: The compiler can't verify
-that the SQL column order matches the decoder's `<*>` chain. A column
-reorder in the SQL that isn't mirrored in the decoder silently maps
-wrong values to wrong fields.
+**Why this matters especially for raw Hasql**: The compiler can't verify that the SQL column order
+matches the decoder's `<*>` chain. A column reorder in the SQL that isn't mirrored in the decoder
+silently maps wrong values to wrong fields.
 
 **[P2] Flag**: A raw Hasql decoder with 10+ columns and no roundtrip test.
 
@@ -221,14 +218,14 @@ wrong values to wrong fields.
 
 When adding a constructor to an owned ADT, the PR must update all of these:
 
-| Area | Check |
-|---|---|
-| Pattern matches | Compiler enforces if no wildcards (which the style guide requires) |
-| `ToJSON`/`FromJSON` | New constructor serializes correctly |
-| DB serialization | If the ADT maps to a Postgres enum, add the new value |
-| Documentation | Supported values lists, tool schemas, API docs |
-| Tests | Add to any `Arbitrary` instances and golden tests |
-| `Bounded`/`Enum` | If derived, verify the new constructor is in the right position |
+| Area                | Check                                                              |
+| ------------------- | ------------------------------------------------------------------ |
+| Pattern matches     | Compiler enforces if no wildcards (which the style guide requires) |
+| `ToJSON`/`FromJSON` | New constructor serializes correctly                               |
+| DB serialization    | If the ADT maps to a Postgres enum, add the new value              |
+| Documentation       | Supported values lists, tool schemas, API docs                     |
+| Tests               | Add to any `Arbitrary` instances and golden tests                  |
+| `Bounded`/`Enum`    | If derived, verify the new constructor is in the right position    |
 
-**[P1] Flag**: A PR that adds an ADT constructor but doesn't update the
-`ToJSON`/`FromJSON` instance or `Arbitrary` instance.
+**[P1] Flag**: A PR that adds an ADT constructor but doesn't update the `ToJSON`/`FromJSON` instance
+or `Arbitrary` instance.

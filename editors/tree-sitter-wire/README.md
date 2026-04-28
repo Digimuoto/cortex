@@ -1,10 +1,10 @@
 # tree-sitter-wire
 
-Tree-sitter grammar for the Cortex **Wire** DSL. Checked-in examples
-and regression fixtures use `.wire` files under `test/fixtures/wire-v1/`.
+Tree-sitter grammar for the Cortex **Wire** DSL. Checked-in examples and regression fixtures use
+`.wire` files under `test/fixtures/wire-v1/`.
 
-Source of truth for the syntax: `docs/Reference/Wire/grammar.md`.
-The production parser is `src/Cortex/Wire/V1/Parser.hs`.
+Source of truth for the syntax: `docs/Reference/Wire/grammar.md`. The production parser is
+`src/Cortex/Wire/V1/Parser.hs`.
 
 ## What's here
 
@@ -74,7 +74,8 @@ tree-sitter parse path/to/file.wire
 ./test/parse-fixtures.sh
 ```
 
-The generated `src/parser.c`, `src/grammar.json`, `src/node-types.json`, and `src/tree_sitter/parser.h` are checked in by convention so consumers don't need the CLI.
+The generated `src/parser.c`, `src/grammar.json`, `src/node-types.json`, and
+`src/tree_sitter/parser.h` are checked in by convention so consumers don't need the CLI.
 
 ## Editor integrations
 
@@ -86,12 +87,17 @@ See the sibling directories:
 
 ## Known Divergences From The V1 Parser
 
-This grammar is deliberately a *parseable superset* of what the Megaparsec parser accepts, except where editor recovery benefits from accepting incomplete buffers:
+This grammar is deliberately a _parseable superset_ of what the Megaparsec parser accepts, except
+where editor recovery benefits from accepting incomplete buffers:
 
-- **Identifiers do not accept `:`.** The grammar uses `[A-Za-z_][A-Za-z0-9_\-]*` so port labels like `<- input: Contract` disambiguate cleanly. Values like `"SPY:US"` remain string literals.
-- **Semantic checks are out of scope.** Tree-sitter accepts syntactically valid records, lists, executor applications, and graph expressions even when the compiler would reject unknown contracts, unknown executors, bad port contracts, or invalid runtime config.
+- **Identifiers do not accept `:`.** The grammar uses `[A-Za-z_][A-Za-z0-9_\-]*` so port labels like
+  `<- input: Contract` disambiguate cleanly. Values like `"SPY:US"` remain string literals.
+- **Semantic checks are out of scope.** Tree-sitter accepts syntactically valid records, lists,
+  executor applications, and graph expressions even when the compiler would reject unknown
+  contracts, unknown executors, bad port contracts, or invalid runtime config.
 
-Outside these points, every production form accepted by the V1 parser should parse here. Regression coverage lives in `test/corpus/v1.txt` and `test/parse-fixtures.sh`.
+Outside these points, every production form accepted by the V1 parser should parse here. Regression
+coverage lives in `test/corpus/v1.txt` and `test/parse-fixtures.sh`.
 
 ## License
 

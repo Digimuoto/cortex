@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+"""Strict mechanical lint checks for Cortex Markdown documentation."""
+
+from __future__ import annotations
+
+import datetime as dt
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import unquote
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+TODAY = dt.date.today()
+
+PUBLICATION_MANUSCRIPT_REQUIRED = {
+    "authors",
+    "date",
+    "description",
+    "kind",
+    "related",
+    "status",
+    "title",
+    "updated",
+}
+
+PUBLICATION_ARTIFACT_REQUIRED = {
+    "date",
+    "description",
+    "related",
+    "status",
+    "title",
+}
+
+STATUS_VALUES = {
+    "accepted",
+    "active",
+    "canonical",
+    "draft",
+    "final",
+    "historical",
+    "planned",
+    "proposed",
+    "published",
+    "research",
+    "superseded",
+}
+
+
+@dataclass
+class Document:
+    path: Path
+    text: str
+    frontmatter: dict[str, object]
+    body: str
+    body_start_line: int
+
+
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def iter_docs() -> list[Path]:
+    paths: list[Path] = []
+    for pattern in ("*.md", "*.mmd"):
+        for path in DOCS.rglob(pattern):
+            if "Templates" in path.relative_to(DOCS).parts:
+                continue
+            paths.append(path)
+    return sorted(paths)
+
+
+def strip_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def parse_frontmatter(text: str) -> tuple[dict[str, object], str, int, list[str]]:
+    errors: list[str] = []
+    if not text.startswith("---\n"):
+        return {}, text, 1, ["missing YAML frontmatter"]
+
+    lines = text.splitlines()
+    close_index = None
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            close_index = index
+            break
+
+    if close_index is None:
+        return {}, text, 1, ["unterminated YAML frontmatter"]
+
+    frontmatter: dict[str, object] = {}
+    key: str | None = None
+    for line in lines[1:close_index]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        list_match = re.match(r"\s+-\s+(.+)$", line)
+        if list_match and key:
+            frontmatter.setdefault(key, [])
+            if isinstance(frontmatter[key], list):
+                frontmatter[key].append(strip_quotes(list_match.group(1)))
+            continue
+        key_match = re.match(r"^([A-Za-z0-9_.-]+):(?:\s*(.*))?$", line)
+        if key_match:
+            key = key_match.group(1)
+            value = key_match.group(2) or ""
+            frontmatter[key] = strip_quotes(value) if value.strip() else []
+            continue
+        nested_match = re.match(r"\s+([A-Za-z0-9_.-]+):(?:\s*(.*))?$", line)
+        if nested_match and key:
+            frontmatter.setdefault(key, {})
+            if isinstance(frontmatter[key], dict):
+                nested_key = nested_match.group(1)
+                value = strip_quotes(nested_match.group(2) or "")
+                frontmatter[key][nested_key] = value
+            continue
+        continuation_match = re.match(r"\s+(.+)$", line)
+        if continuation_match and key:
+            value = strip_quotes(continuation_match.group(1))
+            current = frontmatter.get(key)
+            if current == []:
+                frontmatter[key] = value
+            elif isinstance(current, str):
+                frontmatter[key] = f"{current} {value}"
+            else:
+                errors.append(f"unexpected continuation for frontmatter key {key!r}: {line}")
+            continue
+        errors.append(f"unparsed frontmatter line: {line}")
+
+    body = "\n".join(lines[close_index + 1 :])
+    if text.endswith("\n"):
+        body += "\n"
+    return frontmatter, body, close_index + 2, errors
+
+
+def load_document(path: Path) -> Document:
+    text = path.read_text(encoding="utf-8")
+    frontmatter, body, body_start_line, parse_errors = parse_frontmatter(text)
+    document = Document(path, text, frontmatter, body, body_start_line)
+    setattr(document, "parse_errors", parse_errors)
+    return document
+
+
+def is_markdown(path: Path) -> bool:
+    return path.suffix == ".md"
+
+
+def is_publication(path: Path) -> bool:
+    return path.relative_to(DOCS).parts[:1] == ("Publications",)
+
+
+def is_publication_bundle(path: Path) -> bool:
+    parts = path.relative_to(DOCS).parts
+    return len(parts) >= 2 and parts[0] == "Publications" and parts[1].startswith("Paper-")
+
+
+def is_canonical(path: Path) -> bool:
+    parts = path.relative_to(DOCS).parts
+    if parts[0] in {"Architecture", "Reference", "Publications"}:
+        return True
+    return len(parts) == 1 and path.suffix == ".md"
+
+
+def parse_date(value: object) -> dt.date | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def slugify(heading: str) -> str:
+    heading = re.sub(r"<[^>]+>", "", heading)
+    heading = re.sub(r"`([^`]*)`", r"\1", heading)
+    heading = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", heading)
+    heading = heading.lower()
+    heading = re.sub(r"[^a-z0-9 _-]", "", heading)
+    heading = re.sub(r"\s+", "-", heading.strip())
+    return heading
+
+
+def headings(path: Path) -> set[str]:
+    if not path.exists() or path.suffix != ".md":
+        return set()
+
+    text = path.read_text(encoding="utf-8")
+    ids: set[str] = set(re.findall(r'<a\s+id=["\']([^"\']+)["\']', text))
+    in_fence = False
+    for line in text.splitlines():
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if match:
+            ids.add(slugify(match.group(2)))
+    return ids
+
+
+def add(errors: list[str], path: Path, message: str, line: int | None = None) -> None:
+    location = rel(path) if line is None else f"{rel(path)}:{line}"
+    errors.append(f"{location}: {message}")
+
+
+def check_frontmatter(document: Document, errors: list[str]) -> None:
+    path = document.path
+    if not is_markdown(path):
+        return
+
+    for parse_error in getattr(document, "parse_errors"):
+        add(errors, path, parse_error, 1)
+
+    fm = document.frontmatter
+    for key in ("title", "description"):
+        if not fm.get(key):
+            add(errors, path, f"frontmatter is missing {key!r}", 1)
+
+    status = fm.get("status")
+    if isinstance(status, str) and status not in STATUS_VALUES:
+        add(errors, path, f"unknown status {status!r}", 1)
+
+    date = parse_date(fm.get("date"))
+    updated = parse_date(fm.get("updated"))
+    for key in ("date", "updated"):
+        if key in fm and parse_date(fm.get(key)) is None:
+            add(errors, path, f"{key!r} must be an ISO date", 1)
+    for key, value in (("date", date), ("updated", updated)):
+        if value and value > TODAY:
+            add(errors, path, f"{key!r} must not be in the future", 1)
+    if date and updated and updated < date:
+        add(errors, path, "'updated' must not be earlier than 'date'", 1)
+
+    if is_publication_bundle(path):
+        required = (
+            PUBLICATION_MANUSCRIPT_REQUIRED
+            if path.name == "manuscript.md"
+            else PUBLICATION_ARTIFACT_REQUIRED
+        )
+        for key in sorted(required - set(fm)):
+            add(errors, path, f"publication frontmatter is missing {key!r}", 1)
+        if path.name == "manuscript.md" and fm.get("kind") != "publication":
+            add(errors, path, "publication manuscripts must set kind: publication", 1)
+        if path.name == "manuscript.md" and not isinstance(fm.get("authors"), list):
+            add(errors, path, "publication manuscripts must use list-form authors", 1)
+
+
+def check_related(document: Document, errors: list[str]) -> None:
+    related = document.frontmatter.get("related")
+    if not isinstance(related, list):
+        return
+
+    for entry in related:
+        if not isinstance(entry, str):
+            continue
+        if entry.startswith("docs/"):
+            candidate = ROOT / entry
+        elif entry.startswith("./") or entry.startswith("../") or entry.endswith(".md"):
+            candidate = (document.path.parent / entry).resolve()
+        else:
+            continue
+        if not candidate.exists():
+            add(errors, document.path, f"related target does not exist: {entry}", 1)
+
+
+def check_publication_body(document: Document, errors: list[str]) -> None:
+    if not is_publication(document.path) or not is_markdown(document.path):
+        return
+
+    lines = document.body.splitlines()
+    h1_index = next((i for i, line in enumerate(lines) if line.startswith("# ")), None)
+    if h1_index is not None:
+        for offset, line in enumerate(lines[h1_index + 1 : h1_index + 8], start=h1_index + 2):
+            if re.match(r"\*\*(Authors?|Status|Venue|Date|Updated):\*\*", line):
+                add(
+                    errors,
+                    document.path,
+                    "publication metadata belongs in frontmatter, not below the H1",
+                    document.body_start_line + offset - 1,
+                )
+
+    for index, line in enumerate(lines):
+        if line.strip() == "## References":
+            next_index = index + 1
+            while next_index < len(lines) and not lines[next_index].strip():
+                next_index += 1
+            if next_index >= len(lines):
+                add(errors, document.path, "References section is empty", document.body_start_line + index)
+            elif not re.match(r"\d+\.\s+", lines[next_index]):
+                add(
+                    errors,
+                    document.path,
+                    "References section must start with a Markdown ordered list",
+                    document.body_start_line + next_index,
+                )
+        if re.match(r"\[[0-9]+\]\s+", line):
+            add(
+                errors,
+                document.path,
+                "reference entries must use Markdown ordered-list syntax",
+                document.body_start_line + index,
+            )
+
+
+def check_canonical_policy(document: Document, errors: list[str]) -> None:
+    if not is_canonical(document.path):
+        return
+
+    lines = document.text.splitlines()
+    for line_no, line in enumerate(lines, start=1):
+        if re.search(r"\bTrack\s+[0-9]+\b", line):
+            add(errors, document.path, "canonical docs must not use internal track numbers", line_no)
+        if re.search(r"\b(?:GitHub|PR)\s+#[0-9]+\b", line):
+            add(errors, document.path, "canonical docs must not cite transient issue or PR IDs", line_no)
+        if "Cortex Pulse" in line:
+            add(errors, document.path, "use the stable term 'Pulse runtime' in canonical docs", line_no)
+
+
+def check_markdown_links(document: Document, errors: list[str]) -> None:
+    if not is_markdown(document.path):
+        return
+
+    link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+    current_headings: set[str] | None = None
+    heading_cache: dict[Path, set[str]] = {}
+
+    for match in link_pattern.finditer(document.text):
+        target = unquote(match.group(1))
+        if re.match(r"^[a-z][a-z0-9+.-]*:", target):
+            continue
+
+        line_no, _ = line_col(document.text, match.start())
+        path_part, _, anchor = target.partition("#")
+        if not path_part:
+            target_path = document.path
+        else:
+            target_path = (document.path.parent / path_part).resolve()
+
+        if path_part:
+            if target_path.is_dir():
+                target_file = target_path / "index.md"
+                if not target_file.exists():
+                    add(errors, document.path, f"local link target does not exist: {target}", line_no)
+                    continue
+            elif not target_path.exists():
+                add(errors, document.path, f"local link target does not exist: {target}", line_no)
+                continue
+            else:
+                target_file = target_path
+        else:
+            target_file = document.path
+
+        if anchor:
+            if target_file == document.path:
+                if current_headings is None:
+                    current_headings = headings(document.path)
+                anchor_headings = current_headings
+            else:
+                anchor_headings = heading_cache.setdefault(target_file, headings(target_file))
+            if anchor not in anchor_headings:
+                add(errors, document.path, f"local link anchor does not exist: {target}", line_no)
+
+
+def line_col(text: str, index: int) -> tuple[int, int]:
+    line = text.count("\n", 0, index) + 1
+    last_newline = text.rfind("\n", 0, index)
+    column = index + 1 if last_newline == -1 else index - last_newline
+    return line, column
+
+
+def mermaid_blocks(text: str) -> list[tuple[int, list[str]]]:
+    blocks: list[tuple[int, list[str]]] = []
+    in_mermaid = False
+    start_line = 0
+    current: list[str] = []
+
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if line.startswith("```mermaid"):
+            in_mermaid = True
+            start_line = line_no + 1
+            current = []
+            continue
+        if in_mermaid and line.startswith("```"):
+            blocks.append((start_line, current))
+            in_mermaid = False
+            continue
+        if in_mermaid:
+            current.append(line)
+    return blocks
+
+
+def check_mermaid_text(path: Path, text: str, errors: list[str]) -> None:
+    if path.suffix == ".mmd":
+        blocks = [(1, text.splitlines())]
+    else:
+        blocks = mermaid_blocks(text)
+
+    for start_line, lines in blocks:
+        for offset, line in enumerate(lines):
+            line_no = start_line + offset
+            if "lint: allow semantic" in line:
+                continue
+            if re.search(r"\bclassDef\b.*\bfill:", line):
+                add(errors, path, "Mermaid cosmetic classDef fill is not allowed", line_no)
+            if re.search(r"\bstyle\b.*\bfill:", line):
+                add(errors, path, "Mermaid inline fill styling is not allowed", line_no)
+            if re.search(r"\blinkStyle\b", line):
+                add(errors, path, "Mermaid linkStyle is not allowed in canonical diagrams", line_no)
+
+
+def check_whitespace(path: Path, text: str, errors: list[str]) -> None:
+    for line_no, line in enumerate(text.splitlines(keepends=True), start=1):
+        content = line[:-1] if line.endswith("\n") else line
+        if content.endswith("\r"):
+            add(errors, path, "carriage return is not allowed", line_no)
+        if content.rstrip(" \t") != content:
+            add(errors, path, "trailing whitespace", line_no)
+
+
+def main() -> int:
+    if not DOCS.exists():
+        print("docs-lint: docs/ not found", file=sys.stderr)
+        return 2
+
+    errors: list[str] = []
+    paths = iter_docs()
+    documents = [load_document(path) if path.suffix == ".md" else None for path in paths]
+
+    for path, document in zip(paths, documents):
+        text = path.read_text(encoding="utf-8")
+        check_whitespace(path, text, errors)
+        check_mermaid_text(path, text, errors)
+        if document is None:
+            continue
+        check_frontmatter(document, errors)
+        check_related(document, errors)
+        check_publication_body(document, errors)
+        check_canonical_policy(document, errors)
+        check_markdown_links(document, errors)
+
+    if errors:
+        print("docs-lint failed:", file=sys.stderr)
+        for error in errors:
+            print(f"  {error}", file=sys.stderr)
+        return 1
+
+    print(f"docs-lint: checked {len(paths)} docs/Markdown artifacts")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

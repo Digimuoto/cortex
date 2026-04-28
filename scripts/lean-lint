@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Strict mechanical lint checks for Cortex Lean theory files."""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+THEORY = ROOT / "theory"
+MAX_LINE_LENGTH = 100
+
+BANNED_CODE_WORDS = {
+    "admit",
+    "axiom",
+    "constant",
+    "partial",
+    "sorry",
+    "unsafe",
+}
+
+
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def lean_files() -> list[Path]:
+    return sorted(
+        path
+        for path in THEORY.rglob("*.lean")
+        if ".lake" not in path.parts and path.is_file()
+    )
+
+
+def strip_comments_and_strings(source: str) -> str:
+    """Preserve coordinates while replacing Lean comments and strings by spaces."""
+
+    out: list[str] = []
+    i = 0
+    block_depth = 0
+    in_string = False
+
+    while i < len(source):
+        char = source[i]
+        nxt = source[i : i + 2]
+
+        if block_depth:
+            if nxt == "/-":
+                block_depth += 1
+                out.append("  ")
+                i += 2
+            elif nxt == "-/":
+                block_depth -= 1
+                out.append("  ")
+                i += 2
+            else:
+                out.append("\n" if char == "\n" else " ")
+                i += 1
+            continue
+
+        if in_string:
+            if char == "\\" and i + 1 < len(source):
+                out.append("  ")
+                i += 2
+            elif char == '"':
+                in_string = False
+                out.append(" ")
+                i += 1
+            else:
+                out.append("\n" if char == "\n" else " ")
+                i += 1
+            continue
+
+        if nxt == "--":
+            while i < len(source) and source[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+
+        if nxt == "/-":
+            block_depth = 1
+            out.append("  ")
+            i += 2
+            continue
+
+        if char == '"':
+            in_string = True
+            out.append(" ")
+            i += 1
+            continue
+
+        out.append(char)
+        i += 1
+
+    return "".join(out)
+
+
+def line_col(text: str, index: int) -> tuple[int, int]:
+    line = text.count("\n", 0, index) + 1
+    last_newline = text.rfind("\n", 0, index)
+    column = index + 1 if last_newline == -1 else index - last_newline
+    return line, column
+
+
+def add_match_errors(
+    errors: list[str],
+    path: Path,
+    text: str,
+    pattern: str,
+    message: str,
+) -> None:
+    for match in re.finditer(pattern, text, flags=re.MULTILINE):
+        line, column = line_col(text, match.start())
+        errors.append(f"{rel(path)}:{line}:{column}: {message}: {match.group(0)!r}")
+
+
+def check_file(path: Path, errors: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+
+    for line_no, line in enumerate(source.splitlines(keepends=True), start=1):
+        content = line[:-1] if line.endswith("\n") else line
+        if content.endswith("\r"):
+            errors.append(f"{rel(path)}:{line_no}: carriage return is not allowed")
+        if content.rstrip(" \t") != content:
+            errors.append(f"{rel(path)}:{line_no}: trailing whitespace")
+        if len(content) > MAX_LINE_LENGTH:
+            errors.append(
+                f"{rel(path)}:{line_no}: line is {len(content)} columns "
+                f"(max {MAX_LINE_LENGTH})"
+            )
+
+    code = strip_comments_and_strings(source)
+    banned_words = "|".join(sorted(BANNED_CODE_WORDS))
+    add_match_errors(
+        errors,
+        path,
+        code,
+        rf"\b({banned_words})\b",
+        "trusted-base/debt keyword is banned in Lean code",
+    )
+    add_match_errors(
+        errors,
+        path,
+        code,
+        r"set_option\s+linter\.[A-Za-z0-9_.]+\s+false",
+        "linter suppression is banned",
+    )
+    add_match_errors(
+        errors,
+        path,
+        code,
+        r"set_option\s+autoImplicit\s+true",
+        "autoImplicit must not be re-enabled",
+    )
+    add_match_errors(
+        errors,
+        path,
+        code,
+        r"\|\s*_\s*=>",
+        "wildcard match arms on Lean ADTs are banned",
+    )
+
+
+def module_name(path: Path) -> str:
+    without_suffix = path.relative_to(THEORY).with_suffix("")
+    return ".".join(without_suffix.parts)
+
+
+def check_umbrella_imports(errors: list[str]) -> None:
+    cortex = THEORY / "Cortex.lean"
+    lakefile = THEORY / "lakefile.lean"
+    modules = {
+        module_name(path)
+        for path in (THEORY / "Cortex").rglob("*.lean")
+        if path.is_file() and ".lake" not in path.parts
+    }
+
+    cortex_text = cortex.read_text(encoding="utf-8")
+    cortex_imports = set(re.findall(r"^import\s+([A-Za-z0-9_.]+)\s*$", cortex_text, re.M))
+    missing = sorted(modules - cortex_imports)
+    for mod in missing:
+        errors.append(f"{rel(cortex)}: missing umbrella import for {mod}")
+
+    lake_text = lakefile.read_text(encoding="utf-8")
+    lake_roots = set(re.findall(r"`([A-Za-z0-9_.]+)", lake_text))
+    expected_roots = {"Cortex", *modules}
+    missing_roots = sorted(expected_roots - lake_roots)
+    for mod in missing_roots:
+        errors.append(f"{rel(lakefile)}: root list is missing {mod}")
+
+
+def main() -> int:
+    if not THEORY.exists():
+        print("lean-lint: theory/ not found", file=sys.stderr)
+        return 2
+
+    errors: list[str] = []
+    files = lean_files()
+
+    for path in files:
+        check_file(path, errors)
+    check_umbrella_imports(errors)
+
+    if errors:
+        print("lean-lint failed:", file=sys.stderr)
+        for error in errors:
+            print(f"  {error}", file=sys.stderr)
+        return 1
+
+    print(f"lean-lint: checked {len(files)} Lean files")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -4,6 +4,9 @@ description: Figure inventory and export status for the Algebraic Foundations pa
 date: 2026-04-28
 updated: 2026-04-28
 status: draft
+related:
+  - docs/Publications/Paper-2-algebraic-foundations/manuscript.md
+  - docs/Publications/Paper-2-algebraic-foundations/index.md
 ---
 
 # Paper 2 Figure Inventory

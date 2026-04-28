@@ -12,23 +12,20 @@ related:
 
 # Lean Mechanization Research Plan
 
-**Status:** proposed
-**Scope:** machine-checked support for the fixed-topology staged-reduction core
+**Status:** proposed **Scope:** machine-checked support for the fixed-topology staged-reduction core
 used by Papers 1 and 2
 
 ## Summary
 
-This plan turns the fixed-topology staged-reduction core into a Lean 4
-mechanization target. The goal is not end-to-end workflow correctness or
-replayed I/O equivalence. The goal is to mechanize the structural safety
-contract the runtime actually relies on: commutative accumulation of node-local
-facts, idempotent failure closure, deterministic classification, and recovery
-safety after persisted-prefix crashes.
+This plan turns the fixed-topology staged-reduction core into a Lean 4 mechanization target. The
+goal is not end-to-end workflow correctness or replayed I/O equivalence. The goal is to mechanize
+the structural safety contract the runtime actually relies on: commutative accumulation of
+node-local facts, idempotent failure closure, deterministic classification, and recovery safety
+after persisted-prefix crashes.
 
-The central artifact is an explicit `WellFormedGraphState` structure, exposed
-under the published `wellFormedGraphState` predicate name, for normalized,
-closed states. Without that predicate, Paper 1's recovery claim and Paper 2's
-algebraic presentation remain too rhetorical.
+The central artifact is an explicit `WellFormedGraphState` structure, exposed under the published
+`wellFormedGraphState` predicate name, for normalized, closed states. Without that predicate, Paper
+1's recovery claim and Paper 2's algebraic presentation remain too rhetorical.
 
 ## Core Definitions
 
@@ -57,8 +54,8 @@ structure WellFormedGraphState (G : DAG) (s : GraphState) : Prop where
   frontierBridge : frontierBridge G s
 ```
 
-Here `frontierBridge` means proof-level `readyNodes G s` coincides with the
-runtime-style direct-predecessor frontier `directReadyNodes G s`.
+Here `frontierBridge` means proof-level `readyNodes G s` coincides with the runtime-style
+direct-predecessor frontier `directReadyNodes G s`.
 
 ## Theorem Stack
 
@@ -137,9 +134,8 @@ theorem persistence_safety
   wellFormedGraphState G sRecovered
 ```
 
-This is the load-bearing theorem for the crash-recovery model. It should match
-Paper 1's structural persistence-safety claim and Paper 2's recovery theorem in
-intent.
+This is the load-bearing theorem for the crash-recovery model. It should match Paper 1's structural
+persistence-safety claim and Paper 2's recovery theorem in intent.
 
 ### Tier 5: Classification exhaustiveness
 
@@ -151,8 +147,8 @@ theorem classifyClosedGraphState_exhaustive_of_wellFormed
   ...
 ```
 
-The classifier sits above recovery: well-formed recovered states can resume,
-settle, or suspend, but they cannot enter the stuck diagnostic branch.
+The classifier sits above recovery: well-formed recovered states can resume, settle, or suspend, but
+they cannot enter the stuck diagnostic branch.
 
 ## Explicit Non-Goals
 
@@ -163,8 +159,8 @@ Do not expand this plan into:
 - dynamic graph rewriting correctness
 - operator-facing persistence semantics
 
-Those belong either to assumptions outside the fixed-topology kernel or to the
-separate rewrite-materialization track.
+Those belong either to assumptions outside the fixed-topology kernel or to the separate
+rewrite-materialization track.
 
 ## Suggested Lean Module Structure
 
@@ -184,15 +180,16 @@ DurableTask/
     Safety.lean
 ```
 
-`Validity.lean` should appear early, not as an afterthought. The point of this
-plan is to make valid graph state a first-class theorem object.
+`Validity.lean` should appear early, not as an afterthought. The point of this plan is to make valid
+graph state a first-class theorem object.
 
 ## Expected Challenges
 
 - Finite DAG representation may need an adapter from the runtime's relation-style graph model.
 - Closure idempotence is the hardest proof burden in the current stack.
 - `Waiting(signal)` complicates any local status order because waiting carries data.
-- Output ownership is two-sided in the fixed-topology kernel: outputs must appear only where statuses own them, and completed/rewritten statuses must carry outputs.
+- Output ownership is two-sided in the fixed-topology kernel: outputs must appear only where
+  statuses own them, and completed/rewritten statuses must carry outputs.
 
 ## Relationship to the Paper Set
 
@@ -219,6 +216,9 @@ This plan provides three concrete benefits:
 
 ## Related
 
-- [../../Publications/Paper-1-staged-reduction/](../../Publications/Paper-1-staged-reduction/) — runtime-grounded fixed-topology paper.
-- [../../Publications/Paper-2-algebraic-foundations/](../../Publications/Paper-2-algebraic-foundations/) — algebraic companion paper.
-- [rewrite-materialization-and-recovery.md](rewrite-materialization-and-recovery.md) — separate plan for dynamic topology.
+- [../../Publications/Paper-1-staged-reduction/](../../Publications/Paper-1-staged-reduction/) —
+  runtime-grounded fixed-topology paper.
+- [../../Publications/Paper-2-algebraic-foundations/](../../Publications/Paper-2-algebraic-foundations/)
+  — algebraic companion paper.
+- [rewrite-materialization-and-recovery.md](rewrite-materialization-and-recovery.md) — separate plan
+  for dynamic topology.

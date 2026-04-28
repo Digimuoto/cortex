@@ -10,6 +10,6 @@ sidebar:
 
 No archived roadmap docs are currently retained.
 
-Archive docs are for superseded proposals that still explain why the current
-system looks the way it does. Stale issue-era plans and obsolete grammar
-snapshots should be removed once canonical reference docs replace them.
+Archive docs are for superseded proposals that still explain why the current system looks the way it
+does. Stale issue-era plans and obsolete grammar snapshots should be removed once canonical
+reference docs replace them.

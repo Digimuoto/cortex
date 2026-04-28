@@ -10,10 +10,9 @@ sidebar:
 
 No handoff notes are currently retained.
 
-Use this directory for temporary work-transition records: contributor
-handoffs, PR-to-PR continuation notes, or phase-transition summaries. Remove a
-handoff once its surviving decisions have moved into ADRs, architecture,
-reference, or roadmap docs.
+Use this directory for temporary work-transition records: contributor handoffs, PR-to-PR
+continuation notes, or phase-transition summaries. Remove a handoff once its surviving decisions
+have moved into ADRs, architecture, reference, or roadmap docs.
 
 ## Template
 

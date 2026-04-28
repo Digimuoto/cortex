@@ -1,38 +1,34 @@
 # Platform.Database Raw Hasql Context
 
-This guide covers raw Hasql `Statement` queries. Rel8-based queries
-should follow the local Rel8TH conventions; this file only covers raw
-SQL.
+This guide covers raw Hasql `Statement` queries. Rel8-based queries should follow the local Rel8TH
+conventions; this file only covers raw SQL.
 
 ## When To Use Raw Hasql
 
-Use Rel8 by default. Raw `Statement` is appropriate when the query
-requires CTEs, window functions, `FOR UPDATE SKIP LOCKED`, complex
-upserts, lateral joins, or other SQL constructs that Rel8 cannot
-express. When using raw SQL, use `Platform.Database.Encode` combinators
-and follow this style guide.
+Use Rel8 by default. Raw `Statement` is appropriate when the query requires CTEs, window functions,
+`FOR UPDATE SKIP LOCKED`, complex upserts, lateral joins, or other SQL constructs that Rel8 cannot
+express. When using raw SQL, use `Platform.Database.Encode` combinators and follow this style guide.
 
 ## Encoder Rules
 
 ### Tuple Arity Cap
 
-Use `encode1` through `encode8` for up to eight parameters. For nine or
-more parameters, use `encodeParams` with a list of `col` calls. Do not
-chain `encodeN` combinators with `(<>)` in new code.
+Use `encode1` through `encode8` for up to eight parameters. For nine or more parameters, use
+`encodeParams` with a list of `col` calls. Do not chain `encodeN` combinators with `(<>)` in new
+code.
 
 ### Swap-Risk Threshold
 
-Queries with four or more parameters where two or more share the same
-Hasql type should use a named record to prevent silent swap bugs. Two
-adjacent `Text` params in a flat tuple have no compile-time guard.
+Queries with four or more parameters where two or more share the same Hasql type should use a named
+record to prevent silent swap bugs. Two adjacent `Text` params in a flat tuple have no compile-time
+guard.
 
 ### Use Platform.Database.Encode
 
-Import `Platform.Database.Encode` instead of `Hasql.Encoders` directly.
-It re-exports the common encoder primitives and provides
-`encode1` through `encode8`, `col`, and `encodeParams`. `E.param` is
-intentionally not re-exported; seeing `Platform.Database.Encode` in an
-import list signals combinator-style usage.
+Import `Platform.Database.Encode` instead of `Hasql.Encoders` directly. It re-exports the common
+encoder primitives and provides `encode1` through `encode8`, `col`, and `encodeParams`. `E.param` is
+intentionally not re-exported; seeing `Platform.Database.Encode` in an import list signals
+combinator-style usage.
 
 Each `encodeN` takes N `(accessor, encoder)` pairs:
 
@@ -56,8 +52,7 @@ encoder =
     (.rfRetryable, Enc.nonNullable Enc.bool)
 ```
 
-For queries with nine or more parameters, use `encodeParams` with a
-`NonEmpty` of `col` calls:
+For queries with nine or more parameters, use `encodeParams` with a `NonEmpty` of `col` calls:
 
 ```haskell
 encoder =
@@ -68,22 +63,21 @@ encoder =
          ]
 ```
 
-`encodeParams` takes a `NonEmpty (E.Params t)` so an empty list is a
-compile error rather than a silent runtime mismatch.
+`encodeParams` takes a `NonEmpty (E.Params t)` so an empty list is a compile error rather than a
+silent runtime mismatch.
 
 ### Named Parameter Records
 
-Define parameter records next to the query in the same module, not in a
-shared types file. Use `OverloadedRecordDot` accessors as `encodeN`
-field selectors. The record does not need to be exported unless callers
-outside the module construct it.
+Define parameter records next to the query in the same module, not in a shared types file. Use
+`OverloadedRecordDot` accessors as `encodeN` field selectors. The record does not need to be
+exported unless callers outside the module construct it.
 
 ## Decoder Rules
 
 ### Column Annotation Convention
 
-Decoders with ten or more fields should annotate each `<*>` line with a
-comment matching the SQL column name:
+Decoders with ten or more fields should annotate each `<*>` line with a comment matching the SQL
+column name:
 
 ```haskell
 MyRow
@@ -96,8 +90,8 @@ This makes column-order mismatches visible during review.
 
 ### No Decoder Abstraction
 
-Do not wrap `Hasql.Decoders` in combinators. The `<$>` / `<*>` chain is
-idiomatic and grep-friendly. Comments are sufficient for safety.
+Do not wrap `Hasql.Decoders` in combinators. The `<$>` / `<*>` chain is idiomatic and grep-friendly.
+Comments are sufficient for safety.
 
 ## Anti-Patterns
 

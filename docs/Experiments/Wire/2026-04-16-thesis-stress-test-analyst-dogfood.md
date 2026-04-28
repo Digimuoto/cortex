@@ -33,7 +33,9 @@ Stress-test this thesis. Focus on where it would break: CUDA/software moat durab
 
 ## Expected Rewrite
 
-`analyst_adaptation` should return raw Wire that declares focused `@analyst` nodes. It should not use `@stress_dimension`, and it should not reference outer workflow node instances such as `analyst` or `reviewer`.
+`analyst_adaptation` should return raw Wire that declares focused `@analyst` nodes. It should not
+use `@stress_dimension`, and it should not reference outer workflow node instances such as `analyst`
+or `reviewer`.
 
 Example shape:
 
@@ -68,5 +70,7 @@ node valuation_break :
 - `pulse.graph_rewrites.status` is `admitted`.
 - Materialized node ids include names like `analyst:cuda_moat`.
 - Reviewer inputs include spawned analyst nodes, not only the original `analyst`.
-- Generated analyst nodes can propose follow-on rewrites if gas remains. The stress-test workflow currently allows up to 16 added nodes, 40 added edges, depth 8, frontier delta 12, and 8 rewrite ops so the run can expose a dozen-ish materialized analysts without unbounded growth.
+- Generated analyst nodes can propose follow-on rewrites if gas remains. The stress-test workflow
+  currently allows up to 16 added nodes, 40 added edges, depth 8, frontier delta 12, and 8 rewrite
+  ops so the run can expose a dozen-ish materialized analysts without unbounded growth.
 - Console `Feed`, `Model`, `Tools`, and `Thoughts` tabs filter correctly when clicking each node.

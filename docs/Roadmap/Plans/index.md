@@ -8,17 +8,17 @@ sidebar:
 
 # Cortex Plans
 
-| Plan | Kind | Status |
-|---|---|---|
-| [Lean mechanization](lean-mechanization.md) | Research plan | Proposed |
+| Plan                                                                            | Kind          | Status   |
+| ------------------------------------------------------------------------------- | ------------- | -------- |
+| [Lean mechanization](lean-mechanization.md)                                     | Research plan | Proposed |
 | [Rewrite materialization and recovery](rewrite-materialization-and-recovery.md) | Research plan | Proposed |
 
 ## Template
 
-Use the [implementation-plan template](../../Templates/implementation-plan.md)
-as the baseline when the plan is implementation-facing. Research plans should
-keep the same frontmatter discipline and clear scope, but may replace delivery
-slices with theorem obligations, evidence targets, and open proof debt.
+Use the [implementation-plan template](../../Templates/implementation-plan.md) as the baseline when
+the plan is implementation-facing. Research plans should keep the same frontmatter discipline and
+clear scope, but may replace delivery slices with theorem obligations, evidence targets, and open
+proof debt.
 
 ## Related
 

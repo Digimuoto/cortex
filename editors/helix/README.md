@@ -1,11 +1,12 @@
 # Helix integration for tree-sitter-wire
 
-Configures Helix to recognize `.wire` files, fetch and build the tree-sitter grammar, and apply highlights/folds/indents.
+Configures Helix to recognize `.wire` files, fetch and build the tree-sitter grammar, and apply
+highlights/folds/indents.
 
 ## Install
 
-1. Append the contents of `languages.toml` here to `~/.config/helix/languages.toml`.
-   Edit the `[[grammar]]` `source.path` to point at your local checkout of `editors/tree-sitter-wire/`.
+1. Append the contents of `languages.toml` here to `~/.config/helix/languages.toml`. Edit the
+   `[[grammar]]` `source.path` to point at your local checkout of `editors/tree-sitter-wire/`.
 
 2. Copy the query files from the canonical source into Helix's runtime directory:
 
@@ -14,7 +15,9 @@ Configures Helix to recognize `.wire` files, fetch and build the tree-sitter gra
    cp editors/tree-sitter-wire/queries/*.scm ~/.config/helix/runtime/queries/wire/
    ```
 
-   There is intentionally no `editors/helix/queries/` duplicate — the queries at `editors/tree-sitter-wire/queries/` are the single source of truth, so Helix and Neovim can never drift out of sync.
+   There is intentionally no `editors/helix/queries/` duplicate — the queries at
+   `editors/tree-sitter-wire/queries/` are the single source of truth, so Helix and Neovim can never
+   drift out of sync.
 
 3. Fetch and build the grammar:
 
@@ -24,8 +27,8 @@ Configures Helix to recognize `.wire` files, fetch and build the tree-sitter gra
    ```
 
 4. Restart Helix. Open a checked-in fixture such as
-   `test/fixtures/wire-v1/thesis-parallel-claim-branches.wire`, or any local
-   `.wire` file; highlighting should render immediately.
+   `test/fixtures/wire-v1/thesis-parallel-claim-branches.wire`, or any local `.wire` file;
+   highlighting should render immediately.
 
 ## Query locations Helix reads
 
