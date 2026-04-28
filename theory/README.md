@@ -97,7 +97,10 @@ structural cost equations for every budget dimension, the final definition-domai
 final-definition coverage, final acyclicity, and pointwise budget consumption. `Cortex.Wire.Planner`
 names the executable-planner correspondence boundary: subgraph namespacing, namespace discipline,
 the AST-to-relation mapping lemma, and the construction-to-checks theorem used to feed
-runtime-shaped planner equations into `PlanGraphRewriteChecks`.
+runtime-shaped planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Planner.Construction`
+adds a proof-side planner construction: it realizes the relation-level final topology as a graph
+representative, computes delta diff sets and costs from that relation, and proves the constructed
+delta establishes the planner-construction bridge under the remaining runtime validation witnesses.
 
 Mechanized results now include:
 
@@ -138,14 +141,27 @@ Mechanized results now include:
   obligations.
 - `runtimePlannerConstruction_admissible`: runtime planner construction plus budget admission
   directly instantiates the abstract admissible-rewrite predicate.
+- `Relation.EdgeEndpointsInVertices`, `graphOfRelation`, and `denote_graphOfRelation`: endpoint-
+  closed finite relations can be realized by graph expressions without quotienting raw graph syntax.
+- `RuntimeNodeId.namespacePolicy`: structured namespace segments model the runtime `NodeId`
+  namespacing discipline with fixed-anchor injectivity and local-id syntax.
+- `plannedFinalRelation_edgeEndpointsInVertices`: the relation-level planner output is always
+  endpoint-closed, so it has a graph representative.
+- `constructedPlannedRewriteDelta_runtimePlannerConstruction`: the proof-side planner construction
+  computes the final topology, relation diffs, entry/exit sets, definition update, and structural
+  costs needed by `RuntimePlannerConstruction`; anchor absence for replacement rewrites is derived
+  from namespace freshness plus source-topology acyclicity.
+- `constructedPlannedRewriteDelta_admissible`: the constructed delta, runtime validation witnesses,
+  and budget admission instantiate the abstract admissible-rewrite predicate.
 - `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
 Remaining obligations:
 
-- prove that the executable Haskell planner establishes the `RuntimePlannerConstruction` equations
-  now named in Lean, using the concrete `NodeId` namespace policy and duplicate-free runtime lists;
+- prove that the executable Haskell planner produces the `RuntimeConstructionValidation` witnesses
+  used by the constructed Lean delta, including source-topology acyclicity, current anchor
+  membership, final definition coverage, final acyclicity, and the inserted-depth computation;
 - connect registry-boundary witnesses to the Haskell compiler and registry;
 - connect the abstract chain model to durable materialization order and lineage.
 

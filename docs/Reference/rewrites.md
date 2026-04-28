@@ -70,9 +70,9 @@ definitions outside the fragment, and any cycle in the resulting materialized gr
 
 New node ids inside a spec are deterministic and namespaced by their parent anchor (for example
 `planner:repair_branch_1:step_1`). Deterministic namespacing is required so identity is stable
-across replay. Local node ids inside the inserted spec must not contain the namespace delimiter `:`.
-After namespacing, inserted node ids must also be fresh against the current topology; a proposal
-that would collide with an existing node is rejected before planning continues.
+across replay. Local node ids inside the inserted spec must be non-empty and must not contain the
+namespace delimiter `:`. After namespacing, inserted node ids must also be fresh against the current
+topology; a proposal that would collide with an existing node is rejected before planning continues.
 
 ### 1.3 Deferred forms
 

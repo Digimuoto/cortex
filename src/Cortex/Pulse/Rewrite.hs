@@ -191,7 +191,7 @@ data RewritePlanningError a
   | RewriteDuplicateExitNodes [a]
   | RewriteEntryNodesOutsideTopology [a]
   | RewriteExitNodesOutsideTopology [a]
-  | RewriteLocalNodeIdsContainNamespaceDelimiter [a]
+  | RewriteInvalidLocalNodeIds [a]
   | RewriteNamespacedNodeCollision [a]
   | RewriteOrphanNodes [a]
   deriving stock (Eq, Show, Generic)
@@ -394,16 +394,17 @@ validateNamespaceDiscipline ::
   Either [RewritePlanningError NodeId] ()
 validateNamespaceDiscipline topology anchor spec =
   let localNodes = relVertices spec.sgsTopology
-      badLocalNodes = Set.toList (Set.filter nodeIdHasNamespaceDelimiter localNodes)
+      badLocalNodes = Set.toList (Set.filter nodeIdInvalidLocalSegment localNodes)
       namespacedNodes = Set.map (namespaceNodeId anchor) localNodes
       collisions = Set.toList (Set.intersection namespacedNodes (relVertices topology))
       errors =
-        [RewriteLocalNodeIdsContainNamespaceDelimiter badLocalNodes | not (null badLocalNodes)]
+        [RewriteInvalidLocalNodeIds badLocalNodes | not (null badLocalNodes)]
           <> [RewriteNamespacedNodeCollision collisions | not (null collisions)]
    in if null errors then Right () else Left errors
 
-nodeIdHasNamespaceDelimiter :: NodeId -> Bool
-nodeIdHasNamespaceDelimiter (NodeId nodeId) = T.singleton ':' `T.isInfixOf` nodeId
+nodeIdInvalidLocalSegment :: NodeId -> Bool
+nodeIdInvalidLocalSegment (NodeId nodeId) =
+  T.null nodeId || T.singleton ':' `T.isInfixOf` nodeId
 
 validateRewriteAnchor ::
   Relation NodeId ->

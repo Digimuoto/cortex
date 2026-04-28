@@ -185,8 +185,9 @@ renderRewriteValidationError errs = T.intercalate "; " (fmap renderOne errs)
         "Rewrite entry nodes are outside the inserted topology: " <> showNodeIds nodes
       RewritePlanningIssue (RewriteExitNodesOutsideTopology nodes) ->
         "Rewrite exit nodes are outside the inserted topology: " <> showNodeIds nodes
-      RewritePlanningIssue (RewriteLocalNodeIdsContainNamespaceDelimiter nodes) ->
-        "Rewrite local node ids must not contain namespace delimiter ':': " <> showNodeIds nodes
+      RewritePlanningIssue (RewriteInvalidLocalNodeIds nodes) ->
+        "Rewrite local node ids must be non-empty and must not contain namespace delimiter ':': "
+          <> showNodeIds nodes
       RewritePlanningIssue (RewriteNamespacedNodeCollision nodes) ->
         "Rewrite namespaced nodes collide with existing topology: " <> showNodeIds nodes
       RewritePlanningIssue (RewriteOrphanNodes nodes) ->

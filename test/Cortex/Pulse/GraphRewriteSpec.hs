@@ -267,9 +267,21 @@ spec = do
 
         case planGraphRewrite rewrite initialTopo initialDefs of
           Left errs ->
-            errs `shouldContain` [RewriteLocalNodeIdsContainNamespaceDelimiter [NodeId "sub:1"]]
+            errs `shouldContain` [RewriteInvalidLocalNodeIds [NodeId "sub:1"]]
           Right _ ->
             expectationFailure "Expected namespace-delimiter local node id to be rejected"
+
+      it "rejects empty local inserted node ids" $ do
+        let subTopo = toRelation (Vertex (NodeId "") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "", mkDef Sub1)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId ""] [NodeId ""]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite initialTopo initialDefs of
+          Left errs ->
+            errs `shouldContain` [RewriteInvalidLocalNodeIds [NodeId ""]]
+          Right _ ->
+            expectationFailure "Expected empty local node id to be rejected"
 
       it "rejects namespaced inserted nodes that collide with the current topology" $ do
         let collisionNode = NodeId "b:sub1"

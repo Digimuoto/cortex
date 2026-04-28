@@ -18,6 +18,7 @@ import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
 import Cortex.Wire.Admission
 import Cortex.Wire.Planner
+import Cortex.Wire.Planner.Construction
 
 /-!
 ## Overview

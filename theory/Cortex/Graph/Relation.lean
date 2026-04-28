@@ -180,4 +180,108 @@ theorem denote_connect_decomposition (g h k : Graph α) :
           (Graph.connect h k)) :=
   Relation.connect_decomposition (denote g) (denote h) (denote k)
 
+/-! ## Relation Realization -/
+
+/-- `Relation.EdgeEndpointsInVertices r` says each edge endpoint appears in the vertex set. -/
+def Relation.EdgeEndpointsInVertices (relation : Relation α) : Prop :=
+  ∀ edge, edge ∈ relation.edges → edge.1 ∈ relation.vertices ∧ edge.2 ∈ relation.vertices
+
+/-- `graphOfVertices vertices` is the edge-free graph containing the listed vertices. -/
+def graphOfVertices : List α → Graph α
+  | [] => Graph.empty
+  | vertex :: rest => Graph.overlay (Graph.vertex vertex) (graphOfVertices rest)
+
+/-- `graphOfEdges edges` is the overlay of singleton-edge graphs for the listed edges. -/
+def graphOfEdges : List (α × α) → Graph α
+  | [] => Graph.empty
+  | edge :: rest => Graph.overlay (Graph.edge edge.1 edge.2) (graphOfEdges rest)
+
+/-- `graphOfRelation relation` chooses a non-extractable graph representative for a relation. -/
+noncomputable def graphOfRelation (relation : Relation α) : Graph α :=
+  Graph.overlay (graphOfVertices relation.vertices.toList) (graphOfEdges relation.edges.toList)
+
+/-- Denotation of `graphOfVertices` is exactly the listed vertices and no edges. -/
+theorem denote_graphOfVertices (vertices : List α) :
+    denote (graphOfVertices vertices) =
+      { vertices := vertices.toFinset, edges := ∅ } := by
+  induction vertices with
+  | nil =>
+      ext x <;> simp [graphOfVertices, denote_empty, Relation.empty]
+  | cons vertex rest ih =>
+      rw [graphOfVertices, denote_overlay, ih]
+      ext x <;> simp [Relation.overlay, Relation.vertex, denote_vertex, List.toFinset_cons]
+
+/-- Denotation of `graphOfEdges` contains each listed edge and its endpoints. -/
+theorem denote_graphOfEdges (edges : List (α × α)) :
+    denote (graphOfEdges edges) =
+      { vertices := (edges.map Prod.fst).toFinset ∪ (edges.map Prod.snd).toFinset
+        edges := edges.toFinset } := by
+  induction edges with
+  | nil =>
+      ext x <;> simp [graphOfEdges, denote_empty, Relation.empty]
+  | cons edge rest ih =>
+      rw [graphOfEdges, denote_overlay, ih]
+      ext x
+      · simp
+          [ Relation.overlay
+          , Graph.edge
+          , Relation.connect
+          , Relation.vertex
+          , Relation.cross
+          , denote_vertex
+          , denote_connect
+          , List.toFinset_cons
+          , or_comm
+          , or_left_comm
+          ]
+      · simp
+          [ Relation.overlay
+          , Graph.edge
+          , Relation.connect
+          , Relation.vertex
+          , Relation.cross
+          , denote_vertex
+          , denote_connect
+          , List.toFinset_cons
+          ]
+
+/-- A relation with all edge endpoints in its vertex set has a graph representative. -/
+theorem denote_graphOfRelation
+    {relation : Relation α}
+    (hEndpoints : Relation.EdgeEndpointsInVertices relation) :
+    denote (graphOfRelation relation) = relation := by
+  unfold graphOfRelation
+  rw [denote_overlay, denote_graphOfVertices, denote_graphOfEdges]
+  apply Relation.ext
+  · apply Finset.ext
+    intro vertex
+    simp only
+      [ Relation.overlay
+      , Finset.mem_union
+      , List.mem_toFinset
+      , Finset.mem_toList
+      , List.mem_map
+      ]
+    constructor
+    · intro hVertex
+      rcases hVertex with hVertex | hEndpoint
+      · exact hVertex
+      · rcases hEndpoint with hSource | hTarget
+        · rcases hSource with ⟨edge, hEdge, rfl⟩
+          exact (hEndpoints edge hEdge).1
+        · rcases hTarget with ⟨edge, hEdge, rfl⟩
+          exact (hEndpoints edge hEdge).2
+    · intro hVertex
+      exact Or.inl hVertex
+  · apply Finset.ext
+    intro edge
+    simp only
+      [ Relation.overlay
+      , Finset.mem_union
+      , List.mem_toFinset
+      , Finset.mem_toList
+      , Finset.notMem_empty
+      , false_or
+      ]
+
 end Cortex.Graph
