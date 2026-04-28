@@ -19,6 +19,7 @@ related:
   - docs/ADRs/0022-wire-pure-output-equations.md
   - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0025-corepure-expression-surface.md
+  - docs/ADRs/0026-typed-executor-node-interface.md
 ---
 
 # ADR 0024 - Wire Node Clause Grammar
@@ -202,4 +203,5 @@ node classify
 - [ADR 0022 - Wire Pure Output Equations](./0022-wire-pure-output-equations.md)
 - [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
 - [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
+- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)

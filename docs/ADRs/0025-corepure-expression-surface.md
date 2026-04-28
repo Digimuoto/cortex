@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0022-wire-pure-output-equations.md
   - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0024-wire-node-clause-grammar.md
+  - docs/ADRs/0026-typed-executor-node-interface.md
 ---
 
 # ADR 0025 - CorePure Expression Surface
@@ -254,4 +255,5 @@ can build text outputs without unreadable manual `concat` and `toString` calls.
 - [ADR 0022 - Wire Pure Output Equations](./0022-wire-pure-output-equations.md)
 - [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
 - [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
+- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
 - [Wire Pure Execution Reference](../Reference/Wire/pure-execution.md)

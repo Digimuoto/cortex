@@ -20,6 +20,7 @@ related:
   - docs/ADRs/0022-wire-pure-output-equations.md
   - docs/ADRs/0024-wire-node-clause-grammar.md
   - docs/ADRs/0025-corepure-expression-surface.md
+  - docs/ADRs/0026-typed-executor-node-interface.md
 ---
 
 # ADR 0023 - Wire Source Elaborates to Circuits
@@ -32,8 +33,8 @@ supersedes ADR 0022's decision to defer full Wire-to-circuit unification.
 ## Context
 
 ADR 0022 made pure output equations legible, but it still treats CorePure mostly as the language
-inside `pure (...)`. That keeps the first implementation narrow, but it leaves the authoring model
-with two nearby concepts:
+inside `pure (...)`. That keeps the first implementation narrow, but Wire still has two nearby
+authoring concepts:
 
 - topology expressions that produce circuits;
 - pure expressions that produce values inside a runtime pure executor.
@@ -41,7 +42,7 @@ with two nearby concepts:
 The next phase should make that distinction semantic rather than syntactic. Authors should be able
 to write constants, pure helpers, node bodies, and eventually composition expressions in one Wire
 source language, while the compiler decides which parts can be reduced before runtime and which
-parts must remain as circuit leaves.
+parts must remain as runtime executor vertices.
 
 This must not weaken the graph guarantees from ADR 0005 and ADR 0009. Admission witnesses,
 predecessor hashes, and rewrite budgets must still attach to a fixed post-elaboration circuit, not
@@ -85,7 +86,7 @@ Topology elaboration completes before runtime evaluation begins. After elaborati
 circuit has a fixed vertex set:
 
 - constant outputs are baked into the circuit;
-- runtime leaves are explicit executor invocations;
+- runtime executor vertices are explicit executor invocations;
 - predecessor hashes, rewrite admission witnesses, and budget annotations attach to the
   post-elaboration circuit.
 
@@ -143,7 +144,7 @@ Two consequences are intentionally left open:
 - Implement Wire AST to circuit elaboration before runtime evaluation.
 - Reject statically known typed CorePure failures during elaboration.
 - Add tests that statically reducible bindings are folded.
-- Add tests that input-dependent residue becomes explicit runtime leaves.
+- Add tests that input-dependent residue becomes explicit runtime executor vertices.
 - Keep the runtime executor surface from creating topology.
 
 ## Implementation sequence
@@ -153,7 +154,7 @@ The immediate implementation slice is:
 1. Parse the node and output grammar from ADR 0024.
 2. Implement the CorePure expression surface from ADR 0025.
 3. Elaborate Wire AST into a post-elaboration circuit, including maximal static reduction.
-4. Wire runtime `pure (...)` leaves through the existing pure executor path.
+4. Route runtime `pure (...)` executor vertices through the existing pure executor path.
 5. Add the closed stdlib needed by the first pure examples.
 
 Topology composition primitives are deliberately later work. They should be added once a real
@@ -166,4 +167,5 @@ multi-node composition use case exercises the shape.
 - [ADR 0022 - Wire Pure Output Equations](./0022-wire-pure-output-equations.md)
 - [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
 - [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
+- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)

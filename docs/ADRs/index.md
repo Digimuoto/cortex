@@ -42,6 +42,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0023](0023-wire-source-elaborates-to-circuits.md)              | Wire Source Elaborates to Circuits                                  | proposed   |
 | [0024](0024-wire-node-clause-grammar.md)                        | Wire Node Clause Grammar                                            | proposed   |
 | [0025](0025-corepure-expression-surface.md)                     | CorePure Expression Surface                                         | proposed   |
+| [0026](0026-typed-executor-node-interface.md)                   | Typed Executor Node Interface                                       | proposed   |
 
 ## Writing a new ADR
 
