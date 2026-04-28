@@ -163,6 +163,10 @@ renderRewriteValidationError errs = T.intercalate "; " (fmap renderOne errs)
         "Rewrite anchor node is outside the current topology: " <> unNodeId nid
       RewritePlanningIssue (RewriteAnchorMissingDefinition nid) ->
         "Rewrite anchor node is missing a stage definition: " <> unNodeId nid
+      RewritePlanningIssue (RewriteCurrentDefinitionsMissing nodes) ->
+        "Current topology is missing stage definitions for: " <> showNodeIds nodes
+      RewritePlanningIssue (RewriteCurrentDefinitionsOutsideTopology nodes) ->
+        "Current stage definitions contain nodes outside the topology: " <> showNodeIds nodes
       RewritePlanningIssue RewriteTopologyEmpty ->
         "Rewrite subgraph must insert at least one node"
       RewritePlanningIssue (RewriteDefinitionsMissing nodes) ->
@@ -181,6 +185,10 @@ renderRewriteValidationError errs = T.intercalate "; " (fmap renderOne errs)
         "Rewrite entry nodes are outside the inserted topology: " <> showNodeIds nodes
       RewritePlanningIssue (RewriteExitNodesOutsideTopology nodes) ->
         "Rewrite exit nodes are outside the inserted topology: " <> showNodeIds nodes
+      RewritePlanningIssue (RewriteLocalNodeIdsContainNamespaceDelimiter nodes) ->
+        "Rewrite local node ids must not contain namespace delimiter ':': " <> showNodeIds nodes
+      RewritePlanningIssue (RewriteNamespacedNodeCollision nodes) ->
+        "Rewrite namespaced nodes collide with existing topology: " <> showNodeIds nodes
       RewritePlanningIssue (RewriteOrphanNodes nodes) ->
         "Rewrite subgraph contains orphan nodes: " <> showNodeIds nodes
       RewriteDuplicateTemplate msg ->

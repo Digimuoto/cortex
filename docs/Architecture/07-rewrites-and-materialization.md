@@ -63,7 +63,8 @@ continue. Entry and exit declarations are serialized lists but semantically sets
 invalid. Validation rejects duplicate entry/exit nodes, missing definitions, orphan nodes,
 definitions outside the fragment, and any cycle in the resulting materialized graph. New nodes
 receive deterministic ids namespaced by their parent (`planner:repair_branch_1:step_1`), keeping
-identity stable across replay.
+identity stable across replay. Local inserted node ids cannot contain `:`, and the namespaced ids
+must be fresh against the current topology so namespace mapping cannot silently merge nodes.
 
 Stages signal rewrites via a richer outcome:
 
@@ -111,10 +112,12 @@ Admission is the runtime's gate. A proposal is admitted only when every check pa
    the port-semantic rules of [Chapter 05](./05-wire-language.md). Singular and list-valued inputs
    obey the same arity rules at the rewire boundary as at compile time.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
-   in the current topology and definition map. Entry/exit sets are non-empty and duplicate-free
-   where the rewrite form requires them. Definition-domain updates follow the anchor disposition:
-   replacement deletes the anchor definition before overlaying inserted definitions; retention and
-   append keep the old domain and overlay inserted definitions. No orphans, no dangling references.
+   in the current topology and definition map, and the current definition domain exactly covers the
+   current topology. Entry/exit sets are non-empty and duplicate-free where the rewrite form
+   requires them. Local inserted node ids are delimiter-free, and their namespaced ids are fresh.
+   Definition-domain updates follow the anchor disposition: replacement deletes the anchor
+   definition before overlaying inserted definitions; retention and append keep the old domain and
+   overlay inserted definitions. No orphans, no dangling references.
 4. **Resource bounds.** Estimated `RewriteCost` fits within the remaining budget on every dimension.
 5. **Runtime policy.** The anchor, the run, and the task type permit rewrites of this form. Planner
    nodes may be restricted to a subset of the algebra.

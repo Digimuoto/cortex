@@ -17,6 +17,7 @@ import Cortex.Pulse.Classify
 import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
 import Cortex.Wire.Admission
+import Cortex.Wire.Planner
 
 /-!
 ## Overview

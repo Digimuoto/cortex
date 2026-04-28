@@ -70,7 +70,9 @@ definitions outside the fragment, and any cycle in the resulting materialized gr
 
 New node ids inside a spec are deterministic and namespaced by their parent anchor (for example
 `planner:repair_branch_1:step_1`). Deterministic namespacing is required so identity is stable
-across replay.
+across replay. Local node ids inside the inserted spec must not contain the namespace delimiter `:`.
+After namespacing, inserted node ids must also be fresh against the current topology; a proposal
+that would collide with an existing node is rejected before planning continues.
 
 ### 1.3 Deferred forms
 
@@ -151,11 +153,11 @@ Admission is the runtime's gate. A proposal is admitted only when **every** chec
    the port-semantic rules of [chapter 05](../Architecture/05-wire-language.md). Singular and
    list-valued inputs obey the same arity rules at the rewrite boundary as at compile time.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
-   in the current topology and definition map. Entry and exit sets are non-empty and duplicate-free
-   where the rewrite form requires them. Definition-domain updates follow the anchor disposition:
-   replacing an anchor deletes its definition before overlaying inserted definitions; retaining or
-   appending keeps the old domain and overlays inserted definitions. No orphans, no dangling
-   references.
+   in the current topology and definition map, and the current definition domain exactly covers the
+   current topology. Entry and exit sets are non-empty and duplicate-free where the rewrite form
+   requires them. Definition-domain updates follow the anchor disposition: replacing an anchor
+   deletes its definition before overlaying inserted definitions; retaining or appending keeps the
+   old domain and overlays inserted definitions. No orphans, no dangling references.
 4. **Resource bounds.** Estimated `RewriteCost` fits within the remaining budget on every dimension
    (§3.2).
 5. **Runtime policy.** The anchor, the run, and the task type permit rewrites of this form. Planner

@@ -36,6 +36,7 @@ import Cortex.Pulse.Rewrite
     ExpansionMode (..),
     GraphRewrite (..),
     PlannedRewriteDelta (..),
+    RewriteAnchorDisposition (..),
     RewriteBudget (..),
     RewriteBudgetError (..),
     RewriteCost (..),
@@ -257,6 +258,119 @@ spec = do
             errs `shouldContain` [RewriteDuplicateExitNodes [NodeId "sub2"]]
           Right _ ->
             expectationFailure "Expected duplicate exit nodes to be rejected"
+
+      it "rejects local inserted node ids containing the namespace delimiter" $ do
+        let subTopo = toRelation (Vertex (NodeId "sub:1") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub:1", mkDef Sub1)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub:1"] [NodeId "sub:1"]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite initialTopo initialDefs of
+          Left errs ->
+            errs `shouldContain` [RewriteLocalNodeIdsContainNamespaceDelimiter [NodeId "sub:1"]]
+          Right _ ->
+            expectationFailure "Expected namespace-delimiter local node id to be rejected"
+
+      it "rejects namespaced inserted nodes that collide with the current topology" $ do
+        let collisionNode = NodeId "b:sub1"
+            topoWithCollision = initialTopo <> toRelation (Vertex collisionNode :: Graph NodeId)
+            defsWithCollision = Map.insert collisionNode (mkDef Sub1) initialDefs
+            subTopo = toRelation (Vertex (NodeId "sub1") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub1"]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite topoWithCollision defsWithCollision of
+          Left errs ->
+            errs `shouldContain` [RewriteNamespacedNodeCollision [collisionNode]]
+          Right _ ->
+            expectationFailure "Expected namespaced inserted node collision to be rejected"
+
+      it "rejects current definitions outside the current topology" $ do
+        let staleNode = NodeId "stale"
+            defsWithStale = Map.insert staleNode (mkDef Sub1) initialDefs
+            subTopo = toRelation (Vertex (NodeId "sub1") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub1"]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite initialTopo defsWithStale of
+          Left errs ->
+            errs `shouldContain` [RewriteCurrentDefinitionsOutsideTopology [staleNode]]
+          Right _ ->
+            expectationFailure "Expected stale current definition to be rejected"
+
+      it "rejects current topology nodes without definitions" $ do
+        let ghostNode = NodeId "ghost"
+            topoWithGhost = initialTopo <> toRelation (Vertex ghostNode :: Graph NodeId)
+            subTopo = toRelation (Vertex (NodeId "sub1") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub1"]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite topoWithGhost initialDefs of
+          Left errs ->
+            errs `shouldContain` [RewriteCurrentDefinitionsMissing [ghostNode]]
+          Right _ ->
+            expectationFailure "Expected current topology node without definition to be rejected"
+
+    describe "planGraphRewrite proof-shaped delta" $ do
+      let subTopo = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
+          subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1), (NodeId "sub2", mkDef Sub2)]
+          spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub2"]
+          entry = NodeId "b:sub1"
+          exit = NodeId "b:sub2"
+          assertDelta
+            rewrite
+            expectedDisposition
+            expectedRemoved
+            expectedAddedEdges
+            expectedDepth = do
+              case planGraphRewrite rewrite initialTopo initialDefs of
+                Left errs ->
+                  expectationFailure $ "planGraphRewrite failed: " <> show errs
+                Right delta -> do
+                  prdAnchorNode delta `shouldBe` NodeId "b"
+                  prdAnchorDisposition delta `shouldBe` expectedDisposition
+                  prdEntryNodes delta `shouldBe` [entry]
+                  prdExitNodes delta `shouldBe` [exit]
+                  prdNewNodes delta `shouldBe` Set.fromList [entry, exit]
+                  prdRemovedNodes delta `shouldBe` expectedRemoved
+                  prdAddedEdges delta `shouldBe` expectedAddedEdges
+                  Map.keysSet (prdDefinitions delta)
+                    `shouldBe` Set.union (Set.difference (Map.keysSet initialDefs) expectedRemoved) (Set.fromList [entry, exit])
+                  prdCost delta
+                    `shouldBe` RewriteCost
+                      { rcAddedNodes = 2,
+                        rcAddedEdges = fromIntegral (Set.size expectedAddedEdges),
+                        rcAddedDepth = expectedDepth,
+                        rcFrontierDelta = 0,
+                        rcRewriteOps = 1
+                      }
+
+      it "constructs replace-node deltas from the planned relation formula" $ do
+        assertDelta
+          (ExpandNode (NodeId "b") ExpandReplaceNode spec')
+          RewriteAnchorRemoved
+          (Set.singleton (NodeId "b"))
+          (Set.fromList [(NodeId "a", entry), (entry, exit), (exit, NodeId "c")])
+          1
+
+      it "constructs retained-envelope deltas from the planned relation formula" $ do
+        assertDelta
+          (ExpandNode (NodeId "b") ExpandRetainNodeAsEnvelope spec')
+          RewriteAnchorRetained
+          Set.empty
+          (Set.fromList [(NodeId "b", entry), (entry, exit), (exit, NodeId "c")])
+          2
+
+      it "constructs append-after deltas from the planned relation formula" $ do
+        assertDelta
+          (AppendAfter (NodeId "b") spec')
+          RewriteAnchorRetained
+          Set.empty
+          (Set.fromList [(NodeId "b", entry), (entry, exit), (exit, NodeId "c")])
+          2
 
     describe "rewrite budgeting" $ do
       it "computes structural rewrite cost and decrements remaining budget pointwise" $ do

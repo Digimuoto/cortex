@@ -52,6 +52,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
 
@@ -179,6 +180,8 @@ data RewritePlanningError a
   = RewriteInvalidTopology (ValidationError a)
   | RewriteAnchorMissingFromTopology a
   | RewriteAnchorMissingDefinition a
+  | RewriteCurrentDefinitionsMissing [a]
+  | RewriteCurrentDefinitionsOutsideTopology [a]
   | RewriteTopologyEmpty
   | RewriteDefinitionsMissing [a]
   | RewriteDefinitionsOutsideTopology [a]
@@ -188,6 +191,8 @@ data RewritePlanningError a
   | RewriteDuplicateExitNodes [a]
   | RewriteEntryNodesOutsideTopology [a]
   | RewriteExitNodesOutsideTopology [a]
+  | RewriteLocalNodeIdsContainNamespaceDelimiter [a]
+  | RewriteNamespacedNodeCollision [a]
   | RewriteOrphanNodes [a]
   deriving stock (Eq, Show, Generic)
 
@@ -261,44 +266,33 @@ planGraphRewrite rewrite topology defs = case rewrite of
   ExpandNode nid mode spec -> do
     validateRewriteAnchor topology defs nid
     validateSubgraphSpec spec
+    validateNamespaceDiscipline topology nid spec
     let spec' = namespaceSubgraph nid spec
-        preds = Set.toList (predecessors topology nid)
-        succs = Set.toList (successors topology nid)
-        topoBase = case mode of
-          ExpandReplaceNode -> removeVertex nid topology
-          ExpandRetainNodeAsEnvelope ->
-            foldl' (flip (removeEdge nid)) topology succs
-        topoWithSub = topoBase <> spec'.sgsTopology
-        topoWithEntries = case mode of
-          ExpandReplaceNode ->
-            foldl' (\r p -> foldl' (flip (addEdge p)) r spec'.sgsEntryNodes) topoWithSub preds
-          ExpandRetainNodeAsEnvelope ->
-            foldl' (flip (addEdge nid)) topoWithSub spec'.sgsEntryNodes
-        topoFinal = foldl' (\r e -> foldl' (flip (addEdge e)) r succs) topoWithEntries spec'.sgsExitNodes
-        defs' = case mode of
-          ExpandReplaceNode -> Map.delete nid defs <> spec'.sgsDefinitions
-          ExpandRetainNodeAsEnvelope -> defs <> spec'.sgsDefinitions
+        rewrite' = ExpandNode nid mode spec'
+        topoFinal = plannedFinalTopology rewrite' topology
+        defs' = plannedFinalDefinitions rewrite' defs
     first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
-      pure (mkPlannedDelta nid (anchorDispositionFor mode) spec' topology defs' topoFinal)
+      pure (mkPlannedDelta rewrite' topology defs' topoFinal)
   AppendAfter nid spec -> do
     validateRewriteAnchor topology defs nid
     validateSubgraphSpec spec
+    validateNamespaceDiscipline topology nid spec
     let spec' = namespaceSubgraph nid spec
-        succs = Set.toList (successors topology nid)
-        topoBase = foldl' (flip (removeEdge nid)) topology succs
-        topoWithSub = topoBase <> spec'.sgsTopology
-        topoWithEntries = foldl' (flip (addEdge nid)) topoWithSub spec'.sgsEntryNodes
-        topoFinal = foldl' (\r e -> foldl' (flip (addEdge e)) r succs) topoWithEntries spec'.sgsExitNodes
-        defs' = defs <> spec'.sgsDefinitions
+        rewrite' = AppendAfter nid spec'
+        topoFinal = plannedFinalTopology rewrite' topology
+        defs' = plannedFinalDefinitions rewrite' defs
     first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
-      pure (mkPlannedDelta nid RewriteAnchorRetained spec' topology defs' topoFinal)
+      pure (mkPlannedDelta rewrite' topology defs' topoFinal)
   where
-    anchorDispositionFor ExpandReplaceNode = RewriteAnchorRemoved
-    anchorDispositionFor ExpandRetainNodeAsEnvelope = RewriteAnchorRetained
-
-    mkPlannedDelta nid anchorDisposition spec' oldTopology defs' topoFinal =
+    mkPlannedDelta rewrite' oldTopology defs' topoFinal =
       let (newNodes, removedNodes, addedEdges, _removedEdges) = relationDiff oldTopology topoFinal
-          insertedDepthNodes = longestInsertedPathNodeCount spec'.sgsTopology spec'.sgsEntryNodes spec'.sgsExitNodes
+          spec' = rewriteSpec rewrite'
+          anchorDisposition = rewriteAnchorDisposition rewrite'
+          insertedDepthNodes =
+            longestInsertedPathNodeCount
+              spec'.sgsTopology
+              spec'.sgsEntryNodes
+              spec'.sgsExitNodes
           addedDepth = case anchorDisposition of
             RewriteAnchorRemoved -> max 0 (insertedDepthNodes - 1)
             RewriteAnchorRetained -> insertedDepthNodes
@@ -318,10 +312,68 @@ planGraphRewrite rewrite topology defs = case rewrite of
               prdAddedEdges = addedEdges,
               prdEntryNodes = spec'.sgsEntryNodes,
               prdExitNodes = spec'.sgsExitNodes,
-              prdAnchorNode = nid,
+              prdAnchorNode = rewriteAnchor rewrite',
               prdAnchorDisposition = anchorDisposition,
               prdCost = cost
             }
+
+rewriteAnchor :: GraphRewrite NodeId def -> NodeId
+rewriteAnchor = \case
+  ExpandNode nid _ _ -> nid
+  AppendAfter nid _ -> nid
+
+rewriteSpec :: GraphRewrite NodeId def -> SubgraphSpec NodeId def
+rewriteSpec = \case
+  ExpandNode _ _ spec -> spec
+  AppendAfter _ spec -> spec
+
+rewriteAnchorDisposition :: GraphRewrite NodeId def -> RewriteAnchorDisposition
+rewriteAnchorDisposition = \case
+  ExpandNode _ ExpandReplaceNode _ -> RewriteAnchorRemoved
+  ExpandNode _ ExpandRetainNodeAsEnvelope _ -> RewriteAnchorRetained
+  AppendAfter _ _ -> RewriteAnchorRetained
+
+plannedFinalDefinitions :: GraphRewrite NodeId def -> Map NodeId def -> Map NodeId def
+plannedFinalDefinitions rewrite defs =
+  let spec = rewriteSpec rewrite
+   in case rewriteAnchorDisposition rewrite of
+        RewriteAnchorRemoved -> Map.delete (rewriteAnchor rewrite) defs <> spec.sgsDefinitions
+        RewriteAnchorRetained -> defs <> spec.sgsDefinitions
+
+plannedFinalTopology :: GraphRewrite NodeId def -> Relation NodeId -> Relation NodeId
+plannedFinalTopology rewrite topology =
+  let anchor = rewriteAnchor rewrite
+      spec = rewriteSpec rewrite
+      succs = Set.toList (successors topology anchor)
+      topoBase = plannedBaseTopology rewrite topology succs
+      topoWithSub = topoBase <> spec.sgsTopology
+      topoWithEntries = wireEntryEdges rewrite topology topoWithSub
+   in wireExitEdges spec.sgsExitNodes succs topoWithEntries
+
+plannedBaseTopology :: GraphRewrite NodeId def -> Relation NodeId -> [NodeId] -> Relation NodeId
+plannedBaseTopology rewrite topology succs =
+  let anchor = rewriteAnchor rewrite
+   in case rewrite of
+        ExpandNode _ ExpandReplaceNode _ -> removeVertex anchor topology
+        ExpandNode _ ExpandRetainNodeAsEnvelope _ ->
+          foldl' (flip (removeEdge anchor)) topology succs
+        AppendAfter _ _ ->
+          foldl' (flip (removeEdge anchor)) topology succs
+
+wireEntryEdges :: GraphRewrite NodeId def -> Relation NodeId -> Relation NodeId -> Relation NodeId
+wireEntryEdges rewrite oldTopology topology =
+  let anchor = rewriteAnchor rewrite
+      entries = (rewriteSpec rewrite).sgsEntryNodes
+   in case rewriteAnchorDisposition rewrite of
+        RewriteAnchorRemoved ->
+          let preds = Set.toList (predecessors oldTopology anchor)
+           in foldl' (\r p -> foldl' (flip (addEdge p)) r entries) topology preds
+        RewriteAnchorRetained ->
+          foldl' (flip (addEdge anchor)) topology entries
+
+wireExitEdges :: [NodeId] -> [NodeId] -> Relation NodeId -> Relation NodeId
+wireExitEdges exits succs topology =
+  foldl' (\r e -> foldl' (flip (addEdge e)) r succs) topology exits
 
 namespaceNodeId :: NodeId -> NodeId -> NodeId
 namespaceNodeId (NodeId parent) (NodeId local) = NodeId (parent <> ":" <> local)
@@ -335,14 +387,38 @@ namespaceSubgraph parent spec =
       sgsExitNodes = fmap (namespaceNodeId parent) spec.sgsExitNodes
     }
 
+validateNamespaceDiscipline ::
+  Relation NodeId ->
+  NodeId ->
+  SubgraphSpec NodeId def ->
+  Either [RewritePlanningError NodeId] ()
+validateNamespaceDiscipline topology anchor spec =
+  let localNodes = relVertices spec.sgsTopology
+      badLocalNodes = Set.toList (Set.filter nodeIdHasNamespaceDelimiter localNodes)
+      namespacedNodes = Set.map (namespaceNodeId anchor) localNodes
+      collisions = Set.toList (Set.intersection namespacedNodes (relVertices topology))
+      errors =
+        [RewriteLocalNodeIdsContainNamespaceDelimiter badLocalNodes | not (null badLocalNodes)]
+          <> [RewriteNamespacedNodeCollision collisions | not (null collisions)]
+   in if null errors then Right () else Left errors
+
+nodeIdHasNamespaceDelimiter :: NodeId -> Bool
+nodeIdHasNamespaceDelimiter (NodeId nodeId) = T.singleton ':' `T.isInfixOf` nodeId
+
 validateRewriteAnchor ::
   Relation NodeId ->
   Map NodeId def ->
   NodeId ->
   Either [RewritePlanningError NodeId] ()
 validateRewriteAnchor topology defs nid =
-  let errors =
-        [RewriteAnchorMissingFromTopology nid | not (Set.member nid (relVertices topology))]
+  let topologyNodes = relVertices topology
+      definitionNodes = Map.keysSet defs
+      missingDefinitions = Set.toList (Set.difference topologyNodes definitionNodes)
+      extraDefinitions = Set.toList (Set.difference definitionNodes topologyNodes)
+      errors =
+        [RewriteCurrentDefinitionsMissing missingDefinitions | not (null missingDefinitions)]
+          <> [RewriteCurrentDefinitionsOutsideTopology extraDefinitions | not (null extraDefinitions)]
+          <> [RewriteAnchorMissingFromTopology nid | not (Set.member nid topologyNodes)]
           <> [RewriteAnchorMissingDefinition nid | not (Map.member nid defs)]
    in if null errors then Right () else Left errors
 

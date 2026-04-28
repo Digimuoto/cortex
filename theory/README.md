@@ -94,7 +94,10 @@ runtime rewrite budget. `Cortex.Wire.Admission` now models the proof-side bridge
 inserted-subgraph validity, entry/exit non-emptiness, orphan-freedom, denotational equality to a
 relation-level final-topology construction, relation-diff equations, anchor-disposition coupling,
 structural cost equations for every budget dimension, the final definition-domain update equation,
-final-definition coverage, final acyclicity, and pointwise budget consumption.
+final-definition coverage, final acyclicity, and pointwise budget consumption. `Cortex.Wire.Planner`
+names the executable-planner correspondence boundary: subgraph namespacing, namespace discipline,
+the AST-to-relation mapping lemma, and the construction-to-checks theorem used to feed
+runtime-shaped planner equations into `PlanGraphRewriteChecks`.
 
 Mechanized results now include:
 
@@ -118,14 +121,31 @@ Mechanized results now include:
   `admissible` predicate.
 - `planGraphRewriteChecks_admissible`: runtime planning checks plus budget admission produce an
   abstract admissible rewrite.
+- `namespaceGraphRewrite_anchor` and `namespaceGraphRewrite_anchorDisposition`: runtime namespacing
+  changes the inserted subgraph but not the anchor or removal/retention decision.
+- `RuntimeNamespacePolicy`: the proof-side model of the executable namespace function, its
+  fixed-anchor injectivity fact, and the local-node syntax predicate accepted by the runtime
+  namespace validator.
+- `denote_mapGraph`: mapping the graph AST and then denoting it agrees with relation-level mapping.
+- `namespaceSubgraphSpec_preserves_valid`: injective namespacing preserves inserted-subgraph
+  validity.
+- `RuntimeNodeListMatches.card_eq_length`: duplicate-free runtime entry lists agree with the
+  `Finset` cardinalities used by frontier-delta cost proofs.
+- `runtimePlannerConstruction_planGraphRewriteChecks`: proof-shaped executable planner equations
+  establish the planning contract consumed by the admission bridge.
+- `runtimePlannerConstruction_local_allowed` and `runtimePlannerConstruction_namespaced_fresh`:
+  runtime planner construction exposes the namespace validator's local syntax and freshness
+  obligations.
+- `runtimePlannerConstruction_admissible`: runtime planner construction plus budget admission
+  directly instantiates the abstract admissible-rewrite predicate.
 - `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
 Remaining obligations:
 
-- connect the Lean relation-level planner and namespaced `SubgraphSpec` input to the executable
-  Haskell constructors in `planGraphRewrite`;
+- prove that the executable Haskell planner establishes the `RuntimePlannerConstruction` equations
+  now named in Lean, using the concrete `NodeId` namespace policy and duplicate-free runtime lists;
 - connect registry-boundary witnesses to the Haskell compiler and registry;
 - connect the abstract chain model to durable materialization order and lineage.
 

@@ -23,6 +23,6 @@ def main : IO Unit := do
   IO.println "Cortex theory — Lean 4 mechanization (scaffold)"
   IO.println "  Track 1 (Graph algebra) ......... import Cortex.Graph.Core / Laws"
   IO.println "  Track 2 (Pulse kernel) .......... import Cortex.Pulse.Classify"
-  IO.println "  Track 3 (Wire rewrite) .......... import Cortex.Wire.Admission"
+  IO.println "  Track 3 (Wire rewrite) .......... import Cortex.Wire.Planner"
   IO.println ""
   IO.println "Open obligations: see `theory/README.md`."
