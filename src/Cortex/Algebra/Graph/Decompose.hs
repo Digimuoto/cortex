@@ -1,5 +1,14 @@
-{- | Structural decomposition of graphs: topological sorting, DAG folds,
+{- |
+Module      : Cortex.Algebra.Graph.Decompose
+Description : Structural decomposition of graphs: topological sorting, DAG folds,.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 and strongly connected components.
+
+Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo.
 -}
 module Cortex.Algebra.Graph.Decompose
   ( -- * Topological sort

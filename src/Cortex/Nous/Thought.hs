@@ -1,4 +1,15 @@
--- | One bounded model-mediated cognitive evaluation.
+{- |
+Module      : Cortex.Nous.Thought
+Description : One bounded model-mediated cognitive evaluation.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The module belongs to Cortex's upstream runtime and library surface.
+
+Cortex.Nous is layered above the substrate and must not be imported by substrate modules.
+-}
 module Cortex.Nous.Thought
   ( module Cortex.Nous.Thought.Frame
   , module Cortex.Nous.Thought.Host

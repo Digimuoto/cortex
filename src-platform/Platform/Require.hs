@@ -1,9 +1,14 @@
 {- |
-Module: Platform.Require
-Description: Combinators for requiring values or throwing HTTP errors
+Module      : Platform.Require
+Description : This module provides combinators for common error-handling patterns in.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
-This module provides combinators for common error-handling patterns in
 HTTP handlers, such as converting Maybe/Either values to HTTP errors.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Require
   ( -- * Basic require combinators

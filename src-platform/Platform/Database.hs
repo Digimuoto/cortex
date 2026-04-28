@@ -1,6 +1,14 @@
-{- | Database connection management
+{- |
+Module      : Platform.Database
+Description : Database connection management.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Provides connection pool configuration and management using Hasql.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Database
   ( -- * Connection management

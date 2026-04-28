@@ -1,6 +1,10 @@
 {- |
 Module      : Platform.Observability.Fields
-Description : Typed event codes and safe field builders for observability
+Description : Typed event codes and safe field builders for observability.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Provides a type-safe layer over the raw 'LogEventSpec' interface:
 
@@ -11,6 +15,8 @@ Provides a type-safe layer over the raw 'LogEventSpec' interface:
 
 Domain-specific event code values (e.g. Pulse executor codes) are defined
 in their respective downstream modules, not here.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Observability.Fields
   ( -- * Typed event code

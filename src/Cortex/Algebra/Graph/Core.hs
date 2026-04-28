@@ -1,4 +1,10 @@
-{- | Algebraic graph DSL based on Mokhov 2017, "Algebraic Graphs with Class."
+{- |
+Module      : Cortex.Algebra.Graph.Core
+Description : Algebraic graph DSL based on Mokhov 2017, "Algebraic Graphs with Class.".
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 The graph is built using four constructors ('Empty', 'Vertex', 'Overlay',
 'Connect') and derived combinators ('path', 'edge', 'star', etc.), then
@@ -6,21 +12,23 @@ lowered to a concrete 'Relation' for runtime use.
 
 Layer placement:
 
- * 'Cortex.Algebra.Graph' owns pure graph semantics and algorithms.
- * 'Cortex.Pulse.*' owns durable execution, scheduling, and persistence.
- * Portman domain workflows compile into these generic graph semantics,
-   but finance-specific meaning does not live here.
+* 'Cortex.Algebra.Graph' owns pure graph semantics and algorithms.
+* 'Cortex.Pulse.*' owns durable execution, scheduling, and persistence.
+* Portman domain workflows compile into these generic graph semantics,
+but finance-specific meaning does not live here.
 
 Key semantics from the paper:
 
- * 'connect' creates ALL cross-edges (left × right), not one edge.
- * @connect a (connect b c)@ is a clique (triangle), NOT a path.
- * Paths are built with 'path' or 'edge': @edge a b <> edge b c@.
- * Malformed graphs (dangling edges) are unrepresentable by construction.
+* 'connect' creates ALL cross-edges (left × right), not one edge.
+* @connect a (connect b c)@ is a clique (triangle), NOT a path.
+* Paths are built with 'path' or 'edge': @edge a b <> edge b c@.
+* Malformed graphs (dangling edges) are unrepresentable by construction.
 
 The algebra operates on arbitrary @Ord a@ vertex types (typically typed
 stage IDs). Impure payloads (IO stage actions) live in a separate map,
 indexed by the same vertex type.
+
+Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo.
 -}
 module Cortex.Algebra.Graph.Core
   ( -- * Algebraic graph expression

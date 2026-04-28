@@ -1,3 +1,15 @@
+{- |
+Module      : Platform.DurableTask.PoolSpec
+Description : Tests for Platform.DurableTask.Pool.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The spec exercises public behavior through the same Nix-backed test surface used by CI.
+
+Tests may import the surface they exercise, but they do not define downstream product behavior.
+-}
 module Platform.DurableTask.PoolSpec (spec) where
 
 import Control.Concurrent (threadDelay)

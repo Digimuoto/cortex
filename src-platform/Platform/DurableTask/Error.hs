@@ -1,6 +1,15 @@
-{- | Error handling combinators for durable task DB operations.
+{- |
+Module      : Platform.DurableTask.Error
+Description : Error handling combinators for durable task DB operations.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 Provides standardized patterns for fire-and-forget and try-and-log
 database writes, parameterized by a logging callback.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.DurableTask.Error
   ( logDbFailure_

@@ -1,4 +1,10 @@
-{- | Walk combinators for the graph-native topological memory (DIG-529).
+{- |
+Module      : Cortex.Pulse.Memory.Walk
+Description : Walk combinators for the graph-native topological memory (DIG-529).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Given a topology, an origin 'NodeId', a 'WalkDirection', a
 'WalkScope', and the current node-status map, 'walkCandidates'
@@ -13,6 +19,8 @@ graph-axis signal the score uses is random-walk influence computed
 separately in 'Cortex.Pulse.Memory.Query'.  Ordering of candidates
 at this stage is irrelevant — the final sort always runs over the
 scored matches.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Memory.Walk
   ( walkCandidates

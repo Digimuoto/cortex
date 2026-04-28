@@ -1,4 +1,10 @@
-{- | Supported Platform import surface for downstream consumers.
+{- |
+Module      : Platform
+Description : Supported Platform import surface for downstream consumers.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Downstream products should prefer @import Platform@ for the stable runtime
 utility API. Area modules remain available for advanced use, but this module

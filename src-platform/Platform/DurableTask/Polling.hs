@@ -1,6 +1,15 @@
-{- | Polling utilities for durable task runtimes.
+{- |
+Module      : Platform.DurableTask.Polling
+Description : Polling utilities for durable task runtimes.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 Provides jittered delays to prevent thundering-herd synchronization
 when multiple instances poll at fixed intervals.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.DurableTask.Polling
   ( threadDelayWithJitter

@@ -1,11 +1,19 @@
-{- | Pure tests for 'Cortex.Pulse.Memory' (DIG-529).
+{- |
+Module      : Cortex.Pulse.MemorySpec
+Description : Pure tests for 'Cortex.Pulse.Memory' (DIG-529).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Three groups:
 
- * 'walkCandidates' — ancestor / descendant / scope / hop-count.
- * 'composeScore' / 'tokenJaccard' / 'clamp01' — the scoring axes.
- * 'pureQueryMemory' — end-to-end against a fixed snapshot, plus
-   the determinism property (same inputs ⇒ same outputs).
+* 'walkCandidates' — ancestor / descendant / scope / hop-count.
+* 'composeScore' / 'tokenJaccard' / 'clamp01' — the scoring axes.
+* 'pureQueryMemory' — end-to-end against a fixed snapshot, plus
+the determinism property (same inputs ⇒ same outputs).
+
+Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
 module Cortex.Pulse.MemorySpec (spec) where
 

@@ -1,3 +1,15 @@
+{- |
+Module      : Platform.Observability.Runtime
+Description : Platform runtime support for runtime.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The module belongs to Cortex's upstream runtime and library surface.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
+-}
 module Platform.Observability.Runtime
   ( -- * Public API (re-exported by Platform.Observability)
     loadObservabilityConfig

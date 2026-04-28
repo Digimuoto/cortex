@@ -1,4 +1,10 @@
-{- | Semantic classification of circuit nodes (DIG-481).
+{- |
+Module      : Cortex.Wire.Circuit.NodeKind
+Description : Semantic classification of circuit nodes (DIG-481).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 'CircuitNodeKind' captures what a node /represents/ in a circuit — whether it
 makes decisions, performs work, waits for external input, or emits
@@ -11,6 +17,8 @@ contract at the 'StageDefinition' / executor level).
 most useful on 'CircuitTask' nodes where the semantic difference between
 e.g. a planner ('Decide') and a gatherer ('Act') is otherwise lost after
 lowering.
+
+Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
 -}
 module Cortex.Wire.Circuit.NodeKind
   ( CircuitNodeKind (..)

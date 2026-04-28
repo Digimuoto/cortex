@@ -1,3 +1,14 @@
+{- |
+Module      : Main
+Description : Command-line entry point for the Cortex Pulse substrate shell.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The executable is a substrate shell with an empty task registry; consumers link their own registry
+in separate binaries.
+-}
 module Main (main) where
 
 import Data.Int (Int64)

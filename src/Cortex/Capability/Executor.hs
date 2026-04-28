@@ -1,8 +1,16 @@
-{- | Authority-bearing executor registration boundary.
+{- |
+Module      : Cortex.Capability.Executor
+Description : Authority-bearing executor registration boundary.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Capability executor specs describe the host authority that may be projected
 into Wire. They intentionally do not carry runnable Pulse actions; hosts bind
 those after checking tools, provider policy, config, and codecs.
+
+Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo.
 -}
 module Cortex.Capability.Executor
   ( ExecutorSpec (..)

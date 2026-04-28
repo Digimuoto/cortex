@@ -1,13 +1,19 @@
-{- | Composite scoring for memory matches (DIG-529).
+{- |
+Module      : Cortex.Pulse.Memory.Score
+Description : Composite scoring for memory matches (DIG-529).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Given a candidate node, its graph influence from the origin, the
 snapshot capture time, the node's completion time, and the query's
 semantic text + scorer, 'composeScore' produces a single
 @[0, 1]@-clamped weighted combination of the three axes:
 
- * graph influence (more causally connected = higher)
- * temporal distance (newer = higher)
- * semantic similarity (more relevant = higher)
+* graph influence (more causally connected = higher)
+* temporal distance (newer = higher)
+* semantic similarity (more relevant = higher)
 
 Each axis is independently normalised into @[0, 1]@ before the
 weighted sum; weights are applied multiplicatively and the final
@@ -18,6 +24,8 @@ score.
 The shipped semantic default is a token-jaccard similarity suitable
 for short LLM-generated bodies.  pgvector / reranker implementations
 slot in via 'SemanticScorer' in the query.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Memory.Score
   ( composeScore

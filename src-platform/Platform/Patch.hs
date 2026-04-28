@@ -1,9 +1,14 @@
 {- |
-Module: Platform.Patch
-Description: Helpers for applying partial updates to records
+Module      : Platform.Patch
+Description : This module provides combinators for applying optional field updates,.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
-This module provides combinators for applying optional field updates,
 commonly used in PATCH/PUT HTTP handlers.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Patch
   ( -- * Basic patch helpers

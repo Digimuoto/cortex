@@ -1,8 +1,16 @@
-{- | Source-level executor references and compile-time executor projections.
+{- |
+Module      : Cortex.Wire.Executor
+Description : Source-level executor references and compile-time executor projections.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Wire only needs the structural projection of registered executor authority:
 identity, ports, vocabulary, config shape, and effect metadata. Runnable host
 authority lives in 'Cortex.Capability.Executor'.
+
+Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
 -}
 module Cortex.Wire.Executor
   ( WireExecutor (..)

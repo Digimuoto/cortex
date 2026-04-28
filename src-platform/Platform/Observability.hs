@@ -1,6 +1,17 @@
--- Phase A note: this module keeps the existing Portman env var names and state
--- directory defaults verbatim for compatibility. Neutralizing those runtime
--- names or splitting Platform into a separate package is deferred work.
+{- |
+Module      : Platform.Observability
+Description : Platform runtime support for observability.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+Phase A note: this module keeps the existing Portman env var names and state directory defaults
+verbatim for compatibility. Neutralizing those runtime names or splitting Platform into a separate
+package is deferred work.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
+-}
 module Platform.Observability
   ( ObservabilityRuntime
   , ObservabilityConfig (..)

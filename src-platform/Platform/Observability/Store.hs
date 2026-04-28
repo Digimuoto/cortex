@@ -1,4 +1,10 @@
-{- | On-disk NDJSON observability store.
+{- |
+Module      : Platform.Observability.Store
+Description : On-disk NDJSON observability store.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 This store is designed for a single-process writer. Concurrent writes from
 the same process are serialized by the 'writeLock' MVar in 'ObservabilityRuntime'.
@@ -7,6 +13,8 @@ rotation and may produce interleaved or truncated NDJSON lines.
 
 If multi-process write support is needed, introduce file-level locking (e.g.
 @flock@) or switch to a shared append medium.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Observability.Store
   ( -- * Public API (re-exported by Platform.Observability)

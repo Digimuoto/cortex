@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""Apply Cortex's combined Hackage-style Haddock headers to Haskell modules."""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+import textwrap
+
+ROOTS = ("src", "src-platform", "app", "test")
+
+METADATA_RE = re.compile(
+    r"^(Module|Description|Copyright|License|Maintainer|Stability)\s*:"
+)
+MODULE_RE = re.compile(r"^module\s+([A-Z][A-Za-z0-9_'.]*(?:\.[A-Z][A-Za-z0-9_']*)*)", re.M)
+PRAGMA_RE = re.compile(r"^\{-#\s*(LANGUAGE|OPTIONS_GHC)\b.*#-\}\s*$")
+
+
+def main() -> int:
+    paths = [pathlib.Path(arg) for arg in sys.argv[1:]] if len(sys.argv) > 1 else discover()
+    changed = False
+    for path in paths:
+        if path.suffix != ".hs":
+            continue
+        original = path.read_text()
+        updated = apply_header(path, original)
+        if updated != original:
+            path.write_text(updated)
+            changed = True
+    return 0 if changed or paths else 0
+
+
+def discover() -> list[pathlib.Path]:
+    paths: list[pathlib.Path] = []
+    for root in ROOTS:
+        root_path = pathlib.Path(root)
+        if root_path.exists():
+            paths.extend(sorted(root_path.rglob("*.hs")))
+    return paths
+
+
+def apply_header(path: pathlib.Path, source: str) -> str:
+    newline = "\n" if source.endswith("\n") else ""
+    body, header_doc = strip_existing_combined_header(source)
+    body, old_doc = strip_module_doc(body)
+    module_name = find_module_name(path, body)
+    if not old_doc:
+        old_doc = header_doc
+    description, context = describe_module(path, module_name, old_doc)
+    header = render_header(module_name, description, context)
+    prefix, rest = split_leading_pragmas(body.lstrip("\n"))
+    if prefix:
+        return prefix.rstrip() + "\n\n" + header + "\n" + rest.lstrip("\n").rstrip() + newline
+    return header + "\n" + rest.lstrip("\n").rstrip() + newline
+
+
+def split_leading_pragmas(source: str) -> tuple[str, str]:
+    lines = source.splitlines(keepends=True)
+    index = 0
+    while index < len(lines) and (lines[index].strip() == "" or PRAGMA_RE.match(lines[index].strip())):
+        index += 1
+    prefix = "".join(lines[:index])
+    rest = "".join(lines[index:])
+    if any(PRAGMA_RE.match(line.strip()) for line in lines[:index]):
+        return prefix, rest
+    return "", source
+
+
+def strip_existing_combined_header(source: str) -> tuple[str, list[str]]:
+    if not source.startswith("{- |"):
+        return source, []
+    close_index = source.find("-}")
+    if close_index == -1:
+        return source, []
+    block = source[: close_index + 2]
+    if "Module      :" not in block:
+        return source, []
+    return source[close_index + 2 :], parse_combined_doc(block.splitlines()[1:-1])
+
+
+def strip_module_doc(source: str) -> tuple[str, list[str]]:
+    lines = source.splitlines()
+    index = 0
+    while index < len(lines) and (lines[index].strip() == "" or PRAGMA_RE.match(lines[index].strip())):
+        index += 1
+
+    if index >= len(lines):
+        return source, []
+
+    if lines[index].lstrip().startswith("-- |"):
+        doc_lines: list[str] = []
+        first = lines[index].split("-- |", 1)[1].strip()
+        if first:
+            doc_lines.append(first)
+        index += 1
+        while index < len(lines):
+            stripped = lines[index].lstrip()
+            if stripped == "--":
+                doc_lines.append("")
+                index += 1
+            elif stripped.startswith("-- "):
+                doc_lines.append(stripped[3:].rstrip())
+                index += 1
+            elif stripped.startswith("--"):
+                doc_lines.append(stripped[2:].strip())
+                index += 1
+            else:
+                break
+        return "\n".join(lines[: find_doc_start(lines)] + lines[index:]) + "\n", clean_doc(doc_lines)
+
+    if lines[index].lstrip().startswith("{- |"):
+        doc_start = find_doc_start(lines)
+        block_lines: list[str] = []
+        close = index
+        while close < len(lines):
+            line = lines[close]
+            if close == index:
+                block_lines.append(line.split("{- |", 1)[1].strip())
+            elif line.strip() == "-}":
+                break
+            else:
+                block_lines.append(line.rstrip())
+            close += 1
+        if close < len(lines) and lines[close].strip() == "-}":
+            if any("Module      :" in line or "Description :" in line for line in block_lines):
+                old_doc = parse_combined_doc(block_lines)
+            else:
+                old_doc = clean_doc(block_lines)
+            return "\n".join(lines[:doc_start] + lines[close + 1 :]) + "\n", old_doc
+
+    return source, []
+
+
+def find_doc_start(lines: list[str]) -> int:
+    index = 0
+    while index < len(lines) and (lines[index].strip() == "" or PRAGMA_RE.match(lines[index].strip())):
+        index += 1
+    return index
+
+
+def clean_doc(lines: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    for line in lines:
+        text = line.strip()
+        if text.startswith("--"):
+            text = text[2:].strip()
+        if METADATA_RE.match(text):
+            continue
+        cleaned.append(text)
+    while cleaned and cleaned[0] == "":
+        cleaned.pop(0)
+    while cleaned and cleaned[-1] == "":
+        cleaned.pop()
+    return cleaned
+
+
+def parse_combined_doc(lines: list[str]) -> list[str]:
+    description = ""
+    context: list[str] = []
+    in_context = False
+    for line in lines:
+        text = line.strip()
+        if text.startswith("Description"):
+            description = text.split(":", 1)[1].strip()
+            continue
+        if METADATA_RE.match(text):
+            continue
+        if text == "":
+            in_context = True
+            if context:
+                context.append("")
+            continue
+        if in_context:
+            context.append(text)
+    combined = [description] if description else []
+    combined.extend(context)
+    return clean_doc(combined)
+
+
+def find_module_name(path: pathlib.Path, source: str) -> str:
+    match = MODULE_RE.search(source)
+    if match:
+        return match.group(1)
+    if path.name == "Spec.hs":
+        return "Spec"
+    return path.stem
+
+
+def describe_module(path: pathlib.Path, module_name: str, old_doc: list[str]) -> tuple[str, list[str]]:
+    if old_doc:
+        description = ensure_sentence(old_doc[0])
+        context = old_doc[1:] or [default_context(path, module_name)]
+        while context and context[0] == "":
+            context.pop(0)
+        while context and context[-1] == "":
+            context.pop()
+        if not context:
+            context = [default_context(path, module_name)]
+    else:
+        description = default_description(path, module_name)
+        context = [default_context(path, module_name)]
+
+    boundary = boundary_context(module_name, path)
+    if boundary and boundary not in context:
+        context = context + ["", boundary]
+    return description, context
+
+
+def default_description(path: pathlib.Path, module_name: str) -> str:
+    if module_name == "Main":
+        return "Command-line entry point for the Cortex Pulse substrate shell."
+    if path.parts and path.parts[0] == "test":
+        return f"Tests for {module_name.replace('Spec', '') or 'Cortex'}."
+    last = module_name.split(".")[-1]
+    words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", last).lower()
+    if module_name.startswith("Platform."):
+        return f"Platform runtime support for {words}."
+    if module_name.startswith("Cortex.Wire"):
+        return f"Wire support for {words}."
+    if module_name.startswith("Cortex.Pulse"):
+        return f"Pulse runtime support for {words}."
+    if module_name.startswith("Cortex.Nous"):
+        return f"Nous reasoning-library support for {words}."
+    if module_name.startswith("Cortex."):
+        return f"Cortex substrate support for {words}."
+    return f"Haskell module for {module_name}."
+
+
+def default_context(path: pathlib.Path, module_name: str) -> str:
+    if path.parts and path.parts[0] == "test":
+        return "The spec exercises public behavior through the same Nix-backed test surface used by CI."
+    if module_name == "Main":
+        return (
+            "The executable is a substrate shell with an empty task registry; consumers link their "
+            "own registry in separate binaries."
+        )
+    return "The module belongs to Cortex's upstream runtime and library surface."
+
+
+def boundary_context(module_name: str, path: pathlib.Path) -> str:
+    if path.parts and path.parts[0] == "test":
+        return "Tests may import the surface they exercise, but they do not define downstream product behavior."
+    if module_name.startswith("Platform."):
+        return "Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers."
+    if module_name.startswith("Cortex.Nous"):
+        return "Cortex.Nous is layered above the substrate and must not be imported by substrate modules."
+    if module_name.startswith("Cortex.Pulse"):
+        return "Pulse modules implement durable runtime mechanics without binding consumer task registries."
+    if module_name.startswith("Cortex.Wire"):
+        return "Wire modules own authoring and compilation mechanics while host authority stays in typed registries."
+    if module_name.startswith("Cortex."):
+        return "Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo."
+    return ""
+
+
+def ensure_sentence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return "Haskell module."
+    if stripped[-1] in ".!?":
+        return stripped
+    return stripped + "."
+
+
+def render_header(module_name: str, description: str, context: list[str]) -> str:
+    wrapped_context: list[str] = []
+    for line in context:
+        if line == "":
+            wrapped_context.append("")
+        elif line.startswith("```") or line.startswith("@") or line.startswith("* "):
+            wrapped_context.append(line)
+        else:
+            wrapped_context.extend(textwrap.wrap(line, width=100) or [""])
+
+    return "\n".join(
+        [
+            "{- |",
+            f"Module      : {module_name}",
+            f"Description : {description}",
+            "Copyright   : (c) 2026 Digimuoto Oy",
+            "License     : Apache-2.0",
+            "Maintainer  : julius.koskela@digimuoto.com",
+            "Stability   : experimental",
+            "",
+            *wrapped_context,
+            "-}",
+        ]
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,4 +1,11 @@
-{- | Pure query engine for the graph-native topological memory
+{- |
+Module      : Cortex.Pulse.Memory.Query
+Description : Pure query engine for the graph-native topological memory.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 (DIG-529).
 
 Given an origin 'NodeId' (the caller's @scNodeId@), a
@@ -9,6 +16,8 @@ No IO.
 
 The IO wrapper lives in 'Cortex.Pulse.Memory' where
 'newMemoryHandle' binds this function to a TVar-backed snapshot.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Memory.Query
   ( pureQueryMemory

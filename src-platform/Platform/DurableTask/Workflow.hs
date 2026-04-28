@@ -1,8 +1,10 @@
 {- |
 Module      : Platform.DurableTask.Workflow
-Description : Reusable worker loop skeleton
-Copyright   : (c) Julius Koskela, 2026
-License     : MIT
+Description : Reusable worker loop skeleton.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Generic workflow step abstraction for worker loops. Captures the common
 "plan → execute → persist" shape without hiding domain-specific ADTs.
@@ -16,11 +18,13 @@ Example (from a scheduled job executor):
 @
 jobStep :: WorkflowStep ClaimedJob JobType JobResult
 jobStep = WorkflowStep
-  { wsPlan    = \\job -> pure (jobType job)
-  , wsExecute = \\job _plan -> runJobWithTimeout job
-  , wsPersist = \\job result -> persistJobResult job result >> advanceSchedule job result
-  }
+{ wsPlan    = \\job -> pure (jobType job)
+, wsExecute = \\job _plan -> runJobWithTimeout job
+, wsPersist = \\job result -> persistJobResult job result >> advanceSchedule job result
+}
 @
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.DurableTask.Workflow
   ( -- * Workflow Step

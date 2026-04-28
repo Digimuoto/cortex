@@ -1,4 +1,10 @@
-{- | Canonical Wire surface syntax and shared structural types.
+{- |
+Module      : Cortex.Wire.Syntax
+Description : Canonical Wire surface syntax and shared structural types.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Mirrors the grammar specified in
 @docs/Reference/Wire/grammar.md@ (accepted 2026-04-23). Each
@@ -8,6 +14,8 @@ Structural rules, port-key matching, and runtime admission are not
 represented in the AST: this module only captures surface syntax.
 Static validation happens downstream in 'Cortex.Wire.Parser' (shape)
 and 'Cortex.Wire.Compile' (well-formedness + lowering).
+
+Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
 -}
 module Cortex.Wire.Syntax
   ( module Cortex.Wire.AST

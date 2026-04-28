@@ -1,10 +1,14 @@
 {- |
 Module      : Platform.Error.Servant
-Description : Server error handling utilities
-Copyright   : (c) 2026
-License     : MIT
+Description : Server error handling utilities.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Re-exports from Platform.Error for use in server handlers.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Error.Servant
   ( -- * Unified error handling

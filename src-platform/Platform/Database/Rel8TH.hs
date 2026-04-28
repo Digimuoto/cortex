@@ -2,14 +2,18 @@
 
 {- |
 Module      : Platform.Database.Rel8TH
-Description : Template Haskell helpers for Rel8 schema generation
-Copyright   : (c) Julius Koskela, 2024
-License     : MIT
+Description : Template Haskell helpers for Rel8 schema generation.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 This module provides Template Haskell utilities to auto-generate Rel8 TableSchema
 definitions from record types, eliminating repetitive column name mappings.
 
 The naming convention is: Haskell @fooBarBaz@ maps to SQL @foo_bar_baz@.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Database.Rel8TH
   ( -- * Schema Generation

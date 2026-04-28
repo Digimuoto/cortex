@@ -1,10 +1,19 @@
-{- | Pulse graph executor.
+{- |
+Module      : Cortex.Pulse.Executor
+Description : Pulse graph executor.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 Advances through typed graph-based stage plans with graph-state persistence,
 checkpoint audit writes, cancellation checks, replay-safety warnings, signal suspension, and
 stage-log audit entries.
 
 A linear stage pipeline is a degenerate graph (chain of single dependencies).
 The 'mkLinearStagePlan' constructor is a convenience for chain-shaped plans.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Executor
   ( executeTask

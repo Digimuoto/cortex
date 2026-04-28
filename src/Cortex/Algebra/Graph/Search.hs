@@ -1,4 +1,10 @@
-{- | Generic graph search parameterised by frontier discipline.
+{- |
+Module      : Cortex.Algebra.Graph.Search
+Description : Generic graph search parameterised by frontier discipline.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 DFS, BFS, min-priority, and max-priority search are all the same
 algorithm — only the frontier determines which node is expanded next.
@@ -9,6 +15,8 @@ and yield "the next one" is a valid frontier.
 at construction time, so emptiness is a construction concern, not a
 class law.  'fextract' returning 'Nothing' already represents an
 empty frontier.
+
+Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo.
 -}
 module Cortex.Algebra.Graph.Search
   ( -- * Frontier abstraction

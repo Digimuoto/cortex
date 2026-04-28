@@ -1,4 +1,10 @@
-{- | Types for the graph-native topological memory (DIG-529).
+{- |
+Module      : Cortex.Pulse.Memory.Types
+Description : Types for the graph-native topological memory (DIG-529).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Memory is a deterministic query over the Pulse event substrate — not
 a separate store.  A stage's "view" is the result of a walk over
@@ -10,6 +16,8 @@ This module owns the pure types.  The walk / scoring / query logic
 lives in 'Cortex.Pulse.Memory.Walk', 'Cortex.Pulse.Memory.Score', and
 'Cortex.Pulse.Memory.Query' respectively.  The umbrella
 'Cortex.Pulse.Memory' re-exports and provides handle constructors.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Memory.Types
   ( -- * Walk specification

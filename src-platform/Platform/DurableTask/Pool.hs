@@ -1,10 +1,18 @@
-{- | Bounded concurrent execution pool for durable task runtimes.
+{- |
+Module      : Platform.DurableTask.Pool
+Description : Bounded concurrent execution pool for durable task runtimes.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Provides a generic pool of async tasks with atomic slot reservation,
 duplicate-key rejection, resilient finalization, and graceful drain.
 
 Intended for small bounded runtime pools (single-digit to low tens of
 concurrent tasks). Completion detection is poll-based, not callback-based.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.DurableTask.Pool
   ( TaskPool

@@ -1,5 +1,14 @@
-{- | Database queries for Pulse-owned tables.
+{- |
+Module      : Cortex.Pulse.Query
+Description : Database queries for Pulse-owned tables.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 All queries operate on the pulse.* schema.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Query
   ( -- * Task Discovery

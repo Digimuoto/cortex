@@ -1,16 +1,24 @@
-{- | Pure tests for 'Cortex.Pulse.Memory.Tool' (DIG-530 follow-up).
+{- |
+Module      : Cortex.Pulse.MemoryToolSpec
+Description : Pure tests for 'Cortex.Pulse.Memory.Tool' (DIG-530 follow-up).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Exercises:
 
- * Schema decoding — the LLM-facing JSON -> 'CortexMemoryQueryArgs'
-   round-trips cleanly for valid inputs and rejects unknown
-   enums.
- * 'executeCortexMemoryQuery' — given a bound 'MemoryHandle',
-   returns the expected matches with shape stable enough for the
-   audit trail.
+* Schema decoding — the LLM-facing JSON -> 'CortexMemoryQueryArgs'
+round-trips cleanly for valid inputs and rejects unknown
+enums.
+* 'executeCortexMemoryQuery' — given a bound 'MemoryHandle',
+returns the expected matches with shape stable enough for the
+audit trail.
 
 The handle is built via 'newMemoryHandle' over a fixture snapshot
 so no executor, DB, or HTTP needed.
+
+Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
 module Cortex.Pulse.MemoryToolSpec (spec) where
 

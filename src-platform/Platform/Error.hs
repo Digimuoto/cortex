@@ -1,9 +1,10 @@
 {- |
 Module      : Platform.Error
-Description : Unified application error handling with safe client messages
-Copyright   : (c) 2026
-License     : MIT
-Maintainer  : julius@koskela.email
+Description : Unified application error handling with safe client messages.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Unified error type for the Portman application. This module provides:
 
@@ -18,6 +19,8 @@ Design principles:
 - Log all server errors with full context for debugging
 - Client errors (4xx) get informative but safe messages
 - Server errors (5xx) get generic "something went wrong" messages
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Error
   ( -- * Core Types

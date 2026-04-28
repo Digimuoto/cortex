@@ -1,7 +1,15 @@
-{- | Pulse executor integration tests.
+{- |
+Module      : Cortex.Pulse.ExecutorSpec
+Description : Pulse executor integration tests.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Tests require a running PostgreSQL database with migrations applied.
 Skipped if PGHOST environment variable is not set.
+
+Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
 module Cortex.Pulse.ExecutorSpec (spec) where
 

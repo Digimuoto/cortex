@@ -1,4 +1,10 @@
-{- | DAG influence scoring via single-pass random-walk mass propagation.
+{- |
+Module      : Cortex.Algebra.Graph.Influence
+Description : DAG influence scoring via single-pass random-walk mass propagation.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Given a DAG, an origin vertex, and a damping factor @α ∈ (0, 1)@,
 'dagRandomWalkInfluence' assigns every reachable vertex a scalar
@@ -26,6 +32,8 @@ single chain.  Influence propagation naturally rewards merges:
 if two predecessors of @v@ both carry mass, @v@ accumulates from
 both, so its score grows with its aggregate causal support.  See
 the @merge vs chain@ test for the concrete invariant.
+
+Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo.
 -}
 module Cortex.Algebra.Graph.Influence
   ( dagRandomWalkInfluence

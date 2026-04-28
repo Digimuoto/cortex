@@ -1,3 +1,15 @@
+{- |
+Module      : Platform.DurableTask.PollingSpec
+Description : Tests for Platform.DurableTask.Polling.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The spec exercises public behavior through the same Nix-backed test surface used by CI.
+
+Tests may import the surface they exercise, but they do not define downstream product behavior.
+-}
 module Platform.DurableTask.PollingSpec (spec) where
 
 import Test.Hspec

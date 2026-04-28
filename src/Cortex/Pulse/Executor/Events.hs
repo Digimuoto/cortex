@@ -2,7 +2,11 @@
 
 {- |
 Module      : Cortex.Pulse.Executor.Events
-Description : Typed observability events for the Pulse executor
+Description : Typed observability events for the Pulse executor.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 A closed ADT of all executor-emitted observability events, with a
 'ToObsEvent' instance that derives level, code, component, message,
@@ -12,8 +16,8 @@ Call sites migrate from:
 
 @
 emitExecutorEvent ObsError (ObsEventCode "pulse.executor.stage.failed")
-  ("Stage failed: " <> stageName)
-  [("run_id", toJSON runId), ("stage", toJSON stageName)]
+("Stage failed: " <> stageName)
+[("run_id", toJSON runId), ("stage", toJSON stageName)]
 @
 
 To:
@@ -21,6 +25,8 @@ To:
 @
 emitObsEvent $ EvtStageFailed runId stageName attempt errorType errorMsg
 @
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Executor.Events
   ( ExecutorEvent (..)

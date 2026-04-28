@@ -1,9 +1,17 @@
-{- | Deterministic Wire pure evaluator.
+{- |
+Module      : Cortex.Wire.Pure
+Description : Deterministic Wire pure evaluator.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Pure nodes are authored as output equations and lowered to one host-bound
 native pure task. The evaluator receives only already-wrapped Wire inputs and a
 CorePure AST; it has no host callbacks, IO, time, randomness, model access,
 or executor authority.
+
+Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
 -}
 module Cortex.Wire.Pure
   ( PureEvalError (..)

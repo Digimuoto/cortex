@@ -1,9 +1,17 @@
-{- | Megaparsec-based parser for canonical Wire syntax.
+{- |
+Module      : Cortex.Wire.Parser
+Description : Megaparsec-based parser for canonical Wire syntax.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Mirrors the grammar in @docs/Reference/Wire/grammar.md@.
 Produces a 'Cortex.Wire.Syntax.WireFile'; semantic validation
 (executor registration, port keys, arity, contract membership) is a
 later pass.
+
+Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
 -}
 module Cortex.Wire.Parser
   ( parseWireFile

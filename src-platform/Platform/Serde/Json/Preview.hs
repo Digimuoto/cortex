@@ -1,3 +1,15 @@
+{- |
+Module      : Platform.Serde.Json.Preview
+Description : Platform runtime support for preview.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The module belongs to Cortex's upstream runtime and library surface.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
+-}
 module Platform.Serde.Json.Preview
   ( toolCallPayloadPreview
   , truncateJsonValue

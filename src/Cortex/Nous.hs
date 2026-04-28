@@ -1,8 +1,16 @@
-{- | Public epistemological reasoning surface.
+{- |
+Module      : Cortex.Nous
+Description : Public epistemological reasoning surface.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Nous collects the reusable reasoning-mode machinery that sits above the
 Wire/Circuit/Pulse substrate: canonical archetypes, model policy, task hosts,
 structured task loops, report sections, and event emission.
+
+Cortex.Nous is layered above the substrate and must not be imported by substrate modules.
 -}
 module Cortex.Nous
   ( CortexEvent (..)

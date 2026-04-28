@@ -1,21 +1,29 @@
-{- | Minimal cron schedule parser and next-fire-time computation.
+{- |
+Module      : Platform.DurableTask.Cron
+Description : Minimal cron schedule parser and next-fire-time computation.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Supports standard 5-field cron expressions:
- minute hour day-of-month month day-of-week
+minute hour day-of-month month day-of-week
 
 Field syntax:
- *        = any value
- N        = exact value
- N-M      = range (inclusive)
- N,M,...  = list
- *\/N     = step (every Nth from start of range)
+*        = any value
+N        = exact value
+N-M      = range (inclusive)
+N,M,...  = list
+*\/N     = step (every Nth from start of range)
 
 Day-of-week: 0 = Sunday, 1 = Monday, ..., 6 = Saturday (also 7 = Sunday)
 
 This does NOT support:
- - @yearly, @monthly, @weekly, @daily, @hourly aliases
- - L, W, # modifiers
- - Seconds or year fields
+- @yearly, @monthly, @weekly, @daily, @hourly aliases
+- L, W, # modifiers
+- Seconds or year fields
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.DurableTask.Cron
   ( CronSchedule (..)

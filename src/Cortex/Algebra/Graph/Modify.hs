@@ -1,7 +1,15 @@
-{- | Mutation operations on lowered 'Relation' values.
+{- |
+Module      : Cortex.Algebra.Graph.Modify
+Description : Mutation operations on lowered 'Relation' values.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 All operations are pure functional updates that preserve the cached
 adjacency invariant.
+
+Cortex substrate modules stay consumer-neutral and keep downstream product policy out of this repo.
 -}
 module Cortex.Algebra.Graph.Modify
   ( addEdge

@@ -1,9 +1,17 @@
-{- | Durable signal types for Pulse external event primitives.
+{- |
+Module      : Cortex.Pulse.Signal
+Description : Durable signal types for Pulse external event primitives.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 A signal is a named, durably-stored event that a running stage can wait on.
 When a stage suspends on a signal, the executor persists the wait and
 transitions the run to 'waiting'. When the signal is delivered (via admin
 API or internal event), the run is woken and resumes from the waiting node.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Signal
   ( -- * Signal identity

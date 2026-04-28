@@ -1,11 +1,15 @@
 {- |
 Module      : Platform.Config
-Description : Environment variable reading utilities
-Copyright   : (c) 2026
-License     : MIT
+Description : Environment variable reading utilities.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Helpers for reading typed configuration from environment variables
 with defaults. Used across worker and server modules.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Config
   ( readEnvWithDefault

@@ -1,23 +1,31 @@
-{- | End-to-end integration spec for 'Cortex.Pulse.Memory' (DIG-529).
+{- |
+Module      : Cortex.Pulse.MemoryIntegrationSpec
+Description : End-to-end integration spec for 'Cortex.Pulse.Memory' (DIG-529).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Exercises the IO 'MemoryHandle' constructed by 'newMemoryHandle'
 against live TVars populated as an executor would populate them.
 Two properties the issue calls out explicitly:
 
- * __Sibling preservation__: two analyst branches under a shared
-   planner each emit an observation; the reviewer's query rooted at
-   its own node reaches both of them, not just one.
+* __Sibling preservation__: two analyst branches under a shared
+planner each emit an observation; the reviewer's query rooted at
+its own node reaches both of them, not just one.
 
- * __Within-run determinism__: the IO wrapper is a pure function
-   of the TVar state at snapshot time; two consecutive queries
-   against the same state yield identical matches and identical
-   scores.
+* __Within-run determinism__: the IO wrapper is a pure function
+of the TVar state at snapshot time; two consecutive queries
+against the same state yield identical matches and identical
+scores.
 
 Replay determinism across a crash-resume boundary is partially
 covered here (the TVar-backed snapshot is a pure function of its
 inputs; a resume that reconstructs equivalent TVars yields an
 equivalent view).  A fuller DB-backed resume test belongs alongside
 the executor integration tests under 'Cortex.Pulse.ExecutorSpec'.
+
+Tests may import the surface they exercise, but they do not define downstream product behavior.
 -}
 module Cortex.Pulse.MemoryIntegrationSpec (spec) where
 

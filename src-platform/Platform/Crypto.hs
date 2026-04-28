@@ -3,10 +3,11 @@
 
 {- |
 Module      : Platform.Crypto
-Description : AES-256-GCM encryption for organization credentials
-Copyright   : (c) 2026
-License     : MIT
-Maintainer  : julius@koskela.email
+Description : AES-256-GCM encryption for organization credentials.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Provides encryption/decryption for organization-level API credentials.
 
@@ -18,6 +19,8 @@ Security design:
 
 The admin pepper is loaded from systemd LoadCredential at startup.
 Each provider gets a derived key using HKDF with provider name as info.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Crypto
   ( -- * Key derivation

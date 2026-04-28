@@ -1,8 +1,16 @@
-{- | Generic DeepReport contract catalog.
+{- |
+Module      : Cortex.Nous.Patterns.DeepReport.Contracts
+Description : Generic DeepReport contract catalog.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 These contract specs describe reusable reasoning payload boundaries. They do
 not register executors, grant tool authority, or define downstream artifact
 persistence behavior.
+
+Cortex.Nous is layered above the substrate and must not be imported by substrate modules.
 -}
 module Cortex.Nous.Patterns.DeepReport.Contracts
   ( deepReportWireContractRegistry

@@ -1,4 +1,10 @@
-{- | Hasql encoder combinators for raw-SQL queries.
+{- |
+Module      : Platform.Database.Encode
+Description : Hasql encoder combinators for raw-SQL queries.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Each @encodeN@ takes N @(accessor, encoder)@ pairs, producing a
 single 'E.Params' value.  Use record accessors with
@@ -7,9 +13,9 @@ destructors for small (2-3 field) tuples.
 
 @
 encode3
- (\\p -> p.rfRunId,   E.nonNullable E.uuid)
- (\\p -> p.rfNow,     E.nonNullable E.timestamptz)
- (\\p -> p.rfErrType, E.nonNullable E.text)
+(\\p -> p.rfRunId,   E.nonNullable E.uuid)
+(\\p -> p.rfNow,     E.nonNullable E.timestamptz)
+(\\p -> p.rfErrType, E.nonNullable E.text)
 @
 
 For queries with more than eight parameters, use 'encodeParams' with
@@ -17,10 +23,10 @@ a 'NonEmpty' of 'col' calls instead of chaining @encodeN@ with @(<>)@:
 
 @
 encodeParams $
- col (.fieldA) (E.nonNullable E.text)
-   :| [ col (.fieldB) (E.nonNullable E.int4)
-      , col (.fieldC) (E.nullable E.timestamptz)
-      ]
+col (.fieldA) (E.nonNullable E.text)
+:| [ col (.fieldB) (E.nonNullable E.int4)
+, col (.fieldC) (E.nullable E.timestamptz)
+]
 @
 
 Re-exports the most common 'Hasql.Encoders' primitives so query
@@ -28,6 +34,8 @@ modules can import this instead of @Hasql.Encoders@ directly.
 'E.param' is intentionally not re-exported — use 'encode1' for
 single-parameter queries or import @Hasql.Encoders@ directly if
 you need raw @>$<@ chains.
+
+Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers.
 -}
 module Platform.Database.Encode
   ( -- * Tuple/record encoders

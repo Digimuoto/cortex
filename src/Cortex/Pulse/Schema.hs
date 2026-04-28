@@ -1,5 +1,14 @@
-{- | Rel8 row types and table schemas for Pulse-owned tables.
+{- |
+Module      : Cortex.Pulse.Schema
+Description : Rel8 row types and table schemas for Pulse-owned tables.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 All tables are in the 'pulse' PostgreSQL schema.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Schema
   ( -- * Row Types

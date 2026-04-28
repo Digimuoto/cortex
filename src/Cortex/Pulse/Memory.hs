@@ -1,4 +1,10 @@
-{- | Umbrella module for the graph-native topological memory (DIG-529).
+{- |
+Module      : Cortex.Pulse.Memory
+Description : Umbrella module for the graph-native topological memory (DIG-529).
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Re-exports the pure sub-modules and provides IO helpers for use
 inside the Pulse executor.
@@ -11,20 +17,22 @@ temporal distance, and a pluggable semantic score.
 
 __Past / present / future.__  A wire run has three graphs:
 
- * __Past__ — settled nodes with materialised outputs.  This is
-   memory: searchable, stable, the only thing this module exposes
-   for domain queries.
- * __Present__ — the current frontier plus nodes still running or
-   waiting on signals.  Live orchestration state; deliberately
-   excluded from memory so there is no bleed between siblings in
-   the same frontier.
- * __Future__ — not-yet-materialised descendants and latent
-   rewrites.  Absent from memory by construction.
+* __Past__ — settled nodes with materialised outputs.  This is
+memory: searchable, stable, the only thing this module exposes
+for domain queries.
+* __Present__ — the current frontier plus nodes still running or
+waiting on signals.  Live orchestration state; deliberately
+excluded from memory so there is no bleed between siblings in
+the same frontier.
+* __Future__ — not-yet-materialised descendants and latent
+rewrites.  Absent from memory by construction.
 
 Stage-entry binding is how the past/present split is enforced at
 runtime: the handle wraps one snapshot taken when the stage
 attempt begins, so reads made later in the stage never observe a
 sibling that settled in the meantime.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Memory
   ( -- * Pure types (re-exports)

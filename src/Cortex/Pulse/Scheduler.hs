@@ -1,6 +1,15 @@
-{- | Pulse scheduler: discovers due tasks, creates fresh runs, and manages
+{- |
+Module      : Cortex.Pulse.Scheduler
+Description : Pulse scheduler: discovers due tasks, creates fresh runs, and manages.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
 the poll loop. Startup reclaim happens before the poll loop; expired-run
 recovery continues on every poll iteration.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Scheduler
   ( runSchedulerLoop

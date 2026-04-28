@@ -1,3 +1,15 @@
+{- |
+Module      : Cortex.Pulse.GraphRuntime
+Description : Pulse runtime support for graph runtime.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
+
+The module belongs to Cortex's upstream runtime and library surface.
+
+Pulse modules implement durable runtime mechanics without binding consumer task registries.
+-}
 module Cortex.Pulse.GraphRuntime
   ( InterruptReason (..)
   , NodeStatus (..)

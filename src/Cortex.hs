@@ -1,4 +1,10 @@
-{- | Supported Cortex import surface for downstream consumers.
+{- |
+Module      : Cortex
+Description : Supported Cortex import surface for downstream consumers.
+Copyright   : (c) 2026 Digimuoto Oy
+License     : Apache-2.0
+Maintainer  : julius.koskela@digimuoto.com
+Stability   : experimental
 
 Downstream products should prefer @import Cortex@ for the stable substrate
 API. Area modules remain available for advanced use, but this module is the
