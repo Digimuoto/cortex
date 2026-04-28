@@ -84,19 +84,23 @@ graph algebra laws.
 
 ### Track 3 — Rewrite soundness
 
-`Cortex.Wire.Rewrite` sketches the admission predicate from `src/Cortex/Pulse/Rewrite.hs`. The
-current Lean surface is proof-carrying rather than vacuous: an admitted `Rewrite` carries
-preservation evidence for graph acyclicity, the caller-supplied contract predicate, and positive
-budget consumption. Remaining obligations:
+`Cortex.Wire.Registry` models the `@` executor boundary as pure staging of registered authority:
+executor lookup, config validation, registry-wide contract vocabulary, endpoint compatibility,
+effect-class policy, output validation, and host authority. `Cortex.Wire.Rewrite` sketches the
+admission predicate from `src/Cortex/Pulse/Rewrite.hs`. The current Lean surface is proof-carrying
+rather than vacuous: an admitted `Rewrite` carries preservation evidence for graph acyclicity, the
+caller-supplied contract predicate, and consumption of the five-dimensional runtime rewrite budget.
+Chain-level theorems now lift those local certificates across finite rewrite sequences and bound the
+number of admitted steps by the initial remaining rewrite-operation budget. Remaining obligations:
 
 - connect those proof-carrying certificates to the Haskell admission path;
-- instantiate the contract predicate from the Wire `@` registry boundary model: every materialized
-  executor node must come from a registered executor reference, validated pure config, declared or
-  derivable ports, known contracts, explicit purity/effect metadata, and explicit host authority;
-- lift local positive-cost consumption to a full rewrite-chain termination proof.
+- connect registry-boundary witnesses to the Haskell compiler and registry;
+- model anchor existence, entry/exit non-emptiness, orphan-freedom, and runtime policy checks from
+  `planGraphRewrite`;
+- connect the abstract chain model to durable materialization order and lineage.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
-but they cannot invent new `@` executor authority outside the registry boundary documented in
+but chain-level preservation requires them to stay inside the registry boundary documented in
 `docs/Reference/Wire/executors-and-alphabet.md`.
 
 ### Track 4 — Provider / spark abstraction (TODO)
@@ -147,7 +151,7 @@ The repo's pre-commit hook checks theory changes through the flake surface
 | 1b. Graph denotational AST laws  | AST laws over graph equivalence                                              | denotational law surface                                                                                                                                                                                                                       | none        |
 | 1c. Graph quotient laws          | lifted quotient equality laws                                                | pending                                                                                                                                                                                                                                        | none        |
 | 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none        |
-| 3. Rewrite soundness             | proof-carrying rewrite certificate                                           | acyclicity/contract/budget projections                                                                                                                                                                                                         | none        |
+| 3. Rewrite soundness             | registry-boundary model + proof-carrying rewrite certificate                 | node/edge registry predicates, acyclicity/contract/budget projections, chain-level preservation, step bound by rewrite-operation budget                                                                                                        | none        |
 | 4. Provider / sparks             | —                                                                            | —                                                                                                                                                                                                                                              | not started |
 | 5. Substrate / consumer boundary | —                                                                            | —                                                                                                                                                                                                                                              | not started |
 
