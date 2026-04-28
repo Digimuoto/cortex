@@ -79,6 +79,10 @@ Before pushing, verify the branch's commit provenance:
 just check-commit-provenance origin/main..HEAD
 ```
 
+If publishing includes opening or updating a PR, make the PR title conventional too. The CI PR-title
+check uses `CondeNast/conventional-pull-request-action`; for a single-commit PR, the PR title must
+exactly match the commit subject.
+
 Cortex `main` is integrated by fast-forwarding to exact signed branch commits after PR review and
 CI. Do not assume the branch will be merged with a GitHub squash, merge, or rebase button.
 
