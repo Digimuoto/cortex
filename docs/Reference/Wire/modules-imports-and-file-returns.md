@@ -18,11 +18,6 @@ related:
 > **Stub.** This page is a scoped entry point into the module-model rules in
 > [grammar.md](grammar.md). Until it is fleshed out, jump directly to the grammar sections below.
 
-> **Implementation warning.** Current compiler behavior parses `contract X;` but does not use it to
-> populate registry membership. With an explicit `WireContractRegistry`, only Haskell-registered
-> contracts are enforced. The reference grammar names the intended contract-assertion semantics; the
-> compiler path still has a narrower registry-backed implementation.
-
 ## Where the rules live
 
 - **[§9 Top-level forms](grammar.md#9-top-level-forms)** — the whole module model: `contract`,

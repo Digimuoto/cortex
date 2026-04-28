@@ -192,6 +192,8 @@ data WireError
   | WireMissingRequiredInputPort !CircuitNodeRef !Text
   | WireInputPortCardinalityViolation !CircuitNodeRef !Text !Int
   | WireUnknownContract !Text !Text
+  | WireUnknownExecutor !CircuitNodeRef !Text
+  | WireExecutorPortsMismatch !CircuitNodeRef !Text
   | WireUnknownConditionRef !Text
   | WireDuplicateLetBinding !Text
   | WireUnknownLetBinding !Text
@@ -274,6 +276,18 @@ renderWireError = \case
       <> contractName
       <> " is not registered in "
       <> contextLabel
+      <> "."
+  WireUnknownExecutor nodeRef executorId ->
+    "Node "
+      <> unCircuitNodeRef nodeRef
+      <> " references executor "
+      <> executorId
+      <> ", but it is not present in the strict Wire executor projection."
+  WireExecutorPortsMismatch nodeRef executorId ->
+    "Node "
+      <> unCircuitNodeRef nodeRef
+      <> " declares ports that do not match the strict Wire executor projection for "
+      <> executorId
       <> "."
   WireUnknownConditionRef conditionRef ->
     "Condition " <> conditionRef <> " has no known port contract."

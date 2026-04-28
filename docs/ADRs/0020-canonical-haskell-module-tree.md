@@ -20,6 +20,7 @@ related:
   - docs/ADRs/0017-cortex-roots-and-nous-pattern-extraction.md
   - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0019-wire-pure-nodes.md
+  - docs/ADRs/0021-executor-registration-and-binding.md
   - "GitHub #62"
 ---
 

@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0017-cortex-roots-and-nous-pattern-extraction.md
   - docs/ADRs/0019-wire-pure-nodes.md
+  - docs/ADRs/0021-executor-registration-and-binding.md
   - "GitHub #55"
 ---
 
@@ -336,6 +337,7 @@ The clean next sequence is:
 - [ADR 0014 — Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
 - [ADR 0017 — Cortex Roots and Nous Pattern Extraction](./0017-cortex-roots-and-nous-pattern-extraction.md)
 - [ADR 0019 — Wire Pure Nodes](./0019-wire-pure-nodes.md)
+- [ADR 0021 — Executor Registration and Binding](./0021-executor-registration-and-binding.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
 - [Chapter 09 — Nous Reasoning Library](../Architecture/09-nous-reasoning-library.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)

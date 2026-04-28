@@ -85,6 +85,8 @@ import Cortex.TestSupport.Database (createTestDB, runSession, runTx)
 import Cortex.Wire
   ( WireAppendHole (..),
     WireCompileEnv (..),
+    WireExecutorEffect (..),
+    WireExecutorId (..),
     WireInputCardinality (..),
     WireInputPort (..),
     WireOutputPort (..),
@@ -93,6 +95,8 @@ import Cortex.Wire
     defaultInputPortName,
     defaultOutputPortName,
     emptyWireCompileEnv,
+    wireExecutorProjectionFromPorts,
+    wireExecutorRegistryFromList,
   )
 import Cortex.Wire.Circuit.Artifact (CompiledCircuit (..))
 import Cortex.Wire.Circuit.IR
@@ -373,8 +377,13 @@ nodeIdFromCircuitRef =
 wireSmokeCompileEnv :: WireCompileEnv
 wireSmokeCompileEnv =
   emptyWireCompileEnv
-    { wireCompileEnvNativeExecutorPorts =
-        Map.singleton "stress_dimension" analysisFragmentInOutPorts
+    { wireCompileEnvExecutorRegistry =
+        wireExecutorRegistryFromList
+          [ wireExecutorProjectionFromPorts
+              (WireExecutorId "stress_dimension")
+              analysisFragmentInOutPorts
+              WireExecutorModel
+          ]
     }
 
 wireSmokeAppendHole :: WireAppendHole

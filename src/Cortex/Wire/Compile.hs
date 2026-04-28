@@ -49,8 +49,16 @@ import Cortex.Wire.Circuit.Node (CircuitNodeKind (Act))
 import Cortex.Wire.Contract
   ( WireCompileEnv (..),
     WireContractRegistry (..),
+    WireProjectionMode (..),
     emptyWireCompileEnv,
     portsMetadataValue,
+  )
+import Cortex.Wire.Executor
+  ( WireExecutorProjection (..),
+    lookupWireExecutorProjection,
+    wireExecutorIdFromWireExecutor,
+    wireExecutorIdToText,
+    wireExecutorRegistryVocabulary,
   )
 import Cortex.Wire.Parser (parseWireFile, renderParseError)
 import Cortex.Wire.Syntax
@@ -124,7 +132,7 @@ compileLoweredWireFile ::
   Either WireCore.WireError CompiledCircuit
 compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
   relation <- fragmentRelation requireConnected lowered.lwfFragment
-  validateKnownContracts compileEnv (Map.map (.lnPorts) lowered.lwfFragment.gfNodes)
+  validateKnownContracts compileEnv lowered.lwfDeclaredContracts (Map.map (.lnPorts) lowered.lwfFragment.gfNodes)
   if requireConnected
     then
       validateFragmentContracts
@@ -156,13 +164,15 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
 data LoweredWireFile = LoweredWireFile
   { lwfFragment :: !GraphFragment,
     lwfMetadata :: !(Maybe Aeson.Value),
-    lwfCircuitId :: !Text
+    lwfCircuitId :: !Text,
+    lwfDeclaredContracts :: !(Set.Set Text)
   }
 
 data LoweringState = LoweringState
   { lsBindings :: !(Map Text EvalValue),
     lsNamedNodes :: !(Map Text LoweredNode),
-    lsAnonCounter :: !Int
+    lsAnonCounter :: !Int,
+    lsDeclaredContracts :: !(Set.Set Text)
   }
 
 emptyLoweringState :: LoweringState
@@ -170,7 +180,8 @@ emptyLoweringState =
   LoweringState
     { lsBindings = Map.empty,
       lsNamedNodes = Map.empty,
-      lsAnonCounter = 0
+      lsAnonCounter = 0,
+      lsDeclaredContracts = Set.empty
     }
 
 data EvalValue
@@ -244,9 +255,9 @@ emptyFragment =
     }
 
 lowerWireFile :: WireCompileEnv -> WireFile -> Either WireCore.WireError LoweredWireFile
-lowerWireFile _compileEnv wireFile = do
+lowerWireFile compileEnv wireFile = do
   loweredState <-
-    foldlM lowerTopForm emptyLoweringState wireFile.wireFileTopForms
+    foldlM (lowerTopForm compileEnv) emptyLoweringState wireFile.wireFileTopForms
   fileReturn <- maybe (Left WireCore.WireMissingCircuit) Right wireFile.wireFileReturn
   (resultFragment, maybeMetadata, loweredState') <- lowerFileReturn loweredState fileReturn
   let usedNodeRefs = foldMap loweredNodeRefs resultFragment.gfNodes
@@ -259,7 +270,8 @@ lowerWireFile _compileEnv wireFile = do
         LoweredWireFile
           { lwfFragment = resultFragment,
             lwfMetadata = maybeMetadata,
-            lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
+            lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata),
+            lwfDeclaredContracts = loweredState'.lsDeclaredContracts
           }
 
 loweredNodeRefs :: LoweredNode -> Set.Set CircuitNodeRef
@@ -293,9 +305,10 @@ compiledNodeRefs = \case
     fragmentNodeRefs fragment =
       foldMap compiledNodeRefs fragment.compiledCircuitFragmentNodes
 
-lowerTopForm :: LoweringState -> TopForm -> Either WireCore.WireError LoweringState
-lowerTopForm st = \case
-  TopContract _ -> Right st
+lowerTopForm :: WireCompileEnv -> LoweringState -> TopForm -> Either WireCore.WireError LoweringState
+lowerTopForm compileEnv st = \case
+  TopContract contractId ->
+    Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
   TopImport _ ->
     Left (WireCore.WireParseError "Wire imports are not compiled yet.")
   TopLet name expr -> do
@@ -304,7 +317,7 @@ lowerTopForm st = \case
       then Left (WireCore.WireDuplicateLetBinding name)
       else Right st {lsBindings = Map.insert name value st.lsBindings}
   TopNode nodeDecl -> do
-    loweredNode <- lowerNamedNode st nodeDecl
+    loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
     if Map.member nodeName st.lsNamedNodes
       then Left (WireCore.WireDuplicateNodeRef loweredNode.lnRef)
@@ -314,12 +327,12 @@ lowerTopForm st = \case
             { lsNamedNodes = Map.insert nodeName loweredNode st.lsNamedNodes
             }
 
-lowerNamedNode :: LoweringState -> NodeDecl -> Either WireCore.WireError LoweredNode
-lowerNamedNode st nodeDecl = do
+lowerNamedNode :: WireCompileEnv -> LoweringState -> NodeDecl -> Either WireCore.WireError LoweredNode
+lowerNamedNode compileEnv st nodeDecl = do
   partial <- evalPartial st nodeDecl.nodeDeclBody
   let nodeRef = CircuitNodeRef nodeDecl.nodeDeclName
   ports <- lowerPortSignature nodeRef nodeDecl.nodeDeclPortSig
-  loweredNodeFromPartial nodeRef ports partial
+  loweredNodeFromPartial compileEnv nodeRef ports partial
 
 lowerFileReturn ::
   LoweringState ->
@@ -1141,11 +1154,12 @@ boundaryEndpoint boundary =
     }
 
 loweredNodeFromPartial ::
+  WireCompileEnv ->
   CircuitNodeRef ->
   ([LoweredPort], [LoweredPort]) ->
   PartialNode ->
   Either WireCore.WireError LoweredNode
-loweredNodeFromPartial nodeRef (inputPorts, outputPorts) partial = do
+loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
   let exactFields = partial.pnFields
       label = lookupMaybeTextField "label" exactFields
       genericFields = genericConfigFields exactFields knownSimpleFields
@@ -1202,6 +1216,7 @@ loweredNodeFromPartial nodeRef (inputPorts, outputPorts) partial = do
                 }
       | otherwise -> do
           executor <- maybe (Left (WireCore.WireMissingRequiredField nodeRef "executor")) (Right . qnameToExecutor) executorQName
+          validateExecutorProjection compileEnv nodeRef executor runtimePorts
           tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
           memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
           let promptText = lookupMaybeTextField "prompt" exactFields
@@ -1726,8 +1741,12 @@ fragmentRelation requireConnected fragment = do
   validateFragmentTopology requireConnected relation
   pure relation
 
-validateKnownContracts :: WireCompileEnv -> Map CircuitNodeRef WireCore.WirePorts -> Either WireCore.WireError ()
-validateKnownContracts compileEnv portsCatalog =
+validateKnownContracts ::
+  WireCompileEnv ->
+  Set.Set Text ->
+  Map CircuitNodeRef WireCore.WirePorts ->
+  Either WireCore.WireError ()
+validateKnownContracts compileEnv declaredContracts portsCatalog =
   traverse_
     validateContract
     [ contractName
@@ -1737,11 +1756,16 @@ validateKnownContracts compileEnv portsCatalog =
           <> fmap (.wireOutputPortContract) (Map.elems ports.wirePortsOutputs)
     ]
   where
+    knownContracts registry =
+      declaredContracts
+        <> Map.keysSet registry.wireContractRegistryContracts
+        <> wireExecutorRegistryVocabulary compileEnv.wireCompileEnvExecutorRegistry
+
     validateContract contractName =
       case compileEnv.wireCompileEnvContractRegistry of
         Nothing -> Right ()
         Just registry ->
-          if Map.member contractName registry.wireContractRegistryContracts
+          if Set.member contractName (knownContracts registry)
             then Right ()
             else Left (WireCore.WireUnknownContract "node ports" contractName)
 
@@ -1967,6 +1991,27 @@ qnameToExecutor (QName segments) =
       WireCore.WireExecutorNative (NE.last (modelSeg :| moreSegs))
     _ ->
       WireCore.WireExecutorNative (renderQName (QName segments))
+
+validateExecutorProjection ::
+  WireCompileEnv ->
+  CircuitNodeRef ->
+  WireCore.WireExecutor ->
+  WireCore.WirePorts ->
+  Either WireCore.WireError ()
+validateExecutorProjection compileEnv nodeRef executor ports =
+  case compileEnv.wireCompileEnvProjectionMode of
+    WireProjectionPermissive ->
+      Right ()
+    WireProjectionStrict ->
+      let executorId = wireExecutorIdFromWireExecutor executor
+       in case lookupWireExecutorProjection executorId compileEnv.wireCompileEnvExecutorRegistry of
+            Nothing ->
+              Left (WireCore.WireUnknownExecutor nodeRef (wireExecutorIdToText executorId))
+            Just projection
+              | projection.wireExecutorProjectionPorts == ports ->
+                  Right ()
+              | otherwise ->
+                  Left (WireCore.WireExecutorPortsMismatch nodeRef (wireExecutorIdToText executorId))
 
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f = \case

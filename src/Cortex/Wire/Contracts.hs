@@ -7,8 +7,12 @@ module Cortex.Wire.Contracts
     WireContractRegistry (..),
     emptyWireContractRegistry,
     wireContractRegistryFromList,
+    WireProjectionMode (..),
     WireCompileEnv (..),
     emptyWireCompileEnv,
+    wireCompileEnvWithContractRegistry,
+    wireCompileEnvWithExecutorRegistry,
+    strictWireCompileEnv,
     portsMetadataValue,
     wirePortsFromMetadataValue,
     validatePorts,
@@ -17,6 +21,7 @@ where
 
 import Control.Monad (void)
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
+import Cortex.Wire.Executor (WireExecutorRegistry, emptyWireExecutorRegistry)
 import Cortex.Wire.Syntax
 import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
 import Data.Aeson (ToJSON (..), (.:), (.=))
@@ -67,24 +72,39 @@ wireContractRegistryFromList specs =
     (Map.fromList [(spec.wireContractSpecId, spec) | spec <- specs])
 
 data WireCompileEnv = WireCompileEnv
-  { wireCompileEnvNativeExecutorPorts :: Map Text WirePorts,
-    wireCompileEnvEmitKindPorts :: Map Text WirePorts,
-    wireCompileEnvConditionPorts :: Map Text WirePorts,
-    wireCompileEnvLlmDefaultPorts :: Maybe WirePorts,
-    wireCompileEnvAwaitDefaultPorts :: Maybe WirePorts,
+  { wireCompileEnvExecutorRegistry :: WireExecutorRegistry,
+    wireCompileEnvProjectionMode :: WireProjectionMode,
     wireCompileEnvContractRegistry :: Maybe WireContractRegistry
   }
+  deriving stock (Eq, Show)
+
+data WireProjectionMode
+  = WireProjectionPermissive
+  | WireProjectionStrict
   deriving stock (Eq, Show)
 
 emptyWireCompileEnv :: WireCompileEnv
 emptyWireCompileEnv =
   WireCompileEnv
-    { wireCompileEnvNativeExecutorPorts = Map.empty,
-      wireCompileEnvEmitKindPorts = Map.empty,
-      wireCompileEnvConditionPorts = Map.empty,
-      wireCompileEnvLlmDefaultPorts = Nothing,
-      wireCompileEnvAwaitDefaultPorts = Nothing,
+    { wireCompileEnvExecutorRegistry = emptyWireExecutorRegistry,
+      wireCompileEnvProjectionMode = WireProjectionPermissive,
       wireCompileEnvContractRegistry = Nothing
+    }
+
+wireCompileEnvWithContractRegistry :: WireContractRegistry -> WireCompileEnv
+wireCompileEnvWithContractRegistry registry =
+  emptyWireCompileEnv {wireCompileEnvContractRegistry = Just registry}
+
+wireCompileEnvWithExecutorRegistry :: WireExecutorRegistry -> WireCompileEnv
+wireCompileEnvWithExecutorRegistry registry =
+  emptyWireCompileEnv {wireCompileEnvExecutorRegistry = registry}
+
+strictWireCompileEnv :: WireExecutorRegistry -> WireContractRegistry -> WireCompileEnv
+strictWireCompileEnv executorRegistry contractRegistry =
+  WireCompileEnv
+    { wireCompileEnvExecutorRegistry = executorRegistry,
+      wireCompileEnvProjectionMode = WireProjectionStrict,
+      wireCompileEnvContractRegistry = Just contractRegistry
     }
 
 portsMetadataValue :: WirePorts -> Aeson.Value

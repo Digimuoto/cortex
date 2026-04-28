@@ -15,6 +15,7 @@ related:
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0021-executor-registration-and-binding.md
   - "GitHub #55"
 ---
 
@@ -195,6 +196,7 @@ port extraction.
 
 - [ADR 0014 — Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
 - [ADR 0018 — Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0021 — Executor Registration and Binding](./0021-executor-registration-and-binding.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)

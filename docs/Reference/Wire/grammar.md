@@ -159,11 +159,6 @@ expressions only when their remaining degrees of freedom can be resolved by cont
 
 ## 4. Contracts
 
-> **Implementation warning.** Current compiler behavior parses `contract X;` but does not use it to
-> populate registry membership. With an explicit `WireContractRegistry`, only Haskell-registered
-> contracts are enforced. The reference grammar names the intended contract-assertion semantics; the
-> compiler path still has a narrower registry-backed implementation.
-
 A **contract** is a named, typed interface. Contracts are the atoms the type-checker reasons about
 at port boundaries.
 

@@ -5,6 +5,7 @@
 module Cortex.Wire.CompileSpec (spec) where
 
 import Cortex.Algebra.Graph (successors)
+import Cortex.Wire (WirePayloadKind (..))
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..),
     CompiledCircuit (..),
@@ -12,7 +13,21 @@ import Cortex.Wire.Circuit.Artifact
     CompiledCircuitNode (..),
   )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
-import Cortex.Wire.Compile (compileWireFragmentText, compileWireText)
+import Cortex.Wire.Compile (compileWireFragmentText, compileWireText, compileWireTextWithEnv)
+import Cortex.Wire.Contract
+  ( WireCompileEnv (..),
+    WireContractSpec (..),
+    WireProjectionMode (..),
+    emptyWireCompileEnv,
+    wireContractRegistryFromList,
+  )
+import Cortex.Wire.Executor
+  ( WireExecutorEffect (..),
+    WireExecutorId (..),
+    wireExecutorProjectionFromPorts,
+    wireExecutorRegistryFromList,
+  )
+import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
@@ -138,6 +153,53 @@ spec = describe "Cortex.Wire.Compile" $ do
       other ->
         expectationFailure ("expected one live n-way select condition node, got: " <> show other)
 
+  describe "contract declarations" $ do
+    it "accepts registered contracts under an explicit registry" $
+      compileWireTextWithEnv knownContractsEnv simpleChainSourceText
+        `shouldSatisfy` isRight
+
+    it "accepts file-local contract declarations under an explicit registry" $ do
+      compileWireTextWithEnv
+        knownContractsEnv
+        ( T.unlines
+            [ "contract LocalOnly;",
+              "node local : -> LocalOnly = @llm.local {};",
+              "",
+              "local"
+            ]
+        )
+        `shouldSatisfy` isRight
+
+    it "treats duplicate file-local contract declarations as idempotent" $ do
+      compileWireTextWithEnv
+        knownContractsEnv
+        ( T.unlines
+            [ "contract LocalOnly;",
+              "contract LocalOnly;",
+              "node local : -> LocalOnly = @llm.local {};",
+              "",
+              "local"
+            ]
+        )
+        `shouldSatisfy` isRight
+
+    it "rejects undeclared contract typos under an explicit registry" $
+      compileWireTextWithEnv knownContractsEnv typoContractSourceText
+        `shouldBe` Left (WireUnknownContract "node ports" "PlannerOuput")
+
+  describe "executor projections" $ do
+    it "allows a strict registered executor projection with matching ports" $
+      compileWireTextWithEnv strictExecutorEnv projectedExecutorSourceText
+        `shouldSatisfy` isRight
+
+    it "rejects a missing executor in strict projection mode" $
+      compileWireTextWithEnv strictExecutorEnv missingExecutorSourceText
+        `shouldBe` Left (WireUnknownExecutor (CircuitNodeRef "missing") "missing")
+
+    it "rejects mismatched ports in strict projection mode" $
+      compileWireTextWithEnv strictExecutorEnv mismatchedExecutorPortsSourceText
+        `shouldBe` Left (WireExecutorPortsMismatch (CircuitNodeRef "projected") "projected")
+
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
@@ -154,6 +216,38 @@ commaOverlayFragmentSourceText =
       "node stress_beta : -> AnalysisFragment = @llm.beta {};",
       "",
       "stress_alpha, stress_beta"
+    ]
+
+typoContractSourceText :: T.Text
+typoContractSourceText =
+  T.unlines
+    [ "node planner : -> PlannerOuput = @llm.planner {};",
+      "",
+      "planner"
+    ]
+
+projectedExecutorSourceText :: T.Text
+projectedExecutorSourceText =
+  T.unlines
+    [ "node projected : -> PlannerOutput = @llm.projected {};",
+      "",
+      "projected"
+    ]
+
+missingExecutorSourceText :: T.Text
+missingExecutorSourceText =
+  T.unlines
+    [ "node missing : -> PlannerOutput = @llm.missing {};",
+      "",
+      "missing"
+    ]
+
+mismatchedExecutorPortsSourceText :: T.Text
+mismatchedExecutorPortsSourceText =
+  T.unlines
+    [ "node projected : -> AnalysisFragment = @llm.projected {};",
+      "",
+      "projected"
     ]
 
 bareLlmSourceText :: T.Text
@@ -241,3 +335,58 @@ fragmentContainsCondition fragment =
     isConditionNode = \case
       CompiledCircuitCondition {} -> True
       _ -> False
+
+isRight :: Either err ok -> Bool
+isRight = \case
+  Right _ -> True
+  Left _ -> False
+
+knownContractsEnv :: WireCompileEnv
+knownContractsEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvContractRegistry =
+        Just $
+          wireContractRegistryFromList
+            [ jsonContract "PlannerOutput",
+              jsonContract "AnalysisFragment",
+              jsonContract "ResearchPlan",
+              jsonContract "PlanIssue",
+              jsonContract "DraftPlan",
+              jsonContract "MinorIssue",
+              jsonContract "MajorIssue",
+              jsonContract "ReportArtifactRef"
+            ]
+    }
+
+strictExecutorEnv :: WireCompileEnv
+strictExecutorEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvExecutorRegistry =
+        wireExecutorRegistryFromList
+          [ wireExecutorProjectionFromPorts
+              (WireExecutorId "projected")
+              projectedExecutorPorts
+              WireExecutorModel
+          ],
+      wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
+projectedExecutorPorts :: WirePorts
+projectedExecutorPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty,
+      wirePortsOutputs =
+        Map.singleton
+          "out"
+          WireOutputPort {wireOutputPortContract = "PlannerOutput"}
+    }
+
+jsonContract :: T.Text -> WireContractSpec
+jsonContract contractId =
+  WireContractSpec
+    { wireContractSpecId = contractId,
+      wireContractSpecPayloadKind = WirePayloadJson,
+      wireContractSpecDescription = contractId,
+      wireContractSpecSchema = Nothing,
+      wireContractSpecExamples = []
+    }
