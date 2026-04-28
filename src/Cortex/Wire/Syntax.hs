@@ -34,9 +34,18 @@ module Cortex.Wire.Syntax
     Record (..),
     SelectArm (..),
     Expr (..),
+    CorePureLiteral (..),
+    CorePureUnaryOp (..),
+    CorePureBinOp (..),
+    CorePureField (..),
+    CorePureBinding (..),
+    CorePureExpr (..),
 
     -- * Top-level forms
     ImportSpec (..),
+    PureOutputEquation (..),
+    NodePureBody (..),
+    NodeBody (..),
     NodeDecl (..),
     TopForm (..),
     WireFile (..),
@@ -44,7 +53,7 @@ module Cortex.Wire.Syntax
 where
 
 import Cortex.Wire.AST
-import Data.Aeson (ToJSON)
+import Data.Aeson (FromJSON, ToJSON)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Scientific (Scientific)
@@ -190,6 +199,67 @@ data Expr
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
+-- | Literals admitted by CorePure, the deterministic expression
+-- language used by pure output equations.
+data CorePureLiteral
+  = CorePureString !Text
+  | CorePureNumber !Scientific
+  | CorePureBool !Bool
+  | CorePureNull
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+data CorePureUnaryOp
+  = CorePureNegate
+  | CorePureNot
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+data CorePureBinOp
+  = CorePureAdd
+  | CorePureSubtract
+  | CorePureMultiply
+  | CorePureDivide
+  | CorePureEqual
+  | CorePureNotEqual
+  | CorePureLessThan
+  | CorePureLessThanOrEqual
+  | CorePureGreaterThan
+  | CorePureGreaterThanOrEqual
+  | CorePureAnd
+  | CorePureOr
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+data CorePureField = CorePureField
+  { corePureFieldPath :: !(NonEmpty Text),
+    corePureFieldValue :: !CorePureExpr
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+data CorePureBinding = CorePureBinding
+  { corePureBindingName :: !Text,
+    corePureBindingExpr :: !CorePureExpr
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+data CorePureExpr
+  = CorePureLit !CorePureLiteral
+  | CorePureIdent !Text
+  | CorePureList ![CorePureExpr]
+  | CorePureRecord ![CorePureField]
+  | CorePureFieldAccess !CorePureExpr !Text
+  | CorePureIndex !CorePureExpr !CorePureExpr
+  | CorePureLambda ![Text] !CorePureExpr
+  | CorePureCall !CorePureExpr ![CorePureExpr]
+  | CorePureUnary !CorePureUnaryOp !CorePureExpr
+  | CorePureBinary !CorePureBinOp !CorePureExpr !CorePureExpr
+  | CorePureLet ![CorePureBinding] !CorePureExpr
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
 -- | Import-statement variants (grammar §9.4).
 data ImportSpec
   = -- | @import name from "path";@ — binds the file's file-return
@@ -201,12 +271,34 @@ data ImportSpec
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
+data PureOutputEquation = PureOutputEquation
+  { pureOutputEquationLabel :: !PortLabel,
+    pureOutputEquationContract :: !ContractId,
+    pureOutputEquationExpr :: !CorePureExpr
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
+data NodePureBody = NodePureBody
+  { nodePureBodyBindings :: ![CorePureBinding],
+    nodePureBodyOutputs :: ![PureOutputEquation]
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
+data NodeBody
+  = NodeBodyExecutor !Expr
+  | NodeBodyPure !NodePureBody
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
 -- | A node declaration binds a name to a specific node value. The body
--- expression must evaluate to a partial node at pin time.
+-- expression either evaluates to a partial node at pin time or contains
+-- pure output equations that lower to the native pure evaluator.
 data NodeDecl = NodeDecl
   { nodeDeclName :: !Text,
     nodeDeclPortSig :: ![PortDecl],
-    nodeDeclBody :: !Expr
+    nodeDeclBody :: !NodeBody
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -218,6 +310,9 @@ data TopForm
   | TopNode !NodeDecl
   | -- | @let name = expr;@ — module-level binding.
     TopLet !Text !Expr
+  | -- | @let name = param: expr;@ — module-level CorePure helper
+    -- visible to pure output equations.
+    TopPureLet !CorePureBinding
   | TopImport !ImportSpec
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)

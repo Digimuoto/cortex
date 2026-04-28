@@ -6,6 +6,7 @@ import Cortex.Wire.Parser
 import Cortex.Wire.Syntax
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Test.Hspec
 
@@ -41,6 +42,23 @@ spec = describe "Cortex.Wire.Parser" $ do
         `shouldBe` [ TopLet "greeting" (ExprLit (LitString "hello"))
                    ]
 
+    it "parses a top-level CorePure helper binding" $ do
+      let WireFile forms _ = parseOrFail "let acceptedItem = x: x.score >= 0.7;"
+      forms
+        `shouldBe` [ TopPureLet
+                       CorePureBinding
+                         { corePureBindingName = "acceptedItem",
+                           corePureBindingExpr =
+                             CorePureLambda
+                               ["x"]
+                               ( CorePureBinary
+                                   CorePureGreaterThanOrEqual
+                                   (CorePureFieldAccess (CorePureIdent "x") "score")
+                                   (CorePureLit (CorePureNumber 0.7))
+                               )
+                         }
+                   ]
+
     it "parses a named import" $ do
       let WireFile forms _ =
             parseOrFail "import shared from \"./lib.wire\";"
@@ -72,9 +90,11 @@ spec = describe "Cortex.Wire.Parser" $ do
                                (ContractId "ExecutorError")
                                PortList
                            ]
-                           ( ExprApply
-                               (QName ("artifact" :| ["log"]))
-                               (Record [])
+                           ( NodeBodyExecutor
+                               ( ExprApply
+                                   (QName ("artifact" :| ["log"]))
+                                   (Record [])
+                               )
                            )
                        )
                    ]
@@ -107,6 +127,33 @@ spec = describe "Cortex.Wire.Parser" $ do
                          PortOutputDecl (Label "primary") (ContractId "Claim"),
                          PortOutputDecl (Label "fallback") (ContractId "Claim")
                        ]
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "parses pure output equations with shared CorePure bindings" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node classify :",
+                  "  <- evidence: EvidenceSet",
+                  "  let",
+                  "    items = evidence.items;",
+                  "    acceptedItem = x: x.score >= 0.7;",
+                  "  in",
+                  "  -> accepted: AcceptedSet = pure (filter acceptedItem items)",
+                  "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);"
+                ]
+      case forms of
+        [TopNode node] -> do
+          nodeDeclPortSig node
+            `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet") PortSingular,
+                         PortOutputDecl (Label "accepted") (ContractId "AcceptedSet"),
+                         PortOutputDecl (Label "rejected") (ContractId "RejectedSet")
+                       ]
+          case nodeDeclBody node of
+            NodeBodyPure pureBody -> do
+              length (nodePureBodyBindings pureBody) `shouldBe` 2
+              length (nodePureBodyOutputs pureBody) `shouldBe` 2
+            other -> expectationFailure ("expected pure body, got: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
   describe "expressions" $ do

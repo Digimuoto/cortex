@@ -24,6 +24,7 @@ module Cortex.Wire
     wireInputBundleFromStageInputs,
     wireInputBundlePromptSummary,
     wrapWireStageOutput,
+    wrapWireStageOutputs,
     wrapWireStageResult,
     wrapWireStageDefinition,
     emptyWireCompileEnv,
@@ -111,6 +112,7 @@ import Cortex.Wire.Runtime
     wireInputBundlePromptSummary,
     wrapWireStageDefinition,
     wrapWireStageOutput,
+    wrapWireStageOutputs,
     wrapWireStageResult,
   )
 import Cortex.Wire.Syntax

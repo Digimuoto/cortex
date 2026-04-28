@@ -3,11 +3,11 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Host binding for the first-slice Wire @pure executor.
+-- | Host binding for the Wire native pure evaluator.
 --
--- The executor remains registered host authority. Wire source may select and
--- configure @pure, but this module is what turns an admitted task node into a
--- runnable Pulse stage.
+-- Wire source authors pure output equations without @. The compiler lowers
+-- those equations to an internal native pure task, and this module turns that
+-- admitted task node into a runnable Pulse stage.
 module Cortex.Capability.Executor.Pure
   ( PureTaskConfig (..),
     pureExecutorSpec,
@@ -38,7 +38,7 @@ import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
 import Cortex.Wire.Contract (WireContractRegistry, wirePortsFromMetadataValue)
 import Cortex.Wire.Executor (WireExecutorEffect (..))
 import Cortex.Wire.Pure
-  ( evaluatePureTaskOutput,
+  ( evaluatePureTaskOutputs,
     pureExecutorConfigSchema,
     pureWireExecutorId,
     pureWireExecutorProjection,
@@ -47,21 +47,23 @@ import Cortex.Wire.Pure
   )
 import Cortex.Wire.Runtime
   ( wireInputBundleFromStageInputs,
-    wrapWireStageResult,
+    wrapWireStageOutputs,
   )
-import Cortex.Wire.Syntax (WirePorts)
+import Cortex.Wire.Syntax (CorePureBinding, CorePureExpr, WirePorts)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Types qualified as AesonTypes
 import Data.Int (Int32)
+import Data.Map.Strict (Map)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
 data PureTaskConfig = PureTaskConfig
-  { pureTaskConfigExpression :: !Text,
+  { pureTaskConfigBindings :: ![CorePureBinding],
+    pureTaskConfigOutputs :: !(Map Text CorePureExpr),
     pureTaskConfigPorts :: !WirePorts,
     pureTaskConfigTimeoutSeconds :: !(Maybe Int32)
   }
@@ -89,7 +91,7 @@ pureTaskConfigFromMetadata taskNode = do
     case AesonTypes.parseEither parsePureTaskMetadata taskNode.circuitTaskNodeMetadata of
       Left err -> Left (T.pack err)
       Right parsedConfig -> Right parsedConfig
-  case validatePurePorts config.pureTaskConfigPorts of
+  case validatePurePorts config.pureTaskConfigPorts config.pureTaskConfigOutputs of
     Left err -> Left (renderPureEvalError err)
     Right () -> Right config
 
@@ -101,19 +103,19 @@ bindPureTaskNode maybeRegistry taskNode = do
     StageDefinition
       { sdStageId = stageId,
         sdTemplateId = stageTemplateId stageId,
-        sdActionId = StageActionId "wire.pure.numeric-v1",
+        sdActionId = StageActionId "wire.pure.core-v1",
         sdReplaySafety = SafeToReplay,
         sdReplayPolicyOverride = Nothing,
         sdTimeoutSeconds = config.pureTaskConfigTimeoutSeconds,
         sdRetryPolicy = Nothing,
         sdAction = \ctx -> do
           let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
-          case evaluatePureTaskOutput config.pureTaskConfigPorts inputBundle config.pureTaskConfigExpression of
+          case evaluatePureTaskOutputs config.pureTaskConfigPorts inputBundle config.pureTaskConfigBindings config.pureTaskConfigOutputs of
             Left err -> fail (T.unpack (renderPureEvalError err))
-            Right outputValue ->
-              case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId config.pureTaskConfigPorts (StageComplete outputValue) of
+            Right outputValues ->
+              case wrapWireStageOutputs maybeRegistry ctx.scNodeId ctx.scRunId config.pureTaskConfigPorts outputValues of
                 Left err -> fail (T.unpack err)
-                Right wrappedResult -> pure wrappedResult,
+                Right wrappedValue -> pure (StageComplete wrappedValue),
         sdMemoryStrategy = defaultMemoryStrategy
       }
 
@@ -131,11 +133,12 @@ parsePureTaskMetadata = Aeson.withObject "Pure task metadata" $ \obj -> do
       Right parsedPorts -> pure parsedPorts
       Left err -> fail (T.unpack err)
   configValue <- obj Aeson..: "config"
-  expressionText <- parsePureConfig configValue
+  (bindings, outputs) <- parsePureConfig configValue
   timeoutSeconds <- obj Aeson..:? "timeoutSeconds"
   pure
     PureTaskConfig
-      { pureTaskConfigExpression = expressionText,
+      { pureTaskConfigBindings = bindings,
+        pureTaskConfigOutputs = outputs,
         pureTaskConfigPorts = ports,
         pureTaskConfigTimeoutSeconds = timeoutSeconds
       }
@@ -148,14 +151,17 @@ parsePureExecutor = Aeson.withObject "Pure executor metadata" $ \obj -> do
     ("native", "pure") -> pure ()
     _ -> fail "task node does not reference the native pure executor"
 
-parsePureConfig :: Aeson.Value -> AesonTypes.Parser Text
+parsePureConfig :: Aeson.Value -> AesonTypes.Parser ([CorePureBinding], Map Text CorePureExpr)
 parsePureConfig = Aeson.withObject "Pure executor config" $ \obj -> do
   let extraKeys =
         [ keyText
         | key <- KeyMap.keys obj,
           let keyText = Key.toText key,
-          keyText /= "expr"
+          keyText /= "bindings" && keyText /= "outputs"
         ]
   case extraKeys of
-    [] -> obj Aeson..: "expr"
+    [] -> do
+      bindings <- obj Aeson..:? "bindings" Aeson..!= []
+      outputs <- obj Aeson..: "outputs"
+      pure (bindings, outputs)
     _ -> fail ("unsupported pure executor config fields: " <> T.unpack (T.intercalate ", " extraKeys))

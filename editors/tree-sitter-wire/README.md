@@ -4,7 +4,7 @@ Tree-sitter grammar for the Cortex **Wire** DSL. Checked-in examples and regress
 `.wire` files under `test/fixtures/wire-v1/`.
 
 Source of truth for the syntax: `docs/Reference/Wire/grammar.md`. The production parser is
-`src/Cortex/Wire/V1/Parser.hs`.
+`src/Cortex/Wire/Parser.hs`.
 
 ## What's here
 
@@ -29,8 +29,10 @@ test/
 **Top-level constructs**
 
 - contract assertions: `contract EvidenceBundle;`
-- node declarations: `node name : <- Contract -> Contract = @executor { ... };`
+- executor node declarations: `node name : <- Contract -> Contract = @executor { ... };`
+- pure node declarations: `node name : <- input: Contract -> out: Contract = pure (...);`
 - let bindings: `let shared_prompt = "..." ++ "...";`
+- CorePure helper bindings: `let acceptedItem = x: x.score >= 0.7;`
 - imports: `import { a, b } from "path";`
 - optional file-return expression with no trailing semicolon
 
@@ -50,6 +52,8 @@ test/
 - executors: `@qualified.name { config = value; }`
 - config constructors: `topological { preset = "analyst"; }`
 - operators: record merge `//` and string/list concat `++`
+- CorePure expressions inside pure output equations: field access, lambdas, application,
+  arithmetic/comparison/boolean operators, records, lists, and builtins such as `map` and `zipWith`
 
 **Comments**
 

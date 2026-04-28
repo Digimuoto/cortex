@@ -9,6 +9,7 @@ module Cortex.Wire.Runtime
     wireInputBundleFromStageInputs,
     wireInputBundlePromptSummary,
     wrapWireStageOutput,
+    wrapWireStageOutputs,
     wrapWireStageResult,
     wrapWireStageDefinition,
   )
@@ -202,6 +203,58 @@ wrapWireStageOutput maybeRegistry producer runId ports outputValue =
   where
     outputContracts =
       fmap (.wireOutputPortContract) (Map.elems ports.wirePortsOutputs)
+
+wrapWireStageOutputs ::
+  Maybe WireContractRegistry ->
+  NodeId ->
+  UUID ->
+  WirePorts ->
+  Map Text Aeson.Value ->
+  Either Text Aeson.Value
+wrapWireStageOutputs maybeRegistry producer runId ports outputValues = do
+  let expectedPorts = Map.keysSet ports.wirePortsOutputs
+      actualPorts = Map.keysSet outputValues
+  if expectedPorts == actualPorts
+    then pure ()
+    else
+      Left
+        ( "Wire node "
+            <> unNodeId producer
+            <> " returned pure output ports "
+            <> renderSet actualPorts
+            <> ", expected "
+            <> renderSet expectedPorts
+            <> "."
+        )
+  wireValues <- traverse outputWireValue (Map.toAscList outputValues)
+  let wireValueSet = WireValueSet wireValues
+  validateExplicitWireOutput maybeRegistry ports (ExplicitWireValueSet wireValueSet)
+  Right (Aeson.toJSON wireValueSet)
+  where
+    renderSet values =
+      "{"
+        <> T.intercalate ", " (Set.toAscList values)
+        <> "}"
+
+    outputWireValue (portName, value) = do
+      outputPort <-
+        case Map.lookup portName ports.wirePortsOutputs of
+          Just portSpec -> Right portSpec
+          Nothing -> Left ("Wire output port " <> portName <> " is not offered by this node.")
+      payloadKind <- payloadKindForContract maybeRegistry outputPort.wireOutputPortContract
+      validateWireValuePayloadShape outputPort.wireOutputPortContract payloadKind value
+      Right
+        ( (mkWireValue outputPort.wireOutputPortContract payloadKind (Just (unNodeId producer)) value)
+            { wireValueProvenance =
+                Just
+                  ( Aeson.object
+                      [ "runId" Aeson..= UUID.toText runId,
+                        "nodeId" Aeson..= unNodeId producer
+                      ]
+                  ),
+              wireValuePort = Just portName
+            }
+        )
 
 data ExplicitWireOutput
   = ExplicitWireValue !WireValue

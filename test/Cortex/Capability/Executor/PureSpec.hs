@@ -20,8 +20,12 @@ import Cortex.Pulse.Plan
 import Cortex.Pulse.Rewrite (BudgetContext (..))
 import Cortex.Pulse.Types (defaultRewriteBudget)
 import Cortex.Wire
-  ( WirePayloadKind (..),
+  ( CorePureBinOp (..),
+    CorePureExpr (..),
+    CorePureLiteral (..),
+    WirePayloadKind (..),
     WireValue (..),
+    WireValueSet (..),
     mkWireValue,
   )
 import Cortex.Wire.Circuit.Artifact
@@ -47,7 +51,7 @@ import Cortex.Wire.Syntax
   )
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
-import Data.Scientific (scientific)
+import Data.Scientific (Scientific, scientific)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID qualified as UUID
@@ -68,7 +72,7 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
     result <- stageDef.sdAction weightedStageContext
     case result of
       StageComplete value -> do
-        wireValue <- requireAesonSuccess (Aeson.fromJSON value :: Aeson.Result WireValue)
+        wireValue <- requireSingleWireValue value
         wireValue.wireValueContract `shouldBe` "Float"
         wireValue.wireValuePort `shouldBe` Just "out"
         wireValue.wireValuePayloadKind `shouldBe` WirePayloadJson
@@ -76,7 +80,7 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
       other ->
         expectationFailure ("expected StageComplete, got " <> showStageResult other)
 
-  it "compiles, binds, and deterministically runs a strict @pure Wire node" $ do
+  it "compiles, binds, and deterministically runs a strict pure Wire node" $ do
     compiled <- requireRight (compileWireTextWithEnv pureCompileEnv pureSourceText)
     taskNode <- requireCompiledTask "score" compiled
     stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) taskNode)
@@ -85,7 +89,7 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
     case (first, second) of
       (StageComplete firstValue, StageComplete secondValue) -> do
         firstValue `shouldBe` secondValue
-        wireValue <- requireAesonSuccess (Aeson.fromJSON firstValue :: Aeson.Result WireValue)
+        wireValue <- requireSingleWireValue firstValue
         wireValue.wireValueContract `shouldBe` "Float"
         wireValue.wireValuePort `shouldBe` Just "out"
         wireValue.wireValuePayloadKind `shouldBe` WirePayloadJson
@@ -102,7 +106,7 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
     case bindPureTaskNode (Just floatContractRegistry) noOutputTaskNode of
       Left err ->
         err
-          `shouldBe` "Pure output ports are unsupported: numeric pure executor requires exactly one output port, but declared 0."
+          `shouldBe` "Pure output ports are unsupported: pure output equations require at least one output port."
       Right _ ->
         expectationFailure "expected pure task binding to reject missing output ports"
 
@@ -122,10 +126,7 @@ weightedTaskNode =
             "ports" Aeson..= portsMetadataValue weightedPorts,
             "config"
               Aeson..= Aeson.object
-                [ "expr"
-                    Aeson..= ( "0.5 * evidence_score + 0.3 * recency_score + 0.2 * authority_score" ::
-                                 Text
-                             )
+                [ "outputs" Aeson..= Map.singleton ("out" :: Text) weightedExpression
                 ]
           ]
     }
@@ -139,11 +140,17 @@ noOutputTaskNode =
             "ports" Aeson..= portsMetadataValue (weightedPorts {wirePortsOutputs = Map.empty}),
             "config"
               Aeson..= Aeson.object
-                [ "expr"
-                    Aeson..= ("evidence_score + recency_score + authority_score" :: Text)
+                [ "outputs" Aeson..= Map.singleton ("out" :: Text) weightedExpression
                 ]
           ]
     }
+
+weightedExpression :: CorePureExpr
+weightedExpression =
+  bin
+    CorePureAdd
+    (bin CorePureAdd (bin CorePureMultiply (num (scientific 5 (-1))) (var "evidence_score")) (bin CorePureMultiply (num (scientific 3 (-1))) (var "recency_score")))
+    (bin CorePureMultiply (num (scientific 2 (-1))) (var "authority_score"))
 
 weightedPorts :: WirePorts
 weightedPorts =
@@ -228,7 +235,7 @@ pureSourceText =
     [ "node score :",
       "  <- evidence_score: Float",
       "  <- recency_score: Float",
-      "  -> Float = @pure { expr = \"evidence_score + recency_score\"; };",
+      "  -> Float = pure (evidence_score + recency_score);",
       "",
       "score"
     ]
@@ -261,6 +268,13 @@ requireAesonSuccess = \case
   Aeson.Success value -> pure value
   Aeson.Error err -> fail ("expected Aeson.Success, got " <> err)
 
+requireSingleWireValue :: Aeson.Value -> IO WireValue
+requireSingleWireValue value = do
+  WireValueSet values <- requireAesonSuccess (Aeson.fromJSON value :: Aeson.Result WireValueSet)
+  case values of
+    [wireValue] -> pure wireValue
+    other -> fail ("expected one WireValue, got " <> show (length other))
+
 requireCompiledTask :: Text -> CompiledCircuit -> IO CircuitTaskNode
 requireCompiledTask nodeRef compiled =
   case Map.lookup (CircuitNodeRef nodeRef) compiled.compiledCircuitNodes of
@@ -273,3 +287,15 @@ showStageResult = \case
   StageSuspend {} -> "StageSuspend"
   StageRewrite {} -> "StageRewrite"
   StageRejectRewrite {} -> "StageRejectRewrite"
+
+num :: Scientific -> CorePureExpr
+num =
+  CorePureLit . CorePureNumber
+
+var :: Text -> CorePureExpr
+var =
+  CorePureIdent
+
+bin :: CorePureBinOp -> CorePureExpr -> CorePureExpr -> CorePureExpr
+bin =
+  CorePureBinary

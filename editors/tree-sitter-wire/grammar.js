@@ -2,11 +2,12 @@
  * Tree-sitter grammar for the Wire language.
  *
  * Source of truth: docs/Reference/Wire/grammar.md (accepted
- * 2026-04-23). Mirrors the Haskell parser at src/Cortex/Wire/V1.
+ * 2026-04-23). Mirrors the Haskell parser at src/Cortex/Wire/Parser.hs.
  *
- * Top-level forms:          contract; node; let; import; and optional
- *                           file-return expression.
+ * Top-level forms:          contract; node; let; CorePure helper let;
+ *                           import; and optional file-return expression.
  * Executors:                @qualified.name { config }
+ * Pure nodes:               -> output: Contract = pure (<CorePure expr>)
  * Graph operators:          <> (overlay, infixl 2), => (connect, infixl 3)
  * Value operators:          // (record/partial merge, infixl 5),
  *                           ++ (string/list concat, infixl 5)
@@ -23,6 +24,15 @@ const PREC = {
   connect: 3, // infixl 3 — =>
   select:  4, // postfix 4 — select(...)
   merge:   5, // infixl 5 — // and ++ share a level
+  core_lambda: 1,
+  core_or: 2,
+  core_and: 3,
+  core_compare: 4,
+  core_add: 5,
+  core_mul: 6,
+  core_unary: 7,
+  core_call: 8,
+  core_postfix: 9,
 };
 
 module.exports = grammar({
@@ -41,6 +51,8 @@ module.exports = grammar({
     // `<- Contract`. Both start with an identifier; the `:` is the
     // discriminator. Tree-sitter lookahead resolves this.
     [$.labeled_port_prefix, $._identifier_ref],
+    [$.pure_node_decl, $.port_signature],
+    [$.pure_output_port, $.output_body],
   ],
 
   rules: {
@@ -57,6 +69,7 @@ module.exports = grammar({
     _top_form: $ => choice(
       $.contract_decl,
       $.node_decl,
+      $.pure_let_binding,
       $.let_binding,
       $.import_stmt,
     ),
@@ -68,8 +81,13 @@ module.exports = grammar({
       ';',
     ),
 
+    node_decl: $ => choice(
+      $.executor_node_decl,
+      $.pure_node_decl,
+    ),
+
     // node name : <port-sig> = <expr>;
-    node_decl: $ => seq(
+    executor_node_decl: $ => seq(
       'node',
       field('name', $.identifier),
       ':',
@@ -77,6 +95,59 @@ module.exports = grammar({
       '=',
       field('body', $.expression),
       ';',
+    ),
+
+    // node name :
+    //   <- input: Contract
+    //   let shared = ...; in
+    //   -> output: Contract = pure (...);
+    pure_node_decl: $ => seq(
+      'node',
+      field('name', $.identifier),
+      ':',
+      field('inputs', repeat($.input_port)),
+      optional(field('bindings', $.pure_let_block)),
+      field('outputs', repeat1($.pure_output_equation)),
+      ';',
+    ),
+
+    pure_let_block: $ => seq(
+      'let',
+      repeat1($.core_pure_binding),
+      'in',
+    ),
+
+    pure_output_equation: $ => seq(
+      field('port', $.pure_output_port),
+      '=',
+      field('body', $.pure_output_expr),
+    ),
+
+    pure_output_port: $ => seq(
+      '->',
+      field('variant', $.output_variant),
+    ),
+
+    pure_output_expr: $ => seq(
+      'pure',
+      choice(
+        seq('(', field('expr', $.core_pure_expr), ')'),
+        seq('{', field('expr', $.core_pure_expr), optional(';'), '}'),
+      ),
+    ),
+
+    // let helper = x: ...;   |   let helper = let ... in ...;
+    pure_let_binding: $ => seq(
+      'let',
+      field('name', $.identifier),
+      '=',
+      field('value', $.core_pure_shared_expr),
+      ';',
+    ),
+
+    core_pure_shared_expr: $ => choice(
+      $.core_pure_lambda,
+      $.core_pure_let,
     ),
 
     // let name = <expr>;
@@ -267,6 +338,144 @@ module.exports = grammar({
       ']',
     ),
 
+    // ─── CorePure expressions ──────────────────────────────────────────
+
+    core_pure_binding: $ => seq(
+      field('name', $.identifier),
+      '=',
+      field('value', $.core_pure_expr),
+      ';',
+    ),
+
+    core_pure_expr: $ => choice(
+      $.core_pure_let,
+      $.core_pure_lambda,
+      $._core_pure_or,
+    ),
+
+    core_pure_let: $ => seq(
+      'let',
+      repeat1($.core_pure_binding),
+      'in',
+      field('body', $.core_pure_expr),
+    ),
+
+    core_pure_lambda: $ => prec.right(PREC.core_lambda, seq(
+      field('param', $.identifier),
+      ':',
+      field('body', $.core_pure_expr),
+    )),
+
+    _core_pure_or: $ => choice(
+      prec.left(PREC.core_or, seq(
+        field('left', $._core_pure_or),
+        field('op', '||'),
+        field('right', $._core_pure_and),
+      )),
+      $._core_pure_and,
+    ),
+
+    _core_pure_and: $ => choice(
+      prec.left(PREC.core_and, seq(
+        field('left', $._core_pure_and),
+        field('op', '&&'),
+        field('right', $._core_pure_compare),
+      )),
+      $._core_pure_compare,
+    ),
+
+    _core_pure_compare: $ => choice(
+      prec.left(PREC.core_compare, seq(
+        field('left', $._core_pure_compare),
+        field('op', choice('==', '!=', '<=', '>=', '<', '>')),
+        field('right', $._core_pure_add),
+      )),
+      $._core_pure_add,
+    ),
+
+    _core_pure_add: $ => choice(
+      prec.left(PREC.core_add, seq(
+        field('left', $._core_pure_add),
+        field('op', choice('+', '-')),
+        field('right', $._core_pure_mul),
+      )),
+      $._core_pure_mul,
+    ),
+
+    _core_pure_mul: $ => choice(
+      prec.left(PREC.core_mul, seq(
+        field('left', $._core_pure_mul),
+        field('op', choice('*', '/')),
+        field('right', $._core_pure_unary),
+      )),
+      $._core_pure_unary,
+    ),
+
+    _core_pure_unary: $ => choice(
+      prec.right(PREC.core_unary, seq(
+        field('op', choice('!', '-')),
+        field('expr', $._core_pure_unary),
+      )),
+      $._core_pure_call,
+    ),
+
+    _core_pure_call: $ => choice(
+      prec.left(PREC.core_call, seq(
+        field('function', $._core_pure_call),
+        field('argument', $._core_pure_postfix),
+      )),
+      $._core_pure_postfix,
+    ),
+
+    _core_pure_postfix: $ => choice(
+      prec.left(PREC.core_postfix, seq(
+        field('target', $._core_pure_postfix),
+        '.',
+        field('field', $.identifier),
+      )),
+      prec.left(PREC.core_postfix, seq(
+        field('target', $._core_pure_postfix),
+        '[',
+        field('index', $.core_pure_expr),
+        ']',
+      )),
+      $._core_pure_atom,
+    ),
+
+    _core_pure_atom: $ => choice(
+      $.string,
+      $.indented_string,
+      $.number,
+      $.boolean,
+      $.null,
+      $.core_pure_record,
+      $.core_pure_list,
+      seq('(', $.core_pure_expr, ')'),
+      alias($.identifier, $.core_pure_ident),
+    ),
+
+    core_pure_record: $ => seq(
+      '{',
+      repeat(seq($.core_pure_field, ';')),
+      '}',
+    ),
+
+    core_pure_field: $ => seq(
+      field('path', $.field_path),
+      '=',
+      field('value', $.core_pure_expr),
+    ),
+
+    core_pure_list: $ => seq(
+      '[',
+      optional(seq(
+        $.core_pure_expr,
+        repeat(seq(',', $.core_pure_expr)),
+        optional(','),
+      )),
+      ']',
+    ),
+
     // ( a )             — parenthesization
     // ( a, b, c )       — tuple
     // ()                — empty wire / unit (handled by $.unit)
@@ -328,6 +537,8 @@ module.exports = grammar({
     number: $ => /-?[0-9]+(\.[0-9]+)?/,
 
     boolean: $ => choice('true', 'false'),
+
+    null: $ => 'null',
 
     // The empty wire () lives in the grammar alongside paren_or_tuple;
     // authors can equivalently write `()` to denote the empty wire.

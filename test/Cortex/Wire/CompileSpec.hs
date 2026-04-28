@@ -205,6 +205,18 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv strictExecutorEnv pureExecutorSourceText
         `shouldSatisfy` isRight
 
+    it "lowers top-level CorePure helpers into pure node config" $ do
+      compiled <- requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithSharedHelperSourceText)
+      case Map.lookup (CircuitNodeRef "classify") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureBinding "acceptedItem"
+        other ->
+          expectationFailure ("expected compiled pure task node, got: " <> show other)
+
+    it "rejects authored @pure executor applications" $
+      compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
+        `shouldBe` Left (WireParseError "Pure nodes must be authored with output equations, not @pure executor application.")
+
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
@@ -257,6 +269,29 @@ mismatchedExecutorPortsSourceText =
 
 pureExecutorSourceText :: T.Text
 pureExecutorSourceText =
+  T.unlines
+    [ "node score :",
+      "  <- evidence_score: Float",
+      "  <- recency_score: Float",
+      "  -> Float = pure (evidence_score + recency_score);",
+      "",
+      "score"
+    ]
+
+pureExecutorWithSharedHelperSourceText :: T.Text
+pureExecutorWithSharedHelperSourceText =
+  T.unlines
+    [ "let acceptedItem = x: x.score >= 0.7;",
+      "",
+      "node classify :",
+      "  <- evidence: EvidenceSet",
+      "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);",
+      "",
+      "classify"
+    ]
+
+legacyPureExecutorSourceText :: T.Text
+legacyPureExecutorSourceText =
   T.unlines
     [ "node score :",
       "  <- evidence_score: Float",
@@ -343,6 +378,23 @@ requireRight :: (Show err) => Either err a -> IO a
 requireRight = \case
   Left err -> expectationFailure ("expected Right, got Left: " <> show err) >> error "unreachable"
   Right ok -> pure ok
+
+metadataHasPureBinding :: T.Text -> Aeson.Value -> Bool
+metadataHasPureBinding bindingName = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) ->
+        case KeyMap.lookup "bindings" configObj of
+          Just (Aeson.Array bindings) ->
+            any (bindingHasName bindingName) bindings
+          _ -> False
+      _ -> False
+  _ -> False
+  where
+    bindingHasName expectedName = \case
+      Aeson.Object bindingObj ->
+        KeyMap.lookup "corePureBindingName" bindingObj == Just (Aeson.String expectedName)
+      _ -> False
 
 fragmentContainsCondition :: CompiledCircuitFragment -> Bool
 fragmentContainsCondition fragment =

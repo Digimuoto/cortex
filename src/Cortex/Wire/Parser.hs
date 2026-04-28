@@ -19,7 +19,7 @@ import Control.Monad (when)
 import Cortex.Wire.Syntax
 import Data.Char (isAlpha, isAlphaNum)
 import Data.List.NonEmpty (NonEmpty ((:|)))
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Scientific (Scientific)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -99,7 +99,7 @@ keyword w = lexeme . try $ do
 
 reservedWords :: [Text]
 reservedWords =
-  ["contract", "node", "let", "import", "from", "select", "true", "false"]
+  ["contract", "node", "let", "in", "import", "from", "select", "pure", "true", "false", "null"]
 
 -- | Identifier-continuation predicate.
 identCont :: Char -> Bool
@@ -362,6 +362,177 @@ parenOrTuple = do
           pure (ExprTuple (first : rest))
 
 ------------------------------------------------------------------------
+-- CorePure expressions
+------------------------------------------------------------------------
+
+corePureExpr :: Parser CorePureExpr
+corePureExpr =
+  choice
+    [ try corePureLet,
+      try corePureLambda,
+      corePureOrLevel
+    ]
+
+corePureLet :: Parser CorePureExpr
+corePureLet = do
+  keyword "let"
+  bindings <- some corePureBinding
+  keyword "in"
+  CorePureLet bindings <$> corePureExpr
+
+corePureBinding :: Parser CorePureBinding
+corePureBinding = do
+  name <- identifier
+  _ <- symbol "="
+  value <- corePureExpr
+  _ <- symbol ";"
+  pure CorePureBinding {corePureBindingName = name, corePureBindingExpr = value}
+
+corePureLambda :: Parser CorePureExpr
+corePureLambda = do
+  params <- some . try $ do
+    param <- identifier
+    _ <- symbol ":"
+    pure param
+  CorePureLambda params <$> corePureExpr
+
+corePureOrLevel :: Parser CorePureExpr
+corePureOrLevel =
+  chainLeft corePureAndLevel (CorePureBinary CorePureOr <$ symbol "||")
+
+corePureAndLevel :: Parser CorePureExpr
+corePureAndLevel =
+  chainLeft corePureCompareLevel (CorePureBinary CorePureAnd <$ symbol "&&")
+
+corePureCompareLevel :: Parser CorePureExpr
+corePureCompareLevel =
+  chainLeft corePureAddLevel compareOperator
+  where
+    compareOperator =
+      choice
+        [ CorePureBinary CorePureEqual <$ symbol "==",
+          CorePureBinary CorePureNotEqual <$ symbol "!=",
+          CorePureBinary CorePureLessThanOrEqual <$ symbol "<=",
+          CorePureBinary CorePureGreaterThanOrEqual <$ symbol ">=",
+          CorePureBinary CorePureLessThan <$ symbol "<",
+          CorePureBinary CorePureGreaterThan <$ symbol ">"
+        ]
+
+corePureAddLevel :: Parser CorePureExpr
+corePureAddLevel =
+  chainLeft corePureMultiplyLevel addOperator
+  where
+    addOperator =
+      choice
+        [ CorePureBinary CorePureAdd <$ symbol "+",
+          CorePureBinary CorePureSubtract <$ symbol "-"
+        ]
+
+corePureMultiplyLevel :: Parser CorePureExpr
+corePureMultiplyLevel =
+  chainLeft corePureUnaryLevel multiplyOperator
+  where
+    multiplyOperator =
+      choice
+        [ CorePureBinary CorePureMultiply <$ symbol "*",
+          try (CorePureBinary CorePureDivide <$ symbol "/" <* notFollowedBy (char '/'))
+        ]
+
+corePureUnaryLevel :: Parser CorePureExpr
+corePureUnaryLevel =
+  choice
+    [ CorePureUnary CorePureNot <$> (symbol "!" *> corePureUnaryLevel),
+      CorePureUnary CorePureNegate <$> (symbol "-" *> corePureUnaryLevel),
+      corePureApplication
+    ]
+
+corePureApplication :: Parser CorePureExpr
+corePureApplication = do
+  function <- corePurePostfix
+  arguments <- many (try corePurePostfix)
+  pure $
+    case arguments of
+      [] -> function
+      _ -> CorePureCall function arguments
+
+corePurePostfix :: Parser CorePureExpr
+corePurePostfix = do
+  base <- corePureAtom
+  suffixes <- many corePureSuffix
+  pure (foldl' (\acc suffix -> suffix acc) base suffixes)
+  where
+    corePureSuffix =
+      choice
+        [ do
+            _ <- symbol "."
+            fieldName <- identifier
+            pure (`CorePureFieldAccess` fieldName),
+          do
+            _ <- symbol "["
+            indexExpr <- corePureExpr
+            _ <- symbol "]"
+            pure (`CorePureIndex` indexExpr)
+        ]
+
+corePureAtom :: Parser CorePureExpr
+corePureAtom =
+  choice
+    [ corePureString,
+      CorePureLit . CorePureBool <$> boolLiteral,
+      CorePureLit CorePureNull <$ keyword "null",
+      CorePureLit . CorePureNumber <$> numberLiteral,
+      corePureList,
+      corePureRecord,
+      betweenCorePureParens,
+      CorePureIdent <$> identifier
+    ]
+
+betweenCorePureParens :: Parser CorePureExpr
+betweenCorePureParens = do
+  _ <- symbol "("
+  value <- corePureExpr
+  _ <- symbol ")"
+  pure value
+
+corePureString :: Parser CorePureExpr
+corePureString = do
+  (_form, text) <- stringLiteralForm
+  pure (CorePureLit (CorePureString text))
+
+corePureList :: Parser CorePureExpr
+corePureList = do
+  _ <- symbol "["
+  items <- corePureExpr `sepEndBy` symbol ","
+  _ <- symbol "]"
+  pure (CorePureList items)
+
+corePureRecord :: Parser CorePureExpr
+corePureRecord = do
+  _ <- symbol "{"
+  fields <- many corePureTerminatedField
+  _ <- symbol "}"
+  pure (CorePureRecord fields)
+
+corePureTerminatedField :: Parser CorePureField
+corePureTerminatedField = corePureField <* symbol ";"
+
+corePureField :: Parser CorePureField
+corePureField = do
+  firstSeg <- identifier
+  restSegs <- many (symbol "." *> identifier)
+  _ <- symbol "="
+  CorePureField (firstSeg :| restSegs) <$> corePureExpr
+
+chainLeft :: Parser a -> Parser (a -> a -> a) -> Parser a
+chainLeft operand operator = do
+  first <- operand
+  rest <- many $ do
+    op <- operator
+    rhs <- operand
+    pure (op, rhs)
+  pure (foldl' (\acc (op, rhs) -> op acc rhs) first rest)
+
+------------------------------------------------------------------------
 -- Port signatures
 ------------------------------------------------------------------------
 
@@ -454,6 +625,7 @@ topForm =
   choice
     [ contractDecl,
       nodeDecl,
+      try pureLetBinding,
       letBinding,
       importStmt
     ]
@@ -466,7 +638,10 @@ contractDecl = do
   pure (TopContract (ContractId n))
 
 nodeDecl :: Parser TopForm
-nodeDecl = do
+nodeDecl = try pureNodeDecl <|> executorNodeDecl
+
+executorNodeDecl :: Parser TopForm
+executorNodeDecl = do
   keyword "node"
   name <- identifier
   _ <- symbol ":"
@@ -476,7 +651,70 @@ nodeDecl = do
   _ <- symbol "="
   body <- expr
   _ <- symbol ";"
-  pure (TopNode (NodeDecl name sig body))
+  pure (TopNode (NodeDecl name sig (NodeBodyExecutor body)))
+
+pureNodeDecl :: Parser TopForm
+pureNodeDecl = do
+  keyword "node"
+  name <- identifier
+  _ <- symbol ":"
+  inputs <- many (try inputPort)
+  localBindings <- optional (try pureNodeLocalBindings)
+  outputEquations <- some (try pureOutputEquation)
+  _ <- symbol ";"
+  let sig = inputs <> fmap pureOutputEquationPortDecl outputEquations
+  when (null sig) $
+    fail "Wire requires every node to declare at least one port"
+  pure
+    ( TopNode
+        ( NodeDecl
+            name
+            sig
+            ( NodeBodyPure
+                NodePureBody
+                  { nodePureBodyBindings = fromMaybe [] localBindings,
+                    nodePureBodyOutputs = outputEquations
+                  }
+            )
+        )
+    )
+
+pureNodeLocalBindings :: Parser [CorePureBinding]
+pureNodeLocalBindings = do
+  keyword "let"
+  bindings <- some corePureBinding
+  keyword "in"
+  pure bindings
+
+pureOutputEquation :: Parser PureOutputEquation
+pureOutputEquation = do
+  _ <- symbol "->"
+  SumVariant label contractId <- outputVariant
+  _ <- symbol "="
+  PureOutputEquation label contractId <$> pureOutputExpression
+
+pureOutputExpression :: Parser CorePureExpr
+pureOutputExpression = do
+  keyword "pure"
+  choice
+    [ do
+        _ <- symbol "("
+        value <- corePureExpr
+        _ <- symbol ")"
+        pure value,
+      do
+        _ <- symbol "{"
+        value <- corePureExpr
+        _ <- optional (symbol ";")
+        _ <- symbol "}"
+        pure value
+    ]
+
+pureOutputEquationPortDecl :: PureOutputEquation -> PortDecl
+pureOutputEquationPortDecl outputEquation =
+  PortOutputDecl
+    (pureOutputEquationLabel outputEquation)
+    (pureOutputEquationContract outputEquation)
 
 letBinding :: Parser TopForm
 letBinding = do
@@ -486,6 +724,15 @@ letBinding = do
   value <- expr
   _ <- symbol ";"
   pure (TopLet name value)
+
+pureLetBinding :: Parser TopForm
+pureLetBinding = do
+  keyword "let"
+  name <- identifier
+  _ <- symbol "="
+  value <- try corePureLambda <|> corePureLet
+  _ <- symbol ";"
+  pure (TopPureLet CorePureBinding {corePureBindingName = name, corePureBindingExpr = value})
 
 importStmt :: Parser TopForm
 importStmt = do

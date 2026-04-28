@@ -15,7 +15,7 @@ module Cortex.Wire.Compile
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (unless, when)
+import Control.Monad (unless, when, zipWithM)
 import Cortex.Algebra.Graph
   ( Relation,
     edges,
@@ -171,6 +171,7 @@ data LoweredWireFile = LoweredWireFile
 
 data LoweringState = LoweringState
   { lsBindings :: !(Map Text EvalValue),
+    lsPureBindings :: ![CorePureBinding],
     lsNamedNodes :: !(Map Text LoweredNode),
     lsAnonCounter :: !Int,
     lsDeclaredContracts :: !(Set.Set Text)
@@ -180,6 +181,7 @@ emptyLoweringState :: LoweringState
 emptyLoweringState =
   LoweringState
     { lsBindings = Map.empty,
+      lsPureBindings = [],
       lsNamedNodes = Map.empty,
       lsAnonCounter = 0,
       lsDeclaredContracts = Set.empty
@@ -317,6 +319,11 @@ lowerTopForm compileEnv st = \case
     if Map.member name st.lsBindings
       then Left (WireCore.WireDuplicateLetBinding name)
       else Right st {lsBindings = Map.insert name value st.lsBindings}
+  TopPureLet binding -> do
+    let name = binding.corePureBindingName
+    if Map.member name st.lsBindings || any (\existing -> existing.corePureBindingName == name) st.lsPureBindings
+      then Left (WireCore.WireDuplicateLetBinding name)
+      else Right st {lsPureBindings = st.lsPureBindings <> [binding]}
   TopNode nodeDecl -> do
     loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
@@ -330,10 +337,14 @@ lowerTopForm compileEnv st = \case
 
 lowerNamedNode :: WireCompileEnv -> LoweringState -> NodeDecl -> Either WireCore.WireError LoweredNode
 lowerNamedNode compileEnv st nodeDecl = do
-  partial <- evalPartial st nodeDecl.nodeDeclBody
   let nodeRef = CircuitNodeRef nodeDecl.nodeDeclName
   ports <- lowerPortSignature nodeRef nodeDecl.nodeDeclPortSig
-  loweredNodeFromPartial compileEnv nodeRef ports partial
+  case nodeDecl.nodeDeclBody of
+    NodeBodyExecutor bodyExpr -> do
+      partial <- evalPartial st bodyExpr
+      loweredNodeFromPartial compileEnv nodeRef ports partial
+    NodeBodyPure pureBody ->
+      loweredPureNodeFromBody compileEnv nodeRef ports st.lsPureBindings pureBody
 
 lowerFileReturn ::
   LoweringState ->
@@ -1217,6 +1228,8 @@ loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
                 }
       | otherwise -> do
           executor <- maybe (Left (WireCore.WireMissingRequiredField nodeRef "executor")) (Right . qnameToExecutor) executorQName
+          when (executor == WireCore.WireExecutorNative "pure") $
+            Left (WireCore.WireParseError "Pure nodes must be authored with output equations, not @pure executor application.")
           validateExecutorProjection compileEnv nodeRef executor runtimePorts
           tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
           memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
@@ -1269,6 +1282,115 @@ loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
         "kind",
         "to"
       ]
+
+loweredPureNodeFromBody ::
+  WireCompileEnv ->
+  CircuitNodeRef ->
+  ([LoweredPort], [LoweredPort]) ->
+  [CorePureBinding] ->
+  NodePureBody ->
+  Either WireCore.WireError LoweredNode
+loweredPureNodeFromBody compileEnv nodeRef (inputPorts, outputPorts) topLevelBindings pureBody = do
+  validatePureBindingNames nodeRef pureBody.nodePureBodyBindings
+  outputConfig <- pureOutputConfigMap nodeRef outputPorts pureBody.nodePureBodyOutputs
+  let runtimePorts = taskWirePortsFromLowered inputPorts outputPorts
+      executor = WireCore.WireExecutorNative "pure"
+      configValue =
+        Aeson.object
+          [ "bindings" Aeson..= (topLevelBindings <> pureBody.nodePureBodyBindings),
+            "outputs" Aeson..= outputConfig
+          ]
+  validateExecutorProjection compileEnv nodeRef executor runtimePorts
+  pure
+    LoweredNode
+      { lnRef = nodeRef,
+        lnCompiledNode =
+          CompiledCircuitTask
+            CircuitTaskNode
+              { circuitTaskNodeRef = nodeRef,
+                circuitTaskNodeLabel = defaultNodeLabel nodeRef Nothing,
+                circuitTaskNodeKind = Just Act,
+                circuitTaskNodeMetadata =
+                  actMetadata
+                    nodeRef
+                    executor
+                    Nothing
+                    Nothing
+                    (Just configValue)
+                    []
+                    runtimePorts
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+              },
+        lnPorts = runtimePorts,
+        lnInputs = inputPorts,
+        lnOutputs = outputPorts
+      }
+
+validatePureBindingNames :: CircuitNodeRef -> [CorePureBinding] -> Either WireCore.WireError ()
+validatePureBindingNames nodeRef bindings =
+  case duplicateNames of
+    name : _ -> Left (WireCore.WireInvalidPorts nodeRef ("duplicate CorePure binding " <> name))
+    [] -> Right ()
+  where
+    duplicateNames =
+      [ name
+      | (name, count) <-
+          Map.toAscList
+            ( Map.fromListWith
+                (+)
+                [(binding.corePureBindingName, 1 :: Int) | binding <- bindings]
+            ),
+        count > 1
+      ]
+
+pureOutputConfigMap ::
+  CircuitNodeRef ->
+  [LoweredPort] ->
+  [PureOutputEquation] ->
+  Either WireCore.WireError (Map Text CorePureExpr)
+pureOutputConfigMap nodeRef outputPorts outputEquations = do
+  when (null outputEquations) $
+    Left (WireCore.WireInvalidPorts nodeRef "pure output equations require at least one output")
+  when (length outputPorts /= length outputEquations) $
+    Left (WireCore.WireInvalidPorts nodeRef "pure output equations do not match lowered output ports")
+  Map.fromList <$> zipWithM matchOutput outputPorts outputEquations
+  where
+    matchOutput port outputEquation = do
+      let ContractId contractName = outputEquation.pureOutputEquationContract
+      when (port.lpLabel /= outputEquation.pureOutputEquationLabel || port.lpContract /= contractName) $
+        Left (WireCore.WireInvalidPorts nodeRef "pure output equation does not match its lowered output port")
+      Right (port.lpInternalName, outputEquation.pureOutputEquationExpr)
+
+taskWirePortsFromLowered :: [LoweredPort] -> [LoweredPort] -> WireCore.WirePorts
+taskWirePortsFromLowered inputPorts outputPorts =
+  WireCore.WirePorts
+    { wirePortsInputs =
+        Map.fromList
+          [ ( port.lpInternalName,
+              WireCore.WireInputPort
+                { wireInputPortAccepts = [port.lpContract],
+                  wireInputPortCardinality = fromMaybe WireCore.WireInputCardinalityMany port.lpCardinality,
+                  wireInputPortRequired = False
+                }
+            )
+          | port <- inputPorts
+          ],
+      wirePortsOutputs =
+        Map.fromList
+          [ ( port.lpInternalName,
+              WireCore.WireOutputPort
+                { wireOutputPortContract = port.lpContract
+                }
+            )
+          | port <- outputPorts
+          ]
+    }
 
 evalTools :: EvalValue -> Either WireCore.WireError [WireCore.QualifiedRef]
 evalTools value = case value of

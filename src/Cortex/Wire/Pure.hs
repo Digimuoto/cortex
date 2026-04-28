@@ -4,29 +4,25 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | First-slice deterministic Wire pure evaluator.
+-- | Deterministic Wire pure evaluator.
 --
--- This module is intentionally small: numeric JSON scalar expressions over
--- explicit Wire input ports. Host authority and Pulse binding live outside
--- Wire source; this module only supplies the inert projection and pure
--- evaluation logic.
+-- Pure nodes are authored as output equations and lowered to one host-bound
+-- native pure task. The evaluator receives only already-wrapped Wire inputs and a
+-- CorePure AST; it has no host callbacks, IO, time, randomness, model access,
+-- or executor authority.
 module Cortex.Wire.Pure
-  ( PureExpr (..),
-    PureEvalError (..),
+  ( PureEvalError (..),
     renderPureEvalError,
-    parsePureExpr,
-    evaluatePureExpr,
-    evaluatePureExprText,
     validatePurePorts,
-    bindPureInputVariables,
-    evaluatePureTaskOutput,
+    bindPureInputValues,
+    evaluatePureTaskOutputs,
     pureWireExecutorId,
     pureWireExecutorProjection,
     pureExecutorConfigSchema,
   )
 where
 
-import Control.Applicative (empty)
+import Control.Monad (foldM, (>=>))
 import Cortex.Wire.Executor
   ( WireExecutorConfigShape (..),
     WireExecutorEffect (..),
@@ -36,68 +32,51 @@ import Cortex.Wire.Executor
   )
 import Cortex.Wire.Runtime (WireInputBundle (..))
 import Cortex.Wire.Syntax
-  ( WireInputCardinality (..),
+  ( CorePureBinOp (..),
+    CorePureBinding (..),
+    CorePureExpr (..),
+    CorePureField (..),
+    CorePureLiteral (..),
+    CorePureUnaryOp (..),
+    WireInputCardinality (..),
     WireInputPort (..),
     WirePorts (..),
     defaultInputPortName,
   )
 import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloadKind)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Char qualified as Char
 import Data.Foldable (traverse_)
-import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Scientific (Scientific)
+import Data.Scientific (Scientific, toBoundedInteger)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Void (Void)
+import Data.Vector qualified as Vector
 import GHC.Generics (Generic)
-import Text.Megaparsec
-  ( MonadParsec (notFollowedBy, takeWhileP),
-    Parsec,
-    between,
-    choice,
-    eof,
-    errorBundlePretty,
-    parse,
-    satisfy,
-    try,
-    (<|>),
-  )
-import Text.Megaparsec.Char (char, space1)
-import Text.Megaparsec.Char.Lexer qualified as L
-
-type Parser = Parsec Void Text
-
-data PureExpr
-  = PureNumber !Scientific
-  | PureVariable !Text
-  | PureNegate !PureExpr
-  | PureAdd !PureExpr !PureExpr
-  | PureSubtract !PureExpr !PureExpr
-  | PureMultiply !PureExpr !PureExpr
-  | PureDivide !PureExpr !PureExpr
-  deriving stock (Eq, Show, Generic)
 
 data PureEvalError
-  = PureExpressionParseError !Text
-  | PureMissingVariable !Text
+  = PureMissingVariable !Text
   | PureDivisionByZero
   | PureInputPortUnsupported !Text !Text
   | PureInputPortRequiresLabel !Text !Text
   | PureInputPortMissing !Text !Text
   | PureInputPortAmbiguous !Text !Int
   | PureInputPayloadKindMismatch !Text !WirePayloadKind
-  | PureInputNonNumeric !Text !Aeson.Value
   | PureOutputPortsUnsupported !Text
+  | PureOutputPortsMismatch ![Text] ![Text]
+  | PureTypeMismatch !Text !Text
+  | PureFieldMissing !Text
+  | PureIndexOutOfBounds !Int
+  | PureFunctionExpected !Text
+  | PureFunctionArity !Text !Int !Int
   deriving stock (Eq, Show, Generic)
 
 renderPureEvalError :: PureEvalError -> Text
 renderPureEvalError = \case
-  PureExpressionParseError errText ->
-    "Invalid pure expression: " <> errText
   PureMissingVariable variableName ->
     "Pure expression references missing variable " <> variableName <> "."
   PureDivisionByZero ->
@@ -125,55 +104,40 @@ renderPureEvalError = \case
   PureInputPayloadKindMismatch portName payloadKind ->
     "Pure input port "
       <> portName
-      <> " expected a JSON scalar but received payload kind "
+      <> " expected a JSON WireValue but received payload kind "
       <> renderWirePayloadKind payloadKind
-      <> "."
-  PureInputNonNumeric portName value ->
-    "Pure input port "
-      <> portName
-      <> " expected a numeric JSON value but received "
-      <> T.pack (show value)
       <> "."
   PureOutputPortsUnsupported reason ->
     "Pure output ports are unsupported: " <> reason <> "."
+  PureOutputPortsMismatch expected actual ->
+    "Pure output equations must match output ports exactly. Expected "
+      <> renderList expected
+      <> ", got "
+      <> renderList actual
+      <> "."
+  PureTypeMismatch expected actual ->
+    "Pure expression expected " <> expected <> " but received " <> actual <> "."
+  PureFieldMissing fieldName ->
+    "Pure expression referenced missing field " <> fieldName <> "."
+  PureIndexOutOfBounds index ->
+    "Pure expression referenced out-of-bounds index " <> T.pack (show index) <> "."
+  PureFunctionExpected actual ->
+    "Pure expression expected a function but received " <> actual <> "."
+  PureFunctionArity functionName expected actual ->
+    "Pure function "
+      <> functionName
+      <> " expected "
+      <> T.pack (show expected)
+      <> " argument(s) but received "
+      <> T.pack (show actual)
+      <> "."
+  where
+    renderList values =
+      "[" <> T.intercalate ", " values <> "]"
 
-parsePureExpr :: Text -> Either PureEvalError PureExpr
-parsePureExpr sourceText =
-  case parse (spaceConsumer *> expression <* eof) "wire-pure-expression" sourceText of
-    Left bundle -> Left (PureExpressionParseError (T.pack (errorBundlePretty bundle)))
-    Right expr -> Right expr
-
-evaluatePureExprText :: Map Text Scientific -> Text -> Either PureEvalError Scientific
-evaluatePureExprText variables sourceText = do
-  expr <- parsePureExpr sourceText
-  evaluatePureExpr variables expr
-
-evaluatePureExpr :: Map Text Scientific -> PureExpr -> Either PureEvalError Scientific
-evaluatePureExpr variables = \case
-  PureNumber number ->
-    Right number
-  PureVariable variableName ->
-    case Map.lookup variableName variables of
-      Just value -> Right value
-      Nothing -> Left (PureMissingVariable variableName)
-  PureNegate expr ->
-    negate <$> evaluatePureExpr variables expr
-  PureAdd lhs rhs ->
-    (+) <$> evaluatePureExpr variables lhs <*> evaluatePureExpr variables rhs
-  PureSubtract lhs rhs ->
-    (-) <$> evaluatePureExpr variables lhs <*> evaluatePureExpr variables rhs
-  PureMultiply lhs rhs ->
-    (*) <$> evaluatePureExpr variables lhs <*> evaluatePureExpr variables rhs
-  PureDivide lhs rhs -> do
-    numerator <- evaluatePureExpr variables lhs
-    denominator <- evaluatePureExpr variables rhs
-    if denominator == 0
-      then Left PureDivisionByZero
-      else Right (numerator / denominator)
-
-validatePurePorts :: WirePorts -> Either PureEvalError ()
-validatePurePorts ports =
-  validatePureInputPorts ports *> validatePureOutputPorts ports
+validatePurePorts :: WirePorts -> Map Text CorePureExpr -> Either PureEvalError ()
+validatePurePorts ports outputExprs =
+  validatePureInputPorts ports *> validatePureOutputPorts ports outputExprs
 
 validatePureInputPorts :: WirePorts -> Either PureEvalError ()
 validatePureInputPorts ports =
@@ -189,17 +153,15 @@ validatePureInputPorts ports =
         then Left (PureInputPortRequiresLabel portName contractId)
         else Right ()
 
-validatePureOutputPorts :: WirePorts -> Either PureEvalError ()
-validatePureOutputPorts ports =
-  case Map.size ports.wirePortsOutputs of
-    1 -> Right ()
-    count ->
-      Left
-        ( PureOutputPortsUnsupported
-            ( "numeric pure executor requires exactly one output port, but declared "
-                <> T.pack (show count)
-            )
-        )
+validatePureOutputPorts :: WirePorts -> Map Text CorePureExpr -> Either PureEvalError ()
+validatePureOutputPorts ports outputExprs =
+  let expected = Map.keys ports.wirePortsOutputs
+      actual = Map.keys outputExprs
+   in case expected of
+        [] ->
+          Left (PureOutputPortsUnsupported "pure output equations require at least one output port")
+        _ | expected == actual -> Right ()
+        _ -> Left (PureOutputPortsMismatch expected actual)
 
 pureInputContractCounts :: WirePorts -> Map Text Int
 pureInputContractCounts ports =
@@ -217,7 +179,7 @@ exactPureInputContract portName inputPort =
       | inputPort.wireInputPortCardinality == WireInputCardinalityOne ->
           Right contractId
       | otherwise ->
-          Left (PureInputPortUnsupported portName "list inputs are not supported in the first pure evaluator slice")
+          Left (PureInputPortUnsupported portName "list inputs are not supported by pure output equations")
     [] ->
       Left (PureInputPortUnsupported portName "no accepted contract")
     _ ->
@@ -234,16 +196,16 @@ generatedPurePortName contractId portName =
       suffix = T.drop (T.length prefix) portName
    in prefix `T.isPrefixOf` portName && not (T.null suffix) && T.all Char.isDigit suffix
 
-bindPureInputVariables :: WirePorts -> WireInputBundle -> Either PureEvalError (Map Text Scientific)
-bindPureInputVariables ports inputBundle = do
+bindPureInputValues :: WirePorts -> WireInputBundle -> Either PureEvalError (Map Text Aeson.Value)
+bindPureInputValues ports inputBundle = do
   validatePureInputPorts ports
   Map.fromList <$> traverse bindInputPort (Map.toAscList ports.wirePortsInputs)
   where
     bindInputPort (portName, inputPort) = do
       contractId <- exactPureInputContract portName inputPort
       wireValue <- singleMatchedValue portName contractId
-      number <- wireValueNumber portName wireValue
-      Right (portName, number)
+      value <- wireValueJson portName wireValue
+      Right (portName, value)
 
     singleMatchedValue portName contractId =
       case matchedWireValues portName contractId of
@@ -264,20 +226,421 @@ bindPureInputVariables ports inputBundle = do
       | otherwise =
           wireValue.wireValuePort == Just portName
 
-wireValueNumber :: Text -> WireValue -> Either PureEvalError Scientific
-wireValueNumber portName wireValue
+wireValueJson :: Text -> WireValue -> Either PureEvalError Aeson.Value
+wireValueJson portName wireValue
   | wireValue.wireValuePayloadKind /= WirePayloadJson =
       Left (PureInputPayloadKindMismatch portName wireValue.wireValuePayloadKind)
   | otherwise =
-      case wireValue.wireValueValue of
-        Aeson.Number number -> Right number
-        other -> Left (PureInputNonNumeric portName other)
+      Right wireValue.wireValueValue
 
-evaluatePureTaskOutput :: WirePorts -> WireInputBundle -> Text -> Either PureEvalError Aeson.Value
-evaluatePureTaskOutput ports inputBundle expressionText = do
-  validatePurePorts ports
-  variables <- bindPureInputVariables ports inputBundle
-  Aeson.Number <$> evaluatePureExprText variables expressionText
+evaluatePureTaskOutputs ::
+  WirePorts ->
+  WireInputBundle ->
+  [CorePureBinding] ->
+  Map Text CorePureExpr ->
+  Either PureEvalError (Map Text Aeson.Value)
+evaluatePureTaskOutputs ports inputBundle bindings outputExprs = do
+  validatePurePorts ports outputExprs
+  inputValues <- bindPureInputValues ports inputBundle
+  let inputEnv = Map.map CorePureJson inputValues
+  env <- foldM bindCorePureBinding (corePureBuiltinEnv <> inputEnv) bindings
+  traverse (evaluateOutput env) outputExprs
+  where
+    bindCorePureBinding env binding = do
+      value <- evaluateCorePureExpr env binding.corePureBindingExpr
+      Right (Map.insert binding.corePureBindingName value env)
+
+    evaluateOutput env outputExpr = do
+      value <- evaluateCorePureExpr env outputExpr
+      corePureValueToJson value
+
+type CorePureEnv = Map Text CorePureValue
+
+data CorePureValue
+  = CorePureJson !Aeson.Value
+  | CorePureClosure ![Text] !CorePureExpr !CorePureEnv
+  | CorePureBuiltin !Text !Int !([CorePureValue] -> Either PureEvalError CorePureValue)
+
+evaluateCorePureExpr :: CorePureEnv -> CorePureExpr -> Either PureEvalError CorePureValue
+evaluateCorePureExpr env = \case
+  CorePureLit literal ->
+    Right (CorePureJson (corePureLiteralToJson literal))
+  CorePureIdent name ->
+    case Map.lookup name env of
+      Just value -> Right value
+      Nothing -> Left (PureMissingVariable name)
+  CorePureList items -> do
+    values <- traverse (evaluateCorePureExpr env >=> corePureValueToJson) items
+    Right (CorePureJson (Aeson.Array (Vector.fromList values)))
+  CorePureRecord fields -> do
+    object <- foldM insertField KeyMap.empty fields
+    Right (CorePureJson (Aeson.Object object))
+    where
+      insertField object (CorePureField path valueExpr) = do
+        value <- evaluateCorePureExpr env valueExpr >>= corePureValueToJson
+        Right (mergeObjects object (objectForPath (foldr (:) [] path) value))
+  CorePureFieldAccess baseExpr fieldName -> do
+    baseValue <- evaluateCorePureExpr env baseExpr >>= corePureValueToJson
+    case baseValue of
+      Aeson.Object object ->
+        case KeyMap.lookup (Key.fromText fieldName) object of
+          Just value -> Right (CorePureJson value)
+          Nothing -> Left (PureFieldMissing fieldName)
+      other ->
+        Left (PureTypeMismatch "object" (jsonValueKind other))
+  CorePureIndex baseExpr indexExpr -> do
+    baseValue <- evaluateCorePureExpr env baseExpr >>= corePureValueToJson
+    indexValue <- evaluateCorePureExpr env indexExpr >>= corePureValueToJson
+    evaluateCorePureIndex baseValue indexValue
+  CorePureLambda params body ->
+    Right (CorePureClosure params body env)
+  CorePureCall functionExpr argumentExprs -> do
+    functionValue <- evaluateCorePureExpr env functionExpr
+    argumentValues <- traverse (evaluateCorePureExpr env) argumentExprs
+    applyCorePureValue functionValue argumentValues
+  CorePureUnary unaryOp operandExpr -> do
+    operand <- evaluateCorePureExpr env operandExpr
+    evaluateCorePureUnary unaryOp operand
+  CorePureBinary CorePureAnd lhsExpr rhsExpr -> do
+    lhs <- evaluateCorePureExpr env lhsExpr >>= corePureBool
+    if lhs
+      then CorePureJson . Aeson.Bool <$> (evaluateCorePureExpr env rhsExpr >>= corePureBool)
+      else Right (CorePureJson (Aeson.Bool False))
+  CorePureBinary CorePureOr lhsExpr rhsExpr -> do
+    lhs <- evaluateCorePureExpr env lhsExpr >>= corePureBool
+    if lhs
+      then Right (CorePureJson (Aeson.Bool True))
+      else CorePureJson . Aeson.Bool <$> (evaluateCorePureExpr env rhsExpr >>= corePureBool)
+  CorePureBinary binaryOp lhsExpr rhsExpr -> do
+    lhs <- evaluateCorePureExpr env lhsExpr
+    rhs <- evaluateCorePureExpr env rhsExpr
+    evaluateCorePureBinary binaryOp lhs rhs
+  CorePureLet bindings bodyExpr -> do
+    localEnv <- foldM bindLocal env bindings
+    evaluateCorePureExpr localEnv bodyExpr
+    where
+      bindLocal currentEnv binding = do
+        value <- evaluateCorePureExpr currentEnv binding.corePureBindingExpr
+        Right (Map.insert binding.corePureBindingName value currentEnv)
+
+corePureLiteralToJson :: CorePureLiteral -> Aeson.Value
+corePureLiteralToJson = \case
+  CorePureString text -> Aeson.String text
+  CorePureNumber number -> Aeson.Number number
+  CorePureBool bool -> Aeson.Bool bool
+  CorePureNull -> Aeson.Null
+
+evaluateCorePureIndex :: Aeson.Value -> Aeson.Value -> Either PureEvalError CorePureValue
+evaluateCorePureIndex baseValue indexValue =
+  case (baseValue, indexValue) of
+    (Aeson.Array values, Aeson.Number indexNumber) -> do
+      index <- integerIndex indexNumber
+      case values Vector.!? index of
+        Just value -> Right (CorePureJson value)
+        Nothing -> Left (PureIndexOutOfBounds index)
+    (Aeson.Object object, Aeson.String keyText) ->
+      case KeyMap.lookup (Key.fromText keyText) object of
+        Just value -> Right (CorePureJson value)
+        Nothing -> Left (PureFieldMissing keyText)
+    (Aeson.Array {}, other) ->
+      Left (PureTypeMismatch "integer array index" (jsonValueKind other))
+    (Aeson.Object {}, other) ->
+      Left (PureTypeMismatch "string object key" (jsonValueKind other))
+    (other, _) ->
+      Left (PureTypeMismatch "array or object" (jsonValueKind other))
+
+integerIndex :: Scientific -> Either PureEvalError Int
+integerIndex number =
+  case toBoundedInteger number of
+    Just index
+      | index >= (0 :: Int) -> Right index
+      | otherwise -> Left (PureIndexOutOfBounds index)
+    Nothing -> Left (PureTypeMismatch "integer" "number")
+
+evaluateCorePureUnary :: CorePureUnaryOp -> CorePureValue -> Either PureEvalError CorePureValue
+evaluateCorePureUnary = \case
+  CorePureNot ->
+    fmap (CorePureJson . Aeson.Bool . not) . corePureBool
+  CorePureNegate ->
+    fmap (CorePureJson . Aeson.Number . negate) . corePureNumber
+
+evaluateCorePureBinary ::
+  CorePureBinOp ->
+  CorePureValue ->
+  CorePureValue ->
+  Either PureEvalError CorePureValue
+evaluateCorePureBinary binaryOp lhs rhs =
+  case binaryOp of
+    CorePureAdd -> numericBinary (+) lhs rhs
+    CorePureSubtract -> numericBinary (-) lhs rhs
+    CorePureMultiply -> numericBinary (*) lhs rhs
+    CorePureDivide -> do
+      lhsNumber <- corePureNumber lhs
+      rhsNumber <- corePureNumber rhs
+      if rhsNumber == 0
+        then Left PureDivisionByZero
+        else Right (CorePureJson (Aeson.Number (lhsNumber / rhsNumber)))
+    CorePureEqual ->
+      jsonCompare (==) lhs rhs
+    CorePureNotEqual ->
+      jsonCompare (/=) lhs rhs
+    CorePureLessThan ->
+      numericCompare (<) lhs rhs
+    CorePureLessThanOrEqual ->
+      numericCompare (<=) lhs rhs
+    CorePureGreaterThan ->
+      numericCompare (>) lhs rhs
+    CorePureGreaterThanOrEqual ->
+      numericCompare (>=) lhs rhs
+    CorePureAnd ->
+      boolBinary (&&) lhs rhs
+    CorePureOr ->
+      boolBinary (||) lhs rhs
+
+numericBinary ::
+  (Scientific -> Scientific -> Scientific) ->
+  CorePureValue ->
+  CorePureValue ->
+  Either PureEvalError CorePureValue
+numericBinary op lhs rhs =
+  CorePureJson . Aeson.Number <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
+
+numericCompare ::
+  (Scientific -> Scientific -> Bool) ->
+  CorePureValue ->
+  CorePureValue ->
+  Either PureEvalError CorePureValue
+numericCompare op lhs rhs =
+  CorePureJson . Aeson.Bool <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
+
+boolBinary ::
+  (Bool -> Bool -> Bool) ->
+  CorePureValue ->
+  CorePureValue ->
+  Either PureEvalError CorePureValue
+boolBinary op lhs rhs =
+  CorePureJson . Aeson.Bool <$> (op <$> corePureBool lhs <*> corePureBool rhs)
+
+jsonCompare ::
+  (Aeson.Value -> Aeson.Value -> Bool) ->
+  CorePureValue ->
+  CorePureValue ->
+  Either PureEvalError CorePureValue
+jsonCompare op lhs rhs =
+  CorePureJson . Aeson.Bool <$> (op <$> corePureValueToJson lhs <*> corePureValueToJson rhs)
+
+applyCorePureValue :: CorePureValue -> [CorePureValue] -> Either PureEvalError CorePureValue
+applyCorePureValue functionValue argumentValues =
+  case functionValue of
+    CorePureClosure params body closureEnv
+      | length params == length argumentValues ->
+          evaluateCorePureExpr (Map.fromList (zip params argumentValues) <> closureEnv) body
+      | otherwise ->
+          Left (PureFunctionArity "<lambda>" (length params) (length argumentValues))
+    CorePureBuiltin name arity implementation
+      | arity == length argumentValues ->
+          implementation argumentValues
+      | otherwise ->
+          Left (PureFunctionArity name arity (length argumentValues))
+    other ->
+      Left (PureFunctionExpected (corePureValueKind other))
+
+corePureBuiltinEnv :: CorePureEnv
+corePureBuiltinEnv =
+  Map.fromList
+    [ builtin "map" 2 corePureMap,
+      builtin "fmap" 2 corePureMap,
+      builtin "filter" 2 corePureFilter,
+      builtin "zip" 2 corePureZip,
+      builtin "zipWith" 3 corePureZipWith,
+      builtin "length" 1 corePureLength,
+      builtin "sum" 1 corePureSum,
+      builtin "all" 2 corePureAll,
+      builtin "any" 2 corePureAny,
+      builtin "min" 2 (numericBuiltin2 min),
+      builtin "max" 2 (numericBuiltin2 max),
+      builtin "abs" 1 corePureAbs,
+      builtin "clamp" 3 corePureClamp
+    ]
+  where
+    builtin name arity implementation =
+      (name, CorePureBuiltin name arity implementation)
+
+corePureMap :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureMap [functionValue, listValue] = do
+  values <- corePureArray listValue
+  mapped <- traverse (applyJsonFunction functionValue) (Vector.toList values)
+  CorePureJson . Aeson.Array . Vector.fromList <$> traverse corePureValueToJson mapped
+corePureMap args = impossibleBuiltinArity "map" 2 args
+
+corePureFilter :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFilter [functionValue, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  filtered <-
+    filterMCore
+      ( \value -> do
+          result <- applyJsonFunction functionValue value
+          corePureBool result
+      )
+      values
+  Right (CorePureJson (Aeson.Array (Vector.fromList filtered)))
+corePureFilter args = impossibleBuiltinArity "filter" 2 args
+
+corePureZip :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureZip [lhsValue, rhsValue] = do
+  lhs <- Vector.toList <$> corePureArray lhsValue
+  rhs <- Vector.toList <$> corePureArray rhsValue
+  let pairs =
+        [ Aeson.Array (Vector.fromList [lhsItem, rhsItem])
+        | (lhsItem, rhsItem) <- zip lhs rhs
+        ]
+  Right (CorePureJson (Aeson.Array (Vector.fromList pairs)))
+corePureZip args = impossibleBuiltinArity "zip" 2 args
+
+corePureZipWith :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureZipWith [functionValue, lhsValue, rhsValue] = do
+  lhs <- Vector.toList <$> corePureArray lhsValue
+  rhs <- Vector.toList <$> corePureArray rhsValue
+  mapped <-
+    traverse
+      ( \(lhsItem, rhsItem) ->
+          applyCorePureValue functionValue [CorePureJson lhsItem, CorePureJson rhsItem]
+            >>= corePureValueToJson
+      )
+      (zip lhs rhs)
+  Right (CorePureJson (Aeson.Array (Vector.fromList mapped)))
+corePureZipWith args = impossibleBuiltinArity "zipWith" 3 args
+
+corePureLength :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureLength [value] =
+  case value of
+    CorePureJson (Aeson.Array values) ->
+      Right (CorePureJson (Aeson.Number (fromIntegral (Vector.length values))))
+    CorePureJson (Aeson.Object object) ->
+      Right (CorePureJson (Aeson.Number (fromIntegral (KeyMap.size object))))
+    other ->
+      Left (PureTypeMismatch "array or object" (corePureValueKind other))
+corePureLength args = impossibleBuiltinArity "length" 1 args
+
+corePureSum :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureSum [listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  numbers <- traverse (corePureNumber . CorePureJson) values
+  Right (CorePureJson (Aeson.Number (sum numbers)))
+corePureSum args = impossibleBuiltinArity "sum" 1 args
+
+corePureAll :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureAll [functionValue, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  results <- traverse (applyJsonFunction functionValue >=> corePureBool) values
+  Right (CorePureJson (Aeson.Bool (and results)))
+corePureAll args = impossibleBuiltinArity "all" 2 args
+
+corePureAny :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureAny [functionValue, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  results <- traverse (applyJsonFunction functionValue >=> corePureBool) values
+  Right (CorePureJson (Aeson.Bool (or results)))
+corePureAny args = impossibleBuiltinArity "any" 2 args
+
+numericBuiltin2 ::
+  (Scientific -> Scientific -> Scientific) ->
+  [CorePureValue] ->
+  Either PureEvalError CorePureValue
+numericBuiltin2 op [lhs, rhs] =
+  numericBinary op lhs rhs
+numericBuiltin2 _ args =
+  impossibleBuiltinArity "<numeric>" 2 args
+
+corePureAbs :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureAbs [value] =
+  CorePureJson . Aeson.Number . abs <$> corePureNumber value
+corePureAbs args = impossibleBuiltinArity "abs" 1 args
+
+corePureClamp :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureClamp [minValue, maxValue, value] = do
+  minNumber <- corePureNumber minValue
+  maxNumber <- corePureNumber maxValue
+  number <- corePureNumber value
+  Right (CorePureJson (Aeson.Number (max minNumber (min maxNumber number))))
+corePureClamp args = impossibleBuiltinArity "clamp" 3 args
+
+applyJsonFunction :: CorePureValue -> Aeson.Value -> Either PureEvalError CorePureValue
+applyJsonFunction functionValue value =
+  applyCorePureValue functionValue [CorePureJson value]
+
+filterMCore :: (a -> Either PureEvalError Bool) -> [a] -> Either PureEvalError [a]
+filterMCore predicate =
+  foldM
+    ( \acc value -> do
+        keep <- predicate value
+        Right (if keep then acc <> [value] else acc)
+    )
+    []
+
+impossibleBuiltinArity :: Text -> Int -> [CorePureValue] -> Either PureEvalError a
+impossibleBuiltinArity name expected args =
+  Left (PureFunctionArity name expected (length args))
+
+corePureValueToJson :: CorePureValue -> Either PureEvalError Aeson.Value
+corePureValueToJson = \case
+  CorePureJson value -> Right value
+  CorePureClosure {} -> Left (PureTypeMismatch "JSON value" "function")
+  CorePureBuiltin {} -> Left (PureTypeMismatch "JSON value" "function")
+
+corePureNumber :: CorePureValue -> Either PureEvalError Scientific
+corePureNumber value =
+  case value of
+    CorePureJson (Aeson.Number number) -> Right number
+    other -> Left (PureTypeMismatch "number" (corePureValueKind other))
+
+corePureBool :: CorePureValue -> Either PureEvalError Bool
+corePureBool value =
+  case value of
+    CorePureJson (Aeson.Bool bool) -> Right bool
+    other -> Left (PureTypeMismatch "boolean" (corePureValueKind other))
+
+corePureArray :: CorePureValue -> Either PureEvalError (Vector.Vector Aeson.Value)
+corePureArray value =
+  case value of
+    CorePureJson (Aeson.Array values) -> Right values
+    other -> Left (PureTypeMismatch "array" (corePureValueKind other))
+
+corePureValueKind :: CorePureValue -> Text
+corePureValueKind = \case
+  CorePureJson value -> jsonValueKind value
+  CorePureClosure {} -> "function"
+  CorePureBuiltin {} -> "function"
+
+jsonValueKind :: Aeson.Value -> Text
+jsonValueKind = \case
+  Aeson.Object {} -> "object"
+  Aeson.Array {} -> "array"
+  Aeson.String {} -> "string"
+  Aeson.Number {} -> "number"
+  Aeson.Bool {} -> "boolean"
+  Aeson.Null -> "null"
+
+objectForPath :: [Text] -> Aeson.Value -> KeyMap.KeyMap Aeson.Value
+objectForPath [] value =
+  case value of
+    Aeson.Object object -> object
+    _ -> KeyMap.empty
+objectForPath [segment] value =
+  KeyMap.singleton (Key.fromText segment) value
+objectForPath (segment : rest) value =
+  KeyMap.singleton
+    (Key.fromText segment)
+    (Aeson.Object (objectForPath rest value))
+
+mergeObjects :: KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value
+mergeObjects =
+  KeyMap.unionWith mergeJsonValue
+
+mergeJsonValue :: Aeson.Value -> Aeson.Value -> Aeson.Value
+mergeJsonValue (Aeson.Object leftObj) (Aeson.Object rightObj) =
+  Aeson.Object (mergeObjects leftObj rightObj)
+mergeJsonValue _ rightValue = rightValue
 
 pureWireExecutorId :: WireExecutorId
 pureWireExecutorId = WireExecutorId "pure"
@@ -302,91 +665,19 @@ pureExecutorConfigSchema =
   Aeson.object
     [ "$schema" Aeson..= ("https://json-schema.org/draft/2020-12/schema" :: Text),
       "type" Aeson..= ("object" :: Text),
-      "required" Aeson..= ["expr" :: Text],
+      "required" Aeson..= ["outputs" :: Text],
       "additionalProperties" Aeson..= False,
       "properties"
         Aeson..= Aeson.object
-          [ "expr"
+          [ "bindings"
               Aeson..= Aeson.object
-                [ "type" Aeson..= ("string" :: Text),
-                  "description"
-                    Aeson..= ( "Numeric Wire pure expression over explicit input labels." ::
-                                 Text
-                             )
+                [ "type" Aeson..= ("array" :: Text),
+                  "description" Aeson..= ("CorePure let bindings shared by all pure outputs." :: Text)
+                ],
+            "outputs"
+              Aeson..= Aeson.object
+                [ "type" Aeson..= ("object" :: Text),
+                  "description" Aeson..= ("Map from output port name to CorePure expression AST." :: Text)
                 ]
           ]
-    ]
-
-spaceConsumer :: Parser ()
-spaceConsumer =
-  L.space space1 empty empty
-
-lexeme :: Parser a -> Parser a
-lexeme = L.lexeme spaceConsumer
-
-symbol :: Text -> Parser Text
-symbol = L.symbol spaceConsumer
-
-identifier :: Parser Text
-identifier = lexeme . try $ do
-  firstChar <- satisfy (\c -> Char.isAlpha c || c == '_')
-  rest <- takeWhileP Nothing (\c -> Char.isAlphaNum c || c == '_')
-  pure (T.cons firstChar rest)
-
-numberLiteral :: Parser PureExpr
-numberLiteral =
-  PureNumber <$> lexeme (L.signed (pure ()) L.scientific)
-
-variable :: Parser PureExpr
-variable =
-  PureVariable <$> identifier
-
-term :: Parser PureExpr
-term =
-  choice
-    [ between (symbol "(") (symbol ")") expression,
-      numberLiteral,
-      variable
-    ]
-
-factor :: Parser PureExpr
-factor =
-  (symbol "-" *> (PureNegate <$> factor))
-    <|> term
-
-expression :: Parser PureExpr
-expression =
-  chainLeft multiplyExpression addOperator
-
-multiplyExpression :: Parser PureExpr
-multiplyExpression =
-  chainLeft factor multiplyOperator
-
-chainLeft :: Parser PureExpr -> Parser (PureExpr -> PureExpr -> PureExpr) -> Parser PureExpr
-chainLeft operand operator = do
-  first <- operand
-  foldl' (\acc (op, rhs) -> op acc rhs) first <$> manyOperatorApplications
-  where
-    manyOperatorApplications =
-      manyPairs []
-    manyPairs acc =
-      ( do
-          op <- operator
-          rhs <- operand
-          manyPairs (acc <> [(op, rhs)])
-      )
-        <|> pure acc
-
-addOperator :: Parser (PureExpr -> PureExpr -> PureExpr)
-addOperator =
-  choice
-    [ symbol "+" $> PureAdd,
-      symbol "-" $> PureSubtract
-    ]
-
-multiplyOperator :: Parser (PureExpr -> PureExpr -> PureExpr)
-multiplyOperator =
-  choice
-    [ symbol "*" $> PureMultiply,
-      try (symbol "/" <* notFollowedBy (char '/')) $> PureDivide
     ]

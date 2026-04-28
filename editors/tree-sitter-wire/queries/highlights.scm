@@ -6,10 +6,13 @@
 "contract" @keyword
 "node"     @keyword
 "let"      @keyword
+"in"       @keyword
 "import"   @keyword
 "from"     @keyword
+"pure"     @keyword
 
 (boolean) @constant.builtin
+(null)    @constant.builtin
 
 ; ── Operators ───────────────────────────────────────────────────────────
 
@@ -22,6 +25,19 @@
 "|"    @operator  ; sum-group separator
 "="    @operator
 "@"    @operator
+"+"    @operator
+"-"    @operator
+"*"    @operator
+"/"    @operator
+"=="   @operator
+"!="   @operator
+"<"    @operator
+"<="   @operator
+">"    @operator
+">="   @operator
+"&&"   @operator
+"||"   @operator
+"!"    @operator
 
 ; ── Punctuation ─────────────────────────────────────────────────────────
 
@@ -44,6 +60,7 @@
 
 ; let <name> = <expr>;
 (let_binding name: (identifier) @constant)
+(pure_let_binding name: (identifier) @constant)
 
 ; contract <Name>;
 (contract_decl
@@ -68,6 +85,8 @@
 ; ── Fields in records ──────────────────────────────────────────────────
 
 (field path: (field_path (identifier) @property))
+(core_pure_field path: (field_path (identifier) @property))
+(core_pure_binding name: (identifier) @constant)
 
 ; ── Port labels ────────────────────────────────────────────────────────
 
@@ -76,6 +95,7 @@
 ; ── Identifier references ──────────────────────────────────────────────
 
 (ident_ref) @variable
+(core_pure_ident) @variable
 
 ; ── Literals ───────────────────────────────────────────────────────────
 
