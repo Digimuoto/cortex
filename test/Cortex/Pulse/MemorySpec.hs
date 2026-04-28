@@ -11,7 +11,7 @@
 --     the determinism property (same inputs ⇒ same outputs).
 module Cortex.Pulse.MemorySpec (spec) where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation,
     edges,
     toRelation,

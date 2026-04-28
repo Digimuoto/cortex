@@ -16,7 +16,7 @@ module Cortex.Pulse.Memory.Query
   )
 where
 
-import Cortex.Graph (Relation, dagRandomWalkInfluence)
+import Cortex.Algebra.Graph (Relation, dagRandomWalkInfluence)
 import Cortex.Pulse.Memory.Score (composeScore)
 import Cortex.Pulse.Memory.Types
   ( ExtractedFields (..),

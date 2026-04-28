@@ -26,9 +26,9 @@ module Cortex.Wire.AST
   )
 where
 
-import Cortex.Circuit.IR (CircuitNodeRef (..))
-import Cortex.Graph (ValidationError (..))
+import Cortex.Algebra.Graph (ValidationError (..))
 import Cortex.Pulse.Memory.Types (MemoryStrategy)
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson qualified as Aeson
 import Data.Int (Int32)

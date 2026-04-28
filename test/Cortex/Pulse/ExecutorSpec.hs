@@ -14,18 +14,7 @@ import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, tryPutMVar)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, writeTVar)
 import Control.Exception (AsyncException (ThreadKilled), SomeException, displayException, finally, throwIO, try)
 import Control.Monad (void, when)
-import Cortex.Circuit.Artifact (CompiledCircuit (..))
-import Cortex.Circuit.IR
-  ( CircuitNodeRef (..),
-    CircuitTaskNode (..),
-  )
-import Cortex.Circuit.Lower
-  ( CircuitLoweringError (..),
-    CircuitPulseBinder (..),
-    CircuitPulseConfig (..),
-    lowerCompiledCircuitToStagePlan,
-  )
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Graph (..),
     Relation (..),
     edge,
@@ -104,6 +93,17 @@ import Cortex.Wire
     defaultInputPortName,
     defaultOutputPortName,
     emptyWireCompileEnv,
+  )
+import Cortex.Wire.Circuit.Artifact (CompiledCircuit (..))
+import Cortex.Wire.Circuit.IR
+  ( CircuitNodeRef (..),
+    CircuitTaskNode (..),
+  )
+import Cortex.Wire.Circuit.Lower
+  ( CircuitLoweringError (..),
+    CircuitPulseBinder (..),
+    CircuitPulseConfig (..),
+    lowerCompiledCircuitToStagePlan,
   )
 import Data.Aeson qualified as Aeson
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)

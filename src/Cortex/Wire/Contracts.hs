@@ -16,7 +16,7 @@ module Cortex.Wire.Contracts
 where
 
 import Control.Monad (void)
-import Cortex.Circuit.IR (CircuitNodeRef (..))
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Syntax
 import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
 import Data.Aeson (ToJSON (..), (.:), (.=))

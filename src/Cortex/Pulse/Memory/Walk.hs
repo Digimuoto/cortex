@@ -22,7 +22,7 @@ module Cortex.Pulse.Memory.Walk
   )
 where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation,
     successors,
     transposeRelation,

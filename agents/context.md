@@ -9,11 +9,11 @@ the substrate and depends on it, not the other way round.
 
 ## Repository Shape
 
-- `src/Cortex/` - main Haskell library. Canonical substrate roots are `Cortex.Graph`,
-  `Cortex.Circuit`, `Cortex.Wire`, `Cortex.Pulse`, `Cortex.Memory`, `Cortex.Capability`,
-  `Cortex.Document`, and `Cortex.Event`. Implementation-era roots such as `Cortex.Task`,
-  `Cortex.Provider`, `Cortex.Research`, and `Cortex.Run` remain only as migration surfaces until the
-  Nous follow-up lands.
+- `src/Cortex/` - main Haskell library. Canonical public roots are `Cortex.Algebra`, `Cortex.Wire`,
+  `Cortex.Pulse`, `Cortex.Capability`, `Cortex.Artifact`, and `Cortex.Nous`. Implementation-era
+  roots such as `Cortex.Agent`, `Cortex.Task`, `Cortex.Provider`, `Cortex.Research`, `Cortex.Run`,
+  `Cortex.Graph`, `Cortex.Circuit`, `Cortex.Memory`, `Cortex.Document`, and `Cortex.Event` have been
+  removed from the public tree.
 - `src-platform/Platform/` - runtime substrate library Cortex depends on: `Platform.Observability`,
   `Platform.DurableTask`, `Platform.Database`, `Platform.HTTP.Retry`, `Platform.Text`, etc. Exposed
   as a public Cabal sub-library (`cortex:platform-runtime`).

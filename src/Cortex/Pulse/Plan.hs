@@ -37,7 +37,7 @@ module Cortex.Pulse.Plan
 where
 
 import Control.Exception (SomeException)
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation (..),
     ValidationError (..),
     path,

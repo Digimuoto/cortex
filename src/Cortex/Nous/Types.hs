@@ -82,7 +82,7 @@ nousCapabilityBundle archetype =
   let definition = nousArchetypeDefinition archetype
    in NousCapabilityBundle
         { nousCapabilityBundleArchetype = archetype,
-          nousCapabilityBundlePath = nousArchetypeDefinitionPath definition <> ".Capability",
+          nousCapabilityBundlePath = nousArchetypeDefinitionPath definition <> ".Activation",
           nousCapabilityBundleStatus = NousCapabilityBundleStub,
           nousCapabilityBundleDefinition = definition,
           nousCapabilityBundleComponents = defaultNousCapabilityBundleComponents
@@ -219,4 +219,4 @@ nousArchetypeDefinition Poiesis =
     }
 
 nousArchetypePath :: NousArchetype -> Text
-nousArchetypePath archetype = "Cortex.Nous." <> T.pack (show archetype)
+nousArchetypePath archetype = "Cortex.Nous.Archetypes." <> T.pack (show archetype)

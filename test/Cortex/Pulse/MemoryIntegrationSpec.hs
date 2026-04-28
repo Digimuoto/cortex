@@ -24,7 +24,7 @@
 module Cortex.Pulse.MemoryIntegrationSpec (spec) where
 
 import Control.Concurrent.STM (atomically, modifyTVar', newTVarIO, writeTVar)
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation,
     edges,
     toRelation,

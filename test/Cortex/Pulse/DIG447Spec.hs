@@ -3,7 +3,7 @@
 
 module Cortex.Pulse.DIG447Spec (spec) where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Graph (..),
     toRelation,
   )

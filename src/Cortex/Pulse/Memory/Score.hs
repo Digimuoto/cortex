@@ -51,7 +51,7 @@ import Data.Time (UTCTime, diffUTCTime)
 -- influence; the reviewer balances all three).
 --
 -- The graph-axis input is a random-walk influence value produced by
--- 'Cortex.Graph.Influence.dagRandomWalkInfluence' — a
+-- 'Cortex.Algebra.Graph.Influence.dagRandomWalkInfluence' — a
 -- connectivity-aware signal that rewards merges over linear chains.
 -- The hop count from the walk is still carried on the
 -- 'Cortex.Pulse.Memory.Types.MatchedObservation' for display and for

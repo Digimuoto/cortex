@@ -16,7 +16,7 @@ import Control.Concurrent.QSem (QSem, newQSem, signalQSem, waitQSem)
 import Control.Concurrent.STM (TVar, atomically, check, modifyTVar', newTVarIO, readTVar, readTVarIO, writeTVar)
 import Control.Exception (SomeException, bracket_, displayException, mask, try)
 import Control.Monad (foldM, forM, forM_, unless, when)
-import Cortex.Graph (Relation)
+import Cortex.Algebra.Graph (Relation)
 import Cortex.Pulse.Executor.Attempt
   ( attemptStage,
     withPreAttemptGuards,

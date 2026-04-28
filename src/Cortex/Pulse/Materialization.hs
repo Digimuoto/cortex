@@ -20,7 +20,7 @@ module Cortex.Pulse.Materialization
 where
 
 import Control.Monad (when)
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation (..),
     relEdges,
     relVertices,

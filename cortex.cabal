@@ -189,27 +189,29 @@ library
         megaparsec >=9.2
     other-modules:
         Paths_cortex
-        Cortex.Graph.Core
-        Cortex.Graph.Modify
-        Cortex.Graph.Search
-        Cortex.Graph.Decompose
-        Cortex.Graph.Influence
-        Cortex.Graph.Validate
         Cortex.Nous.Types
         Cortex.Wire.AST
         Cortex.Wire.Contracts
         Cortex.Wire.Proposal
         Cortex.Wire.Runtime
         Cortex.Wire.Value
-        Cortex.Wire.V1.AST
-        Cortex.Wire.V1.Compiler
-        Cortex.Wire.V1.Parser
     exposed-modules:
         Cortex
-        Cortex.Agent.Config
-        Cortex.Agent.Definition
-        Cortex.Agent.Policy
+        Cortex.Algebra
+        Cortex.Algebra.Graph
+        Cortex.Algebra.Graph.Core
+        Cortex.Algebra.Graph.Decompose
+        Cortex.Algebra.Graph.Influence
+        Cortex.Algebra.Graph.Modify
+        Cortex.Algebra.Graph.Mokhov
+        Cortex.Algebra.Graph.Search
+        Cortex.Algebra.Graph.Validate
+        Cortex.Artifact
+        Cortex.Artifact.Host
+        Cortex.Artifact.IR
+        Cortex.Artifact.Metadata
         Cortex.Capability
+        Cortex.Capability.Executor
         Cortex.Capability.Model
         Cortex.Capability.Model.Client
         Cortex.Capability.Model.Message
@@ -223,70 +225,53 @@ library
         Cortex.Capability.StructuredOutput
         Cortex.Capability.Tool
         Cortex.Capability.Tool.Definition
-        Cortex.Capability.Tool.Host
-        Cortex.Capability.Tool.Loop
         Cortex.Capability.Tool.Record
-        Cortex.Document
-        Cortex.Document.Host
-        Cortex.Document.IR
-        Cortex.Document.Metadata
-        Cortex.Document.Report
-        Cortex.Document.Section
-        Cortex.Event
-        Cortex.Events
-        Cortex.Graph
-        Cortex.Graph.Algebra
-        Cortex.Graph.Mokhov
-        Cortex.Json.Object
-        Cortex.Json.Preview
-        Cortex.Json.Text
         Cortex.Nous
-        Cortex.Nous.Episteme
-        Cortex.Nous.Episteme.Capability
-        Cortex.Nous.Kritikos
-        Cortex.Nous.Kritikos.Capability
-        Cortex.Nous.Logos
-        Cortex.Nous.Logos.Capability
+        Cortex.Nous.Archetypes
+        Cortex.Nous.Archetypes.Episteme
+        Cortex.Nous.Archetypes.Episteme.Activation
+        Cortex.Nous.Archetypes.Kritikos
+        Cortex.Nous.Archetypes.Kritikos.Activation
+        Cortex.Nous.Archetypes.Logos
+        Cortex.Nous.Archetypes.Logos.Activation
+        Cortex.Nous.Archetypes.Poiesis
+        Cortex.Nous.Archetypes.Poiesis.Activation
+        Cortex.Nous.Archetypes.Sophia
+        Cortex.Nous.Archetypes.Sophia.Activation
+        Cortex.Nous.Archetypes.Techne
+        Cortex.Nous.Archetypes.Techne.Activation
+        Cortex.Nous.Archetypes.Themis
+        Cortex.Nous.Archetypes.Themis.Activation
+        Cortex.Nous.Memory
+        Cortex.Nous.Memory.Candidate
+        Cortex.Nous.Memory.Candidates
+        Cortex.Nous.Memory.Compact
+        Cortex.Nous.Memory.Conflict
+        Cortex.Nous.Memory.Document
+        Cortex.Nous.Memory.Host
+        Cortex.Nous.Memory.Pack
+        Cortex.Nous.Memory.Query
+        Cortex.Nous.Memory.Rank
+        Cortex.Nous.Memory.Retrieve
+        Cortex.Nous.Memory.Source
+        Cortex.Nous.Memory.Types
+        Cortex.Nous.Patterns.DeepReport
         Cortex.Nous.Patterns.DeepReport.Contracts
-        Cortex.Nous.Poiesis
-        Cortex.Nous.Poiesis.Capability
-        Cortex.Nous.Sophia
-        Cortex.Nous.Sophia.Capability
-        Cortex.Nous.Techne
-        Cortex.Nous.Techne.Capability
-        Cortex.Nous.Themis
-        Cortex.Nous.Themis.Capability
-        Cortex.Provider.OpenRouter
-        Cortex.Provider.OpenRouter.Client
-        Cortex.Provider.OpenRouter.Embeddings
-        Cortex.Provider.OpenRouter.Wire
-        Cortex.Memory
-        Cortex.Memory.Candidate
-        Cortex.Memory.Candidates
-        Cortex.Memory.Compact
-        Cortex.Memory.Conflict
-        Cortex.Memory.Document
-        Cortex.Memory.Host
-        Cortex.Memory.Pack
-        Cortex.Memory.Query
-        Cortex.Memory.Rank
-        Cortex.Memory.Retrieve
-        Cortex.Memory.Source
-        Cortex.Memory.Types
-        Cortex.MemoryCompaction
-        Cortex.Research.Runtime
-        Cortex.Research.Section
-        Cortex.Run.Engine
-        Cortex.Run.Types
-        Cortex.Task.Gather
-        Cortex.Task.Host
-        Cortex.Task.Plan
-        Cortex.Task.Report
-        Cortex.Task.Runtime
-        Cortex.Task.StructuredOutput
-        Cortex.Task.ToolHost
-        Cortex.Task.ToolLoop
-        Cortex.Text
+        Cortex.Nous.Patterns.DeepReport.Gather
+        Cortex.Nous.Patterns.DeepReport.LegacyReportTask
+        Cortex.Nous.Patterns.DeepReport.Section
+        Cortex.Nous.Patterns.DeepReport.Section.Runtime
+        Cortex.Nous.Patterns.PlanReview
+        Cortex.Nous.Thought
+        Cortex.Nous.Thought.Event
+        Cortex.Nous.Thought.Frame
+        Cortex.Nous.Thought.Host
+        Cortex.Nous.Thought.Policy
+        Cortex.Nous.Thought.Runtime
+        Cortex.Nous.Thought.Stage
+        Cortex.Nous.Thought.StructuredOutput
+        Cortex.Nous.Thought.ToolHost
+        Cortex.Nous.Thought.ToolLoop
         Cortex.Pulse
         Cortex.Pulse.Attempt
         Cortex.Pulse.Event
@@ -308,17 +293,22 @@ library
         Cortex.Pulse.Replay
         Cortex.Pulse.Resume
         Cortex.Pulse.Runtime
-        Cortex.Circuit
-        Cortex.Circuit.Artifact
-        Cortex.Circuit.Compile
         Cortex.Wire
         Cortex.Wire.Compile
         Cortex.Wire.Contract
+        Cortex.Wire.Executor
         Cortex.Wire.Parser
         Cortex.Wire.Syntax
-        Cortex.Wire.V1
-        Cortex.Circuit.Compiled
-        Cortex.Circuit.Compiler
+        Cortex.Wire.Circuit
+        Cortex.Wire.Circuit.Artifact
+        Cortex.Wire.Circuit.Compile
+        Cortex.Wire.Circuit.Compiled
+        Cortex.Wire.Circuit.Compiler
+        Cortex.Wire.Circuit.IR
+        Cortex.Wire.Circuit.Lower
+        Cortex.Wire.Circuit.Lowering
+        Cortex.Wire.Circuit.Node
+        Cortex.Wire.Circuit.NodeKind
         Cortex.Pulse.GraphRuntime
         Cortex.Pulse.Health
         Cortex.Pulse.Materialization
@@ -337,11 +327,6 @@ library
         Cortex.Pulse.Signal
         Cortex.Pulse.Scheduler
         Cortex.Pulse.Types
-        Cortex.Circuit.IR
-        Cortex.Circuit.Lower
-        Cortex.Circuit.Lowering
-        Cortex.Circuit.Node
-        Cortex.Circuit.NodeKind
 
 -- Pulse executor binary: substrate shell.
 -- Ships with an empty task registry; downstream consumers link their own.
@@ -369,23 +354,29 @@ test-suite cortex-test
     build-tool-depends:
         hspec-discover:hspec-discover >=2.10
     other-modules:
-        Cortex.PublicPreludeSpec
-        Cortex.Agent.ConfigSpec
-        Cortex.Circuit.CompilerSpec
-        Cortex.Circuit.IRSpec
-        Cortex.Document.IRSpec
-        Cortex.GraphSpec
-        Cortex.Memory.CandidatesSpec
-        Cortex.Memory.ConflictSpec
-        Cortex.Memory.DocumentSpec
-        Cortex.Memory.PackSpec
-        Cortex.Memory.QuerySpec
-        Cortex.Memory.RankSpec
-        Cortex.Memory.RetrieveSpec
-        Cortex.Memory.SourceSpec
-        Cortex.MemoryCompactionSpec
+        Cortex.Algebra.GraphSpec
+        Cortex.Artifact.IRSpec
+        Cortex.CanonicalModuleTreeSpec
+        Cortex.Capability.Provider.OpenRouterSpec
+        Cortex.Capability.StructuredOutputSpec
+        Cortex.Nous.Memory.CandidatesSpec
+        Cortex.Nous.Memory.CompactSpec
+        Cortex.Nous.Memory.ConflictSpec
+        Cortex.Nous.Memory.DocumentSpec
+        Cortex.Nous.Memory.PackSpec
+        Cortex.Nous.Memory.QuerySpec
+        Cortex.Nous.Memory.RankSpec
+        Cortex.Nous.Memory.RetrieveSpec
+        Cortex.Nous.Memory.SourceSpec
         Cortex.Nous.Patterns.DeepReport.ContractsSpec
-        Cortex.Provider.OpenRouterSpec
+        Cortex.Nous.Patterns.DeepReport.GatherSpec
+        Cortex.Nous.Patterns.DeepReport.LegacyReportTaskSpec
+        Cortex.Nous.Patterns.DeepReport.Section.RuntimeSpec
+        Cortex.Nous.Patterns.DeepReport.SectionSpec
+        Cortex.Nous.Patterns.PlanReviewSpec
+        Cortex.Nous.Thought.FrameSpec
+        Cortex.Nous.Thought.ToolLoopSpec
+        Cortex.PublicPreludeSpec
         Cortex.Pulse.DIG447Spec
         Cortex.Pulse.DIG448Spec
         Cortex.Pulse.DIG449Spec
@@ -397,16 +388,11 @@ test-suite cortex-test
         Cortex.Pulse.MemoryToolSpec
         Cortex.Pulse.SchedulerSpec
         Cortex.Pulse.TypesSpec
-        Cortex.Research.RuntimeSpec
-        Cortex.Research.SectionSpec
-        Cortex.Task.GatherSpec
-        Cortex.Task.PlanSpec
-        Cortex.Task.ReportSpec
-        Cortex.Task.StructuredOutputSpec
-        Cortex.Task.ToolLoopSpec
         Cortex.TestSupport.Database
-        Cortex.Wire.V1.CompilerSpec
-        Cortex.Wire.V1.ParserSpec
+        Cortex.Wire.Circuit.CompilerSpec
+        Cortex.Wire.Circuit.IRSpec
+        Cortex.Wire.CompileSpec
+        Cortex.Wire.ParserSpec
         Platform.DurableTask.CheckpointSpec
         Platform.DurableTask.CronSpec
         Platform.DurableTask.ErrorSpec

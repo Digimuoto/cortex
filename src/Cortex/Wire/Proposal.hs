@@ -19,17 +19,17 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (when)
-import Cortex.Circuit.Artifact (CircuitConditionNode (..), CompiledCircuit (..), CompiledCircuitNode (..))
-import Cortex.Circuit.IR
+import Cortex.Wire.Circuit.Artifact (CircuitConditionNode (..), CompiledCircuit (..), CompiledCircuitNode (..))
+import Cortex.Wire.Circuit.IR
   ( CircuitArtifactBoundary (..),
     CircuitNodeRef (..),
     CircuitRewriteBoundary (..),
     CircuitSignalBoundary (..),
     CircuitTaskNode (..),
   )
+import Cortex.Wire.Compile qualified as WireCompile
 import Cortex.Wire.Contract (WireCompileEnv, wirePortsFromMetadataValue)
 import Cortex.Wire.Syntax
-import Cortex.Wire.V1 qualified as WireV1
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -139,7 +139,7 @@ compileWireAppendProposalWithEnv compileEnv appendHole rawSource = do
   compiled <-
     mapLeft
       WireProposalCompileError
-      (WireV1.compileWireFragmentTextWithEnv compileEnv rawSource)
+      (WireCompile.compileWireFragmentTextWithEnv compileEnv rawSource)
   nodePorts <- proposalPortsCatalogFromCompiled compiled
   validateAppendHole appendHole nodePorts compiled
   Right compiled

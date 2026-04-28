@@ -1,5 +1,7 @@
 module Cortex.Wire
   ( module Cortex.Wire.Syntax,
+    module Cortex.Wire.Circuit,
+    module Cortex.Wire.Executor,
     WireCompileEnv (..),
     WireContractSpec (..),
     WireContractRegistry (..),
@@ -51,6 +53,7 @@ module Cortex.Wire
   )
 where
 
+import Cortex.Wire.Circuit
 import Cortex.Wire.Compile
   ( compileWireFile,
     compileWireFileWithEnv,
@@ -70,6 +73,7 @@ import Cortex.Wire.Contract
     wireContractRegistryFromList,
     wirePortsFromMetadataValue,
   )
+import Cortex.Wire.Executor
 import Cortex.Wire.Parser
   ( ParseError,
     parseWireExpr,

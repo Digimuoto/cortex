@@ -55,7 +55,7 @@ module Cortex.Pulse.GraphRuntime
   )
 where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation (..),
     predecessors,
     successors,

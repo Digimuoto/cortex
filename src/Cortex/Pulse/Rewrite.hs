@@ -28,7 +28,7 @@ module Cortex.Pulse.Rewrite
   )
 where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation (..),
     ValidationError (..),
     addEdge,

@@ -45,7 +45,7 @@ module Cortex.Pulse.Memory
 where
 
 import Control.Concurrent.STM (TVar, atomically, readTVar)
-import Cortex.Graph (Relation)
+import Cortex.Algebra.Graph (Relation)
 import Cortex.Pulse.Materialize (PersistedGraphState (..))
 import Cortex.Pulse.Memory.Query (pureQueryMemory)
 import Cortex.Pulse.Memory.Types

@@ -4,34 +4,32 @@
 -- API. Area modules remain available for advanced use, but this module is the
 -- boundary that accumulates public compatibility promises.
 module Cortex
-  ( module Cortex.Capability,
-    module Cortex.Circuit,
-    module Cortex.Document,
+  ( module Cortex.Algebra.Graph,
+    module Cortex.Artifact,
+    module Cortex.Capability,
     DocumentValidationError,
-    module Cortex.Event,
-    module Cortex.Graph,
     GraphValidationError,
-    module Cortex.Memory,
+    module Cortex.Nous.Memory,
     module Cortex.Nous,
     module Cortex.Pulse,
     module Cortex.Wire,
+    module Cortex.Wire.Circuit,
   )
 where
 
+import Cortex.Algebra.Graph hiding (ValidationError)
+import Cortex.Algebra.Graph qualified as Graph
+import Cortex.Artifact hiding (ValidationError)
+import Cortex.Artifact qualified as Artifact
 import Cortex.Capability
-import Cortex.Circuit
-import Cortex.Document hiding (ValidationError)
-import Cortex.Document qualified as Document
-import Cortex.Event
-import Cortex.Graph hiding (ValidationError)
-import Cortex.Graph qualified as Graph
-import Cortex.Memory
 import Cortex.Nous
+import Cortex.Nous.Memory
 import Cortex.Pulse
 import Cortex.Wire
+import Cortex.Wire.Circuit
 
 -- | Domain-shaped alias for document validation failures.
-type DocumentValidationError = Document.ValidationError
+type DocumentValidationError = Artifact.ValidationError
 
 -- | Domain-shaped alias for graph validation failures.
 type GraphValidationError = Graph.ValidationError

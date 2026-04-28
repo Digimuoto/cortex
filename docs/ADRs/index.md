@@ -36,6 +36,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0017](0017-cortex-roots-and-nous-pattern-extraction.md)        | Cortex Roots and Nous Pattern Extraction                            | proposed   |
 | [0018](0018-wire-executor-and-port-catalog-boundary.md)         | Wire Executor and Port Catalog Boundary                             | proposed   |
 | [0019](0019-wire-pure-nodes.md)                                 | Wire Pure Nodes                                                     | proposed   |
+| [0020](0020-canonical-haskell-module-tree.md)                   | Canonical Haskell Module Tree                                       | proposed   |
 
 ## Writing a new ADR
 

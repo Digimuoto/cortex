@@ -31,7 +31,7 @@ module Cortex.Pulse.Executor
 where
 
 import Control.Concurrent.STM (TVar, newTVarIO)
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( ValidationError (..),
     validateDAG,
   )

@@ -16,9 +16,9 @@ spec =
       Cortex.researchChunkHasVisibleContent emptyChunk `shouldBe` False
       Cortex.emptyCortexAgentBudget `shouldBe` Cortex.CortexAgentBudget Nothing Nothing
       Cortex.nousArchetypeDefinitionPath Cortex.logosDefinition
-        `shouldBe` "Cortex.Nous.Logos"
+        `shouldBe` "Cortex.Nous.Archetypes.Logos"
       Cortex.nousCapabilityBundlePath Cortex.logosCapabilityBundle
-        `shouldBe` "Cortex.Nous.Logos.Capability"
+        `shouldBe` "Cortex.Nous.Archetypes.Logos.Activation"
       Cortex.nousCapabilityBundleStatus Cortex.logosCapabilityBundle
         `shouldBe` Cortex.NousCapabilityBundleStub
 
@@ -54,11 +54,11 @@ emptyChunk =
 assertNousDefinitionPath :: Cortex.NousArchetypeDefinition -> Expectation
 assertNousDefinitionPath definition =
   Cortex.nousArchetypeDefinitionPath definition
-    `shouldBe` ("Cortex.Nous." <> T.pack (show (Cortex.nousArchetypeDefinitionArchetype definition)))
+    `shouldBe` ("Cortex.Nous.Archetypes." <> T.pack (show (Cortex.nousArchetypeDefinitionArchetype definition)))
 
 assertNousCapabilityBundlePath :: Cortex.NousArchetype -> Expectation
 assertNousCapabilityBundlePath archetype =
   let definition = Cortex.nousArchetypeDefinition archetype
       bundle = Cortex.nousCapabilityBundle archetype
    in Cortex.nousCapabilityBundlePath bundle
-        `shouldBe` (Cortex.nousArchetypeDefinitionPath definition <> ".Capability")
+        `shouldBe` (Cortex.nousArchetypeDefinitionPath definition <> ".Activation")

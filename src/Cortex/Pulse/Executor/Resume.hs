@@ -10,7 +10,7 @@ where
 
 import Control.Concurrent.STM (TVar, newTVarIO)
 import Control.Monad (foldM, when)
-import Cortex.Graph (Relation (..))
+import Cortex.Algebra.Graph (Relation (..))
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Frontier (resolveDeliveredSignals)
 import Cortex.Pulse.Executor.Persistence

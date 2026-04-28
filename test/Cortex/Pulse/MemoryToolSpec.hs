@@ -16,7 +16,7 @@
 -- so no executor, DB, or HTTP needed.
 module Cortex.Pulse.MemoryToolSpec (spec) where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Relation,
     edges,
     toRelation,

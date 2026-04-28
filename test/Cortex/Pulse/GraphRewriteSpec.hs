@@ -2,7 +2,7 @@
 
 module Cortex.Pulse.GraphRewriteSpec (spec) where
 
-import Cortex.Graph
+import Cortex.Algebra.Graph
   ( Graph (..),
     Relation (..),
     checkCacheInvariant,
