@@ -11,8 +11,8 @@ related:
 
 # Research Memo: {Topic}
 
-**Date:** YYYY-MM-DD
-**Scope:** {substrate layer or consumer domain this memo addresses}
+<!-- Date, scope, status, and related links live in frontmatter. -->
+
 **Method:** {cross-source synthesis | implementation reading | external literature review | combined}
 **Confidence profile:** {high on X; medium on Y; low on Z}
 

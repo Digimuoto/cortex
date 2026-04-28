@@ -5,6 +5,8 @@ sidebar:
   label: Paper 3
   order: 3
 status: draft
+date: 2026-04-28
+updated: 2026-04-28
 related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Roadmap/Plans/rewrite-materialization-and-recovery.md

@@ -5,6 +5,8 @@ sidebar:
   label: Paper 2
   order: 2
 status: draft
+date: 2026-04-28
+updated: 2026-04-28
 related:
   - docs/Publications/Paper-1-staged-reduction/
   - docs/Publications/Paper-3-graph-substitution-semantics/

@@ -1,6 +1,8 @@
 ---
 title: Paper 2 Figure Inventory
 description: Figure inventory and export status for the Algebraic Foundations paper.
+date: 2026-04-28
+updated: 2026-04-28
 status: draft
 ---
 

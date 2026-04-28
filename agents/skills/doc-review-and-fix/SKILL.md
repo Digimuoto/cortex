@@ -5,7 +5,7 @@ description: >
   to review-and-edit architecture/spec/research/publication/blog docs,
   repair frontmatter or staleness, improve Mermaid/math/code blocks,
   tighten claims, or make docs more concise while preserving intent.
-date: 2026-04-25
+date: 2026-04-28
 status: active
 ---
 
@@ -39,6 +39,11 @@ Unless the user explicitly asks for review-only output:
 Fix directly when intent is clear:
 
 - missing or malformed frontmatter
+- publication manuscript frontmatter gaps, including missing
+  `kind: publication`, `authors`, `date`, or `updated`
+- publication `## References` blocks that are paragraph lists instead
+  of Markdown ordered lists
+- template body metadata that duplicates frontmatter-rendered fields
 - stale status, replacement links, and obvious `related` issues
 - broken or misleading headings
 - verbosity, repetition, weak lead sentences

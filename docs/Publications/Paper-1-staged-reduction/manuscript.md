@@ -1,17 +1,19 @@
 ---
 title: "Staged Reduction for Durable Workflow Execution"
 description: Draft manuscript on staged reduction, crash recovery, and structural persistence safety for durable workflow execution.
+kind: publication
 status: draft
+authors:
+  - Julius Koskela
+date: 2026-04-28
+updated: 2026-04-28
 related:
+  - docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md
   - docs/Publications/Paper-1-staged-reduction/lean-mechanization.md
   - docs/Publications/Paper-2-algebraic-foundations/
 ---
 
 # Staged Reduction for Durable Workflow Execution
-
-Julius Koskela, Digimuoto Oy
-
----
 
 ## Abstract
 
@@ -19,11 +21,9 @@ We present a durable workflow execution runtime organized as a staged pure reduc
 
 ---
 
-## Draft TODOs
+## Artifact Status
 
-The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`; see [lean-mechanization.md](lean-mechanization.md) for the artifact mapping. The manuscript remains `draft` until the following obligations also land:
-
-- add a short artifact note describing the boundary between the Lean model and the live runtime
+The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`; see [lean-mechanization.md](lean-mechanization.md) for the artifact mapping. The boundary between the Lean model and the live Haskell runtime is documented in [lean-haskell-boundary.md](lean-haskell-boundary.md).
 
 ---
 
@@ -522,18 +522,18 @@ The runtime is not claimed correct because every worker interleaving is directly
 
 ## References
 
-[1] Temporal Technologies. "Temporal." https://temporal.io
-[2] Microsoft. "Azure Durable Functions." https://learn.microsoft.com/en-us/azure/azure-functions/durable/
-[3] Carbone, P. et al. (2015). "Lightweight Asynchronous Snapshots for Distributed Dataflows." arXiv:1506.08603.
-[4] Chandy, K.M., Lamport, L. (1985). "Distributed Snapshots." ACM TOCS 3(1):63-75.
-[5] Apache Software Foundation. "Apache Airflow." https://airflow.apache.org
-[6] Dagster Labs. "Dagster." https://dagster.io
-[7] Mokhov, A. (2017). "Algebraic Graphs with Class." Haskell 2017.
-[8] Kuper, L., Newton, R. (2013). "LVars: Lattice-based Data Structures for Deterministic Parallelism." FHPC 2013.
-[9] Best, E., Devillers, R. (1987). "Sequential and Concurrent Behaviour in Petri Net Theory." TCS 55:87-136.
-[10] Shapiro, M. et al. (2011). "Conflict-free Replicated Data Types." SSS 2011.
-[11] Conway, N. et al. (2012). "Logic and Lattices for Distributed Programming." SoCC 2012.
-[12] Henrio, L. et al. (2026). "Layers of Confluence for Actors." CPP 2026.
-[13] Elnozahy, E. et al. (2002). "A Survey of Rollback-Recovery Protocols." ACM Computing Surveys 34(3):375-408.
-[14] Marlow, S. et al. (2014). "There is No Fork." ICFP 2014.
-[15] Marlow, S. et al. (2011). "A Monad for Deterministic Parallelism." Haskell 2011.
+1. Temporal Technologies. *Temporal*. <https://temporal.io>
+2. Microsoft. *Azure Durable Functions*. <https://learn.microsoft.com/en-us/azure/azure-functions/durable/>
+3. Carbone, P. et al. (2015). *Lightweight Asynchronous Snapshots for Distributed Dataflows*. arXiv:[1506.08603](https://arxiv.org/abs/1506.08603).
+4. Chandy, K. M., Lamport, L. (1985). *Distributed Snapshots*. ACM TOCS 3(1):63–75.
+5. Apache Software Foundation. *Apache Airflow*. <https://airflow.apache.org>
+6. Dagster Labs. *Dagster*. <https://dagster.io>
+7. Mokhov, A. (2017). *Algebraic Graphs with Class*. Haskell 2017.
+8. Kuper, L., Newton, R. (2013). *LVars: Lattice-based Data Structures for Deterministic Parallelism*. FHPC 2013.
+9. Best, E., Devillers, R. (1987). *Sequential and Concurrent Behaviour in Petri Net Theory*. TCS 55:87–136.
+10. Shapiro, M. et al. (2011). *Conflict-free Replicated Data Types*. SSS 2011.
+11. Conway, N. et al. (2012). *Logic and Lattices for Distributed Programming*. SoCC 2012.
+12. Henrio, L. et al. (2026). *Layers of Confluence for Actors*. CPP 2026.
+13. Elnozahy, E. et al. (2002). *A Survey of Rollback-Recovery Protocols*. ACM Computing Surveys 34(3):375–408.
+14. Marlow, S. et al. (2014). *There is No Fork*. ICFP 2014.
+15. Marlow, S. et al. (2011). *A Monad for Deterministic Parallelism*. Haskell 2011.

@@ -1,9 +1,12 @@
 ---
 title: "Paper 1 — Lean 4 Mechanization Plan"
 description: Paper-local Lean 4 plan for discharging the fixed-topology staged-reduction obligations used by the Staged Reduction manuscript.
+date: 2026-04-28
+updated: 2026-04-28
 status: draft
 related:
   - docs/Publications/Paper-1-staged-reduction/manuscript.md
+  - docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Roadmap/Plans/lean-mechanization.md
 ---
@@ -34,7 +37,7 @@ Paper 1 should stay `draft` until all of the following exist in Lean 4:
 2. Proofs of the three closure laws for `propagateFailure`: extensiveness, monotonicity, idempotence. **Done** — `propagateFailure_extensive`, `propagateFailure_monotone`, and `propagateFailure_idempotent` are discharged in `theory/Cortex/Pulse/Closure.lean`.
 3. A machine-checked structural recovery theorem matching Proposition 1 in the manuscript. **Done** (`persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`), conditional on persisted topology-domain, output-ownership, output-completeness, and causal-history preconditions.
 4. A machine-checked classification exhaustiveness theorem for normalized, closed states. **Done** (`classifyClosedGraphState_exhaustive_of_wellFormed` and `classifyGraphState_not_stuck_of_wellFormed` in `theory/Cortex/Pulse/Classify.lean`).
-5. A short artifact note explaining the modeling boundary between the Lean kernel and the live Haskell runtime. **Open**.
+5. A short artifact note explaining the modeling boundary between the Lean kernel and the live Haskell runtime. **Done** ([lean-haskell-boundary.md](lean-haskell-boundary.md)).
 
 ## What Must Be Proved
 
@@ -113,22 +116,20 @@ Build order followed by the existing artifacts:
 | Proposition 1: structural persistence safety | `persistence_safety` in `theory/Cortex/Pulse/Recovery.lean` |
 | Phase 3 classification split | `classifyClosedGraphState_exhaustive_of_wellFormed` and `classifyGraphState_not_stuck_of_wellFormed` in `theory/Cortex/Pulse/Classify.lean` |
 
-## Draft Notes for the Manuscript
+## Manuscript Notes
 
 The mechanized obligations now have direct Lean references in the manuscript body. Remaining manuscript-side guidance:
 
 - keep Proposition 1's preconditions explicit — the Lean theorem is conditional on persisted topology-domain, output-ownership, output-completeness, and causal-history invariants that the runtime must establish
-
-When the remaining work lands:
-
-- write the artifact note explaining the Lean ↔ Haskell modeling boundary (status, output, payload, and persistence assumptions) and link it from the manuscript
+- keep the Lean-Haskell modeling boundary linked from the manuscript and synchronized with the Pulse runtime contract ([lean-haskell-boundary.md](lean-haskell-boundary.md))
 
 ## Immediate Next Steps
 
-1. Draft the Lean ↔ Haskell artifact note and link it from the manuscript and landing page.
+1. Keep the boundary note synchronized when `wellFormedGraphState`, recovery normalization, or Pulse persisted-state handling changes.
 
 ## Related
 
 - [manuscript.md](manuscript.md) — Paper 1 manuscript.
 - [index.md](index.md) — paper landing page.
+- [lean-haskell-boundary.md](lean-haskell-boundary.md) — Lean-Haskell runtime boundary note.
 - [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) — program-level plan shared with Paper 2.

@@ -6,7 +6,7 @@ description: >
   publication/blog docs, check frontmatter and staleness, assess
   Mermaid/math/code blocks, verify claims, improve compactness, or
   enforce Cortex-first canonical docs.
-date: 2026-04-25
+date: 2026-04-28
 status: active
 ---
 
@@ -111,6 +111,18 @@ Check first, report first.
 For old canonical docs, focus on alignment and cleanup before stylistic
 polish.
 
+**Publication frontmatter:**
+
+- `docs/Publications/**/manuscript.md` should declare
+  `kind: publication`, `authors`, `date`, `updated`, `status`, and
+  `related`.
+- Artifact notes under `docs/Publications/**` should at least carry
+  `title`, `description`, `date`, `status`, and `related` when they are
+  part of the publication bundle.
+- Do not duplicate rendered metadata immediately under the H1. Author,
+  status, venue, date, and update information should live in
+  frontmatter so `DocsTitle` owns the byline.
+
 ## Canonical Cortex policy
 
 Apply this aggressively in `canonical` docs.
@@ -127,6 +139,9 @@ Apply this aggressively in `canonical` docs.
   repo paths, and transient package/module layout in canonical docs
   unless the document is specifically about migration or repo
   structure.
+- Avoid internal roadmap numbering such as "Track 3" in canonical
+  publication and reference prose. Prefer stable conceptual names such
+  as "rewrite materialization" or "dynamic-rewrite semantics".
 - If a canonical doc depends on those details, treat it as a real
   content-placement issue, not a nit.
 
@@ -171,6 +186,12 @@ finding.
 - math notation, variable naming, display quality
 - code fence language tags and whether examples look plausible
 - link targets and cross-reference quality
+- publication reference blocks: `## References` should contain a
+  Markdown ordered list, italic titles, autolink URLs, and en-dash page
+  ranges where applicable
+- publication citations: use GFM footnotes (`[^name]`) when a reference
+  is tied to a specific sentence; standalone bibliographies belong
+  under `## References`
 
 Mermaid standard:
 

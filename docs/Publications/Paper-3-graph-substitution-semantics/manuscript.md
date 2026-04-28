@@ -1,7 +1,12 @@
 ---
 title: "Paper 3: Graph Substitution Semantics"
 description: Typed workflow compilation, vertex-anchored graph substitution, and durable materialization for dynamic workflow execution
+kind: publication
 status: draft
+authors:
+  - Julius Koskela
+date: 2026-04-28
+updated: 2026-04-28
 related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Roadmap/Plans/rewrite-materialization-and-recovery.md
@@ -1053,3 +1058,11 @@ For motivating contexts such as Cortex and its downstream host applications,
 this theory offers a principled route to dynamic workflow execution without
 collapsing workflow semantics, runtime execution, and graph evolution into a
 single informal notion.
+
+## References
+
+1. Ehrig, H., Ehrig, K., Prange, U., Taentzer, G. (2006). *Fundamentals of Algebraic Graph Transformation*. Springer. <https://link.springer.com/book/10.1007/3-540-31188-2>
+2. Milner, R. (1999). *Communicating and Mobile Systems: The Pi-Calculus*. Cambridge University Press.
+3. van der Aalst, W. M. P. (1998). *The Application of Petri Nets to Workflow Management*. Journal of Circuits, Systems and Computers 8(1):21–66.
+4. Temporal Technologies. *Temporal*. <https://temporal.io>
+5. Restate. *Workflows*. <https://docs.restate.dev/tour/workflows>

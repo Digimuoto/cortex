@@ -1,6 +1,8 @@
 ---
 title: Paper 3 Figure Inventory
 description: Figure inventory and export status for the Graph Substitution Semantics paper.
+date: 2026-04-28
+updated: 2026-04-28
 status: draft
 ---
 

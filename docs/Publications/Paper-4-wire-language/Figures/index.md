@@ -1,6 +1,8 @@
 ---
 title: "Paper 4 Figures"
 description: Figure inventory and export notes for the Wire Language paper.
+date: 2026-04-24
+updated: 2026-04-28
 status: draft
 ---
 

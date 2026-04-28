@@ -1,11 +1,13 @@
 ---
 title: "{Paper title}"
 description: "{One-sentence description — the abstract in one line.}"
+kind: publication
 authors:
   - "{Author Name}"
 status: draft   # draft | submitted | accepted | published
 venue: null     # when known
 date: YYYY-MM-DD
+updated: YYYY-MM-DD
 related:
   - docs/Publications/paper-N-*/
   - docs/Research-notes/...
@@ -13,9 +15,11 @@ related:
 
 # {Paper title}
 
-**Authors:** {Authors}
-**Status:** {Draft | Submitted | Accepted | Published}
-**Venue:** {Target venue or "TBD"}
+<!--
+Authors, status, venue, date, and updated metadata render from
+frontmatter through the docs page header. Use this body for the abstract
+and onward.
+-->
 
 ## Abstract
 
@@ -67,8 +71,13 @@ Summarize the contribution and its implications. Point at future work.
 
 ## References
 
+1. {Author}. *{Title}*. {Venue} ({Year}). <{URL}>
+2. ...
+
 <!--
-Bibliography.
+Use GFM footnotes (`[^name]`) when a citation is tied to a specific
+sentence. Keep standalone bibliographies as ordered lists under the
+`## References` heading.
 -->
 
 ## Figures

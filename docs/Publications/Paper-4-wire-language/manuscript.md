@@ -1,8 +1,12 @@
 ---
 title: "Wire: Closed Alphabets, Open Composition for Typed Workflow Graphs"
 description: Draft manuscript on Wire as an authoring language for typed workflow graphs, bounded structural proposals, and registered authority.
+kind: publication
 status: draft
+authors:
+  - Julius Koskela
 date: 2026-04-24
+updated: 2026-04-28
 related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Publications/Paper-3-graph-substitution-semantics/
@@ -235,7 +239,9 @@ The next steps are clear: sharpen the contract regime carried by compiled artifa
 2. Andrey Mokhov, Neil Mitchell, Simon Peyton Jones. *Build Systems a la Carte: Theory and Practice*. 2020.
 3. Andrey Mokhov, Georgy Lukyanov, Simon Marlow, Conor McBride. *Selective Applicative Functors*. 2019.
 4. Alexandra Matache, Nicolas Wu, and Sam Staton. *Scoped Effects as Parameterized Algebraic Theories*. 2024.
-5. Prior workflow and durable execution systems such as Temporal, Durable Functions, and related orchestration runtimes.
+5. Temporal Technologies. *Temporal*. <https://temporal.io>
+6. Microsoft. *Azure Durable Functions*. <https://learn.microsoft.com/en-us/azure/azure-functions/durable/>
+7. Restate. *Workflows*. <https://docs.restate.dev/tour/workflows>
 
 ## Figures
 

@@ -1,6 +1,8 @@
 ---
 title: "Paper 1 Figures"
 description: Figure inventory and source notes for Paper 1.
+date: 2026-04-28
+updated: 2026-04-28
 status: draft
 ---
 

@@ -5,6 +5,8 @@ sidebar:
   label: Paper 4
   order: 4
 status: draft
+date: 2026-04-24
+updated: 2026-04-28
 related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Publications/Paper-3-graph-substitution-semantics/

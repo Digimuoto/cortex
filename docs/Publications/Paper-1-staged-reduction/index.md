@@ -5,6 +5,8 @@ sidebar:
   label: Paper 1
   order: 1
 status: draft
+date: 2026-04-28
+updated: 2026-04-28
 ---
 
 # Paper 1 — Staged Reduction
@@ -15,7 +17,7 @@ Staged reduction for durable workflow execution over fixed DAG topology. The pap
 
 Draft manuscript. See [manuscript.md](manuscript.md) for the full text.
 
-The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`, including the structural recovery theorem (`persistence_safety`), frontier antichain, disjoint-key accumulation commutativity, fold permutation invariance, classification exhaustiveness, and the extensiveness, monotonicity, and idempotence closure laws. The paper stays `draft` until the remaining artifact note in [lean-mechanization.md](lean-mechanization.md) describes the Lean ↔ Haskell boundary.
+The fixed-topology kernel is mechanized in Lean 4 under `theory/Cortex/Pulse/`, including the structural recovery theorem (`persistence_safety`), frontier antichain, disjoint-key accumulation commutativity, fold permutation invariance, classification exhaustiveness, and the extensiveness, monotonicity, and idempotence closure laws. The Lean-Haskell modeling boundary is documented in [lean-haskell-boundary.md](lean-haskell-boundary.md).
 
 ## Abstract
 
@@ -31,5 +33,6 @@ The manuscript presents a durable workflow runtime organized as a staged pure re
 
 - [manuscript.md](manuscript.md) — full manuscript.
 - [lean-mechanization.md](lean-mechanization.md) — paper-local Lean 4 plan and draft exit criteria.
+- [lean-haskell-boundary.md](lean-haskell-boundary.md) — companion note on the Lean model and Haskell runtime boundary.
 - [../../Roadmap/Plans/lean-mechanization.md](../../Roadmap/Plans/lean-mechanization.md) — program-level mechanization plan shared with Paper 2.
 - [../Paper-2-algebraic-foundations/](../Paper-2-algebraic-foundations/) — companion algebraic foundations paper.

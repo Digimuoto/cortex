@@ -10,7 +10,8 @@ related:
 
 # Experiment: {Topic}
 
-**Date:** YYYY-MM-DD
+<!-- Date, scope, status, and related links live in frontmatter. -->
+
 **Type:** {smoke test | dogfood | exploratory trial | benchmark}
 
 ## Hypothesis

@@ -1,7 +1,12 @@
 ---
 title: "Paper 2: Algebraic Foundations"
 description: Algebraic foundations of staged durable execution.
+kind: publication
 status: draft
+authors:
+  - Julius Koskela
+date: 2026-04-28
+updated: 2026-04-28
 related:
   - docs/Publications/Paper-1-staged-reduction/
   - docs/Publications/Paper-3-graph-substitution-semantics/
@@ -308,3 +313,12 @@ The point of the algebraic foundations paper is not to inflate an implementation
 - structural recovery safety follows only after validity is defined explicitly
 
 Everything stronger must either be proved elsewhere, or named honestly as an assumption.
+
+## References
+
+1. Kuper, L., Newton, R. (2013). *LVars: Lattice-based Data Structures for Deterministic Parallelism*. FHPC 2013.
+2. Shapiro, M. et al. (2011). *Conflict-free Replicated Data Types*. SSS 2011.
+3. Conway, N. et al. (2012). *Logic and Lattices for Distributed Programming*. SoCC 2012.
+4. Hoare, C. A. R., Möller, B., Struth, G., Wehrman, I. (2009). *Foundations of Concurrent Kleene Algebra*. RelMiCS 2009.
+5. Valiant, L. G. (1990). *A Bridging Model for Parallel Computation*. Communications of the ACM 33(8):103–111.
+6. Henrio, L. et al. (2026). *Layers of Confluence for Actors*. CPP 2026.

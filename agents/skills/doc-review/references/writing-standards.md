@@ -11,7 +11,24 @@ Canonical docs should optimize for concept stability, not current repo shape.
 - frame downstream products as examples, not as the system boundary
 - prefer stable conceptual names over file paths and module names
 - keep issue IDs, PR links, commit hashes, and repo-layout trivia out of canon
+- keep internal roadmap track numbers out of publication and reference prose
 - keep prose compact and scannable
+
+## Publication Docs
+
+Publication manuscripts should let frontmatter drive the rendered page
+header.
+
+- include `kind: publication`, `authors`, `date`, `updated`, `status`,
+  and `related` in manuscript frontmatter
+- keep author, status, venue, date, and update metadata out of the body
+  immediately below the H1
+- format standalone bibliographies as `## References` plus a Markdown
+  ordered list
+- italicize reference titles, autolink URLs, and use en-dashes for page
+  ranges
+- use GFM footnotes (`[^name]`) when a citation belongs to a specific
+  sentence
 
 ## Internal Docs
 

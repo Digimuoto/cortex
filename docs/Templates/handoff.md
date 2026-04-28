@@ -11,8 +11,7 @@ related:
 
 # Handoff: {Topic}
 
-**Date:** YYYY-MM-DD
-**Transition:** {from} → {to}
+<!-- Date, from/to, status, and related links live in frontmatter. -->
 
 ## Context
 

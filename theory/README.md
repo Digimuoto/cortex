@@ -96,9 +96,11 @@ Mechanized results now include:
 - `classifyGraphState_not_stuck_of_wellFormed`: well-formed states
   cannot classify as stuck after the runtime closure step.
 
-Remaining obligations include Haskell-side establishment of the persisted
-recovery preconditions, the Lean-Haskell modeling-boundary note, and
-quotient lifting for the graph algebra laws.
+The Paper 1 Lean-Haskell modeling boundary is documented in
+`docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md`.
+Remaining obligations include Haskell-side establishment of the
+persisted recovery preconditions and quotient lifting for the graph
+algebra laws.
 
 ### Track 3 — Rewrite soundness
 
