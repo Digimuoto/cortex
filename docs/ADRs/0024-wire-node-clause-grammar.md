@@ -29,6 +29,9 @@ related:
 Proposed - this ADR replaces the historical colon-led node body and string-config pure examples with
 the clause grammar for the next Wire implementation phase.
 
+This ADR rewrites the worked-example surface syntax in ADR 0022, including `node classify :` and
+newline-terminated clauses. ADR 0022's decision on pure output equations remains in force.
+
 ## Context
 
 ADR 0022 accepted pure output equations, but the first implementation kept some transitional syntax

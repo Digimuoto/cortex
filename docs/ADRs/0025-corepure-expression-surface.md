@@ -56,6 +56,8 @@ The initial language includes:
 - curried application and partial application;
 - arithmetic, comparison, and boolean operators.
 
+The initial language does not include tuple syntax. Pair-like values are represented as records.
+
 Evaluation failures are typed and deterministic. The required failure set includes missing fields,
 type mismatches, divide by zero, bad indexes, arity mismatches, and budget exhaustion.
 
@@ -111,7 +113,7 @@ The initial closed stdlib is:
 ```text
 map       : (T -> U) -> List T -> List U
 filter    : (T -> Bool) -> List T -> List T
-zip       : List U -> List T -> List (T, U)
+zip       : List U -> List T -> List { fst: T; snd: U }
 zipWith   : (T -> U -> V) -> List U -> List T -> List V
 length    : List T -> Number
 sum       : List Number -> Number
@@ -123,7 +125,6 @@ abs       : Number -> Number
 clamp     : Number -> Number -> Number -> Number
 concat    : List String -> String
 toString  : Scalar -> String
-joinLines : List String -> String
 joinWith  : String -> List String -> String
 ```
 
@@ -135,6 +136,18 @@ For `zip` and `zipWith`, the piped list is the rightmost operand:
 ```wire
 scores |> zipWith (score: weight: score * weight) weights
 ```
+
+`zip` returns records because tuples are not part of the first CorePure surface. For
+`scores |> zip weights`, each result element has `fst = score` and `snd = weight`.
+
+`clamp` is ordered as `clamp lo hi value`, preserving data-last use:
+
+```wire
+score |> clamp 0 1
+```
+
+Line joining is written with `joinWith "\n"` rather than a separate `joinLines` primitive. That
+keeps the initial closed stdlib smaller while preserving the common prompt/report use case.
 
 Future stdlib additions must preserve data-last ordering. User-defined functions should follow the
 same convention when intended for pipe use, but the evaluator does not enforce this for user code.
@@ -172,15 +185,28 @@ Interpolation auto-stringifies only scalar values:
 This gives prompt and report authors useful ergonomics without committing Cortex to a generic `Show`
 mechanism for structured values.
 
-Double-quoted strings use ordinary escapes such as `\n`, `\t`, `\\`, and `\"`.
+Double-quoted strings support only these escapes in the first slice:
+
+- `\n`, `\t`, and `\r` for newline, tab, and carriage return;
+- `\\` for a literal backslash;
+- `\"` for a literal double quote;
+- `\${` for a literal `${` without starting interpolation.
 
 Indented strings use Nix-style `''...''` syntax. The parser strips the common leading whitespace
 from all non-blank lines and ignores the first line if it is whitespace-only after the opening
 delimiter. This allows prompt templates to align with surrounding Wire source without carrying that
 indentation into the value.
 
-Escapes inside indented strings should follow Nix's conventions for `${`, `''`, and literal newlines
-rather than inventing a Cortex-specific escape language.
+Physical newlines inside an indented string are preserved after indentation stripping. A final
+newline before the closing delimiter is preserved if it remains after the delimiter line is removed.
+
+Indented strings support only these escapes in the first slice:
+
+- `''${` for a literal `${` without starting interpolation;
+- `'''` for a literal `''`;
+- `''\n`, `''\t`, and `''\r` for newline, tab, and carriage return.
+
+All other backslashes and single quotes inside indented strings are literal characters.
 
 ### Layer Boundary
 

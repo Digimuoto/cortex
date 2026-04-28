@@ -15,6 +15,7 @@ related:
   - docs/Architecture/09-nous-reasoning-library.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/grammar.md
+  - docs/Reference/Wire/partials-and-execution-boundary.md
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
@@ -104,9 +105,16 @@ registered authority and carry reusable configuration, but it may not absorb a p
 surrounding arrows, infer "context" from graph position, or become runnable merely by appearing in a
 composition expression.
 
-A graph vertex exists only after admission produces a concrete typed port boundary. That boundary
-may be authored explicitly in a node declaration or derived from a registered fixed executor
-projection, but it must be complete before the value enters graph position:
+This overturns the earlier reference-doc model in
+[`partials-and-execution-boundary.md`](../Reference/Wire/partials-and-execution-boundary.md), where
+partial executor values could later become graph nodes by receiving ports from surrounding syntax.
+Under this ADR, reusable configuration may still exist, but it is not a node and it is not admitted
+into graph position on its own.
+
+A graph vertex exists only after an explicit node declaration produces a concrete typed port
+boundary. A registered fixed executor projection may supply the admission-time backing for an
+`@executor (...)` RHS inside that declaration, but it is not an alternative authoring path that
+skips the node declaration:
 
 ```wire
 node analyst
@@ -312,3 +320,4 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 - [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
 - [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
 - [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
+- [Wire Partials and Execution Boundary Reference](../Reference/Wire/partials-and-execution-boundary.md)

@@ -16,6 +16,8 @@ related:
   - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0019-wire-pure-nodes.md
   - docs/ADRs/0021-executor-registration-and-binding.md
+  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0024-wire-node-clause-grammar.md
 ---
 
 # ADR 0022 - Wire Pure Output Equations
@@ -24,6 +26,11 @@ related:
 
 Accepted. This ADR defines the CorePure output-equation surface. It is not a decision to make every
 Wire expression a circuit, to infer executors implicitly, or to generalize all executor syntax.
+
+Forward note: ADR 0023 proposes the broader Wire-to-circuit elaboration model that this ADR
+deferred. ADR 0024 proposes the next clause grammar and supersedes this ADR's worked-example surface
+syntax, including `node classify :` and newline-terminated clauses. This ADR's positive decision on
+pure output equations remains in force.
 
 ## Context
 

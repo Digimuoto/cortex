@@ -50,13 +50,16 @@ to runtime-discovered topology.
 
 ## Decision
 
-Wire source should elaborate to circuits as its single semantic target. Every Wire expression
-denotes a circuit:
+Wire source should elaborate to circuits as its executable semantic target. Expressions in topology
+position denote circuits:
 
 - a literal denotes a constant circuit with no inputs and one typed output;
-- a file-level pure helper denotes a statically reducible value until it is used by a circuit;
 - a `node` declaration denotes a circuit with declared input and output ports;
 - future composition expressions compose circuits at the topology layer.
+
+File-level pure helpers remain CorePure value bindings. They do not denote standalone circuits at
+the binding site. Instead, they are inlined at each use site and either reduced during elaboration
+or embedded in runtime residue according to the dependencies at that use.
 
 CorePure becomes an elaborator phase, not a separate language that exists only inside `pure (...)`.
 The compiler uses one CorePure evaluator in two phases:
