@@ -5,7 +5,7 @@ description:
   implementation status in Cortex."
 sidebar:
   label: Conditionality
-  order: 6
+  order: 7
 status: draft
 date: 2026-04-24
 related:

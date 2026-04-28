@@ -139,24 +139,45 @@ checked by the executor schema and host binding.
 
 ## Native Pure Evaluator
 
-The Capability layer provides a first-slice native `@pure` executor for deterministic numeric
-calculations over Wire values:
+Wire provides a theorem-side CorePure node form for deterministic calculations over Wire values:
 
 ```wire
 node score :
-  <- evidence_score: Float
-  <- recency_score: Float
-  -> Float = @pure { expr = "0.7 * evidence_score + 0.3 * recency_score"; };
+  <- evidence: EvidenceSet
+  <- weights: WeightSet
+  let
+    scores = map (item: item.score) evidence.items;
+    weighted = zipWith (score: weight: score * weight) scores weights.values;
+  in
+  -> score: ScoreSet = pure ({
+    total = sum weighted;
+    count = length weighted;
+  });
 ```
 
-This executor accepts author-declared ports instead of a fixed registry port profile. Each input
-label becomes a variable in `expr`; repeated same-contract inputs must therefore be labeled
-explicitly. Inputs must arrive as numeric JSON scalar `WireValue`s, and output is wrapped through
-the declared Wire output port and contract.
+`pure (...)` is not an `@` executor application. Authored `@pure { ... }` is rejected. The `@`
+marker remains the boundary to registered external executor authority; CorePure is inside Wire's
+deterministic expression layer. The compiler lowers pure output equations to one native pure task
+whose config carries CorePure ASTs keyed by declared output port names.
 
-The implemented expression subset is intentionally small: numeric literals, input variables,
-parentheses, unary minus, and `+`, `-`, `*`, `/`. It has no functions, host callbacks, time, random
-state, IO, or model/tool authority.
+Each input label becomes a CorePure variable; a single unlabeled input is available as `in`.
+Repeated same-contract inputs must therefore be labeled explicitly. Inputs must arrive as JSON
+`WireValue`s, and outputs are wrapped through the declared Wire output ports and contracts.
+
+Hosts register this executor through the normal Capability boundary. `pureExecutorSpec` exposes the
+inert Wire projection, and host code can build a strict compile registry with
+`executorProjectionRegistry [pureExecutorSpec]`. Binding then decodes the compiled task metadata and
+rechecks admission before producing a Pulse stage: every input must be a single-contract,
+cardinality-one port, generated repeated same-contract ports such as `Float_1` must be replaced with
+explicit labels, and the output-expression keys must match the declared output ports exactly.
+
+The implemented expression subset is intentionally small but useful: JSON literals, records, lists,
+field access, indexing, lambdas, application, arithmetic, comparisons, booleans, `let ... in`, and
+builtins such as `map`, `filter`, `zipWith`, `length`, and `sum`. It has no loops, recursion, host
+callbacks, time, random state, IO, model calls, or tool authority.
+
+For the full authoring, lowering, builtin, and error reference, see
+[Pure execution](pure-execution.md).
 
 ## Runtime Evaluation
 

@@ -265,24 +265,25 @@ become DeepReport or other Nous patterns when they are LLM-shaped reasoning sema
 
 The layers own different parts of executor meaning:
 
-| Context                      | Owns                                                                                                                                                                                                         | Does not own                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `Cortex.Wire.Executor`       | Source-level executor references such as `@native.deep_report` and `@pure`, executor ids, compile-time projections, port constraints, contract obligations, and inert purity/effect metadata needed by Wire. | Host authority, Haskell application codecs, provider keys, DB access, prompts, or Pulse scheduling.   |
-| `Cortex.Capability.Executor` | Authority-bearing registration records: config decoders, admitted tools, model/provider requirements, application codecs, host interpreters, and runnable binding into substrate actions.                    | Reasoning-pattern semantics or durable scheduling.                                                    |
-| `Cortex.Pulse.Executor`      | Durable execution of already-bound stage actions: scheduling, persistence, replay, resume, retry, cancellation, and execution events.                                                                        | Wire executor registry, source-level executor ids, application semantics, or provider/tool admission. |
-| `Cortex.Nous.*`              | Reasoning-shaped executor profiles, adapters, prompts, pattern templates, and reusable catalog values that consumers may opt into.                                                                           | Host authority, provider credentials, product tools, DB loading, or artifact destinations.            |
+| Context                      | Owns                                                                                                                                                                                                                            | Does not own                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `Cortex.Wire.Executor`       | Source-level executor references such as `@native.deep_report`, lowered native evaluator ids such as `pure`, compile-time projections, port constraints, contract obligations, and inert purity/effect metadata needed by Wire. | Host authority, Haskell application codecs, provider keys, DB access, prompts, or Pulse scheduling.   |
+| `Cortex.Capability.Executor` | Authority-bearing registration records: config decoders, admitted tools, model/provider requirements, application codecs, host interpreters, and runnable binding into substrate actions.                                       | Reasoning-pattern semantics or durable scheduling.                                                    |
+| `Cortex.Pulse.Executor`      | Durable execution of already-bound stage actions: scheduling, persistence, replay, resume, retry, cancellation, and execution events.                                                                                           | Wire executor registry, source-level executor ids, application semantics, or provider/tool admission. |
+| `Cortex.Nous.*`              | Reasoning-shaped executor profiles, adapters, prompts, pattern templates, and reusable catalog values that consumers may opt into.                                                                                              | Host authority, provider credentials, product tools, DB loading, or artifact destinations.            |
 
 This makes `@native.deep_report` a Wire executor reference admitted by a host binding. The reusable
 DeepReport pieces may live under `Cortex.Nous.Patterns.DeepReport.*`, but the binding that grants
 runnable authority belongs to the consumer or to a Capability-level registration surface. Pulse only
 sees the resulting bound `StageAction` and its generic replay/runtime metadata.
 
-Pure executors follow the same split. `@pure` is a host-registered executor whose expression/config
-is checked through Wire-level syntax and contract/port rules, whose deterministic evaluator is
-admitted through the executor registration surface, and whose resulting action is run by Pulse. A
-pure evaluator may be provided upstream by Cortex, but it is not a special Pulse executor and it
-does not install new Pulse framing codecs. It operates over Wire values and closed, deterministic
-functions rather than downstream Haskell application types.
+CorePure follows the same split. Authors write pure output equations without `@`; the compiler
+lowers them to a host-registered native evaluator id whose config is checked through Wire-level
+syntax and contract/port rules, whose deterministic evaluator is admitted through the executor
+registration surface, and whose resulting action is run by Pulse. A pure evaluator may be provided
+upstream by Cortex, but it is not a special Pulse executor and it does not install new Pulse framing
+codecs. It operates over Wire values and closed, deterministic functions rather than downstream
+Haskell application types.
 
 This ADR decides the namespace boundary: no top-level `Cortex.Executor` root, and no expansion of
 `Cortex.Pulse.Executor` into the generic executor registry. A separate ADR is required before Cortex

@@ -6,9 +6,9 @@ description:
 sidebar:
   label: "0019. Pure nodes"
   order: 19
-status: proposed
+status: superseded
 date: 2026-04-27
-superseded_by: null
+superseded_by: docs/ADRs/0022-wire-pure-output-equations.md
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar.md
@@ -16,6 +16,7 @@ related:
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0021-executor-registration-and-binding.md
+  - docs/ADRs/0022-wire-pure-output-equations.md
   - "GitHub #55"
 ---
 
@@ -23,9 +24,8 @@ related:
 
 ## Status
 
-Proposed - records the target semantics for pure nodes before implementation. Pure nodes are the
-first planned feature family that makes same-contract labeled inputs unavoidable; they are not
-needed for the current DeepReport port-profile extraction.
+Superseded by ADR 0022. This ADR records the first pure-node semantics sketch; its
+`@pure { expr = ... }` examples are historical and are not accepted Wire syntax.
 
 ## Context
 

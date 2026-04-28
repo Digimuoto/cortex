@@ -38,6 +38,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0019](0019-wire-pure-nodes.md)                                 | Wire Pure Nodes                                                     | proposed   |
 | [0020](0020-canonical-haskell-module-tree.md)                   | Canonical Haskell Module Tree                                       | proposed   |
 | [0021](0021-executor-registration-and-binding.md)               | Executor Registration and Binding                                   | proposed   |
+| [0022](0022-wire-pure-output-equations.md)                      | Wire Pure Output Equations                                          | proposed   |
 
 ## Writing a new ADR
 

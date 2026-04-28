@@ -10,8 +10,8 @@ sidebar:
 
 # Wire Language Reference
 
-The Wire language reference is organized into a normative grammar specification plus four
-topic-focused pages that factor out specific rule areas for quick consultation.
+The Wire language reference is organized into a normative grammar specification plus topic-focused
+pages that factor out specific rule areas for quick consultation.
 
 ## Contents
 
@@ -27,13 +27,17 @@ topic-focused pages that factor out specific rule areas for quick consultation.
 - **[executors-and-alphabet.md](executors-and-alphabet.md)** — executor registration,
   `@`-application, config merge, ambient identifiers in config values. Corresponds to grammar §5.1,
   §5.2, §5.3, §5.5.
+- **[pure-execution.md](pure-execution.md)** — Wire-authored CorePure output equations, native pure
+  evaluator lowering, input/output binding, builtins, and failure surface. Corresponds to grammar
+  §6.1.1, §14.5.
+- **[conditionality.md](conditionality.md)** — exclusive-output reduction with `select(...)`, latent
+  continuations, arm keys, and current implementation status. Corresponds to grammar §7.7.
 
 The rewrite algebra, admission, and materialization — a runtime concern — are in the separate
 [Rewrites reference](../rewrites.md).
 
-The grammar spec is self-contained. The four topic pages exist to give readers a shorter,
-scope-limited entry point when they are looking for specific rules without wanting to read the whole
-spec.
+The grammar spec is self-contained. The topic pages exist to give readers a shorter, scope-limited
+entry point when they are looking for specific rules without wanting to read the whole spec.
 
 ## Related
 

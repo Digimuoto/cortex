@@ -82,7 +82,7 @@ Identifier kinds are disambiguated by context and by an optional leading `@`:
 Reserved, cannot be used as identifiers:
 
 ```
-contract   node   let   import   from   select   true   false
+contract   node   let   in   import   from   select   pure   true   false   null
 ```
 
 ### 2.4 Literals
@@ -97,8 +97,9 @@ contract   node   let   import   from   select   true   false
 **Records.** `{ k1 = v1; k2 = v2; }`. Fields are terminated by `;`; every field needs its
 terminating `;`. Empty record: `{}`.
 
-**Numbers.** Decimal integers and floats: `42`, `3.14`, `-7`. Leading `-` is part of the numeric
-literal, not an operator — Wire has no arithmetic. No hex, octal, or scientific notation.
+**Numbers.** Decimal integers and floats: `42`, `3.14`, `-7`. In ordinary Wire config values,
+leading `-` is part of the numeric literal, not an operator. Arithmetic lives only in CorePure
+output equations (§6.1.1). No hex, octal, or scientific notation.
 
 **Booleans.** `true`, `false`.
 
@@ -169,9 +170,8 @@ Contracts live in a single **global ambient namespace**, populated from two sour
 1. **Executor vocabulary declarations.** Each registered executor declares the set of contract names
    it can produce or consume. Those names enter the global namespace automatically.
 2. **`contract X;` assertions in `.wire` files.** An author may assert a contract name that isn't
-   covered by any executor's vocabulary — typically for contract-polymorphic executors (`@pure`,
-   `@identity`) where the contract is a graph-structural concern rather than an executor-declared
-   one.
+   covered by any executor's vocabulary — typically for contract-polymorphic utilities or CorePure
+   nodes where the contract is a graph-structural concern rather than an executor-declared one.
 
 Contract names are global. `EvidenceBundle` means the same contract wherever it appears. Two files
 each asserting `contract EvidenceBundle;` refer to the same contract.
@@ -215,7 +215,7 @@ An **executor** is a named constructor registered outside Wire. Each executor de
 
 - A **config schema** — what fields its config record may contain, with their types.
 - A **vocabulary** — the set of contract names it can produce or consume. A contract-polymorphic
-  executor (`@pure`, `@identity`) declares itself open-vocabulary, accepting any contract chosen at
+  executor such as `@identity` declares itself open-vocabulary, accepting any contract chosen at
   node declaration.
 - **Structural constraints** — rules the port signature must satisfy. These may be tight ("exactly
   one input of `EvidenceBundle`, exactly one output of `AnalysisFragment | ExecutorError`") or loose
@@ -235,8 +235,8 @@ been compiled, materialized, and scheduled by Pulse. See
 
 The boundary between what the executor pins and what the author pins is a degree-of-freedom
 question. A fully-pinned executor (`@llm.review` with a fixed input/output signature) leaves no
-choices to the author. A fully-polymorphic executor (`@pure`) leaves every choice open. Most real
-executors sit in between.
+choices to the author. A port-polymorphic executor leaves choices to the explicit `node`
+declaration. Most real executors sit in between.
 
 #### Illustrative alphabet
 
@@ -249,7 +249,10 @@ The prelude registry typically includes families like:
   sinks (no output).
 - **`@cortex.*`** — runtime wrappers: `@cortex.report_run`, `@cortex.analysis_run`. Consume a wire's
   output, produce an artifact reference.
-- **`@pure`, `@identity`, `@const`** — contract-polymorphic utilities.
+- **`@identity`, `@const`** — contract-polymorphic utilities.
+
+CorePure nodes are not authored as `@pure` executor applications. They use pure output equations
+inside `node` declarations (§6.1.1), then lower internally to the registered native pure evaluator.
 
 These names are conventions of the registry, not grammar. Wire itself only requires that executors
 be qualified identifiers.
@@ -382,6 +385,74 @@ node analyst_mechanism :
   -> AnalysisFragment | ExecutorError
 = analyst_base // { prompt = ''Attack the mechanism leg…''; };
 ```
+
+Pure nodes use a separate node-body form:
+
+```wire
+node name :
+  <input_port>*
+  [ let <corepure_binding>+ in ]
+  <pure_output_equation>+;
+```
+
+This form is only for deterministic CorePure computations (§6.1.1). It has no `@` because it does
+not cross the executor-authority boundary; the compiler lowers the equations to the host-registered
+native pure evaluator after parsing.
+
+#### 6.1.1 Pure Output Equations
+
+A pure output equation declares an output port and its deterministic computation in one place:
+
+```wire
+node score :
+  <- evidence: EvidenceSet
+  <- weights: WeightSet
+  let
+    scores = map (item: item.score) evidence.items;
+    weighted = zipWith (score: weight: score * weight) scores weights.values;
+  in
+  -> score: ScoreSet = pure ({
+    total = sum weighted;
+    count = length weighted;
+  });
+```
+
+The output label is the Wire routing label. The right-hand side is `pure (<corepure_expr>)` or
+`pure { <corepure_expr>; }`; both forms return the expression value implicitly for that output port.
+
+Rules:
+
+- Only input ports may appear before the optional node-local `let ... in` block.
+- Each pure output equation declares exactly one output port; sum-grouped outputs are not pure
+  equation syntax.
+- Every declared output equation lowers to one output of the same node. The node evaluates once and
+  either produces all declared outputs or fails.
+- Input port names, including labels and the implicit single-input name `in`, are CorePure
+  variables.
+- Local bindings are shared by every output equation and are evaluated without host effects.
+- Top-level CorePure helper bindings of the form `let name = x: ...;` are visible to later pure
+  nodes. Ordinary top-level `let` bindings keep their Wire value semantics.
+- Duplicate CorePure binding names are rejected within a scope. Node-local bindings are a nested
+  scope and may shadow top-level CorePure helpers.
+- Authored `@pure { ... }` executor applications are rejected; use this syntax instead.
+
+CorePure is a small Nix-like expression language over JSON Wire values. The implemented surface is:
+
+- literals: strings, numbers, booleans, `null`, lists, and records;
+- variables, field access (`item.score`), and indexing (`items[0]`);
+- lambdas (`x: x.score`, `score: weight: score * weight`);
+- function application (`map f xs`, `zipWith f xs ys`);
+- unary `!` and `-`;
+- arithmetic `+`, `-`, `*`, `/`;
+- comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`;
+- boolean `&&`, `||`;
+- `let ... in` expressions;
+- builtins: `map`, `fmap`, `filter`, `zip`, `zipWith`, `length`, `sum`, `all`, `any`, `min`, `max`,
+  `abs`, and `clamp`.
+
+CorePure has no loops, recursion, IO, time, randomness, model calls, tool calls, or host callbacks.
+For the full execution model, builtin list, and failure surface, see
+[pure-execution.md](pure-execution.md).
 
 ### 6.2 Port declarations
 
@@ -794,6 +865,10 @@ partial node, a node, or a graph expression.
 **Alias semantics**: `let` never duplicates. If the expression evaluates to a wire,
 `let name = ...;` and subsequent references to `name` refer to the same wire.
 
+A top-level `let` whose right-hand side is a CorePure lambda, such as
+`let acceptedItem = x: x.score >= 0.7;`, binds a CorePure helper instead. CorePure helpers are
+available to later pure output equations and do not introduce executor authority.
+
 ### 9.4 `import`
 
 ```wire
@@ -1133,9 +1208,32 @@ top_form          ::= contract_decl
 
 contract_decl     ::= "contract" identifier ";"
 
-node_decl         ::= "node" identifier ":" port_sig "=" expr ";"
+node_decl         ::= executor_node_decl
+                   |  pure_node_decl
+
+executor_node_decl
+                  ::= "node" identifier ":" port_sig "=" expr ";"
+
+pure_node_decl    ::= "node" identifier ":"
+                      { input_port }
+                      [ pure_let_block ]
+                      pure_output_equation { pure_output_equation }
+                      ";"
+
+pure_let_block    ::= "let" corepure_binding { corepure_binding } "in"
+
+pure_output_equation
+                  ::= "->" variant "=" pure_output_expr
+
+pure_output_expr  ::= "pure" "(" corepure_expr ")"
+                   |  "pure" "{" corepure_expr [ ";" ] "}"
 
 let_binding       ::= "let" identifier "=" expr ";"
+                   |  "let" identifier "=" corepure_shared_expr ";"
+
+corepure_shared_expr
+                  ::= corepure_lambda
+                   |  corepure_let
 
 import_stmt       ::= "import" identifier "from" string_literal ";"
                    |  "import" "{" ident_list "}" "from" string_literal ";"
@@ -1225,6 +1323,52 @@ list_expr         ::= "[" [ expr { "," expr } [ "," ] ] "]"
 qualified_ident   ::= identifier { "." identifier }
 
 ident_list        ::= identifier { "," identifier } [ "," ]
+```
+
+### 14.5 CorePure Expressions
+
+```
+corepure_binding  ::= identifier "=" corepure_expr ";"
+
+corepure_expr     ::= corepure_let
+                   |  corepure_lambda
+                   |  corepure_or
+
+corepure_let      ::= "let" corepure_binding { corepure_binding } "in" corepure_expr
+
+corepure_lambda   ::= identifier ":" corepure_expr
+                   |  identifier ":" corepure_lambda
+
+corepure_or       ::= corepure_and { "||" corepure_and }
+corepure_and      ::= corepure_compare { "&&" corepure_compare }
+
+corepure_compare  ::= corepure_add
+                      { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) corepure_add }
+
+corepure_add      ::= corepure_mul { ( "+" | "-" ) corepure_mul }
+corepure_mul      ::= corepure_unary { ( "*" | "/" ) corepure_unary }
+
+corepure_unary    ::= ( "!" | "-" ) corepure_unary
+                   |  corepure_apply
+
+corepure_apply    ::= corepure_postfix { corepure_postfix }
+
+corepure_postfix  ::= corepure_atom { "." identifier | "[" corepure_expr "]" }
+
+corepure_atom     ::= string_literal
+                   |  number_literal
+                   |  boolean_literal
+                   |  "null"
+                   |  identifier
+                   |  corepure_list
+                   |  corepure_record
+                   |  "(" corepure_expr ")"
+
+corepure_list     ::= "[" [ corepure_expr { "," corepure_expr } [ "," ] ] "]"
+
+corepure_record   ::= "{" { corepure_field ";" } "}"
+
+corepure_field    ::= path "=" corepure_expr
 ```
 
 Notes on ambiguity:

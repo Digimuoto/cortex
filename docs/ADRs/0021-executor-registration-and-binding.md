@@ -36,7 +36,8 @@ policies are admitted, and how Haskell values are encoded at Wire boundaries.
 
 Before this decision, `WireCompileEnv` mixed temporary executor-port maps with the contract catalog,
 and `Cortex.Wire.Executor` / `Cortex.Capability.Executor` were placeholders. That made it unclear
-where `@pure`, DeepReport profiles, provider policy, and Pulse stage actions should be introduced.
+where the native pure evaluator projection, DeepReport profiles, provider policy, and Pulse stage
+actions should be introduced.
 
 ## Decision
 
@@ -100,9 +101,10 @@ programs and tests.
 
 ## Deferred Work
 
-This ADR does not implement a pure expression evaluator, structural utility executors, Node algebra,
-gas, content-addressed execution, or a new Pulse result channel. `@pure` will be registered through
-the same Capability-to-Wire projection path when ADR 0019 is implemented.
+This ADR does not implement structural utility executors, Node algebra, gas, content-addressed
+execution, or a new Pulse result channel. ADR 0022 defines the Wire-authored CorePure surface:
+authors write pure output equations, and the compiler lowers them to the native pure evaluator
+registered through the same Capability-to-Wire projection path.
 
 ## Consequences
 
