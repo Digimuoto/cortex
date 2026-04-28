@@ -7,13 +7,13 @@ sidebar:
 status: draft
 date: 2026-04-24
 related:
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
   - docs/Architecture/05-wire-language.md
 ---
 
 # Wire Reference — Contracts, Ports, and Matching
 
-> **Stub.** This page is a scoped entry point into the type-surface rules in [grammar-v1.md](grammar-v1.md). Until it is fleshed out, jump directly to the grammar sections below.
+> **Stub.** This page is a scoped entry point into the type-surface rules in [grammar.md](grammar.md). Until it is fleshed out, jump directly to the grammar sections below.
 
 > **Implementation warning.** Current compiler behavior parses `contract X;` but
 > does not use it to populate registry membership. With an explicit
@@ -22,13 +22,13 @@ related:
 
 ## Where the rules live
 
-- **[§4 Contracts](grammar-v1.md#4-contracts)** — global ambient namespace, contract equality, what contracts are not.
-- **[§6.2 Port declarations](grammar-v1.md#62-port-declarations)** — input and output port syntax, port keys `(direction, contract, label)`, label-required cases, label semantics.
-- **[§6.3 Singular vs list-valued ports](grammar-v1.md#63-singular-vs-list-valued-ports)** — arity rules.
-- **[§6.4 No output ports](grammar-v1.md#64-no-output-ports)** — zero-output nodes.
-- **[§6.5 Sum-grouped output ports](grammar-v1.md#65-sum-grouped-output-ports)** — `-> A | B` with mutual-exclusion metadata.
-- **[§7.1 The three operators](grammar-v1.md#71-the-three-operators)** — `=>` port-key matching rule.
-- **[§7.6 What is and isn't a match](grammar-v1.md#76-what-is-and-isnt-a-match)** — cross-product-with-filter consequences.
+- **[§4 Contracts](grammar.md#4-contracts)** — global ambient namespace, contract equality, what contracts are not.
+- **[§6.2 Port declarations](grammar.md#62-port-declarations)** — input and output port syntax, port keys `(direction, contract, label)`, label-required cases, label semantics.
+- **[§6.3 Singular vs list-valued ports](grammar.md#63-singular-vs-list-valued-ports)** — arity rules.
+- **[§6.4 No output ports](grammar.md#64-no-output-ports)** — zero-output nodes.
+- **[§6.5 Sum-grouped output ports](grammar.md#65-sum-grouped-output-ports)** — `-> A | B` with mutual-exclusion metadata.
+- **[§7.1 The three operators](grammar.md#71-the-three-operators)** — `=>` port-key matching rule.
+- **[§7.6 What is and isn't a match](grammar.md#76-what-is-and-isnt-a-match)** — cross-product-with-filter consequences.
 
 ## Summary of the rules
 

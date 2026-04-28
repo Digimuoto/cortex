@@ -1,4 +1,4 @@
-;; Fold queries for Wire v1.
+;; Fold queries for Wire.
 
 (record)          @fold
 (list)            @fold

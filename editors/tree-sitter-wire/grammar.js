@@ -1,7 +1,7 @@
 /**
- * Tree-sitter grammar for the Wire v1 language.
+ * Tree-sitter grammar for the Wire language.
  *
- * Source of truth: docs/Reference/Wire/grammar-v1.md (accepted
+ * Source of truth: docs/Reference/Wire/grammar.md (accepted
  * 2026-04-23). Mirrors the Haskell parser at src/Cortex/Wire/V1.
  *
  * Top-level forms:          contract; node; let; import; and optional
@@ -271,7 +271,7 @@ module.exports = grammar({
     // ( a, b, c )       — tuple
     // ()                — empty wire / unit (handled by $.unit)
     //
-    // v1 explicitly rejects singleton trailing-comma tuples `(a,)`.
+    // the grammar rejects singleton trailing-comma tuples `(a,)`.
     paren_or_tuple: $ => seq(
       '(',
       choice(

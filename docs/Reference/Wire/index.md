@@ -12,7 +12,7 @@ The Wire language reference is organized into a normative grammar specification 
 
 ## Contents
 
-- **[grammar-v1.md](grammar-v1.md)** — the normative v1 grammar specification. The authoritative document; other pages in this directory point into its sections.
+- **[grammar.md](grammar.md)** — the normative grammar specification. The authoritative document; other pages in this directory point into its sections.
 - **[modules-imports-and-file-returns.md](modules-imports-and-file-returns.md)** — module model, `import` semantics, file-return expressions, declaration-only files. Corresponds to grammar §9.
 - **[contracts-ports-and-matching.md](contracts-ports-and-matching.md)** — contract namespace, port declarations, sum groups, labels, `=>` port-key matching. Corresponds to grammar §4, §6.2–§6.5, §7.1, §7.6.
 - **[partials-and-execution-boundary.md](partials-and-execution-boundary.md)** — partial nodes in graph position, port-determined rule, evaluation-boundary check. Corresponds to grammar §5.4, §11.

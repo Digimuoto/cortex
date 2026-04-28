@@ -7,7 +7,7 @@ related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Publications/Paper-3-graph-substitution-semantics/
   - docs/Architecture/05-wire-language.md
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
 ---
 
 # Wire: Closed Alphabets, Open Composition for Typed Workflow Graphs

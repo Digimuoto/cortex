@@ -3,7 +3,7 @@
 Tree-sitter grammar for the Cortex **Wire** DSL. Checked-in examples
 and regression fixtures use `.wire` files under `test/fixtures/wire-v1/`.
 
-Source of truth for the syntax: `docs/Reference/Wire/grammar-v1.md`.
+Source of truth for the syntax: `docs/Reference/Wire/grammar.md`.
 The production parser is `src/Cortex/Wire/V1/Parser.hs`.
 
 ## What's here

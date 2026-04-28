@@ -1,8 +1,8 @@
 ---
-title: "Wire Grammar v1 Specification"
-description: "Normative specification of the Wire v1-final grammar: keywords, operators, port typing, executor alphabet, composition semantics."
+title: "Wire Grammar Specification"
+description: "Normative specification of the Wire grammar: keywords, operators, port typing, executor alphabet, composition semantics."
 sidebar:
-  label: Grammar v1
+  label: Grammar
   order: 1
 date: 2026-04-25
 status: accepted
@@ -11,7 +11,7 @@ related:
   - docs/Reference/Wire/conditionality.md
 ---
 
-# The Wire Language — Specification v1
+# The Wire Language — Specification
 
 A DSL for composing typed dataflow graphs. Three declaration forms, explicit imports, one composition algebra, strict port typing, explicit executor alphabet.
 
@@ -25,7 +25,7 @@ A Wire program is a `.wire` file that evaluates to a **wire**: a typed dataflow 
 
 The language has exactly three top-level declaration forms (`contract`, `node`, `let`), one cross-file form (`import`), two graph operators (`<>` overlay and `=>` connect), one postfix conditional form (`select(...)`, see §7.7), one record-merge operator (`//`), one concatenation operator (`++` for strings and lists), one sum-group constructor (`|` at output port positions), and one executor-application form (`@name { ... }`). The `->` token is reserved for output-port declarations in node signatures (§6.2); it is not a graph operator.
 
-Nodes are constructed by applying **executors** — named constructors from a closed alphabet registered outside Wire — to config records. Executors are the only **graph-level** extension point the grammar acknowledges. User code cannot define new executors; it composes them. Config values may also reference other registry-ambient identifiers (tool names, tagged-record constructors); those are scoped to config record positions and documented in §5.5.
+Nodes are constructed by applying **executors** — named constructors from a closed alphabet registered outside Wire — to config records. Executors are the only **graph-level** extension point the grammar acknowledges. User code cannot define new executors; it composes them. Config values may also reference other registry-ambient identifiers (tool names, tagged-record constructors); those are scoped to config record positions and documented in §5.5. The semantic boundary behind `@executor { config }` is expanded in [executors-and-alphabet.md](executors-and-alphabet.md): `@` stages registered authority with pure config data; it does not run the executor.
 
 **Labels are semantic, not cosmetic.** Ports may be labeled (`<- label: Contract`, `-> label: Contract`); a label is part of the port's identity for `=>` matching, not an annotation for humans. A labeled port connects only to an identically-labeled partner of the same contract; an unlabeled port connects only to an unlabeled partner. There is no wildcard. Author labels when you want routing control; do not label for documentation. Full rule in §6.2, matching semantics in §7.1.
 
@@ -71,7 +71,7 @@ contract   node   let   import   from   select   true   false
 
 **Records.** `{ k1 = v1; k2 = v2; }`. Fields are terminated by `;`; every field needs its terminating `;`. Empty record: `{}`.
 
-**Numbers.** Decimal integers and floats: `42`, `3.14`, `-7`. Leading `-` is part of the numeric literal, not an operator — Wire has no arithmetic in v1. No hex, octal, or scientific notation.
+**Numbers.** Decimal integers and floats: `42`, `3.14`, `-7`. Leading `-` is part of the numeric literal, not an operator — Wire has no arithmetic. No hex, octal, or scientific notation.
 
 **Booleans.** `true`, `false`.
 
@@ -100,7 +100,7 @@ Wire has two disjoint algebras of values:
 
 **Strings.** Immutable text. Concatenated with `++`.
 
-**Lists.** Ordered collections. Concatenated with `++`. Homogeneity is enforced only where a consuming executor schema or constructor signature requires it; v1 does not specify standalone ordinary-value typing beyond that. Until a list flows into a typed slot, the grammar is permissive about element types.
+**Lists.** Ordered collections. Concatenated with `++`. Homogeneity is enforced only where a consuming executor schema or constructor signature requires it; the grammar does not specify standalone ordinary-value typing beyond that. Until a list flows into a typed slot, the grammar is permissive about element types.
 
 **Numbers and booleans.** Scalar values. Used only as config values.
 
@@ -140,7 +140,7 @@ Referencing an undeclared contract name is a compile error. "Undeclared" means: 
 
 ### 4.2 Contract equality
 
-Two contracts are equal iff their names are equal. Contracts are flat — no parameters, no refinement, no subtyping in v1.
+Two contracts are equal iff their names are equal. Contracts are flat — no parameters, no refinement, no subtyping.
 
 ### 4.3 What contracts are not
 
@@ -150,7 +150,7 @@ The structural schema of a contract's values (what bytes flow through an `Eviden
 
 ### 4.4 Cost of ambient globality
 
-Contracts declared only in wire files (not anchored to any executor) have no backstop against typos: `contract EvidnceBundle;` silently becomes a different contract from `EvidenceBundle`. The moment such a contract routes through any executor-anchored path, the mismatch surfaces at pinning. For contracts that never touch an executor port, there is no static check beyond name equality. This is acceptable for v1 and will be revisited if it causes problems in practice.
+Contracts declared only in wire files (not anchored to any executor) have no backstop against typos: `contract EvidnceBundle;` silently becomes a different contract from `EvidenceBundle`. The moment such a contract routes through any executor-anchored path, the mismatch surfaces at pinning. For contracts that never touch an executor port, there is no static check beyond name equality. This is acceptable for the current grammar and will be revisited if it causes problems in practice.
 
 ---
 
@@ -166,6 +166,14 @@ An **executor** is a named constructor registered outside Wire. Each executor de
 - A **purity class** — pure or impure. This does not affect static type-checking; it is carried through to the evaluation-model spec.
 
 The alphabet is global. All executors are referenced by qualified name with a leading `@`. There is no mechanism in Wire for defining new executors; they are added by extending the registry externally.
+
+The leading `@` is the executor-authority marker. It separates registered
+executor references from ordinary config constructors such as
+`topological { preset = "analyst" }`. Applying `@` creates a staged partial
+node with pure config data; runtime effects happen only later, after the graph
+has been compiled, materialized, and scheduled by Pulse. See
+[executors-and-alphabet.md](executors-and-alphabet.md) for the registry
+admission obligations.
 
 The boundary between what the executor pins and what the author pins is a degree-of-freedom question. A fully-pinned executor (`@llm.review` with a fixed input/output signature) leaves no choices to the author. A fully-polymorphic executor (`@pure`) leaves every choice open. Most real executors sit in between.
 
@@ -193,7 +201,7 @@ tools, memory, model choice, timeout, step budget, and executor-specific fields
 are all ordinary config fields. Wire does not define a second metadata channel
 for those concerns.
 
-Schema-checking timing for partial nodes is **implementation-defined for v1**. The reference implementation checks the partial's config at pinning time — i.e., in the `node ... = <partial>` declaration — because partial-node reuse (§5.3) routinely omits fields that are filled in later by `//`. Implementations are free to perform eager type-checks on provided fields at `@` application, but must not reject a partial node for missing fields until pinning.
+Schema-checking timing for partial nodes is **implementation-defined**. The reference implementation checks the partial's config at pinning time — i.e., in the `node ... = <partial>` declaration — because partial-node reuse (§5.3) routinely omits fields that are filled in later by `//`. Implementations are free to perform eager type-checks on provided fields at `@` application, but must not reject a partial node for missing fields until pinning.
 
 ### 5.3 Config merge on partial nodes
 
@@ -230,7 +238,7 @@ Authors wanting local reasoning and predictable errors should prefer explicit `n
 
 Rewrite producers use the same surface as authored workflows: explicit `node`
 declarations plus a final graph expression. There is no separate template-use
-syntax in v1.
+syntax.
 
 ### 5.5 Ambient identifiers in config values
 
@@ -328,7 +336,7 @@ This is a **sum group** — a grammar-level construct distinct from independent 
 3. **Mutual exclusion is a grammar-level property.** At each evaluation, exactly one variant fires; the others do not produce a value. The runtime enforces this using the metadata.
 4. `=>` matches variants **individually**. An edge forms for each variant whose contract matches an input on the other side of the connect. The sum-grouping metadata survives on the outgoing edges so the runtime knows which edges are part of the same mutual-exclusion set.
 
-**Sum groups are output-position only in v1.** Input ports may not use `|`.
+**Sum groups are output-position only.** Input ports may not use `|`.
 
 Sum groups are a general feature for any mutually-exclusive output, not a special error-handling construct. The failure-variant pattern (`-> T | ExecutorError`) is the common case, but authors may use sum groups anywhere a node genuinely produces one of several alternatives per evaluation.
 
@@ -354,7 +362,7 @@ planner => gatherer => merge => review => rewriter <> merge => rewriter
 
 the second `merge` and second `rewriter` are the **same nodes** as the first occurrences. `<>` (overlay) is union on nodes and edges; shared nodes retain their identity.
 
-This matches `let` alias semantics (§9.3). There is no node-cloning construct in v1.
+This matches `let` alias semantics (§9.3). There is no node-cloning construct.
 
 ### 6.7 Node well-formedness
 
@@ -391,7 +399,7 @@ A wire has a **port-boundary**: the set of its unconnected input ports (sources)
 
 Unmatched ports on either side remain on the composed wire's boundary. Labels are the mechanism authors use to control matching explicitly; see §6.2.
 
-**No path operator.** An earlier draft included `->` as a singleton-chain specialization of `=>`. It is not part of v1: it added no expressiveness over `=>`, and the `->` glyph collides with the output-port declaration form (§6.2), creating visual ambiguity in mixed contexts. `=>` covers every connect case. See §13.
+**No path operator.** An earlier draft included `->` as a singleton-chain specialization of `=>`. It is not part of Wire: it added no expressiveness over `=>`, and the `->` glyph collides with the output-port declaration form (§6.2), creating visual ambiguity in mixed contexts. `=>` covers every connect case. See §13.
 
 ### 7.2 Precedence and associativity
 
@@ -451,7 +459,7 @@ In graph position, `(a, b, c)` is the overlay `a <> b <> c` — three independen
  ,  gatherer_beneficiaries => analyst_beneficiaries )
 ```
 
-Tuple elements are flattened under composition: `((a, b), c)` is equivalent to `(a, b, c)`. A single-element parenthesized expression `(a)` is just `a`. The single-element tuple spelling `(a,)` is not admitted in v1. The empty tuple `()` is the empty wire (§7.4). Trailing commas are permitted on two-or-more-element tuples.
+Tuple elements are flattened under composition: `((a, b), c)` is equivalent to `(a, b, c)`. A single-element parenthesized expression `(a)` is just `a`. The single-element tuple spelling `(a,)` is not admitted. The empty tuple `()` is the empty wire (§7.4). Trailing commas are permitted on two-or-more-element tuples.
 
 ### 7.6 What is and isn't a match
 
@@ -668,11 +676,12 @@ A `.wire` file type-checks iff all of the following hold:
 
 1. Every referenced contract is declared (in some executor vocabulary or in some loaded `contract` assertion).
 2. Every `@executor { config }` application references a registered executor.
-3. Every `node` declaration is well-formed per §6.7.
-4. Every port label-requirement is satisfied (no two ports on the same node share a port key).
-5. Every graph composition produces a well-formed graph under the arity rules: singular inputs receive at most one edge; list inputs receive zero or more.
-6. The file-return expression (if present) evaluates to a wire value — not a record, string, list, or partial node without resolvable ports.
-7. `//` and `++` are applied only to their permitted value kinds.
+3. Every executor config validates against the executor's registry schema.
+4. Every `node` declaration is well-formed per §6.7.
+5. Every port label-requirement is satisfied (no two ports on the same node share a port key).
+6. Every graph composition produces a well-formed graph under the arity rules: singular inputs receive at most one edge; list inputs receive zero or more.
+7. The file-return expression (if present) evaluates to a wire value — not a record, string, list, or partial node without resolvable ports.
+8. `//` and `++` are applied only to their permitted value kinds.
 
 Well-typed wires may have **open boundaries** — unconnected singular inputs are allowed and are part of the wire's importable/composable surface. An entry wire prepared for execution is a stricter category; see below.
 
@@ -798,18 +807,18 @@ let thesis =
 
 ---
 
-## 13. Out of scope for v1
+## 13. Out of scope
 
-The following are intentionally deferred. Each has a known generalization path that does not invalidate v1 code.
+The following are intentionally deferred. Each has a known generalization path that does not invalidate existing code.
 
 - **Filtered connect `=>?`** — aspect-style composition where `=>` matches only compatible ports and passes the rest through. Admissible later as an additional operator without changing existing `=>`.
 - **Refinement contracts** — `contract A :> B;` with subtyping. Deferred; flat contracts today.
 - **Universal runtime contract `Graph C`** — polymorphic runtimes that accept any graph. Deferred; runtimes today are specialized by input contract.
 - **Executor authoring in `.wire`** — extending the alphabet from within Wire. Deferred; executors are globally registered externally.
 - **First-class functions / lambdas** — user-defined parameterized wire templates. Deferred; reuse today is via partial nodes + `//`.
-- **Zero-port wires** — nodes or wires with no ports at all. Deferred; v1 requires every node to have at least one port.
+- **Zero-port wires** — nodes or wires with no ports at all. Deferred; Wire requires every node to have at least one port.
 - **Sum groups at input positions** — input ports are singular or list-valued; `|` is output-only. Admissible later.
-- **`->` as graph operator** — removed from v1. It was a singleton-chain specialization of `=>` with zero additional expressiveness and a visual collision with the `->` output-port marker. `=>` covers every connect case. If a compelling ergonomic case emerges later, reintroducing `->` is additive and non-breaking.
+- **`->` as graph operator** — removed from the canonical grammar. It was a singleton-chain specialization of `=>` with zero additional expressiveness and a visual collision with the `->` output-port marker. `=>` covers every connect case. If a compelling ergonomic case emerges later, reintroducing `->` is additive and non-breaking.
 - **Port projection and internal addressing** — `wire.node.port` reaching into wire internals. Rejected by design; violates boundary sealing.
 - **Multiple built-in type constructors** — `Result`, `Option`, `List` as type constructors. Rejected; failure is topology (via sum groups), fan-in is `[C]` at input ports.
 - **Evaluation model spec** — gas accounting, topological memory, rewrite bounds, determinism guarantees. Deferred to a sibling doc.
@@ -929,7 +938,7 @@ Notes on ambiguity:
 
 - `partial_expr` (with `@`) can appear in graph-expression or value-expression position; disambiguation is semantic.
 - `constructor_expr` (without `@`) is a plain qualified identifier followed by a record — used for config-value constructors like `topological { preset = "..." }`. It is a value-expression form only; it cannot appear in graph-expression position.
-- `paren_or_tuple` is the empty wire `()` with no contents, ordinary parenthesization with one expression, and a tuple with two or more comma-separated expressions. Single-element `(a,)` is not admissible in v1; use `a` for parenthesization or two-or-more elements for a tuple. In graph-expression position, a tuple overlays its elements; in value-expression position, tuples are not first-class and the form is invalid.
+- `paren_or_tuple` is the empty wire `()` with no contents, ordinary parenthesization with one expression, and a tuple with two or more comma-separated expressions. Single-element `(a,)` is not admitted; use `a` for parenthesization or two-or-more elements for a tuple. In graph-expression position, a tuple overlays its elements; in value-expression position, tuples are not first-class and the form is invalid.
 
 ---
 
@@ -943,8 +952,8 @@ Notes on ambiguity:
 6. **Local reasoning over global inference.** Partial-node admissibility in graph position depends only on the partial and the executor registry, not on the enclosing expression. Port-polymorphic executors require explicit `node` declarations. The grammar has no whole-expression constraint solver.
 7. **Strict where it matters, permissive where it doesn't.** Port contracts (and labels) are strictly matched. Config records are shallowly merged right-biased. Ports are unordered sets. Empty wire is identity.
 8. **Grammar-level what, runtime-level how.** The grammar specifies composition. The runtime specifies evaluation. Mutual-exclusion pruning, gas, memory, rewrite bounds, and runnability checks all live downstream of the grammar and leave it small.
-9. **Defer generalizations until pressure.** Filtered connect, refinement, universal graph contracts, lambdas, bootstrap wires — all admissible later. None required today. v1 ships the minimum that expresses the current production wires cleanly.
+9. **Defer generalizations until pressure.** Filtered connect, refinement, universal graph contracts, lambdas, bootstrap wires — all admissible later. None required today. The current grammar ships the minimum that expresses the current production wires cleanly.
 
 ---
 
-*End of specification v1.*
+*End of specification.*

@@ -22,8 +22,8 @@ If you are evaluating Cortex rather than implementing against Pulse directly,
 the core model and service boundary are the key sections. The later sections
 spell out the runtime mechanics in detail.
 
-Wire source examples on this page use v1 syntax. The normative grammar is
-[`../Reference/Wire/grammar-v1.md`](../Reference/Wire/grammar-v1.md); the
+Wire source examples on this page use the canonical grammar. The normative grammar is
+[`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md); the
 substrate story is [`./05-wire-language.md`](./05-wire-language.md).
 
 ## Core model

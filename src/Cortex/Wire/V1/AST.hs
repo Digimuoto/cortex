@@ -3,10 +3,10 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Wire v1 abstract syntax tree.
+-- | Wire abstract syntax tree.
 --
 -- Mirrors the grammar specified in
--- @docs/Reference/Wire/grammar-v1.md@ (accepted 2026-04-23). Each
+-- @docs/Reference/Wire/grammar.md@ (accepted 2026-04-23). Each
 -- production in §14 has a corresponding constructor here.
 --
 -- Structural rules, port-key matching, and runtime admission are not

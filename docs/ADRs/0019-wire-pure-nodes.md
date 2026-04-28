@@ -9,7 +9,7 @@ date: 2026-04-27
 superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
@@ -211,6 +211,6 @@ current DeepReport port extraction.
 - [ADR 0014 — Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
 - [ADR 0018 — Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
-- [Wire Grammar v1](../Reference/Wire/grammar-v1.md)
+- [Wire Grammar](../Reference/Wire/grammar.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
 - GitHub #55

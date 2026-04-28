@@ -7,13 +7,13 @@ sidebar:
 status: draft
 date: 2026-04-24
 related:
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
   - docs/Architecture/05-wire-language.md
 ---
 
 # Wire Reference — Modules, Imports, and File Returns
 
-> **Stub.** This page is a scoped entry point into the module-model rules in [grammar-v1.md](grammar-v1.md). Until it is fleshed out, jump directly to the grammar sections below.
+> **Stub.** This page is a scoped entry point into the module-model rules in [grammar.md](grammar.md). Until it is fleshed out, jump directly to the grammar sections below.
 
 > **Implementation warning.** Current compiler behavior parses `contract X;` but
 > does not use it to populate registry membership. With an explicit
@@ -22,11 +22,11 @@ related:
 
 ## Where the rules live
 
-- **[§9 Top-level forms](grammar-v1.md#9-top-level-forms)** — the whole module model: `contract`, `node`, `let`, `import`, file-return expression, wire files vs declaration-only files, closed composition with open vocabulary.
-- **[§9.4 `import`](grammar-v1.md#94-import)** — import forms, what enters local scope, `let`-aliasing pattern for node exports, ambient contract side effects.
-- **[§9.5 File-return expression](grammar-v1.md#95-file-return-expression)** — last-expression semantics, what makes a file a wire file.
-- **[§9.6 Wire files and declaration-only files](grammar-v1.md#96-wire-files-and-declaration-only-files)** — what declaration-only files contribute.
-- **[§9.7 Closed composition, open vocabulary](grammar-v1.md#97-closed-composition-open-vocabulary)** — the compilation-unit definition: program = root file + transitive imports.
+- **[§9 Top-level forms](grammar.md#9-top-level-forms)** — the whole module model: `contract`, `node`, `let`, `import`, file-return expression, wire files vs declaration-only files, closed composition with open vocabulary.
+- **[§9.4 `import`](grammar.md#94-import)** — import forms, what enters local scope, `let`-aliasing pattern for node exports, ambient contract side effects.
+- **[§9.5 File-return expression](grammar.md#95-file-return-expression)** — last-expression semantics, what makes a file a wire file.
+- **[§9.6 Wire files and declaration-only files](grammar.md#96-wire-files-and-declaration-only-files)** — what declaration-only files contribute.
+- **[§9.7 Closed composition, open vocabulary](grammar.md#97-closed-composition-open-vocabulary)** — the compilation-unit definition: program = root file + transitive imports.
 
 ## Summary of the rules
 

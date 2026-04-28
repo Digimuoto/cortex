@@ -297,7 +297,7 @@ lowerTopForm :: LoweringState -> TopForm -> Either WireCore.WireError LoweringSt
 lowerTopForm st = \case
   TopContract _ -> Right st
   TopImport _ ->
-    Left (WireCore.WireParseError "Wire v1 imports are not compiled yet in this bridge.")
+    Left (WireCore.WireParseError "Wire imports are not compiled yet in this bridge.")
   TopLet name expr -> do
     value <- evalValue st expr
     if Map.member name st.lsBindings
@@ -558,7 +558,7 @@ lowerGraphBase st = \case
   other ->
     Left
       ( WireCore.WireParseError
-          ( "Unsupported v1 graph-position expression in bridge compiler: "
+          ( "Unsupported graph-position expression in bridge compiler: "
               <> T.pack (show other)
           )
       )
@@ -1422,9 +1422,9 @@ evalValue st = \case
   ExprConnect {} ->
     Left (WireCore.WireParseError "Graph connect cannot appear in an ordinary-value position.")
   ExprSelect {} ->
-    Left (WireCore.WireParseError "select(...) is graph-position only in v1.")
+    Left (WireCore.WireParseError "select(...) is only supported in graph position.")
   ExprTuple {} ->
-    Left (WireCore.WireParseError "Tuples are graph-position only in v1.")
+    Left (WireCore.WireParseError "Tuples are only supported in graph position.")
 
 evalRecordFields ::
   LoweringState ->

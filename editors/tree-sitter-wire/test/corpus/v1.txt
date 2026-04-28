@@ -1,5 +1,5 @@
 ==================
-v1 node with sum output and file return
+node with sum output and file return
 ==================
 
 contract EvidenceBundle;

@@ -35,7 +35,7 @@ For Wire-specific detail:
 
 - [Chapter 05 — Wire language](05-wire-language.md) for Wire architecture and
   substrate concerns
-- [Wire Grammar v1](../Reference/Wire/grammar-v1.md) for the normative grammar
+- [Wire Grammar](../Reference/Wire/grammar.md) for the normative grammar
   and type-checking rules
 
 ## System Boundary
@@ -85,7 +85,7 @@ end:
 
 - **Authoring and typing** — Wire as the source language for authoring circuits;
   see [Chapter 05 — Wire language](05-wire-language.md) and
-  [Wire Grammar v1](../Reference/Wire/grammar-v1.md).
+  [Wire Grammar](../Reference/Wire/grammar.md).
 - **Topology and compilation** — Graph and Circuit as the formal and executable
   layers below Wire; see [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md).
 - **Durable execution** — Pulse as the runtime that executes compiled circuits;

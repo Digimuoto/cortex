@@ -1,4 +1,4 @@
-;; Tree-sitter highlight queries for Wire v1.
+;; Tree-sitter highlight queries for Wire.
 ;; Capture names follow the tree-sitter convention; editors map them to themes.
 
 ; ── Keywords ─────────────────────────────────────────────────────────────

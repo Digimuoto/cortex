@@ -343,7 +343,7 @@ wireProposalGrammarReference =
     [ "proposal ::= (node_decl | let_decl)* final_graph_expr",
       "node_decl ::= node IDENT : port_decl* = @executor { config_fields };",
       "let_decl ::= let IDENT = expr;",
-      "final_graph_expr ::= graph_expr   # v1 file-return syntax: no trailing ';' on the final expression",
+      "final_graph_expr ::= graph_expr   # file-return syntax: no trailing ';' on the final expression",
       "graph_expr ::= node | (graph_expr) | () | graph_expr => graph_expr | graph_expr <> graph_expr | graph_expr, graph_expr",
       "hard constraints: every referenced node must be declared locally in this proposal; graph must be a DAG; proposal entries must fit the anchor outputs; proposal exits must fit every original successor; outer workflow nodes are not in proposal scope."
     ]

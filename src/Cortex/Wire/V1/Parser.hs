@@ -1,9 +1,9 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Megaparsec-based parser for Wire v1 syntax.
+-- | Megaparsec-based parser for Wire syntax.
 --
--- Mirrors the grammar in @docs/Reference/Wire/grammar-v1.md@.
+-- Mirrors the grammar in @docs/Reference/Wire/grammar.md@.
 -- Produces a 'Cortex.Wire.V1.AST.WireFile'; semantic validation
 -- (executor registration, port keys, arity, contract membership) is a
 -- later pass.
@@ -355,7 +355,7 @@ parenOrTuple = do
       case rest of
         []
           | hadTrailingComma ->
-              fail "single-element tuples are not admissible in v1"
+              fail "single-element tuples are not admitted"
           | otherwise ->
               pure first
         _ ->
@@ -472,7 +472,7 @@ nodeDecl = do
   _ <- symbol ":"
   sig <- portSignature
   when (null sig) $
-    fail "v1 requires every node to declare at least one port"
+    fail "Wire requires every node to declare at least one port"
   _ <- symbol "="
   body <- expr
   _ <- symbol ";"

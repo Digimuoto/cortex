@@ -204,7 +204,7 @@ renderWireError = \case
   WireParseError msg ->
     "Wire parse error:\n" <> msg
   WireMissingCircuit ->
-    "Wire v1 file must end in a file-return expression."
+    "Wire file must end in a file-return expression."
   WireDuplicateNodeRef nodeRef ->
     "Wire file declared node " <> unCircuitNodeRef nodeRef <> " more than once."
   WireMissingRequiredField nodeRef fieldName ->

@@ -12,14 +12,14 @@ related:
   - docs/Architecture/03-formalism-stack.md
   - docs/Architecture/04-graph-and-circuit.md
   - docs/Architecture/05-wire-language.md
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
 ---
 
 # ADR 0010 — Wire as Closed-Authority Language over the Graph/Circuit/Wire Stack
 
 ## Status
 
-Accepted — the current Cortex vocabulary and Wire v1 architecture already assume this split and authority rule.
+Accepted — the current Cortex vocabulary and Wire architecture already assume this split and authority rule.
 
 ## Context
 
@@ -73,4 +73,4 @@ The design rule is: Wire composes registered authority, and Haskell owns what th
 - [../Architecture/03-formalism-stack.md](../Architecture/03-formalism-stack.md)
 - [../Architecture/04-graph-and-circuit.md](../Architecture/04-graph-and-circuit.md)
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md)
-- [../Reference/Wire/grammar-v1.md](../Reference/Wire/grammar-v1.md)
+- [../Reference/Wire/grammar.md](../Reference/Wire/grammar.md)

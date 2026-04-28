@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Parse every checked-in v1 fixture, then fail on any parse error.
+# Parse every checked-in Wire fixture, then fail on any parse error.
 # Invoked from CI or manually after grammar changes.
 
 set -eu

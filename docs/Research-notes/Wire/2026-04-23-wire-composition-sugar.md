@@ -6,7 +6,7 @@ status: research
 related:
   - DIG-540
   - DIG-541
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
   - docs/Architecture/05-wire-language.md
 ---
 
@@ -14,7 +14,7 @@ related:
 
 ## Context
 
-Wire v1 ships with two graph operators (`<>` overlay and `=>` connect) plus tuples, and one reuse primitive at the node level: partial nodes with `//` merge (§5.3 of the spec). Deliberately small. Deliberately Mokhov-algebraic.
+The Wire grammar ships with two graph operators (`<>` overlay and `=>` connect) plus tuples, and one reuse primitive at the node level: partial nodes with `//` merge (§5.3 of the spec). Deliberately small. Deliberately Mokhov-algebraic.
 
 Two classes of reuse are naturally expressible in v1:
 

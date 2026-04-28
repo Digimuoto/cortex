@@ -9,7 +9,7 @@ related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Publications/Paper-3-graph-substitution-semantics/
   - docs/Architecture/05-wire-language.md
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
 ---
 
 # Paper 4 — Wire Language
@@ -36,4 +36,4 @@ This paper presents Wire, a source language for authoring typed workflow and rea
 - [../Paper-2-algebraic-foundations/](../Paper-2-algebraic-foundations/) — algebraic substrate beneath Wire.
 - [../Paper-3-graph-substitution-semantics/](../Paper-3-graph-substitution-semantics/) — substitution and materialization semantics that Wire hands off to.
 - [../../Architecture/05-wire-language.md](../../Architecture/05-wire-language.md) — architecture chapter.
-- [../../Reference/Wire/grammar-v1.md](../../Reference/Wire/grammar-v1.md) — current normative grammar surface.
+- [../../Reference/Wire/grammar.md](../../Reference/Wire/grammar.md) — current normative grammar surface.

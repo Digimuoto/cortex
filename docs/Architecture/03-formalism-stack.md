@@ -164,7 +164,7 @@ mutating the alphabet.
 - [`../Reference/terminology.md`](../Reference/terminology.md) — normative vocabulary.
 - [`./01-overview.md`](./01-overview.md) — three-layer model and ownership.
 - [`./04-graph-and-circuit.md`](./04-graph-and-circuit.md) — Graph and Circuit mechanics.
-- [`./05-wire-language.md`](./05-wire-language.md) — Wire substrate; grammar at [`../Reference/Wire/grammar-v1.md`](../Reference/Wire/grammar-v1.md).
+- [`./05-wire-language.md`](./05-wire-language.md) — Wire substrate; grammar at [`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md).
 - [`./07-rewrites-and-materialization.md`](./07-rewrites-and-materialization.md) — rewrite admission mechanics.
 - [`../Publications/Paper-2-algebraic-foundations/manuscript.md`](../Publications/Paper-2-algebraic-foundations/manuscript.md) — algebraic foundations of staged durable execution.
 - [`../Publications/Paper-3-graph-substitution-semantics/manuscript.md`](../Publications/Paper-3-graph-substitution-semantics/manuscript.md) — vertex-anchored substitution semantics.

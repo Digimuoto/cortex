@@ -7,7 +7,7 @@ sidebar:
 status: draft
 date: 2026-04-24
 related:
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
   - docs/Reference/rewrites.md
   - docs/ADRs/0007-latent-branch-conditional-lowering.md
   - docs/Architecture/05-wire-language.md
@@ -29,7 +29,7 @@ The short version is:
 - productive arms share a common downstream boundary
 - the current Cortex runtime is a narrower binary subset of this model
 
-This page is normative about the intended language model and informative about the current implementation status. [grammar-v1.md](grammar-v1.md) carries the compact grammar and typing rules; this page expands the same conditional model semantically and explains how the current Cortex implementation realizes a narrower subset.
+This page is normative about the intended language model and informative about the current implementation status. [grammar.md](grammar.md) carries the compact grammar and typing rules; this page expands the same conditional model semantically and explains how the current Cortex implementation realizes a narrower subset.
 
 ## 1. Status and Scope
 
@@ -49,7 +49,7 @@ This page therefore does five things:
 - states the main typing, composition, and budgeting rules
 - records how the current Cortex implementation realizes a narrower subset today
 
-This page does not repeat the full EBNF for `select(...)`; that lives in [grammar-v1.md](grammar-v1.md).
+This page does not repeat the full EBNF for `select(...)`; that lives in [grammar.md](grammar.md).
 
 ## 2. Conditionality Is Exclusive-Output Reduction
 
@@ -106,7 +106,7 @@ The conditional model Wire needs is therefore:
 
 ## 4. Exclusive Outputs Are Necessary but Not Sufficient
 
-Wire v1 already has one crucial ingredient: **sum-grouped output ports**.
+Wire already has one crucial ingredient: **sum-grouped output ports**.
 
 ```wire
 node gate :
@@ -121,7 +121,7 @@ The accepted grammar already says:
 - at each evaluation, exactly one variant fires
 - the runtime carries and enforces that mutual-exclusion metadata
 
-See [§6.5 Sum-grouped output ports](grammar-v1.md#65-sum-grouped-output-ports).
+See [§6.5 Sum-grouped output ports](grammar.md#65-sum-grouped-output-ports).
 
 That means the language already knows how to say:
 
@@ -157,7 +157,7 @@ The intended reading is:
 
 This is why the operator belongs **after** the selecting graph, not around it. The left-hand graph is the thing whose output boundary is being reduced.
 
-> **Syntax status.** `select(...)` is now the accepted conditional form in [grammar-v1.md](grammar-v1.md). This page remains the fuller semantic reference for how that form should be understood.
+> **Syntax status.** `select(...)` is now the accepted conditional form in [grammar.md](grammar.md). This page remains the fuller semantic reference for how that form should be understood.
 
 ### 5.1 `select(...)` is a single expression unit
 
@@ -372,7 +372,7 @@ Bn : Vn -> T
 G select(V1: B1, ..., Vn: Bn) : I -> T
 ```
 
-This is enough for the semantic reference. [grammar-v1.md](grammar-v1.md) carries the compact formal grammar and operator precedence.
+This is enough for the semantic reference. [grammar.md](grammar.md) carries the compact formal grammar and operator precedence.
 
 ### 8.3 Shared continuation should stay outside
 
@@ -394,7 +394,7 @@ validate_plan select(
 )
 ```
 
-(The tuple form `(a, b, c, d)` overlays its elements as parallel lanes — see [grammar-v1.md §7.5](grammar-v1.md#75-tuples-of-wires) — and avoids the `<>` / `=>` precedence pitfall: `=> a <> b` parses as `(prior => a) <> b`, not as "connect to the overlay of `a` and `b`".)
+(The tuple form `(a, b, c, d)` overlays its elements as parallel lanes — see [grammar.md §7.5](grammar.md#75-tuples-of-wires) — and avoids the `<>` / `=>` precedence pitfall: `=> a <> b` parses as `(prior => a) <> b`, not as "connect to the overlay of `a` and `b`".)
 
 because the shared continuation should not be duplicated inside the branch alternatives unless it genuinely differs by branch.
 
@@ -488,7 +488,7 @@ The current Cortex implementation is a **narrower subset** of the target model a
 
 What exists today:
 
-- accepted `select(...)` syntax in the Wire v1 grammar
+- accepted `select(...)` syntax in the Wire grammar
 - parser and bridge-compiler support for postfix `select(...)`
 - n-way source `select(...)` lowered by the compiler to nested binary condition trees
 - a binary runtime model
@@ -622,7 +622,7 @@ This chapter is intended to make the target semantics and the current implementa
 
 ## Related
 
-- [grammar-v1.md](grammar-v1.md) — accepted Wire v1 grammar.
+- [grammar.md](grammar.md) — accepted Wire grammar.
 - [../rewrites.md](../rewrites.md) — runtime rewrite algebra and current `AppendAfter` realization.
 - [../../ADRs/0007-latent-branch-conditional-lowering.md](../../ADRs/0007-latent-branch-conditional-lowering.md) — accepted latent-branch architecture decision.
 - [../../Architecture/05-wire-language.md](../../Architecture/05-wire-language.md) — Wire substrate architecture.

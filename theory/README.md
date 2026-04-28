@@ -109,11 +109,18 @@ preservation evidence for graph acyclicity, the caller-supplied contract
 predicate, and positive budget consumption. Remaining obligations:
 
 - connect those proof-carrying certificates to the Haskell admission path;
-- instantiate the contract predicate from the registry boundary model;
+- instantiate the contract predicate from the Wire `@` registry boundary
+  model: every materialized executor node must come from a registered
+  executor reference, validated pure config, declared or derivable ports,
+  known contracts, explicit purity/effect metadata, and explicit host
+  authority;
 - lift local positive-cost consumption to a full rewrite-chain
   termination proof.
 
 This is the "sandbox by proof" story for dynamic graph rewriting.
+Rewrites may transform topology, but they cannot invent new `@` executor
+authority outside the registry boundary documented in
+`docs/Reference/Wire/executors-and-alphabet.md`.
 
 ### Track 4 — Provider / spark abstraction (TODO)
 

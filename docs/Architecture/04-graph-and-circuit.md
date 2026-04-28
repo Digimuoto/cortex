@@ -162,4 +162,4 @@ and they should not use Circuit as a hiding place for product policy.
 - [./08-artifacts-and-provenance.md](./08-artifacts-and-provenance.md) — envelopes and payload kinds on edges.
 - [./02-ownership-and-boundaries.md](./02-ownership-and-boundaries.md) — Cortex ↔ host boundary.
 - [../Reference/terminology.md](../Reference/terminology.md) — normative vocabulary.
-- [../Reference/Wire/grammar-v1.md](../Reference/Wire/grammar-v1.md) — Wire v1 normative grammar.
+- [../Reference/Wire/grammar.md](../Reference/Wire/grammar.md) — Wire normative grammar.

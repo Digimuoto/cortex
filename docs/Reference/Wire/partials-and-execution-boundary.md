@@ -7,7 +7,7 @@ sidebar:
 status: draft
 date: 2026-04-24
 related:
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/rewrites.md
   - docs/Architecture/05-wire-language.md
@@ -15,14 +15,14 @@ related:
 
 # Wire Reference — Partials and Execution Boundary
 
-> **Stub.** This page is a scoped entry point into the partial-node and execution-boundary rules in [grammar-v1.md](grammar-v1.md). Until it is fleshed out, jump directly to the grammar sections below.
+> **Stub.** This page is a scoped entry point into the partial-node and execution-boundary rules in [grammar.md](grammar.md). Until it is fleshed out, jump directly to the grammar sections below.
 
 ## Where the rules live
 
-- **[§5.4 Partial nodes in graph position](grammar-v1.md#54-partial-nodes-in-graph-position)** — the **port-determined rule**. Whether a partial may appear in graph position depends only on the partial and the registry; no whole-expression inference.
-- **[§11 Type-checking summary](grammar-v1.md#11-type-checking-summary)** — well-formedness checks; evaluation-boundary check for runnable wires.
+- **[§5.4 Partial nodes in graph position](grammar.md#54-partial-nodes-in-graph-position)** — the **port-determined rule**. Whether a partial may appear in graph position depends only on the partial and the registry; no whole-expression inference.
+- **[§11 Type-checking summary](grammar.md#11-type-checking-summary)** — well-formedness checks; evaluation-boundary check for runnable wires.
 
-For the `//`-on-partials rule (`base // { delta }` producing a new partial), see **[§5.3 Config merge on partial nodes](grammar-v1.md#53-config-merge-on-partial-nodes)**, covered in the [Executors and the alphabet](./executors-and-alphabet.md) stub.
+For the `//`-on-partials rule (`base // { delta }` producing a new partial), see **[§5.3 Config merge on partial nodes](grammar.md#53-config-merge-on-partial-nodes)**, covered in the [Executors and the alphabet](./executors-and-alphabet.md) stub.
 
 Executor registration, application, and config-merge rules are covered separately in [Executors and the alphabet](./executors-and-alphabet.md). The rewrite algebra, admission, and materialization — the runtime-side picture — are in the [Rewrites reference](../rewrites.md); this page does not restate them.
 

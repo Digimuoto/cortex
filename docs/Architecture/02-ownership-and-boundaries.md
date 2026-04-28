@@ -75,7 +75,7 @@ layout.
 
 Cortex is not a thin provider wrapper. It owns the generic substrate end to end, grouped into three layers:
 
-- **Source language and graph layer.** Algebraic graph primitives (`Empty | Vertex | Overlay | Connect`), DAG validation, the validated executable Circuit, and the Wire source language that authors circuits. Normative Wire grammar lives at [`../Reference/Wire/grammar-v1.md`](../Reference/Wire/grammar-v1.md).
+- **Source language and graph layer.** Algebraic graph primitives (`Empty | Vertex | Overlay | Connect`), DAG validation, the validated executable Circuit, and the Wire source language that authors circuits. Normative Wire grammar lives at [`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md).
 - **Runtime and agent layer.** The Pulse runtime — durable stage execution,
   checkpointing, rewrite hydration, and frontier scheduling — ships as its own
   service. Run lifecycle and stage events sit alongside it, with generic agent

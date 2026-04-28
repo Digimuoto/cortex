@@ -48,6 +48,10 @@ A single Wire value often wears multiple hats. The roles are:
 | **Composed wire** | Result of applying a graph operator. Has a derived boundary. | `planner => gatherer => analyst` |
 | **Runtime wrapper** | A node whose role is to host a whole wire and provide runtime services. | `@cortex.report_run { title = ...; }` |
 
+The leading `@` marks the executor-authority boundary. It stages a registered
+executor with pure config data; it does not run the executor. See
+[Reference/Wire/executors-and-alphabet.md](Reference/Wire/executors-and-alphabet.md).
+
 ## Artifacts a contract can carry
 
 Every contract declares a **payload kind** that selects validation and rendering:
@@ -72,6 +76,8 @@ Cortex has a small closed set of globally-ambient namespaces:
 | **Config constructors** | Executor config schemas | `qualified.name { ... }` inside config values |
 
 Beyond these four, every name is local: introduced by `let`, `node`, or `import`.
+The executor alphabet is authority-bearing; ordinary config constructors are
+not. The syntax distinction is the leading `@`.
 
 ## Nous archetypes and patterns
 

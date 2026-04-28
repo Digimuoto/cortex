@@ -108,7 +108,7 @@ flowchart LR
    what belongs in Cortex versus a downstream product.
 3. **[Wire language](Architecture/05-wire-language.md)** - how source programs
    describe executable topology.
-4. **[Wire grammar v1](Reference/Wire/grammar-v1.md)** - the normative language
+4. **[Wire grammar](Reference/Wire/grammar.md)** - the normative language
    surface.
 5. **[Pulse runtime](Architecture/06-pulse-runtime.md)** - durable execution,
    events, signals, retries, and host actions.

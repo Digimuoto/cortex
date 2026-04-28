@@ -6,7 +6,7 @@ version: "v1"
 related:
   - docs/Architecture/01-overview.md
   - docs/Architecture/05-wire-language.md
-  - docs/Reference/Wire/grammar-v1.md
+  - docs/Reference/Wire/grammar.md
 ---
 
 # Cortex Terminology
@@ -27,7 +27,7 @@ Each layer owns a specific set of terms. This page groups them by layer.
 |---|---|---|
 | **Graph** | The lowest pure algebraic topology layer: vertices, edges, `Empty`, `Overlay`, `Connect`, relation construction, and DAG validation. Pure; no evaluation semantics. | `Cortex.Graph` |
 | **Circuit** | The validated executable topology. Predeclared nodes plus compatible-port edges, ready for execution. A Wire source file compiles to a Circuit. | `Cortex.Circuit` |
-| **Wire** | The source language and file format used to author Circuits. Composes registered authority (nodes and contracts) into a topology. Normative grammar: [grammar-v1.md](Wire/grammar-v1.md). | `Cortex.Wire` |
+| **Wire** | The source language and file format used to author Circuits. Composes registered authority (nodes and contracts) into a topology. Normative grammar: [grammar.md](Wire/grammar.md). | `Cortex.Wire` |
 | **Pulse** | The durable runtime that schedules and executes a compiled Circuit. Standalone service `cortex-pulse`. | `Cortex.Pulse` |
 
 ## Wire language
@@ -125,7 +125,7 @@ Terms used to classify docs in `docs/`. See [../map.md](../map.md) for how each 
 
 ## Related
 
-- [Wire/grammar-v1.md](Wire/grammar-v1.md) — normative Wire grammar.
+- [Wire/grammar.md](Wire/grammar.md) — normative Wire grammar.
 - [../Architecture/01-overview.md](../Architecture/01-overview.md) — canonical overview.
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md) — Wire substrate architecture.
 - [../glossary.md](../glossary.md) — informal quick-reference.

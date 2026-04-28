@@ -24,7 +24,7 @@ into Cortex.
 
 The normative rules live in the reference:
 
-- [Wire Grammar v1](../Reference/Wire/grammar-v1.md) — grammar, precedence,
+- [Wire Grammar](../Reference/Wire/grammar.md) — grammar, precedence,
   type surface, composition semantics
 - [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md) —
   contract namespace, port declarations, `=>` matching
@@ -218,6 +218,6 @@ Cortex still owns the source language, composition rules, and substrate runtime.
   contract, port, executor, and binding separation
 - [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md) —
   deterministic expression nodes and same-contract labels
-- [Wire Grammar v1](../Reference/Wire/grammar-v1.md) — normative grammar
+- [Wire Grammar](../Reference/Wire/grammar.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
 - [Consumer examples](../Consumers/) — downstream binding examples

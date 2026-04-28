@@ -19,7 +19,7 @@ casual lookup and orientation.
   connect, and law-bearing graph operations.
 - **Wire** — the source language for authoring executable topology. Its compiled
   circuit form is the artifact Pulse executes. Grammar:
-  [Reference/Wire/grammar-v1.md](Reference/Wire/grammar-v1.md).
+  [Reference/Wire/grammar.md](Reference/Wire/grammar.md).
 - **Pulse** — the durable runtime that executes Circuits. See
   [Architecture/06-pulse-runtime.md](Architecture/06-pulse-runtime.md).
 - **Capability** — external authority surfaces available to execution: models,

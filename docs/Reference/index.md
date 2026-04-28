@@ -15,7 +15,7 @@ workflow rather than read front-to-back.
 
 - **[terminology.md](terminology.md)** — accepted Wire and Cortex terms. Canonical definitions; the source of truth for vocabulary.
 - **[Wire/](Wire/)** — Wire language reference:
-  - **[grammar-v1.md](Wire/grammar-v1.md)** — normative v1 grammar specification.
+  - **[grammar.md](Wire/grammar.md)** — normative grammar specification.
   - **[modules-imports-and-file-returns.md](Wire/modules-imports-and-file-returns.md)** — module model, import semantics, file-return rules.
   - **[contracts-ports-and-matching.md](Wire/contracts-ports-and-matching.md)** — contract namespace, port declarations, `=>` port-key matching.
   - **[partials-and-execution-boundary.md](Wire/partials-and-execution-boundary.md)** — partial nodes in graph position, port-determined rule, evaluation-boundary check.
