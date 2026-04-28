@@ -27,13 +27,13 @@ slices replace scaffold assumptions with theorems, while unfinished tracks keep 
 `connect`. `Cortex.Graph.Relation` defines the finite relation denotation used by the Haskell
 `toRelation` implementation and proves the Mokhov laws on that denotation with mathlib `Finset`s.
 `Cortex.Graph.Laws` now exposes the AST-facing laws as theorems over denotational equality
-(`GraphEq`), because raw syntax trees are not definitionally equal. The next quotient step
-(`Cortex.Graph.Quotient`, TODO) can lift those denotational laws to ordinary equality on a quotient
-carrier.
+(`GraphEq`), because raw syntax trees are not definitionally equal. `Cortex.Graph.Quotient` defines
+`AlgGraph α`, the quotient of raw graph expressions by `GraphEq`, and lifts the same laws to
+ordinary equality on that algebraic carrier.
 
 **Headline obligation:** `connect_decomposition` (`g · h · k = g · h ⊕ g · k ⊕ h · k`). This is what
 licenses circuit simplification and the executor's compatibility-edge derivation. The relation-level
-theorem now exists; the remaining obligation is lifting it through graph equivalence.
+theorem, denotational AST theorem, and quotient-equality theorem now exist.
 
 ### Track 2 — Fixed-topology Pulse kernel
 
@@ -79,8 +79,7 @@ Mechanized results now include:
 
 The Paper 1 Lean-Haskell modeling boundary is documented in
 `docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md`. Remaining obligations include
-Haskell-side establishment of the persisted recovery preconditions and quotient lifting for the
-graph algebra laws.
+Haskell-side establishment of the persisted recovery preconditions.
 
 ### Track 3 — Rewrite soundness
 
@@ -215,7 +214,7 @@ The repo's pre-commit hook checks theory changes through the flake surface
 | -------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                | relation-level laws                                                                                                                                                                                                                            | none        |
 | 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                         | denotational law surface                                                                                                                                                                                                                       | none        |
-| 1c. Graph quotient laws          | lifted quotient equality laws                                                           | pending                                                                                                                                                                                                                                        | none        |
+| 1c. Graph quotient laws          | lifted quotient equality laws                                                           | `AlgGraph` quotient carrier, lifted operations, quotient equality bridge, Mokhov laws as `=`                                                                                                                                                   | none        |
 | 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface            | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none        |
 | 3. Rewrite soundness             | registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge | node/edge registry predicates, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget                                            | none        |
 | 4. Provider / sparks             | —                                                                                       | —                                                                                                                                                                                                                                              | not started |

@@ -2,6 +2,7 @@
 import Cortex.Graph.Core
 import Cortex.Graph.Relation
 import Cortex.Graph.Laws
+import Cortex.Graph.Quotient
 
 -- Track 2 — Pulse runtime, fixed-topology kernel
 import Cortex.Pulse.DAG

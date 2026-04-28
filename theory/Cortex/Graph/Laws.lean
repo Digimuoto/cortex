@@ -18,8 +18,8 @@ modulo the finite relation denotation defined in
 
 The page defines denotational graph equality, proves Mokhov's unit and
 algebraic laws as theorems, and restates selected laws for the `+` and
-`*` operator surface. A later quotient module can lift these facts to
-ordinary equality on a quotient carrier.
+`*` operator surface. `Cortex.Graph.Quotient` packages this relation as
+the setoid for the `AlgGraph` quotient carrier.
 
 ## Status
 
@@ -35,7 +35,7 @@ ordinary equality on a quotient carrier.
 | `connect_distrib_overlay_right`        | theorem       |
 | `connect_decomposition`                | theorem       |
 
-The remaining Track 1 obligation is quotient lifting.
+The quotient law surface lives in `Cortex.Graph.Quotient`.
 
 ## References
 
@@ -138,7 +138,7 @@ Same denotational laws re-expressed against the Lean operator surface
 notation.
 -/
 
-theorem overlay_comm_plus {α : Type} [DecidableEq α] (g h : Graph α) :
+theorem overlay_comm_add {α : Type} [DecidableEq α] (g h : Graph α) :
     GraphEq (g + h) (h + g) :=
   overlay_comm g h
 

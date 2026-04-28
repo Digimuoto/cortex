@@ -30,6 +30,7 @@ lean_lib «Cortex» where
     `Cortex.Graph.Core,
     `Cortex.Graph.Relation,
     `Cortex.Graph.Laws,
+    `Cortex.Graph.Quotient,
     `Cortex.Pulse.DAG,
     `Cortex.Pulse.State,
     `Cortex.Pulse.Fact,
