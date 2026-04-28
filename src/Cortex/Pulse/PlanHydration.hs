@@ -173,6 +173,10 @@ renderRewriteValidationError errs = T.intercalate "; " (fmap renderOne errs)
         "Rewrite subgraph must declare at least one entry node"
       RewritePlanningIssue RewriteExitNodesMissing ->
         "Rewrite subgraph must declare at least one exit node"
+      RewritePlanningIssue (RewriteDuplicateEntryNodes nodes) ->
+        "Rewrite subgraph declares duplicate entry nodes: " <> showNodeIds nodes
+      RewritePlanningIssue (RewriteDuplicateExitNodes nodes) ->
+        "Rewrite subgraph declares duplicate exit nodes: " <> showNodeIds nodes
       RewritePlanningIssue (RewriteEntryNodesOutsideTopology nodes) ->
         "Rewrite entry nodes are outside the inserted topology: " <> showNodeIds nodes
       RewritePlanningIssue (RewriteExitNodesOutsideTopology nodes) ->

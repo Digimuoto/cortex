@@ -16,6 +16,7 @@ import Cortex.Pulse.Classify
 -- Track 3 — Wire rewrite soundness
 import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
+import Cortex.Wire.Admission
 
 /-!
 ## Overview

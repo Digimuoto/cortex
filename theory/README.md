@@ -86,17 +86,47 @@ graph algebra laws.
 
 `Cortex.Wire.Registry` models the `@` executor boundary as pure staging of registered authority:
 executor lookup, config validation, registry-wide contract vocabulary, endpoint compatibility,
-effect-class policy, output validation, and host authority. `Cortex.Wire.Rewrite` sketches the
-admission predicate from `src/Cortex/Pulse/Rewrite.hs`. The current Lean surface is proof-carrying
-rather than vacuous: an admitted `Rewrite` carries preservation evidence for graph acyclicity, the
-caller-supplied contract predicate, and consumption of the five-dimensional runtime rewrite budget.
-Chain-level theorems now lift those local certificates across finite rewrite sequences and bound the
-number of admitted steps by the initial remaining rewrite-operation budget. Remaining obligations:
+effect-class policy, output validation, and host authority. `Cortex.Wire.Rewrite` defines the
+proof-carrying rewrite certificate surface: an admitted `Rewrite` carries preservation evidence for
+graph acyclicity, the caller-supplied contract predicate, and consumption of the five-dimensional
+runtime rewrite budget. `Cortex.Wire.Admission` now models the proof-side bridge from
+`planGraphRewrite` and `admitRewriteDelta`: anchor existence, anchor definition coverage,
+inserted-subgraph validity, entry/exit non-emptiness, orphan-freedom, denotational equality to a
+relation-level final-topology construction, relation-diff equations, anchor-disposition coupling,
+structural cost equations for every budget dimension, the final definition-domain update equation,
+final-definition coverage, final acyclicity, and pointwise budget consumption.
 
-- connect those proof-carrying certificates to the Haskell admission path;
+Mechanized results now include:
+
+- `plannedRewriteSafety_of_checks`: runtime planning checks supply the acyclicity and positive
+  rewrite-operation parts of a proof-carrying rewrite.
+- `planGraphRewriteChecks_topology_matches`: planning checks expose the final-topology construction
+  equation.
+- `planGraphRewriteChecks_topologyDiffMatches`: planning checks expose relation-diff equations for
+  new nodes, removed nodes, and added edges.
+- `planGraphRewriteChecks_costMatches`: planning checks expose structural cost equations for added
+  nodes, added edges, inserted depth, frontier delta, and rewrite-operation budget.
+- `planGraphRewriteChecks_anchorDispositionMatches`: planning checks expose anchor-disposition
+  agreement and final anchor membership.
+- `planGraphRewriteChecks_definitions_eq`: planning checks expose the exact definition-domain update
+  formula for removed versus retained anchors.
+- `admittedRewriteDelta_remaining_le_initial`: budget admission never replenishes any structural
+  budget dimension.
+- `admittedRewriteDelta_rewriteOps_bound`: the runtime rewrite-operation bound is exposed for chain
+  termination.
+- `admittedPlannedRewrite_admissible`: an admitted planned delta instantiates the abstract
+  `admissible` predicate.
+- `planGraphRewriteChecks_admissible`: runtime planning checks plus budget admission produce an
+  abstract admissible rewrite.
+- `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
+  `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
+  `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
+
+Remaining obligations:
+
+- connect the Lean relation-level planner and namespaced `SubgraphSpec` input to the executable
+  Haskell constructors in `planGraphRewrite`;
 - connect registry-boundary witnesses to the Haskell compiler and registry;
-- model anchor existence, entry/exit non-emptiness, orphan-freedom, and runtime policy checks from
-  `planGraphRewrite`;
 - connect the abstract chain model to durable materialization order and lineage.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
@@ -145,15 +175,15 @@ The repo's pre-commit hook checks theory changes through the flake surface
 
 ## Status
 
-| Track                            | Statements                                                                   | Proved                                                                                                                                                                                                                                         | Axiomatized |
-| -------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                     | relation-level laws                                                                                                                                                                                                                            | none        |
-| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                              | denotational law surface                                                                                                                                                                                                                       | none        |
-| 1c. Graph quotient laws          | lifted quotient equality laws                                                | pending                                                                                                                                                                                                                                        | none        |
-| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none        |
-| 3. Rewrite soundness             | registry-boundary model + proof-carrying rewrite certificate                 | node/edge registry predicates, acyclicity/contract/budget projections, chain-level preservation, step bound by rewrite-operation budget                                                                                                        | none        |
-| 4. Provider / sparks             | —                                                                            | —                                                                                                                                                                                                                                              | not started |
-| 5. Substrate / consumer boundary | —                                                                            | —                                                                                                                                                                                                                                              | not started |
+| Track                            | Statements                                                                              | Proved                                                                                                                                                                                                                                         | Axiomatized |
+| -------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                | relation-level laws                                                                                                                                                                                                                            | none        |
+| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                         | denotational law surface                                                                                                                                                                                                                       | none        |
+| 1c. Graph quotient laws          | lifted quotient equality laws                                                           | pending                                                                                                                                                                                                                                        | none        |
+| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface            | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none        |
+| 3. Rewrite soundness             | registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge | node/edge registry predicates, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget                                            | none        |
+| 4. Provider / sparks             | —                                                                                       | —                                                                                                                                                                                                                                              | not started |
+| 5. Substrate / consumer boundary | —                                                                                       | —                                                                                                                                                                                                                                              | not started |
 
 Discharging the remaining obligations is the actual work. The scaffold's job is to make the
 obligation graph compile and run end-to-end so that proof debt is visible and each abstract

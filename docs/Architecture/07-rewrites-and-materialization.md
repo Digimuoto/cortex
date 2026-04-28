@@ -59,9 +59,11 @@ are recognized future forms but not part of the admitted alphabet.
 
 A `SubgraphSpec` is a self-contained fragment: local topology, stage definitions for every local
 node, explicit entry nodes where inbound edges attach, explicit exit nodes where outbound edges
-continue. Validation rejects missing definitions, orphan nodes, definitions outside the fragment,
-and any cycle in the resulting materialized graph. New nodes receive deterministic ids namespaced by
-their parent (`planner:repair_branch_1:step_1`), keeping identity stable across replay.
+continue. Entry and exit declarations are serialized lists but semantically sets, so duplicates are
+invalid. Validation rejects duplicate entry/exit nodes, missing definitions, orphan nodes,
+definitions outside the fragment, and any cycle in the resulting materialized graph. New nodes
+receive deterministic ids namespaced by their parent (`planner:repair_branch_1:step_1`), keeping
+identity stable across replay.
 
 Stages signal rewrites via a richer outcome:
 
@@ -85,18 +87,19 @@ effect class) is deferred. The five dimensions:
 
 ```haskell
 data RewriteBudget = RewriteBudget
-  { rbAddedNodesMax    :: Int  -- nodes added
-  , rbAddedEdgesMax    :: Int  -- edges added
-  , rbAddedDepthMax    :: Int  -- depth added below any anchor
-  , rbFrontierDeltaMax :: Int  -- peak frontier breadth delta
-  , rbRewriteOpsMax    :: Int  -- admitted rewrite operations
+  { rbAddedNodesMax    :: Natural  -- nodes added
+  , rbAddedEdgesMax    :: Natural  -- edges added
+  , rbAddedDepthMax    :: Natural  -- depth added below any anchor
+  , rbFrontierDeltaMax :: Natural  -- peak frontier breadth delta
+  , rbRewriteOpsMax    :: Natural  -- admitted rewrite operations
   }
 ```
 
-Each admitted rewire consumes a `RewriteCost` computed statically from its `SubgraphSpec`; admission
-draws only against remaining budget. Runaway planner elaboration becomes a runtime impossibility
-rather than a prompt-discipline problem. Gas is visible in run history: operators can inspect
-remaining budget, each rewrite's cost, and the rewire that exhausted a dimension.
+Each admitted rewire consumes a natural-valued `RewriteCost` computed statically from its
+`SubgraphSpec`; admission draws only against remaining budget. Negative serialized values are
+invalid before admission. Runaway planner elaboration becomes a runtime impossibility rather than a
+prompt-discipline problem. Gas is visible in run history: operators can inspect remaining budget,
+each rewrite's cost, and the rewire that exhausted a dimension.
 
 ## Admission policy
 
@@ -108,8 +111,10 @@ Admission is the runtime's gate. A proposal is admitted only when every check pa
    the port-semantic rules of [Chapter 05](./05-wire-language.md). Singular and list-valued inputs
    obey the same arity rules at the rewire boundary as at compile time.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
-   in the current topology and definition map. Entry/exit sets are non-empty where the rewrite form
-   requires them. No orphans, no dangling references.
+   in the current topology and definition map. Entry/exit sets are non-empty and duplicate-free
+   where the rewrite form requires them. Definition-domain updates follow the anchor disposition:
+   replacement deletes the anchor definition before overlaying inserted definitions; retention and
+   append keep the old domain and overlay inserted definitions. No orphans, no dangling references.
 4. **Resource bounds.** Estimated `RewriteCost` fits within the remaining budget on every dimension.
 5. **Runtime policy.** The anchor, the run, and the task type permit rewrites of this form. Planner
    nodes may be restricted to a subset of the algebra.
@@ -131,6 +136,10 @@ reduce node-local facts concurrently over the current frontier. Rewrite admissio
 is the coordinated phase where topology-changing proposals are checked against the ambient graph,
 the remaining budget, and the other proposals in flight. The phase boundary therefore separates
 coordination-friendly fact reduction from coordinated topology change.
+
+The proof contract leads the implementation. The runtime admission path must construct the same
+natural budget vectors, duplicate-free entry/exit sets, topology-diff facts, and definition-domain
+update shape used by the mechanized rewrite model, or reject the proposal before materialization.
 
 ## Materialization
 

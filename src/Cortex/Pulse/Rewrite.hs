@@ -53,7 +53,10 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import Numeric.Natural (Natural)
 
+-- | A rewrite fragment. Entry and exit lists are the serialized form of proof-side sets;
+-- validation rejects duplicates before planning.
 data SubgraphSpec a def = SubgraphSpec
   { sgsTopology :: Relation a,
     sgsDefinitions :: Map a def,
@@ -75,22 +78,26 @@ data GraphRewrite a def
   deriving stock (Eq, Show, Generic, Functor)
   deriving anyclass (FromJSON, ToJSON)
 
+-- | Remaining structural rewrite budget. Dimensions are natural quantities, matching the
+-- proof-side `RewriteBudget`.
 data RewriteBudget = RewriteBudget
-  { rbAddedNodesMax :: !Int,
-    rbAddedEdgesMax :: !Int,
-    rbAddedDepthMax :: !Int,
-    rbFrontierDeltaMax :: !Int,
-    rbRewriteOpsMax :: !Int
+  { rbAddedNodesMax :: !Natural,
+    rbAddedEdgesMax :: !Natural,
+    rbAddedDepthMax :: !Natural,
+    rbFrontierDeltaMax :: !Natural,
+    rbRewriteOpsMax :: !Natural
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
+-- | Structural rewrite cost. A cost is a proof-side natural vector, so negative costs are rejected
+-- at JSON decoding and cannot reach budget admission.
 data RewriteCost = RewriteCost
-  { rcAddedNodes :: !Int,
-    rcAddedEdges :: !Int,
-    rcAddedDepth :: !Int,
-    rcFrontierDelta :: !Int,
-    rcRewriteOps :: !Int
+  { rcAddedNodes :: !Natural,
+    rcAddedEdges :: !Natural,
+    rcAddedDepth :: !Natural,
+    rcFrontierDelta :: !Natural,
+    rcRewriteOps :: !Natural
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -108,8 +115,8 @@ data BudgetDimension
 -- | A single exceeded dimension with the requested and remaining values.
 data ExceededDimension = ExceededDimension
   { edDimension :: !BudgetDimension,
-    edRequested :: !Int,
-    edRemaining :: !Int
+    edRequested :: !Natural,
+    edRemaining :: !Natural
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -129,8 +136,8 @@ budgetFraction ctx dim =
       remaining = lookupDimension dim ctx.bcRemainingBudget
    in if initial == 0 then 0 else fromIntegral remaining / fromIntegral initial
 
--- | Extract the integer value for a budget dimension from a 'RewriteBudget'.
-lookupDimension :: BudgetDimension -> RewriteBudget -> Int
+-- | Extract the natural value for a budget dimension from a 'RewriteBudget'.
+lookupDimension :: BudgetDimension -> RewriteBudget -> Natural
 lookupDimension DimAddedNodes = rbAddedNodesMax
 lookupDimension DimAddedEdges = rbAddedEdgesMax
 lookupDimension DimAddedDepth = rbAddedDepthMax
@@ -177,6 +184,8 @@ data RewritePlanningError a
   | RewriteDefinitionsOutsideTopology [a]
   | RewriteEntryNodesMissing
   | RewriteExitNodesMissing
+  | RewriteDuplicateEntryNodes [a]
+  | RewriteDuplicateExitNodes [a]
   | RewriteEntryNodesOutsideTopology [a]
   | RewriteExitNodesOutsideTopology [a]
   | RewriteOrphanNodes [a]
@@ -295,10 +304,10 @@ planGraphRewrite rewrite topology defs = case rewrite of
             RewriteAnchorRetained -> insertedDepthNodes
           cost =
             RewriteCost
-              { rcAddedNodes = Set.size newNodes,
-                rcAddedEdges = Set.size addedEdges,
-                rcAddedDepth = addedDepth,
-                rcFrontierDelta = max 0 (length spec'.sgsEntryNodes - 1),
+              { rcAddedNodes = fromIntegral (Set.size newNodes),
+                rcAddedEdges = fromIntegral (Set.size addedEdges),
+                rcAddedDepth = fromIntegral addedDepth,
+                rcFrontierDelta = fromIntegral (max 0 (length spec'.sgsEntryNodes - 1)),
                 rcRewriteOps = 1
               }
        in PlannedRewriteDelta
@@ -347,6 +356,8 @@ validateSubgraphSpec spec =
       extraDefinitions = Set.toList (Set.difference definitionNodes insertedNodes)
       entryNodes = Set.fromList spec.sgsEntryNodes
       exitNodes = Set.fromList spec.sgsExitNodes
+      duplicateEntries = duplicateValues spec.sgsEntryNodes
+      duplicateExits = duplicateValues spec.sgsExitNodes
       badEntries = Set.toList (Set.difference entryNodes insertedNodes)
       badExits = Set.toList (Set.difference exitNodes insertedNodes)
       reachableFromEntries =
@@ -363,6 +374,8 @@ validateSubgraphSpec spec =
             [RewriteDefinitionsOutsideTopology extraDefinitions | not (null extraDefinitions)],
             [RewriteEntryNodesMissing | null spec.sgsEntryNodes],
             [RewriteExitNodesMissing | null spec.sgsExitNodes],
+            [RewriteDuplicateEntryNodes duplicateEntries | not (null duplicateEntries)],
+            [RewriteDuplicateExitNodes duplicateExits | not (null duplicateExits)],
             [RewriteEntryNodesOutsideTopology badEntries | not (null badEntries)],
             [RewriteExitNodesOutsideTopology badExits | not (null badExits)],
             [RewriteOrphanNodes orphanNodes | not (null orphanNodes)]
@@ -371,6 +384,17 @@ validateSubgraphSpec spec =
         Left err -> Left (RewriteInvalidTopology err : errors)
         Right () ->
           if null errors then Right () else Left errors
+
+duplicateValues :: (Ord a) => [a] -> [a]
+duplicateValues = reverse . go Set.empty Set.empty []
+  where
+    go _seen _emitted acc [] = acc
+    go seen emitted acc (value : values)
+      | Set.member value emitted = go seen emitted acc values
+      | Set.member value seen =
+          go seen (Set.insert value emitted) (value : acc) values
+      | otherwise =
+          go (Set.insert value seen) emitted acc values
 
 -- | Longest path node count from any entry to any exit in the subgraph.
 --

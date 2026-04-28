@@ -38,6 +38,7 @@ import Data.Int (Int64)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
+import Numeric.Natural (Natural)
 import Platform.Observability.Fields
   ( ObsEventCode (ObsEventCode),
     ObsFields,
@@ -139,9 +140,9 @@ data FailrunInfo = FailrunInfo
 -- | Info for a successfully admitted rewrite.
 data RewriteAdmissionInfo = RewriteAdmissionInfo
   { raiRewriteId :: Int64,
-    raiCostNodes :: Int,
-    raiCostEdges :: Int,
-    raiRewriteOpsRemaining :: Int
+    raiCostNodes :: Natural,
+    raiCostEdges :: Natural,
+    raiRewriteOpsRemaining :: Natural
   }
   deriving stock (Show)
 

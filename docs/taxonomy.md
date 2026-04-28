@@ -32,21 +32,22 @@ flowchart TD
     N -- "emits outputs as" --> R
 ```
 
-Algebra is the pure substrate Wire authors over. Wire owns the compiled circuit form. Pulse executes
-compiled circuits durably. Capability exposes external authority. Artifact owns durable outputs and
+Algebra is the pure substrate Wire authors over. Mechanized theory names the safety contracts that
+runtime implementation must enforce. Wire owns the compiled circuit form. Pulse executes compiled
+circuits durably. Capability exposes external authority. Artifact owns durable outputs and
 provenance. Nous owns model-mediated cognition.
 
 ## Roles a value can play
 
 A single Wire value often wears multiple hats. The roles are:
 
-| Role                | What it is                                                                     | Examples                                                         |
-| ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------- |
-| **Executor**        | Registered recipe. Turns config + inputs into outputs. Referenced via `@name`. | `@llm.analyst`, `@artifact.log`, `@cortex.report_run`, `@pure`   |
-| **Partial node**    | Executor applied to config, no ports pinned. `let`-bindable, `//`-mergeable.   | `@llm.gatherer { memory = topological { preset = "analyst" }; }` |
-| **Node**            | Partial node with ports pinned. Has boundary. Has identity.                    | `node analyst : <- EvidenceBundle -> AnalysisFragment            | ExecutorError = @llm.analyst { prompt = "..."; };` |
-| **Composed wire**   | Result of applying a graph operator. Has a derived boundary.                   | `planner => gatherer => analyst`                                 |
-| **Runtime wrapper** | A node whose role is to host a whole wire and provide runtime services.        | `@cortex.report_run { title = ...; }`                            |
+| Role                | What it is                                                                     | Examples                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **Executor**        | Registered recipe. Turns config + inputs into outputs. Referenced via `@name`. | `@llm.analyst`, `@artifact.log`, `@cortex.report_run`, `@pure`                                              |
+| **Partial node**    | Executor applied to config, no ports pinned. `let`-bindable, `//`-mergeable.   | `@llm.gatherer { memory = topological { preset = "analyst" }; }`                                            |
+| **Node**            | Partial node with ports pinned. Has boundary. Has identity.                    | `node analyst : <- EvidenceBundle -> AnalysisFragment \| ExecutorError = @llm.analyst { prompt = "..."; };` |
+| **Composed wire**   | Result of applying a graph operator. Has a derived boundary.                   | `planner => gatherer => analyst`                                                                            |
+| **Runtime wrapper** | A node whose role is to host a whole wire and provide runtime services.        | `@cortex.report_run { title = ...; }`                                                                       |
 
 The leading `@` marks the executor-authority boundary. It stages a registered executor with pure
 config data; it does not run the executor. See

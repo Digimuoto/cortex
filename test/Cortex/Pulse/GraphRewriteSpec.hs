@@ -39,6 +39,7 @@ import Cortex.Pulse.Rewrite
     RewriteBudget (..),
     RewriteBudgetError (..),
     RewriteCost (..),
+    RewritePlanningError (..),
     SubgraphSpec (..),
     admitRewriteDelta,
     admittedRemainingBudget,
@@ -232,6 +233,31 @@ spec = do
           Right _ ->
             expectationFailure "Expected append with missing anchor definition to be rejected"
 
+    describe "rewrite validation" $ do
+      it "rejects duplicate entry nodes before planning a rewrite" $ do
+        let subTopo = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1), (NodeId "sub2", mkDef Sub2)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub1", NodeId "sub1"] [NodeId "sub2"]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite initialTopo initialDefs of
+          Left errs ->
+            errs `shouldContain` [RewriteDuplicateEntryNodes [NodeId "sub1"]]
+          Right _ ->
+            expectationFailure "Expected duplicate entry nodes to be rejected"
+
+      it "rejects duplicate exit nodes before planning a rewrite" $ do
+        let subTopo = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1), (NodeId "sub2", mkDef Sub2)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub2", NodeId "sub2"]
+            rewrite = AppendAfter (NodeId "b") spec'
+
+        case planGraphRewrite rewrite initialTopo initialDefs of
+          Left errs ->
+            errs `shouldContain` [RewriteDuplicateExitNodes [NodeId "sub2"]]
+          Right _ ->
+            expectationFailure "Expected duplicate exit nodes to be rejected"
+
     describe "rewrite budgeting" $ do
       it "computes structural rewrite cost and decrements remaining budget pointwise" $ do
         let subTopo = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
@@ -349,6 +375,38 @@ spec = do
             dims = exceededDimensions budgetErr
         fmap (\d -> (edDimension d, edRequested d, edRemaining d)) dims
           `shouldBe` [(DimAddedNodes, 4, 2), (DimAddedDepth, 2, 1)]
+
+      it "rejects serialized negative rewrite costs before admission" $ do
+        let negativeCostJson =
+              Aeson.object
+                [ "rcAddedNodes" Aeson..= (-1 :: Int),
+                  "rcAddedEdges" Aeson..= (0 :: Int),
+                  "rcAddedDepth" Aeson..= (0 :: Int),
+                  "rcFrontierDelta" Aeson..= (0 :: Int),
+                  "rcRewriteOps" Aeson..= (0 :: Int)
+                ]
+
+        case Aeson.fromJSON negativeCostJson :: Aeson.Result RewriteCost of
+          Aeson.Error _err -> pure ()
+          Aeson.Success cost ->
+            expectationFailure $
+              "Expected negative rewrite cost to fail JSON decoding, got: " <> show cost
+
+      it "rejects serialized negative rewrite budgets before runtime use" $ do
+        let negativeBudgetJson =
+              Aeson.object
+                [ "rbAddedNodesMax" Aeson..= (-1 :: Int),
+                  "rbAddedEdgesMax" Aeson..= (0 :: Int),
+                  "rbAddedDepthMax" Aeson..= (0 :: Int),
+                  "rbFrontierDeltaMax" Aeson..= (0 :: Int),
+                  "rbRewriteOpsMax" Aeson..= (0 :: Int)
+                ]
+
+        case Aeson.fromJSON negativeBudgetJson :: Aeson.Result RewriteBudget of
+          Aeson.Error _err -> pure ()
+          Aeson.Success budget ->
+            expectationFailure $
+              "Expected negative rewrite budget to fail JSON decoding, got: " <> show budget
 
   describe "buildStageTemplateRegistry" $ do
     let mkDynDef nid templateId =

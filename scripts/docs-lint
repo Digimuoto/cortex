@@ -414,6 +414,104 @@ def check_mermaid_text(path: Path, text: str, errors: list[str]) -> None:
                 add(errors, path, "Mermaid linkStyle is not allowed in canonical diagrams", line_no)
 
 
+def split_table_row(line: str) -> list[str]:
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|") and not line.endswith("\\|"):
+        line = line[:-1]
+
+    cells: list[str] = []
+    current: list[str] = []
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == "\\" and index + 1 < len(line) and line[index + 1] == "|":
+            current.append("\\|")
+            index += 2
+            continue
+        if char == "|":
+            cells.append("".join(current))
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    cells.append("".join(current))
+    return cells
+
+
+SEPARATOR_CELL = re.compile(r"^\s*:?-{2,}:?\s*$")
+
+
+def check_table_shape(path: Path, text: str, errors: list[str]) -> None:
+    if not is_markdown(path):
+        return
+
+    lines = text.splitlines()
+    in_fence = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("```"):
+            in_fence = not in_fence
+            index += 1
+            continue
+        if in_fence:
+            index += 1
+            continue
+
+        stripped = line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            index += 1
+            continue
+        if index + 1 >= len(lines):
+            index += 1
+            continue
+
+        next_stripped = lines[index + 1].strip()
+        if not (next_stripped.startswith("|") and next_stripped.endswith("|")):
+            index += 1
+            continue
+
+        sep_cells = split_table_row(next_stripped)
+        if not sep_cells or not all(SEPARATOR_CELL.match(cell) for cell in sep_cells):
+            index += 1
+            continue
+
+        expected = len(sep_cells)
+        header_cells = split_table_row(stripped)
+        if len(header_cells) != expected:
+            add(
+                errors,
+                path,
+                f"table header has {len(header_cells)} cells, separator has {expected}",
+                index + 1,
+            )
+
+        body = index + 2
+        while body < len(lines):
+            body_line = lines[body]
+            if body_line.startswith("```"):
+                break
+            body_stripped = body_line.strip()
+            if not (body_stripped.startswith("|") and body_stripped.endswith("|")):
+                break
+            if SEPARATOR_CELL.match(body_stripped.strip("|").strip()):
+                break
+            body_cells = split_table_row(body_stripped)
+            if len(body_cells) != expected:
+                add(
+                    errors,
+                    path,
+                    f"table row has {len(body_cells)} cells, separator has {expected}",
+                    body + 1,
+                )
+            body += 1
+
+        index = body
+
+
 def check_whitespace(path: Path, text: str, errors: list[str]) -> None:
     for line_no, line in enumerate(text.splitlines(keepends=True), start=1):
         content = line[:-1] if line.endswith("\n") else line
@@ -435,6 +533,7 @@ def main() -> int:
     for path, document in zip(paths, documents):
         text = path.read_text(encoding="utf-8")
         check_whitespace(path, text, errors)
+        check_table_shape(path, text, errors)
         check_mermaid_text(path, text, errors)
         if document is None:
             continue

@@ -39,13 +39,13 @@ Each layer owns a specific set of terms. This page groups them by layer.
 ### Core forms
 
 | Term              | Definition                                                                                                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Contract**      | A named typed interface that flows through a port. Ambient in a global namespace. Carries a payload kind.                                                           |
 | **Node**          | A pinned executor application with a port signature. Declared via `node name : <ports> = @executor { config };`. Has identity; reused references are the same node. |
 | **Port**          | A slot on a node, typed by a contract. Input (`<-`) or output (`->`). May be labeled.                                                                               |
 | **Port key**      | The identity tuple `(direction, contract, label)` that `=>` matches on. Absent-label is a distinct key, not a wildcard.                                             |
 | **Label**         | Part of a port's identity for routing, not a decoration. Labeled ports match only identically-labeled partners.                                                     |
-| **Sum group**     | Output port form `-> A                                                                                                                                              | B` with mutual-exclusion metadata: exactly one variant fires per evaluation. |
+| **Sum group**     | Output port form `-> A \| B` with mutual-exclusion metadata: exactly one variant fires per evaluation.                                                              |
 | **Partial node**  | Staged value `@executor { config }` with no ports pinned yet. `let`-bindable, `//`-mergeable, pinnable via `node` declaration.                                      |
 | **Wire value**    | Any value of wire kind: node, composed graph expression, or (in graph position with port-determined executor) a partial node.                                       |
 | **Port-boundary** | A wire's unconnected input and output ports. The surface `=>` operates on.                                                                                          |
@@ -60,12 +60,12 @@ Each layer owns a specific set of terms. This page groups them by layer.
 
 ### Value operators
 
-| Term                | Definition                                                                                   |
-| ------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **`//` merge**      | Right-biased shallow record merge. Applies to records and to partial-node configs.           |
-| **`++` concat**     | String and list concatenation.                                                               |
-| \*\*`               | ` sum constructor\*\*                                                                        | Output-port mutual-exclusion form; distinct grammar construct, not pure sugar. |
-| **`@` application** | Executor application to a config record: `@qualified.name { ... }`. Produces a partial node. |
+| Term                     | Definition                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| **`//` merge**           | Right-biased shallow record merge. Applies to records and to partial-node configs.           |
+| **`++` concat**          | String and list concatenation.                                                               |
+| **`\|` sum constructor** | Output-port mutual-exclusion form; distinct grammar construct, not pure sugar.               |
+| **`@` application**      | Executor application to a config record: `@qualified.name { ... }`. Produces a partial node. |
 
 ### File-level forms
 
@@ -100,6 +100,7 @@ Each layer owns a specific set of terms. This page groups them by layer.
 | **Rewire**                    | A bounded runtime topology modification over a live Circuit. Subject to vocabulary, endpoint-compatibility, topology, and resource (gas) bounds. Modules: `Cortex.Pulse.Rewrite` plus the Wire compiler.       |
 | **Realized circuit**          | The concrete Circuit topology that existed after admitted rewires during a run. A runtime artifact, not a grammar construct.                                                                                   |
 | **Gas**                       | The structural-change budget consumed by rewires: nodes added, edges added, depth, frontier breadth, rewrite operations.                                                                                       |
+| **Proof contract**            | A mechanized safety surface whose terms lead runtime implementation. Haskell admission code must either construct values satisfying the proof contract or reject the input before it reaches that boundary.    |
 | **Topological memory**        | A node-addressable accumulated context from upstream evaluations. Declared on the node, consumed at evaluation time. Canonical home: `Cortex.Nous.Memory.Topological`; Pulse supplies the settled event state. |
 | **Frontier**                  | The set of graph nodes ready to execute at a given point. Pulse schedules over the frontier.                                                                                                                   |
 
@@ -107,6 +108,9 @@ Each layer owns a specific set of terms. This page groups them by layer.
 
 - **Wire composes registered authority.** Wire source references registered nodes, contract IDs,
   prompts, and wiring. It does not invent executors, tools, payload types, or domain authority.
+- **Theory names safety obligations.** Where a mechanized proof contract exists, the proof-side
+  vocabulary is normative. Runtime code enforces that shape at admission and persistence boundaries;
+  it does not weaken the contract to fit convenient implementation types.
 - **Haskell owns what the authority means.** Executors, contracts, codecs, payload kinds, and
   registry schemas are Haskell-defined and live outside Wire.
 - **Product concepts stay downstream.** Launch fields, report sections, model-policy choices,

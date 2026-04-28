@@ -64,8 +64,9 @@ A `SubgraphSpec` is a self-contained fragment carrying:
 - an explicit **entry set** where inbound edges attach,
 - an explicit **exit set** where outbound edges continue.
 
-Validation rejects missing definitions, orphan nodes, definitions outside the fragment, and any
-cycle in the resulting materialized graph.
+Entry and exit declarations are serialized as lists but are semantically sets. Duplicate entry or
+exit nodes are invalid. Validation rejects duplicates, missing definitions, orphan nodes,
+definitions outside the fragment, and any cycle in the resulting materialized graph.
 
 New node ids inside a spec are deterministic and namespaced by their parent anchor (for example
 `planner:repair_branch_1:step_1`). Deterministic namespacing is required so identity is stable
@@ -102,16 +103,17 @@ construction.
 
 ```haskell
 data RewriteBudget = RewriteBudget
-  { rbAddedNodesMax    :: Int  -- nodes added
-  , rbAddedEdgesMax    :: Int  -- edges added
-  , rbAddedDepthMax    :: Int  -- depth added below any anchor
-  , rbFrontierDeltaMax :: Int  -- peak frontier breadth delta
-  , rbRewriteOpsMax    :: Int  -- admitted rewrite operations
+  { rbAddedNodesMax    :: Natural  -- nodes added
+  , rbAddedEdgesMax    :: Natural  -- edges added
+  , rbAddedDepthMax    :: Natural  -- depth added below any anchor
+  , rbFrontierDeltaMax :: Natural  -- peak frontier breadth delta
+  , rbRewriteOpsMax    :: Natural  -- admitted rewrite operations
   }
 ```
 
-Gas is **structural-change only** in v1. Semantic weighting (latency, cost class, effect class) is
-not part of the budget and is deferred to a future ADR.
+Gas dimensions are natural quantities. Negative serialized values are invalid and fail before
+admission. Gas is **structural-change only** in v1. Semantic weighting (latency, cost class, effect
+class) is not part of the budget and is deferred to a future ADR.
 
 ### 3.2 `RewriteCost`
 
@@ -125,6 +127,10 @@ Each admitted rewrite consumes a `RewriteCost` computed **statically** from its 
 
 Admission draws only against remaining budget on every dimension. A proposal whose cost exceeds any
 dimension is rejected with `rewrite_budget_exceeded`; no partial consumption.
+
+The proof contract is the leader here: runtime `RewriteBudget` and `RewriteCost` use the same
+natural-vector shape as the mechanized rewrite-admission model, and runtime validation rejects list
+or JSON shapes that cannot denote the proof-side sets and natural numbers.
 
 ### 3.3 Budget visibility
 
@@ -145,8 +151,11 @@ Admission is the runtime's gate. A proposal is admitted only when **every** chec
    the port-semantic rules of [chapter 05](../Architecture/05-wire-language.md). Singular and
    list-valued inputs obey the same arity rules at the rewrite boundary as at compile time.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
-   in the current topology and definition map. Entry and exit sets are non-empty where the rewrite
-   form requires them. No orphans, no dangling references.
+   in the current topology and definition map. Entry and exit sets are non-empty and duplicate-free
+   where the rewrite form requires them. Definition-domain updates follow the anchor disposition:
+   replacing an anchor deletes its definition before overlaying inserted definitions; retaining or
+   appending keeps the old domain and overlays inserted definitions. No orphans, no dangling
+   references.
 4. **Resource bounds.** Estimated `RewriteCost` fits within the remaining budget on every dimension
    (§3.2).
 5. **Runtime policy.** The anchor, the run, and the task type permit rewrites of this form. Planner
