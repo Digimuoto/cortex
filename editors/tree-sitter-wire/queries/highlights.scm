@@ -56,7 +56,8 @@
 ; ── Declarations ────────────────────────────────────────────────────────
 
 ; node <name> : <sig> = <body>;
-(node_decl name: (identifier) @function)
+(executor_node_decl name: (identifier) @function)
+(pure_node_decl name: (identifier) @function)
 
 ; let <name> = <expr>;
 (let_binding name: (identifier) @constant)

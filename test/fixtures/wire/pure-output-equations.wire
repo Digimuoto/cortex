@@ -1,0 +1,16 @@
+contract EvidenceSet;
+contract AcceptedSet;
+contract RejectedSet;
+
+let acceptedItem = item: item.score >= 0.7;
+
+node classify :
+  <- evidence: EvidenceSet
+  let
+    items = evidence.items;
+    acceptedItems = filter acceptedItem items;
+  in
+  -> accepted: AcceptedSet = pure (acceptedItems)
+  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
+
+classify

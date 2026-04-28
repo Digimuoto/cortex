@@ -13,22 +13,118 @@ planner
     name: (contract_name
       (contract)))
   (node_decl
+    (executor_node_decl
+      name: (identifier)
+      ports: (port_signature
+        (output_port
+          body: (output_body
+            (output_variant
+              contract: (contract_name
+                (contract)))
+            (output_variant
+              contract: (contract_name
+                (contract))))))
+      body: (expression
+        (executor_apply
+          name: (qualified_ident
+            (identifier)
+            (identifier))
+          config: (record)))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
+
+==================
+pure output equations
+==================
+
+contract EvidenceSet;
+contract AcceptedSet;
+contract RejectedSet;
+
+let acceptedItem = item: item.score >= 0.7;
+
+node classify :
+  <- evidence: EvidenceSet
+  let
+    items = evidence.items;
+    acceptedItems = filter acceptedItem items;
+  in
+  -> accepted: AcceptedSet = pure (acceptedItems)
+  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
+
+classify
+
+---
+
+(source_file
+  (contract_decl
+    name: (contract_name
+      (contract)))
+  (contract_decl
+    name: (contract_name
+      (contract)))
+  (contract_decl
+    name: (contract_name
+      (contract)))
+  (pure_let_binding
     name: (identifier)
-    ports: (port_signature
-      (output_port
-        body: (output_body
-          (output_variant
-            contract: (contract_name
-              (contract)))
-          (output_variant
-            contract: (contract_name
-              (contract))))))
-    body: (expression
-      (executor_apply
-        name: (qualified_ident
-          (identifier)
+    value: (core_pure_shared_expr
+      (core_pure_lambda
+        param: (identifier)
+        body: (core_pure_expr
+          target: (core_pure_ident)
+          field: (identifier)
+          right: (number)))))
+  (node_decl
+    (pure_node_decl
+      name: (identifier)
+      inputs: (input_port
+        label: (labeled_port_prefix
           (identifier))
-        config: (record))))
+        contract: (input_singular
+          (contract_name
+            (contract))))
+      bindings: (pure_let_block
+        (core_pure_binding
+          name: (identifier)
+          value: (core_pure_expr
+            target: (core_pure_ident)
+            field: (identifier)))
+        (core_pure_binding
+          name: (identifier)
+          value: (core_pure_expr
+            function: (core_pure_ident)
+            argument: (core_pure_ident)
+            argument: (core_pure_ident))))
+      outputs: (pure_output_equation
+        port: (pure_output_port
+          variant: (output_variant
+            label: (labeled_port_prefix
+              (identifier))
+            contract: (contract_name
+              (contract))))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            (core_pure_ident))))
+      outputs: (pure_output_equation
+        port: (pure_output_port
+          variant: (output_variant
+            label: (labeled_port_prefix
+              (identifier))
+            contract: (contract_name
+              (contract))))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            function: (core_pure_ident)
+            argument: (core_pure_expr
+              (core_pure_lambda
+                param: (identifier)
+                body: (core_pure_expr
+                  expr: (core_pure_expr
+                    function: (core_pure_ident)
+                    argument: (core_pure_ident)))))
+            argument: (core_pure_ident))))))
   file_return: (expression
     (ident_ref
       (identifier))))

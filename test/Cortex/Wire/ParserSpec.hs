@@ -156,6 +156,24 @@ spec = describe "Cortex.Wire.Parser" $ do
             other -> expectationFailure ("expected pure body, got: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
+    it "parses brace-form pure output equations" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node score :",
+                  "  <- evidence: EvidenceSet",
+                  "  -> score: ScoreSet = pure {",
+                  "    { total = evidence.total; };",
+                  "  };"
+                ]
+      case forms of
+        [TopNode node] ->
+          case nodeDeclBody node of
+            NodeBodyPure pureBody ->
+              length (nodePureBodyOutputs pureBody) `shouldBe` 1
+            other -> expectationFailure ("expected pure body, got: " <> show other)
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
   describe "expressions" $ do
     it "parses a linear => chain" $ do
       case parseWireExpr "test" "a => b => c" of
@@ -284,6 +302,23 @@ spec = describe "Cortex.Wire.Parser" $ do
         other ->
           expectationFailure
             ("expected final => @cortex.deep_report, got: " <> show other)
+
+    it "parses the pure-output-equations fixture" $ do
+      src <-
+        TIO.readFile
+          "test/fixtures/wire/pure-output-equations.wire"
+      let WireFile forms ret = parseOrFail src
+      length forms `shouldBe` 5
+      case forms of
+        [TopContract _, TopContract _, TopContract _, TopPureLet _, TopNode node] ->
+          case nodeDeclBody node of
+            NodeBodyPure pureBody -> do
+              length (nodePureBodyBindings pureBody) `shouldBe` 2
+              length (nodePureBodyOutputs pureBody) `shouldBe` 2
+            other -> expectationFailure ("expected pure body, got: " <> show other)
+        other ->
+          expectationFailure ("unexpected forms: " <> show other)
+      ret `shouldBe` Just (ExprIdent (QName ("classify" :| [])))
 
 isParseFailure :: Either ParseError a -> Bool
 isParseFailure result = case result of

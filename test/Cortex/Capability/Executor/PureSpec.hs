@@ -21,6 +21,7 @@ import Cortex.Pulse.Rewrite (BudgetContext (..))
 import Cortex.Pulse.Types (defaultRewriteBudget)
 import Cortex.Wire
   ( CorePureBinOp (..),
+    CorePureBinding (..),
     CorePureExpr (..),
     CorePureLiteral (..),
     WirePayloadKind (..),
@@ -80,6 +81,19 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
       other ->
         expectationFailure ("expected StageComplete, got " <> showStageResult other)
 
+  it "decodes node-local pure bindings from task metadata" $ do
+    stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) localBindingTaskNode)
+    result <- stageDef.sdAction weightedStageContext
+    case result of
+      StageComplete value -> do
+        wireValue <- requireSingleWireValue value
+        wireValue.wireValueContract `shouldBe` "Float"
+        wireValue.wireValuePort `shouldBe` Just "out"
+        wireValue.wireValuePayloadKind `shouldBe` WirePayloadJson
+        wireValue.wireValueValue `shouldBe` Aeson.Number (scientific 68 (-2))
+      other ->
+        expectationFailure ("expected StageComplete, got " <> showStageResult other)
+
   it "compiles, binds, and deterministically runs a strict pure Wire node" $ do
     compiled <- requireRight (compileWireTextWithEnv pureCompileEnv pureSourceText)
     taskNode <- requireCompiledTask "score" compiled
@@ -127,6 +141,21 @@ weightedTaskNode =
             "config"
               Aeson..= Aeson.object
                 [ "outputs" Aeson..= Map.singleton ("out" :: Text) weightedExpression
+                ]
+          ]
+    }
+
+localBindingTaskNode :: CircuitTaskNode
+localBindingTaskNode =
+  weightedTaskNode
+    { circuitTaskNodeMetadata =
+        Aeson.object
+          [ "executor" Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)],
+            "ports" Aeson..= portsMetadataValue weightedPorts,
+            "config"
+              Aeson..= Aeson.object
+                [ "localBindings" Aeson..= [CorePureBinding "weighted" weightedExpression],
+                  "outputs" Aeson..= Map.singleton ("out" :: Text) (var "weighted")
                 ]
           ]
     }

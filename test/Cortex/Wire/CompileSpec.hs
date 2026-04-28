@@ -30,6 +30,7 @@ import Cortex.Wire.Executor
 import Cortex.Wire.Pure (pureWireExecutorProjection)
 import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -213,6 +214,17 @@ spec = describe "Cortex.Wire.Compile" $ do
         other ->
           expectationFailure ("expected compiled pure task node, got: " <> show other)
 
+    it "lowers node-local CorePure bindings and port-keyed output equations" $ do
+      compiled <- requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithLocalBindingsSourceText)
+      case Map.lookup (CircuitNodeRef "classify") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) -> do
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureBinding "acceptedItem"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureLocalBinding "acceptedItems"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureOutput "accepted"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureOutput "rejected"
+        other ->
+          expectationFailure ("expected compiled pure task node, got: " <> show other)
+
     it "rejects duplicate names across CorePure helper and ordinary let bindings" $
       compileWireTextWithEnv strictExecutorEnv duplicatePureAndWireLetSourceText
         `shouldBe` Left (WireDuplicateLetBinding "acceptedItem")
@@ -290,6 +302,23 @@ pureExecutorWithSharedHelperSourceText =
       "node classify :",
       "  <- evidence: EvidenceSet",
       "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);",
+      "",
+      "classify"
+    ]
+
+pureExecutorWithLocalBindingsSourceText :: T.Text
+pureExecutorWithLocalBindingsSourceText =
+  T.unlines
+    [ "let acceptedItem = x: x.score >= 0.7;",
+      "",
+      "node classify :",
+      "  <- evidence: EvidenceSet",
+      "  let",
+      "    items = evidence.items;",
+      "    acceptedItems = filter acceptedItem items;",
+      "  in",
+      "  -> accepted: AcceptedSet = pure (acceptedItems)",
+      "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);",
       "",
       "classify"
     ]
@@ -397,11 +426,19 @@ requireRight = \case
   Right ok -> pure ok
 
 metadataHasPureBinding :: T.Text -> Aeson.Value -> Bool
-metadataHasPureBinding bindingName = \case
+metadataHasPureBinding =
+  metadataHasPureBindingIn "bindings"
+
+metadataHasPureLocalBinding :: T.Text -> Aeson.Value -> Bool
+metadataHasPureLocalBinding =
+  metadataHasPureBindingIn "localBindings"
+
+metadataHasPureBindingIn :: Key.Key -> T.Text -> Aeson.Value -> Bool
+metadataHasPureBindingIn bindingField bindingName = \case
   Aeson.Object obj ->
     case KeyMap.lookup "config" obj of
       Just (Aeson.Object configObj) ->
-        case KeyMap.lookup "bindings" configObj of
+        case KeyMap.lookup bindingField configObj of
           Just (Aeson.Array bindings) ->
             any (bindingHasName bindingName) bindings
           _ -> False
@@ -412,6 +449,18 @@ metadataHasPureBinding bindingName = \case
       Aeson.Object bindingObj ->
         KeyMap.lookup "corePureBindingName" bindingObj == Just (Aeson.String expectedName)
       _ -> False
+
+metadataHasPureOutput :: T.Text -> Aeson.Value -> Bool
+metadataHasPureOutput outputName = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) ->
+        case KeyMap.lookup "outputs" configObj of
+          Just (Aeson.Object outputsObj) ->
+            KeyMap.member (Key.fromText outputName) outputsObj
+          _ -> False
+      _ -> False
+  _ -> False
 
 fragmentContainsCondition :: CompiledCircuitFragment -> Bool
 fragmentContainsCondition fragment =
