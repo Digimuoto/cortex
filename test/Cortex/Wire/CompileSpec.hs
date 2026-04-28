@@ -27,6 +27,7 @@ import Cortex.Wire.Executor
     wireExecutorProjectionFromPorts,
     wireExecutorRegistryFromList,
   )
+import Cortex.Wire.Pure (pureWireExecutorProjection)
 import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -200,6 +201,10 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv strictExecutorEnv mismatchedExecutorPortsSourceText
         `shouldBe` Left (WireExecutorPortsMismatch (CircuitNodeRef "projected") "projected")
 
+    it "allows author-declared ports for the pure executor in strict projection mode" $
+      compileWireTextWithEnv strictExecutorEnv pureExecutorSourceText
+        `shouldSatisfy` isRight
+
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
@@ -248,6 +253,17 @@ mismatchedExecutorPortsSourceText =
     [ "node projected : -> AnalysisFragment = @llm.projected {};",
       "",
       "projected"
+    ]
+
+pureExecutorSourceText :: T.Text
+pureExecutorSourceText =
+  T.unlines
+    [ "node score :",
+      "  <- evidence_score: Float",
+      "  <- recency_score: Float",
+      "  -> Float = @pure { expr = \"evidence_score + recency_score\"; };",
+      "",
+      "score"
     ]
 
 bareLlmSourceText :: T.Text
@@ -366,7 +382,8 @@ strictExecutorEnv =
           [ wireExecutorProjectionFromPorts
               (WireExecutorId "projected")
               projectedExecutorPorts
-              WireExecutorModel
+              WireExecutorModel,
+            pureWireExecutorProjection
           ],
       wireCompileEnvProjectionMode = WireProjectionStrict
     }

@@ -212,6 +212,7 @@ library
         Cortex.Artifact.Metadata
         Cortex.Capability
         Cortex.Capability.Executor
+        Cortex.Capability.Executor.Pure
         Cortex.Capability.Model
         Cortex.Capability.Model.Client
         Cortex.Capability.Model.Message
@@ -298,6 +299,7 @@ library
         Cortex.Wire.Contract
         Cortex.Wire.Executor
         Cortex.Wire.Parser
+        Cortex.Wire.Pure
         Cortex.Wire.Syntax
         Cortex.Wire.Circuit
         Cortex.Wire.Circuit.Artifact
@@ -357,6 +359,7 @@ test-suite cortex-test
         Cortex.Algebra.GraphSpec
         Cortex.Artifact.IRSpec
         Cortex.CanonicalModuleTreeSpec
+        Cortex.Capability.Executor.PureSpec
         Cortex.Capability.Provider.OpenRouterSpec
         Cortex.Capability.StructuredOutputSpec
         Cortex.Nous.Memory.CandidatesSpec
@@ -393,6 +396,7 @@ test-suite cortex-test
         Cortex.Wire.Circuit.IRSpec
         Cortex.Wire.CompileSpec
         Cortex.Wire.ParserSpec
+        Cortex.Wire.PureSpec
         Platform.DurableTask.CheckpointSpec
         Platform.DurableTask.CronSpec
         Platform.DurableTask.ErrorSpec

@@ -54,7 +54,8 @@ import Cortex.Wire.Contract
     portsMetadataValue,
   )
 import Cortex.Wire.Executor
-  ( WireExecutorProjection (..),
+  ( WireExecutorPortPolicy (..),
+    WireExecutorProjection (..),
     lookupWireExecutorProjection,
     wireExecutorIdFromWireExecutor,
     wireExecutorIdToText,
@@ -2008,6 +2009,8 @@ validateExecutorProjection compileEnv nodeRef executor ports =
             Nothing ->
               Left (WireCore.WireUnknownExecutor nodeRef (wireExecutorIdToText executorId))
             Just projection
+              | projection.wireExecutorProjectionPortPolicy == WireExecutorAuthorDeclaredPorts ->
+                  Right ()
               | projection.wireExecutorProjectionPorts == ports ->
                   Right ()
               | otherwise ->

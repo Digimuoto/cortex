@@ -137,6 +137,27 @@ The merge creates a new configured partial node. It does not mutate `gatherer_ba
 `@llm.gatherer`, or contact any tool. Tool identifiers in config are ordinary names whose meaning is
 checked by the executor schema and host binding.
 
+## Native Pure Evaluator
+
+The Capability layer provides a first-slice native `@pure` executor for deterministic numeric
+calculations over Wire values:
+
+```wire
+node score :
+  <- evidence_score: Float
+  <- recency_score: Float
+  -> Float = @pure { expr = "0.7 * evidence_score + 0.3 * recency_score"; };
+```
+
+This executor accepts author-declared ports instead of a fixed registry port profile. Each input
+label becomes a variable in `expr`; repeated same-contract inputs must therefore be labeled
+explicitly. Inputs must arrive as numeric JSON scalar `WireValue`s, and output is wrapped through
+the declared Wire output port and contract.
+
+The implemented expression subset is intentionally small: numeric literals, input variables,
+parentheses, unary minus, and `+`, `-`, `*`, `/`. It has no functions, host callbacks, time, random
+state, IO, or model/tool authority.
+
 ## Runtime Evaluation
 
 Pulse evaluates materialized nodes after Wire has compiled and validated the graph. At that point

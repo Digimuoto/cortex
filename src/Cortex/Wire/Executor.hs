@@ -15,6 +15,7 @@ module Cortex.Wire.Executor
     wireExecutorIdFromWireExecutor,
     WireExecutorEffect (..),
     WireExecutorConfigShape (..),
+    WireExecutorPortPolicy (..),
     WireExecutorProjection (..),
     wireExecutorProjectionFromPorts,
     wireContractsFromPorts,
@@ -63,12 +64,18 @@ data WireExecutorConfigShape
   | WireExecutorConfigSchema Aeson.Value
   deriving stock (Eq, Show, Generic)
 
+data WireExecutorPortPolicy
+  = WireExecutorFixedPorts
+  | WireExecutorAuthorDeclaredPorts
+  deriving stock (Eq, Show, Generic)
+
 data WireExecutorProjection = WireExecutorProjection
   { wireExecutorProjectionId :: !WireExecutorId,
     wireExecutorProjectionPorts :: !WirePorts,
     wireExecutorProjectionVocabulary :: !(Set Text),
     wireExecutorProjectionEffect :: !WireExecutorEffect,
-    wireExecutorProjectionConfigShape :: !WireExecutorConfigShape
+    wireExecutorProjectionConfigShape :: !WireExecutorConfigShape,
+    wireExecutorProjectionPortPolicy :: !WireExecutorPortPolicy
   }
   deriving stock (Eq, Show, Generic)
 
@@ -83,7 +90,8 @@ wireExecutorProjectionFromPorts executorId ports effect =
       wireExecutorProjectionPorts = ports,
       wireExecutorProjectionVocabulary = wireContractsFromPorts ports,
       wireExecutorProjectionEffect = effect,
-      wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+      wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked,
+      wireExecutorProjectionPortPolicy = WireExecutorFixedPorts
     }
 
 wireContractsFromPorts :: WirePorts -> Set Text

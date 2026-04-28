@@ -2,6 +2,7 @@ module Cortex.Wire
   ( module Cortex.Wire.Syntax,
     module Cortex.Wire.Circuit,
     module Cortex.Wire.Executor,
+    module Cortex.Wire.Pure,
     WireCompileEnv (..),
     WireProjectionMode (..),
     WireContractSpec (..),
@@ -101,6 +102,7 @@ import Cortex.Wire.Proposal
     wireProposalSingleNodeExample,
     wireProposalSingleNodeShorthandExample,
   )
+import Cortex.Wire.Pure
 import Cortex.Wire.Runtime
   ( WireInputBundle (..),
     unwrapWireStageInputs,
