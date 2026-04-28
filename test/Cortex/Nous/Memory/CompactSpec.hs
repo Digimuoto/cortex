@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Memory.CompactSpec (spec) where
 
 import Data.Int (Int64)

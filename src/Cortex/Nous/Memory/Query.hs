@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Memory.Query
   ( CortexMemoryQuery (..)
   , parseMemoryQuery

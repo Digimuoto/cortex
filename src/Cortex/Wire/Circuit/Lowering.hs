@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Wire.Circuit.Lowering
   ( CircuitPulseConfig (..)
   , CircuitConditionBranch (..)

@@ -1,5 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Wire.Circuit.IRSpec (spec) where
 

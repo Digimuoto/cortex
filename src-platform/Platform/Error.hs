@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 {- |
 Module      : Platform.Error
 Description : Unified application error handling with safe client messages

@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Patterns.PlanReviewSpec (spec) where
 
 import Data.Aeson qualified as Aeson

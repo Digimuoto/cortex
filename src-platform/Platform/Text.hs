@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.Text
   ( showText
   , stripNonEmptyMaybeText

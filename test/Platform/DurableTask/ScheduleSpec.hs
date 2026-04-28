@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.DurableTask.ScheduleSpec (spec) where
 
 import Data.Time (Day (ModifiedJulianDay), UTCTime (..), fromGregorian, secondsToDiffTime)

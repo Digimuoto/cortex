@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Patterns.DeepReport.Section.RuntimeSpec (spec) where
 
 import Data.Aeson qualified as Aeson

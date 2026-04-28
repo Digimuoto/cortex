@@ -1,6 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-
 {- | Semantic classification of circuit nodes (DIG-481).
 
 'CircuitNodeKind' captures what a node /represents/ in a circuit — whether it

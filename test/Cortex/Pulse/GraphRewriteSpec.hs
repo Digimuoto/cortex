@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.GraphRewriteSpec (spec) where
 
 import Data.Aeson qualified as Aeson

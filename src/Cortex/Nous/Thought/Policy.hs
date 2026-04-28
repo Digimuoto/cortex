@@ -1,5 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-
 module Cortex.Nous.Thought.Policy
   ( CortexActionApproval (..)
   , CortexAgentPolicy (..)

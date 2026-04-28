@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 {- |
 Module: Platform.Require
 Description: Combinators for requiring values or throwing HTTP errors

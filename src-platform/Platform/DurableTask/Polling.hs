@@ -1,5 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-
 {- | Polling utilities for durable task runtimes.
 Provides jittered delays to prevent thundering-herd synchronization
 when multiple instances poll at fixed intervals.

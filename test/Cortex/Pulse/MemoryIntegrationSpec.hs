@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | End-to-end integration spec for 'Cortex.Pulse.Memory' (DIG-529).
 
 Exercises the IO 'MemoryHandle' constructed by 'newMemoryHandle'

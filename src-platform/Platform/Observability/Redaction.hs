@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.Observability.Redaction
   ( -- * Public API (re-exported by Platform.Observability)
     redactText

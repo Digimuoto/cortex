@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Thought.FrameSpec (spec) where
 
 import Data.Text (Text)

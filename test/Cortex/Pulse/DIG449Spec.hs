@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.DIG449Spec (spec) where
 
 import Data.Aeson qualified as Aeson

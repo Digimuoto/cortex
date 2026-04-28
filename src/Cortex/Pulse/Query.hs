@@ -1,8 +1,3 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Database queries for Pulse-owned tables.
 All queries operate on the pulse.* schema.
 -}
@@ -379,7 +374,7 @@ getNextDueTask excludedTypes deprioritized skippedTaskIds now =
   where
     taskOrder =
       mconcat
-        [ (\t -> t.priority) >$< desc
+        [ (.priority) >$< desc
         , deprioritizeOrder
         , (\t -> unsafeCastExpr t.nextRunAt :: Expr UTCTime) >$< asc
         ]
@@ -1229,7 +1224,7 @@ listTasks =
   Session.statement () . run . select . orderBy sortByName $
     each pulseTaskDefinitionSchema
   where
-    sortByName = (\t -> t.taskName) >$< asc
+    sortByName = (.taskName) >$< asc
 
 -- | Get the task definition for a given run (join pulse.runs → pulse.task_definitions).
 getTaskForRun :: UUID -> Session (Maybe (PulseTaskDefinitionRow Result))

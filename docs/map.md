@@ -17,6 +17,7 @@ here.
 | ------------------------------ | ------------------------------------------ | ------------------------------------ | ------ |
 | Canonical architecture chapter | [Architecture/](Architecture/)             | Long-term canon                      | No     |
 | Normative specification        | [Reference/](Reference/)                   | Long-term canon                      | No     |
+| Code style guide               | [Style.md](Style.md)                       | Long-term canon                      | No     |
 | Architecture decision record   | [ADRs/](ADRs/)                             | Permanent                            | No     |
 | Downstream consumer binding    | [Consumers/{consumer}.md](Consumers/)      | Long-term per consumer               | No     |
 | Active roadmap plan            | [Roadmap/Plans/](Roadmap/Plans/)           | Active until completed or superseded | No     |

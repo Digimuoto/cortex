@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 {- | Pure query engine for the graph-native topological memory
 (DIG-529).
 

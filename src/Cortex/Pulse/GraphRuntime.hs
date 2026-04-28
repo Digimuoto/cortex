@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase #-}
-
 module Cortex.Pulse.GraphRuntime
   ( InterruptReason (..)
   , NodeStatus (..)

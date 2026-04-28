@@ -1,8 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 {- | Pulse graph executor.
 Advances through typed graph-based stage plans with graph-state persistence,
 checkpoint audit writes, cancellation checks, replay-safety warnings, signal suspension, and

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Memory.DocumentSpec (spec) where
 
 import Data.Text qualified as T

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 {- | Umbrella module for the graph-native topological memory (DIG-529).
 
 Re-exports the pure sub-modules and provides IO helpers for use

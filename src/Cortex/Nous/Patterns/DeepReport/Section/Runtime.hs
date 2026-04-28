@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Patterns.DeepReport.Section.Runtime
   ( ResearchChunkCompileSuccess (..)
   , chunkCompileFailureFromErrorText

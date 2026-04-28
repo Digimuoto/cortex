@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Cortex Pulse public facade and daemon entry point.
 module Cortex.Pulse
   ( runPulse

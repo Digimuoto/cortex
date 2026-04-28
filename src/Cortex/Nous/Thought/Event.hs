@@ -1,6 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Nous.Thought.Event
   ( CortexEventKind (..)
   , CortexEvent (..)

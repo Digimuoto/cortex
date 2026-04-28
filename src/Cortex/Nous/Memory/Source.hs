@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Nous.Memory.Source
   ( CortexMemoryIndexedPassage (..)
   , CortexMemorySource (..)

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Artifact.IRSpec (spec) where
 
 import Data.Aeson qualified as Aeson

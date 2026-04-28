@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.Materialization
   ( PersistedRewrite (..)
   , PersistedGraphState (..)

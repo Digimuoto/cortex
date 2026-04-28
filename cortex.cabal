@@ -12,7 +12,7 @@ description:
 license:            Apache-2.0
 license-file:       LICENSE
 author:             Julius Koskela
-maintainer:         julius@koskela.dev
+maintainer:         julius.koskela@digimuoto.com
 copyright:          2026 Digimuoto Oy
 category:           AI, Runtime
 build-type:         Simple
@@ -23,22 +23,15 @@ data-files:
     config/cortex/memory-ranking.yaml
 
 common shared-properties
-    default-language: GHC2021
+    default-language: GHC2024
     default-extensions:
-        DataKinds
         DeriveAnyClass
-        DeriveGeneric
-        DerivingStrategies
         DerivingVia
         DuplicateRecordFields
-        GeneralizedNewtypeDeriving
-        LambdaCase
+        OverloadedRecordDot
         OverloadedStrings
         RecordWildCards
-        TemplateHaskell
-        TypeApplications
         TypeFamilies
-        TypeOperators
     ghc-options:
         -Wall
         -Wextra
@@ -52,6 +45,7 @@ common shared-properties
         -Wpartial-fields
         -Wredundant-constraints
         -Werror=missing-fields
+        -Werror=unused-imports
         -fno-warn-orphans
 
 common runtime-library-deps

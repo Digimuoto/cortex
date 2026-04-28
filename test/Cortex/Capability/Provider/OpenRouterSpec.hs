@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Capability.Provider.OpenRouterSpec (spec) where
 
 import Data.Aeson qualified as Aeson

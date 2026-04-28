@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 {- | Generic graph search parameterised by frontier discipline.
 
 DFS, BFS, min-priority, and max-priority search are all the same

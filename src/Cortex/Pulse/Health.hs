@@ -1,8 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Pulse health endpoint: minimal Warp server exposing runtime state.
 module Cortex.Pulse.Health
   ( PulseHealthState (..)

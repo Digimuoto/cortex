@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Minimal cron schedule parser and next-fire-time computation.
 
 Supports standard 5-field cron expressions:

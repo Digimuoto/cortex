@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Pure tests for 'Cortex.Pulse.Memory' (DIG-529).
 
 Three groups:

@@ -1,8 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Core types for the Cortex Pulse durable execution runtime.
 module Cortex.Pulse.Types
   ( -- * Task Kind

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.TypesSpec (spec) where
 
 import Data.Aeson ((.=))

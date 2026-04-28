@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Nous.Thought.ToolLoop
   ( CortexToolLoopConfig (..)
   , CortexToolLoopResult (..)

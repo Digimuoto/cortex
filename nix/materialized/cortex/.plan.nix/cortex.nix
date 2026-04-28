@@ -14,7 +14,7 @@
       identifier = { name = "cortex"; version = "0.1.0.0"; };
       license = "Apache-2.0";
       copyright = "2026 Digimuoto Oy";
-      maintainer = "julius@koskela.dev";
+      maintainer = "julius.koskela@digimuoto.com";
       author = "Julius Koskela";
       homepage = "";
       url = "";

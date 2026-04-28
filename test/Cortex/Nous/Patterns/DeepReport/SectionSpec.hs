@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Patterns.DeepReport.SectionSpec (spec) where
 
 import Data.Aeson qualified as Aeson

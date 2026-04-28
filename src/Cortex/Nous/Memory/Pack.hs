@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Nous.Memory.Pack
   ( selectByTokenBudget
   , packSessionPassages
@@ -51,12 +49,12 @@ packSessionPassages tokenBudget maxCount rows =
     tokenBudget
     maxCount
     (sortedRows rows)
-    (\row -> row.cortexMemoryPassageTokenCount)
+    (.cortexMemoryPassageTokenCount)
   where
     sortedRows =
       sortBy
-        ( comparing (Down . (\row -> row.cortexMemorySourceUpdatedAt))
-            <> comparing (Down . (\row -> row.cortexMemoryPassageOrder))
+        ( comparing (Down . (.cortexMemorySourceUpdatedAt))
+            <> comparing (Down . (.cortexMemoryPassageOrder))
         )
 
 {- | Pack reference passages using MMR (Maximal Marginal Relevance) to balance

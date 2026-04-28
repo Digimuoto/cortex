@@ -1,8 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-
 module Cortex.Nous.Thought.Frame
   ( CortexAgentBudget (..)
   , CortexAgentBudgetLimits (..)

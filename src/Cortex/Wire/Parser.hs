@@ -1,6 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Megaparsec-based parser for canonical Wire syntax.
 
 Mirrors the grammar in @docs/Reference/Wire/grammar.md@.

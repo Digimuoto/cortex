@@ -1,9 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Wire.Circuit.Compiled
   ( CircuitCompatibilityWitness (..)
   , CompiledCircuitFragment (..)

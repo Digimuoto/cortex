@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.DurableTask.CronSpec (spec) where
 
 import Data.Maybe (isJust, isNothing)

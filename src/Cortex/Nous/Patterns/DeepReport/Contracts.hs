@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Generic DeepReport contract catalog.
 
 These contract specs describe reusable reasoning payload boundaries. They do

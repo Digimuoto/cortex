@@ -36,6 +36,18 @@
       '';
     };
 
+    check-language-pragmas = pkgs.writeShellApplication {
+      name = "check-language-pragmas";
+      runtimeInputs = [
+        pkgs.findutils
+        pkgs.perl
+      ];
+      text = ''
+        set -euo pipefail
+        exec scripts/check-language-pragma-allowlist.sh "$@"
+      '';
+    };
+
     lean-lint = pkgs.writeShellApplication {
       name = "lean-lint";
       runtimeInputs = [pkgs.python3];
@@ -88,19 +100,23 @@
         lint-haskell
         echo
 
-        echo "Step 4: Lean lint"
+        echo "Step 4: Haskell language pragmas"
+        check-language-pragmas
+        echo
+
+        echo "Step 5: Lean lint"
         lean-lint
         echo
 
-        echo "Step 5: docs lint"
+        echo "Step 6: docs lint"
         docs-lint
         echo
 
-        echo "Step 6: Lean theory"
+        echo "Step 7: Lean theory"
         check-theory
         echo
 
-        echo "Step 7: flake checks"
+        echo "Step 8: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -110,6 +126,7 @@
       _check-theory = check-theory;
       _ci-check = ci-check;
       check-haskell-format = check-haskell-format;
+      check-language-pragmas = check-language-pragmas;
       docs-lint = docs-lint;
       lean-lint = lean-lint;
       lint-haskell = lint-haskell;
@@ -132,6 +149,12 @@
         type = "app";
         program = "${check-haskell-format}/bin/check-haskell-format";
         meta.description = "Fail when Fourmolu formatting drifts";
+      };
+
+      check-language-pragmas = {
+        type = "app";
+        program = "${check-language-pragmas}/bin/check-language-pragmas";
+        meta.description = "Reject non-allowlisted file-local LANGUAGE pragmas";
       };
 
       _ci-check = {

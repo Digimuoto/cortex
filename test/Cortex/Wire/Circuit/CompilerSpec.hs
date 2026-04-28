@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Wire.Circuit.CompilerSpec (spec) where
 
 import Data.Aeson qualified as Aeson

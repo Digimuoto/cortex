@@ -261,6 +261,9 @@ jobs:
       - name: Run HLint
         run: nix run '.#lint-haskell' --print-build-logs
 
+      - name: Check language pragmas
+        run: nix run '.#check-language-pragmas' --print-build-logs
+
   lean-lint:
     name: Lint Lean
     runs-on: [self-hosted, nix, mercury, cortex]

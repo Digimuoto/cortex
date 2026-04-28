@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Capability.Tool.Record
   ( CortexToolCallRecord (..)
   , buildToolCallRecord

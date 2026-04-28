@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | @cortex_memory_query@ tool — agent-driven ad-hoc recall over the
 DIG-529/530 topological memory (DIG-530 follow-up).
 

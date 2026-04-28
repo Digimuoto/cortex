@@ -1,5 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-
 {- |
 Module      : Platform.Observability.Fields
 Description : Typed event codes and safe field builders for observability

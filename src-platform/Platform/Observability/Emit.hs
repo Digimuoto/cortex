@@ -1,7 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.Observability.Emit
   ( -- * Public API (re-exported by Platform.Observability)
     emitEvent

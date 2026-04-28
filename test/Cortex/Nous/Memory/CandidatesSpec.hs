@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Memory.CandidatesSpec (spec) where
 
 import Data.Char (isAsciiUpper, isDigit)

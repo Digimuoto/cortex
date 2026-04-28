@@ -1,7 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 {- |
 Module      : Platform.Crypto

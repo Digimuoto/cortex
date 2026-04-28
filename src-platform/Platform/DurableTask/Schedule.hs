@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Platform.DurableTask.Schedule
   ( ScheduleKind (..)
   , ExecutionOrigin (..)

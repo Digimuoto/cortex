@@ -1,6 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Canonical epistemological archetypes for Cortex.Nous.
 
 These values define semantic expectations for modes of cognition. They do

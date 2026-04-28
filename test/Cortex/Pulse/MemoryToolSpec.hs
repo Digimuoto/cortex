@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Pure tests for 'Cortex.Pulse.Memory.Tool' (DIG-530 follow-up).
 
 Exercises:

@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 {- | Algebraic graph DSL based on Mokhov 2017, "Algebraic Graphs with Class."
 
 The graph is built using four constructors ('Empty', 'Vertex', 'Overlay',

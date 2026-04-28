@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Wire.PureSpec (spec) where
 
 import Data.Aeson qualified as Aeson

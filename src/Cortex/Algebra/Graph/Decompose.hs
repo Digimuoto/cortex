@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 {- | Structural decomposition of graphs: topological sorting, DAG folds,
 and strongly connected components.
 -}

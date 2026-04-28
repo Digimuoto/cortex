@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Platform.DurableTask.PoolSpec (spec) where
 
 import Control.Concurrent (threadDelay)

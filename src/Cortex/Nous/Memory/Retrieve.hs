@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Nous.Memory.Retrieve
   ( CortexMemoryRetrievalContext (..)
   , CortexMemoryRetrievalRequest (..)

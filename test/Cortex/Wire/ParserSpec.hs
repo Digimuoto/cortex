@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Wire.ParserSpec (spec) where
 
 import Data.List.NonEmpty (NonEmpty ((:|)))

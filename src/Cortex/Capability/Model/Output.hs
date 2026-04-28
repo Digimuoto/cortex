@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Capability.Model.Output
   ( appendSourcesSection
   , renderChoiceContentWithSources

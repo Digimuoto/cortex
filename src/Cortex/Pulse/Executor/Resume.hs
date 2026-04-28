@@ -1,7 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.Executor.Resume
   ( materializedTopologyForAdmin
   , resumeFromPersistedState

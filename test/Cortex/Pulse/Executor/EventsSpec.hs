@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.Executor.EventsSpec (spec) where
 
 import Data.Aeson qualified as Aeson

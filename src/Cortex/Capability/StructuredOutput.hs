@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Capability.StructuredOutput
   ( decodeStructuredChoice
   , decodeStructuredErrorMessage

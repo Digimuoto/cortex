@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Capability.Provider.OpenRouter.Wire
   ( OpenRouterCompletion (..)
   , OpenRouterUsage (..)

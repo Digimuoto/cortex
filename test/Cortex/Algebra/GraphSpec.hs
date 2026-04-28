@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Algebra.GraphSpec (spec) where
 
 import Data.Aeson qualified as Aeson

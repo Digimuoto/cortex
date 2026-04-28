@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Pulse.SchedulerSpec (spec) where
 
 import Control.Concurrent (threadDelay)

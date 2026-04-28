@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Database connection management
 
 Provides connection pool configuration and management using Hasql.

@@ -1,7 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- | Pulse scheduler: discovers due tasks, creates fresh runs, and manages
 the poll loop. Startup reclaim happens before the poll loop; expired-run
 recovery continues on every poll iteration.

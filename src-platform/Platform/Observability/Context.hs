@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.Observability.Context
   ( -- * Public API (re-exported by Platform.Observability)
     newLinkedRootContext

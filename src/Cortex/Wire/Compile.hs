@@ -1,7 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
-
 module Cortex.Wire.Compile
   ( compileWireFile
   , compileWireFileWithEnv

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 {- | Bounded concurrent execution pool for durable task runtimes.
 
 Provides a generic pool of async tasks with atomic slot reservation,

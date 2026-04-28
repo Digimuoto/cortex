@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.Observability.Runtime
   ( -- * Public API (re-exported by Platform.Observability)
     loadObservabilityConfig

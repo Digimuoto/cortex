@@ -1,6 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-
 module Cortex.Nous.Memory.Types
   ( CortexMemoryEntityConfig (..)
   , defaultCortexMemoryEntityConfig

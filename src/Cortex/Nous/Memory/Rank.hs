@@ -1,7 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Cortex.Nous.Memory.Rank
   ( CortexMemoryRankWeights (..)
   , defaultCortexMemoryRankWeights

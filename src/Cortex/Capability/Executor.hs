@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase #-}
-
 {- | Authority-bearing executor registration boundary.
 
 Capability executor specs describe the host authority that may be projected

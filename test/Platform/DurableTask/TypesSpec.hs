@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Platform.DurableTask.TypesSpec (spec) where
 
 import Data.List (nub)

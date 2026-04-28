@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.TestSupport.Database
   ( TestDB
   , createTestDB

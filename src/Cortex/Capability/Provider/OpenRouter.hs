@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Capability.Provider.OpenRouter
   ( buildOpenRouterRequestPayload
   , defaultMaxOutputTokens

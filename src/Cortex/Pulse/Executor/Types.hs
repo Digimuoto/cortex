@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Cortex.Pulse.Executor.Types
   ( RunFailureSpec (..)
   , RewriteAdmissionState (..)

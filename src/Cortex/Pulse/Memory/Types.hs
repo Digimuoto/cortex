@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 {- | Types for the graph-native topological memory (DIG-529).
 
 Memory is a deterministic query over the Pulse event substrate — not

@@ -1,5 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-
 module Cortex.Capability.Model.Types
   ( CortexChoice (..)
   , CortexChoiceRequest (..)

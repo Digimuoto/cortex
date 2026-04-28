@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Capability.StructuredOutputSpec (spec) where
 
 import Data.Aeson qualified as Aeson

@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 {- | Walk combinators for the graph-native topological memory (DIG-529).
 
 Given a topology, an origin 'NodeId', a 'WalkDirection', a

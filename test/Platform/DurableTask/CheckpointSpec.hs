@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Platform.DurableTask.CheckpointSpec (spec) where
 
 import Data.Aeson qualified as Aeson

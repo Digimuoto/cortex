@@ -47,6 +47,16 @@
             files = "(^|/).+\\.(hs|lhs)$|(^|/)cortex\\.cabal$|(^|/)\\.hlint\\.yaml$";
           };
 
+          language-pragmas = {
+            enable = true;
+            name = "language-pragmas";
+            description = "Reject non-allowlisted Haskell LANGUAGE pragmas";
+            entry = "${config.packages.check-language-pragmas}/bin/check-language-pragmas";
+            language = "system";
+            pass_filenames = true;
+            files = "^(src|src-platform|app|test)/.*\\.hs$|^cortex\\.cabal$|^scripts/check-language-pragma-allowlist\\.sh$";
+          };
+
           lean-lint = {
             enable = true;
             name = "lean-lint";

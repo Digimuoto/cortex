@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Cortex.Nous.Thought.ToolLoopSpec (spec) where
 
 import Data.Aeson qualified as Aeson
