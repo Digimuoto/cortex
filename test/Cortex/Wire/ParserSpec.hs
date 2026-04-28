@@ -50,7 +50,7 @@ spec = describe "Cortex.Wire.Parser" $ do
                          { corePureBindingName = "acceptedItem",
                            corePureBindingExpr =
                              CorePureLambda
-                               ["x"]
+                               ("x" :| [])
                                ( CorePureBinary
                                    CorePureGreaterThanOrEqual
                                    (CorePureFieldAccess (CorePureIdent "x") "score")

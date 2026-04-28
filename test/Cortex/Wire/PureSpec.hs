@@ -37,6 +37,7 @@ spec = describe "Cortex.Wire.Pure" $ do
       scorePorts
       scoreInputs
       scoreBindings
+      []
       (Map.singleton "score" scoreOutputExpr)
       `shouldBe` Right
         ( Map.singleton
@@ -72,7 +73,7 @@ spec = describe "Cortex.Wire.Pure" $ do
                       }
                   )
               )
-    evaluatePureTaskOutputs ports inputBundle [] (Map.singleton "out" (bin CorePureDivide (field (var "in") "value") (num 2)))
+    evaluatePureTaskOutputs ports inputBundle [] [] (Map.singleton "out" (bin CorePureDivide (field (var "in") "value") (num 2)))
       `shouldBe` Right (Map.singleton "out" (Aeson.Number 2))
 
   it "accepts pure port declarations with multiple output equations" $
@@ -80,12 +81,39 @@ spec = describe "Cortex.Wire.Pure" $ do
       `shouldBe` Right ()
 
   it "rejects missing variables" $
-    evaluatePureTaskOutputs scorePorts scoreInputs [] (Map.singleton "score" (var "unknown"))
+    evaluatePureTaskOutputs scorePorts scoreInputs [] [] (Map.singleton "score" (var "unknown"))
       `shouldBe` Left (PureMissingVariable "unknown")
 
   it "rejects divide by zero" $
-    evaluatePureTaskOutputs scorePorts scoreInputs [] (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
+    evaluatePureTaskOutputs scorePorts scoreInputs [] [] (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
       `shouldBe` Left PureDivisionByZero
+
+  it "rejects duplicate CorePure binding names in the same scope" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      [binding "dup" (num 1), binding "dup" (num 2)]
+      []
+      (Map.singleton "score" (var "dup"))
+      `shouldBe` Left (PureDuplicateBinding "dup")
+
+  it "rejects duplicate CorePure lambda parameters" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      []
+      (Map.singleton "score" (CorePureCall (CorePureLambda ("x" :| ["x"]) (var "x")) [num 1, num 2]))
+      `shouldBe` Left (PureDuplicateLambdaParam "x")
+
+  it "allows node-local bindings to shadow top-level helpers" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      [binding "shared" (num 1)]
+      [binding "shared" (num 2)]
+      (Map.singleton "score" (var "shared"))
+      `shouldBe` Right (Map.singleton "score" (Aeson.Number 2))
 
   it "rejects non-JSON WireValue inputs" $ do
     let inputBundle =
@@ -246,7 +274,7 @@ scoreBindings =
         corePureBindingExpr =
           call
             (var "map")
-            [ lambda ["item"] (field (var "item") "score"),
+            [ lambda ("item" :| []) (field (var "item") "score"),
               field (var "evidence") "items"
             ]
       },
@@ -255,7 +283,7 @@ scoreBindings =
         corePureBindingExpr =
           call
             (var "zipWith")
-            [ lambda ["score", "weight"] (bin CorePureMultiply (var "score") (var "weight")),
+            [ lambda ("score" :| ["weight"]) (bin CorePureMultiply (var "score") (var "weight")),
               var "scores",
               field (var "weights") "values"
             ]
@@ -269,6 +297,10 @@ scoreOutputExpr =
       CorePureField ("count" :| []) (call (var "length") [var "weighted"])
     ]
 
+binding :: Text -> CorePureExpr -> CorePureBinding
+binding name expr =
+  CorePureBinding {corePureBindingName = name, corePureBindingExpr = expr}
+
 num :: Scientific -> CorePureExpr
 num =
   CorePureLit . CorePureNumber
@@ -281,7 +313,7 @@ field :: CorePureExpr -> Text -> CorePureExpr
 field =
   CorePureFieldAccess
 
-lambda :: [Text] -> CorePureExpr -> CorePureExpr
+lambda :: NonEmpty Text -> CorePureExpr -> CorePureExpr
 lambda =
   CorePureLambda
 

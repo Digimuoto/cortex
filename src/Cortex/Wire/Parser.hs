@@ -19,6 +19,7 @@ import Control.Monad (when)
 import Cortex.Wire.Syntax
 import Data.Char (isAlpha, isAlphaNum)
 import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, isJust)
 import Data.Scientific (Scientific)
 import Data.Text (Text)
@@ -376,7 +377,7 @@ corePureExpr =
 corePureLet :: Parser CorePureExpr
 corePureLet = do
   keyword "let"
-  bindings <- some corePureBinding
+  bindings <- requireNonEmpty "CorePure let requires at least one binding" =<< some corePureBinding
   keyword "in"
   CorePureLet bindings <$> corePureExpr
 
@@ -390,10 +391,11 @@ corePureBinding = do
 
 corePureLambda :: Parser CorePureExpr
 corePureLambda = do
-  params <- some . try $ do
+  paramList <- some . try $ do
     param <- identifier
     _ <- symbol ":"
     pure param
+  params <- requireNonEmpty "CorePure lambda requires at least one parameter" paramList
   CorePureLambda params <$> corePureExpr
 
 corePureOrLevel :: Parser CorePureExpr
@@ -532,6 +534,12 @@ chainLeft operand operator = do
     pure (op, rhs)
   pure (foldl' (\acc (op, rhs) -> op acc rhs) first rest)
 
+requireNonEmpty :: String -> [a] -> Parser (NonEmpty a)
+requireNonEmpty message values =
+  case NE.nonEmpty values of
+    Just nonEmptyValues -> pure nonEmptyValues
+    Nothing -> fail message
+
 ------------------------------------------------------------------------
 -- Port signatures
 ------------------------------------------------------------------------
@@ -660,9 +668,9 @@ pureNodeDecl = do
   _ <- symbol ":"
   inputs <- many (try inputPort)
   localBindings <- optional (try pureNodeLocalBindings)
-  outputEquations <- some (try pureOutputEquation)
+  outputEquations <- requireNonEmpty "pure node requires at least one output equation" =<< some (try pureOutputEquation)
   _ <- symbol ";"
-  let sig = inputs <> fmap pureOutputEquationPortDecl outputEquations
+  let sig = inputs <> fmap pureOutputEquationPortDecl (NE.toList outputEquations)
   when (null sig) $
     fail "Wire requires every node to declare at least one port"
   pure

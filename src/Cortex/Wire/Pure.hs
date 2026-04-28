@@ -49,6 +49,8 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Char qualified as Char
 import Data.Foldable (traverse_)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, toBoundedInteger)
@@ -73,6 +75,8 @@ data PureEvalError
   | PureIndexOutOfBounds !Int
   | PureFunctionExpected !Text
   | PureFunctionArity !Text !Int !Int
+  | PureDuplicateBinding !Text
+  | PureDuplicateLambdaParam !Text
   deriving stock (Eq, Show, Generic)
 
 renderPureEvalError :: PureEvalError -> Text
@@ -131,6 +135,10 @@ renderPureEvalError = \case
       <> " argument(s) but received "
       <> T.pack (show actual)
       <> "."
+  PureDuplicateBinding bindingName ->
+    "Pure expression declares binding " <> bindingName <> " more than once in the same scope."
+  PureDuplicateLambdaParam paramName ->
+    "Pure expression declares lambda parameter " <> paramName <> " more than once."
   where
     renderList values =
       "[" <> T.intercalate ", " values <> "]"
@@ -237,19 +245,17 @@ evaluatePureTaskOutputs ::
   WirePorts ->
   WireInputBundle ->
   [CorePureBinding] ->
+  [CorePureBinding] ->
   Map Text CorePureExpr ->
   Either PureEvalError (Map Text Aeson.Value)
-evaluatePureTaskOutputs ports inputBundle bindings outputExprs = do
+evaluatePureTaskOutputs ports inputBundle bindings localBindings outputExprs = do
   validatePurePorts ports outputExprs
   inputValues <- bindPureInputValues ports inputBundle
   let inputEnv = Map.map CorePureJson inputValues
-  env <- foldM bindCorePureBinding (corePureBuiltinEnv <> inputEnv) bindings
+  outerEnv <- bindCorePureBindings (corePureBuiltinEnv <> inputEnv) bindings
+  env <- bindCorePureBindings outerEnv localBindings
   traverse (evaluateOutput env) outputExprs
   where
-    bindCorePureBinding env binding = do
-      value <- evaluateCorePureExpr env binding.corePureBindingExpr
-      Right (Map.insert binding.corePureBindingName value env)
-
     evaluateOutput env outputExpr = do
       value <- evaluateCorePureExpr env outputExpr
       corePureValueToJson value
@@ -258,7 +264,7 @@ type CorePureEnv = Map Text CorePureValue
 
 data CorePureValue
   = CorePureJson !Aeson.Value
-  | CorePureClosure ![Text] !CorePureExpr !CorePureEnv
+  | CorePureClosure !(NonEmpty Text) !CorePureExpr !CorePureEnv
   | CorePureBuiltin !Text !Int !([CorePureValue] -> Either PureEvalError CorePureValue)
 
 evaluateCorePureExpr :: CorePureEnv -> CorePureExpr -> Either PureEvalError CorePureValue
@@ -293,7 +299,7 @@ evaluateCorePureExpr env = \case
     indexValue <- evaluateCorePureExpr env indexExpr >>= corePureValueToJson
     evaluateCorePureIndex baseValue indexValue
   CorePureLambda params body ->
-    Right (CorePureClosure params body env)
+    validateCorePureParamNames params *> Right (CorePureClosure params body env)
   CorePureCall functionExpr argumentExprs -> do
     functionValue <- evaluateCorePureExpr env functionExpr
     argumentValues <- traverse (evaluateCorePureExpr env) argumentExprs
@@ -316,12 +322,39 @@ evaluateCorePureExpr env = \case
     rhs <- evaluateCorePureExpr env rhsExpr
     evaluateCorePureBinary binaryOp lhs rhs
   CorePureLet bindings bodyExpr -> do
-    localEnv <- foldM bindLocal env bindings
+    localEnv <- bindCorePureBindings env (NE.toList bindings)
     evaluateCorePureExpr localEnv bodyExpr
-    where
-      bindLocal currentEnv binding = do
-        value <- evaluateCorePureExpr currentEnv binding.corePureBindingExpr
-        Right (Map.insert binding.corePureBindingName value currentEnv)
+
+bindCorePureBindings ::
+  CorePureEnv ->
+  [CorePureBinding] ->
+  Either PureEvalError CorePureEnv
+bindCorePureBindings env bindings = do
+  validateCorePureBindingNames bindings
+  foldM bindCorePureBinding env bindings
+  where
+    bindCorePureBinding currentEnv binding = do
+      value <- evaluateCorePureExpr currentEnv binding.corePureBindingExpr
+      Right (Map.insert binding.corePureBindingName value currentEnv)
+
+validateCorePureBindingNames :: [CorePureBinding] -> Either PureEvalError ()
+validateCorePureBindingNames bindings =
+  case duplicateNames (fmap (.corePureBindingName) bindings) of
+    name : _ -> Left (PureDuplicateBinding name)
+    [] -> Right ()
+
+validateCorePureParamNames :: NonEmpty Text -> Either PureEvalError ()
+validateCorePureParamNames params =
+  case duplicateNames (NE.toList params) of
+    name : _ -> Left (PureDuplicateLambdaParam name)
+    [] -> Right ()
+
+duplicateNames :: [Text] -> [Text]
+duplicateNames names =
+  [ name
+  | (name, count) <- Map.toAscList (Map.fromListWith (+) [(name, 1 :: Int) | name <- names]),
+    count > 1
+  ]
 
 corePureLiteralToJson :: CorePureLiteral -> Aeson.Value
 corePureLiteralToJson = \case
@@ -433,10 +466,11 @@ applyCorePureValue :: CorePureValue -> [CorePureValue] -> Either PureEvalError C
 applyCorePureValue functionValue argumentValues =
   case functionValue of
     CorePureClosure params body closureEnv
-      | length params == length argumentValues ->
-          evaluateCorePureExpr (Map.fromList (zip params argumentValues) <> closureEnv) body
+      | NE.length params == length argumentValues ->
+          validateCorePureParamNames params
+            *> evaluateCorePureExpr (Map.fromList (zip (NE.toList params) argumentValues) <> closureEnv) body
       | otherwise ->
-          Left (PureFunctionArity "<lambda>" (length params) (length argumentValues))
+          Left (PureFunctionArity "<lambda>" (NE.length params) (length argumentValues))
     CorePureBuiltin name arity implementation
       | arity == length argumentValues ->
           implementation argumentValues
@@ -570,13 +604,15 @@ applyJsonFunction functionValue value =
   applyCorePureValue functionValue [CorePureJson value]
 
 filterMCore :: (a -> Either PureEvalError Bool) -> [a] -> Either PureEvalError [a]
-filterMCore predicate =
-  foldM
-    ( \acc value -> do
-        keep <- predicate value
-        Right (if keep then acc <> [value] else acc)
-    )
-    []
+filterMCore predicate values =
+  reverse
+    <$> foldM
+      ( \acc value -> do
+          keep <- predicate value
+          Right (if keep then value : acc else acc)
+      )
+      []
+      values
 
 impossibleBuiltinArity :: Text -> Int -> [CorePureValue] -> Either PureEvalError a
 impossibleBuiltinArity name expected args =
@@ -672,7 +708,12 @@ pureExecutorConfigSchema =
           [ "bindings"
               Aeson..= Aeson.object
                 [ "type" Aeson..= ("array" :: Text),
-                  "description" Aeson..= ("CorePure let bindings shared by all pure outputs." :: Text)
+                  "description" Aeson..= ("Top-level CorePure helper bindings shared by all pure outputs." :: Text)
+                ],
+            "localBindings"
+              Aeson..= Aeson.object
+                [ "type" Aeson..= ("array" :: Text),
+                  "description" Aeson..= ("Node-local CorePure bindings evaluated after top-level helpers." :: Text)
                 ],
             "outputs"
               Aeson..= Aeson.object

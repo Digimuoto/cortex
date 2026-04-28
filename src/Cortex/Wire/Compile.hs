@@ -316,12 +316,12 @@ lowerTopForm compileEnv st = \case
     Left (WireCore.WireParseError "Wire imports are not compiled yet.")
   TopLet name expr -> do
     value <- evalValue st expr
-    if Map.member name st.lsBindings
+    if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
       else Right st {lsBindings = Map.insert name value st.lsBindings}
   TopPureLet binding -> do
     let name = binding.corePureBindingName
-    if Map.member name st.lsBindings || any (\existing -> existing.corePureBindingName == name) st.lsPureBindings
+    if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
       else Right st {lsPureBindings = st.lsPureBindings <> [binding]}
   TopNode nodeDecl -> do
@@ -334,6 +334,10 @@ lowerTopForm compileEnv st = \case
           st
             { lsNamedNodes = Map.insert nodeName loweredNode st.lsNamedNodes
             }
+  where
+    topLevelBindingNameTaken state name =
+      Map.member name state.lsBindings
+        || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
 
 lowerNamedNode :: WireCompileEnv -> LoweringState -> NodeDecl -> Either WireCore.WireError LoweredNode
 lowerNamedNode compileEnv st nodeDecl = do
@@ -1297,7 +1301,8 @@ loweredPureNodeFromBody compileEnv nodeRef (inputPorts, outputPorts) topLevelBin
       executor = WireCore.WireExecutorNative "pure"
       configValue =
         Aeson.object
-          [ "bindings" Aeson..= (topLevelBindings <> pureBody.nodePureBodyBindings),
+          [ "bindings" Aeson..= topLevelBindings,
+            "localBindings" Aeson..= pureBody.nodePureBodyBindings,
             "outputs" Aeson..= outputConfig
           ]
   validateExecutorProjection compileEnv nodeRef executor runtimePorts
@@ -1352,14 +1357,13 @@ validatePureBindingNames nodeRef bindings =
 pureOutputConfigMap ::
   CircuitNodeRef ->
   [LoweredPort] ->
-  [PureOutputEquation] ->
+  NonEmpty PureOutputEquation ->
   Either WireCore.WireError (Map Text CorePureExpr)
 pureOutputConfigMap nodeRef outputPorts outputEquations = do
-  when (null outputEquations) $
-    Left (WireCore.WireInvalidPorts nodeRef "pure output equations require at least one output")
-  when (length outputPorts /= length outputEquations) $
+  let outputEquationList = NE.toList outputEquations
+  when (length outputPorts /= length outputEquationList) $
     Left (WireCore.WireInvalidPorts nodeRef "pure output equations do not match lowered output ports")
-  Map.fromList <$> zipWithM matchOutput outputPorts outputEquations
+  Map.fromList <$> zipWithM matchOutput outputPorts outputEquationList
   where
     matchOutput port outputEquation = do
       let ContractId contractName = outputEquation.pureOutputEquationContract

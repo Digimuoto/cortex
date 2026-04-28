@@ -213,6 +213,10 @@ spec = describe "Cortex.Wire.Compile" $ do
         other ->
           expectationFailure ("expected compiled pure task node, got: " <> show other)
 
+    it "rejects duplicate names across CorePure helper and ordinary let bindings" $
+      compileWireTextWithEnv strictExecutorEnv duplicatePureAndWireLetSourceText
+        `shouldBe` Left (WireDuplicateLetBinding "acceptedItem")
+
     it "rejects authored @pure executor applications" $
       compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
         `shouldBe` Left (WireParseError "Pure nodes must be authored with output equations, not @pure executor application.")
@@ -282,6 +286,19 @@ pureExecutorWithSharedHelperSourceText :: T.Text
 pureExecutorWithSharedHelperSourceText =
   T.unlines
     [ "let acceptedItem = x: x.score >= 0.7;",
+      "",
+      "node classify :",
+      "  <- evidence: EvidenceSet",
+      "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);",
+      "",
+      "classify"
+    ]
+
+duplicatePureAndWireLetSourceText :: T.Text
+duplicatePureAndWireLetSourceText =
+  T.unlines
+    [ "let acceptedItem = x: x.score >= 0.7;",
+      "let acceptedItem = \"ordinary\";",
       "",
       "node classify :",
       "  <- evidence: EvidenceSet",

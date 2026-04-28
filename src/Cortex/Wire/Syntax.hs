@@ -252,11 +252,11 @@ data CorePureExpr
   | CorePureRecord ![CorePureField]
   | CorePureFieldAccess !CorePureExpr !Text
   | CorePureIndex !CorePureExpr !CorePureExpr
-  | CorePureLambda ![Text] !CorePureExpr
+  | CorePureLambda !(NonEmpty Text) !CorePureExpr
   | CorePureCall !CorePureExpr ![CorePureExpr]
   | CorePureUnary !CorePureUnaryOp !CorePureExpr
   | CorePureBinary !CorePureBinOp !CorePureExpr !CorePureExpr
-  | CorePureLet ![CorePureBinding] !CorePureExpr
+  | CorePureLet !(NonEmpty CorePureBinding) !CorePureExpr
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
@@ -281,7 +281,7 @@ data PureOutputEquation = PureOutputEquation
 
 data NodePureBody = NodePureBody
   { nodePureBodyBindings :: ![CorePureBinding],
-    nodePureBodyOutputs :: ![PureOutputEquation]
+    nodePureBodyOutputs :: !(NonEmpty PureOutputEquation)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)

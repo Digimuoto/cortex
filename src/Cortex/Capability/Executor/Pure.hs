@@ -63,6 +63,7 @@ import GHC.Generics (Generic)
 
 data PureTaskConfig = PureTaskConfig
   { pureTaskConfigBindings :: ![CorePureBinding],
+    pureTaskConfigLocalBindings :: ![CorePureBinding],
     pureTaskConfigOutputs :: !(Map Text CorePureExpr),
     pureTaskConfigPorts :: !WirePorts,
     pureTaskConfigTimeoutSeconds :: !(Maybe Int32)
@@ -110,7 +111,7 @@ bindPureTaskNode maybeRegistry taskNode = do
         sdRetryPolicy = Nothing,
         sdAction = \ctx -> do
           let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
-          case evaluatePureTaskOutputs config.pureTaskConfigPorts inputBundle config.pureTaskConfigBindings config.pureTaskConfigOutputs of
+          case evaluatePureTaskOutputs config.pureTaskConfigPorts inputBundle config.pureTaskConfigBindings config.pureTaskConfigLocalBindings config.pureTaskConfigOutputs of
             Left err -> fail (T.unpack (renderPureEvalError err))
             Right outputValues ->
               case wrapWireStageOutputs maybeRegistry ctx.scNodeId ctx.scRunId config.pureTaskConfigPorts outputValues of
@@ -133,11 +134,12 @@ parsePureTaskMetadata = Aeson.withObject "Pure task metadata" $ \obj -> do
       Right parsedPorts -> pure parsedPorts
       Left err -> fail (T.unpack err)
   configValue <- obj Aeson..: "config"
-  (bindings, outputs) <- parsePureConfig configValue
+  (bindings, localBindings, outputs) <- parsePureConfig configValue
   timeoutSeconds <- obj Aeson..:? "timeoutSeconds"
   pure
     PureTaskConfig
       { pureTaskConfigBindings = bindings,
+        pureTaskConfigLocalBindings = localBindings,
         pureTaskConfigOutputs = outputs,
         pureTaskConfigPorts = ports,
         pureTaskConfigTimeoutSeconds = timeoutSeconds
@@ -151,17 +153,18 @@ parsePureExecutor = Aeson.withObject "Pure executor metadata" $ \obj -> do
     ("native", "pure") -> pure ()
     _ -> fail "task node does not reference the native pure executor"
 
-parsePureConfig :: Aeson.Value -> AesonTypes.Parser ([CorePureBinding], Map Text CorePureExpr)
+parsePureConfig :: Aeson.Value -> AesonTypes.Parser ([CorePureBinding], [CorePureBinding], Map Text CorePureExpr)
 parsePureConfig = Aeson.withObject "Pure executor config" $ \obj -> do
   let extraKeys =
         [ keyText
         | key <- KeyMap.keys obj,
           let keyText = Key.toText key,
-          keyText /= "bindings" && keyText /= "outputs"
+          keyText /= "bindings" && keyText /= "localBindings" && keyText /= "outputs"
         ]
   case extraKeys of
     [] -> do
       bindings <- obj Aeson..:? "bindings" Aeson..!= []
+      localBindings <- obj Aeson..:? "localBindings" Aeson..!= []
       outputs <- obj Aeson..: "outputs"
-      pure (bindings, outputs)
+      pure (bindings, localBindings, outputs)
     _ -> fail ("unsupported pure executor config fields: " <> T.unpack (T.intercalate ", " extraKeys))
