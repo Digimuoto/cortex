@@ -1,19 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Database connection management
---
--- Provides connection pool configuration and management using Hasql.
+{- | Database connection management
+
+Provides connection pool configuration and management using Hasql.
+-}
 module Platform.Database
   ( -- * Connection management
-    ConnectionConfig (..),
-    initConnectionPool,
-    createPool,
-    releasePool,
-    withConnection,
-    runTransaction,
-    Session,
-    Transaction,
-    Pool,
+    ConnectionConfig (..)
+  , initConnectionPool
+  , createPool
+  , releasePool
+  , withConnection
+  , runTransaction
+  , Session
+  , Transaction
+  , Pool
   )
 where
 
@@ -31,17 +32,18 @@ import Hasql.Session (Session)
 import Hasql.Transaction (Transaction)
 import Hasql.Transaction.Sessions (IsolationLevel (ReadCommitted), Mode (Write), transaction)
 
--- | Database connection configuration
--- NOTE: Does not derive Show to prevent accidental password logging in error messages
+{- | Database connection configuration
+NOTE: Does not derive Show to prevent accidental password logging in error messages
+-}
 data ConnectionConfig = ConnectionConfig
-  { dbHost :: Text,
-    dbPort :: Word16,
-    dbUser :: Text,
-    -- | Never logged or displayed
-    dbPassword :: Text,
-    dbDatabase :: Text,
-    dbPoolSize :: Int,
-    dbPoolTimeout :: Int
+  { dbHost :: Text
+  , dbPort :: Word16
+  , dbUser :: Text
+  , dbPassword :: Text
+  -- ^ Never logged or displayed
+  , dbDatabase :: Text
+  , dbPoolSize :: Int
+  , dbPoolTimeout :: Int
   }
 
 -- | Initialize connection pool
@@ -55,21 +57,21 @@ initConnectionPool config = do
       let connectionSettings =
             [ ConnectionSetting.connection $
                 Connection.params
-                  [ Param.host (dbHost config),
-                    Param.port (dbPort config),
-                    Param.user (dbUser config),
-                    Param.password (dbPassword config),
-                    Param.dbname (dbDatabase config)
+                  [ Param.host (dbHost config)
+                  , Param.port (dbPort config)
+                  , Param.user (dbUser config)
+                  , Param.password (dbPassword config)
+                  , Param.dbname (dbDatabase config)
                   ]
             ]
 
       -- Create pool config using the new API
       let poolCfg =
             PoolConfig.settings
-              [ PoolConfig.size (dbPoolSize config),
-                PoolConfig.acquisitionTimeout . secondsToDiffTime . fromIntegral $
-                  dbPoolTimeout config,
-                PoolConfig.staticConnectionSettings connectionSettings
+              [ PoolConfig.size (dbPoolSize config)
+              , PoolConfig.acquisitionTimeout . secondsToDiffTime . fromIntegral $
+                  dbPoolTimeout config
+              , PoolConfig.staticConnectionSettings connectionSettings
               ]
 
       -- Acquire the pool (wrap in exception handler)
@@ -91,8 +93,9 @@ validateConfig config
   | dbPoolTimeout config <= 0 = Just "Pool timeout must be greater than 0"
   | otherwise = Nothing
 
--- | Release all connections in the pool.
--- Call this when the server shuts down to avoid leaked connections.
+{- | Release all connections in the pool.
+Call this when the server shuts down to avoid leaked connections.
+-}
 releasePool :: Pool -> IO ()
 releasePool = release
 

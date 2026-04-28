@@ -1,5 +1,5 @@
 module Cortex.Nous.Memory.Candidate
-  ( module Cortex.Nous.Memory.Candidates,
+  ( module Cortex.Nous.Memory.Candidates
   )
 where
 

@@ -5,55 +5,38 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Pulse.Plan
-  ( StageAction,
-    StageContext (..),
-    StageRejectedRewrite (..),
-    StageResult (..),
-    StableStageId (..),
-    StageActionId (..),
-    stageActionId,
-    StageTemplateId (..),
-    stageTemplateId,
-    buildStageTemplateRegistry,
-    mergeStageTemplateRegistries,
-    StageLatentNode (..),
-    StageLatentDeltaSignature (..),
-    StageLatentBranch (..),
-    StageLatentCondition (..),
-    StagePlan (..),
-    SomeStagePlan (..),
-    StageDefinition (..),
-    StageReplaySafety (..),
-    ReplayPolicy (..),
-    RewriteExhaustionPolicy (..),
-    StageRetryPolicy (..),
-    StageRetryBackoff (..),
-    StageRetryExhaustion (..),
-    StageFailure (..),
-    StageRetryFailureContext (..),
-    mkLinearStagePlan,
-    liftChainAction,
+  ( StageAction
+  , StageContext (..)
+  , StageRejectedRewrite (..)
+  , StageResult (..)
+  , StableStageId (..)
+  , StageActionId (..)
+  , stageActionId
+  , StageTemplateId (..)
+  , stageTemplateId
+  , buildStageTemplateRegistry
+  , mergeStageTemplateRegistries
+  , StageLatentNode (..)
+  , StageLatentDeltaSignature (..)
+  , StageLatentBranch (..)
+  , StageLatentCondition (..)
+  , StagePlan (..)
+  , SomeStagePlan (..)
+  , StageDefinition (..)
+  , StageReplaySafety (..)
+  , ReplayPolicy (..)
+  , RewriteExhaustionPolicy (..)
+  , StageRetryPolicy (..)
+  , StageRetryBackoff (..)
+  , StageRetryExhaustion (..)
+  , StageFailure (..)
+  , StageRetryFailureContext (..)
+  , mkLinearStagePlan
+  , liftChainAction
   )
 where
 
 import Control.Exception (SomeException)
-import Cortex.Algebra.Graph
-  ( Relation (..),
-    ValidationError (..),
-    path,
-    toRelation,
-    validateDAG,
-  )
-import Cortex.Pulse.Memory.Types (MemoryHandle, MemoryStrategy)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Rewrite
-  ( BudgetContext,
-    GraphRewrite (..),
-    RewriteAnchorDisposition,
-    RewriteBudget,
-    RewriteRejectionContext,
-  )
-import Cortex.Pulse.Signal (SignalName)
 import Data.Aeson qualified as Aeson
 import Data.Int (Int32)
 import Data.Map.Strict (Map)
@@ -64,10 +47,28 @@ import Data.Text qualified as T
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
+import Cortex.Algebra.Graph
+  ( Relation (..)
+  , ValidationError (..)
+  , path
+  , toRelation
+  , validateDAG
+  )
+import Cortex.Pulse.Memory.Types (MemoryHandle, MemoryStrategy)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Rewrite
+  ( BudgetContext
+  , GraphRewrite (..)
+  , RewriteAnchorDisposition
+  , RewriteBudget
+  , RewriteRejectionContext
+  )
+import Cortex.Pulse.Signal (SignalName)
+
 data StageRejectedRewrite = StageRejectedRewrite
-  { srrRejectionType :: !Text,
-    srrMessage :: !Text,
-    srrRejectedSpec :: !(Maybe Aeson.Value)
+  { srrRejectionType :: !Text
+  , srrMessage :: !Text
+  , srrRejectedSpec :: !(Maybe Aeson.Value)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.ToJSON)
@@ -80,24 +81,26 @@ data StageResult stageId
 
 -- | Execution context provided to every stage action.
 data StageContext = StageContext
-  { scRunId :: !UUID,
-    scNodeId :: !NodeId,
-    scInputs :: !(Map NodeId Aeson.Value),
-    scAttempt :: !Int,
-    scBudgetContext :: !BudgetContext,
-    scRewriteRejection :: !(Maybe RewriteRejectionContext),
-    scRetryFailure :: !(Maybe StageRetryFailureContext),
-    -- | DIG-529 graph-native topological memory.  A stage queries the
-    -- substrate via this handle rather than reading a dedicated claim
-    -- store.  Constructed once per run by the executor from the run's
-    -- 'PersistedGraphState' / node-completion / topology TVars.
-    scMemory :: !MemoryHandle,
-    -- | DIG-530 per-stage memory read surface selector.  Copied from
-    -- the bound 'StageDefinition.sdMemoryStrategy' so that stage
-    -- actions can dispatch on the declared surface (classic vs.
-    -- topological, future retrieval/hybrid) without re-reading the
-    -- plan.
-    scMemoryStrategy :: !MemoryStrategy
+  { scRunId :: !UUID
+  , scNodeId :: !NodeId
+  , scInputs :: !(Map NodeId Aeson.Value)
+  , scAttempt :: !Int
+  , scBudgetContext :: !BudgetContext
+  , scRewriteRejection :: !(Maybe RewriteRejectionContext)
+  , scRetryFailure :: !(Maybe StageRetryFailureContext)
+  , scMemory :: !MemoryHandle
+  {- ^ DIG-529 graph-native topological memory.  A stage queries the
+   substrate via this handle rather than reading a dedicated claim
+   store.  Constructed once per run by the executor from the run's
+   'PersistedGraphState' / node-completion / topology TVars.
+  -}
+  , scMemoryStrategy :: !MemoryStrategy
+  {- ^ DIG-530 per-stage memory read surface selector.  Copied from
+   the bound 'StageDefinition.sdMemoryStrategy' so that stage
+   actions can dispatch on the declared surface (classic vs.
+   topological, future retrieval/hybrid) without re-reading the
+   plan.
+  -}
   }
 
 type StageAction stageId = StageContext -> IO (StageResult stageId)
@@ -120,14 +123,14 @@ newtype StageTemplateId = StageTemplateId {unStageTemplateId :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Aeson.FromJSON, Aeson.ToJSON)
 
-stageTemplateId :: (StableStageId stageId) => stageId -> StageTemplateId
+stageTemplateId :: StableStageId stageId => stageId -> StageTemplateId
 stageTemplateId = StageTemplateId . stageIdToText
 
 newtype StageActionId = StageActionId {unStageActionId :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Aeson.FromJSON, Aeson.ToJSON)
 
-stageActionId :: (StableStageId stageId) => stageId -> StageActionId
+stageActionId :: StableStageId stageId => stageId -> StageActionId
 stageActionId = StageActionId . stageIdToText
 
 data StageReplaySafety
@@ -163,19 +166,19 @@ instance Show StageFailure where
   show = T.unpack . stageFailureMessage
 
 data StageRetryFailureContext = StageRetryFailureContext
-  { srfcPreviousAttempt :: !Int,
-    srfcFailureType :: !Text,
-    srfcFailureMessage :: !Text
+  { srfcPreviousAttempt :: !Int
+  , srfcFailureType :: !Text
+  , srfcFailureMessage :: !Text
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 data StageRetryPolicy = StageRetryPolicy
-  { srpPredicateName :: Text,
-    srpMaxAttempts :: Int,
-    srpBackoff :: StageRetryBackoff,
-    srpRetryable :: StageFailure -> Bool,
-    srpExhaustion :: StageRetryExhaustion
+  { srpPredicateName :: Text
+  , srpMaxAttempts :: Int
+  , srpBackoff :: StageRetryBackoff
+  , srpRetryable :: StageFailure -> Bool
+  , srpExhaustion :: StageRetryExhaustion
   }
   deriving stock (Generic)
 
@@ -210,62 +213,63 @@ instance Aeson.FromJSON StageRetryPolicy where
 instance Aeson.ToJSON StageRetryPolicy where
   toJSON p =
     Aeson.object
-      [ "predicate_name" Aeson..= p.srpPredicateName,
-        "max_attempts" Aeson..= p.srpMaxAttempts,
-        "backoff" Aeson..= p.srpBackoff,
-        "exhaustion" Aeson..= p.srpExhaustion
+      [ "predicate_name" Aeson..= p.srpPredicateName
+      , "max_attempts" Aeson..= p.srpMaxAttempts
+      , "backoff" Aeson..= p.srpBackoff
+      , "exhaustion" Aeson..= p.srpExhaustion
       ]
 
 data StageDefinition stageId = StageDefinition
-  { sdStageId :: stageId,
-    sdTemplateId :: StageTemplateId,
-    sdActionId :: StageActionId,
-    sdReplaySafety :: StageReplaySafety,
-    sdReplayPolicyOverride :: Maybe ReplayPolicy,
-    sdTimeoutSeconds :: Maybe Int32,
-    sdRetryPolicy :: Maybe StageRetryPolicy,
-    sdAction :: StageAction stageId,
-    -- | DIG-530: memory read surface the stage expects.  Defaults to
-    -- 'MemoryClassic' (scInputs only) so pre-existing plans stay on
-    -- the historical chain-scoped path until a wire opts in.
-    sdMemoryStrategy :: MemoryStrategy
+  { sdStageId :: stageId
+  , sdTemplateId :: StageTemplateId
+  , sdActionId :: StageActionId
+  , sdReplaySafety :: StageReplaySafety
+  , sdReplayPolicyOverride :: Maybe ReplayPolicy
+  , sdTimeoutSeconds :: Maybe Int32
+  , sdRetryPolicy :: Maybe StageRetryPolicy
+  , sdAction :: StageAction stageId
+  , sdMemoryStrategy :: MemoryStrategy
+  {- ^ DIG-530: memory read surface the stage expects.  Defaults to
+   'MemoryClassic' (scInputs only) so pre-existing plans stay on
+   the historical chain-scoped path until a wire opts in.
+  -}
   }
 
 data StageLatentNode = StageLatentNode
-  { slnTemplateId :: StageTemplateId,
-    slnActionId :: StageActionId
+  { slnTemplateId :: StageTemplateId
+  , slnActionId :: StageActionId
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 data StageLatentDeltaSignature = StageLatentDeltaSignature
-  { sldsAnchorNodeId :: NodeId,
-    sldsAnchorDisposition :: RewriteAnchorDisposition,
-    sldsNewNodes :: Set NodeId,
-    sldsAddedEdges :: Set (NodeId, NodeId),
-    sldsEntryNodes :: [NodeId],
-    sldsExitNodes :: [NodeId]
+  { sldsAnchorNodeId :: NodeId
+  , sldsAnchorDisposition :: RewriteAnchorDisposition
+  , sldsNewNodes :: Set NodeId
+  , sldsAddedEdges :: Set (NodeId, NodeId)
+  , sldsEntryNodes :: [NodeId]
+  , sldsExitNodes :: [NodeId]
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 data StageLatentBranch = StageLatentBranch
-  { slbBranchId :: Text,
-    slbAnchorNodeId :: NodeId,
-    slbNodes :: Map NodeId StageLatentNode,
-    slbTopology :: Relation NodeId,
-    slbEntryNodes :: [NodeId],
-    slbExitNodes :: [NodeId],
-    slbPostSuccessorNodes :: [NodeId],
-    slbDeltaSignature :: StageLatentDeltaSignature,
-    slbNestedConditions :: [StageLatentCondition]
+  { slbBranchId :: Text
+  , slbAnchorNodeId :: NodeId
+  , slbNodes :: Map NodeId StageLatentNode
+  , slbTopology :: Relation NodeId
+  , slbEntryNodes :: [NodeId]
+  , slbExitNodes :: [NodeId]
+  , slbPostSuccessorNodes :: [NodeId]
+  , slbDeltaSignature :: StageLatentDeltaSignature
+  , slbNestedConditions :: [StageLatentCondition]
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 data StageLatentCondition = StageLatentCondition
-  { slcAnchorNodeId :: NodeId,
-    slcBranches :: [StageLatentBranch]
+  { slcAnchorNodeId :: NodeId
+  , slcBranches :: [StageLatentBranch]
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
@@ -280,29 +284,30 @@ data RewriteExhaustionPolicy
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 data StagePlan stageId = StagePlan
-  { spInitialState :: Aeson.Value,
-    spCheckpointRuntimeVersion :: Int,
-    spReplayPolicy :: ReplayPolicy,
-    spInitialRewriteBudget :: RewriteBudget,
-    spRewriteExhaustionPolicy :: RewriteExhaustionPolicy,
-    spBudgetExceededExhaustionPolicy :: Maybe RewriteExhaustionPolicy,
-    spMaxRewriteReExecutions :: !Int,
-    spTopology :: Relation NodeId,
-    spDefinitions :: Map NodeId (StageDefinition stageId),
-    spTemplateRegistry :: Map StageTemplateId (StageDefinition stageId)
+  { spInitialState :: Aeson.Value
+  , spCheckpointRuntimeVersion :: Int
+  , spReplayPolicy :: ReplayPolicy
+  , spInitialRewriteBudget :: RewriteBudget
+  , spRewriteExhaustionPolicy :: RewriteExhaustionPolicy
+  , spBudgetExceededExhaustionPolicy :: Maybe RewriteExhaustionPolicy
+  , spMaxRewriteReExecutions :: !Int
+  , spTopology :: Relation NodeId
+  , spDefinitions :: Map NodeId (StageDefinition stageId)
+  , spTemplateRegistry :: Map StageTemplateId (StageDefinition stageId)
   }
 
 data SomeStagePlan where
-  SomeStagePlan :: (StableStageId stageId) => StagePlan stageId -> [StageLatentCondition] -> SomeStagePlan
+  SomeStagePlan
+    :: StableStageId stageId => StagePlan stageId -> [StageLatentCondition] -> SomeStagePlan
 
-mkLinearStagePlan ::
-  (StableStageId stageId) =>
-  [StageDefinition stageId] ->
-  Aeson.Value ->
-  Int ->
-  ReplayPolicy ->
-  RewriteBudget ->
-  Either Text (StagePlan stageId)
+mkLinearStagePlan
+  :: StableStageId stageId
+  => [StageDefinition stageId]
+  -> Aeson.Value
+  -> Int
+  -> ReplayPolicy
+  -> RewriteBudget
+  -> Either Text (StagePlan stageId)
 mkLinearStagePlan stages initialState runtimeVersion replayPolicy rewriteBudget =
   let nodeIds = fmap (NodeId . stageIdToText . (.sdStageId)) stages
       topology = toRelation (path nodeIds)
@@ -313,7 +318,9 @@ mkLinearStagePlan stages initialState runtimeVersion replayPolicy rewriteBudget 
           ]
    in case validateDAG topology of
         Left (GraphHasCycle cycle') ->
-          Left $ "mkLinearStagePlan: cycle detected in stage plan (duplicate stage IDs?): " <> T.pack (show (fmap unNodeId cycle'))
+          Left $
+            "mkLinearStagePlan: cycle detected in stage plan (duplicate stage IDs?): "
+              <> T.pack (show (fmap unNodeId cycle'))
         Right () ->
           case buildStageTemplateRegistry definitions of
             Left err ->
@@ -321,22 +328,22 @@ mkLinearStagePlan stages initialState runtimeVersion replayPolicy rewriteBudget 
             Right templateRegistry ->
               Right $
                 StagePlan
-                  { spInitialState = initialState,
-                    spCheckpointRuntimeVersion = runtimeVersion,
-                    spReplayPolicy = replayPolicy,
-                    spInitialRewriteBudget = rewriteBudget,
-                    spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                    spBudgetExceededExhaustionPolicy = Nothing,
-                    spMaxRewriteReExecutions = 2,
-                    spTopology = topology,
-                    spDefinitions = definitions,
-                    spTemplateRegistry = templateRegistry
+                  { spInitialState = initialState
+                  , spCheckpointRuntimeVersion = runtimeVersion
+                  , spReplayPolicy = replayPolicy
+                  , spInitialRewriteBudget = rewriteBudget
+                  , spRewriteExhaustionPolicy = RewriteExhaustionFail
+                  , spBudgetExceededExhaustionPolicy = Nothing
+                  , spMaxRewriteReExecutions = 2
+                  , spTopology = topology
+                  , spDefinitions = definitions
+                  , spTemplateRegistry = templateRegistry
                   }
 
-buildStageTemplateRegistry ::
-  (Eq stageId) =>
-  Map NodeId (StageDefinition stageId) ->
-  Either Text (Map StageTemplateId (StageDefinition stageId))
+buildStageTemplateRegistry
+  :: Eq stageId
+  => Map NodeId (StageDefinition stageId)
+  -> Either Text (Map StageTemplateId (StageDefinition stageId))
 buildStageTemplateRegistry =
   foldl'
     ( \acc (nodeId, stageDef) ->
@@ -346,11 +353,11 @@ buildStageTemplateRegistry =
     (Right Map.empty)
     . Map.toList
 
-mergeStageTemplateRegistries ::
-  (Eq stageId) =>
-  Map StageTemplateId (StageDefinition stageId) ->
-  Map StageTemplateId (StageDefinition stageId) ->
-  Either Text (Map StageTemplateId (StageDefinition stageId))
+mergeStageTemplateRegistries
+  :: Eq stageId
+  => Map StageTemplateId (StageDefinition stageId)
+  -> Map StageTemplateId (StageDefinition stageId)
+  -> Either Text (Map StageTemplateId (StageDefinition stageId))
 mergeStageTemplateRegistries baseRegistry =
   foldl'
     ( \acc stageDef ->
@@ -360,12 +367,12 @@ mergeStageTemplateRegistries baseRegistry =
     (Right baseRegistry)
     . Map.elems
 
-insertTemplate ::
-  (Eq stageId) =>
-  Map StageTemplateId (StageDefinition stageId) ->
-  Maybe NodeId ->
-  StageDefinition stageId ->
-  Either Text (Map StageTemplateId (StageDefinition stageId))
+insertTemplate
+  :: Eq stageId
+  => Map StageTemplateId (StageDefinition stageId)
+  -> Maybe NodeId
+  -> StageDefinition stageId
+  -> Either Text (Map StageTemplateId (StageDefinition stageId))
 insertTemplate templateRegistry maybeNodeId stageDef =
   case Map.lookup stageDef.sdTemplateId templateRegistry of
     Just existingDef
@@ -386,14 +393,16 @@ insertTemplate templateRegistry maybeNodeId stageDef =
     Nothing ->
       Right (Map.insert stageDef.sdTemplateId stageDef templateRegistry)
 
-stageTemplateFingerprint :: StageDefinition stageId -> (stageId, StageActionId, StageReplaySafety, Maybe ReplayPolicy, Maybe Int32, Maybe StageRetryPolicy)
+stageTemplateFingerprint
+  :: StageDefinition stageId
+  -> (stageId, StageActionId, StageReplaySafety, Maybe ReplayPolicy, Maybe Int32, Maybe StageRetryPolicy)
 stageTemplateFingerprint stageDef =
-  ( stageDef.sdStageId,
-    stageDef.sdActionId,
-    stageDef.sdReplaySafety,
-    stageDef.sdReplayPolicyOverride,
-    stageDef.sdTimeoutSeconds,
-    stageDef.sdRetryPolicy
+  ( stageDef.sdStageId
+  , stageDef.sdActionId
+  , stageDef.sdReplaySafety
+  , stageDef.sdReplayPolicyOverride
+  , stageDef.sdTimeoutSeconds
+  , stageDef.sdRetryPolicy
   )
 
 stageFailureMessage :: StageFailure -> Text

@@ -2,13 +2,14 @@
 
 module Cortex.Wire.ParserSpec (spec) where
 
-import Cortex.Wire.Parser
-import Cortex.Wire.Syntax
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Test.Hspec
+
+import Cortex.Wire.Parser
+import Cortex.Wire.Syntax
 
 -- | Parse or fail with a helpful message (for use inside @shouldSatisfy@).
 parseOrFail :: Text -> WireFile
@@ -47,8 +48,8 @@ spec = describe "Cortex.Wire.Parser" $ do
       forms
         `shouldBe` [ TopPureLet
                        CorePureBinding
-                         { corePureBindingName = "acceptedItem",
-                           corePureBindingExpr =
+                         { corePureBindingName = "acceptedItem"
+                         , corePureBindingExpr =
                              CorePureLambda
                                ("x" :| [])
                                ( CorePureBinary
@@ -110,8 +111,8 @@ spec = describe "Cortex.Wire.Parser" $ do
             [PortOutputSumDecl variants] ->
               let vlist = foldr (:) [] variants
                in fmap svContract vlist
-                    `shouldBe` [ ContractId "PlannerOutput",
-                                 ContractId "ExecutorError"
+                    `shouldBe` [ ContractId "PlannerOutput"
+                               , ContractId "ExecutorError"
                                ]
             other -> expectationFailure ("unexpected port sig: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
@@ -123,9 +124,9 @@ spec = describe "Cortex.Wire.Parser" $ do
       case forms of
         [TopNode node] ->
           nodeDeclPortSig node
-            `shouldBe` [ PortInputDecl NoLabel (ContractId "Report") PortSingular,
-                         PortOutputDecl (Label "primary") (ContractId "Claim"),
-                         PortOutputDecl (Label "fallback") (ContractId "Claim")
+            `shouldBe` [ PortInputDecl NoLabel (ContractId "Report") PortSingular
+                       , PortOutputDecl (Label "primary") (ContractId "Claim")
+                       , PortOutputDecl (Label "fallback") (ContractId "Claim")
                        ]
         other -> expectationFailure ("unexpected forms: " <> show other)
 
@@ -133,21 +134,21 @@ spec = describe "Cortex.Wire.Parser" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "node classify :",
-                  "  <- evidence: EvidenceSet",
-                  "  let",
-                  "    items = evidence.items;",
-                  "    acceptedItem = x: x.score >= 0.7;",
-                  "  in",
-                  "  -> accepted: AcceptedSet = pure (filter acceptedItem items)",
-                  "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);"
+                [ "node classify :"
+                , "  <- evidence: EvidenceSet"
+                , "  let"
+                , "    items = evidence.items;"
+                , "    acceptedItem = x: x.score >= 0.7;"
+                , "  in"
+                , "  -> accepted: AcceptedSet = pure (filter acceptedItem items)"
+                , "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);"
                 ]
       case forms of
         [TopNode node] -> do
           nodeDeclPortSig node
-            `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet") PortSingular,
-                         PortOutputDecl (Label "accepted") (ContractId "AcceptedSet"),
-                         PortOutputDecl (Label "rejected") (ContractId "RejectedSet")
+            `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet") PortSingular
+                       , PortOutputDecl (Label "accepted") (ContractId "AcceptedSet")
+                       , PortOutputDecl (Label "rejected") (ContractId "RejectedSet")
                        ]
           case nodeDeclBody node of
             NodeBodyPure pureBody -> do
@@ -160,11 +161,11 @@ spec = describe "Cortex.Wire.Parser" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "node score :",
-                  "  <- evidence: EvidenceSet",
-                  "  -> score: ScoreSet = pure {",
-                  "    { total = evidence.total; };",
-                  "  };"
+                [ "node score :"
+                , "  <- evidence: EvidenceSet"
+                , "  -> score: ScoreSet = pure {"
+                , "    { total = evidence.total; };"
+                , "  };"
                 ]
       case forms of
         [TopNode node] ->

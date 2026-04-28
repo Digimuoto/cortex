@@ -4,46 +4,26 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Deterministic Wire pure evaluator.
---
--- Pure nodes are authored as output equations and lowered to one host-bound
--- native pure task. The evaluator receives only already-wrapped Wire inputs and a
--- CorePure AST; it has no host callbacks, IO, time, randomness, model access,
--- or executor authority.
+{- | Deterministic Wire pure evaluator.
+
+Pure nodes are authored as output equations and lowered to one host-bound
+native pure task. The evaluator receives only already-wrapped Wire inputs and a
+CorePure AST; it has no host callbacks, IO, time, randomness, model access,
+or executor authority.
+-}
 module Cortex.Wire.Pure
-  ( PureEvalError (..),
-    renderPureEvalError,
-    validatePurePorts,
-    bindPureInputValues,
-    evaluatePureTaskOutputs,
-    pureWireExecutorId,
-    pureWireExecutorProjection,
-    pureExecutorConfigSchema,
+  ( PureEvalError (..)
+  , renderPureEvalError
+  , validatePurePorts
+  , bindPureInputValues
+  , evaluatePureTaskOutputs
+  , pureWireExecutorId
+  , pureWireExecutorProjection
+  , pureExecutorConfigSchema
   )
 where
 
 import Control.Monad (foldM, (>=>))
-import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..),
-    WireExecutorEffect (..),
-    WireExecutorId (..),
-    WireExecutorPortPolicy (..),
-    WireExecutorProjection (..),
-  )
-import Cortex.Wire.Runtime (WireInputBundle (..))
-import Cortex.Wire.Syntax
-  ( CorePureBinOp (..),
-    CorePureBinding (..),
-    CorePureExpr (..),
-    CorePureField (..),
-    CorePureLiteral (..),
-    CorePureUnaryOp (..),
-    WireInputCardinality (..),
-    WireInputPort (..),
-    WirePorts (..),
-    defaultInputPortName,
-  )
-import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloadKind)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -59,6 +39,28 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Vector qualified as Vector
 import GHC.Generics (Generic)
+
+import Cortex.Wire.Executor
+  ( WireExecutorConfigShape (..)
+  , WireExecutorEffect (..)
+  , WireExecutorId (..)
+  , WireExecutorPortPolicy (..)
+  , WireExecutorProjection (..)
+  )
+import Cortex.Wire.Runtime (WireInputBundle (..))
+import Cortex.Wire.Syntax
+  ( CorePureBinOp (..)
+  , CorePureBinding (..)
+  , CorePureExpr (..)
+  , CorePureField (..)
+  , CorePureLiteral (..)
+  , CorePureUnaryOp (..)
+  , WireInputCardinality (..)
+  , WireInputPort (..)
+  , WirePorts (..)
+  , defaultInputPortName
+  )
+import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloadKind)
 
 data PureEvalError
   = PureMissingVariable !Text
@@ -176,8 +178,8 @@ pureInputContractCounts ports =
   Map.fromListWith
     (+)
     [ (contractId, 1 :: Int)
-    | inputPort <- Map.elems ports.wirePortsInputs,
-      contractId <- inputPort.wireInputPortAccepts
+    | inputPort <- Map.elems ports.wirePortsInputs
+    , contractId <- inputPort.wireInputPortAccepts
     ]
 
 exactPureInputContract :: Text -> WireInputPort -> Either PureEvalError Text
@@ -223,9 +225,9 @@ bindPureInputValues ports inputBundle = do
 
     matchedWireValues portName contractId =
       [ wireValue
-      | wireValue <- inputBundle.wireInputBundleValues,
-        wireValue.wireValueContract == contractId,
-        inputValueMatchesPort portName wireValue
+      | wireValue <- inputBundle.wireInputBundleValues
+      , wireValue.wireValueContract == contractId
+      , inputValueMatchesPort portName wireValue
       ]
 
     inputValueMatchesPort portName wireValue
@@ -241,13 +243,13 @@ wireValueJson portName wireValue
   | otherwise =
       Right wireValue.wireValueValue
 
-evaluatePureTaskOutputs ::
-  WirePorts ->
-  WireInputBundle ->
-  [CorePureBinding] ->
-  [CorePureBinding] ->
-  Map Text CorePureExpr ->
-  Either PureEvalError (Map Text Aeson.Value)
+evaluatePureTaskOutputs
+  :: WirePorts
+  -> WireInputBundle
+  -> [CorePureBinding]
+  -> [CorePureBinding]
+  -> Map Text CorePureExpr
+  -> Either PureEvalError (Map Text Aeson.Value)
 evaluatePureTaskOutputs ports inputBundle bindings localBindings outputExprs = do
   validatePurePorts ports outputExprs
   inputValues <- bindPureInputValues ports inputBundle
@@ -325,10 +327,10 @@ evaluateCorePureExpr env = \case
     localEnv <- bindCorePureBindings env (NE.toList bindings)
     evaluateCorePureExpr localEnv bodyExpr
 
-bindCorePureBindings ::
-  CorePureEnv ->
-  [CorePureBinding] ->
-  Either PureEvalError CorePureEnv
+bindCorePureBindings
+  :: CorePureEnv
+  -> [CorePureBinding]
+  -> Either PureEvalError CorePureEnv
 bindCorePureBindings env bindings = do
   validateCorePureBindingNames bindings
   foldM bindCorePureBinding env bindings
@@ -352,8 +354,8 @@ validateCorePureParamNames params =
 duplicateNames :: [Text] -> [Text]
 duplicateNames names =
   [ name
-  | (name, count) <- Map.toAscList (Map.fromListWith (+) [(name, 1 :: Int) | name <- names]),
-    count > 1
+  | (name, count) <- Map.toAscList (Map.fromListWith (+) [(name, 1 :: Int) | name <- names])
+  , count > 1
   ]
 
 corePureLiteralToJson :: CorePureLiteral -> Aeson.Value
@@ -397,11 +399,11 @@ evaluateCorePureUnary = \case
   CorePureNegate ->
     fmap (CorePureJson . Aeson.Number . negate) . corePureNumber
 
-evaluateCorePureBinary ::
-  CorePureBinOp ->
-  CorePureValue ->
-  CorePureValue ->
-  Either PureEvalError CorePureValue
+evaluateCorePureBinary
+  :: CorePureBinOp
+  -> CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
 evaluateCorePureBinary binaryOp lhs rhs =
   case binaryOp of
     CorePureAdd -> numericBinary (+) lhs rhs
@@ -430,35 +432,35 @@ evaluateCorePureBinary binaryOp lhs rhs =
     CorePureOr ->
       boolBinary (||) lhs rhs
 
-numericBinary ::
-  (Scientific -> Scientific -> Scientific) ->
-  CorePureValue ->
-  CorePureValue ->
-  Either PureEvalError CorePureValue
+numericBinary
+  :: (Scientific -> Scientific -> Scientific)
+  -> CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
 numericBinary op lhs rhs =
   CorePureJson . Aeson.Number <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
 
-numericCompare ::
-  (Scientific -> Scientific -> Bool) ->
-  CorePureValue ->
-  CorePureValue ->
-  Either PureEvalError CorePureValue
+numericCompare
+  :: (Scientific -> Scientific -> Bool)
+  -> CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
 numericCompare op lhs rhs =
   CorePureJson . Aeson.Bool <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
 
-boolBinary ::
-  (Bool -> Bool -> Bool) ->
-  CorePureValue ->
-  CorePureValue ->
-  Either PureEvalError CorePureValue
+boolBinary
+  :: (Bool -> Bool -> Bool)
+  -> CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
 boolBinary op lhs rhs =
   CorePureJson . Aeson.Bool <$> (op <$> corePureBool lhs <*> corePureBool rhs)
 
-jsonCompare ::
-  (Aeson.Value -> Aeson.Value -> Bool) ->
-  CorePureValue ->
-  CorePureValue ->
-  Either PureEvalError CorePureValue
+jsonCompare
+  :: (Aeson.Value -> Aeson.Value -> Bool)
+  -> CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
 jsonCompare op lhs rhs =
   CorePureJson . Aeson.Bool <$> (op <$> corePureValueToJson lhs <*> corePureValueToJson rhs)
 
@@ -482,19 +484,19 @@ applyCorePureValue functionValue argumentValues =
 corePureBuiltinEnv :: CorePureEnv
 corePureBuiltinEnv =
   Map.fromList
-    [ builtin "map" 2 corePureMap,
-      builtin "fmap" 2 corePureMap,
-      builtin "filter" 2 corePureFilter,
-      builtin "zip" 2 corePureZip,
-      builtin "zipWith" 3 corePureZipWith,
-      builtin "length" 1 corePureLength,
-      builtin "sum" 1 corePureSum,
-      builtin "all" 2 corePureAll,
-      builtin "any" 2 corePureAny,
-      builtin "min" 2 (numericBuiltin2 min),
-      builtin "max" 2 (numericBuiltin2 max),
-      builtin "abs" 1 corePureAbs,
-      builtin "clamp" 3 corePureClamp
+    [ builtin "map" 2 corePureMap
+    , builtin "fmap" 2 corePureMap
+    , builtin "filter" 2 corePureFilter
+    , builtin "zip" 2 corePureZip
+    , builtin "zipWith" 3 corePureZipWith
+    , builtin "length" 1 corePureLength
+    , builtin "sum" 1 corePureSum
+    , builtin "all" 2 corePureAll
+    , builtin "any" 2 corePureAny
+    , builtin "min" 2 (numericBuiltin2 min)
+    , builtin "max" 2 (numericBuiltin2 max)
+    , builtin "abs" 1 corePureAbs
+    , builtin "clamp" 3 corePureClamp
     ]
   where
     builtin name arity implementation =
@@ -577,10 +579,10 @@ corePureAny [functionValue, listValue] = do
   Right (CorePureJson (Aeson.Bool (or results)))
 corePureAny args = impossibleBuiltinArity "any" 2 args
 
-numericBuiltin2 ::
-  (Scientific -> Scientific -> Scientific) ->
-  [CorePureValue] ->
-  Either PureEvalError CorePureValue
+numericBuiltin2
+  :: (Scientific -> Scientific -> Scientific)
+  -> [CorePureValue]
+  -> Either PureEvalError CorePureValue
 numericBuiltin2 op [lhs, rhs] =
   numericBinary op lhs rhs
 numericBuiltin2 _ args =
@@ -684,41 +686,41 @@ pureWireExecutorId = WireExecutorId "pure"
 pureWireExecutorProjection :: WireExecutorProjection
 pureWireExecutorProjection =
   WireExecutorProjection
-    { wireExecutorProjectionId = pureWireExecutorId,
-      wireExecutorProjectionPorts =
+    { wireExecutorProjectionId = pureWireExecutorId
+    , wireExecutorProjectionPorts =
         WirePorts
-          { wirePortsInputs = Map.empty,
-            wirePortsOutputs = Map.empty
-          },
-      wireExecutorProjectionVocabulary = Set.empty,
-      wireExecutorProjectionEffect = WireExecutorPure,
-      wireExecutorProjectionConfigShape = WireExecutorConfigSchema pureExecutorConfigSchema,
-      wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
+          { wirePortsInputs = Map.empty
+          , wirePortsOutputs = Map.empty
+          }
+    , wireExecutorProjectionVocabulary = Set.empty
+    , wireExecutorProjectionEffect = WireExecutorPure
+    , wireExecutorProjectionConfigShape = WireExecutorConfigSchema pureExecutorConfigSchema
+    , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 
 pureExecutorConfigSchema :: Aeson.Value
 pureExecutorConfigSchema =
   Aeson.object
-    [ "$schema" Aeson..= ("https://json-schema.org/draft/2020-12/schema" :: Text),
-      "type" Aeson..= ("object" :: Text),
-      "required" Aeson..= ["outputs" :: Text],
-      "additionalProperties" Aeson..= False,
-      "properties"
+    [ "$schema" Aeson..= ("https://json-schema.org/draft/2020-12/schema" :: Text)
+    , "type" Aeson..= ("object" :: Text)
+    , "required" Aeson..= ["outputs" :: Text]
+    , "additionalProperties" Aeson..= False
+    , "properties"
         Aeson..= Aeson.object
           [ "bindings"
               Aeson..= Aeson.object
-                [ "type" Aeson..= ("array" :: Text),
-                  "description" Aeson..= ("Top-level CorePure helper bindings shared by all pure outputs." :: Text)
-                ],
-            "localBindings"
+                [ "type" Aeson..= ("array" :: Text)
+                , "description" Aeson..= ("Top-level CorePure helper bindings shared by all pure outputs." :: Text)
+                ]
+          , "localBindings"
               Aeson..= Aeson.object
-                [ "type" Aeson..= ("array" :: Text),
-                  "description" Aeson..= ("Node-local CorePure bindings evaluated after top-level helpers." :: Text)
-                ],
-            "outputs"
+                [ "type" Aeson..= ("array" :: Text)
+                , "description" Aeson..= ("Node-local CorePure bindings evaluated after top-level helpers." :: Text)
+                ]
+          , "outputs"
               Aeson..= Aeson.object
-                [ "type" Aeson..= ("object" :: Text),
-                  "description" Aeson..= ("Map from output port name to CorePure expression AST." :: Text)
+                [ "type" Aeson..= ("object" :: Text)
+                , "description" Aeson..= ("Map from output port name to CorePure expression AST." :: Text)
                 ]
           ]
     ]

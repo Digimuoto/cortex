@@ -27,6 +27,16 @@
             pass_filenames = false;
           };
 
+          fourmolu = {
+            enable = true;
+            name = "fourmolu";
+            description = "Format staged Haskell sources and normalize imports";
+            entry = "${pkgs.haskellPackages.fourmolu}/bin/fourmolu --mode inplace";
+            language = "system";
+            pass_filenames = true;
+            files = "^(src|src-platform|app|test)/.*\\.hs$";
+          };
+
           hlint = {
             enable = true;
             name = "hlint";

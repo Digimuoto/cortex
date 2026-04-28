@@ -3,24 +3,25 @@
 
 module Cortex.Nous.Memory.SourceSpec (spec) where
 
-import Cortex.Nous.Memory.Document
-  ( CortexMemoryDocument (..),
-    CortexMemoryPassageDraft (..),
-  )
-import Cortex.Nous.Memory.Source
-  ( CortexMemoryIndexedPassage (..),
-    CortexMemorySource (..),
-    indexMemorySource,
-  )
-import Cortex.Nous.Memory.Types
-  ( defaultCortexMemoryEntityConfig,
-  )
 import Data.Text (Text)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Data.Word (Word32)
 import Test.Hspec
+
+import Cortex.Nous.Memory.Document
+  ( CortexMemoryDocument (..)
+  , CortexMemoryPassageDraft (..)
+  )
+import Cortex.Nous.Memory.Source
+  ( CortexMemoryIndexedPassage (..)
+  , CortexMemorySource (..)
+  , indexMemorySource
+  )
+import Cortex.Nous.Memory.Types
+  ( defaultCortexMemoryEntityConfig
+  )
 
 spec :: Spec
 spec = do
@@ -32,11 +33,11 @@ spec = do
           indexedPassages =
             indexMemorySource defaultCortexMemoryEntityConfig $
               CortexMemorySource
-                { cortexMemorySourceVersionId = versionId,
-                  cortexMemorySourceItemId = Just itemId,
-                  cortexMemorySourceCheckpointId = Nothing,
-                  cortexMemorySourceChatSessionId = Just sessionId,
-                  cortexMemorySourceDocument =
+                { cortexMemorySourceVersionId = versionId
+                , cortexMemorySourceItemId = Just itemId
+                , cortexMemorySourceCheckpointId = Nothing
+                , cortexMemorySourceChatSessionId = Just sessionId
+                , cortexMemorySourceDocument =
                     mkDocument
                       "saved_report"
                       "AMD continuation memo"
@@ -52,11 +53,11 @@ spec = do
       let indexedPassages =
             indexMemorySource defaultCortexMemoryEntityConfig $
               CortexMemorySource
-                { cortexMemorySourceVersionId = uuidFromWord 20,
-                  cortexMemorySourceItemId = Nothing,
-                  cortexMemorySourceCheckpointId = Just (uuidFromWord 21),
-                  cortexMemorySourceChatSessionId = Nothing,
-                  cortexMemorySourceDocument = mkDocument "checkpoint" "Empty checkpoint" "   "
+                { cortexMemorySourceVersionId = uuidFromWord 20
+                , cortexMemorySourceItemId = Nothing
+                , cortexMemorySourceCheckpointId = Just (uuidFromWord 21)
+                , cortexMemorySourceChatSessionId = Nothing
+                , cortexMemorySourceDocument = mkDocument "checkpoint" "Empty checkpoint" "   "
                 }
 
       indexedPassages `shouldBe` []
@@ -64,14 +65,14 @@ spec = do
 mkDocument :: Text -> Text -> Text -> CortexMemoryDocument
 mkDocument sourceKind title body =
   CortexMemoryDocument
-    { memoryDocumentSourceKind = sourceKind,
-      memoryDocumentTitle = title,
-      memoryDocumentBody = body,
-      memoryDocumentContextTexts = [],
-      memoryDocumentReportType = Nothing,
-      memoryDocumentTimeRange = Nothing,
-      memoryDocumentCreatedAt = fixedNow,
-      memoryDocumentUpdatedAt = fixedNow
+    { memoryDocumentSourceKind = sourceKind
+    , memoryDocumentTitle = title
+    , memoryDocumentBody = body
+    , memoryDocumentContextTexts = []
+    , memoryDocumentReportType = Nothing
+    , memoryDocumentTimeRange = Nothing
+    , memoryDocumentCreatedAt = fixedNow
+    , memoryDocumentUpdatedAt = fixedNow
     }
 
 fixedNow :: UTCTime

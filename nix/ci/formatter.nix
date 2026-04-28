@@ -10,7 +10,7 @@
       programs = {
         alejandra.enable = true; # Nix
         just.enable = true; # justfile
-        ormolu.enable = true; # Haskell
+        fourmolu.enable = true; # Haskell
         prettier = {
           enable = true; # Markdown
           includes = ["*.md"];

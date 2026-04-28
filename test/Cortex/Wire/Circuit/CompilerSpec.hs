@@ -3,59 +3,6 @@
 
 module Cortex.Wire.Circuit.CompilerSpec (spec) where
 
-import Cortex.Algebra.Graph
-  ( ValidationError (..),
-    edge,
-    successors,
-    toRelation,
-  )
-import Cortex.Pulse.Hydrate (planRewriteDelta)
-import Cortex.Pulse.Memory (defaultMemoryStrategy, discardMemoryHandle)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Plan
-  ( ReplayPolicy (..),
-    RewriteExhaustionPolicy (..),
-    SomeStagePlan (..),
-    StageActionId (..),
-    StageContext (..),
-    StageDefinition (..),
-    StageLatentBranch (..),
-    StageLatentCondition (..),
-    StagePlan (..),
-    StageReplaySafety (..),
-    StageResult (..),
-    StageTemplateId (..),
-    liftChainAction,
-    stageActionId,
-    stageTemplateId,
-  )
-import Cortex.Pulse.Rewrite (BudgetContext (..), PlannedRewriteDelta (..))
-import Cortex.Pulse.Types (defaultRewriteBudget)
-import Cortex.Wire.Circuit
-  ( CircuitArtifactBoundary (..),
-    CircuitCompatibilityWitness (..),
-    CircuitCompileError (..),
-    CircuitCondition (..),
-    CircuitConditionBinding (..),
-    CircuitConditionBranch (..),
-    CircuitConditionNode (..),
-    CircuitConditionSelection (..),
-    CircuitExpr (..),
-    CircuitIR (..),
-    CircuitLoweringError (..),
-    CircuitNodeRef (..),
-    CircuitPulseBinder (..),
-    CircuitPulseConfig (..),
-    CircuitRewriteBoundary (..),
-    CircuitSignalBoundary (..),
-    CircuitTaskNode (..),
-    CompiledCircuit (..),
-    CompiledCircuitFragment (..),
-    CompiledCircuitNode (..),
-    compileCircuitIR,
-    lowerCompiledCircuitToSomeStagePlan,
-    lowerCompiledCircuitToStagePlan,
-  )
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
@@ -64,6 +11,60 @@ import Data.Text qualified as T
 import Data.UUID qualified as UUID
 import Test.HUnit.Lang (assertFailure)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( ValidationError (..)
+  , edge
+  , successors
+  , toRelation
+  )
+import Cortex.Pulse.Hydrate (planRewriteDelta)
+import Cortex.Pulse.Memory (defaultMemoryStrategy, discardMemoryHandle)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+  ( ReplayPolicy (..)
+  , RewriteExhaustionPolicy (..)
+  , SomeStagePlan (..)
+  , StageActionId (..)
+  , StageContext (..)
+  , StageDefinition (..)
+  , StageLatentBranch (..)
+  , StageLatentCondition (..)
+  , StagePlan (..)
+  , StageReplaySafety (..)
+  , StageResult (..)
+  , StageTemplateId (..)
+  , liftChainAction
+  , stageActionId
+  , stageTemplateId
+  )
+import Cortex.Pulse.Rewrite (BudgetContext (..), PlannedRewriteDelta (..))
+import Cortex.Pulse.Types (defaultRewriteBudget)
+import Cortex.Wire.Circuit
+  ( CircuitArtifactBoundary (..)
+  , CircuitCompatibilityWitness (..)
+  , CircuitCompileError (..)
+  , CircuitCondition (..)
+  , CircuitConditionBinding (..)
+  , CircuitConditionBranch (..)
+  , CircuitConditionNode (..)
+  , CircuitConditionSelection (..)
+  , CircuitExpr (..)
+  , CircuitIR (..)
+  , CircuitLoweringError (..)
+  , CircuitNodeRef (..)
+  , CircuitPulseBinder (..)
+  , CircuitPulseConfig (..)
+  , CircuitRewriteBoundary (..)
+  , CircuitSignalBoundary (..)
+  , CircuitTaskNode (..)
+  , CompiledCircuit (..)
+  , CompiledCircuitFragment (..)
+  , CompiledCircuitNode (..)
+  , compileCircuitIR
+  , lowerCompiledCircuitToSomeStagePlan
+  , lowerCompiledCircuitToStagePlan
+  )
 
 spec :: Spec
 spec = do
@@ -77,11 +78,11 @@ spec = do
       Map.keys compiled.compiledCircuitNodes
         `shouldSatisfy` all
           ( `elem`
-              [ CircuitNodeRef "__cortex_workflow__/condition/1",
-                CircuitNodeRef "planner",
-                CircuitNodeRef "reviewer",
-                CircuitNodeRef "risks",
-                CircuitNodeRef "summary"
+              [ CircuitNodeRef "__cortex_workflow__/condition/1"
+              , CircuitNodeRef "planner"
+              , CircuitNodeRef "reviewer"
+              , CircuitNodeRef "risks"
+              , CircuitNodeRef "summary"
               ]
           )
       Map.keys compiled.compiledCircuitNodes
@@ -113,7 +114,9 @@ spec = do
       compiled <- requireCompiled nestedConditionalCircuitIR
       case Map.lookup (CircuitNodeRef "__cortex_workflow__/condition/1") compiled.compiledCircuitNodes of
         Just (CompiledCircuitCondition outerCondition) ->
-          case Map.lookup (CircuitNodeRef "__cortex_workflow__/condition/1/0") outerCondition.circuitConditionNodeThenFragment.compiledCircuitFragmentNodes of
+          case Map.lookup
+            (CircuitNodeRef "__cortex_workflow__/condition/1/0")
+            outerCondition.circuitConditionNodeThenFragment.compiledCircuitFragmentNodes of
             Just (CompiledCircuitCondition nestedCondition) ->
               Map.keys nestedCondition.circuitConditionNodeThenFragment.compiledCircuitFragmentNodes
                 `shouldBe` [CircuitNodeRef "nested_then"]
@@ -125,9 +128,9 @@ spec = do
     it "captures fan-out join fan-out circuits with stable entry and exit nodes" $ do
       compiled <- requireCompiled quarterlyRebalanceCircuitIR
       compiled.compiledCircuitEntryNodes
-        `shouldBe` [ CircuitNodeRef "fetch_positions",
-                     CircuitNodeRef "fetch_market_data",
-                     CircuitNodeRef "fetch_risk_limits"
+        `shouldBe` [ CircuitNodeRef "fetch_positions"
+                   , CircuitNodeRef "fetch_market_data"
+                   , CircuitNodeRef "fetch_risk_limits"
                    ]
       compiled.compiledCircuitExitNodes
         `shouldBe` [CircuitNodeRef "report_artifact"]
@@ -138,7 +141,11 @@ spec = do
       successors compiled.compiledCircuitTopology (CircuitNodeRef "fetch_risk_limits")
         `shouldBe` Set.singleton (CircuitNodeRef "compute_target_allocations")
       successors compiled.compiledCircuitTopology (CircuitNodeRef "compute_target_allocations")
-        `shouldBe` Set.fromList [CircuitNodeRef "propose_equity_trades", CircuitNodeRef "propose_fixed_income_trades", CircuitNodeRef "propose_derivatives_overlay"]
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "propose_equity_trades"
+          , CircuitNodeRef "propose_fixed_income_trades"
+          , CircuitNodeRef "propose_derivatives_overlay"
+          ]
       successors compiled.compiledCircuitTopology (CircuitNodeRef "signoff_equities")
         `shouldBe` Set.singleton (CircuitNodeRef "aggregate_execution_plan")
       successors compiled.compiledCircuitTopology (CircuitNodeRef "signoff_fixed_income")
@@ -166,37 +173,42 @@ spec = do
       stagePlan <- requireLoweredStagePlan defaultBinder compiled
 
       Map.keys stagePlan.spDefinitions
-        `shouldBe` [ NodeId "planner",
-                     NodeId "reviewer"
+        `shouldBe` [ NodeId "planner"
+                   , NodeId "reviewer"
                    ]
 
     it "lowers fan-out join fan-out circuits without collapsing the frontier structure" $ do
       compiled <- requireCompiled quarterlyRebalanceCircuitIR
       stagePlan <- requireLoweredStagePlan defaultBinder compiled
       successors stagePlan.spTopology (NodeId "compute_target_allocations")
-        `shouldBe` Set.fromList [NodeId "propose_equity_trades", NodeId "propose_fixed_income_trades", NodeId "propose_derivatives_overlay"]
+        `shouldBe` Set.fromList
+          [ NodeId "propose_equity_trades"
+          , NodeId "propose_fixed_income_trades"
+          , NodeId "propose_derivatives_overlay"
+          ]
       successors stagePlan.spTopology (NodeId "aggregate_execution_plan")
         `shouldBe` Set.singleton (NodeId "report_artifact")
 
     let nilStageCtx =
           let b = defaultRewriteBudget
            in StageContext
-                { scRunId = UUID.nil,
-                  scNodeId = NodeId "__test__",
-                  scInputs = Map.empty,
-                  scAttempt = 1,
-                  scBudgetContext = BudgetContext {bcInitialBudget = b, bcRemainingBudget = b},
-                  scRewriteRejection = Nothing,
-                  scRetryFailure = Nothing,
-                  scMemoryStrategy = defaultMemoryStrategy,
-                  scMemory = discardMemoryHandle
+                { scRunId = UUID.nil
+                , scNodeId = NodeId "__test__"
+                , scInputs = Map.empty
+                , scAttempt = 1
+                , scBudgetContext = BudgetContext {bcInitialBudget = b, bcRemainingBudget = b}
+                , scRewriteRejection = Nothing
+                , scRetryFailure = Nothing
+                , scMemoryStrategy = defaultMemoryStrategy
+                , scMemory = discardMemoryHandle
                 }
 
     it "lowers a conditional stage that appends the selected branch as a rewrite" $ do
       compiled <- requireCompiled sampleCircuitIR
       stagePlan <- requireLoweredStagePlan thenBranchBinder compiled
       let conditionNodeId = NodeId "__cortex_workflow__/condition/1"
-      conditionStage <- requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
+      conditionStage <-
+        requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
       stageResult <- conditionStage.sdAction nilStageCtx
       case stageResult of
         StageRewrite (Aeson.Bool True) rewrite ->
@@ -215,7 +227,8 @@ spec = do
       compiled <- requireCompiled sampleCircuitIR
       stagePlan <- requireLoweredStagePlan elseBranchBinder compiled
       let conditionNodeId = NodeId "__cortex_workflow__/condition/1"
-      conditionStage <- requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
+      conditionStage <-
+        requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
       stageResult <- conditionStage.sdAction nilStageCtx
       case stageResult of
         StageComplete (Aeson.Bool False) -> pure ()
@@ -228,13 +241,14 @@ spec = do
               { bindCircuitConditionNode =
                   const . Right $
                     (conditionBinding CircuitConditionThen (Aeson.Bool True))
-                      { circuitConditionTemplateId = Just (StageTemplateId "condition/template"),
-                        circuitConditionActionId = Just (StageActionId "condition/action")
+                      { circuitConditionTemplateId = Just (StageTemplateId "condition/template")
+                      , circuitConditionActionId = Just (StageActionId "condition/action")
                       }
               }
       stagePlan <- requireLoweredStagePlan idBoundBinder compiled
       let conditionNodeId = NodeId "__cortex_workflow__/condition/1"
-      conditionStage <- requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
+      conditionStage <-
+        requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
       conditionStage.sdTemplateId `shouldBe` StageTemplateId "condition/template"
       conditionStage.sdActionId `shouldBe` StageActionId "condition/action"
 
@@ -262,33 +276,36 @@ spec = do
       case lowerCompiledCircuitToStagePlan pulseConfig mismatchedBinder compiled of
         Left (CircuitStageRefMismatch (CircuitNodeRef "planner") (NodeId "planner:mismatch")) ->
           pure ()
-        other -> expectationFailure ("Expected CircuitStageRefMismatch, got: " <> show (fmap (.spTopology) other))
+        other ->
+          expectationFailure ("Expected CircuitStageRefMismatch, got: " <> show (fmap (.spTopology) other))
 
     it "rejects compiled circuits whose lowered topology is cyclic" $ do
       compatibility <- requireCompatibilityWitness simpleLinearCircuitIR
       let cyclicCompiled =
             CompiledCircuit
-              { compiledCircuitId = "cyclic",
-                compiledCircuitLabel = "Cyclic circuit",
-                compiledCircuitCompatibility = compatibility,
-                compiledCircuitEntryNodes = [CircuitNodeRef "a"],
-                compiledCircuitExitNodes = [CircuitNodeRef "b"],
-                compiledCircuitTopology =
+              { compiledCircuitId = "cyclic"
+              , compiledCircuitLabel = "Cyclic circuit"
+              , compiledCircuitCompatibility = compatibility
+              , compiledCircuitEntryNodes = [CircuitNodeRef "a"]
+              , compiledCircuitExitNodes = [CircuitNodeRef "b"]
+              , compiledCircuitTopology =
                   toRelation
                     ( edge (CircuitNodeRef "a") (CircuitNodeRef "b")
                         <> edge (CircuitNodeRef "b") (CircuitNodeRef "a")
-                    ),
-                compiledCircuitNodes =
+                    )
+              , compiledCircuitNodes =
                   Map.fromList
-                    [ (CircuitNodeRef "a", CompiledCircuitTask (taskNode "a" "A")),
-                      (CircuitNodeRef "b", CompiledCircuitTask (taskNode "b" "B"))
-                    ],
-                compiledCircuitMetadata = Aeson.object []
+                    [ (CircuitNodeRef "a", CompiledCircuitTask (taskNode "a" "A"))
+                    , (CircuitNodeRef "b", CompiledCircuitTask (taskNode "b" "B"))
+                    ]
+              , compiledCircuitMetadata = Aeson.object []
               }
       case lowerCompiledCircuitToStagePlan pulseConfig defaultBinder cyclicCompiled of
         Left (CircuitLoweredGraphInvalid (GraphHasCycle cycleNodes)) ->
           Set.fromList cycleNodes `shouldBe` Set.fromList [NodeId "a", NodeId "b"]
-        other -> expectationFailure ("Expected CircuitLoweredGraphInvalid with cycle details, got: " <> show (fmap (.spTopology) other))
+        other ->
+          expectationFailure
+            ("Expected CircuitLoweredGraphInvalid with cycle details, got: " <> show (fmap (.spTopology) other))
 
 requireCompiled :: CircuitIR -> IO CompiledCircuit
 requireCompiled circuitIr =
@@ -300,13 +317,15 @@ requireCompatibilityWitness circuitIr =
 
 requireLoweredStagePlan :: CircuitPulseBinder -> CompiledCircuit -> IO (StagePlan NodeId)
 requireLoweredStagePlan binder compiled =
-  requireRight "Expected successful lowering" (lowerCompiledCircuitToStagePlan pulseConfig binder compiled)
+  requireRight
+    "Expected successful lowering"
+    (lowerCompiledCircuitToStagePlan pulseConfig binder compiled)
 
-requireLookup :: (Ord k) => String -> k -> Map.Map k v -> IO v
+requireLookup :: Ord k => String -> k -> Map.Map k v -> IO v
 requireLookup message key values =
   maybe (assertFailure message) pure (Map.lookup key values)
 
-requireRight :: (Show err) => String -> Either err value -> IO value
+requireRight :: Show err => String -> Either err value -> IO value
 requireRight message =
   either (assertFailure . ((message <> ", got: ") <>) . show) pure
 
@@ -317,23 +336,23 @@ isSyntheticConditionRef (CircuitNodeRef refText) =
 sampleCircuitIR :: CircuitIR
 sampleCircuitIR =
   CircuitIR
-    { circuitIrId = "sample",
-      circuitIrLabel = "Sample circuit",
-      circuitIrRoot =
+    { circuitIrId = "sample"
+    , circuitIrLabel = "Sample circuit"
+    , circuitIrRoot =
         CircuitSequence
           ( CircuitTask (taskNode "planner" "Planner")
               :| [ CircuitConditional
                      (CircuitConditionRef "needs_analysis")
                      (CircuitTask (taskNode "analyst" "Analyst"))
-                     Nothing,
-                   CircuitParallel
+                     Nothing
+                 , CircuitParallel
                      ( CircuitTask (taskNode "summary" "Summary")
                          :| [CircuitTask (taskNode "risks" "Risks")]
-                     ),
-                   CircuitTask (taskNode "reviewer" "Reviewer")
+                     )
+                 , CircuitTask (taskNode "reviewer" "Reviewer")
                  ]
-          ),
-      circuitIrMetadata = Aeson.object []
+          )
+    , circuitIrMetadata = Aeson.object []
     }
 
 changedSampleCircuitIR :: CircuitIR
@@ -345,14 +364,14 @@ changedSampleCircuitIR =
               :| [ CircuitConditional
                      (CircuitConditionRef "needs_analysis")
                      (CircuitTask (taskNode "analyst" "Analyst"))
-                     Nothing,
-                   CircuitParallel
+                     Nothing
+                 , CircuitParallel
                      ( CircuitTask (taskNode "summary" "Summary")
-                         :| [ CircuitTask (taskNode "risks" "Risks"),
-                              CircuitTask (taskNode "open_gaps" "Open gaps")
+                         :| [ CircuitTask (taskNode "risks" "Risks")
+                            , CircuitTask (taskNode "open_gaps" "Open gaps")
                             ]
-                     ),
-                   CircuitTask (taskNode "reviewer" "Reviewer")
+                     )
+                 , CircuitTask (taskNode "reviewer" "Reviewer")
                  ]
           )
     }
@@ -360,18 +379,18 @@ changedSampleCircuitIR =
 quarterlyRebalanceCircuitIR :: CircuitIR
 quarterlyRebalanceCircuitIR =
   CircuitIR
-    { circuitIrId = "quarterly-rebalance",
-      circuitIrLabel = "Quarterly Portfolio Rebalance",
-      circuitIrRoot =
+    { circuitIrId = "quarterly-rebalance"
+    , circuitIrLabel = "Quarterly Portfolio Rebalance"
+    , circuitIrRoot =
         CircuitSequence
           ( CircuitParallel
               ( CircuitTask (taskNode "fetch_positions" "Fetch Positions")
-                  :| [ CircuitTask (taskNode "fetch_market_data" "Fetch Market Data"),
-                       CircuitTask (taskNode "fetch_risk_limits" "Fetch Risk Limits")
+                  :| [ CircuitTask (taskNode "fetch_market_data" "Fetch Market Data")
+                     , CircuitTask (taskNode "fetch_risk_limits" "Fetch Risk Limits")
                      ]
               )
-              :| [ CircuitTask (taskNode "compute_target_allocations" "Compute Target Allocations"),
-                   CircuitParallel
+              :| [ CircuitTask (taskNode "compute_target_allocations" "Compute Target Allocations")
+                 , CircuitParallel
                      ( CircuitSequence
                          ( CircuitTask (taskNode "propose_equity_trades" "Propose Equity Trades")
                              :| [CircuitTask (taskNode "signoff_equities" "Sign Off Equities")]
@@ -379,66 +398,66 @@ quarterlyRebalanceCircuitIR =
                          :| [ CircuitSequence
                                 ( CircuitTask (taskNode "propose_fixed_income_trades" "Propose Fixed Income Trades")
                                     :| [CircuitTask (taskNode "signoff_fixed_income" "Sign Off Fixed Income")]
-                                ),
-                              CircuitSequence
+                                )
+                            , CircuitSequence
                                 ( CircuitTask (taskNode "propose_derivatives_overlay" "Propose Derivatives Overlay")
                                     :| [ CircuitAwaitSignal
                                            CircuitSignalBoundary
-                                             { circuitSignalBoundaryRef = CircuitNodeRef "risk_desk_approval",
-                                               circuitSignalName = "risk_desk_approval",
-                                               circuitSignalDescription = Just "Wait for risk desk approval",
-                                               circuitSignalMetadata = Aeson.object []
-                                             },
-                                         CircuitTask (taskNode "signoff_derivatives" "Sign Off Derivatives")
+                                             { circuitSignalBoundaryRef = CircuitNodeRef "risk_desk_approval"
+                                             , circuitSignalName = "risk_desk_approval"
+                                             , circuitSignalDescription = Just "Wait for risk desk approval"
+                                             , circuitSignalMetadata = Aeson.object []
+                                             }
+                                       , CircuitTask (taskNode "signoff_derivatives" "Sign Off Derivatives")
                                        ]
                                 )
                             ]
-                     ),
-                   CircuitTask (taskNode "aggregate_execution_plan" "Aggregate Execution Plan"),
-                   CircuitArtifact
+                     )
+                 , CircuitTask (taskNode "aggregate_execution_plan" "Aggregate Execution Plan")
+                 , CircuitArtifact
                      CircuitArtifactBoundary
-                       { circuitArtifactBoundaryRef = CircuitNodeRef "report_artifact",
-                         circuitArtifactKind = "report",
-                         circuitArtifactLabel = "Rebalance Report",
-                         circuitArtifactMetadata = Aeson.object []
+                       { circuitArtifactBoundaryRef = CircuitNodeRef "report_artifact"
+                       , circuitArtifactKind = "report"
+                       , circuitArtifactLabel = "Rebalance Report"
+                       , circuitArtifactMetadata = Aeson.object []
                        }
                  ]
-          ),
-      circuitIrMetadata = Aeson.object []
+          )
+    , circuitIrMetadata = Aeson.object []
     }
 
 simpleLinearCircuitIR :: CircuitIR
 simpleLinearCircuitIR =
   CircuitIR
-    { circuitIrId = "simple",
-      circuitIrLabel = "Simple circuit",
-      circuitIrRoot =
+    { circuitIrId = "simple"
+    , circuitIrLabel = "Simple circuit"
+    , circuitIrRoot =
         CircuitSequence
           ( CircuitTask (taskNode "planner" "Planner")
               :| [CircuitTask (taskNode "reviewer" "Reviewer")]
-          ),
-      circuitIrMetadata = Aeson.object []
+          )
+    , circuitIrMetadata = Aeson.object []
     }
 
 duplicateNodeRefCircuitIR :: CircuitIR
 duplicateNodeRefCircuitIR =
   CircuitIR
-    { circuitIrId = "duplicate-node-ref",
-      circuitIrLabel = "Duplicate node ref",
-      circuitIrRoot =
+    { circuitIrId = "duplicate-node-ref"
+    , circuitIrLabel = "Duplicate node ref"
+    , circuitIrRoot =
         CircuitSequence
           ( CircuitTask (taskNode "shared" "Shared")
               :| [CircuitTask (taskNode "shared" "Shared again")]
-          ),
-      circuitIrMetadata = Aeson.object []
+          )
+    , circuitIrMetadata = Aeson.object []
     }
 
 nestedConditionalCircuitIR :: CircuitIR
 nestedConditionalCircuitIR =
   CircuitIR
-    { circuitIrId = "nested-conditional",
-      circuitIrLabel = "Nested conditional",
-      circuitIrRoot =
+    { circuitIrId = "nested-conditional"
+    , circuitIrLabel = "Nested conditional"
+    , circuitIrRoot =
         CircuitSequence
           ( CircuitTask (taskNode "planner" "Planner")
               :| [ CircuitConditional
@@ -448,42 +467,45 @@ nestedConditionalCircuitIR =
                          (CircuitTask (taskNode "nested_then" "Nested Then"))
                          (Just (CircuitTask (taskNode "nested_else" "Nested Else")))
                      )
-                     Nothing,
-                   CircuitTask (taskNode "reviewer" "Reviewer")
+                     Nothing
+                 , CircuitTask (taskNode "reviewer" "Reviewer")
                  ]
-          ),
-      circuitIrMetadata = Aeson.object []
+          )
+    , circuitIrMetadata = Aeson.object []
     }
 
 taskNode :: T.Text -> T.Text -> CircuitTaskNode
 taskNode nodeRef label =
   CircuitTaskNode
-    { circuitTaskNodeRef = CircuitNodeRef nodeRef,
-      circuitTaskNodeLabel = label,
-      circuitTaskNodeKind = Nothing,
-      circuitTaskNodeMetadata = Aeson.object []
+    { circuitTaskNodeRef = CircuitNodeRef nodeRef
+    , circuitTaskNodeLabel = label
+    , circuitTaskNodeKind = Nothing
+    , circuitTaskNodeMetadata = Aeson.object []
     }
 
 pulseConfig :: CircuitPulseConfig
 pulseConfig =
   CircuitPulseConfig
-    { circuitPulseInitialState = Aeson.object [],
-      circuitPulseRuntimeVersion = 1,
-      circuitPulseReplayPolicy = ReplayPolicyWarn,
-      circuitPulseInitialRewriteBudget = defaultRewriteBudget,
-      circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail,
-      circuitPulseBudgetExceededExhaustionPolicy = Nothing,
-      circuitPulseMaxRewriteReExecutions = 2
+    { circuitPulseInitialState = Aeson.object []
+    , circuitPulseRuntimeVersion = 1
+    , circuitPulseReplayPolicy = ReplayPolicyWarn
+    , circuitPulseInitialRewriteBudget = defaultRewriteBudget
+    , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
+    , circuitPulseBudgetExceededExhaustionPolicy = Nothing
+    , circuitPulseMaxRewriteReExecutions = 2
     }
 
 defaultBinder :: CircuitPulseBinder
 defaultBinder =
   CircuitPulseBinder
-    { bindCircuitTaskNode = pure . passThroughStageDefinition . circuitNodeId . (.circuitTaskNodeRef),
-      bindCircuitSignalBoundary = pure . passThroughStageDefinition . circuitNodeId . (.circuitSignalBoundaryRef),
-      bindCircuitArtifactBoundary = pure . passThroughStageDefinition . circuitNodeId . (.circuitArtifactBoundaryRef),
-      bindCircuitRewriteBoundary = pure . passThroughStageDefinition . circuitNodeId . (.circuitRewriteBoundaryRef),
-      bindCircuitConditionNode = const (Right (conditionBinding CircuitConditionThen (Aeson.Bool True)))
+    { bindCircuitTaskNode = pure . passThroughStageDefinition . circuitNodeId . (.circuitTaskNodeRef)
+    , bindCircuitSignalBoundary =
+        pure . passThroughStageDefinition . circuitNodeId . (.circuitSignalBoundaryRef)
+    , bindCircuitArtifactBoundary =
+        pure . passThroughStageDefinition . circuitNodeId . (.circuitArtifactBoundaryRef)
+    , bindCircuitRewriteBoundary =
+        pure . passThroughStageDefinition . circuitNodeId . (.circuitRewriteBoundaryRef)
+    , bindCircuitConditionNode = const (Right (conditionBinding CircuitConditionThen (Aeson.Bool True)))
     }
 
 mismatchedBinder :: CircuitPulseBinder
@@ -512,25 +534,30 @@ circuitNodeId (CircuitNodeRef refText) = NodeId refText
 passThroughStageDefinition :: NodeId -> StageDefinition NodeId
 passThroughStageDefinition stageRef =
   StageDefinition
-    { sdStageId = stageRef,
-      sdTemplateId = stageTemplateId stageRef,
-      sdActionId = stageActionId stageRef,
-      sdReplaySafety = SafeToReplay,
-      sdReplayPolicyOverride = Nothing,
-      sdTimeoutSeconds = Nothing,
-      sdRetryPolicy = Nothing,
-      sdAction = liftChainAction (\_ state -> pure state),
-      sdMemoryStrategy = defaultMemoryStrategy
+    { sdStageId = stageRef
+    , sdTemplateId = stageTemplateId stageRef
+    , sdActionId = stageActionId stageRef
+    , sdReplaySafety = SafeToReplay
+    , sdReplayPolicyOverride = Nothing
+    , sdTimeoutSeconds = Nothing
+    , sdRetryPolicy = Nothing
+    , sdAction = liftChainAction (\_ state -> pure state)
+    , sdMemoryStrategy = defaultMemoryStrategy
     }
 
 conditionBinding :: CircuitConditionBranch -> Aeson.Value -> CircuitConditionBinding
 conditionBinding branch output =
   CircuitConditionBinding
-    { circuitConditionReplaySafety = SafeToReplay,
-      circuitConditionReplayPolicyOverride = Nothing,
-      circuitConditionTimeoutSeconds = Nothing,
-      circuitConditionRetryPolicy = Nothing,
-      circuitConditionTemplateId = Nothing,
-      circuitConditionActionId = Nothing,
-      circuitConditionSelectBranch = \_ _ -> pure CircuitConditionSelection {circuitConditionSelectionOutput = output, circuitConditionSelectionBranch = branch}
+    { circuitConditionReplaySafety = SafeToReplay
+    , circuitConditionReplayPolicyOverride = Nothing
+    , circuitConditionTimeoutSeconds = Nothing
+    , circuitConditionRetryPolicy = Nothing
+    , circuitConditionTemplateId = Nothing
+    , circuitConditionActionId = Nothing
+    , circuitConditionSelectBranch = \_ _ ->
+        pure
+          CircuitConditionSelection
+            { circuitConditionSelectionOutput = output
+            , circuitConditionSelectionBranch = branch
+            }
     }

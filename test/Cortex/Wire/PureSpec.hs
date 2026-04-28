@@ -2,33 +2,34 @@
 
 module Cortex.Wire.PureSpec (spec) where
 
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Wire
-  ( CorePureBinOp (..),
-    CorePureBinding (..),
-    CorePureExpr (..),
-    CorePureField (..),
-    CorePureLiteral (..),
-    PureEvalError (..),
-    WireInputBundle,
-    WireInputCardinality (..),
-    WireInputPort (..),
-    WireOutputPort (..),
-    WirePayloadKind (..),
-    WirePorts (..),
-    WireValue (..),
-    bindPureInputValues,
-    evaluatePureTaskOutputs,
-    mkWireValue,
-    validatePurePorts,
-    wireInputBundleFromStageInputs,
-  )
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
 import Data.Text (Text)
 import Test.Hspec
+
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Wire
+  ( CorePureBinOp (..)
+  , CorePureBinding (..)
+  , CorePureExpr (..)
+  , CorePureField (..)
+  , CorePureLiteral (..)
+  , PureEvalError (..)
+  , WireInputBundle
+  , WireInputCardinality (..)
+  , WireInputPort (..)
+  , WireOutputPort (..)
+  , WirePayloadKind (..)
+  , WirePorts (..)
+  , WireValue (..)
+  , bindPureInputValues
+  , evaluatePureTaskOutputs
+  , mkWireValue
+  , validatePurePorts
+  , wireInputBundleFromStageInputs
+  )
 
 spec :: Spec
 spec = describe "Cortex.Wire.Pure" $ do
@@ -43,8 +44,8 @@ spec = describe "Cortex.Wire.Pure" $ do
         ( Map.singleton
             "score"
             ( Aeson.object
-                [ "total" Aeson..= Aeson.Number (scientific 55 (-2)),
-                  "count" Aeson..= Aeson.Number 2
+                [ "total" Aeson..= Aeson.Number (scientific 55 (-2))
+                , "count" Aeson..= Aeson.Number 2
                 ]
             )
         )
@@ -56,11 +57,11 @@ spec = describe "Cortex.Wire.Pure" $ do
                 Map.singleton
                   "in"
                   WireInputPort
-                    { wireInputPortAccepts = ["Payload"],
-                      wireInputPortCardinality = WireInputCardinalityOne,
-                      wireInputPortRequired = False
-                    },
-              wirePortsOutputs =
+                    { wireInputPortAccepts = ["Payload"]
+                    , wireInputPortCardinality = WireInputCardinalityOne
+                    , wireInputPortRequired = False
+                    }
+            , wirePortsOutputs =
                 Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
             }
         inputBundle =
@@ -68,16 +69,28 @@ spec = describe "Cortex.Wire.Pure" $ do
             Map.singleton
               (NodeId "source")
               ( Aeson.toJSON
-                  ( (mkWireValue "Payload" WirePayloadJson (Just "source") (Aeson.object ["value" Aeson..= Aeson.Number 4]))
+                  ( ( mkWireValue
+                        "Payload"
+                        WirePayloadJson
+                        (Just "source")
+                        (Aeson.object ["value" Aeson..= Aeson.Number 4])
+                    )
                       { wireValuePort = Just "out"
                       }
                   )
               )
-    evaluatePureTaskOutputs ports inputBundle [] [] (Map.singleton "out" (bin CorePureDivide (field (var "in") "value") (num 2)))
+    evaluatePureTaskOutputs
+      ports
+      inputBundle
+      []
+      []
+      (Map.singleton "out" (bin CorePureDivide (field (var "in") "value") (num 2)))
       `shouldBe` Right (Map.singleton "out" (Aeson.Number 2))
 
   it "accepts pure port declarations with multiple output equations" $
-    validatePurePorts multiOutputPorts (Map.fromList [("accepted", CorePureList []), ("rejected", CorePureList [])])
+    validatePurePorts
+      multiOutputPorts
+      (Map.fromList [("accepted", CorePureList []), ("rejected", CorePureList [])])
       `shouldBe` Right ()
 
   it "rejects missing variables" $
@@ -85,7 +98,12 @@ spec = describe "Cortex.Wire.Pure" $ do
       `shouldBe` Left (PureMissingVariable "unknown")
 
   it "rejects divide by zero" $
-    evaluatePureTaskOutputs scorePorts scoreInputs [] [] (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      []
+      (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
       `shouldBe` Left PureDivisionByZero
 
   it "rejects duplicate CorePure binding names in the same scope" $
@@ -132,9 +150,9 @@ spec = describe "Cortex.Wire.Pure" $ do
               Map.singleton
                 "evidence"
                 WireInputPort
-                  { wireInputPortAccepts = ["EvidenceSet"],
-                    wireInputPortCardinality = WireInputCardinalityOne,
-                    wireInputPortRequired = False
+                  { wireInputPortAccepts = ["EvidenceSet"]
+                  , wireInputPortCardinality = WireInputCardinalityOne
+                  , wireInputPortRequired = False
                   }
           }
       )
@@ -146,22 +164,24 @@ spec = describe "Cortex.Wire.Pure" $ do
           WirePorts
             { wirePortsInputs =
                 Map.fromList
-                  [ ( "Float_1",
-                      WireInputPort
-                        { wireInputPortAccepts = ["Float"],
-                          wireInputPortCardinality = WireInputCardinalityOne,
-                          wireInputPortRequired = False
-                        }
-                    ),
-                    ( "Float_2",
-                      WireInputPort
-                        { wireInputPortAccepts = ["Float"],
-                          wireInputPortCardinality = WireInputCardinalityOne,
-                          wireInputPortRequired = False
+                  [
+                    ( "Float_1"
+                    , WireInputPort
+                        { wireInputPortAccepts = ["Float"]
+                        , wireInputPortCardinality = WireInputCardinalityOne
+                        , wireInputPortRequired = False
                         }
                     )
-                  ],
-              wirePortsOutputs =
+                  ,
+                    ( "Float_2"
+                    , WireInputPort
+                        { wireInputPortAccepts = ["Float"]
+                        , wireInputPortCardinality = WireInputCardinalityOne
+                        , wireInputPortRequired = False
+                        }
+                    )
+                  ]
+            , wirePortsOutputs =
                 Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
             }
     validatePurePorts ports (Map.singleton "out" (num 1))
@@ -174,9 +194,9 @@ spec = describe "Cortex.Wire.Pure" $ do
                 Map.singleton
                   "values"
                   WireInputPort
-                    { wireInputPortAccepts = ["Float"],
-                      wireInputPortCardinality = WireInputCardinalityMany,
-                      wireInputPortRequired = False
+                    { wireInputPortAccepts = ["Float"]
+                    , wireInputPortCardinality = WireInputCardinalityMany
+                    , wireInputPortRequired = False
                     }
             }
         multiContractPorts =
@@ -185,9 +205,9 @@ spec = describe "Cortex.Wire.Pure" $ do
                 Map.singleton
                   "value"
                   WireInputPort
-                    { wireInputPortAccepts = ["Float", "Score"],
-                      wireInputPortCardinality = WireInputCardinalityOne,
-                      wireInputPortRequired = False
+                    { wireInputPortAccepts = ["Float", "Score"]
+                    , wireInputPortCardinality = WireInputCardinalityOne
+                    , wireInputPortRequired = False
                     }
             }
     validatePurePorts listInputPorts (Map.singleton "score" (num 1))
@@ -208,10 +228,10 @@ scorePorts =
   WirePorts
     { wirePortsInputs =
         Map.fromList
-          [ labeledJsonInput "evidence" "EvidenceSet",
-            labeledJsonInput "weights" "WeightSet"
-          ],
-      wirePortsOutputs =
+          [ labeledJsonInput "evidence" "EvidenceSet"
+          , labeledJsonInput "weights" "WeightSet"
+          ]
+    , wirePortsOutputs =
         Map.singleton "score" WireOutputPort {wireOutputPortContract = "ScoreSet"}
     }
 
@@ -219,21 +239,21 @@ multiOutputPorts :: WirePorts
 multiOutputPorts =
   WirePorts
     { wirePortsInputs =
-        Map.singleton "evidence" (snd (labeledJsonInput "evidence" "EvidenceSet")),
-      wirePortsOutputs =
+        Map.singleton "evidence" (snd (labeledJsonInput "evidence" "EvidenceSet"))
+    , wirePortsOutputs =
         Map.fromList
-          [ ("accepted", WireOutputPort {wireOutputPortContract = "AcceptedSet"}),
-            ("rejected", WireOutputPort {wireOutputPortContract = "RejectedSet"})
+          [ ("accepted", WireOutputPort {wireOutputPortContract = "AcceptedSet"})
+          , ("rejected", WireOutputPort {wireOutputPortContract = "RejectedSet"})
           ]
     }
 
 labeledJsonInput :: Text -> Text -> (Text, WireInputPort)
 labeledJsonInput portName contractId =
-  ( portName,
-    WireInputPort
-      { wireInputPortAccepts = [contractId],
-        wireInputPortCardinality = WireInputCardinalityOne,
-        wireInputPortRequired = False
+  ( portName
+  , WireInputPort
+      { wireInputPortAccepts = [contractId]
+      , wireInputPortCardinality = WireInputCardinalityOne
+      , wireInputPortRequired = False
       }
   )
 
@@ -241,8 +261,8 @@ scoreInputs :: WireInputBundle
 scoreInputs =
   wireInputBundleFromStageInputs $
     Map.fromList
-      [ (NodeId "evidence", wireValue "EvidenceSet" "evidence" evidenceValue),
-        (NodeId "weights", wireValue "WeightSet" "weights" weightsValue)
+      [ (NodeId "evidence", wireValue "EvidenceSet" "evidence" evidenceValue)
+      , (NodeId "weights", wireValue "WeightSet" "weights" weightsValue)
       ]
   where
     wireValue contractId portName value =
@@ -256,8 +276,8 @@ evidenceValue :: Aeson.Value
 evidenceValue =
   Aeson.object
     [ "items"
-        Aeson..= [ Aeson.object ["score" Aeson..= Aeson.Number (scientific 8 (-1))],
-                   Aeson.object ["score" Aeson..= Aeson.Number (scientific 6 (-1))]
+        Aeson..= [ Aeson.object ["score" Aeson..= Aeson.Number (scientific 8 (-1))]
+                 , Aeson.object ["score" Aeson..= Aeson.Number (scientific 6 (-1))]
                  ]
     ]
 
@@ -270,22 +290,22 @@ weightsValue =
 scoreBindings :: [CorePureBinding]
 scoreBindings =
   [ CorePureBinding
-      { corePureBindingName = "scores",
-        corePureBindingExpr =
+      { corePureBindingName = "scores"
+      , corePureBindingExpr =
           call
             (var "map")
-            [ lambda ("item" :| []) (field (var "item") "score"),
-              field (var "evidence") "items"
+            [ lambda ("item" :| []) (field (var "item") "score")
+            , field (var "evidence") "items"
             ]
-      },
-    CorePureBinding
-      { corePureBindingName = "weighted",
-        corePureBindingExpr =
+      }
+  , CorePureBinding
+      { corePureBindingName = "weighted"
+      , corePureBindingExpr =
           call
             (var "zipWith")
-            [ lambda ("score" :| ["weight"]) (bin CorePureMultiply (var "score") (var "weight")),
-              var "scores",
-              field (var "weights") "values"
+            [ lambda ("score" :| ["weight"]) (bin CorePureMultiply (var "score") (var "weight"))
+            , var "scores"
+            , field (var "weights") "values"
             ]
       }
   ]
@@ -293,8 +313,8 @@ scoreBindings =
 scoreOutputExpr :: CorePureExpr
 scoreOutputExpr =
   CorePureRecord
-    [ CorePureField ("total" :| []) (call (var "sum") [var "weighted"]),
-      CorePureField ("count" :| []) (call (var "length") [var "weighted"])
+    [ CorePureField ("total" :| []) (call (var "sum") [var "weighted"])
+    , CorePureField ("count" :| []) (call (var "length") [var "weighted"])
     ]
 
 binding :: Text -> CorePureExpr -> CorePureBinding

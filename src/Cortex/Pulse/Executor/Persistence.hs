@@ -3,81 +3,36 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Pulse.Executor.Persistence
-  ( persistGraphState,
-    requireGraphStatePersist,
-    persistStageSuccess,
-    persistStageRewrite,
-    flushDeferredRejections,
-    rejectedRewriteInsertValue,
-    handleRewriteAdmissionFailure,
-    handleSkip,
-    handleTerminalFailure,
-    buildCheckpointState,
-    requireTx,
-    failRun,
-    timeoutRun,
-    persistTerminalStageOutcome,
-    failUnsupportedTaskType,
-    retryDelayMicros,
-    terminalStageOutcome,
-    skipStageSummary,
-    stageAttemptFailureSummary,
-    stageFailureSummary,
-    stageFailureType,
-    stageFailureMessage,
-    recordRunEvent,
-    rewriteRejectionInfo,
+  ( persistGraphState
+  , requireGraphStatePersist
+  , persistStageSuccess
+  , persistStageRewrite
+  , flushDeferredRejections
+  , rejectedRewriteInsertValue
+  , handleRewriteAdmissionFailure
+  , handleSkip
+  , handleTerminalFailure
+  , buildCheckpointState
+  , requireTx
+  , failRun
+  , timeoutRun
+  , persistTerminalStageOutcome
+  , failUnsupportedTaskType
+  , retryDelayMicros
+  , terminalStageOutcome
+  , skipStageSummary
+  , stageAttemptFailureSummary
+  , stageFailureSummary
+  , stageFailureType
+  , stageFailureMessage
+  , recordRunEvent
+  , rewriteRejectionInfo
   )
 where
 
 import Control.Concurrent.MVar (withMVar)
 import Control.Concurrent.STM (atomically, modifyTVar', readTVarIO, writeTVar)
 import Control.Monad (when)
-import Cortex.Pulse.Executor.Events (ExecutorEvent (..), FailrunInfo (..), RewriteAdmissionInfo (..), RewriteRejectionInfo (..), StageFailureDetail (..))
-import Cortex.Pulse.Executor.Types
-  ( RewriteAdmissionState (..),
-    RewriteRejection (..),
-    RunFailureSpec (..),
-    StageAttemptRef (..),
-    StageAttemptResult (..),
-    StageCall (..),
-    StageEnv (..),
-  )
-import Cortex.Pulse.GraphRuntime (GraphState (..))
-import Cortex.Pulse.Materialization
-  ( PersistedGraphState (..),
-    PersistedRewrite (..),
-    rewriteDeltaSummaryJson,
-  )
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Plan
-  ( StableStageId,
-    StageDefinition (..),
-    StageFailure (..),
-    StagePlan (..),
-    StageReplaySafety (..),
-    StageRetryBackoff (..),
-  )
-import Cortex.Pulse.PlanHydration
-  ( RewriteError (..),
-    planRewriteDelta,
-    renderRewriteError,
-    rewriteErrorType,
-    toSerializableStageDefinition,
-  )
-import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Rewrite
-  ( BudgetContext (..),
-    GraphRewrite,
-    PlannedRewriteDelta (..),
-    RewriteBudget (..),
-    RewriteCost (..),
-    RewriteRejectionContext (..),
-    admitRewriteDelta,
-    admittedDelta,
-    admittedRemainingBudget,
-    exceededDimensions,
-  )
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Map.Strict (Map)
@@ -86,6 +41,59 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, getCurrentTime)
 import Data.UUID (UUID)
+
+import Cortex.Pulse.Executor.Events
+  ( ExecutorEvent (..)
+  , FailrunInfo (..)
+  , RewriteAdmissionInfo (..)
+  , RewriteRejectionInfo (..)
+  , StageFailureDetail (..)
+  )
+import Cortex.Pulse.Executor.Types
+  ( RewriteAdmissionState (..)
+  , RewriteRejection (..)
+  , RunFailureSpec (..)
+  , StageAttemptRef (..)
+  , StageAttemptResult (..)
+  , StageCall (..)
+  , StageEnv (..)
+  )
+import Cortex.Pulse.GraphRuntime (GraphState (..))
+import Cortex.Pulse.Materialization
+  ( PersistedGraphState (..)
+  , PersistedRewrite (..)
+  , rewriteDeltaSummaryJson
+  )
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+  ( StableStageId
+  , StageDefinition (..)
+  , StageFailure (..)
+  , StagePlan (..)
+  , StageReplaySafety (..)
+  , StageRetryBackoff (..)
+  )
+import Cortex.Pulse.PlanHydration
+  ( RewriteError (..)
+  , planRewriteDelta
+  , renderRewriteError
+  , rewriteErrorType
+  , toSerializableStageDefinition
+  )
+import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Rewrite
+  ( BudgetContext (..)
+  , GraphRewrite
+  , PlannedRewriteDelta (..)
+  , RewriteBudget (..)
+  , RewriteCost (..)
+  , RewriteRejectionContext (..)
+  , admitRewriteDelta
+  , admittedDelta
+  , admittedRemainingBudget
+  , exceededDimensions
+  )
+
 import Platform.Database qualified as DB
 import Platform.DurableTask.Checkpoint (buildCheckpointEnvelope)
 import Platform.DurableTask.Types (RunOutcome (..), StageStatus (..))
@@ -96,15 +104,15 @@ persistGraphState env persistedState = do
   now <- getCurrentTime
   let input =
         Q.GraphStateWrite
-          { gswRunId = env.seRunId,
-            gswNodeStatuses = Aeson.toJSON persistedState.pgsGraphState.gsNodeStatuses,
-            gswNodeOutputs = Aeson.toJSON persistedState.pgsGraphState.gsNodeOutputs,
-            gswRemainingRewriteBudget = Just (Aeson.toJSON persistedState.pgsRemainingRewriteBudget),
-            gswRuntimeVersion = Just (fromIntegral env.seCheckpointRuntimeVersion),
-            gswAppliedRewriteId = persistedState.pgsAppliedRewriteId,
-            gswNodeProvenance = Just (Aeson.toJSON persistedState.pgsNodeProvenance),
-            gswTopologyHash = persistedState.pgsTopologyHash,
-            gswUpdatedAt = now
+          { gswRunId = env.seRunId
+          , gswNodeStatuses = Aeson.toJSON persistedState.pgsGraphState.gsNodeStatuses
+          , gswNodeOutputs = Aeson.toJSON persistedState.pgsGraphState.gsNodeOutputs
+          , gswRemainingRewriteBudget = Just (Aeson.toJSON persistedState.pgsRemainingRewriteBudget)
+          , gswRuntimeVersion = Just (fromIntegral env.seCheckpointRuntimeVersion)
+          , gswAppliedRewriteId = persistedState.pgsAppliedRewriteId
+          , gswNodeProvenance = Just (Aeson.toJSON persistedState.pgsNodeProvenance)
+          , gswTopologyHash = persistedState.pgsTopologyHash
+          , gswUpdatedAt = now
           }
   result <-
     DB.runTransaction env.sePool $
@@ -118,18 +126,23 @@ requireGraphStatePersist env persistedState = do
     Right () -> pure Nothing
     Left err -> do
       now <- getCurrentTime
-      recordRunEvent env "run.graph_state_persist_failed" Q.RunEventError ("Graph state persistence failed: " <> err) Nothing
+      recordRunEvent
+        env
+        "run.graph_state_persist_failed"
+        Q.RunEventError
+        ("Graph state persistence failed: " <> err)
+        Nothing
       failRun env.sePool env.seRunId now "graph_state_persist_failed" err True
       pure (Just OutcomeFailed)
 
-persistStageSuccess ::
-  StageEnv ->
-  StageAttemptRef ->
-  NodeId ->
-  Text ->
-  UTCTime ->
-  Aeson.Value ->
-  IO (StageAttemptResult stageId)
+persistStageSuccess
+  :: StageEnv
+  -> StageAttemptRef
+  -> NodeId
+  -> Text
+  -> UTCTime
+  -> Aeson.Value
+  -> IO (StageAttemptResult stageId)
 persistStageSuccess env attemptRef nodeId stageName stageEnd newState = do
   let completionSummary = attemptSummary attemptRef.sarAttempt
       checkpointState = buildCheckpointState env stageName newState
@@ -149,21 +162,27 @@ persistStageSuccess env attemptRef nodeId stageName stageEnd newState = do
       atomically $ modifyTVar' env.seNodeCompletedAtVar (Map.insert nodeId stageEnd)
       emitObsEvent $ EvtStageCompleted env.seRunId stageName attemptRef.sarAttempt
       let stageDetails
-            | attemptRef.sarAttempt > 1 = Aeson.object ["stage" Aeson..= stageName, "attempts" Aeson..= attemptRef.sarAttempt]
+            | attemptRef.sarAttempt > 1 =
+                Aeson.object ["stage" Aeson..= stageName, "attempts" Aeson..= attemptRef.sarAttempt]
             | otherwise = Aeson.object ["stage" Aeson..= stageName]
-      recordRunEvent env "stage.completed" Q.RunEventInfo ("Stage completed: " <> stageName) (Just stageDetails)
+      recordRunEvent
+        env
+        "stage.completed"
+        Q.RunEventInfo
+        ("Stage completed: " <> stageName)
+        (Just stageDetails)
       pure (StageAdvance newState)
 
-persistStageRewrite ::
-  (StableStageId stageId) =>
-  StageEnv ->
-  StagePlan stageId ->
-  StageCall stageId ->
-  StageAttemptRef ->
-  UTCTime ->
-  Aeson.Value ->
-  GraphRewrite NodeId (StageDefinition stageId) ->
-  IO (StageAttemptResult stageId)
+persistStageRewrite
+  :: StableStageId stageId
+  => StageEnv
+  -> StagePlan stageId
+  -> StageCall stageId
+  -> StageAttemptRef
+  -> UTCTime
+  -> Aeson.Value
+  -> GraphRewrite NodeId (StageDefinition stageId)
+  -> IO (StageAttemptResult stageId)
 persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrite = do
   let completionSummary = attemptSummary attemptRef.sarAttempt
       serializableRewrite = fmap toSerializableStageDefinition rewrite
@@ -176,17 +195,31 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
         let err = RewriteValidationFailed errs
             rejectionCtx =
               RewriteRejectionContext
-                { rrcRejectionType = rewriteErrorType err,
-                  rrcMessage = renderRewriteError err,
-                  rrcExceededDimensions = [],
-                  rrcBudgetContext = budgetCtx,
-                  rrcAttemptedCost = Nothing,
-                  rrcAttemptNumber = 0
+                { rrcRejectionType = rewriteErrorType err
+                , rrcMessage = renderRewriteError err
+                , rrcExceededDimensions = []
+                , rrcBudgetContext = budgetCtx
+                , rrcAttemptedCost = Nothing
+                , rrcAttemptNumber = 0
                 }
             rejectedRewrite =
-              rejectedRewriteInsertValue env stageCall currentBudget (Aeson.toJSON serializableRewrite) stageEnd rejectionCtx
-        emitObsEvent $ EvtRewriteRejected env.seRunId stageCall.scStageName (rewriteRejectionInfo rejectionCtx Nothing)
-        handleRewriteAdmissionFailure env attemptRef stageCall.scStageName stageEnd (RunFailureSpec rejectionCtx.rrcRejectionType rejectionCtx.rrcMessage False) Nothing [rejectedRewrite]
+              rejectedRewriteInsertValue
+                env
+                stageCall
+                currentBudget
+                (Aeson.toJSON serializableRewrite)
+                stageEnd
+                rejectionCtx
+        emitObsEvent $
+          EvtRewriteRejected env.seRunId stageCall.scStageName (rewriteRejectionInfo rejectionCtx Nothing)
+        handleRewriteAdmissionFailure
+          env
+          attemptRef
+          stageCall.scStageName
+          stageEnd
+          (RunFailureSpec rejectionCtx.rrcRejectionType rejectionCtx.rrcMessage False)
+          Nothing
+          [rejectedRewrite]
       Right delta ->
         case admitRewriteDelta currentBudget delta of
           Left budgetErr -> do
@@ -194,24 +227,30 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                 dims = exceededDimensions budgetErr
                 rejectionCtx =
                   RewriteRejectionContext
-                    { rrcRejectionType = rewriteErrorType err,
-                      rrcMessage = renderRewriteError err,
-                      rrcExceededDimensions = dims,
-                      rrcBudgetContext = budgetCtx,
-                      rrcAttemptedCost = Just delta.prdCost,
-                      rrcAttemptNumber = 0
+                    { rrcRejectionType = rewriteErrorType err
+                    , rrcMessage = renderRewriteError err
+                    , rrcExceededDimensions = dims
+                    , rrcBudgetContext = budgetCtx
+                    , rrcAttemptedCost = Just delta.prdCost
+                    , rrcAttemptNumber = 0
                     }
                 rejectedRewrite =
-                  rejectedRewriteInsertValue env stageCall currentBudget (Aeson.toJSON serializableRewrite) stageEnd rejectionCtx
+                  rejectedRewriteInsertValue
+                    env
+                    stageCall
+                    currentBudget
+                    (Aeson.toJSON serializableRewrite)
+                    stageEnd
+                    rejectionCtx
             -- Do not persist the rejected rewrite here — the caller
             -- (attemptStage) accumulates rejections and flushes them
             -- atomically at the attempt resolution boundary.
             pure
               ( StageRewriteRejected
                   RewriteRejection
-                    { rrLastOutput = newOutput,
-                      rrContext = rejectionCtx,
-                      rrDeferredInsert = rejectedRewrite
+                    { rrLastOutput = newOutput
+                    , rrContext = rejectionCtx
+                    , rrDeferredInsert = rejectedRewrite
                     }
               )
           Right admitted -> do
@@ -224,21 +263,31 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                   rewriteId <-
                     Q.writeGraphRewrite
                       Q.GraphRewriteInsert
-                        { griRunId = env.seRunId,
-                          griSourceNodeId = unNodeId stageCall.scNodeId,
-                          griSourceNodeOutput = Just newOutput,
-                          griRewriteCost = Just (Aeson.toJSON admDelta.prdCost),
-                          griRewriteDelta = Just (rewriteDeltaSummaryJson admDelta),
-                          griBudgetBefore = Just (Aeson.toJSON currentBudget),
-                          griBudgetAfter = Just (Aeson.toJSON remainingBudget),
-                          griRewriteSpec = Aeson.toJSON serializableRewrite,
-                          griStatus = "admitted",
-                          griRejectionReason = Nothing,
-                          griExceededDimensions = Nothing,
-                          griCreatedAt = stageEnd
+                        { griRunId = env.seRunId
+                        , griSourceNodeId = unNodeId stageCall.scNodeId
+                        , griSourceNodeOutput = Just newOutput
+                        , griRewriteCost = Just (Aeson.toJSON admDelta.prdCost)
+                        , griRewriteDelta = Just (rewriteDeltaSummaryJson admDelta)
+                        , griBudgetBefore = Just (Aeson.toJSON currentBudget)
+                        , griBudgetAfter = Just (Aeson.toJSON remainingBudget)
+                        , griRewriteSpec = Aeson.toJSON serializableRewrite
+                        , griStatus = "admitted"
+                        , griRejectionReason = Nothing
+                        , griExceededDimensions = Nothing
+                        , griCreatedAt = stageEnd
                         }
-                  Q.writeCheckpoint env.seRunId env.seTaskType stageCall.scStageName checkpointState completionSummary stageEnd
-                  Q.updateStageAttemptCompleted attemptRef.sarAttemptLogId StageCompleted (Just (Aeson.object ["rewritten" Aeson..= True])) stageEnd
+                  Q.writeCheckpoint
+                    env.seRunId
+                    env.seTaskType
+                    stageCall.scStageName
+                    checkpointState
+                    completionSummary
+                    stageEnd
+                  Q.updateStageAttemptCompleted
+                    attemptRef.sarAttemptLogId
+                    StageCompleted
+                    (Just (Aeson.object ["rewritten" Aeson..= True]))
+                    stageEnd
                   Q.updateStageCompleted attemptRef.sarLogId StageCompleted completionSummary stageEnd
                   pure rewriteId
             case cpResult of
@@ -254,71 +303,107 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                     env.seRunId
                     stageCall.scStageName
                     RewriteAdmissionInfo
-                      { raiRewriteId = rewriteId,
-                        raiCostNodes = admDelta.prdCost.rcAddedNodes,
-                        raiCostEdges = admDelta.prdCost.rcAddedEdges,
-                        raiRewriteOpsRemaining = remainingBudget.rbRewriteOpsMax
+                      { raiRewriteId = rewriteId
+                      , raiCostNodes = admDelta.prdCost.rcAddedNodes
+                      , raiCostEdges = admDelta.prdCost.rcAddedEdges
+                      , raiRewriteOpsRemaining = remainingBudget.rbRewriteOpsMax
                       }
-                recordRunEvent env "stage.rewritten" Q.RunEventInfo ("Stage rewritten: " <> stageCall.scStageName) (Just (Aeson.object ["stage" Aeson..= stageCall.scStageName]))
+                recordRunEvent
+                  env
+                  "stage.rewritten"
+                  Q.RunEventInfo
+                  ("Stage rewritten: " <> stageCall.scStageName)
+                  (Just (Aeson.object ["stage" Aeson..= stageCall.scStageName]))
                 pure
                   ( StageAdvanceWithRewrite
                       newOutput
                       PersistedRewrite
-                        { prRewriteId = rewriteId,
-                          prSourceNodeId = stageCall.scNodeId,
-                          prSourceNodeOutput = Just newOutput,
-                          prRewriteCost = Just admDelta.prdCost,
-                          prRewrite = rewrite
+                        { prRewriteId = rewriteId
+                        , prSourceNodeId = stageCall.scNodeId
+                        , prSourceNodeOutput = Just newOutput
+                        , prRewriteCost = Just admDelta.prdCost
+                        , prRewrite = rewrite
                         }
                   )
 
-handleRewriteAdmissionFailure ::
-  StageEnv ->
-  StageAttemptRef ->
-  Text ->
-  UTCTime ->
-  RunFailureSpec ->
-  Maybe Aeson.Value ->
-  [Q.GraphRewriteInsert] ->
-  IO (StageAttemptResult stageId)
+handleRewriteAdmissionFailure
+  :: StageEnv
+  -> StageAttemptRef
+  -> Text
+  -> UTCTime
+  -> RunFailureSpec
+  -> Maybe Aeson.Value
+  -> [Q.GraphRewriteInsert]
+  -> IO (StageAttemptResult stageId)
 handleRewriteAdmissionFailure env attemptRef stageName stageEnd failureSpec mDetails rejectedRewrites = do
   stageLogResult <-
     DB.runTransaction env.sePool $ do
       mapM_ Q.writeGraphRewrite rejectedRewrites
-      Q.updateStageAttemptCompleted attemptRef.sarAttemptLogId StageFailed (Just (Aeson.object ["error_type" Aeson..= failureSpec.rfsErrType, "error_message" Aeson..= failureSpec.rfsErrMsg])) stageEnd
-      Q.updateStageCompleted attemptRef.sarLogId StageFailed (Just (Aeson.String failureSpec.rfsErrMsg)) stageEnd
+      Q.updateStageAttemptCompleted
+        attemptRef.sarAttemptLogId
+        StageFailed
+        ( Just
+            ( Aeson.object
+                ["error_type" Aeson..= failureSpec.rfsErrType, "error_message" Aeson..= failureSpec.rfsErrMsg]
+            )
+        )
+        stageEnd
+      Q.updateStageCompleted
+        attemptRef.sarLogId
+        StageFailed
+        (Just (Aeson.String failureSpec.rfsErrMsg))
+        stageEnd
       Q.updateRunFailed
         Q.RunFailureUpdate
-          { rfuRunId = env.seRunId,
-            rfuCompletedAt = stageEnd,
-            rfuErrType = failureSpec.rfsErrType,
-            rfuErrMsg = failureSpec.rfsErrMsg,
-            rfuRetryable = failureSpec.rfsRetryable
+          { rfuRunId = env.seRunId
+          , rfuCompletedAt = stageEnd
+          , rfuErrType = failureSpec.rfsErrType
+          , rfuErrMsg = failureSpec.rfsErrMsg
+          , rfuRetryable = failureSpec.rfsRetryable
           }
   case stageLogResult of
     Left txErr -> do
       emitObsEvent $ EvtDbCritical env.seRunId "rewrite_failure_persist" (T.pack txErr)
-      failRun env.sePool env.seRunId stageEnd failureSpec.rfsErrType failureSpec.rfsErrMsg failureSpec.rfsRetryable
+      failRun
+        env.sePool
+        env.seRunId
+        stageEnd
+        failureSpec.rfsErrType
+        failureSpec.rfsErrMsg
+        failureSpec.rfsRetryable
     Right () -> pure ()
-  emitObsEvent $ EvtStageFailed env.seRunId stageName attemptRef.sarAttempt StageFailureDetail {sfdErrType = failureSpec.rfsErrType, sfdErrMsg = failureSpec.rfsErrMsg}
+  emitObsEvent $
+    EvtStageFailed
+      env.seRunId
+      stageName
+      attemptRef.sarAttempt
+      StageFailureDetail {sfdErrType = failureSpec.rfsErrType, sfdErrMsg = failureSpec.rfsErrMsg}
   recordRunEvent
     env
     "stage.failed"
     Q.RunEventError
     ("Stage failed: " <> failureSpec.rfsErrMsg)
-    (Just (Aeson.object ["stage" Aeson..= stageName, "error_type" Aeson..= failureSpec.rfsErrType, "details" Aeson..= mDetails]))
+    ( Just
+        ( Aeson.object
+            [ "stage" Aeson..= stageName
+            , "error_type" Aeson..= failureSpec.rfsErrType
+            , "details" Aeson..= mDetails
+            ]
+        )
+    )
   pure (StageTerminal OutcomeFailed)
 
--- | Flush accumulated rejected-rewrite inserts to the database.
--- Used on non-failure resolution paths (StageComplete, Degrade,
--- StageSuspend) where the run outcome is success — the rejected
--- rewrite rows are informational history, not part of a failure
--- transaction.  Best-effort: a failure here does not abort the
--- enclosing resolution.
---
--- For the exhaustion-fail path, rejected rewrites are instead
--- passed to 'handleRewriteAdmissionFailure' which commits them
--- atomically with the run failure record.
+{- | Flush accumulated rejected-rewrite inserts to the database.
+Used on non-failure resolution paths (StageComplete, Degrade,
+StageSuspend) where the run outcome is success — the rejected
+rewrite rows are informational history, not part of a failure
+transaction.  Best-effort: a failure here does not abort the
+enclosing resolution.
+
+For the exhaustion-fail path, rejected rewrites are instead
+passed to 'handleRewriteAdmissionFailure' which commits them
+atomically with the run failure record.
+-}
 flushDeferredRejections :: StageEnv -> [Q.GraphRewriteInsert] -> IO ()
 flushDeferredRejections _ [] = pure ()
 flushDeferredRejections env inserts = do
@@ -328,60 +413,61 @@ flushDeferredRejections env inserts = do
       emitObsEvent $ EvtDbCritical env.seRunId "deferred_rejection_flush" (T.pack txErr)
     Right () -> pure ()
 
--- | Construct a rejected rewrite insert so the caller can persist it atomically
--- with the terminal failure state.
-rejectedRewriteInsertValue ::
-  StageEnv ->
-  StageCall stageId ->
-  RewriteBudget ->
-  Aeson.Value ->
-  UTCTime ->
-  RewriteRejectionContext ->
-  Q.GraphRewriteInsert
+{- | Construct a rejected rewrite insert so the caller can persist it atomically
+with the terminal failure state.
+-}
+rejectedRewriteInsertValue
+  :: StageEnv
+  -> StageCall stageId
+  -> RewriteBudget
+  -> Aeson.Value
+  -> UTCTime
+  -> RewriteRejectionContext
+  -> Q.GraphRewriteInsert
 rejectedRewriteInsertValue env stageCall remainingBudget rewriteSpec stageEnd rejectionCtx =
   Q.GraphRewriteInsert
-    { griRunId = env.seRunId,
-      griSourceNodeId = unNodeId stageCall.scNodeId,
-      griSourceNodeOutput = Nothing,
-      griRewriteCost = Nothing,
-      griRewriteDelta = Nothing,
-      griBudgetBefore = Just (Aeson.toJSON remainingBudget),
-      griBudgetAfter = Nothing,
-      griRewriteSpec = rewriteSpec,
-      griStatus = "rejected",
-      griRejectionReason = Just rejectionCtx.rrcMessage,
-      griExceededDimensions =
+    { griRunId = env.seRunId
+    , griSourceNodeId = unNodeId stageCall.scNodeId
+    , griSourceNodeOutput = Nothing
+    , griRewriteCost = Nothing
+    , griRewriteDelta = Nothing
+    , griBudgetBefore = Just (Aeson.toJSON remainingBudget)
+    , griBudgetAfter = Nothing
+    , griRewriteSpec = rewriteSpec
+    , griStatus = "rejected"
+    , griRejectionReason = Just rejectionCtx.rrcMessage
+    , griExceededDimensions =
         if null rejectionCtx.rrcExceededDimensions
           then Nothing
-          else Just (Aeson.toJSON rejectionCtx.rrcExceededDimensions),
-      griCreatedAt = stageEnd
+          else Just (Aeson.toJSON rejectionCtx.rrcExceededDimensions)
+    , griCreatedAt = stageEnd
     }
 
 budgetContextFromBudget :: StagePlan stageId -> RewriteBudget -> BudgetContext
 budgetContextFromBudget stagePlan remainingBudget =
   BudgetContext
-    { bcInitialBudget = stagePlan.spInitialRewriteBudget,
-      bcRemainingBudget = remainingBudget
+    { bcInitialBudget = stagePlan.spInitialRewriteBudget
+    , bcRemainingBudget = remainingBudget
     }
 
 rewriteRejectionInfo :: RewriteRejectionContext -> Maybe Int -> RewriteRejectionInfo
 rewriteRejectionInfo rejectionCtx maybeAttemptNumber =
   RewriteRejectionInfo
-    { rrjRejectionType = rejectionCtx.rrcRejectionType,
-      rrjMessage = rejectionCtx.rrcMessage,
-      rrjAttemptNumber = maybeAttemptNumber,
-      rrjTopologyChanged = False
+    { rrjRejectionType = rejectionCtx.rrcRejectionType
+    , rrjMessage = rejectionCtx.rrcMessage
+    , rrjAttemptNumber = maybeAttemptNumber
+    , rrjTopologyChanged = False
     }
 
-handleSkip ::
-  StageEnv ->
-  StageAttemptRef ->
-  Text ->
-  Map NodeId Aeson.Value ->
-  StageFailure ->
-  Aeson.Value ->
-  UTCTime ->
-  IO (StageAttemptResult stageId)
+handleSkip
+  :: StageEnv
+  -> StageAttemptRef
+  -> Text
+  -> Map NodeId Aeson.Value
+  -> StageFailure
+  -> Aeson.Value
+  -> UTCTime
+  -> IO (StageAttemptResult stageId)
 handleSkip env attemptRef stageName inputs failure skipSummary stageEnd = do
   let inputState = case Map.elems inputs of
         [v] -> v
@@ -393,12 +479,17 @@ handleSkip env attemptRef stageName inputs failure skipSummary stageEnd = do
       . DB.runTransaction env.sePool
       $ do
         Q.writeCheckpoint env.seRunId env.seTaskType stageName checkpointState (Just skipSummary) stageEnd
-        Q.updateStageAttemptCompleted attemptRef.sarAttemptLogId StageFailed (Just (stageAttemptFailureSummary attemptRef.sarAttempt failure)) stageEnd
+        Q.updateStageAttemptCompleted
+          attemptRef.sarAttemptLogId
+          StageFailed
+          (Just (stageAttemptFailureSummary attemptRef.sarAttempt failure))
+          stageEnd
         Q.updateStageCompleted attemptRef.sarLogId StageSkipped (Just skipSummary) stageEnd
   case cpResult of
     Nothing -> pure (StageTerminal OutcomeFailed)
     Just () -> do
-      emitObsEvent $ EvtStageSkipped env.seRunId stageName attemptRef.sarAttempt (stageFailureType failure)
+      emitObsEvent $
+        EvtStageSkipped env.seRunId stageName attemptRef.sarAttempt (stageFailureType failure)
       recordRunEvent
         env
         "stage.skipped"
@@ -407,34 +498,48 @@ handleSkip env attemptRef stageName inputs failure skipSummary stageEnd = do
         (Just (Aeson.object ["stage" Aeson..= stageName, "attempts" Aeson..= attemptRef.sarAttempt]))
       pure StageSkip
 
-handleTerminalFailure ::
-  StageEnv ->
-  StageDefinition stageId ->
-  StageAttemptRef ->
-  Text ->
-  StageFailure ->
-  UTCTime ->
-  RunFailureSpec ->
-  IO (StageAttemptResult stageId)
+handleTerminalFailure
+  :: StageEnv
+  -> StageDefinition stageId
+  -> StageAttemptRef
+  -> Text
+  -> StageFailure
+  -> UTCTime
+  -> RunFailureSpec
+  -> IO (StageAttemptResult stageId)
 handleTerminalFailure env stageDef attemptRef stageName failure stageEnd failureSpec = do
   let failureSummary = stageFailureSummary attemptRef.sarAttempt failure
       outcome = terminalStageOutcome failure
   stageLogResult <-
     DB.runTransaction env.sePool $ do
-      Q.updateStageAttemptCompleted attemptRef.sarAttemptLogId StageFailed (Just (stageAttemptFailureSummary attemptRef.sarAttempt failure)) stageEnd
+      Q.updateStageAttemptCompleted
+        attemptRef.sarAttemptLogId
+        StageFailed
+        (Just (stageAttemptFailureSummary attemptRef.sarAttempt failure))
+        stageEnd
       Q.updateStageCompleted attemptRef.sarLogId StageFailed (Just failureSummary) stageEnd
   case stageLogResult of
     Left stageLogErr ->
       emitObsEvent $ EvtStageLogWriteFailed env.seRunId stageName (T.pack stageLogErr)
     Right () -> pure ()
   persistTerminalStageOutcome env.sePool env.seRunId stageEnd outcome failureSpec
-  emitObsEvent $ EvtStageFailed env.seRunId stageName attemptRef.sarAttempt StageFailureDetail {sfdErrType = failureSpec.rfsErrType, sfdErrMsg = failureSpec.rfsErrMsg}
+  emitObsEvent $
+    EvtStageFailed
+      env.seRunId
+      stageName
+      attemptRef.sarAttempt
+      StageFailureDetail {sfdErrType = failureSpec.rfsErrType, sfdErrMsg = failureSpec.rfsErrMsg}
   when (stageDef.sdReplaySafety == Irreversible) $
     case failure of
       StageFailureTimeout timeoutSeconds ->
         emitObsEvent $ EvtStageTimeoutIrreversible env.seRunId stageName (fromIntegral timeoutSeconds)
       _ -> pure ()
-  recordRunEvent env "stage.failed" Q.RunEventError ("Stage failed: " <> failureSpec.rfsErrMsg) (Just (Aeson.object ["stage" Aeson..= stageName, "error_type" Aeson..= failureSpec.rfsErrType]))
+  recordRunEvent
+    env
+    "stage.failed"
+    Q.RunEventError
+    ("Stage failed: " <> failureSpec.rfsErrMsg)
+    (Just (Aeson.object ["stage" Aeson..= stageName, "error_type" Aeson..= failureSpec.rfsErrType]))
   pure (StageTerminal outcome)
 
 buildCheckpointState :: StageEnv -> Text -> Aeson.Value -> Aeson.Value
@@ -462,11 +567,11 @@ failRun :: DB.Pool -> UUID -> UTCTime -> Text -> Text -> Bool -> IO ()
 failRun pool runId now errType errMsg retryable = do
   let update =
         Q.RunFailureUpdate
-          { rfuRunId = runId,
-            rfuCompletedAt = now,
-            rfuErrType = errType,
-            rfuErrMsg = errMsg,
-            rfuRetryable = retryable
+          { rfuRunId = runId
+          , rfuCompletedAt = now
+          , rfuErrType = errType
+          , rfuErrMsg = errMsg
+          , rfuRetryable = retryable
           }
   result <- DB.runTransaction pool $ Q.updateRunFailed update
   case result of
@@ -476,19 +581,19 @@ failRun pool runId now errType errMsg retryable = do
         EvtFailrunDb
           runId
           FailrunInfo
-            { friOriginalErrorType = errType,
-              friOriginalErrorMsg = errMsg,
-              friDbError = T.pack dbErr
+            { friOriginalErrorType = errType
+            , friOriginalErrorMsg = errMsg
+            , friDbError = T.pack dbErr
             }
 
 timeoutRun :: DB.Pool -> UUID -> UTCTime -> Text -> Text -> IO ()
 timeoutRun pool runId now errType errMsg = do
   let update =
         Q.RunTimeoutUpdate
-          { rtuRunId = runId,
-            rtuCompletedAt = now,
-            rtuErrType = errType,
-            rtuErrMsg = errMsg
+          { rtuRunId = runId
+          , rtuCompletedAt = now
+          , rtuErrType = errType
+          , rtuErrMsg = errMsg
           }
   result <- DB.runTransaction pool $ Q.updateRunTimedOut update
   case result of
@@ -498,9 +603,9 @@ timeoutRun pool runId now errType errMsg = do
         EvtTimeoutrunDb
           runId
           FailrunInfo
-            { friOriginalErrorType = errType,
-              friOriginalErrorMsg = errMsg,
-              friDbError = T.pack dbErr
+            { friOriginalErrorType = errType
+            , friOriginalErrorMsg = errMsg
+            , friDbError = T.pack dbErr
             }
 
 persistTerminalStageOutcome :: DB.Pool -> UUID -> UTCTime -> RunOutcome -> RunFailureSpec -> IO ()
@@ -547,26 +652,26 @@ attemptSummary attempt
 skipStageSummary :: Int -> StageFailure -> Aeson.Value
 skipStageSummary attempt failure =
   Aeson.object
-    [ "attempts" Aeson..= attempt,
-      "skip_reason" Aeson..= ("retry_budget_exhausted" :: Text),
-      "error_type" Aeson..= stageFailureType failure,
-      "error" Aeson..= stageFailureMessage failure
+    [ "attempts" Aeson..= attempt
+    , "skip_reason" Aeson..= ("retry_budget_exhausted" :: Text)
+    , "error_type" Aeson..= stageFailureType failure
+    , "error" Aeson..= stageFailureMessage failure
     ]
 
 stageAttemptFailureSummary :: Int -> StageFailure -> Aeson.Value
 stageAttemptFailureSummary attempt failure =
   Aeson.object
-    [ "attempt_number" Aeson..= attempt,
-      "error_type" Aeson..= stageFailureType failure,
-      "error" Aeson..= stageFailureMessage failure
+    [ "attempt_number" Aeson..= attempt
+    , "error_type" Aeson..= stageFailureType failure
+    , "error" Aeson..= stageFailureMessage failure
     ]
 
 stageFailureSummary :: Int -> StageFailure -> Aeson.Value
 stageFailureSummary attempt failure =
   Aeson.object
-    [ "attempts" Aeson..= attempt,
-      "error_type" Aeson..= stageFailureType failure,
-      "error" Aeson..= stageFailureMessage failure
+    [ "attempts" Aeson..= attempt
+    , "error_type" Aeson..= stageFailureType failure
+    , "error" Aeson..= stageFailureMessage failure
     ]
 
 stageFailureType :: StageFailure -> Text
@@ -584,9 +689,9 @@ recordRunEvent env eventType severity message details =
   Q.recordRunEvent
     env.sePool
     Q.RunEventInsert
-      { reiRunId = env.seRunId,
-        reiEventType = eventType,
-        reiSeverity = severity,
-        reiMessage = message,
-        reiDetails = details
+      { reiRunId = env.seRunId
+      , reiEventType = eventType
+      , reiSeverity = severity
+      , reiMessage = message
+      , reiDetails = details
       }

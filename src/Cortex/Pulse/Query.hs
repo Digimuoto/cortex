@@ -3,129 +3,127 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Database queries for Pulse-owned tables.
--- All queries operate on the pulse.* schema.
+{- | Database queries for Pulse-owned tables.
+All queries operate on the pulse.* schema.
+-}
 module Cortex.Pulse.Query
   ( -- * Task Discovery
-    getNextDueTask,
+    getNextDueTask
 
     -- * Run Management
-    claimAndCreateRun,
-    claimNextPendingRun,
-    createPendingRun,
-    getRunStatusForUpdate,
-    updateRunStarted,
-    updateRunCompleted,
-    updateRunFailed,
-    updateRunCancelled,
-    updateRunTimedOut,
-    getRunStartedAt,
+  , claimAndCreateRun
+  , claimNextPendingRun
+  , createPendingRun
+  , getRunStatusForUpdate
+  , updateRunStarted
+  , updateRunCompleted
+  , updateRunFailed
+  , updateRunCancelled
+  , updateRunTimedOut
+  , getRunStartedAt
 
     -- * Checkpoint
-    writeCheckpoint,
-    readCheckpointPayload,
+  , writeCheckpoint
+  , readCheckpointPayload
 
     -- * Stage Log
-    findOpenStageLogId,
-    getNextStageAttemptNumber,
-    appendStageStarted,
-    appendStageAttemptStarted,
-    updateStageCompleted,
-    updateStageAttemptCompleted,
+  , findOpenStageLogId
+  , getNextStageAttemptNumber
+  , appendStageStarted
+  , appendStageAttemptStarted
+  , updateStageCompleted
+  , updateStageAttemptCompleted
 
     -- * Scheduling
-    advanceTaskSchedule,
-    completeOneOffTask,
-    restoreTaskSchedule,
+  , advanceTaskSchedule
+  , completeOneOffTask
+  , restoreTaskSchedule
 
     -- * Cancellation
-    requestCancellation,
-    checkCancellation,
-    disableTaskByRunId,
-    releaseSchedulerClaimByRunId,
+  , requestCancellation
+  , checkCancellation
+  , disableTaskByRunId
+  , releaseSchedulerClaimByRunId
 
     -- * Lease Management
-    renewRunLease,
+  , renewRunLease
 
     -- * Recovery
-    PulseExpiredRunRecovery (..),
-    reclaimOwnedRuns,
-    recoverExpiredRuns,
+  , PulseExpiredRunRecovery (..)
+  , reclaimOwnedRuns
+  , recoverExpiredRuns
 
     -- * Scheduling helpers
-    restoreOneOffTaskAt,
-    restoreTaskForFailedRun,
+  , restoreOneOffTaskAt
+  , restoreTaskForFailedRun
 
     -- * Admin views and writes
-    PulseTaskDefinitionInsert (..),
-    PulseRunAdminView (..),
-    PulseRunUserView (..),
-    PulseCheckpointDetail (..),
-    PulseStageLogDetail (..),
-    PulseStageAttemptLogDetail (..),
-    PulseGraphStateSnapshot (..),
-    PulseGraphStateAdminView (..),
-    PulseGraphRewriteAdminView (..),
-    RunFailureUpdate (..),
-    RunTimeoutUpdate (..),
-    RunEventSeverity (..),
-    RunEventInsert (..),
-    GraphStateWrite (..),
-    GraphRewriteInsert (..),
-    PulsePendingRunClaim (..),
-    createTaskDefinition,
-    getRunAdminView,
-    listRunsForTask,
-    listRunsForUser,
-    getRunUserId,
-    getRunStatusReadOnly,
-    getRunStatusReadOnlyForUser,
-    getCheckpointDetail,
-    listStageLogDetails,
-    listStageAttemptLogDetails,
-    updateTaskLastRun,
-    updateTaskLastRunOnly,
+  , PulseTaskDefinitionInsert (..)
+  , PulseRunAdminView (..)
+  , PulseRunUserView (..)
+  , PulseCheckpointDetail (..)
+  , PulseStageLogDetail (..)
+  , PulseStageAttemptLogDetail (..)
+  , PulseGraphStateSnapshot (..)
+  , PulseGraphStateAdminView (..)
+  , PulseGraphRewriteAdminView (..)
+  , RunFailureUpdate (..)
+  , RunTimeoutUpdate (..)
+  , RunEventSeverity (..)
+  , RunEventInsert (..)
+  , GraphStateWrite (..)
+  , GraphRewriteInsert (..)
+  , PulsePendingRunClaim (..)
+  , createTaskDefinition
+  , getRunAdminView
+  , listRunsForTask
+  , listRunsForUser
+  , getRunUserId
+  , getRunStatusReadOnly
+  , getRunStatusReadOnlyForUser
+  , getCheckpointDetail
+  , listStageLogDetails
+  , listStageAttemptLogDetails
+  , updateTaskLastRun
+  , updateTaskLastRunOnly
 
     -- * Listing
-    listTasks,
-    getTaskForRun,
+  , listTasks
+  , getTaskForRun
 
     -- * Run event history
-    PulseRunEvent (..),
-    appendRunEvent,
-    recordRunEvent,
-    getLatestRunEvent,
-    listRunEvents,
+  , PulseRunEvent (..)
+  , appendRunEvent
+  , recordRunEvent
+  , getLatestRunEvent
+  , listRunEvents
 
     -- * Graph state
-    readGraphState,
-    readGraphStateForAdmin,
-    writeGraphState,
-    readGraphRewrites,
-    readGraphRewritesUpTo,
-    readGraphRewritesForAdmin,
-    writeGraphRewrite,
+  , readGraphState
+  , readGraphStateForAdmin
+  , writeGraphState
+  , readGraphRewrites
+  , readGraphRewritesUpTo
+  , readGraphRewritesForAdmin
+  , writeGraphRewrite
 
     -- * Signals
-    registerSignalWait,
-    deliverSignal,
-    lookupDeliveredSignal,
-    lookupSignalStatus,
-    updateRunWaiting,
+  , registerSignalWait
+  , deliverSignal
+  , lookupDeliveredSignal
+  , lookupSignalStatus
+  , updateRunWaiting
 
     -- * Test support
-    claimTestTaskDef,
-    getTaskById,
-    readRunStatus,
-    countStageLogEntries,
-    readNodeCompletionTimes,
+  , claimTestTaskDef
+  , getTaskById
+  , readRunStatus
+  , countStageLogEntries
+  , readNodeCompletionTimes
   )
 where
 
 import Control.Monad (when)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Schema
-import Cortex.Pulse.Signal (SignalName (..))
 import Data.Aeson (Value)
 import Data.ByteString (ByteString)
 import Data.Functor.Contravariant ((>$<))
@@ -141,155 +139,160 @@ import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
 import Hasql.Transaction (Transaction)
 import Hasql.Transaction qualified as Tx
+import Rel8 hiding (Statement)
+import System.IO qualified
+
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Schema
+import Cortex.Pulse.Signal (SignalName (..))
+
 import Platform.Database qualified as DB
 import Platform.Database.Encode qualified as Enc
 import Platform.DurableTask.Checkpoint (CheckpointEnvelope (..), parseCheckpointEnvelope)
 import Platform.DurableTask.Types
-  ( RunStatus,
-    StageStatus,
-    TriggerSource,
-    runStatusToText,
-    stageStatusToText,
-    triggerSourceToText,
+  ( RunStatus
+  , StageStatus
+  , TriggerSource
+  , runStatusToText
+  , stageStatusToText
+  , triggerSourceToText
   )
-import Rel8 hiding (Statement)
-import System.IO qualified
 
 data PulseTaskDefinitionInsert = PulseTaskDefinitionInsert
-  { ptdiTaskType :: Text,
-    ptdiTaskName :: Text,
-    ptdiConfig :: Value,
-    ptdiCronExpression :: Text,
-    ptdiEnabled :: Bool,
-    ptdiNextRunAt :: Maybe UTCTime,
-    ptdiTimeoutSeconds :: Int32,
-    ptdiPriority :: Int32,
-    ptdiMinIntervalSeconds :: Maybe Int32,
-    ptdiCreatedAt :: UTCTime
+  { ptdiTaskType :: Text
+  , ptdiTaskName :: Text
+  , ptdiConfig :: Value
+  , ptdiCronExpression :: Text
+  , ptdiEnabled :: Bool
+  , ptdiNextRunAt :: Maybe UTCTime
+  , ptdiTimeoutSeconds :: Int32
+  , ptdiPriority :: Int32
+  , ptdiMinIntervalSeconds :: Maybe Int32
+  , ptdiCreatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
 data PulseRunAdminView = PulseRunAdminView
-  { pravRunId :: UUID,
-    pravTaskId :: UUID,
-    pravStatus :: Text,
-    pravTriggerSource :: Text,
-    pravStartedAt :: Maybe UTCTime,
-    pravCompletedAt :: Maybe UTCTime,
-    pravLeaseOwner :: Maybe Text,
-    pravLeaseExpiresAt :: Maybe UTCTime,
-    pravCancelRequestedAt :: Maybe UTCTime,
-    pravCancelReason :: Maybe Text,
-    pravErrorType :: Maybe Text,
-    pravErrorMessage :: Maybe Text,
-    pravErrorRetryable :: Maybe Bool,
-    pravSkipReason :: Maybe Text,
-    pravParentRunId :: Maybe UUID,
-    pravCreatedAt :: UTCTime,
-    pravLatestStageName :: Maybe Text,
-    pravLatestStageStatus :: Maybe Text,
-    pravStageCount :: Int32
+  { pravRunId :: UUID
+  , pravTaskId :: UUID
+  , pravStatus :: Text
+  , pravTriggerSource :: Text
+  , pravStartedAt :: Maybe UTCTime
+  , pravCompletedAt :: Maybe UTCTime
+  , pravLeaseOwner :: Maybe Text
+  , pravLeaseExpiresAt :: Maybe UTCTime
+  , pravCancelRequestedAt :: Maybe UTCTime
+  , pravCancelReason :: Maybe Text
+  , pravErrorType :: Maybe Text
+  , pravErrorMessage :: Maybe Text
+  , pravErrorRetryable :: Maybe Bool
+  , pravSkipReason :: Maybe Text
+  , pravParentRunId :: Maybe UUID
+  , pravCreatedAt :: UTCTime
+  , pravLatestStageName :: Maybe Text
+  , pravLatestStageStatus :: Maybe Text
+  , pravStageCount :: Int32
   }
   deriving stock (Eq, Show)
 
 data PulseCheckpointDetail = PulseCheckpointDetail
-  { pcdTaskType :: Text,
-    pcdCheckpointName :: Text,
-    pcdState :: Value,
-    pcdSummary :: Maybe Value,
-    pcdUpdatedAt :: UTCTime
+  { pcdTaskType :: Text
+  , pcdCheckpointName :: Text
+  , pcdState :: Value
+  , pcdSummary :: Maybe Value
+  , pcdUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
 data PulseStageLogDetail = PulseStageLogDetail
-  { psldId :: Int64,
-    psldStageName :: Text,
-    psldStatus :: Text,
-    psldStateSummary :: Maybe Value,
-    psldStartedAt :: UTCTime,
-    psldCompletedAt :: Maybe UTCTime
+  { psldId :: Int64
+  , psldStageName :: Text
+  , psldStatus :: Text
+  , psldStateSummary :: Maybe Value
+  , psldStartedAt :: UTCTime
+  , psldCompletedAt :: Maybe UTCTime
   }
   deriving stock (Eq, Show)
 
 data PulseStageAttemptLogDetail = PulseStageAttemptLogDetail
-  { psaldAttemptId :: Int64,
-    psaldStageLogId :: Int64,
-    psaldAttemptNumber :: Int32,
-    psaldStatus :: Text,
-    psaldSummary :: Maybe Value,
-    psaldStartedAt :: UTCTime,
-    psaldCompletedAt :: Maybe UTCTime
+  { psaldAttemptId :: Int64
+  , psaldStageLogId :: Int64
+  , psaldAttemptNumber :: Int32
+  , psaldStatus :: Text
+  , psaldSummary :: Maybe Value
+  , psaldStartedAt :: UTCTime
+  , psaldCompletedAt :: Maybe UTCTime
   }
   deriving stock (Eq, Show)
 
 data PulseGraphStateAdminView = PulseGraphStateAdminView
-  { pgsavNodeStatuses :: Value,
-    pgsavNodeOutputs :: Value,
-    pgsavRemainingRewriteBudget :: Maybe Value,
-    pgsavRuntimeVersion :: Maybe Int32,
-    pgsavAppliedRewriteId :: Maybe Int64,
-    pgsavNodeProvenance :: Maybe Value,
-    pgsavTopologyHash :: Maybe Text,
-    pgsavUpdatedAt :: UTCTime
+  { pgsavNodeStatuses :: Value
+  , pgsavNodeOutputs :: Value
+  , pgsavRemainingRewriteBudget :: Maybe Value
+  , pgsavRuntimeVersion :: Maybe Int32
+  , pgsavAppliedRewriteId :: Maybe Int64
+  , pgsavNodeProvenance :: Maybe Value
+  , pgsavTopologyHash :: Maybe Text
+  , pgsavUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
 data PulseGraphStateSnapshot = PulseGraphStateSnapshot
-  { pgssNodeStatuses :: Value,
-    pgssNodeOutputs :: Value,
-    pgssRemainingRewriteBudget :: Maybe Value,
-    pgssRuntimeVersion :: Maybe Int32,
-    pgssAppliedRewriteId :: Maybe Int64,
-    pgssNodeProvenance :: Maybe Value,
-    pgssTopologyHash :: Maybe Text
+  { pgssNodeStatuses :: Value
+  , pgssNodeOutputs :: Value
+  , pgssRemainingRewriteBudget :: Maybe Value
+  , pgssRuntimeVersion :: Maybe Int32
+  , pgssAppliedRewriteId :: Maybe Int64
+  , pgssNodeProvenance :: Maybe Value
+  , pgssTopologyHash :: Maybe Text
   }
   deriving stock (Eq, Show)
 
 data PulseGraphRewriteAdminView = PulseGraphRewriteAdminView
-  { pgravRewriteId :: Int64,
-    pgravSourceNodeId :: Text,
-    pgravRewriteCost :: Maybe Value,
-    pgravRewriteDelta :: Maybe Value,
-    pgravBudgetBefore :: Maybe Value,
-    pgravBudgetAfter :: Maybe Value,
-    pgravRewriteSpec :: Value,
-    pgravStatus :: Text,
-    pgravRejectionReason :: Maybe Text,
-    pgravExceededDimensions :: Maybe Value,
-    pgravCreatedAt :: UTCTime
+  { pgravRewriteId :: Int64
+  , pgravSourceNodeId :: Text
+  , pgravRewriteCost :: Maybe Value
+  , pgravRewriteDelta :: Maybe Value
+  , pgravBudgetBefore :: Maybe Value
+  , pgravBudgetAfter :: Maybe Value
+  , pgravRewriteSpec :: Value
+  , pgravStatus :: Text
+  , pgravRejectionReason :: Maybe Text
+  , pgravExceededDimensions :: Maybe Value
+  , pgravCreatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
 data GraphRewriteInsert = GraphRewriteInsert
-  { griRunId :: UUID,
-    griSourceNodeId :: Text,
-    griSourceNodeOutput :: Maybe Value,
-    griRewriteCost :: Maybe Value,
-    griRewriteDelta :: Maybe Value,
-    griBudgetBefore :: Maybe Value,
-    griBudgetAfter :: Maybe Value,
-    griRewriteSpec :: Value,
-    griStatus :: Text,
-    griRejectionReason :: Maybe Text,
-    griExceededDimensions :: Maybe Value,
-    griCreatedAt :: UTCTime
+  { griRunId :: UUID
+  , griSourceNodeId :: Text
+  , griSourceNodeOutput :: Maybe Value
+  , griRewriteCost :: Maybe Value
+  , griRewriteDelta :: Maybe Value
+  , griBudgetBefore :: Maybe Value
+  , griBudgetAfter :: Maybe Value
+  , griRewriteSpec :: Value
+  , griStatus :: Text
+  , griRejectionReason :: Maybe Text
+  , griExceededDimensions :: Maybe Value
+  , griCreatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
 data RunFailureUpdate = RunFailureUpdate
-  { rfuRunId :: UUID,
-    rfuCompletedAt :: UTCTime,
-    rfuErrType :: Text,
-    rfuErrMsg :: Text,
-    rfuRetryable :: Bool
+  { rfuRunId :: UUID
+  , rfuCompletedAt :: UTCTime
+  , rfuErrType :: Text
+  , rfuErrMsg :: Text
+  , rfuRetryable :: Bool
   }
   deriving stock (Eq, Show)
 
 data RunTimeoutUpdate = RunTimeoutUpdate
-  { rtuRunId :: UUID,
-    rtuCompletedAt :: UTCTime,
-    rtuErrType :: Text,
-    rtuErrMsg :: Text
+  { rtuRunId :: UUID
+  , rtuCompletedAt :: UTCTime
+  , rtuErrType :: Text
+  , rtuErrMsg :: Text
   }
   deriving stock (Eq, Show)
 
@@ -300,11 +303,11 @@ data RunEventSeverity
   deriving stock (Eq, Show)
 
 data RunEventInsert = RunEventInsert
-  { reiRunId :: UUID,
-    reiEventType :: Text,
-    reiSeverity :: RunEventSeverity,
-    reiMessage :: Text,
-    reiDetails :: Maybe Value
+  { reiRunId :: UUID
+  , reiEventType :: Text
+  , reiSeverity :: RunEventSeverity
+  , reiMessage :: Text
+  , reiDetails :: Maybe Value
   }
   deriving stock (Eq, Show)
 
@@ -315,30 +318,30 @@ renderRunEventSeverity = \case
   RunEventError -> "error"
 
 data GraphStateWrite = GraphStateWrite
-  { gswRunId :: UUID,
-    gswNodeStatuses :: Value,
-    gswNodeOutputs :: Value,
-    gswRemainingRewriteBudget :: Maybe Value,
-    gswRuntimeVersion :: Maybe Int32,
-    gswAppliedRewriteId :: Maybe Int64,
-    gswNodeProvenance :: Maybe Value,
-    gswTopologyHash :: Maybe Text,
-    gswUpdatedAt :: UTCTime
+  { gswRunId :: UUID
+  , gswNodeStatuses :: Value
+  , gswNodeOutputs :: Value
+  , gswRemainingRewriteBudget :: Maybe Value
+  , gswRuntimeVersion :: Maybe Int32
+  , gswAppliedRewriteId :: Maybe Int64
+  , gswNodeProvenance :: Maybe Value
+  , gswTopologyHash :: Maybe Text
+  , gswUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
 data PulsePendingRunClaim = PulsePendingRunClaim
-  { pprcRunId :: UUID,
-    pprcTriggerSource :: Text
+  { pprcRunId :: UUID
+  , pprcTriggerSource :: Text
   }
   deriving stock (Eq, Show)
 
 data PulseExpiredRunRecovery = PulseExpiredRunRecovery
-  { perrRunId :: UUID,
-    perrTaskId :: UUID,
-    perrTriggerSource :: Text,
-    perrTaskName :: Maybe Text,
-    perrCronExpression :: Maybe Text
+  { perrRunId :: UUID
+  , perrTaskId :: UUID
+  , perrTriggerSource :: Text
+  , perrTaskName :: Maybe Text
+  , perrCronExpression :: Maybe Text
   }
   deriving stock (Eq, Show)
 
@@ -346,15 +349,17 @@ data PulseExpiredRunRecovery = PulseExpiredRunRecovery
 -- Task Discovery
 -- ============================================================================
 
--- | Get the next due task definition (enabled, next_run_at <= now).
---
--- Ordering: priority DESC, deprioritized types last, then next_run_at ASC.
--- @excludedTypes@: types at their per-type concurrency limit.
--- @deprioritized@: types already claimed this fill cycle (round-robin fairness).
--- @skippedTaskIds@: specific tasks to skip (e.g. in cooldown).
--- Cooldown filtering (min_interval_seconds) is handled at the scheduler level
--- after loading the task, because Rel8 lacks clean interval arithmetic.
-getNextDueTask :: [Text] -> [Text] -> [UUID] -> UTCTime -> Session (Maybe (PulseTaskDefinitionRow Result))
+{- | Get the next due task definition (enabled, next_run_at <= now).
+
+Ordering: priority DESC, deprioritized types last, then next_run_at ASC.
+@excludedTypes@: types at their per-type concurrency limit.
+@deprioritized@: types already claimed this fill cycle (round-robin fairness).
+@skippedTaskIds@: specific tasks to skip (e.g. in cooldown).
+Cooldown filtering (min_interval_seconds) is handled at the scheduler level
+after loading the task, because Rel8 lacks clean interval arithmetic.
+-}
+getNextDueTask
+  :: [Text] -> [Text] -> [UUID] -> UTCTime -> Session (Maybe (PulseTaskDefinitionRow Result))
 getNextDueTask excludedTypes deprioritized skippedTaskIds now =
   Session.statement () . runMaybe . select . limit 1 . orderBy taskOrder $ do
     task <- each pulseTaskDefinitionSchema
@@ -374,9 +379,9 @@ getNextDueTask excludedTypes deprioritized skippedTaskIds now =
   where
     taskOrder =
       mconcat
-        [ (\t -> t.priority) >$< desc,
-          deprioritizeOrder,
-          (\t -> unsafeCastExpr t.nextRunAt :: Expr UTCTime) >$< asc
+        [ (\t -> t.priority) >$< desc
+        , deprioritizeOrder
+        , (\t -> unsafeCastExpr t.nextRunAt :: Expr UTCTime) >$< asc
         ]
     -- Round-robin: deprioritized types sort after non-deprioritized (0 < 1)
     deprioritizeOrder = case deprioritized of
@@ -433,14 +438,16 @@ claimAndCreateRun tId leaseOwner triggerSource now leaseDurationSec =
       (D.rowMaybe (D.column (D.nonNullable D.uuid)))
       False
 
--- | Claim the next pending run, with scheduling controls:
---
--- * @excludedTypes@: types at their per-type concurrency limit (skipped)
--- * @deprioritized@: types already claimed this fill cycle (ordered last for round-robin)
--- * Priority: higher-priority tasks' runs are claimed first
--- Note: no cooldown filter here — pending runs are operator-triggered
--- (manual/retry) and should always execute immediately.
-claimNextPendingRun :: Text -> UTCTime -> Int32 -> [Text] -> [Text] -> Transaction (Maybe PulsePendingRunClaim)
+{- | Claim the next pending run, with scheduling controls:
+
+* @excludedTypes@: types at their per-type concurrency limit (skipped)
+* @deprioritized@: types already claimed this fill cycle (ordered last for round-robin)
+* Priority: higher-priority tasks' runs are claimed first
+Note: no cooldown filter here — pending runs are operator-triggered
+(manual/retry) and should always execute immediately.
+-}
+claimNextPendingRun
+  :: Text -> UTCTime -> Int32 -> [Text] -> [Text] -> Transaction (Maybe PulsePendingRunClaim)
 claimNextPendingRun leaseOwner now leaseDurationSec excludedTypes deprioritized =
   Tx.statement (leaseOwner, now, leaseDurationSec, excludedTypes, deprioritized) $
     Statement
@@ -482,7 +489,8 @@ claimNextPendingRun leaseOwner now leaseDurationSec excludedTypes deprioritized 
       )
       False
 
-createPendingRun :: UUID -> TriggerSource -> Maybe UUID -> Maybe UUID -> UTCTime -> Transaction (Maybe UUID)
+createPendingRun
+  :: UUID -> TriggerSource -> Maybe UUID -> Maybe UUID -> UTCTime -> Transaction (Maybe UUID)
 createPendingRun taskId triggerSource parentRunId maybeUserId now =
   Tx.statement (taskId, triggerSource, parentRunId, maybeUserId, now) $
     Statement
@@ -546,18 +554,19 @@ updateRunFailed input =
       \WHERE run_id = $1 AND status != 'failed'::pulse.run_status"
       ( Enc.encodeParams
           ( Enc.col (.rfuRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.rfuCompletedAt) (Enc.nonNullable Enc.timestamptz),
-                   Enc.col (.rfuErrType) (Enc.nonNullable Enc.text),
-                   Enc.col (.rfuErrMsg) (Enc.nonNullable Enc.text),
-                   Enc.col (.rfuRetryable) (Enc.nonNullable Enc.bool)
+              :| [ Enc.col (.rfuCompletedAt) (Enc.nonNullable Enc.timestamptz)
+                 , Enc.col (.rfuErrType) (Enc.nonNullable Enc.text)
+                 , Enc.col (.rfuErrMsg) (Enc.nonNullable Enc.text)
+                 , Enc.col (.rfuRetryable) (Enc.nonNullable Enc.bool)
                  ]
           )
       )
       D.noResult
       False
 
--- | Mark a run as cancelled. Preserves the operator-provided cancel_reason
--- from requestCancellation; only sets it if not already present.
+{- | Mark a run as cancelled. Preserves the operator-provided cancel_reason
+from requestCancellation; only sets it if not already present.
+-}
 updateRunCancelled :: UUID -> UTCTime -> Text -> Transaction ()
 updateRunCancelled rId now reason =
   Tx.statement (rId, now, reason) $
@@ -581,9 +590,9 @@ updateRunTimedOut input =
       \WHERE run_id = $1"
       ( Enc.encodeParams
           ( Enc.col (.rtuRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.rtuCompletedAt) (Enc.nonNullable Enc.timestamptz),
-                   Enc.col (.rtuErrType) (Enc.nonNullable Enc.text),
-                   Enc.col (.rtuErrMsg) (Enc.nonNullable Enc.text)
+              :| [ Enc.col (.rtuCompletedAt) (Enc.nonNullable Enc.timestamptz)
+                 , Enc.col (.rtuErrType) (Enc.nonNullable Enc.text)
+                 , Enc.col (.rtuErrMsg) (Enc.nonNullable Enc.text)
                  ]
           )
       )
@@ -626,9 +635,10 @@ writeCheckpoint rId taskType cpName cpState cpSummary now =
       D.noResult
       False
 
--- | Read the latest inner checkpoint payload for a run, stripping the envelope.
--- Returns the @cePayload@ field from the 'CheckpointEnvelope', or 'Nothing'
--- if no checkpoint row exists or the envelope cannot be parsed.
+{- | Read the latest inner checkpoint payload for a run, stripping the envelope.
+Returns the @cePayload@ field from the 'CheckpointEnvelope', or 'Nothing'
+if no checkpoint row exists or the envelope cannot be parsed.
+-}
 readCheckpointPayload :: UUID -> Session (Maybe Value)
 readCheckpointPayload rId = do
   mRaw <-
@@ -804,8 +814,9 @@ updateTaskLastRun tId now runStatus =
       D.noResult
       False
 
--- | Record last-run outcome only, without clearing scheduler_claimed.
--- Used for manual/retry executions of recurring tasks (RecordOutcomeOnly).
+{- | Record last-run outcome only, without clearing scheduler_claimed.
+Used for manual/retry executions of recurring tasks (RecordOutcomeOnly).
+-}
 updateTaskLastRunOnly :: UUID -> UTCTime -> RunStatus -> Transaction ()
 updateTaskLastRunOnly tId now runStatus =
   Tx.statement (tId, now, runStatus) $
@@ -821,8 +832,9 @@ updateTaskLastRunOnly tId now runStatus =
       D.noResult
       False
 
--- | Restore a task's next_run_at by looking up the task_id from a failed run.
--- Used when startup recovery fails to load the task definition (transient error).
+{- | Restore a task's next_run_at by looking up the task_id from a failed run.
+Used when startup recovery fails to load the task definition (transient error).
+-}
 restoreTaskForFailedRun :: UUID -> UTCTime -> UTCTime -> Session ()
 restoreTaskForFailedRun rId nextTime now =
   Session.statement (rId, nextTime, now) $
@@ -845,16 +857,16 @@ restoreTaskSchedule :: UUID -> UTCTime -> UTCTime -> Transaction ()
 restoreTaskSchedule tId nextTime now =
   Tx.statement () . run_ . update $
     Update
-      { target = pulseTaskDefinitionSchema,
-        from = pure (),
-        set = \_ task ->
+      { target = pulseTaskDefinitionSchema
+      , from = pure ()
+      , set = \_ task ->
           task
-            { schedulerClaimed = lit False,
-              nextRunAt = lit (Just nextTime),
-              updatedAt = lit now
-            },
-        updateWhere = \_ task -> task.taskId ==. lit tId,
-        returning = NoReturning
+            { schedulerClaimed = lit False
+            , nextRunAt = lit (Just nextTime)
+            , updatedAt = lit now
+            }
+      , updateWhere = \_ task -> task.taskId ==. lit tId
+      , returning = NoReturning
       }
 
 -- ============================================================================
@@ -866,15 +878,15 @@ requestCancellation :: UUID -> Text -> UTCTime -> Transaction ()
 requestCancellation rId reason now =
   Tx.statement () . run_ . update $
     Update
-      { target = pulseRunSchema,
-        from = pure (),
-        set = \_ row ->
+      { target = pulseRunSchema
+      , from = pure ()
+      , set = \_ row ->
           row
-            { cancelRequestedAt = lit (Just now),
-              cancelReason = lit (Just reason)
-            },
-        updateWhere = \_ row -> row.runId ==. lit rId,
-        returning = NoReturning
+            { cancelRequestedAt = lit (Just now)
+            , cancelReason = lit (Just reason)
+            }
+      , updateWhere = \_ row -> row.runId ==. lit rId
+      , returning = NoReturning
       }
 
 -- | Check if a run has been cancelled. Returns False if the run does not exist.
@@ -889,9 +901,10 @@ checkCancellation rId = do
         True
   pure (result == Just True)
 
--- | Disable the parent task of a run and clear any scheduled visibility.
--- Used for one-shot workflow tasks that should never be re-enqueued after
--- operator cancellation or force termination.
+{- | Disable the parent task of a run and clear any scheduled visibility.
+Used for one-shot workflow tasks that should never be re-enqueued after
+operator cancellation or force termination.
+-}
 disableTaskByRunId :: UUID -> UTCTime -> Transaction ()
 disableTaskByRunId rId now =
   Tx.statement (rId, now) $
@@ -903,9 +916,10 @@ disableTaskByRunId rId now =
       D.noResult
       False
 
--- | Release scheduler_claimed on the parent task of a run.
--- Used when a run is terminated outside the normal scheduler finalization path
--- (e.g., admin cancels a pending run directly).
+{- | Release scheduler_claimed on the parent task of a run.
+Used when a run is terminated outside the normal scheduler finalization path
+(e.g., admin cancels a pending run directly).
+-}
 releaseSchedulerClaimByRunId :: UUID -> UTCTime -> Transaction ()
 releaseSchedulerClaimByRunId rId now =
   Tx.statement (rId, now) $
@@ -922,8 +936,9 @@ releaseSchedulerClaimByRunId rId now =
 -- Lease Management
 -- ============================================================================
 
--- | Renew lease for a specific run (run-scoped, not owner-wide).
--- Used by withLeaseRenewal during task execution.
+{- | Renew lease for a specific run (run-scoped, not owner-wide).
+Used by withLeaseRenewal during task execution.
+-}
 renewRunLease :: UUID -> UTCTime -> Int32 -> Session Bool
 renewRunLease rId now leaseDurationSec =
   Session.statement (rId, now, leaseDurationSec) $
@@ -947,9 +962,10 @@ renewRunLease rId now leaseDurationSec =
 -- Recovery
 -- ============================================================================
 
--- | Reclaim runs owned by this Pulse instance from a previous incarnation.
--- Refreshes the lease so the executor can resume from the existing checkpoint.
--- Returns the run IDs that were reclaimed.
+{- | Reclaim runs owned by this Pulse instance from a previous incarnation.
+Refreshes the lease so the executor can resume from the existing checkpoint.
+Returns the run IDs that were reclaimed.
+-}
 reclaimOwnedRuns :: Text -> UTCTime -> Int32 -> Session [UUID]
 reclaimOwnedRuns leaseOwner now leaseDurationSec =
   Session.statement (leaseOwner, now, leaseDurationSec) $
@@ -967,10 +983,11 @@ reclaimOwnedRuns leaseOwner now leaseDurationSec =
       (D.rowList (D.column (D.nonNullable D.uuid)))
       False
 
--- | Recover runs with expired leases from OTHER owners. These are genuinely
--- abandoned (the owning process died and didn't come back). Marks them failed
--- and returns enough task context for the caller to apply normal schedule
--- finalization semantics in the same transaction.
+{- | Recover runs with expired leases from OTHER owners. These are genuinely
+abandoned (the owning process died and didn't come back). Marks them failed
+and returns enough task context for the caller to apply normal schedule
+finalization semantics in the same transaction.
+-}
 recoverExpiredRuns :: Text -> UTCTime -> Transaction [PulseExpiredRunRecovery]
 recoverExpiredRuns currentLeaseOwner now =
   Tx.statement (now, currentLeaseOwner) $
@@ -1023,15 +1040,15 @@ createTaskDefinition taskDef =
       \RETURNING task_id"
       ( Enc.encodeParams $
           Enc.col (.ptdiTaskType) (Enc.nonNullable Enc.text)
-            :| [ Enc.col (.ptdiTaskName) (Enc.nonNullable Enc.text),
-                 Enc.col (.ptdiConfig) (Enc.nonNullable Enc.jsonb),
-                 Enc.col (.ptdiCronExpression) (Enc.nonNullable Enc.text),
-                 Enc.col (.ptdiEnabled) (Enc.nonNullable Enc.bool),
-                 Enc.col (.ptdiNextRunAt) (Enc.nullable Enc.timestamptz),
-                 Enc.col (.ptdiTimeoutSeconds) (Enc.nonNullable Enc.int4),
-                 Enc.col (.ptdiPriority) (Enc.nonNullable Enc.int4),
-                 Enc.col (.ptdiMinIntervalSeconds) (Enc.nullable Enc.int4),
-                 Enc.col (.ptdiCreatedAt) (Enc.nonNullable Enc.timestamptz)
+            :| [ Enc.col (.ptdiTaskName) (Enc.nonNullable Enc.text)
+               , Enc.col (.ptdiConfig) (Enc.nonNullable Enc.jsonb)
+               , Enc.col (.ptdiCronExpression) (Enc.nonNullable Enc.text)
+               , Enc.col (.ptdiEnabled) (Enc.nonNullable Enc.bool)
+               , Enc.col (.ptdiNextRunAt) (Enc.nullable Enc.timestamptz)
+               , Enc.col (.ptdiTimeoutSeconds) (Enc.nonNullable Enc.int4)
+               , Enc.col (.ptdiPriority) (Enc.nonNullable Enc.int4)
+               , Enc.col (.ptdiMinIntervalSeconds) (Enc.nullable Enc.int4)
+               , Enc.col (.ptdiCreatedAt) (Enc.nonNullable Enc.timestamptz)
                ]
       )
       (D.rowMaybe (D.column (D.nonNullable D.uuid)))
@@ -1057,14 +1074,14 @@ listRunsForTask taskId limitValue =
 
 -- | A lightweight view of a run joined with its task, for user-facing endpoints.
 data PulseRunUserView = PulseRunUserView
-  { pruvRunId :: UUID,
-    pruvTaskId :: UUID,
-    pruvTaskType :: Text,
-    pruvTaskName :: Text,
-    pruvStatus :: Text,
-    pruvStartedAt :: Maybe UTCTime,
-    pruvCompletedAt :: Maybe UTCTime,
-    pruvCreatedAt :: UTCTime
+  { pruvRunId :: UUID
+  , pruvTaskId :: UUID
+  , pruvTaskType :: Text
+  , pruvTaskName :: Text
+  , pruvStatus :: Text
+  , pruvStartedAt :: Maybe UTCTime
+  , pruvCompletedAt :: Maybe UTCTime
+  , pruvCreatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
 
@@ -1116,8 +1133,9 @@ getRunStatusReadOnly runId =
       )
       True
 
--- | Read-only status check for a run scoped to a specific user.
--- Parameter order matches the SQL bind order: @$1 = run_id@, @$2 = user_id@.
+{- | Read-only status check for a run scoped to a specific user.
+Parameter order matches the SQL bind order: @$1 = run_id@, @$2 = user_id@.
+-}
 getRunStatusReadOnlyForUser :: UUID -> UUID -> Session (Maybe (Text, Maybe UTCTime, Maybe UTCTime))
 getRunStatusReadOnlyForUser runId userId =
   Session.statement (runId, userId) $
@@ -1229,8 +1247,9 @@ getTaskForRun rId =
 -- Test support
 -- ============================================================================
 
--- | Insert a task definition and return its ID.
--- Sets next_run_at = now so claimAndCreateRun's CAS succeeds.
+{- | Insert a task definition and return its ID.
+Sets next_run_at = now so claimAndCreateRun's CAS succeeds.
+-}
 claimTestTaskDef :: Text -> Text -> UTCTime -> Transaction UUID
 claimTestTaskDef taskType taskName now =
   Tx.statement (taskType, taskName, now) $
@@ -1275,13 +1294,14 @@ countStageLogEntries rId =
       (D.singleRow (D.column (D.nonNullable D.int4)))
       True
 
--- | Read @(stage_name, completed_at)@ pairs for every completed
--- stage of a run.  Used at resume time to repopulate the
--- DIG-529/530 memory subsystem's per-node completion-time TVar so
--- temporal scoring survives a worker restart.
---
--- Only rows with a non-null @completed_at@ are returned; running /
--- waiting stages contribute no temporal data.
+{- | Read @(stage_name, completed_at)@ pairs for every completed
+stage of a run.  Used at resume time to repopulate the
+DIG-529/530 memory subsystem's per-node completion-time TVar so
+temporal scoring survives a worker restart.
+
+Only rows with a non-null @completed_at@ are returned; running /
+waiting stages contribute no temporal data.
+-}
 readNodeCompletionTimes :: UUID -> Session [(Text, UTCTime)]
 readNodeCompletionTimes rId =
   Session.statement rId $
@@ -1363,12 +1383,12 @@ pulseRunAdminViewDecoder =
 -- ============================================================================
 
 data PulseRunEvent = PulseRunEvent
-  { preEventId :: Int64,
-    preEventType :: Text,
-    preSeverity :: Text,
-    preMessage :: Text,
-    preDetails :: Maybe Value,
-    preCreatedAt :: UTCTime
+  { preEventId :: Int64
+  , preEventType :: Text
+  , preSeverity :: Text
+  , preMessage :: Text
+  , preDetails :: Maybe Value
+  , preCreatedAt :: UTCTime
   }
 
 -- | Append a lifecycle event to the run's event history (best-effort).
@@ -1380,20 +1400,21 @@ appendRunEvent input =
       \VALUES ($1, $2, $3, $4, $5)"
       ( Enc.encodeParams
           ( Enc.col (.reiRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.reiEventType) (Enc.nonNullable Enc.text),
-                   Enc.col (renderRunEventSeverity . (.reiSeverity)) (Enc.nonNullable Enc.text),
-                   Enc.col (.reiMessage) (Enc.nonNullable Enc.text),
-                   Enc.col (.reiDetails) (Enc.nullable Enc.jsonb)
+              :| [ Enc.col (.reiEventType) (Enc.nonNullable Enc.text)
+                 , Enc.col (renderRunEventSeverity . (.reiSeverity)) (Enc.nonNullable Enc.text)
+                 , Enc.col (.reiMessage) (Enc.nonNullable Enc.text)
+                 , Enc.col (.reiDetails) (Enc.nullable Enc.jsonb)
                  ]
           )
       )
       D.noResult
       False
 
--- | Best-effort run event recording.  Performs a synchronous DB transaction
--- and logs write failures to stderr — the event history is supplementary
--- and must never block or fail a run.  Callers should be aware this adds
--- one round-trip of latency per event.
+{- | Best-effort run event recording.  Performs a synchronous DB transaction
+and logs write failures to stderr — the event history is supplementary
+and must never block or fail a run.  Callers should be aware this adds
+one round-trip of latency per event.
+-}
 recordRunEvent :: DB.Pool -> RunEventInsert -> IO ()
 recordRunEvent pool input = do
   result <- DB.runTransaction pool $ appendRunEvent input
@@ -1441,8 +1462,9 @@ pulseRunEventDecoder =
 -- Graph state
 -- --------------------------------------------------------------------------
 
--- | Read persisted graph state for a run.
--- runtime_version is Nothing for rows written before migration 044.
+{- | Read persisted graph state for a run.
+runtime_version is Nothing for rows written before migration 044.
+-}
 readGraphState :: UUID -> Session (Maybe PulseGraphStateSnapshot)
 readGraphState runId =
   Session.statement runId $
@@ -1507,14 +1529,14 @@ writeGraphState input =
       \  updated_at = EXCLUDED.updated_at"
       ( Enc.encodeParams
           ( Enc.col (.gswRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.gswNodeStatuses) (Enc.nonNullable Enc.jsonb),
-                   Enc.col (.gswNodeOutputs) (Enc.nonNullable Enc.jsonb),
-                   Enc.col (.gswRemainingRewriteBudget) (Enc.nullable Enc.jsonb),
-                   Enc.col (.gswRuntimeVersion) (Enc.nullable Enc.int4),
-                   Enc.col (.gswAppliedRewriteId) (Enc.nullable Enc.int8),
-                   Enc.col (.gswNodeProvenance) (Enc.nullable Enc.jsonb),
-                   Enc.col (.gswTopologyHash) (Enc.nullable Enc.text),
-                   Enc.col (.gswUpdatedAt) (Enc.nonNullable Enc.timestamptz)
+              :| [ Enc.col (.gswNodeStatuses) (Enc.nonNullable Enc.jsonb)
+                 , Enc.col (.gswNodeOutputs) (Enc.nonNullable Enc.jsonb)
+                 , Enc.col (.gswRemainingRewriteBudget) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.gswRuntimeVersion) (Enc.nullable Enc.int4)
+                 , Enc.col (.gswAppliedRewriteId) (Enc.nullable Enc.int8)
+                 , Enc.col (.gswNodeProvenance) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.gswTopologyHash) (Enc.nullable Enc.text)
+                 , Enc.col (.gswUpdatedAt) (Enc.nonNullable Enc.timestamptz)
                  ]
           )
       )
@@ -1534,17 +1556,17 @@ writeGraphRewrite input =
       \RETURNING rewrite_id"
       ( Enc.encodeParams
           ( Enc.col (.griRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.griSourceNodeId) (Enc.nonNullable Enc.text),
-                   Enc.col (.griSourceNodeOutput) (Enc.nullable Enc.jsonb),
-                   Enc.col (.griRewriteCost) (Enc.nullable Enc.jsonb),
-                   Enc.col (.griRewriteDelta) (Enc.nullable Enc.jsonb),
-                   Enc.col (.griBudgetBefore) (Enc.nullable Enc.jsonb),
-                   Enc.col (.griBudgetAfter) (Enc.nullable Enc.jsonb),
-                   Enc.col (.griRewriteSpec) (Enc.nonNullable Enc.jsonb),
-                   Enc.col (.griStatus) (Enc.nonNullable Enc.text),
-                   Enc.col (.griRejectionReason) (Enc.nullable Enc.text),
-                   Enc.col (.griExceededDimensions) (Enc.nullable Enc.jsonb),
-                   Enc.col (.griCreatedAt) (Enc.nonNullable Enc.timestamptz)
+              :| [ Enc.col (.griSourceNodeId) (Enc.nonNullable Enc.text)
+                 , Enc.col (.griSourceNodeOutput) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.griRewriteCost) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.griRewriteDelta) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.griBudgetBefore) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.griBudgetAfter) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.griRewriteSpec) (Enc.nonNullable Enc.jsonb)
+                 , Enc.col (.griStatus) (Enc.nonNullable Enc.text)
+                 , Enc.col (.griRejectionReason) (Enc.nullable Enc.text)
+                 , Enc.col (.griExceededDimensions) (Enc.nullable Enc.jsonb)
+                 , Enc.col (.griCreatedAt) (Enc.nonNullable Enc.timestamptz)
                  ]
           )
       )
@@ -1644,17 +1666,18 @@ registerSignalWait runId (NodeId nodeId) (SignalName signalName) now expiresAt =
       D.noResult
       False
 
--- | Deliver a signal and wake the run. Atomically:
---   1. Mark the signal as delivered with payload
---   2. Transition the run from 'waiting' → 'pending' so the scheduler reclaims it
--- Returns True if a pending signal was found and delivered.
---
--- Precondition: callers should deliver signals only when the run is in
--- 'waiting' status (i.e., not during an active frontier wave). The wake-up
--- in step 2 is conditional on the run being 'waiting', so early delivery
--- is safe (the signal is recorded but the run is not woken), but the timing
--- guarantee that "delivery cannot arrive during a frontier wave" is an
--- assumption about callers, not enforced by this function.
+{- | Deliver a signal and wake the run. Atomically:
+ 1. Mark the signal as delivered with payload
+ 2. Transition the run from 'waiting' → 'pending' so the scheduler reclaims it
+Returns True if a pending signal was found and delivered.
+
+Precondition: callers should deliver signals only when the run is in
+'waiting' status (i.e., not during an active frontier wave). The wake-up
+in step 2 is conditional on the run being 'waiting', so early delivery
+is safe (the signal is recorded but the run is not woken), but the timing
+guarantee that "delivery cannot arrive during a frontier wave" is an
+assumption about callers, not enforced by this function.
+-}
 deliverSignal :: UUID -> Text -> Value -> UTCTime -> Transaction Bool
 deliverSignal runId signalName payload now = do
   delivered <- deliverSignalOnly runId signalName payload now
@@ -1680,8 +1703,9 @@ deliverSignalOnly runId signalName payload now =
       ((/= 0) <$> D.rowsAffected)
       False
 
--- | Transition a run from 'waiting' back to 'pending' so the scheduler
--- picks it up on the next poll cycle.
+{- | Transition a run from 'waiting' back to 'pending' so the scheduler
+picks it up on the next poll cycle.
+-}
 wakeRunFromWaiting :: UUID -> Transaction ()
 wakeRunFromWaiting rId =
   Tx.statement rId $
@@ -1692,9 +1716,10 @@ wakeRunFromWaiting rId =
       D.noResult
       False
 
--- | Look up the status of any signal for a (run_id, signal_name) pair,
--- regardless of current status. Returns the most recent status.
--- Used to distinguish "no such signal" from "already delivered".
+{- | Look up the status of any signal for a (run_id, signal_name) pair,
+regardless of current status. Returns the most recent status.
+Used to distinguish "no such signal" from "already delivered".
+-}
 lookupSignalStatus :: UUID -> Text -> Transaction (Maybe Text)
 lookupSignalStatus runId signalName =
   Tx.statement (runId, signalName) $
@@ -1706,9 +1731,10 @@ lookupSignalStatus runId signalName =
       (D.rowMaybe (D.column (D.nonNullable D.text)))
       True
 
--- | Look up a delivered signal for a specific node in a run.
--- Scoped to node_id to prevent a later wait on the same signal name
--- from consuming a stale delivery from an earlier stage.
+{- | Look up a delivered signal for a specific node in a run.
+Scoped to node_id to prevent a later wait on the same signal name
+from consuming a stale delivery from an earlier stage.
+-}
 lookupDeliveredSignal :: UUID -> Text -> Text -> Session (Maybe (Maybe Value))
 lookupDeliveredSignal runId signalName nodeId =
   Session.statement (runId, signalName, nodeId) $

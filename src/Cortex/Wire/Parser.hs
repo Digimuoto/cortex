@@ -1,22 +1,22 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Megaparsec-based parser for canonical Wire syntax.
---
--- Mirrors the grammar in @docs/Reference/Wire/grammar.md@.
--- Produces a 'Cortex.Wire.Syntax.WireFile'; semantic validation
--- (executor registration, port keys, arity, contract membership) is a
--- later pass.
+{- | Megaparsec-based parser for canonical Wire syntax.
+
+Mirrors the grammar in @docs/Reference/Wire/grammar.md@.
+Produces a 'Cortex.Wire.Syntax.WireFile'; semantic validation
+(executor registration, port keys, arity, contract membership) is a
+later pass.
+-}
 module Cortex.Wire.Parser
-  ( parseWireFile,
-    parseWireExpr,
-    ParseError,
-    renderParseError,
+  ( parseWireFile
+  , parseWireExpr
+  , ParseError
+  , renderParseError
   )
 where
 
 import Control.Monad (when)
-import Cortex.Wire.Syntax
 import Data.Char (isAlpha, isAlphaNum)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
@@ -26,25 +26,27 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void (Void)
 import Text.Megaparsec
-  ( MonadParsec (notFollowedBy, takeWhileP, try),
-    Parsec,
-    anySingle,
-    choice,
-    eof,
-    errorBundlePretty,
-    many,
-    manyTill,
-    optional,
-    parse,
-    satisfy,
-    sepEndBy,
-    some,
-    (<?>),
-    (<|>),
+  ( MonadParsec (notFollowedBy, takeWhileP, try)
+  , Parsec
+  , anySingle
+  , choice
+  , eof
+  , errorBundlePretty
+  , many
+  , manyTill
+  , optional
+  , parse
+  , satisfy
+  , sepEndBy
+  , some
+  , (<?>)
+  , (<|>)
   )
 import Text.Megaparsec qualified as MP
 import Text.Megaparsec.Char (char, digitChar, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as L
+
+import Cortex.Wire.Syntax
 
 type Parser = Parsec Void Text
 
@@ -64,8 +66,9 @@ parseWireFile name src =
     Left bundle -> Left (ParseError bundle)
     Right ok -> Right ok
 
--- | Parse a single expression (no file-return resolution). Useful for
--- REPL-style consumption and tests.
+{- | Parse a single expression (no file-return resolution). Useful for
+REPL-style consumption and tests.
+-}
 parseWireExpr :: FilePath -> Text -> Either ParseError Expr
 parseWireExpr name src =
   case parse (spaceConsumer *> expr <* eof) name src of
@@ -76,8 +79,9 @@ parseWireExpr name src =
 -- Lexer
 ------------------------------------------------------------------------
 
--- | Whitespace eater. Handles spaces/tabs/newlines plus the two comment
--- kinds: @# …@ line and @/* … */@ block (non-nesting, per grammar §2.1).
+{- | Whitespace eater. Handles spaces/tabs/newlines plus the two comment
+kinds: @# …@ line and @/* … */@ block (non-nesting, per grammar §2.1).
+-}
 spaceConsumer :: Parser ()
 spaceConsumer =
   L.space
@@ -116,8 +120,9 @@ identifier = lexeme . try $ do
     "reserved word: " <> T.unpack w
   pure w
 
--- | Qualified identifier: one or more unqualified identifiers joined by
--- dots (grammar §2.2, §14.4).
+{- | Qualified identifier: one or more unqualified identifiers joined by
+dots (grammar §2.2, §14.4).
+-}
 qualifiedIdent :: Parser QName
 qualifiedIdent = lexeme . try $ do
   first <- bareIdent
@@ -158,9 +163,10 @@ executorRef = lexeme . try $ do
 stringLiteral :: Parser Text
 stringLiteral = fmap snd stringLiteralForm
 
--- | Parse a string literal and report whether it was single-line or
--- multi-line. Single-line strings use escape sequences; multi-line
--- strings are verbatim (grammar §2.4).
+{- | Parse a string literal and report whether it was single-line or
+multi-line. Single-line strings use escape sequences; multi-line
+strings are verbatim (grammar §2.4).
+-}
 stringLiteralForm :: Parser (StringForm, Text)
 stringLiteralForm = multiLine <|> singleLine
   where
@@ -231,9 +237,10 @@ boolLiteral = (True <$ keyword "true") <|> (False <$ keyword "false")
 expr :: Parser Expr
 expr = exprOverlayLevel
 
--- | @<>@ binds the loosest: @a => b <> c@ parses as @a => (b <> c)@ …
--- wait, <> is infixl 2 (lowest), so the overlay layer sits OUTSIDE =>.
--- Correct reading: @a => b <> c => d@ parses as @(a => b) <> (c => d)@.
+{- | @<>@ binds the loosest: @a => b <> c@ parses as @a => (b <> c)@ …
+wait, <> is infixl 2 (lowest), so the overlay layer sits OUTSIDE =>.
+Correct reading: @a => b <> c => d@ parses as @(a => b) <> (c => d)@.
+-}
 exprOverlayLevel :: Parser Expr
 exprOverlayLevel = do
   first <- exprConnectLevel
@@ -268,8 +275,9 @@ selectArm = do
   _ <- symbol ":"
   SelectArm armKey <$> expr
 
--- | @//@ and @++@ share precedence level 5, operate on disjoint value
--- kinds; the grammar admits either operator in the chain.
+{- | @//@ and @++@ share precedence level 5, operate on disjoint value
+kinds; the grammar admits either operator in the chain.
+-}
 exprMergeLevel :: Parser Expr
 exprMergeLevel = do
   first <- exprAtom
@@ -283,8 +291,9 @@ exprMergeLevel = do
       )
         >>= \op -> exprAtom >>= \rhs -> pure (op, rhs)
 
--- | String literal as an expression, preserving the single-vs-multi
--- form on the resulting 'Literal' constructor.
+{- | String literal as an expression, preserving the single-vs-multi
+form on the resulting 'Literal' constructor.
+-}
 stringLitExpr :: Parser Expr
 stringLitExpr = do
   (form, text) <- stringLiteralForm
@@ -292,25 +301,27 @@ stringLitExpr = do
     FormSingle -> LitString text
     FormMulti -> LitMultilineString text
 
--- | Atomic expression: application, constructor, record, list, literal,
--- identifier, or parenthesized group / tuple.
+{- | Atomic expression: application, constructor, record, list, literal,
+identifier, or parenthesized group / tuple.
+-}
 exprAtom :: Parser Expr
 exprAtom =
   choice
-    [ ExprApply <$> executorRef <*> recordExpr,
-      try constructorExpr,
-      ExprRecord <$> recordExpr,
-      listExpr,
-      stringLitExpr,
-      ExprLit . LitBool <$> boolLiteral,
-      ExprLit . LitNumber <$> numberLiteral,
-      parenOrTuple,
-      ExprIdent <$> qualifiedIdent
+    [ ExprApply <$> executorRef <*> recordExpr
+    , try constructorExpr
+    , ExprRecord <$> recordExpr
+    , listExpr
+    , stringLitExpr
+    , ExprLit . LitBool <$> boolLiteral
+    , ExprLit . LitNumber <$> numberLiteral
+    , parenOrTuple
+    , ExprIdent <$> qualifiedIdent
     ]
 
--- | Tagged-record constructor: a qualified identifier followed
--- immediately by a record body, with no @\@@ prefix. Value-position only
--- (grammar §14.4).
+{- | Tagged-record constructor: a qualified identifier followed
+immediately by a record body, with no @\@@ prefix. Value-position only
+(grammar §14.4).
+-}
 constructorExpr :: Parser Expr
 constructorExpr = do
   name <- qualifiedIdent
@@ -369,9 +380,9 @@ parenOrTuple = do
 corePureExpr :: Parser CorePureExpr
 corePureExpr =
   choice
-    [ try corePureLet,
-      try corePureLambda,
-      corePureOrLevel
+    [ try corePureLet
+    , try corePureLambda
+    , corePureOrLevel
     ]
 
 corePureLet :: Parser CorePureExpr
@@ -412,12 +423,12 @@ corePureCompareLevel =
   where
     compareOperator =
       choice
-        [ CorePureBinary CorePureEqual <$ symbol "==",
-          CorePureBinary CorePureNotEqual <$ symbol "!=",
-          CorePureBinary CorePureLessThanOrEqual <$ symbol "<=",
-          CorePureBinary CorePureGreaterThanOrEqual <$ symbol ">=",
-          CorePureBinary CorePureLessThan <$ symbol "<",
-          CorePureBinary CorePureGreaterThan <$ symbol ">"
+        [ CorePureBinary CorePureEqual <$ symbol "=="
+        , CorePureBinary CorePureNotEqual <$ symbol "!="
+        , CorePureBinary CorePureLessThanOrEqual <$ symbol "<="
+        , CorePureBinary CorePureGreaterThanOrEqual <$ symbol ">="
+        , CorePureBinary CorePureLessThan <$ symbol "<"
+        , CorePureBinary CorePureGreaterThan <$ symbol ">"
         ]
 
 corePureAddLevel :: Parser CorePureExpr
@@ -426,8 +437,8 @@ corePureAddLevel =
   where
     addOperator =
       choice
-        [ CorePureBinary CorePureAdd <$ symbol "+",
-          CorePureBinary CorePureSubtract <$ symbol "-"
+        [ CorePureBinary CorePureAdd <$ symbol "+"
+        , CorePureBinary CorePureSubtract <$ symbol "-"
         ]
 
 corePureMultiplyLevel :: Parser CorePureExpr
@@ -436,16 +447,16 @@ corePureMultiplyLevel =
   where
     multiplyOperator =
       choice
-        [ CorePureBinary CorePureMultiply <$ symbol "*",
-          try (CorePureBinary CorePureDivide <$ symbol "/" <* notFollowedBy (char '/'))
+        [ CorePureBinary CorePureMultiply <$ symbol "*"
+        , try (CorePureBinary CorePureDivide <$ symbol "/" <* notFollowedBy (char '/'))
         ]
 
 corePureUnaryLevel :: Parser CorePureExpr
 corePureUnaryLevel =
   choice
-    [ CorePureUnary CorePureNot <$> (symbol "!" *> corePureUnaryLevel),
-      CorePureUnary CorePureNegate <$> (symbol "-" *> corePureUnaryLevel),
-      corePureApplication
+    [ CorePureUnary CorePureNot <$> (symbol "!" *> corePureUnaryLevel)
+    , CorePureUnary CorePureNegate <$> (symbol "-" *> corePureUnaryLevel)
+    , corePureApplication
     ]
 
 corePureApplication :: Parser CorePureExpr
@@ -468,8 +479,8 @@ corePurePostfix = do
         [ do
             _ <- symbol "."
             fieldName <- identifier
-            pure (`CorePureFieldAccess` fieldName),
-          do
+            pure (`CorePureFieldAccess` fieldName)
+        , do
             _ <- symbol "["
             indexExpr <- corePureExpr
             _ <- symbol "]"
@@ -479,14 +490,14 @@ corePurePostfix = do
 corePureAtom :: Parser CorePureExpr
 corePureAtom =
   choice
-    [ corePureString,
-      CorePureLit . CorePureBool <$> boolLiteral,
-      CorePureLit CorePureNull <$ keyword "null",
-      CorePureLit . CorePureNumber <$> numberLiteral,
-      corePureList,
-      corePureRecord,
-      betweenCorePureParens,
-      CorePureIdent <$> identifier
+    [ corePureString
+    , CorePureLit . CorePureBool <$> boolLiteral
+    , CorePureLit CorePureNull <$ keyword "null"
+    , CorePureLit . CorePureNumber <$> numberLiteral
+    , corePureList
+    , corePureRecord
+    , betweenCorePureParens
+    , CorePureIdent <$> identifier
     ]
 
 betweenCorePureParens :: Parser CorePureExpr
@@ -544,8 +555,9 @@ requireNonEmpty message values =
 -- Port signatures
 ------------------------------------------------------------------------
 
--- | Zero or more port declarations. Terminates at the first non-port
--- token (@=@ introducing the body).
+{- | Zero or more port declarations. Terminates at the first non-port
+token (@=@ introducing the body).
+-}
 portSignature :: Parser [PortDecl]
 portSignature = many (try portDecl)
 
@@ -598,8 +610,9 @@ outputVariant = do
   lbl <- optionalLabel
   SumVariant lbl . ContractId <$> identifier
 
--- | Optional @label:@ prefix. Distinguished from a bare
--- contract-name-then-separator by lookahead for the colon.
+{- | Optional @label:@ prefix. Distinguished from a bare
+contract-name-then-separator by lookahead for the colon.
+-}
 optionalLabel :: Parser PortLabel
 optionalLabel = do
   ml <- optional . try $ do
@@ -631,11 +644,11 @@ fileReturnExpr = do
 topForm :: Parser TopForm
 topForm =
   choice
-    [ contractDecl,
-      nodeDecl,
-      try pureLetBinding,
-      letBinding,
-      importStmt
+    [ contractDecl
+    , nodeDecl
+    , try pureLetBinding
+    , letBinding
+    , importStmt
     ]
 
 contractDecl :: Parser TopForm
@@ -668,7 +681,8 @@ pureNodeDecl = do
   _ <- symbol ":"
   inputs <- many (try inputPort)
   localBindings <- optional (try pureNodeLocalBindings)
-  outputEquations <- requireNonEmpty "pure node requires at least one output equation" =<< some (try pureOutputEquation)
+  outputEquations <-
+    requireNonEmpty "pure node requires at least one output equation" =<< some (try pureOutputEquation)
   _ <- symbol ";"
   let sig = inputs <> fmap pureOutputEquationPortDecl (NE.toList outputEquations)
   when (null sig) $
@@ -680,8 +694,8 @@ pureNodeDecl = do
             sig
             ( NodeBodyPure
                 NodePureBody
-                  { nodePureBodyBindings = fromMaybe [] localBindings,
-                    nodePureBodyOutputs = outputEquations
+                  { nodePureBodyBindings = fromMaybe [] localBindings
+                  , nodePureBodyOutputs = outputEquations
                   }
             )
         )
@@ -709,8 +723,8 @@ pureOutputExpression = do
         _ <- symbol "("
         value <- corePureExpr
         _ <- symbol ")"
-        pure value,
-      do
+        pure value
+    , do
         _ <- symbol "{"
         value <- corePureExpr
         _ <- optional (symbol ";")

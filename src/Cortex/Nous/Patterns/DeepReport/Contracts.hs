@@ -1,38 +1,40 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Generic DeepReport contract catalog.
---
--- These contract specs describe reusable reasoning payload boundaries. They do
--- not register executors, grant tool authority, or define downstream artifact
--- persistence behavior.
+{- | Generic DeepReport contract catalog.
+
+These contract specs describe reusable reasoning payload boundaries. They do
+not register executors, grant tool authority, or define downstream artifact
+persistence behavior.
+-}
 module Cortex.Nous.Patterns.DeepReport.Contracts
-  ( deepReportWireContractRegistry,
-    deepReportWireContractSpecs,
-    deepReportPlannerOutputContract,
-    deepReportPlannerRewriteNeededContract,
-    deepReportEvidenceBundleContract,
-    deepReportEvidenceReadyContract,
-    deepReportEvidenceRepairNeededContract,
-    deepReportConditionPassthroughContract,
-    deepReportAnalysisFragmentContract,
-    deepReportReportFragmentContract,
-    deepReportReviewBundleContract,
-    deepReportReviewConcernsContract,
-    deepReportReportArtifactRefContract,
-    deepReportWorkflowAuditContract,
-    deepReportAwaitSignalContract,
+  ( deepReportWireContractRegistry
+  , deepReportWireContractSpecs
+  , deepReportPlannerOutputContract
+  , deepReportPlannerRewriteNeededContract
+  , deepReportEvidenceBundleContract
+  , deepReportEvidenceReadyContract
+  , deepReportEvidenceRepairNeededContract
+  , deepReportConditionPassthroughContract
+  , deepReportAnalysisFragmentContract
+  , deepReportReportFragmentContract
+  , deepReportReviewBundleContract
+  , deepReportReviewConcernsContract
+  , deepReportReportArtifactRefContract
+  , deepReportWorkflowAuditContract
+  , deepReportAwaitSignalContract
   )
 where
 
-import Cortex.Wire
-  ( WireContractRegistry,
-    WireContractSpec (..),
-    WirePayloadKind (..),
-    wireContractRegistryFromList,
-  )
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Text (Text)
+
+import Cortex.Wire
+  ( WireContractRegistry
+  , WireContractSpec (..)
+  , WirePayloadKind (..)
+  , wireContractRegistryFromList
+  )
 
 deepReportWireContractRegistry :: WireContractRegistry
 deepReportWireContractRegistry =
@@ -40,19 +42,19 @@ deepReportWireContractRegistry =
 
 deepReportWireContractSpecs :: [WireContractSpec]
 deepReportWireContractSpecs =
-  [ deepReportPlannerOutputContract,
-    deepReportPlannerRewriteNeededContract,
-    deepReportEvidenceBundleContract,
-    deepReportEvidenceReadyContract,
-    deepReportEvidenceRepairNeededContract,
-    deepReportConditionPassthroughContract,
-    deepReportAnalysisFragmentContract,
-    deepReportReportFragmentContract,
-    deepReportReviewBundleContract,
-    deepReportReviewConcernsContract,
-    deepReportReportArtifactRefContract,
-    deepReportWorkflowAuditContract,
-    deepReportAwaitSignalContract
+  [ deepReportPlannerOutputContract
+  , deepReportPlannerRewriteNeededContract
+  , deepReportEvidenceBundleContract
+  , deepReportEvidenceReadyContract
+  , deepReportEvidenceRepairNeededContract
+  , deepReportConditionPassthroughContract
+  , deepReportAnalysisFragmentContract
+  , deepReportReportFragmentContract
+  , deepReportReviewBundleContract
+  , deepReportReviewConcernsContract
+  , deepReportReportArtifactRefContract
+  , deepReportWorkflowAuditContract
+  , deepReportAwaitSignalContract
   ]
 
 deepReportPlannerOutputContract :: WireContractSpec
@@ -175,17 +177,17 @@ deepReportAwaitSignalContract =
 contractSpec :: Text -> WirePayloadKind -> Text -> Aeson.Value -> [Aeson.Value] -> WireContractSpec
 contractSpec contractId payloadKind description schema examples =
   WireContractSpec
-    { wireContractSpecId = contractId,
-      wireContractSpecPayloadKind = payloadKind,
-      wireContractSpecDescription = description,
-      wireContractSpecSchema = Just schema,
-      wireContractSpecExamples = examples
+    { wireContractSpecId = contractId
+    , wireContractSpecPayloadKind = payloadKind
+    , wireContractSpecDescription = description
+    , wireContractSpecSchema = Just schema
+    , wireContractSpecExamples = examples
     }
 
 objectPayloadSchema :: Text -> Aeson.Value
 objectPayloadSchema description =
   Aeson.object
-    [ "type" .= ("object" :: Text),
-      "description" .= description,
-      "additionalProperties" .= True
+    [ "type" .= ("object" :: Text)
+    , "description" .= description
+    , "additionalProperties" .= True
     ]

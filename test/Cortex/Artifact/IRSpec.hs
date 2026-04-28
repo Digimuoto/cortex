@@ -2,7 +2,6 @@
 
 module Cortex.Artifact.IRSpec (spec) where
 
-import Cortex.Artifact.IR
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as Map
@@ -11,6 +10,8 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Test.Hspec
 import Test.QuickCheck qualified as QC
+
+import Cortex.Artifact.IR
 
 spec :: Spec
 spec = do
@@ -188,7 +189,10 @@ spec = do
       compileToMarkdown ir `shouldBe` Right "1. first\n2. second"
 
     it "compiles bold and italic" $ do
-      let ir = mkReportIR 1 [ParagraphBlock [BoldText [PlainText "bold"], PlainText " and ", ItalicText [PlainText "italic"]]]
+      let ir =
+            mkReportIR
+              1
+              [ParagraphBlock [BoldText [PlainText "bold"], PlainText " and ", ItalicText [PlainText "italic"]]]
       compileToMarkdown ir `shouldBe` Right "**bold** and *italic*"
 
     it "compiles inline code with backticks" $ do
@@ -237,7 +241,8 @@ spec = do
               [ParagraphBlock [PlainText "Price: ", Sourced 1 (Currency 185.00 (CurrencyCode "USD"))]]
               [(1, Direct (Source "call_abc123" "$.price"))]
       compileToAnnotatedHtml ir
-        `shouldBe` Right "<p>Price: <span data-prov-id=\"1\" data-prov-kind=\"direct\" tabindex=\"0\" role=\"button\">$185.00</span></p>"
+        `shouldBe` Right
+          "<p>Price: <span data-prov-id=\"1\" data-prov-kind=\"direct\" tabindex=\"0\" role=\"button\">$185.00</span></p>"
 
     it "marks computed provenance distinctly" $ do
       let ir =
@@ -245,7 +250,8 @@ spec = do
               [ParagraphBlock [Sourced 2 (Pct 0.1234)]]
               [(2, Computed [Source "call_bid" "$.bid", Source "call_ask" "$.ask"] "spread / ask")]
       compileToAnnotatedHtml ir
-        `shouldBe` Right "<p><span data-prov-id=\"2\" data-prov-kind=\"computed\" tabindex=\"0\" role=\"button\">12.34%</span></p>"
+        `shouldBe` Right
+          "<p><span data-prov-id=\"2\" data-prov-kind=\"computed\" tabindex=\"0\" role=\"button\">12.34%</span></p>"
 
     it "renders unsourced values without provenance wrappers" $ do
       let ir = mkReportIR 1 [ParagraphBlock [PlainText "Spread: ", Pct 0.1234]]
@@ -270,9 +276,9 @@ spec = do
       let ir =
             mkReportIR
               1
-              [ ParagraphBlock [PlainText "hello", Currency 42.0 (CurrencyCode "USD")],
-                MathBlock "x^2",
-                HorizontalRule
+              [ ParagraphBlock [PlainText "hello", Currency 42.0 (CurrencyCode "USD")]
+              , MathBlock "x^2"
+              , HorizontalRule
               ]
       (Aeson.eitherDecode (Aeson.encode ir) :: Either String ReportIR) `shouldBe` Right ir
 
@@ -280,17 +286,18 @@ spec = do
       let ir =
             mkReportIRWithProvenance
               [ ParagraphBlock
-                  [ PlainText "Price: ",
-                    Sourced 1 (Currency 185.00 (CurrencyCode "USD")),
-                    PlainText " | Spread: ",
-                    Sourced
+                  [ PlainText "Price: "
+                  , Sourced 1 (Currency 185.00 (CurrencyCode "USD"))
+                  , PlainText " | Spread: "
+                  , Sourced
                       2
                       (Currency 12.34 (CurrencyCode "USD"))
                   ]
               ]
-              [ (1, Direct (Source "call_price" "$.price")),
-                ( 2,
-                  Computed
+              [ (1, Direct (Source "call_price" "$.price"))
+              ,
+                ( 2
+                , Computed
                     [Source "call_bid" "$.bid", Source "call_ask" "$.ask"]
                     "ask - bid"
                 )
@@ -324,17 +331,17 @@ isLeft _ = False
 mkReportIR :: Int -> [Block] -> ReportIR
 mkReportIR version blocks =
   ReportIR
-    { reportVersion = version,
-      reportBlocks = blocks,
-      reportProvenance = Nothing
+    { reportVersion = version
+    , reportBlocks = blocks
+    , reportProvenance = Nothing
     }
 
 mkReportIRWithProvenance :: [Block] -> [(Int, Provenance)] -> ReportIR
 mkReportIRWithProvenance blocks provenanceEntries =
   ReportIR
-    { reportVersion = 1,
-      reportBlocks = blocks,
-      reportProvenance = Just (Map.fromList provenanceEntries)
+    { reportVersion = 1
+    , reportBlocks = blocks
+    , reportProvenance = Just (Map.fromList provenanceEntries)
     }
 
 genValidReportIR :: QC.Gen ReportIR
@@ -346,14 +353,14 @@ genValidReportIR = do
 genBlock :: QC.Gen Block
 genBlock =
   QC.oneof
-    [ genHeadingBlock,
-      genParagraphBlock,
-      genTableBlock,
-      genBulletListBlock,
-      genOrderedListBlock,
-      genCodeBlock,
-      genMathBlock,
-      pure HorizontalRule
+    [ genHeadingBlock
+    , genParagraphBlock
+    , genTableBlock
+    , genBulletListBlock
+    , genOrderedListBlock
+    , genCodeBlock
+    , genMathBlock
+    , pure HorizontalRule
     ]
 
 genHeadingBlock :: QC.Gen Block
@@ -375,7 +382,8 @@ genTableBlock = do
   useAlignments <- QC.arbitrary
   alignments <-
     if useAlignments
-      then Just <$> QC.vectorOf columnCount (QC.elements [AlignLeft, AlignCenter, AlignRight, AlignDefault])
+      then
+        Just <$> QC.vectorOf columnCount (QC.elements [AlignLeft, AlignCenter, AlignRight, AlignDefault])
       else pure Nothing
   rows <- QC.vectorOf rowCount (QC.vectorOf columnCount genTableCell)
   pure (TableBlock (TableDef columns alignments rows))
@@ -409,28 +417,28 @@ genTableCell = do
 genInline :: QC.Gen Inline
 genInline =
   QC.oneof
-    [ genLeafInline,
-      BoldText <$> QC.listOf1 genLeafInline,
-      ItalicText <$> QC.listOf1 genLeafInline
+    [ genLeafInline
+    , BoldText <$> QC.listOf1 genLeafInline
+    , ItalicText <$> QC.listOf1 genLeafInline
     ]
 
 genLeafInline :: QC.Gen Inline
 genLeafInline =
   QC.oneof
-    [ PlainText <$> genShortText,
-      InlineCode <$> genShortText,
-      InlineMath <$> QC.elements ["x^2", "\\alpha + \\beta", "\\frac{1}{2}"],
-      Currency <$> genScientificRange (-100000) 100000 <*> genCurrencyCode,
-      Pct <$> genScientificRange (-10) 10,
-      Link <$> genShortText <*> QC.elements ["https://example.com", "http://example.org"],
-      Embed <$> genEmbed
+    [ PlainText <$> genShortText
+    , InlineCode <$> genShortText
+    , InlineMath <$> QC.elements ["x^2", "\\alpha + \\beta", "\\frac{1}{2}"]
+    , Currency <$> genScientificRange (-100000) 100000 <*> genCurrencyCode
+    , Pct <$> genScientificRange (-10) 10
+    , Link <$> genShortText <*> QC.elements ["https://example.com", "http://example.org"]
+    , Embed <$> genEmbed
     ]
 
 genEmbed :: QC.Gen EmbedSpec
 genEmbed =
   QC.oneof
-    [ PriceEmbed <$> QC.elements ["AAPL", "MSFT", "NVDA"],
-      ChartEmbed
+    [ PriceEmbed <$> QC.elements ["AAPL", "MSFT", "NVDA"]
+    , ChartEmbed
         <$> QC.elements ["AAPL", "MSFT", "NVDA"]
         <*> QC.elements ["1D", "1W", "1M", "3M", "6M", "1Y", "YTD"]
         <*> QC.frequency [(2, pure Nothing), (1, Just <$> QC.elements ["area", "line"])]

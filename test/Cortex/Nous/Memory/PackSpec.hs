@@ -3,17 +3,6 @@
 
 module Cortex.Nous.Memory.PackSpec (spec) where
 
-import Cortex.Nous.Memory.Pack
-  ( jaccardSimilarity,
-    packReferencePassages,
-    packSessionPassages,
-    passageFeatures,
-  )
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryPassage (..),
-    CortexMemoryRankedPassage (..),
-  )
 import Data.Int (Int64)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -22,6 +11,18 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Data.Word (Word32)
 import Test.Hspec
+
+import Cortex.Nous.Memory.Pack
+  ( jaccardSimilarity
+  , packReferencePassages
+  , packSessionPassages
+  , passageFeatures
+  )
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryPassage (..)
+  , CortexMemoryRankedPassage (..)
+  )
 
 spec :: Spec
 spec = do
@@ -37,7 +38,9 @@ spec = do
       let packed = packReferencePassages tokenBudget 5 [lowerRanked, higherRanked]
 
       fmap ((.cortexMemoryPassageId) . (.cortexRankedPassage)) packed
-        `shouldBe` [higherRanked.cortexRankedPassage.cortexMemoryPassageId, lowerRanked.cortexRankedPassage.cortexMemoryPassageId]
+        `shouldBe` [ higherRanked.cortexRankedPassage.cortexMemoryPassageId
+                   , lowerRanked.cortexRankedPassage.cortexMemoryPassageId
+                   ]
 
   describe "jaccardSimilarity" $ do
     it "returns 1.0 for identical sets" $
@@ -50,7 +53,8 @@ spec = do
       jaccardSimilarity Set.empty Set.empty `shouldBe` 1.0
 
     it "returns correct value for partial overlap" $
-      jaccardSimilarity (Set.fromList ["a", "b", "c"]) (Set.fromList ["b", "c", "d"]) `shouldBe` (2.0 / 4.0)
+      jaccardSimilarity (Set.fromList ["a", "b", "c"]) (Set.fromList ["b", "c", "d"])
+        `shouldBe` (2.0 / 4.0)
 
   describe "MMR packing" $ do
     it "prefers diversity over pure score ordering" $ do
@@ -103,50 +107,50 @@ lowerRanked = mkRanked 0.4 olderPassage
 mkPassage :: UUID -> UTCTime -> CortexMemoryPassage
 mkPassage passageId' updatedAt' =
   CortexMemoryPassage
-    { cortexMemoryPassageId = passageId',
-      cortexMemorySourceKind = "checkpoint",
-      cortexMemorySourceItemId = Nothing,
-      cortexMemorySourceCheckpointId = Just (uuidFromWord 99),
-      cortexMemorySourceVersionId = uuidFromWord 100,
-      cortexMemoryChatSessionId = Just (uuidFromWord 200),
-      cortexMemoryPassageOrder = 0,
-      cortexMemorySourceTitle = "Checkpoint",
-      cortexMemorySectionHeading = Nothing,
-      cortexMemoryPassageText = "Prior continuation context.",
-      cortexMemoryEntities = [],
-      cortexMemoryReportType = Nothing,
-      cortexMemoryTimeRange = Nothing,
-      cortexMemoryPassageTokenCount = 4,
-      cortexMemorySourceCreatedAt = updatedAt',
-      cortexMemorySourceUpdatedAt = updatedAt'
+    { cortexMemoryPassageId = passageId'
+    , cortexMemorySourceKind = "checkpoint"
+    , cortexMemorySourceItemId = Nothing
+    , cortexMemorySourceCheckpointId = Just (uuidFromWord 99)
+    , cortexMemorySourceVersionId = uuidFromWord 100
+    , cortexMemoryChatSessionId = Just (uuidFromWord 200)
+    , cortexMemoryPassageOrder = 0
+    , cortexMemorySourceTitle = "Checkpoint"
+    , cortexMemorySectionHeading = Nothing
+    , cortexMemoryPassageText = "Prior continuation context."
+    , cortexMemoryEntities = []
+    , cortexMemoryReportType = Nothing
+    , cortexMemoryTimeRange = Nothing
+    , cortexMemoryPassageTokenCount = 4
+    , cortexMemorySourceCreatedAt = updatedAt'
+    , cortexMemorySourceUpdatedAt = updatedAt'
     }
 
 mkRanked :: Double -> CortexMemoryPassage -> CortexMemoryRankedPassage
 mkRanked score passage =
   CortexMemoryRankedPassage
-    { cortexRankedPassage = passage,
-      cortexRankedCandidate =
+    { cortexRankedPassage = passage
+    , cortexRankedCandidate =
         CortexMemoryCandidate
-          { cortexCandidatePassage = passage,
-            cortexCandidateLexicalScore = Nothing,
-            cortexCandidateFuzzyScore = Nothing,
-            cortexCandidateSemanticScore = Just score,
-            cortexCandidateMatchedTerms = [],
-            cortexCandidateMatchedFields = [],
-            cortexCandidateSources = [],
-            cortexCandidateFusionScore = 0
-          },
-      cortexRankedFinalScore = score,
-      cortexRankedConflictNote = Nothing
+          { cortexCandidatePassage = passage
+          , cortexCandidateLexicalScore = Nothing
+          , cortexCandidateFuzzyScore = Nothing
+          , cortexCandidateSemanticScore = Just score
+          , cortexCandidateMatchedTerms = []
+          , cortexCandidateMatchedFields = []
+          , cortexCandidateSources = []
+          , cortexCandidateFusionScore = 0
+          }
+    , cortexRankedFinalScore = score
+    , cortexRankedConflictNote = Nothing
     }
 
 mkRankedWithMeta :: Double -> Text -> Maybe Text -> [Text] -> CortexMemoryRankedPassage
 mkRankedWithMeta score title heading entities =
   let passage =
         (mkPassage (uuidFromWord (round (score * 1000))) baseTime)
-          { cortexMemorySourceTitle = title,
-            cortexMemorySectionHeading = heading,
-            cortexMemoryEntities = entities
+          { cortexMemorySourceTitle = title
+          , cortexMemorySectionHeading = heading
+          , cortexMemoryEntities = entities
           }
    in mkRanked score passage
 

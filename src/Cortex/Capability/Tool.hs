@@ -1,6 +1,6 @@
 module Cortex.Capability.Tool
-  ( module Cortex.Capability.Tool.Definition,
-    module Cortex.Capability.Tool.Record,
+  ( module Cortex.Capability.Tool.Definition
+  , module Cortex.Capability.Tool.Record
   )
 where
 

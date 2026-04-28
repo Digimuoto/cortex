@@ -3,13 +3,14 @@
 module Platform.DurableTask.CheckpointSpec (spec) where
 
 import Data.Aeson qualified as Aeson
-import Platform.DurableTask.Checkpoint
-  ( CheckpointCompatibilityFailure (..),
-    buildCheckpointEnvelope,
-    parseCheckpointEnvelope,
-    validateCheckpointEnvelope,
-  )
 import Test.Hspec
+
+import Platform.DurableTask.Checkpoint
+  ( CheckpointCompatibilityFailure (..)
+  , buildCheckpointEnvelope
+  , parseCheckpointEnvelope
+  , validateCheckpointEnvelope
+  )
 
 spec :: Spec
 spec = do

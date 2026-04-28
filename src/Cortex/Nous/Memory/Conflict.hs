@@ -2,18 +2,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Memory.Conflict
-  ( resolveMemoryConflicts,
+  ( resolveMemoryConflicts
   )
 where
 
 import Control.Applicative ((<|>))
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryEntityConfig (..),
-    CortexMemoryPassage (..),
-    CortexMemoryRankedPassage (..),
-    CortexMemoryRetrievalSource (..),
-  )
 import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
@@ -23,7 +16,16 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 
-resolveMemoryConflicts :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> [CortexMemoryRankedPassage]
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryEntityConfig (..)
+  , CortexMemoryPassage (..)
+  , CortexMemoryRankedPassage (..)
+  , CortexMemoryRetrievalSource (..)
+  )
+
+resolveMemoryConflicts
+  :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> [CortexMemoryRankedPassage]
 resolveMemoryConflicts entityConfig =
   suppressConflicts entityConfig
     . annotateSurvivors entityConfig
@@ -48,33 +50,35 @@ dedupeByVersionAndSection rows =
 
 dedupeKey :: CortexMemoryRankedPassage -> (Maybe UUID, Maybe UUID, UUID, Text)
 dedupeKey row =
-  ( row.cortexRankedPassage.cortexMemorySourceItemId,
-    row.cortexRankedPassage.cortexMemorySourceCheckpointId,
-    row.cortexRankedPassage.cortexMemorySourceVersionId,
-    normalizeHeadingKey row.cortexRankedPassage
+  ( row.cortexRankedPassage.cortexMemorySourceItemId
+  , row.cortexRankedPassage.cortexMemorySourceCheckpointId
+  , row.cortexRankedPassage.cortexMemorySourceVersionId
+  , normalizeHeadingKey row.cortexRankedPassage
   )
 
-suppressConflicts :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> [CortexMemoryRankedPassage]
+suppressConflicts
+  :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> [CortexMemoryRankedPassage]
 suppressConflicts entityConfig rows =
   filter (\row -> row.cortexRankedPassage.cortexMemoryPassageId `Set.notMember` suppressedIds) rows
   where
     suppressedIds =
       Set.fromList
         [ loser.cortexRankedPassage.cortexMemoryPassageId
-        | groupRows <- Map.elems grouped,
-          winner : losers <- [sortConflictGroup groupRows],
-          hasOpposingStances entityConfig (winner : losers),
-          loser <- losers
+        | groupRows <- Map.elems grouped
+        , winner : losers <- [sortConflictGroup groupRows]
+        , hasOpposingStances entityConfig (winner : losers)
+        , loser <- losers
         ]
     grouped =
       Map.fromListWith
         (<>)
         [ (key, [row])
-        | row <- rows,
-          Just key <- [conflictKey row]
+        | row <- rows
+        , Just key <- [conflictKey row]
         ]
 
-annotateSurvivors :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> [CortexMemoryRankedPassage]
+annotateSurvivors
+  :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> [CortexMemoryRankedPassage]
 annotateSurvivors entityConfig rows =
   fmap annotate rows
   where
@@ -82,8 +86,8 @@ annotateSurvivors entityConfig rows =
       Map.fromListWith
         (<>)
         [ (key, [row])
-        | row <- rows,
-          Just key <- [conflictKey row]
+        | row <- rows
+        , Just key <- [conflictKey row]
         ]
     conflictNotes =
       Map.fromList $
@@ -124,7 +128,8 @@ conflictKey row = do
 
 normalizeHeadingKey :: CortexMemoryPassage -> Text
 normalizeHeadingKey passage =
-  normalizeWhitespaceLower (fromMaybe passage.cortexMemorySourceTitle passage.cortexMemorySectionHeading)
+  normalizeWhitespaceLower
+    (fromMaybe passage.cortexMemorySourceTitle passage.cortexMemorySectionHeading)
 
 hasOpposingStances :: CortexMemoryEntityConfig -> [CortexMemoryRankedPassage] -> Bool
 hasOpposingStances entityConfig rows
@@ -137,7 +142,8 @@ hasOpposingStances entityConfig rows
 data ConflictStance = ConflictPositive | ConflictNegative
   deriving stock (Eq, Show)
 
-detectConflictStance :: CortexMemoryEntityConfig -> CortexMemoryRankedPassage -> Maybe ConflictStance
+detectConflictStance
+  :: CortexMemoryEntityConfig -> CortexMemoryRankedPassage -> Maybe ConflictStance
 detectConflictStance entityConfig row =
   let haystack =
         normalizeWhitespaceLower

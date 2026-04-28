@@ -3,30 +3,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Memory.Candidates
-  ( CortexMemorySearchPlan (..),
-    QueryComplexity (..),
-    buildMemorySearchPlan,
-    classifyQueryComplexity,
-    generateMemoryCandidates,
-    mergeMemoryCandidates,
+  ( CortexMemorySearchPlan (..)
+  , QueryComplexity (..)
+  , buildMemorySearchPlan
+  , classifyQueryComplexity
+  , generateMemoryCandidates
+  , mergeMemoryCandidates
   )
 where
 
-import Cortex.Nous.Memory.Host
-  ( CortexMemoryHost (..),
-  )
-import Cortex.Nous.Memory.Query
-  ( CortexMemoryQuery (..),
-    cortexMemoryQueryIsBlank,
-    cortexMemoryQueryPositiveTerms,
-  )
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryEntityConfig (..),
-    CortexMemoryMatchedField (..),
-    CortexMemoryPassage (..),
-    CortexMemoryRetrievalSource (..),
-  )
 import Data.List (sortBy)
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
@@ -37,9 +22,26 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 
--- | Classified query complexity determines which search strategies to use.
--- Simpler queries skip expensive strategies (semantic) to reduce latency
--- and prevent noise injection.
+import Cortex.Nous.Memory.Host
+  ( CortexMemoryHost (..)
+  )
+import Cortex.Nous.Memory.Query
+  ( CortexMemoryQuery (..)
+  , cortexMemoryQueryIsBlank
+  , cortexMemoryQueryPositiveTerms
+  )
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryEntityConfig (..)
+  , CortexMemoryMatchedField (..)
+  , CortexMemoryPassage (..)
+  , CortexMemoryRetrievalSource (..)
+  )
+
+{- | Classified query complexity determines which search strategies to use.
+Simpler queries skip expensive strategies (semantic) to reduce latency
+and prevent noise injection.
+-}
 data QueryComplexity
   = -- | Blank query — no search at all, only anchored/direct items
     QueryBlank
@@ -56,27 +58,29 @@ classifyQueryComplexity entityConfig query
   | cortexMemoryQueryIsBlank query = QueryBlank
   | null query.cortexMemoryQueryTerms = QueryBlank
   | cortexMemoryIsEntityOnlyQuery entityConfig query.cortexMemoryQueryRawText = QueryEntityLookup
-  | length query.cortexMemoryQueryTerms <= 2 && not (cortexMemoryQueryHasEntityIntent entityConfig query.cortexMemoryQueryRawText) = QuerySimpleLexical
+  | length query.cortexMemoryQueryTerms <= 2
+      && not (cortexMemoryQueryHasEntityIntent entityConfig query.cortexMemoryQueryRawText) =
+      QuerySimpleLexical
   | otherwise = QueryFull
 
 data CortexMemorySearchPlan = CortexMemorySearchPlan
-  { cmspQuery :: CortexMemoryQuery,
-    cmspUseLexical :: Bool,
-    cmspUseFuzzy :: Bool,
-    cmspUseSemantic :: Bool,
-    cmspAnchoredItemIds :: [UUID],
-    cmspSessionId :: Maybe UUID,
-    cmspCandidateLimit :: Int
+  { cmspQuery :: CortexMemoryQuery
+  , cmspUseLexical :: Bool
+  , cmspUseFuzzy :: Bool
+  , cmspUseSemantic :: Bool
+  , cmspAnchoredItemIds :: [UUID]
+  , cmspSessionId :: Maybe UUID
+  , cmspCandidateLimit :: Int
   }
   deriving stock (Eq, Show)
 
-buildMemorySearchPlan ::
-  CortexMemoryEntityConfig ->
-  CortexMemoryQuery ->
-  Maybe UUID ->
-  [UUID] ->
-  Int ->
-  CortexMemorySearchPlan
+buildMemorySearchPlan
+  :: CortexMemoryEntityConfig
+  -> CortexMemoryQuery
+  -> Maybe UUID
+  -> [UUID]
+  -> Int
+  -> CortexMemorySearchPlan
 buildMemorySearchPlan entityConfig query maybeSessionId anchoredItemIds candidateLimit =
   let complexity = classifyQueryComplexity entityConfig query
       (useLex, useFuz, useSem) = case complexity of
@@ -85,13 +89,13 @@ buildMemorySearchPlan entityConfig query maybeSessionId anchoredItemIds candidat
         QuerySimpleLexical -> (True, True, False)
         QueryFull -> (True, True, True)
    in CortexMemorySearchPlan
-        { cmspQuery = query,
-          cmspUseLexical = useLex,
-          cmspUseFuzzy = useFuz,
-          cmspUseSemantic = useSem,
-          cmspAnchoredItemIds = trimmedAnchoredItemIds,
-          cmspSessionId = maybeSessionId,
-          cmspCandidateLimit = min 80 candidateLimit
+        { cmspQuery = query
+        , cmspUseLexical = useLex
+        , cmspUseFuzzy = useFuz
+        , cmspUseSemantic = useSem
+        , cmspAnchoredItemIds = trimmedAnchoredItemIds
+        , cmspSessionId = maybeSessionId
+        , cmspCandidateLimit = min 80 candidateLimit
         }
   where
     dedupedAnchoredItemIds = List.nub anchoredItemIds
@@ -101,12 +105,12 @@ buildMemorySearchPlan entityConfig query maybeSessionId anchoredItemIds candidat
         Just explicitTargetItemId ->
           explicitTargetItemId : take 8 (filter (/= explicitTargetItemId) dedupedAnchoredItemIds)
 
-generateMemoryCandidates ::
-  (Monad m) =>
-  CortexMemoryHost m ->
-  CortexMemorySearchPlan ->
-  [CortexMemoryPassage] ->
-  m [CortexMemoryCandidate]
+generateMemoryCandidates
+  :: Monad m
+  => CortexMemoryHost m
+  -> CortexMemorySearchPlan
+  -> [CortexMemoryPassage]
+  -> m [CortexMemoryCandidate]
 generateMemoryCandidates host plan sessionPassages = do
   directAndAnchoredPassages <-
     if null plan.cmspAnchoredItemIds
@@ -175,20 +179,24 @@ mergeMemoryCandidates query candidates =
       annotateCandidate
         query'
         candidate
-          { cortexCandidateSources = [source],
-            cortexCandidateFusionScore = sourceBias source + reciprocalRank rankIndex
+          { cortexCandidateSources = [source]
+          , cortexCandidateFusionScore = sourceBias source + reciprocalRank rankIndex
           }
 
 combineCandidates :: CortexMemoryCandidate -> CortexMemoryCandidate -> CortexMemoryCandidate
 combineCandidates newer older =
   older
-    { cortexCandidateLexicalScore = pickMax older.cortexCandidateLexicalScore newer.cortexCandidateLexicalScore,
-      cortexCandidateFuzzyScore = pickMax older.cortexCandidateFuzzyScore newer.cortexCandidateFuzzyScore,
-      cortexCandidateSemanticScore = pickMax older.cortexCandidateSemanticScore newer.cortexCandidateSemanticScore,
-      cortexCandidateMatchedTerms = ordNub (older.cortexCandidateMatchedTerms <> newer.cortexCandidateMatchedTerms),
-      cortexCandidateMatchedFields = ordNub (older.cortexCandidateMatchedFields <> newer.cortexCandidateMatchedFields),
-      cortexCandidateSources = ordNub (older.cortexCandidateSources <> newer.cortexCandidateSources),
-      cortexCandidateFusionScore = older.cortexCandidateFusionScore + newer.cortexCandidateFusionScore
+    { cortexCandidateLexicalScore =
+        pickMax older.cortexCandidateLexicalScore newer.cortexCandidateLexicalScore
+    , cortexCandidateFuzzyScore = pickMax older.cortexCandidateFuzzyScore newer.cortexCandidateFuzzyScore
+    , cortexCandidateSemanticScore =
+        pickMax older.cortexCandidateSemanticScore newer.cortexCandidateSemanticScore
+    , cortexCandidateMatchedTerms =
+        ordNub (older.cortexCandidateMatchedTerms <> newer.cortexCandidateMatchedTerms)
+    , cortexCandidateMatchedFields =
+        ordNub (older.cortexCandidateMatchedFields <> newer.cortexCandidateMatchedFields)
+    , cortexCandidateSources = ordNub (older.cortexCandidateSources <> newer.cortexCandidateSources)
+    , cortexCandidateFusionScore = older.cortexCandidateFusionScore + newer.cortexCandidateFusionScore
     }
   where
     pickMax left right =
@@ -197,11 +205,11 @@ combineCandidates newer older =
         (other, Nothing) -> other
         (Just x, Just y) -> Just (max x y)
 
-candidateOrderingForSource ::
-  CortexMemoryRetrievalSource ->
-  CortexMemoryCandidate ->
-  CortexMemoryCandidate ->
-  Ordering
+candidateOrderingForSource
+  :: CortexMemoryRetrievalSource
+  -> CortexMemoryCandidate
+  -> CortexMemoryCandidate
+  -> Ordering
 candidateOrderingForSource source =
   comparing (Down . candidateScoreForSource source)
     <> comparing (Down . (.cortexMemorySourceUpdatedAt) . cortexCandidatePassage)
@@ -217,10 +225,10 @@ candidateScoreForSource source candidate =
     CortexMemoryRetrievedFromDirectTarget -> sourceBias source
     CortexMemoryRetrievedFromAnchored -> sourceBias source
 
-directAndAnchoredCandidates ::
-  CortexMemoryQuery ->
-  [CortexMemoryPassage] ->
-  [CortexMemoryCandidate]
+directAndAnchoredCandidates
+  :: CortexMemoryQuery
+  -> [CortexMemoryPassage]
+  -> [CortexMemoryCandidate]
 directAndAnchoredCandidates query passages =
   concatMap buildForItem grouped
   where
@@ -230,8 +238,8 @@ directAndAnchoredCandidates query passages =
         Map.fromListWith
           (<>)
           [ (itemId, [passage])
-          | passage <- passages,
-            itemId <- maybeToList passage.cortexMemorySourceItemId
+          | passage <- passages
+          , itemId <- maybeToList passage.cortexMemorySourceItemId
           ]
     buildForItem (itemId, itemPassages) =
       let sortedPassages = sortBy (comparing (.cortexMemoryPassageOrder)) itemPassages
@@ -246,14 +254,14 @@ directAndAnchoredCandidates query passages =
 baseCandidate :: CortexMemoryRetrievalSource -> CortexMemoryPassage -> CortexMemoryCandidate
 baseCandidate source passage =
   CortexMemoryCandidate
-    { cortexCandidatePassage = passage,
-      cortexCandidateLexicalScore = Nothing,
-      cortexCandidateFuzzyScore = Nothing,
-      cortexCandidateSemanticScore = Nothing,
-      cortexCandidateMatchedTerms = [],
-      cortexCandidateMatchedFields = [],
-      cortexCandidateSources = [source],
-      cortexCandidateFusionScore = sourceBias source
+    { cortexCandidatePassage = passage
+    , cortexCandidateLexicalScore = Nothing
+    , cortexCandidateFuzzyScore = Nothing
+    , cortexCandidateSemanticScore = Nothing
+    , cortexCandidateMatchedTerms = []
+    , cortexCandidateMatchedFields = []
+    , cortexCandidateSources = [source]
+    , cortexCandidateFusionScore = sourceBias source
     }
 
 sourceBias :: CortexMemoryRetrievalSource -> Double
@@ -268,8 +276,8 @@ sourceBias = \case
 annotateCandidate :: CortexMemoryQuery -> CortexMemoryCandidate -> CortexMemoryCandidate
 annotateCandidate query candidate =
   candidate
-    { cortexCandidateMatchedTerms = ordNub matchedTerms,
-      cortexCandidateMatchedFields = ordNub matchedFields
+    { cortexCandidateMatchedTerms = ordNub matchedTerms
+    , cortexCandidateMatchedFields = ordNub matchedFields
     }
   where
     positiveTerms = cortexMemoryQueryPositiveTerms query
@@ -279,19 +287,19 @@ annotateCandidate query candidate =
     entitiesUpper = Set.fromList (fmap T.toUpper candidate.cortexCandidatePassage.cortexMemoryEntities)
     matchedTerms =
       [ term
-      | term <- positiveTerms,
-        termMatches term titleHaystack headingHaystack bodyHaystack entitiesUpper
+      | term <- positiveTerms
+      , termMatches term titleHaystack headingHaystack bodyHaystack entitiesUpper
       ]
     matchedFields =
       concatMap (fieldsForTerm titleHaystack headingHaystack bodyHaystack entitiesUpper) matchedTerms
 
-fieldsForTerm ::
-  Text ->
-  Text ->
-  Text ->
-  Set.Set Text ->
-  Text ->
-  [CortexMemoryMatchedField]
+fieldsForTerm
+  :: Text
+  -> Text
+  -> Text
+  -> Set.Set Text
+  -> Text
+  -> [CortexMemoryMatchedField]
 fieldsForTerm titleHaystack headingHaystack bodyHaystack entitiesUpper term =
   ordNub $
     [ CortexMemoryMatchedTitle
@@ -314,5 +322,5 @@ termMatches term titleHaystack headingHaystack bodyHaystack entitiesUpper =
     || term `T.isInfixOf` bodyHaystack
     || Set.member (T.toUpper term) entitiesUpper
 
-ordNub :: (Ord a) => [a] -> [a]
+ordNub :: Ord a => [a] -> [a]
 ordNub = Set.toList . Set.fromList

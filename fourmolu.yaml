@@ -1,8 +1,26 @@
+# Cortex uses Fourmolu for formatting and import normalization.
+#
+# Import grouping keeps third-party imports first, followed by Cortex modules
+# and then Platform runtime modules. Fourmolu sorts declarations
+# alphabetically inside each group and inserts a blank line between groups.
 indentation: 2
 column-limit: 100
 function-arrows: leading
 comma-style: leading
 import-export-style: leading
+import-grouping:
+  - name: Third-party imports
+    rules:
+      - match: all
+        priority: 100
+  - name: Cortex imports
+    rules:
+      - glob: Cortex
+      - glob: Cortex.**
+  - name: Platform imports
+    rules:
+      - glob: Platform
+      - glob: Platform.**
 indent-wheres: true
 record-brace-space: true
 newlines-between-decls: 1

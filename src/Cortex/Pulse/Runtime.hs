@@ -1,5 +1,5 @@
 module Cortex.Pulse.Runtime
-  ( module Cortex.Pulse.GraphRuntime,
+  ( module Cortex.Pulse.GraphRuntime
   )
 where
 

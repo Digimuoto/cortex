@@ -4,31 +4,6 @@
 
 module Cortex.Wire.CompileSpec (spec) where
 
-import Cortex.Algebra.Graph (successors)
-import Cortex.Wire (WirePayloadKind (..))
-import Cortex.Wire.Circuit.Artifact
-  ( CircuitConditionNode (..),
-    CompiledCircuit (..),
-    CompiledCircuitFragment (..),
-    CompiledCircuitNode (..),
-  )
-import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
-import Cortex.Wire.Compile (compileWireFragmentText, compileWireText, compileWireTextWithEnv)
-import Cortex.Wire.Contract
-  ( WireCompileEnv (..),
-    WireContractSpec (..),
-    WireProjectionMode (..),
-    emptyWireCompileEnv,
-    wireContractRegistryFromList,
-  )
-import Cortex.Wire.Executor
-  ( WireExecutorEffect (..),
-    WireExecutorId (..),
-    wireExecutorProjectionFromPorts,
-    wireExecutorRegistryFromList,
-  )
-import Cortex.Wire.Pure (pureWireExecutorProjection)
-import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -36,6 +11,32 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Test.Hspec
+
+import Cortex.Algebra.Graph (successors)
+import Cortex.Wire (WirePayloadKind (..))
+import Cortex.Wire.Circuit.Artifact
+  ( CircuitConditionNode (..)
+  , CompiledCircuit (..)
+  , CompiledCircuitFragment (..)
+  , CompiledCircuitNode (..)
+  )
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
+import Cortex.Wire.Compile (compileWireFragmentText, compileWireText, compileWireTextWithEnv)
+import Cortex.Wire.Contract
+  ( WireCompileEnv (..)
+  , WireContractSpec (..)
+  , WireProjectionMode (..)
+  , emptyWireCompileEnv
+  , wireContractRegistryFromList
+  )
+import Cortex.Wire.Executor
+  ( WireExecutorEffect (..)
+  , WireExecutorId (..)
+  , wireExecutorProjectionFromPorts
+  , wireExecutorRegistryFromList
+  )
+import Cortex.Wire.Pure (pureWireExecutorProjection)
+import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 
 spec :: Spec
 spec = describe "Cortex.Wire.Compile" $ do
@@ -105,16 +106,16 @@ spec = describe "Cortex.Wire.Compile" $ do
               `shouldBe` Just
                 ( Aeson.toJSON
                     [ Aeson.object
-                        [ "node" Aeson..= ("validate_plan" :: T.Text),
-                          "port" Aeson..= ("ResearchPlan_1" :: T.Text),
-                          "contract" Aeson..= ("ResearchPlan" :: T.Text),
-                          "label" Aeson..= Aeson.Null
-                        ],
-                      Aeson.object
-                        [ "node" Aeson..= ("validate_plan" :: T.Text),
-                          "port" Aeson..= ("PlanIssue_2" :: T.Text),
-                          "contract" Aeson..= ("PlanIssue" :: T.Text),
-                          "label" Aeson..= Aeson.Null
+                        [ "node" Aeson..= ("validate_plan" :: T.Text)
+                        , "port" Aeson..= ("ResearchPlan_1" :: T.Text)
+                        , "contract" Aeson..= ("ResearchPlan" :: T.Text)
+                        , "label" Aeson..= Aeson.Null
+                        ]
+                    , Aeson.object
+                        [ "node" Aeson..= ("validate_plan" :: T.Text)
+                        , "port" Aeson..= ("PlanIssue_2" :: T.Text)
+                        , "contract" Aeson..= ("PlanIssue" :: T.Text)
+                        , "label" Aeson..= Aeson.Null
                         ]
                     ]
                 )
@@ -139,7 +140,8 @@ spec = describe "Cortex.Wire.Compile" $ do
           `shouldBe` Set.singleton selectRef
         conditionNode.circuitConditionNodeElseFragment `shouldBe` Nothing
       other ->
-        expectationFailure ("expected one compiled tail-position select condition node, got: " <> show other)
+        expectationFailure
+          ("expected one compiled tail-position select condition node, got: " <> show other)
 
   it "compiles n-way select(...) by lowering to nested binary latent condition nodes" $ do
     compiled <- requireRight (compileWireText nWaySelectSourceText)
@@ -164,10 +166,10 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv
         knownContractsEnv
         ( T.unlines
-            [ "contract LocalOnly;",
-              "node local : -> LocalOnly = @llm.local {};",
-              "",
-              "local"
+            [ "contract LocalOnly;"
+            , "node local : -> LocalOnly = @llm.local {};"
+            , ""
+            , "local"
             ]
         )
         `shouldSatisfy` isRight
@@ -176,11 +178,11 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv
         knownContractsEnv
         ( T.unlines
-            [ "contract LocalOnly;",
-              "contract LocalOnly;",
-              "node local : -> LocalOnly = @llm.local {};",
-              "",
-              "local"
+            [ "contract LocalOnly;"
+            , "contract LocalOnly;"
+            , "node local : -> LocalOnly = @llm.local {};"
+            , ""
+            , "local"
             ]
         )
         `shouldSatisfy` isRight
@@ -207,7 +209,8 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldSatisfy` isRight
 
     it "lowers top-level CorePure helpers into pure node config" $ do
-      compiled <- requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithSharedHelperSourceText)
+      compiled <-
+        requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithSharedHelperSourceText)
       case Map.lookup (CircuitNodeRef "classify") compiled.compiledCircuitNodes of
         Just (CompiledCircuitTask taskNode) ->
           taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureBinding "acceptedItem"
@@ -215,7 +218,8 @@ spec = describe "Cortex.Wire.Compile" $ do
           expectationFailure ("expected compiled pure task node, got: " <> show other)
 
     it "lowers node-local CorePure bindings and port-keyed output equations" $ do
-      compiled <- requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithLocalBindingsSourceText)
+      compiled <-
+        requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithLocalBindingsSourceText)
       case Map.lookup (CircuitNodeRef "classify") compiled.compiledCircuitNodes of
         Just (CompiledCircuitTask taskNode) -> do
           taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureBinding "acceptedItem"
@@ -231,196 +235,197 @@ spec = describe "Cortex.Wire.Compile" $ do
 
     it "rejects authored @pure executor applications" $
       compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
-        `shouldBe` Left (WireParseError "Pure nodes must be authored with output equations, not @pure executor application.")
+        `shouldBe` Left
+          (WireParseError "Pure nodes must be authored with output equations, not @pure executor application.")
 
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
-    [ "node planner : -> PlannerOutput = @llm.planner {};",
-      "node analyst : <- PlannerOutput -> AnalysisFragment = @llm.analyst {};",
-      "",
-      "planner => analyst"
+    [ "node planner : -> PlannerOutput = @llm.planner {};"
+    , "node analyst : <- PlannerOutput -> AnalysisFragment = @llm.analyst {};"
+    , ""
+    , "planner => analyst"
     ]
 
 commaOverlayFragmentSourceText :: T.Text
 commaOverlayFragmentSourceText =
   T.unlines
-    [ "node stress_alpha : -> AnalysisFragment = @llm.alpha {};",
-      "node stress_beta : -> AnalysisFragment = @llm.beta {};",
-      "",
-      "stress_alpha, stress_beta"
+    [ "node stress_alpha : -> AnalysisFragment = @llm.alpha {};"
+    , "node stress_beta : -> AnalysisFragment = @llm.beta {};"
+    , ""
+    , "stress_alpha, stress_beta"
     ]
 
 typoContractSourceText :: T.Text
 typoContractSourceText =
   T.unlines
-    [ "node planner : -> PlannerOuput = @llm.planner {};",
-      "",
-      "planner"
+    [ "node planner : -> PlannerOuput = @llm.planner {};"
+    , ""
+    , "planner"
     ]
 
 projectedExecutorSourceText :: T.Text
 projectedExecutorSourceText =
   T.unlines
-    [ "node projected : -> PlannerOutput = @llm.projected {};",
-      "",
-      "projected"
+    [ "node projected : -> PlannerOutput = @llm.projected {};"
+    , ""
+    , "projected"
     ]
 
 missingExecutorSourceText :: T.Text
 missingExecutorSourceText =
   T.unlines
-    [ "node missing : -> PlannerOutput = @llm.missing {};",
-      "",
-      "missing"
+    [ "node missing : -> PlannerOutput = @llm.missing {};"
+    , ""
+    , "missing"
     ]
 
 mismatchedExecutorPortsSourceText :: T.Text
 mismatchedExecutorPortsSourceText =
   T.unlines
-    [ "node projected : -> AnalysisFragment = @llm.projected {};",
-      "",
-      "projected"
+    [ "node projected : -> AnalysisFragment = @llm.projected {};"
+    , ""
+    , "projected"
     ]
 
 pureExecutorSourceText :: T.Text
 pureExecutorSourceText =
   T.unlines
-    [ "node score :",
-      "  <- evidence_score: Float",
-      "  <- recency_score: Float",
-      "  -> Float = pure (evidence_score + recency_score);",
-      "",
-      "score"
+    [ "node score :"
+    , "  <- evidence_score: Float"
+    , "  <- recency_score: Float"
+    , "  -> Float = pure (evidence_score + recency_score);"
+    , ""
+    , "score"
     ]
 
 pureExecutorWithSharedHelperSourceText :: T.Text
 pureExecutorWithSharedHelperSourceText =
   T.unlines
-    [ "let acceptedItem = x: x.score >= 0.7;",
-      "",
-      "node classify :",
-      "  <- evidence: EvidenceSet",
-      "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);",
-      "",
-      "classify"
+    [ "let acceptedItem = x: x.score >= 0.7;"
+    , ""
+    , "node classify :"
+    , "  <- evidence: EvidenceSet"
+    , "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);"
+    , ""
+    , "classify"
     ]
 
 pureExecutorWithLocalBindingsSourceText :: T.Text
 pureExecutorWithLocalBindingsSourceText =
   T.unlines
-    [ "let acceptedItem = x: x.score >= 0.7;",
-      "",
-      "node classify :",
-      "  <- evidence: EvidenceSet",
-      "  let",
-      "    items = evidence.items;",
-      "    acceptedItems = filter acceptedItem items;",
-      "  in",
-      "  -> accepted: AcceptedSet = pure (acceptedItems)",
-      "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);",
-      "",
-      "classify"
+    [ "let acceptedItem = x: x.score >= 0.7;"
+    , ""
+    , "node classify :"
+    , "  <- evidence: EvidenceSet"
+    , "  let"
+    , "    items = evidence.items;"
+    , "    acceptedItems = filter acceptedItem items;"
+    , "  in"
+    , "  -> accepted: AcceptedSet = pure (acceptedItems)"
+    , "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);"
+    , ""
+    , "classify"
     ]
 
 duplicatePureAndWireLetSourceText :: T.Text
 duplicatePureAndWireLetSourceText =
   T.unlines
-    [ "let acceptedItem = x: x.score >= 0.7;",
-      "let acceptedItem = \"ordinary\";",
-      "",
-      "node classify :",
-      "  <- evidence: EvidenceSet",
-      "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);",
-      "",
-      "classify"
+    [ "let acceptedItem = x: x.score >= 0.7;"
+    , "let acceptedItem = \"ordinary\";"
+    , ""
+    , "node classify :"
+    , "  <- evidence: EvidenceSet"
+    , "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);"
+    , ""
+    , "classify"
     ]
 
 legacyPureExecutorSourceText :: T.Text
 legacyPureExecutorSourceText =
   T.unlines
-    [ "node score :",
-      "  <- evidence_score: Float",
-      "  <- recency_score: Float",
-      "  -> Float = @pure { expr = \"evidence_score + recency_score\"; };",
-      "",
-      "score"
+    [ "node score :"
+    , "  <- evidence_score: Float"
+    , "  <- recency_score: Float"
+    , "  -> Float = @pure { expr = \"evidence_score + recency_score\"; };"
+    , ""
+    , "score"
     ]
 
 bareLlmSourceText :: T.Text
 bareLlmSourceText =
   T.unlines
-    [ "node planner : -> PlannerOutput = @llm {};",
-      "",
-      "planner"
+    [ "node planner : -> PlannerOutput = @llm {};"
+    , ""
+    , "planner"
     ]
 
 wrapperSourceText :: T.Text
 wrapperSourceText =
   T.unlines
-    [ "let analyst_base = @llm.analyst {",
-      "  memory = topological { preset = \"analyst\"; };",
-      "};",
-      "",
-      "node planner : -> PlannerOutput = @llm.planner {};",
-      "node analyst : <- PlannerOutput -> AnalysisFragment = analyst_base;",
-      "",
-      "planner => analyst => @cortex.deep_report {",
-      "  title = \"Wrapper Smoke\";",
-      "  description = \"Checks metadata lifting through @cortex.deep_report.\";",
-      "  match.skill = \"deep-report\";",
-      "  match.priority = 1;",
-      "  render.aggregateOpenGaps = true;",
-      "  workspace.sourceKind = \"deep-report\";",
-      "}"
+    [ "let analyst_base = @llm.analyst {"
+    , "  memory = topological { preset = \"analyst\"; };"
+    , "};"
+    , ""
+    , "node planner : -> PlannerOutput = @llm.planner {};"
+    , "node analyst : <- PlannerOutput -> AnalysisFragment = analyst_base;"
+    , ""
+    , "planner => analyst => @cortex.deep_report {"
+    , "  title = \"Wrapper Smoke\";"
+    , "  description = \"Checks metadata lifting through @cortex.deep_report.\";"
+    , "  match.skill = \"deep-report\";"
+    , "  match.priority = 1;"
+    , "  render.aggregateOpenGaps = true;"
+    , "  workspace.sourceKind = \"deep-report\";"
+    , "}"
     ]
 
 selectSourceText :: T.Text
 selectSourceText =
   T.unlines
-    [ "node draft_plan : -> DraftPlan = @llm.plan {};",
-      "node validate_plan : <- DraftPlan -> ResearchPlan | PlanIssue = @llm.validate_plan {};",
-      "node gather_missing_constraints : <- PlanIssue -> PlanIssue = @llm.gather_missing_constraints {};",
-      "node repair_plan : <- PlanIssue -> ResearchPlan = @llm.repair_plan {};",
-      "node publish_report : <- ResearchPlan -> ReportArtifactRef = @artifact.publish_report {};",
-      "",
-      "draft_plan => validate_plan select(",
-      "  ResearchPlan: (),",
-      "  PlanIssue: (gather_missing_constraints => repair_plan)",
-      ") => publish_report"
+    [ "node draft_plan : -> DraftPlan = @llm.plan {};"
+    , "node validate_plan : <- DraftPlan -> ResearchPlan | PlanIssue = @llm.validate_plan {};"
+    , "node gather_missing_constraints : <- PlanIssue -> PlanIssue = @llm.gather_missing_constraints {};"
+    , "node repair_plan : <- PlanIssue -> ResearchPlan = @llm.repair_plan {};"
+    , "node publish_report : <- ResearchPlan -> ReportArtifactRef = @artifact.publish_report {};"
+    , ""
+    , "draft_plan => validate_plan select("
+    , "  ResearchPlan: (),"
+    , "  PlanIssue: (gather_missing_constraints => repair_plan)"
+    , ") => publish_report"
     ]
 
 bareSelectSourceText :: T.Text
 bareSelectSourceText =
   T.unlines
-    [ "node validate_plan : <- DraftPlan -> ResearchPlan | PlanIssue = @llm.validate_plan {};",
-      "node gather_missing_constraints : <- PlanIssue -> PlanIssue = @llm.gather_missing_constraints {};",
-      "node repair_plan : <- PlanIssue -> ResearchPlan = @llm.repair_plan {};",
-      "",
-      "validate_plan select(",
-      "  ResearchPlan: (),",
-      "  PlanIssue: (gather_missing_constraints => repair_plan)",
-      ")"
+    [ "node validate_plan : <- DraftPlan -> ResearchPlan | PlanIssue = @llm.validate_plan {};"
+    , "node gather_missing_constraints : <- PlanIssue -> PlanIssue = @llm.gather_missing_constraints {};"
+    , "node repair_plan : <- PlanIssue -> ResearchPlan = @llm.repair_plan {};"
+    , ""
+    , "validate_plan select("
+    , "  ResearchPlan: (),"
+    , "  PlanIssue: (gather_missing_constraints => repair_plan)"
+    , ")"
     ]
 
 nWaySelectSourceText :: T.Text
 nWaySelectSourceText =
   T.unlines
-    [ "node draft_plan : -> DraftPlan = @llm.plan {};",
-      "node classify_plan : <- DraftPlan -> ResearchPlan | MinorIssue | MajorIssue = @llm.classify_plan {};",
-      "node minor_repair : <- MinorIssue -> ResearchPlan = @llm.minor_repair {};",
-      "node gather_major_context : <- MajorIssue -> MajorIssue = @llm.gather_major_context {};",
-      "node major_repair : <- MajorIssue -> ResearchPlan = @llm.major_repair {};",
-      "node publish_report : <- ResearchPlan -> ReportArtifactRef = @artifact.publish_report {};",
-      "",
-      "draft_plan => classify_plan select(",
-      "  ResearchPlan: (),",
-      "  MinorIssue: minor_repair,",
-      "  MajorIssue: (gather_major_context => major_repair)",
-      ") => publish_report"
+    [ "node draft_plan : -> DraftPlan = @llm.plan {};"
+    , "node classify_plan : <- DraftPlan -> ResearchPlan | MinorIssue | MajorIssue = @llm.classify_plan {};"
+    , "node minor_repair : <- MinorIssue -> ResearchPlan = @llm.minor_repair {};"
+    , "node gather_major_context : <- MajorIssue -> MajorIssue = @llm.gather_major_context {};"
+    , "node major_repair : <- MajorIssue -> ResearchPlan = @llm.major_repair {};"
+    , "node publish_report : <- ResearchPlan -> ReportArtifactRef = @artifact.publish_report {};"
+    , ""
+    , "draft_plan => classify_plan select("
+    , "  ResearchPlan: (),"
+    , "  MinorIssue: minor_repair,"
+    , "  MajorIssue: (gather_major_context => major_repair)"
+    , ") => publish_report"
     ]
 
-requireRight :: (Show err) => Either err a -> IO a
+requireRight :: Show err => Either err a -> IO a
 requireRight = \case
   Left err -> expectationFailure ("expected Right, got Left: " <> show err) >> error "unreachable"
   Right ok -> pure ok
@@ -481,14 +486,14 @@ knownContractsEnv =
     { wireCompileEnvContractRegistry =
         Just $
           wireContractRegistryFromList
-            [ jsonContract "PlannerOutput",
-              jsonContract "AnalysisFragment",
-              jsonContract "ResearchPlan",
-              jsonContract "PlanIssue",
-              jsonContract "DraftPlan",
-              jsonContract "MinorIssue",
-              jsonContract "MajorIssue",
-              jsonContract "ReportArtifactRef"
+            [ jsonContract "PlannerOutput"
+            , jsonContract "AnalysisFragment"
+            , jsonContract "ResearchPlan"
+            , jsonContract "PlanIssue"
+            , jsonContract "DraftPlan"
+            , jsonContract "MinorIssue"
+            , jsonContract "MajorIssue"
+            , jsonContract "ReportArtifactRef"
             ]
     }
 
@@ -500,17 +505,17 @@ strictExecutorEnv =
           [ wireExecutorProjectionFromPorts
               (WireExecutorId "projected")
               projectedExecutorPorts
-              WireExecutorModel,
-            pureWireExecutorProjection
-          ],
-      wireCompileEnvProjectionMode = WireProjectionStrict
+              WireExecutorModel
+          , pureWireExecutorProjection
+          ]
+    , wireCompileEnvProjectionMode = WireProjectionStrict
     }
 
 projectedExecutorPorts :: WirePorts
 projectedExecutorPorts =
   WirePorts
-    { wirePortsInputs = Map.empty,
-      wirePortsOutputs =
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs =
         Map.singleton
           "out"
           WireOutputPort {wireOutputPortContract = "PlannerOutput"}
@@ -519,9 +524,9 @@ projectedExecutorPorts =
 jsonContract :: T.Text -> WireContractSpec
 jsonContract contractId =
   WireContractSpec
-    { wireContractSpecId = contractId,
-      wireContractSpecPayloadKind = WirePayloadJson,
-      wireContractSpecDescription = contractId,
-      wireContractSpecSchema = Nothing,
-      wireContractSpecExamples = []
+    { wireContractSpecId = contractId
+    , wireContractSpecPayloadKind = WirePayloadJson
+    , wireContractSpecDescription = contractId
+    , wireContractSpecSchema = Nothing
+    , wireContractSpecExamples = []
     }

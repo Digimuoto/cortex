@@ -3,18 +3,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Artifact.Metadata
-  ( documentIrSchema,
-    documentProvenanceCoverage,
-    documentTitleFromIr,
+  ( documentIrSchema
+  , documentProvenanceCoverage
+  , documentTitleFromIr
   )
 where
 
-import Cortex.Artifact.IR qualified as IR
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
+
+import Cortex.Artifact.IR qualified as IR
+
 import Platform.Text (stripNonEmptyText)
 
 documentTitleFromIr :: IR.ReportIR -> Maybe Text
@@ -45,52 +47,52 @@ documentTitleFromIr ir =
 documentIrSchema :: Aeson.Value
 documentIrSchema =
   Aeson.object
-    [ "type" .= ("object" :: Text),
-      "properties"
+    [ "type" .= ("object" :: Text)
+    , "properties"
         .= Aeson.object
-          [ "version" .= schemaInteger "IR version (must be 1)",
-            "blocks"
+          [ "version" .= schemaInteger "IR version (must be 1)"
+          , "blocks"
               .= Aeson.object
-                [ "type" .= ("array" :: Text),
-                  "description"
+                [ "type" .= ("array" :: Text)
+                , "description"
                     .= T.intercalate
                       " "
-                      [ "Array of block objects. Each block has a \"type\" field.",
-                        "heading: {type,level,content}.",
-                        "paragraph: {type,content}.",
-                        "table: {type,columns,rows,alignments?}.",
-                        "bullet_list/ordered_list: {type,items}.",
-                        "code: {type,language,content}.",
-                        "math_block: {type,content}.",
-                        "horizontal_rule: {type}.",
-                        "Heading levels must be integers from 2 through 6.",
-                        "All content/items arrays contain inline objects: {type:\"text\",value:...}, {type:\"currency\",amount:...,currencyCode:...}, {type:\"pct\",value:...}, {type:\"bold\",content:[...]}, etc.",
-                        "Pct values are decimal fractions: 0.4065 means 40.65%. Do not send whole-number percents such as 40.65.",
-                        "Do not emit legacy ref nodes in new reports.",
-                        "Link URLs must start with https:// or http://.",
-                        "Chart embeds use range values from: 1D, 1W, 1M, 3M, 6M, 1Y, YTD. Optional style is area or line.",
-                        "Source-traced values may use {type:\"sourced\",provenanceId:N,content:{...}} where N resolves against the optional root provenance object. Sourced wrappers may only wrap leaf values such as text, code, math, currency, or pct nodes.",
-                        "Table rows are [[[Inline]]] — array of rows, each row is array of cells, each cell is array of inline objects.",
-                        "Legacy report mode rejects payloads larger than 40 blocks, 10 headings, or 2 tables. Use /deep-report for larger multi-section analysis.",
-                        "NEVER use bare strings where inline objects are expected."
-                      ],
-                  "items" .= Aeson.object ["type" .= ("object" :: Text)]
-                ],
-            "provenance"
-              .= Aeson.object
-                [ "type" .= ("object" :: Text),
-                  "description"
-                    .= T.intercalate
-                      " "
-                      [ "Optional report-local provenance index keyed by positive integers.",
-                        "Each entry is either {kind:\"direct\",source:{toolCallId,fieldPath}} or {kind:\"computed\",sources:[...],operation:\"...\"}.",
-                        "Authored narrative text is represented by the absence of sourced wrappers."
-                      ],
-                  "additionalProperties" .= Aeson.object ["type" .= ("object" :: Text)]
+                      [ "Array of block objects. Each block has a \"type\" field."
+                      , "heading: {type,level,content}."
+                      , "paragraph: {type,content}."
+                      , "table: {type,columns,rows,alignments?}."
+                      , "bullet_list/ordered_list: {type,items}."
+                      , "code: {type,language,content}."
+                      , "math_block: {type,content}."
+                      , "horizontal_rule: {type}."
+                      , "Heading levels must be integers from 2 through 6."
+                      , "All content/items arrays contain inline objects: {type:\"text\",value:...}, {type:\"currency\",amount:...,currencyCode:...}, {type:\"pct\",value:...}, {type:\"bold\",content:[...]}, etc."
+                      , "Pct values are decimal fractions: 0.4065 means 40.65%. Do not send whole-number percents such as 40.65."
+                      , "Do not emit legacy ref nodes in new reports."
+                      , "Link URLs must start with https:// or http://."
+                      , "Chart embeds use range values from: 1D, 1W, 1M, 3M, 6M, 1Y, YTD. Optional style is area or line."
+                      , "Source-traced values may use {type:\"sourced\",provenanceId:N,content:{...}} where N resolves against the optional root provenance object. Sourced wrappers may only wrap leaf values such as text, code, math, currency, or pct nodes."
+                      , "Table rows are [[[Inline]]] — array of rows, each row is array of cells, each cell is array of inline objects."
+                      , "Legacy report mode rejects payloads larger than 40 blocks, 10 headings, or 2 tables. Use /deep-report for larger multi-section analysis."
+                      , "NEVER use bare strings where inline objects are expected."
+                      ]
+                , "items" .= Aeson.object ["type" .= ("object" :: Text)]
                 ]
-          ],
-      "required" .= (["version", "blocks"] :: [Text]),
-      "additionalProperties" .= False
+          , "provenance"
+              .= Aeson.object
+                [ "type" .= ("object" :: Text)
+                , "description"
+                    .= T.intercalate
+                      " "
+                      [ "Optional report-local provenance index keyed by positive integers."
+                      , "Each entry is either {kind:\"direct\",source:{toolCallId,fieldPath}} or {kind:\"computed\",sources:[...],operation:\"...\"}."
+                      , "Authored narrative text is represented by the absence of sourced wrappers."
+                      ]
+                , "additionalProperties" .= Aeson.object ["type" .= ("object" :: Text)]
+                ]
+          ]
+    , "required" .= (["version", "blocks"] :: [Text])
+    , "additionalProperties" .= False
     ]
 
 documentProvenanceCoverage :: IR.ReportIR -> Maybe Double
@@ -105,22 +107,22 @@ documentProvenanceCoverage ir =
             )
 
 data CoverageCounts = CoverageCounts
-  { coverageEligibleLeaves :: Int,
-    coverageSourcedLeaves :: Int
+  { coverageEligibleLeaves :: Int
+  , coverageSourcedLeaves :: Int
   }
 
 instance Semigroup CoverageCounts where
   left <> right =
     CoverageCounts
-      { coverageEligibleLeaves = left.coverageEligibleLeaves + right.coverageEligibleLeaves,
-        coverageSourcedLeaves = left.coverageSourcedLeaves + right.coverageSourcedLeaves
+      { coverageEligibleLeaves = left.coverageEligibleLeaves + right.coverageEligibleLeaves
+      , coverageSourcedLeaves = left.coverageSourcedLeaves + right.coverageSourcedLeaves
       }
 
 instance Monoid CoverageCounts where
   mempty =
     CoverageCounts
-      { coverageEligibleLeaves = 0,
-        coverageSourcedLeaves = 0
+      { coverageEligibleLeaves = 0
+      , coverageSourcedLeaves = 0
       }
 
 coverageFromBlock :: IR.Block -> CoverageCounts
@@ -156,13 +158,13 @@ coverageLeaf isEligible isSourced
   | not isEligible = mempty
   | otherwise =
       CoverageCounts
-        { coverageEligibleLeaves = 1,
-          coverageSourcedLeaves = if isSourced then 1 else 0
+        { coverageEligibleLeaves = 1
+        , coverageSourcedLeaves = if isSourced then 1 else 0
         }
 
 schemaInteger :: Text -> Aeson.Value
 schemaInteger description =
   Aeson.object
-    [ "type" .= ("integer" :: Text),
-      "description" .= description
+    [ "type" .= ("integer" :: Text)
+    , "description" .= description
     ]

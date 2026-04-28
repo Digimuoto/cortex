@@ -3,18 +3,18 @@
 
 module Platform.Observability.Context
   ( -- * Public API (re-exported by Platform.Observability)
-    newLinkedRootContext,
-    withThreadContext,
-    withThreadContextPatch,
-    captureCurrentContext,
-    currentTraceHeaders,
-    forkWithContext,
-    forkWithSharedContext,
+    newLinkedRootContext
+  , withThreadContext
+  , withThreadContextPatch
+  , captureCurrentContext
+  , currentTraceHeaders
+  , forkWithContext
+  , forkWithSharedContext
 
     -- * Internal (used by sibling modules)
-    currentContextForRuntime,
-    randomHexText,
-    nextRequestId,
+  , currentContextForRuntime
+  , randomHexText
+  , nextRequestId
   )
 where
 
@@ -34,34 +34,36 @@ import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Word (Word16, Word64)
 import Network.HTTP.Types (HeaderName)
 import Numeric (showHex)
+
 import Platform.Observability.Types
 
-newLinkedRootContext :: Maybe ObservabilityContext -> Maybe Text -> Maybe Text -> IO ObservabilityContext
+newLinkedRootContext
+  :: Maybe ObservabilityContext -> Maybe Text -> Maybe Text -> IO ObservabilityContext
 newLinkedRootContext maybeParent maybeRunId maybeOperation = do
   traceTxt <- randomHexText 16
   spanTxt <- randomHexText 8
   pure
     ObservabilityContext
-      { requestId = Nothing,
-        upstreamRequestId = Nothing,
-        traceId = traceTxt,
-        spanId = spanTxt,
-        runId = maybeRunId,
-        userId = maybeParent >>= (.userId),
-        accountId = maybeParent >>= (.accountId),
-        assetId = maybeParent >>= (.assetId),
-        provider = maybeParent >>= (.provider),
-        httpMethod = Nothing,
-        route = Nothing,
-        operation = maybeOperation,
-        stage = Nothing,
-        toolName = Nothing,
-        assistantPhase = Nothing,
-        model = Nothing,
-        stepIndex = Nothing,
-        linkedTraceId = maybeParent <&> (.traceId),
-        linkedRequestId = maybeParent >>= (.requestId),
-        linkedSpanId = maybeParent <&> (.spanId)
+      { requestId = Nothing
+      , upstreamRequestId = Nothing
+      , traceId = traceTxt
+      , spanId = spanTxt
+      , runId = maybeRunId
+      , userId = maybeParent >>= (.userId)
+      , accountId = maybeParent >>= (.accountId)
+      , assetId = maybeParent >>= (.assetId)
+      , provider = maybeParent >>= (.provider)
+      , httpMethod = Nothing
+      , route = Nothing
+      , operation = maybeOperation
+      , stage = Nothing
+      , toolName = Nothing
+      , assistantPhase = Nothing
+      , model = Nothing
+      , stepIndex = Nothing
+      , linkedTraceId = maybeParent <&> (.traceId)
+      , linkedRequestId = maybeParent >>= (.requestId)
+      , linkedSpanId = maybeParent <&> (.spanId)
       }
 
 withThreadContext :: ObservabilityRuntime -> ObservabilityContext -> IO a -> IO a
@@ -71,7 +73,8 @@ withThreadContext runtime ctx action =
     endThreadContext
     (const action)
 
-withThreadContextPatch :: ObservabilityRuntime -> (ObservabilityContext -> ObservabilityContext) -> IO a -> IO a
+withThreadContextPatch
+  :: ObservabilityRuntime -> (ObservabilityContext -> ObservabilityContext) -> IO a -> IO a
 withThreadContextPatch runtime patch action = do
   current <- currentContextForRuntime runtime
   next <-
@@ -83,26 +86,26 @@ withThreadContextPatch runtime patch action = do
         pure $
           patch
             ObservabilityContext
-              { requestId = Nothing,
-                upstreamRequestId = Nothing,
-                traceId = traceTxt,
-                spanId = spanTxt,
-                runId = Nothing,
-                userId = Nothing,
-                accountId = Nothing,
-                assetId = Nothing,
-                provider = Nothing,
-                httpMethod = Nothing,
-                route = Nothing,
-                operation = Nothing,
-                stage = Nothing,
-                toolName = Nothing,
-                assistantPhase = Nothing,
-                model = Nothing,
-                stepIndex = Nothing,
-                linkedTraceId = Nothing,
-                linkedRequestId = Nothing,
-                linkedSpanId = Nothing
+              { requestId = Nothing
+              , upstreamRequestId = Nothing
+              , traceId = traceTxt
+              , spanId = spanTxt
+              , runId = Nothing
+              , userId = Nothing
+              , accountId = Nothing
+              , assetId = Nothing
+              , provider = Nothing
+              , httpMethod = Nothing
+              , route = Nothing
+              , operation = Nothing
+              , stage = Nothing
+              , toolName = Nothing
+              , assistantPhase = Nothing
+              , model = Nothing
+              , stepIndex = Nothing
+              , linkedTraceId = Nothing
+              , linkedRequestId = Nothing
+              , linkedSpanId = Nothing
               }
   withThreadContext runtime next action
 
@@ -136,7 +139,10 @@ forkWithSharedContext (Just runtime) ctx action =
 
 -- Internal helpers
 
-beginThreadContext :: ObservabilityRuntime -> ObservabilityContext -> IO (ObservabilityRuntime, ThreadId, Maybe ObservabilityContext)
+beginThreadContext
+  :: ObservabilityRuntime
+  -> ObservabilityContext
+  -> IO (ObservabilityRuntime, ThreadId, Maybe ObservabilityContext)
 beginThreadContext runtime ctx = do
   tid <- myThreadId
   previous <- currentContextForRuntime runtime

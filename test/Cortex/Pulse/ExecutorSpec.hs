@@ -2,113 +2,26 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Pulse executor integration tests.
---
--- Tests require a running PostgreSQL database with migrations applied.
--- Skipped if PGHOST environment variable is not set.
+{- | Pulse executor integration tests.
+
+Tests require a running PostgreSQL database with migrations applied.
+Skipped if PGHOST environment variable is not set.
+-}
 module Cortex.Pulse.ExecutorSpec (spec) where
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (cancel, waitCatch, withAsync)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, tryPutMVar)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, writeTVar)
-import Control.Exception (AsyncException (ThreadKilled), SomeException, displayException, finally, throwIO, try)
+import Control.Exception
+  ( AsyncException (ThreadKilled)
+  , SomeException
+  , displayException
+  , finally
+  , throwIO
+  , try
+  )
 import Control.Monad (void, when)
-import Cortex.Algebra.Graph
-  ( Graph (..),
-    Relation (..),
-    edge,
-    path,
-    successors,
-    toRelation,
-    topSort,
-    validateDAG,
-  )
-import Cortex.Pulse.Executor
-  ( ReplayPolicy (..),
-    RewriteExhaustionPolicy (..),
-    SomeStagePlan (..),
-    StableStageId (..),
-    StageContext (..),
-    StageDefinition (..),
-    StageFailure (..),
-    StagePlan (..),
-    StageRejectedRewrite (..),
-    StageReplaySafety (..),
-    StageResult (..),
-    StageRetryBackoff (..),
-    StageRetryExhaustion (..),
-    StageRetryFailureContext (..),
-    StageRetryPolicy (..),
-    StageTemplateId (..),
-    TaskContext (..),
-    TaskHandler (..),
-    TaskRegistry,
-    buildStageTemplateRegistry,
-    executeStagePlan,
-    executeTask,
-    liftChainAction,
-    resumeStagePlan,
-    resumeTask,
-    retryDelayMicros,
-    stageActionId,
-    stageTemplateId,
-  )
-import Cortex.Pulse.Executor qualified as Executor
-import Cortex.Pulse.Materialize (NodeProvenanceEntry (..))
-import Cortex.Pulse.Memory (defaultMemoryStrategy)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Query (PulseRunEvent (..), PulseStageAttemptLogDetail (..), PulseStageLogDetail (..))
-import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Rewrite
-  ( BudgetContext (..),
-    BudgetDimension (..),
-    ExpansionMode (..),
-    GraphRewrite (..),
-    RewriteBudget (..),
-    RewriteRejectionContext (..),
-    SubgraphSpec (..),
-    budgetFraction,
-  )
-import Cortex.Pulse.Runtime
-  ( GraphState (..),
-    InterruptReason (..),
-    NodeStatus (..),
-    initialGraphState,
-    markCompleted,
-    markFailed,
-  )
-import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Signal (SignalName (..))
-import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget, taskEnvelopeVersionOrDefault)
-import Cortex.TestSupport.Database (createTestDB, runSession, runTx)
-import Cortex.Wire
-  ( WireAppendHole (..),
-    WireCompileEnv (..),
-    WireExecutorEffect (..),
-    WireExecutorId (..),
-    WireInputCardinality (..),
-    WireInputPort (..),
-    WireOutputPort (..),
-    WirePorts (..),
-    compileWireAppendProposalWithEnv,
-    defaultInputPortName,
-    defaultOutputPortName,
-    emptyWireCompileEnv,
-    wireExecutorProjectionFromPorts,
-    wireExecutorRegistryFromList,
-  )
-import Cortex.Wire.Circuit.Artifact (CompiledCircuit (..))
-import Cortex.Wire.Circuit.IR
-  ( CircuitNodeRef (..),
-    CircuitTaskNode (..),
-  )
-import Cortex.Wire.Circuit.Lower
-  ( CircuitLoweringError (..),
-    CircuitPulseBinder (..),
-    CircuitPulseConfig (..),
-    lowerCompiledCircuitToStagePlan,
-  )
 import Data.Aeson qualified as Aeson
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
 import Data.Int (Int32, Int64)
@@ -124,14 +37,115 @@ import Hasql.Decoders qualified as D
 import Hasql.Pool (Pool)
 import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
-import Platform.Database qualified as DB
-import Platform.Database.Encode qualified as Enc
-import Platform.DurableTask.Checkpoint (buildCheckpointEnvelope)
-import Platform.DurableTask.Types (RunOutcome (..), StageStatus (..), TriggerSource (..))
 import Rel8 (Result)
 import System.Environment (lookupEnv)
 import System.Timeout (timeout)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( Graph (..)
+  , Relation (..)
+  , edge
+  , path
+  , successors
+  , toRelation
+  , topSort
+  , validateDAG
+  )
+import Cortex.Pulse.Executor
+  ( ReplayPolicy (..)
+  , RewriteExhaustionPolicy (..)
+  , SomeStagePlan (..)
+  , StableStageId (..)
+  , StageContext (..)
+  , StageDefinition (..)
+  , StageFailure (..)
+  , StagePlan (..)
+  , StageRejectedRewrite (..)
+  , StageReplaySafety (..)
+  , StageResult (..)
+  , StageRetryBackoff (..)
+  , StageRetryExhaustion (..)
+  , StageRetryFailureContext (..)
+  , StageRetryPolicy (..)
+  , StageTemplateId (..)
+  , TaskContext (..)
+  , TaskHandler (..)
+  , TaskRegistry
+  , buildStageTemplateRegistry
+  , executeStagePlan
+  , executeTask
+  , liftChainAction
+  , resumeStagePlan
+  , resumeTask
+  , retryDelayMicros
+  , stageActionId
+  , stageTemplateId
+  )
+import Cortex.Pulse.Executor qualified as Executor
+import Cortex.Pulse.Materialize (NodeProvenanceEntry (..))
+import Cortex.Pulse.Memory (defaultMemoryStrategy)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Query
+  ( PulseRunEvent (..)
+  , PulseStageAttemptLogDetail (..)
+  , PulseStageLogDetail (..)
+  )
+import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Rewrite
+  ( BudgetContext (..)
+  , BudgetDimension (..)
+  , ExpansionMode (..)
+  , GraphRewrite (..)
+  , RewriteBudget (..)
+  , RewriteRejectionContext (..)
+  , SubgraphSpec (..)
+  , budgetFraction
+  )
+import Cortex.Pulse.Runtime
+  ( GraphState (..)
+  , InterruptReason (..)
+  , NodeStatus (..)
+  , initialGraphState
+  , markCompleted
+  , markFailed
+  )
+import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
+import Cortex.Pulse.Signal (SignalName (..))
+import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget, taskEnvelopeVersionOrDefault)
+import Cortex.TestSupport.Database (createTestDB, runSession, runTx)
+import Cortex.Wire
+  ( WireAppendHole (..)
+  , WireCompileEnv (..)
+  , WireExecutorEffect (..)
+  , WireExecutorId (..)
+  , WireInputCardinality (..)
+  , WireInputPort (..)
+  , WireOutputPort (..)
+  , WirePorts (..)
+  , compileWireAppendProposalWithEnv
+  , defaultInputPortName
+  , defaultOutputPortName
+  , emptyWireCompileEnv
+  , wireExecutorProjectionFromPorts
+  , wireExecutorRegistryFromList
+  )
+import Cortex.Wire.Circuit.Artifact (CompiledCircuit (..))
+import Cortex.Wire.Circuit.IR
+  ( CircuitNodeRef (..)
+  , CircuitTaskNode (..)
+  )
+import Cortex.Wire.Circuit.Lower
+  ( CircuitLoweringError (..)
+  , CircuitPulseBinder (..)
+  , CircuitPulseConfig (..)
+  , lowerCompiledCircuitToStagePlan
+  )
+
+import Platform.Database qualified as DB
+import Platform.Database.Encode qualified as Enc
+import Platform.DurableTask.Checkpoint (buildCheckpointEnvelope)
+import Platform.DurableTask.Types (RunOutcome (..), StageStatus (..), TriggerSource (..))
 
 data TestStage
   = TestStageAlpha
@@ -194,8 +208,9 @@ readRunStatus :: Pool -> UUID -> IO (Maybe Text)
 readRunStatus pool runId =
   runSession pool $ Q.readRunStatus runId
 
--- | Read persisted graph state and decode node statuses.
--- Fails the test with a descriptive message if the JSON cannot be decoded.
+{- | Read persisted graph state and decode node statuses.
+Fails the test with a descriptive message if the JSON cannot be decoded.
+-}
 readGraphNodeStatuses :: Pool -> UUID -> IO (Maybe (Map.Map NodeId NodeStatus))
 readGraphNodeStatuses pool runId = do
   result <- runSession pool $ Q.readGraphState runId
@@ -248,9 +263,9 @@ mkTaskContext pool = do
   shutdownFlag <- newTVarIO False
   let taskContext =
         TaskContext
-          { tcPool = pool,
-            tcConfig = testPulseConfig,
-            tcShutdownFlag = shutdownFlag
+          { tcPool = pool
+          , tcConfig = testPulseConfig
+          , tcShutdownFlag = shutdownFlag
           }
   pure (shutdownFlag, taskContext)
 
@@ -259,19 +274,20 @@ mkTaskContextWith pool frontierConcurrency = do
   shutdownFlag <- newTVarIO False
   let taskContext =
         TaskContext
-          { tcPool = pool,
-            tcConfig = testPulseConfig {pulseMaxFrontierConcurrency = frontierConcurrency},
-            tcShutdownFlag = shutdownFlag
+          { tcPool = pool
+          , tcConfig = testPulseConfig {pulseMaxFrontierConcurrency = frontierConcurrency}
+          , tcShutdownFlag = shutdownFlag
           }
   pure (shutdownFlag, taskContext)
 
 stubPlanTaskRegistry :: TaskRegistry
 stubPlanTaskRegistry =
   Map.fromList
-    [ ( "paper_portfolio_cycle",
-        TaskHandler
-          { executeFresh = executeStubPlanTask,
-            resumeExisting = resumeStubPlanTask
+    [
+      ( "paper_portfolio_cycle"
+      , TaskHandler
+          { executeFresh = executeStubPlanTask
+          , resumeExisting = resumeStubPlanTask
           }
       )
     ]
@@ -313,61 +329,61 @@ loadTaskDef pool taskId = do
 testPulseConfig :: PulseConfig
 testPulseConfig =
   PulseConfig
-    { pulseDbHost = "localhost",
-      pulseDbPort = 5432,
-      pulseDbUser = "portman",
-      pulseDbPassword = "",
-      pulseDbName = "portman",
-      pulseDbPoolSize = 1,
-      pulseApiUrl = "http://127.0.0.1:8080",
-      pulseJwtSecret = "test-secret-key-for-unit-testing-only-32chars",
-      pulseJwtExpirationSeconds = 86400,
-      pulseJwtIssuer = "portman",
-      pulseJwtAudience = "portman-api",
-      pulseAdminApiKey = Just "test-admin-api-key",
-      pulseServiceCredential = Just "test-pulse-credential",
-      pulseHealthPort = 9090,
-      pulseLeaseOwner = "test-owner",
-      pulseLeaseDurationSeconds = 300,
-      pulsePollIntervalSeconds = 5,
-      pulseMaxConcurrentTasks = 4,
-      pulseMaxFrontierConcurrency = 1,
-      pulseTaskTypeLimits = mempty
+    { pulseDbHost = "localhost"
+    , pulseDbPort = 5432
+    , pulseDbUser = "portman"
+    , pulseDbPassword = ""
+    , pulseDbName = "portman"
+    , pulseDbPoolSize = 1
+    , pulseApiUrl = "http://127.0.0.1:8080"
+    , pulseJwtSecret = "test-secret-key-for-unit-testing-only-32chars"
+    , pulseJwtExpirationSeconds = 86400
+    , pulseJwtIssuer = "portman"
+    , pulseJwtAudience = "portman-api"
+    , pulseAdminApiKey = Just "test-admin-api-key"
+    , pulseServiceCredential = Just "test-pulse-credential"
+    , pulseHealthPort = 9090
+    , pulseLeaseOwner = "test-owner"
+    , pulseLeaseDurationSeconds = 300
+    , pulsePollIntervalSeconds = 5
+    , pulseMaxConcurrentTasks = 4
+    , pulseMaxFrontierConcurrency = 1
+    , pulseTaskTypeLimits = mempty
     }
 
 simpleStage :: TestStage -> (UUID -> Aeson.Value -> IO Aeson.Value) -> StageDefinition TestStage
 simpleStage stageId action =
   StageDefinition
-    { sdStageId = stageId,
-      sdTemplateId = stageTemplateId stageId,
-      sdActionId = stageActionId stageId,
-      sdReplaySafety = SafeToReplay,
-      sdReplayPolicyOverride = Nothing,
-      sdTimeoutSeconds = Nothing,
-      sdRetryPolicy = Nothing,
-      sdAction = liftChainAction action,
-      sdMemoryStrategy = defaultMemoryStrategy
+    { sdStageId = stageId
+    , sdTemplateId = stageTemplateId stageId
+    , sdActionId = stageActionId stageId
+    , sdReplaySafety = SafeToReplay
+    , sdReplayPolicyOverride = Nothing
+    , sdTimeoutSeconds = Nothing
+    , sdRetryPolicy = Nothing
+    , sdAction = liftChainAction action
+    , sdMemoryStrategy = defaultMemoryStrategy
     }
 
-mkTemplateRegistry ::
-  (Eq stageId) =>
-  Map.Map NodeId (StageDefinition stageId) ->
-  Map.Map Executor.StageTemplateId (StageDefinition stageId)
+mkTemplateRegistry
+  :: Eq stageId
+  => Map.Map NodeId (StageDefinition stageId)
+  -> Map.Map Executor.StageTemplateId (StageDefinition stageId)
 mkTemplateRegistry defs =
   either (error . T.unpack) id (buildStageTemplateRegistry defs)
 
 nodeStage :: NodeId -> (StageContext -> IO (StageResult NodeId)) -> StageDefinition NodeId
 nodeStage nodeId action =
   StageDefinition
-    { sdStageId = nodeId,
-      sdTemplateId = stageTemplateId nodeId,
-      sdActionId = stageActionId nodeId,
-      sdReplaySafety = SafeToReplay,
-      sdReplayPolicyOverride = Nothing,
-      sdTimeoutSeconds = Nothing,
-      sdRetryPolicy = Nothing,
-      sdAction = action,
-      sdMemoryStrategy = defaultMemoryStrategy
+    { sdStageId = nodeId
+    , sdTemplateId = stageTemplateId nodeId
+    , sdActionId = stageActionId nodeId
+    , sdReplaySafety = SafeToReplay
+    , sdReplayPolicyOverride = Nothing
+    , sdTimeoutSeconds = Nothing
+    , sdRetryPolicy = Nothing
+    , sdAction = action
+    , sdMemoryStrategy = defaultMemoryStrategy
     }
 
 nodeIdFromCircuitRef :: CircuitNodeRef -> NodeId
@@ -389,41 +405,41 @@ wireSmokeCompileEnv =
 wireSmokeAppendHole :: WireAppendHole
 wireSmokeAppendHole =
   WireAppendHole
-    { wireAppendHoleAnchor = CircuitNodeRef "analyst",
-      wireAppendHoleAnchorPorts = outputOnlyAnalysisFragmentPort,
-      wireAppendHoleSuccessors = Map.singleton (CircuitNodeRef "reviewer") inputOnlyAnalysisFragmentPort
+    { wireAppendHoleAnchor = CircuitNodeRef "analyst"
+    , wireAppendHoleAnchorPorts = outputOnlyAnalysisFragmentPort
+    , wireAppendHoleSuccessors = Map.singleton (CircuitNodeRef "reviewer") inputOnlyAnalysisFragmentPort
     }
 
 wireSmokeProposalSource :: Text
 wireSmokeProposalSource =
   T.unlines
-    [ "node stress_alpha :",
-      "  <- AnalysisFragment",
-      "  -> AnalysisFragment",
-      "= @stress_dimension {",
-      "  prompt = \"Stress-test alpha fragility.\";",
-      "};",
-      "",
-      "node stress_beta :",
-      "  <- AnalysisFragment",
-      "  -> AnalysisFragment",
-      "= @stress_dimension {",
-      "  prompt = \"Stress-test beta fragility.\";",
-      "};",
-      "",
-      "stress_alpha, stress_beta"
+    [ "node stress_alpha :"
+    , "  <- AnalysisFragment"
+    , "  -> AnalysisFragment"
+    , "= @stress_dimension {"
+    , "  prompt = \"Stress-test alpha fragility.\";"
+    , "};"
+    , ""
+    , "node stress_beta :"
+    , "  <- AnalysisFragment"
+    , "  -> AnalysisFragment"
+    , "= @stress_dimension {"
+    , "  prompt = \"Stress-test beta fragility.\";"
+    , "};"
+    , ""
+    , "stress_alpha, stress_beta"
     ]
 
 wireSmokePulseConfig :: CircuitPulseConfig
 wireSmokePulseConfig =
   CircuitPulseConfig
-    { circuitPulseInitialState = Aeson.object [],
-      circuitPulseRuntimeVersion = 1,
-      circuitPulseReplayPolicy = ReplayPolicyWarn,
-      circuitPulseInitialRewriteBudget = defaultRewriteBudget,
-      circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail,
-      circuitPulseBudgetExceededExhaustionPolicy = Nothing,
-      circuitPulseMaxRewriteReExecutions = 2
+    { circuitPulseInitialState = Aeson.object []
+    , circuitPulseRuntimeVersion = 1
+    , circuitPulseReplayPolicy = ReplayPolicyWarn
+    , circuitPulseInitialRewriteBudget = defaultRewriteBudget
+    , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
+    , circuitPulseBudgetExceededExhaustionPolicy = Nothing
+    , circuitPulseMaxRewriteReExecutions = 2
     }
 
 wireSmokeBinder :: CircuitPulseBinder
@@ -436,23 +452,23 @@ wireSmokeBinder =
                   pure
                     ( StageComplete
                         ( Aeson.object
-                            [ "nodeId" Aeson..= unNodeId nodeId,
-                              "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                            [ "nodeId" Aeson..= unNodeId nodeId
+                            , "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
                             ]
                         )
                     )
-              ),
-      bindCircuitSignalBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support signal nodes"),
-      bindCircuitArtifactBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support artifact nodes"),
-      bindCircuitRewriteBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support nested rewrite boundaries"),
-      bindCircuitConditionNode = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support condition nodes")
+              )
+    , bindCircuitSignalBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support signal nodes")
+    , bindCircuitArtifactBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support artifact nodes")
+    , bindCircuitRewriteBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support nested rewrite boundaries")
+    , bindCircuitConditionNode = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support condition nodes")
     }
 
 analysisFragmentInOutPorts :: WirePorts
 analysisFragmentInOutPorts =
   WirePorts
-    { wirePortsInputs = inputOnlyAnalysisFragmentPort.wirePortsInputs,
-      wirePortsOutputs = outputOnlyAnalysisFragmentPort.wirePortsOutputs
+    { wirePortsInputs = inputOnlyAnalysisFragmentPort.wirePortsInputs
+    , wirePortsOutputs = outputOnlyAnalysisFragmentPort.wirePortsOutputs
     }
 
 inputOnlyAnalysisFragmentPort :: WirePorts
@@ -461,27 +477,27 @@ inputOnlyAnalysisFragmentPort =
     { wirePortsInputs =
         Map.singleton
           defaultInputPortName
-          (WireInputPort ["AnalysisFragment"] WireInputCardinalityMany False),
-      wirePortsOutputs = Map.empty
+          (WireInputPort ["AnalysisFragment"] WireInputCardinalityMany False)
+    , wirePortsOutputs = Map.empty
     }
 
 outputOnlyAnalysisFragmentPort :: WirePorts
 outputOnlyAnalysisFragmentPort =
   WirePorts
-    { wirePortsInputs = Map.empty,
-      wirePortsOutputs =
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs =
         Map.singleton
           defaultOutputPortName
           (WireOutputPort "AnalysisFragment")
     }
 
-mkLinearStagePlan ::
-  (StableStageId stageId) =>
-  [StageDefinition stageId] ->
-  Aeson.Value ->
-  Int ->
-  ReplayPolicy ->
-  StagePlan stageId
+mkLinearStagePlan
+  :: StableStageId stageId
+  => [StageDefinition stageId]
+  -> Aeson.Value
+  -> Int
+  -> ReplayPolicy
+  -> StagePlan stageId
 mkLinearStagePlan stages initialState runtimeVersion replayPolicy =
   case Executor.mkLinearStagePlan stages initialState runtimeVersion replayPolicy defaultRewriteBudget of
     Left err -> error ("mkLinearStagePlan: " <> show err)
@@ -497,8 +513,9 @@ checkpointEnvelopeState task checkpointName payload =
       checkpointName
       payload
 
--- | Write graph state for the PaperPortfolioCycle 12-stage plan.
--- completedNames: which stage names should be marked completed.
+{- | Write graph state for the PaperPortfolioCycle 12-stage plan.
+completedNames: which stage names should be marked completed.
+-}
 writeGraphStateCompleted :: Pool -> UUID -> Int -> [Text] -> Aeson.Value -> IO ()
 writeGraphStateCompleted pool runId runtimeVersion completedNames outputValue = do
   let allNames = paperPortfolioCycleNodeNames
@@ -507,35 +524,43 @@ writeGraphStateCompleted pool runId runtimeVersion completedNames outputValue = 
       completedNodeIds = fmap NodeId completedNames
       gs0 = initialGraphState topology
       gs = foldl' (\s nid -> markCompleted nid outputValue s) gs0 completedNodeIds
-  writeGraphStateCompat pool runId (Aeson.toJSON (gsNodeStatuses gs)) (Aeson.toJSON (gsNodeOutputs gs)) (Just (fromIntegral runtimeVersion :: Int32)) Nothing
+  writeGraphStateCompat
+    pool
+    runId
+    (Aeson.toJSON (gsNodeStatuses gs))
+    (Aeson.toJSON (gsNodeOutputs gs))
+    (Just (fromIntegral runtimeVersion :: Int32))
+    Nothing
 
--- | The 12 stage node names of PaperPortfolioCycle in order.
--- Must match the StableStageId instance and buildStagePlan order.
+{- | The 12 stage node names of PaperPortfolioCycle in order.
+Must match the StableStageId instance and buildStagePlan order.
+-}
 paperPortfolioCycleNodeNames :: [Text]
 paperPortfolioCycleNodeNames =
-  [ "strategy_resolution",
-    "preflight_snapshot",
-    "planner",
-    "gatherer",
-    "required_evidence_repair",
-    "analyst",
-    "reviewer",
-    "guardrails",
-    "execution_preflight",
-    "persist_decision",
-    "finalize_report",
-    "shadow_complete"
+  [ "strategy_resolution"
+  , "preflight_snapshot"
+  , "planner"
+  , "gatherer"
+  , "required_evidence_repair"
+  , "analyst"
+  , "reviewer"
+  , "guardrails"
+  , "execution_preflight"
+  , "persist_decision"
+  , "finalize_report"
+  , "shadow_complete"
   ]
 
--- | Write graph state for a custom stage plan with the first N nodes completed.
--- Uses topological order to determine the prefix of completed nodes.
-writeGraphStateForPlan ::
-  Pool ->
-  UUID ->
-  StagePlan stageId ->
-  Int -> -- number of completed nodes (prefix in topological order)
-  Aeson.Value ->
-  IO ()
+{- | Write graph state for a custom stage plan with the first N nodes completed.
+Uses topological order to determine the prefix of completed nodes.
+-}
+writeGraphStateForPlan
+  :: Pool
+  -> UUID
+  -> StagePlan stageId
+  -> Int -- number of completed nodes (prefix in topological order)
+  -> Aeson.Value
+  -> IO ()
 writeGraphStateForPlan pool runId stagePlan completedCount outputValue = do
   let topology = spTopology stagePlan
       nodeIds = case topSort topology of
@@ -544,30 +569,36 @@ writeGraphStateForPlan pool runId stagePlan completedCount outputValue = do
       completedNodeIds = take completedCount nodeIds
       gs0 = initialGraphState topology
       gs = foldl' (\s nid -> markCompleted nid outputValue s) gs0 completedNodeIds
-  writeGraphStateCompat pool runId (Aeson.toJSON (gsNodeStatuses gs)) (Aeson.toJSON (gsNodeOutputs gs)) (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32)) Nothing
+  writeGraphStateCompat
+    pool
+    runId
+    (Aeson.toJSON (gsNodeStatuses gs))
+    (Aeson.toJSON (gsNodeOutputs gs))
+    (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32))
+    Nothing
 
-writeGraphStateCompat ::
-  Pool ->
-  UUID ->
-  Aeson.Value ->
-  Aeson.Value ->
-  Maybe Int32 ->
-  Maybe Int64 ->
-  IO ()
+writeGraphStateCompat
+  :: Pool
+  -> UUID
+  -> Aeson.Value
+  -> Aeson.Value
+  -> Maybe Int32
+  -> Maybe Int64
+  -> IO ()
 writeGraphStateCompat pool runId statuses outputs runtimeVersion appliedRewriteId = do
   now <- getCurrentTime
   runTx pool $
     Q.writeGraphState
       Q.GraphStateWrite
-        { gswRunId = runId,
-          gswNodeStatuses = statuses,
-          gswNodeOutputs = outputs,
-          gswRemainingRewriteBudget = Nothing,
-          gswRuntimeVersion = runtimeVersion,
-          gswAppliedRewriteId = appliedRewriteId,
-          gswNodeProvenance = Nothing,
-          gswTopologyHash = Nothing,
-          gswUpdatedAt = now
+        { gswRunId = runId
+        , gswNodeStatuses = statuses
+        , gswNodeOutputs = outputs
+        , gswRemainingRewriteBudget = Nothing
+        , gswRuntimeVersion = runtimeVersion
+        , gswAppliedRewriteId = appliedRewriteId
+        , gswNodeProvenance = Nothing
+        , gswTopologyHash = Nothing
+        , gswUpdatedAt = now
         }
 
 installGraphStateWriteFailureInjector :: Pool -> IO ()
@@ -685,11 +716,11 @@ withInjectedRunFailedWriteFailure pool runId action = do
   runSession pool $ Session.statement runId insertStmt
   action `finally` runSession pool (Session.statement runId deleteStmt)
 
-waitForGraphStatuses ::
-  Pool ->
-  UUID ->
-  (Map.Map NodeId NodeStatus -> Bool) ->
-  IO (Map.Map NodeId NodeStatus)
+waitForGraphStatuses
+  :: Pool
+  -> UUID
+  -> (Map.Map NodeId NodeStatus -> Bool)
+  -> IO (Map.Map NodeId NodeStatus)
 waitForGraphStatuses pool runId predicate =
   go (80 :: Int)
   where
@@ -789,7 +820,14 @@ spec = beforeAll setupTestDb $ do
       -- Write a checkpoint with a nonexistent stage — irrelevant because
       -- resume is driven by graph state, not checkpoints. With no graph
       -- state, the run starts from scratch.
-      runTx pool $ Q.writeCheckpoint runId "paper_portfolio_cycle" "nonexistent_stage" (checkpointEnvelopeState task "nonexistent_stage" Aeson.Null) Nothing now
+      runTx pool $
+        Q.writeCheckpoint
+          runId
+          "paper_portfolio_cycle"
+          "nonexistent_stage"
+          (checkpointEnvelopeState task "nonexistent_stage" Aeson.Null)
+          Nothing
+          now
       outcome <- resumeTask stubPlanTaskRegistry taskContext runId task
       outcome `shouldBe` OutcomeCompleted
       status <- readRunStatus pool runId
@@ -830,31 +868,31 @@ spec = beforeAll setupTestDb $ do
       retryContextsRef <- newIORef ([] :: [Maybe StageRetryFailureContext])
       let retryPolicy =
             StageRetryPolicy
-              { srpPredicateName = "test_retry",
-                srpMaxAttempts = 2,
-                srpBackoff = FixedBackoffMicros 0,
-                srpRetryable = \case
+              { srpPredicateName = "test_retry"
+              , srpMaxAttempts = 2
+              , srpBackoff = FixedBackoffMicros 0
+              , srpRetryable = \case
                   StageFailureException _ -> True
-                  StageFailureTimeout _ -> False,
-                srpExhaustion = ExhaustionFailsRun
+                  StageFailureTimeout _ -> False
+              , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Just retryPolicy,
-                    sdAction = \ctx -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Just retryPolicy
+                  , sdAction = \ctx -> do
                       atomicModifyIORef' retryContextsRef (\contexts -> (contexts <> [ctx.scRetryFailure], ()))
                       attempt <- atomicModifyIORef' attemptsRef (\n -> let next = n + 1 in (next, next))
                       if attempt == 1
                         then throwIO (userError "retryable failure")
-                        else pure (StageComplete (Aeson.toJSON ctx.scInputs)),
-                    sdMemoryStrategy = defaultMemoryStrategy
+                        else pure (StageComplete (Aeson.toJSON ctx.scInputs))
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -887,31 +925,31 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let retryPolicy =
             StageRetryPolicy
-              { srpPredicateName = "test_retry",
-                srpMaxAttempts = 2,
-                srpBackoff = FixedBackoffMicros 0,
-                srpRetryable = \case
+              { srpPredicateName = "test_retry"
+              , srpMaxAttempts = 2
+              , srpBackoff = FixedBackoffMicros 0
+              , srpRetryable = \case
                   StageFailureException _ -> True
-                  StageFailureTimeout _ -> False,
-                srpExhaustion = ExhaustionFailsRun
+                  StageFailureTimeout _ -> False
+              , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Just retryPolicy,
-                    sdAction = liftChainAction $ \_runId _state -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Just retryPolicy
+                  , sdAction = liftChainAction $ \_runId _state -> do
                       attempt <- atomicModifyIORef' attemptsRef (\n -> let next = n + 1 in (next, next))
                       when (attempt == 1) $ do
                         now <- getCurrentTime
                         runTx pool $ Q.requestCancellation runId "cancel before retry" now
-                      throwIO (userError "retryable failure"),
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      throwIO (userError "retryable failure")
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -939,29 +977,29 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let retryPolicy =
             StageRetryPolicy
-              { srpPredicateName = "test_retry",
-                srpMaxAttempts = 2,
-                srpBackoff = FixedBackoffMicros 0,
-                srpRetryable = \case
+              { srpPredicateName = "test_retry"
+              , srpMaxAttempts = 2
+              , srpBackoff = FixedBackoffMicros 0
+              , srpRetryable = \case
                   StageFailureException _ -> True
-                  StageFailureTimeout _ -> False,
-                srpExhaustion = ExhaustionFailsRun
+                  StageFailureTimeout _ -> False
+              , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Just retryPolicy,
-                    sdAction = liftChainAction $ \_runId _state -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Just retryPolicy
+                  , sdAction = liftChainAction $ \_runId _state -> do
                       attempt <- atomicModifyIORef' attemptsRef (\n -> let next = n + 1 in (next, next))
                       when (attempt == 1) (atomically (writeTVar shutdownFlag True))
-                      throwIO (userError "retryable failure"),
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      throwIO (userError "retryable failure")
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -985,29 +1023,29 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let retryPolicy =
             StageRetryPolicy
-              { srpPredicateName = "test_retry",
-                srpMaxAttempts = 3,
-                srpBackoff = FixedBackoffMicros 30_000_000,
-                srpRetryable = \case
+              { srpPredicateName = "test_retry"
+              , srpMaxAttempts = 3
+              , srpBackoff = FixedBackoffMicros 30_000_000
+              , srpRetryable = \case
                   StageFailureException _ -> True
-                  StageFailureTimeout _ -> False,
-                srpExhaustion = ExhaustionFailsRun
+                  StageFailureTimeout _ -> False
+              , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Just retryPolicy,
-                    sdAction = liftChainAction $ \_runId _state -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Just retryPolicy
+                  , sdAction = liftChainAction $ \_runId _state -> do
                       attempt <- atomicModifyIORef' attemptsRef (\n -> let next = n + 1 in (next, next))
                       when (attempt == 1) (atomically (writeTVar shutdownFlag True))
-                      throwIO (userError "retryable failure"),
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      throwIO (userError "retryable failure")
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1028,28 +1066,28 @@ spec = beforeAll setupTestDb $ do
       nextStageRuns <- newIORef (0 :: Int)
       let retryPolicy =
             StageRetryPolicy
-              { srpPredicateName = "test_retry",
-                srpMaxAttempts = 2,
-                srpBackoff = FixedBackoffMicros 0,
-                srpRetryable = \case
+              { srpPredicateName = "test_retry"
+              , srpMaxAttempts = 2
+              , srpBackoff = FixedBackoffMicros 0
+              , srpRetryable = \case
                   StageFailureException _ -> True
-                  StageFailureTimeout _ -> False,
-                srpExhaustion = ExhaustionSkipsStage
+                  StageFailureTimeout _ -> False
+              , srpExhaustion = ExhaustionSkipsStage
               }
           stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Just retryPolicy,
-                    sdAction = liftChainAction $ \_runId _state -> throwIO (userError "keep failing"),
-                    sdMemoryStrategy = defaultMemoryStrategy
-                  },
-                simpleStage TestStageBeta $ \_runId state -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Just retryPolicy
+                  , sdAction = liftChainAction $ \_runId _state -> throwIO (userError "keep failing")
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              , simpleStage TestStageBeta $ \_runId state -> do
                   atomicModifyIORef' nextStageRuns (\n -> (n + 1, ()))
                   pure state
               ]
@@ -1076,17 +1114,17 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Just 1,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Just 1
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> do
                       threadDelay 1_500_000
-                      pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1108,25 +1146,31 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         _ <- Q.appendStageStarted runId "test_beta" now
         pure ()
       betaRuns <- newIORef (0 :: Int)
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = Irreversible,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> do
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = Irreversible
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> do
                       atomicModifyIORef' betaRuns (\n -> (n + 1, ()))
-                      pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1151,27 +1195,39 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       logId <- runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         existingLogId <- Q.appendStageStarted runId "test_beta" now
         attemptId <- Q.appendStageAttemptStarted existingLogId runId 1 now
-        Q.updateStageAttemptCompleted attemptId StageFailed (Just (Aeson.object ["attempt_number" Aeson..= (1 :: Int), "error" Aeson..= ("retryable failure" :: Text)])) now
+        Q.updateStageAttemptCompleted
+          attemptId
+          StageFailed
+          ( Just
+              (Aeson.object ["attempt_number" Aeson..= (1 :: Int), "error" Aeson..= ("retryable failure" :: Text)])
+          )
+          now
         pure existingLogId
       betaRuns <- newIORef (0 :: Int)
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> do
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> do
                       atomicModifyIORef' betaRuns (\n -> (n + 1, ()))
-                      pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1199,12 +1255,18 @@ spec = beforeAll setupTestDb $ do
       now <- getCurrentTime
       runTx pool $ do
         _ <- Q.appendStageStarted runId "test_alpha" now
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
       betaRuns <- newIORef (0 :: Int)
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                simpleStage TestStageBeta $ \_runId state -> do
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , simpleStage TestStageBeta $ \_runId state -> do
                   atomicModifyIORef' betaRuns (\n -> (n + 1, ()))
                   pure state
               ]
@@ -1222,30 +1284,37 @@ spec = beforeAll setupTestDb $ do
 
     it "replays a stage when completion log exists but checkpoint is stale" $ \mPool -> withDb mPool $ \pool -> do
       (_, taskContext) <- mkTaskContext pool
-      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-resume-completed-log-stale-checkpoint"
+      taskId <-
+        insertTestTaskDef pool "paper_portfolio_cycle" "test-resume-completed-log-stale-checkpoint"
       runId <- createTestRun pool taskId
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         logId <- Q.appendStageStarted runId "test_beta" now
         Q.updateStageCompleted logId StageCompleted Nothing now
       betaRuns <- newIORef (0 :: Int)
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = Irreversible,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> do
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = Irreversible
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> do
                       atomicModifyIORef' betaRuns (\n -> (n + 1, ()))
-                      pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1269,8 +1338,8 @@ spec = beforeAll setupTestDb $ do
             mkLinearStagePlan
               [ simpleStage TestStageAlpha $ \_runId state -> do
                   atomically $ writeTVar shutdownFlag True
-                  pure state,
-                simpleStage TestStageBeta $ \_runId state -> do
+                  pure state
+              , simpleStage TestStageBeta $ \_runId state -> do
                   atomicModifyIORef' betaRuns (\n -> (n + 1, ()))
                   pure state
               ]
@@ -1304,7 +1373,8 @@ spec = beforeAll setupTestDb $ do
               Aeson.Null
               1
               ReplayPolicyWarn
-      result <- try (executeStagePlan taskContext runId task stagePlan) :: IO (Either SomeException RunOutcome)
+      result <-
+        try (executeStagePlan taskContext runId task stagePlan) :: IO (Either SomeException RunOutcome)
       case result of
         Left _ -> pure ()
         Right outcome -> expectationFailure $ "Expected async exception to be rethrown, got outcome: " <> show outcome
@@ -1321,22 +1391,28 @@ spec = beforeAll setupTestDb $ do
       now <- getCurrentTime
       -- Pre-seed: checkpoint at Alpha, prior stage log for Beta (simulating prior execution)
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         _ <- Q.appendStageStarted runId "test_beta" now
         pure ()
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = Irreversible,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = Irreversible
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1355,22 +1431,28 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         _ <- Q.appendStageStarted runId "test_beta" now
         pure ()
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = Irreversible,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = Irreversible
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1387,22 +1469,28 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         _ <- Q.appendStageStarted runId "test_beta" now
         pure ()
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = Irreversible,
-                    sdReplayPolicyOverride = Just ReplayPolicyBlockResume,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = Irreversible
+                  , sdReplayPolicyOverride = Just ReplayPolicyBlockResume
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1421,22 +1509,28 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         _ <- Q.appendStageStarted runId "test_beta" now
         pure ()
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = Irreversible,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = Irreversible
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1455,22 +1549,28 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       now <- getCurrentTime
       runTx pool $ do
-        Q.writeCheckpoint runId task.taskType "test_alpha" (checkpointEnvelopeState task "test_alpha" Aeson.Null) Nothing now
+        Q.writeCheckpoint
+          runId
+          task.taskType
+          "test_alpha"
+          (checkpointEnvelopeState task "test_alpha" Aeson.Null)
+          Nothing
+          now
         _ <- Q.appendStageStarted runId "test_beta" now
         pure ()
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1491,17 +1591,17 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_runId state -> pure state),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = \_ctx -> pure (StageSuspend (SignalName "test_signal")),
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (SignalName "test_signal"))
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1520,15 +1620,15 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = \_ctx -> pure (StageSuspend (SignalName "fill_event")),
-                    sdMemoryStrategy = defaultMemoryStrategy
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (SignalName "fill_event"))
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1556,28 +1656,28 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = \_ctx -> pure (StageSuspend (SignalName "approval")),
-                    sdMemoryStrategy = defaultMemoryStrategy
-                  },
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_runId state -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (SignalName "approval"))
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_runId state -> do
                       atomicModifyIORef' completedRef (const (True, ()))
-                      pure state,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure state
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1607,17 +1707,17 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_ s -> pure s),
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_ _ -> throwIO (userError "leaf boom"),
-                    sdMemoryStrategy = defaultMemoryStrategy
+              [ simpleStage TestStageAlpha (\_ s -> pure s)
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_ _ -> throwIO (userError "leaf boom")
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1640,18 +1740,18 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_ _ -> throwIO (userError "origin boom"),
-                    sdMemoryStrategy = defaultMemoryStrategy
-                  },
-                simpleStage TestStageBeta (\_ s -> pure s),
-                simpleStage TestStageGamma (\_ s -> pure s)
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_ _ -> throwIO (userError "origin boom")
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              , simpleStage TestStageBeta (\_ s -> pure s)
+              , simpleStage TestStageGamma (\_ s -> pure s)
               ]
               Aeson.Null
               1
@@ -1677,77 +1777,87 @@ spec = beforeAll setupTestDb $ do
           nodeBeta = NodeId "test_beta"
           nodeGamma = NodeId "test_gamma"
           nodeDelta = NodeId "test_delta"
-          topology = toRelation (edge nodeAlpha nodeBeta <> edge nodeAlpha nodeGamma <> edge nodeBeta nodeDelta <> edge nodeGamma nodeDelta)
+          topology =
+            toRelation
+              ( edge nodeAlpha nodeBeta
+                  <> edge nodeAlpha nodeGamma
+                  <> edge nodeBeta nodeDelta
+                  <> edge nodeGamma nodeDelta
+              )
       case validateDAG topology of
         Left err -> expectationFailure $ "Diamond graph validation failed: " <> show err
         Right () -> pure ()
       let defs =
             Map.fromList
-              [ ( nodeAlpha,
-                  StageDefinition
-                    { sdStageId = TestStageAlpha,
-                      sdTemplateId = stageTemplateId TestStageAlpha,
-                      sdActionId = stageActionId TestStageAlpha,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> throwIO (userError "diamond origin boom"),
-                      sdMemoryStrategy = defaultMemoryStrategy
+              [
+                ( nodeAlpha
+                , StageDefinition
+                    { sdStageId = TestStageAlpha
+                    , sdTemplateId = stageTemplateId TestStageAlpha
+                    , sdActionId = stageActionId TestStageAlpha
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> throwIO (userError "diamond origin boom")
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( nodeBeta,
-                  StageDefinition
-                    { sdStageId = TestStageBeta,
-                      sdTemplateId = stageTemplateId TestStageBeta,
-                      sdActionId = stageActionId TestStageBeta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                )
+              ,
+                ( nodeBeta
+                , StageDefinition
+                    { sdStageId = TestStageBeta
+                    , sdTemplateId = stageTemplateId TestStageBeta
+                    , sdActionId = stageActionId TestStageBeta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( nodeGamma,
-                  StageDefinition
-                    { sdStageId = TestStageGamma,
-                      sdTemplateId = stageTemplateId TestStageGamma,
-                      sdActionId = stageActionId TestStageGamma,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                )
+              ,
+                ( nodeGamma
+                , StageDefinition
+                    { sdStageId = TestStageGamma
+                    , sdTemplateId = stageTemplateId TestStageGamma
+                    , sdActionId = stageActionId TestStageGamma
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( nodeDelta,
-                  StageDefinition
-                    { sdStageId = TestStageDelta,
-                      sdTemplateId = stageTemplateId TestStageDelta,
-                      sdActionId = stageActionId TestStageDelta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                )
+              ,
+                ( nodeDelta
+                , StageDefinition
+                    { sdStageId = TestStageDelta
+                    , sdTemplateId = stageTemplateId TestStageDelta
+                    , sdActionId = stageActionId TestStageDelta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
                 )
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -1772,8 +1882,8 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let stagePlan =
             mkLinearStagePlan
-              [ simpleStage TestStageAlpha (\_ s -> pure s),
-                simpleStage TestStageBeta (\_ s -> pure s)
+              [ simpleStage TestStageAlpha (\_ s -> pure s)
+              , simpleStage TestStageBeta (\_ s -> pure s)
               ]
               Aeson.Null
               1
@@ -1783,7 +1893,13 @@ spec = beforeAll setupTestDb $ do
           gs :: GraphState Aeson.Value
           gs = foldl' (flip markFailed) (initialGraphState topology) [NodeId "test_alpha", NodeId "test_beta"]
       -- Write the failed graph state directly (simulating a prior crash)
-      writeGraphStateCompat pool runId (Aeson.toJSON (gsNodeStatuses gs)) (Aeson.toJSON (gsNodeOutputs gs)) (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32)) Nothing
+      writeGraphStateCompat
+        pool
+        runId
+        (Aeson.toJSON (gsNodeStatuses gs))
+        (Aeson.toJSON (gsNodeOutputs gs))
+        (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32))
+        Nothing
       -- Resume: should detect settled-with-failures and return OutcomeFailed
       outcome <- resumeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -1802,17 +1918,17 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_ s -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_ s -> do
                       atomicModifyIORef' executedRef (const (True, ()))
-                      pure s,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure s
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -1822,7 +1938,13 @@ spec = beforeAll setupTestDb $ do
           -- Simulate: alpha was in-flight (NodeRunning) when crash occurred
           gs :: GraphState Aeson.Value
           gs = (initialGraphState topology) {gsNodeStatuses = Map.fromList [(NodeId "test_alpha", NodeRunning)]}
-      writeGraphStateCompat pool runId (Aeson.toJSON (gsNodeStatuses gs)) (Aeson.toJSON (gsNodeOutputs gs)) (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32)) Nothing
+      writeGraphStateCompat
+        pool
+        runId
+        (Aeson.toJSON (gsNodeStatuses gs))
+        (Aeson.toJSON (gsNodeOutputs gs))
+        (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32))
+        Nothing
       -- Resume should reset NodeRunning → NodePending and re-execute
       outcome <- resumeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -1842,44 +1964,50 @@ spec = beforeAll setupTestDb $ do
       gammaStarted <- newEmptyMVar
       let barrierStage name myBarrier otherBarrier =
             StageDefinition
-              { sdStageId = name,
-                sdTemplateId = stageTemplateId name,
-                sdActionId = stageActionId name,
-                sdReplaySafety = SafeToReplay,
-                sdReplayPolicyOverride = Nothing,
-                sdTimeoutSeconds = Nothing,
-                sdRetryPolicy = Nothing,
-                sdAction = \_ -> do
+              { sdStageId = name
+              , sdTemplateId = stageTemplateId name
+              , sdActionId = stageActionId name
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = \_ -> do
                   putMVar myBarrier ()
                   _ <- readMVar otherBarrier -- blocks until the other stage has started
-                  pure (StageComplete Aeson.Null),
-                sdMemoryStrategy = defaultMemoryStrategy
+                  pure (StageComplete Aeson.Null)
+              , sdMemoryStrategy = defaultMemoryStrategy
               }
           -- Diamond: alpha → beta, alpha → gamma, beta → delta, gamma → delta
           nodeAlpha = NodeId "test_alpha"
           nodeBeta = NodeId "test_beta"
           nodeGamma = NodeId "test_gamma"
           nodeDelta = NodeId "test_delta"
-          topology = toRelation (edge nodeAlpha nodeBeta <> edge nodeAlpha nodeGamma <> edge nodeBeta nodeDelta <> edge nodeGamma nodeDelta)
+          topology =
+            toRelation
+              ( edge nodeAlpha nodeBeta
+                  <> edge nodeAlpha nodeGamma
+                  <> edge nodeBeta nodeDelta
+                  <> edge nodeGamma nodeDelta
+              )
           defs =
             Map.fromList
-              [ (nodeAlpha, simpleStage TestStageAlpha (\_ _ -> pure Aeson.Null)),
-                (nodeBeta, barrierStage TestStageBeta betaStarted gammaStarted),
-                (nodeGamma, barrierStage TestStageGamma gammaStarted betaStarted),
-                (nodeDelta, simpleStage TestStageDelta (\_ _ -> pure Aeson.Null))
+              [ (nodeAlpha, simpleStage TestStageAlpha (\_ _ -> pure Aeson.Null))
+              , (nodeBeta, barrierStage TestStageBeta betaStarted gammaStarted)
+              , (nodeGamma, barrierStage TestStageGamma gammaStarted betaStarted)
+              , (nodeDelta, simpleStage TestStageDelta (\_ _ -> pure Aeson.Null))
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       -- If concurrent: both barriers release and the run completes.
       -- If sequential: deadlock (beta waits for gamma which never starts).
@@ -1896,52 +2024,60 @@ spec = beforeAll setupTestDb $ do
           nodeBeta = NodeId "test_beta"
           nodeGamma = NodeId "test_gamma"
           nodeDelta = NodeId "test_delta"
-          topology = toRelation (edge nodeAlpha nodeBeta <> edge nodeAlpha nodeGamma <> edge nodeBeta nodeDelta <> edge nodeGamma nodeDelta)
+          topology =
+            toRelation
+              ( edge nodeAlpha nodeBeta
+                  <> edge nodeAlpha nodeGamma
+                  <> edge nodeBeta nodeDelta
+                  <> edge nodeGamma nodeDelta
+              )
           defs =
             Map.fromList
-              [ (nodeAlpha, simpleStage TestStageAlpha (\_ _ -> pure Aeson.Null)),
-                ( nodeBeta,
-                  StageDefinition
-                    { sdStageId = TestStageBeta,
-                      sdTemplateId = stageTemplateId TestStageBeta,
-                      sdActionId = stageActionId TestStageBeta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> throwIO (userError "beta fails"),
-                      sdMemoryStrategy = defaultMemoryStrategy
+              [ (nodeAlpha, simpleStage TestStageAlpha (\_ _ -> pure Aeson.Null))
+              ,
+                ( nodeBeta
+                , StageDefinition
+                    { sdStageId = TestStageBeta
+                    , sdTemplateId = stageTemplateId TestStageBeta
+                    , sdActionId = stageActionId TestStageBeta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> throwIO (userError "beta fails")
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( nodeGamma,
-                  StageDefinition
-                    { sdStageId = TestStageGamma,
-                      sdTemplateId = stageTemplateId TestStageGamma,
-                      sdActionId = stageActionId TestStageGamma,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+                )
+              ,
+                ( nodeGamma
+                , StageDefinition
+                    { sdStageId = TestStageGamma
+                    , sdTemplateId = stageTemplateId TestStageGamma
+                    , sdActionId = stageActionId TestStageGamma
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         threadDelay 500000 -- slow — should be cancelled
-                        pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                (nodeDelta, simpleStage TestStageDelta (\_ _ -> pure Aeson.Null))
+                )
+              , (nodeDelta, simpleStage TestStageDelta (\_ _ -> pure Aeson.Null))
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -1974,64 +2110,73 @@ spec = beforeAll setupTestDb $ do
       betaRewrote <- newEmptyMVar
       let mkDynStage stageId action =
             StageDefinition
-              { sdStageId = DynStageId stageId,
-                sdTemplateId = stageTemplateId (DynStageId stageId),
-                sdActionId = stageActionId (DynStageId stageId),
-                sdReplaySafety = SafeToReplay,
-                sdReplayPolicyOverride = Nothing,
-                sdTimeoutSeconds = Nothing,
-                sdRetryPolicy = Nothing,
-                sdAction = action,
-                sdMemoryStrategy = defaultMemoryStrategy
+              { sdStageId = DynStageId stageId
+              , sdTemplateId = stageTemplateId (DynStageId stageId)
+              , sdActionId = stageActionId (DynStageId stageId)
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = action
+              , sdMemoryStrategy = defaultMemoryStrategy
               }
           nodeAlpha = NodeId "alpha"
           nodeBeta = NodeId "beta"
           nodeGamma = NodeId "gamma"
           nodeDelta = NodeId "delta"
           nodeBetaSub1 = NodeId "beta:sub1"
-          topology = toRelation (edge nodeAlpha nodeBeta <> edge nodeAlpha nodeGamma <> edge nodeBeta nodeDelta <> edge nodeGamma nodeDelta)
+          topology =
+            toRelation
+              ( edge nodeAlpha nodeBeta
+                  <> edge nodeAlpha nodeGamma
+                  <> edge nodeBeta nodeDelta
+                  <> edge nodeGamma nodeDelta
+              )
           rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "sub1")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "sub1"))
+              , sgsDefinitions =
                   Map.fromList
-                    [ ( NodeId "sub1",
-                        mkDynStage "sub1" (liftChainAction (\_ state -> pure (Aeson.object ["sub" Aeson..= state])))
+                    [
+                      ( NodeId "sub1"
+                      , mkDynStage "sub1" (liftChainAction (\_ state -> pure (Aeson.object ["sub" Aeson..= state])))
                       )
-                    ],
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub1"]
+                    ]
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub1"]
               }
           defs =
             Map.fromList
-              [ (nodeAlpha, mkDynStage "alpha" (\_ -> pure (StageComplete Aeson.Null))),
-                ( nodeBeta,
-                  mkDynStage "beta" $ \_ -> do
+              [ (nodeAlpha, mkDynStage "alpha" (\_ -> pure (StageComplete Aeson.Null)))
+              ,
+                ( nodeBeta
+                , mkDynStage "beta" $ \_ -> do
                     putMVar betaRewrote ()
                     pure (StageRewrite (Aeson.String "beta-output") (ExpandNode nodeBeta ExpandReplaceNode rewriteSpec))
-                ),
-                ( nodeGamma,
-                  mkDynStage "gamma" $ \_ -> do
+                )
+              ,
+                ( nodeGamma
+                , mkDynStage "gamma" $ \_ -> do
                     maybeBetaRewrote <- timeout 2_000_000 (readMVar betaRewrote)
                     case maybeBetaRewrote of
                       Nothing -> throwIO (userError "timed out waiting for beta rewrite")
                       Just () -> pure ()
                     throwIO (userError "gamma fails after sibling rewrite")
-                ),
-                (nodeDelta, mkDynStage "delta" (\_ -> pure (StageComplete Aeson.Null)))
+                )
+              , (nodeDelta, mkDynStage "delta" (\_ -> pure (StageComplete Aeson.Null)))
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -2061,20 +2206,20 @@ spec = beforeAll setupTestDb $ do
       peakRef <- newIORef (0 :: Int)
       let mkNode name =
             StageDefinition
-              { sdStageId = name,
-                sdTemplateId = stageTemplateId name,
-                sdActionId = stageActionId name,
-                sdReplaySafety = SafeToReplay,
-                sdReplayPolicyOverride = Nothing,
-                sdTimeoutSeconds = Nothing,
-                sdRetryPolicy = Nothing,
-                sdAction = \_ -> do
+              { sdStageId = name
+              , sdTemplateId = stageTemplateId name
+              , sdActionId = stageActionId name
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = \_ -> do
                   n <- atomicModifyIORef' concurrentRef (\c -> let c' = c + 1 in (c', c'))
                   atomicModifyIORef' peakRef (\p -> (max p n, ()))
                   threadDelay 30000
                   atomicModifyIORef' concurrentRef (\c -> (c - 1, ()))
-                  pure (StageComplete Aeson.Null),
-                sdMemoryStrategy = defaultMemoryStrategy
+                  pure (StageComplete Aeson.Null)
+              , sdMemoryStrategy = defaultMemoryStrategy
               }
           -- 4 independent roots (no edges between them)
           nodes = [NodeId "a", NodeId "b", NodeId "c", NodeId "d"]
@@ -2083,16 +2228,16 @@ spec = beforeAll setupTestDb $ do
           defs = Map.fromList (zip nodes (fmap mkNode stages))
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -2110,36 +2255,36 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let mkDynStage stageId action =
             StageDefinition
-              { sdStageId = DynStageId stageId,
-                sdTemplateId = stageTemplateId (DynStageId stageId),
-                sdActionId = stageActionId (DynStageId stageId),
-                sdReplaySafety = SafeToReplay,
-                sdReplayPolicyOverride = Nothing,
-                sdTimeoutSeconds = Nothing,
-                sdRetryPolicy = Nothing,
-                sdAction = action,
-                sdMemoryStrategy = defaultMemoryStrategy
+              { sdStageId = DynStageId stageId
+              , sdTemplateId = stageTemplateId (DynStageId stageId)
+              , sdActionId = stageActionId (DynStageId stageId)
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = action
+              , sdMemoryStrategy = defaultMemoryStrategy
               }
           nodes = [NodeId "a", NodeId "b", NodeId "c"]
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           defs =
             Map.fromList
-              [ (NodeId "a", mkDynStage "a" (\_ -> throwIO (userError "a fails immediately"))),
-                (NodeId "b", mkDynStage "b" (\_ -> pure (StageComplete (Aeson.String "b")))),
-                (NodeId "c", mkDynStage "c" (\_ -> pure (StageComplete (Aeson.String "c"))))
+              [ (NodeId "a", mkDynStage "a" (\_ -> throwIO (userError "a fails immediately")))
+              , (NodeId "b", mkDynStage "b" (\_ -> pure (StageComplete (Aeson.String "b"))))
+              , (NodeId "c", mkDynStage "c" (\_ -> pure (StageComplete (Aeson.String "c"))))
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -2164,62 +2309,65 @@ spec = beforeAll setupTestDb $ do
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           defs =
             Map.fromList
-              [ ( NodeId "a",
-                  StageDefinition
-                    { sdStageId = TestStageAlpha,
-                      sdTemplateId = stageTemplateId TestStageAlpha,
-                      sdActionId = stageActionId TestStageAlpha,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> pure (StageSuspend (SignalName "wait_for_it")),
-                      sdMemoryStrategy = defaultMemoryStrategy
+              [
+                ( NodeId "a"
+                , StageDefinition
+                    { sdStageId = TestStageAlpha
+                    , sdTemplateId = stageTemplateId TestStageAlpha
+                    , sdActionId = stageActionId TestStageAlpha
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> pure (StageSuspend (SignalName "wait_for_it"))
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( NodeId "b",
-                  StageDefinition
-                    { sdStageId = TestStageBeta,
-                      sdTemplateId = stageTemplateId TestStageBeta,
-                      sdActionId = stageActionId TestStageBeta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+                )
+              ,
+                ( NodeId "b"
+                , StageDefinition
+                    { sdStageId = TestStageBeta
+                    , sdTemplateId = stageTemplateId TestStageBeta
+                    , sdActionId = stageActionId TestStageBeta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         atomicModifyIORef' completedRef (\c -> (c + 1, ()))
-                        pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( NodeId "c",
-                  StageDefinition
-                    { sdStageId = TestStageGamma,
-                      sdTemplateId = stageTemplateId TestStageGamma,
-                      sdActionId = stageActionId TestStageGamma,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+                )
+              ,
+                ( NodeId "c"
+                , StageDefinition
+                    { sdStageId = TestStageGamma
+                    , sdTemplateId = stageTemplateId TestStageGamma
+                    , sdActionId = stageActionId TestStageGamma
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         atomicModifyIORef' completedRef (\c -> (c + 1, ()))
-                        pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
                 )
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeSuspended
@@ -2244,35 +2392,35 @@ spec = beforeAll setupTestDb $ do
           nodes = [NodeId (T.pack ("n" <> show i)) | i <- [1 :: Int .. nodeCount]]
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           mkDef nid =
-            ( nid,
-              StageDefinition
-                { sdStageId = DynStageId (unNodeId nid),
-                  sdTemplateId = stageTemplateId (DynStageId (unNodeId nid)),
-                  sdActionId = stageActionId (DynStageId (unNodeId nid)),
-                  sdReplaySafety = SafeToReplay,
-                  sdReplayPolicyOverride = Nothing,
-                  sdTimeoutSeconds = Nothing,
-                  sdRetryPolicy = Nothing,
-                  sdAction = \_ -> do
+            ( nid
+            , StageDefinition
+                { sdStageId = DynStageId (unNodeId nid)
+                , sdTemplateId = stageTemplateId (DynStageId (unNodeId nid))
+                , sdActionId = stageActionId (DynStageId (unNodeId nid))
+                , sdReplaySafety = SafeToReplay
+                , sdReplayPolicyOverride = Nothing
+                , sdTimeoutSeconds = Nothing
+                , sdRetryPolicy = Nothing
+                , sdAction = \_ -> do
                     threadDelay 5000 -- 5ms
                     atomicModifyIORef' completedRef (\c -> (c + 1, ()))
-                    pure (StageComplete Aeson.Null),
-                  sdMemoryStrategy = defaultMemoryStrategy
+                    pure (StageComplete Aeson.Null)
+                , sdMemoryStrategy = defaultMemoryStrategy
                 }
             )
           defs = Map.fromList (fmap mkDef nodes)
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -2289,39 +2437,39 @@ spec = beforeAll setupTestDb $ do
           nodes = [NodeId (T.pack ("n" <> show i)) | i <- [1 :: Int .. nodeCount]]
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           mkDef i nid =
-            ( nid,
-              StageDefinition
-                { sdStageId = DynStageId (unNodeId nid),
-                  sdTemplateId = stageTemplateId (DynStageId (unNodeId nid)),
-                  sdActionId = stageActionId (DynStageId (unNodeId nid)),
-                  sdReplaySafety = SafeToReplay,
-                  sdReplayPolicyOverride = Nothing,
-                  sdTimeoutSeconds = Nothing,
-                  sdRetryPolicy = Nothing,
-                  sdAction = \_ ->
+            ( nid
+            , StageDefinition
+                { sdStageId = DynStageId (unNodeId nid)
+                , sdTemplateId = stageTemplateId (DynStageId (unNodeId nid))
+                , sdActionId = stageActionId (DynStageId (unNodeId nid))
+                , sdReplaySafety = SafeToReplay
+                , sdReplayPolicyOverride = Nothing
+                , sdTimeoutSeconds = Nothing
+                , sdRetryPolicy = Nothing
+                , sdAction = \_ ->
                     if i `elem` failingIndices
                       then do
                         threadDelay 2000
                         throwIO (userError ("node " <> show i <> " fails"))
                       else do
                         threadDelay 10000
-                        pure (StageComplete Aeson.Null),
-                  sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete Aeson.Null)
+                , sdMemoryStrategy = defaultMemoryStrategy
                 }
             )
           defs = Map.fromList (zipWith mkDef [1 ..] nodes)
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -2336,91 +2484,97 @@ spec = beforeAll setupTestDb $ do
           let allStatuses = Map.elems m
           allStatuses `shouldSatisfy` notElem NodeRunning
 
-    it "closes stage logs and records diagnostics when post-action finalization throws in a concurrent frontier" $ \mPool -> withDb mPool $ \pool -> do
-      (_, taskContext) <- mkTaskContextWith pool 2
-      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-concurrent-dispatch-exception"
-      runId <- createTestRun pool taskId
-      task <- loadTaskDef pool taskId
-      let nodes = [NodeId "bad", NodeId "good"]
-          topology = toRelation (mconcat [Vertex n | n <- nodes])
-          defs =
-            Map.fromList
-              [ ( NodeId "bad",
-                  StageDefinition
-                    { sdStageId = DynStageId "bad",
-                      sdTemplateId = stageTemplateId (DynStageId "bad"),
-                      sdActionId = stageActionId (DynStageId "bad"),
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
-                        threadDelay 5_000
-                        pure (StageComplete (error "post_action_dispatch_boom")),
-                      sdMemoryStrategy = defaultMemoryStrategy
-                    }
-                ),
-                ( NodeId "good",
-                  StageDefinition
-                    { sdStageId = DynStageId "good",
-                      sdTemplateId = stageTemplateId (DynStageId "good"),
-                      sdActionId = stageActionId (DynStageId "good"),
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
-                        threadDelay 20_000
-                        pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
-                    }
+    it
+      "closes stage logs and records diagnostics when post-action finalization throws in a concurrent frontier"
+      $ \mPool -> withDb mPool $ \pool -> do
+        (_, taskContext) <- mkTaskContextWith pool 2
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-concurrent-dispatch-exception"
+        runId <- createTestRun pool taskId
+        task <- loadTaskDef pool taskId
+        let nodes = [NodeId "bad", NodeId "good"]
+            topology = toRelation (mconcat [Vertex n | n <- nodes])
+            defs =
+              Map.fromList
+                [
+                  ( NodeId "bad"
+                  , StageDefinition
+                      { sdStageId = DynStageId "bad"
+                      , sdTemplateId = stageTemplateId (DynStageId "bad")
+                      , sdActionId = stageActionId (DynStageId "bad")
+                      , sdReplaySafety = SafeToReplay
+                      , sdReplayPolicyOverride = Nothing
+                      , sdTimeoutSeconds = Nothing
+                      , sdRetryPolicy = Nothing
+                      , sdAction = \_ -> do
+                          threadDelay 5_000
+                          pure (StageComplete (error "post_action_dispatch_boom"))
+                      , sdMemoryStrategy = defaultMemoryStrategy
+                      }
+                  )
+                ,
+                  ( NodeId "good"
+                  , StageDefinition
+                      { sdStageId = DynStageId "good"
+                      , sdTemplateId = stageTemplateId (DynStageId "good")
+                      , sdActionId = stageActionId (DynStageId "good")
+                      , sdReplaySafety = SafeToReplay
+                      , sdReplayPolicyOverride = Nothing
+                      , sdTimeoutSeconds = Nothing
+                      , sdRetryPolicy = Nothing
+                      , sdAction = \_ -> do
+                          threadDelay 20_000
+                          pure (StageComplete Aeson.Null)
+                      , sdMemoryStrategy = defaultMemoryStrategy
+                      }
+                  )
+                ]
+            stagePlan =
+              StagePlan
+                { spInitialState = Aeson.Null
+                , spCheckpointRuntimeVersion = 1
+                , spReplayPolicy = ReplayPolicyWarn
+                , spInitialRewriteBudget = defaultRewriteBudget
+                , spRewriteExhaustionPolicy = RewriteExhaustionFail
+                , spBudgetExceededExhaustionPolicy = Nothing
+                , spMaxRewriteReExecutions = 2
+                , spTopology = topology
+                , spDefinitions = defs
+                , spTemplateRegistry = mkTemplateRegistry defs
+                }
+        outcome <- executeStagePlan taskContext runId task stagePlan
+        outcome `shouldBe` OutcomeFailed
+
+        stageLogs <- readStageLogs pool runId
+        attemptLogs <- readStageAttemptLogs pool runId
+        runEvents <- readRunEvents pool runId
+        statuses <- readGraphNodeStatuses pool runId
+
+        fmap psldStageName stageLogs `shouldContain` ["bad"]
+        let badStageLogs = filter (\logEntry -> logEntry.psldStageName == "bad") stageLogs
+            badAttemptLogs =
+              filter
+                ( \attemptLog ->
+                    case badStageLogs of
+                      [badLog] -> attemptLog.psaldStageLogId == badLog.psldId
+                      _ -> False
                 )
-              ]
-          stagePlan =
-            StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
-              }
-      outcome <- executeStagePlan taskContext runId task stagePlan
-      outcome `shouldBe` OutcomeFailed
+                attemptLogs
+        fmap psldStatus badStageLogs `shouldBe` ["failed"]
+        fmap psldCompletedAt badStageLogs `shouldSatisfy` all isJust
+        fmap psaldStatus badAttemptLogs `shouldBe` ["failed"]
+        fmap psaldCompletedAt badAttemptLogs `shouldSatisfy` all isJust
 
-      stageLogs <- readStageLogs pool runId
-      attemptLogs <- readStageAttemptLogs pool runId
-      runEvents <- readRunEvents pool runId
-      statuses <- readGraphNodeStatuses pool runId
+        let eventTypes = fmap preEventType runEvents
+        mapM_
+          (\ev -> eventTypes `shouldSatisfy` elem ev)
+          ["stage.dispatch_exception", "frontier.settled_failed", "stage.failed", "run.failed.settled"]
+        fmap preMessage runEvents `shouldSatisfy` any (T.isInfixOf "post_action_dispatch_boom")
 
-      fmap psldStageName stageLogs `shouldContain` ["bad"]
-      let badStageLogs = filter (\logEntry -> logEntry.psldStageName == "bad") stageLogs
-          badAttemptLogs =
-            filter
-              ( \attemptLog ->
-                  case badStageLogs of
-                    [badLog] -> attemptLog.psaldStageLogId == badLog.psldId
-                    _ -> False
-              )
-              attemptLogs
-      fmap psldStatus badStageLogs `shouldBe` ["failed"]
-      fmap psldCompletedAt badStageLogs `shouldSatisfy` all isJust
-      fmap psaldStatus badAttemptLogs `shouldBe` ["failed"]
-      fmap psaldCompletedAt badAttemptLogs `shouldSatisfy` all isJust
-
-      let eventTypes = fmap preEventType runEvents
-      mapM_ (\ev -> eventTypes `shouldSatisfy` elem ev) ["stage.dispatch_exception", "frontier.settled_failed", "stage.failed", "run.failed.settled"]
-      fmap preMessage runEvents `shouldSatisfy` any (T.isInfixOf "post_action_dispatch_boom")
-
-      case statuses of
-        Nothing -> expectationFailure "Expected graph state to be persisted"
-        Just m -> do
-          Map.lookup (NodeId "bad") m `shouldBe` Just NodeFailed
-          Map.elems m `shouldSatisfy` notElem NodeRunning
+        case statuses of
+          Nothing -> expectationFailure "Expected graph state to be persisted"
+          Just m -> do
+            Map.lookup (NodeId "bad") m `shouldBe` Just NodeFailed
+            Map.elems m `shouldSatisfy` notElem NodeRunning
 
   describe "frontier regression tests" $ do
     it "cancellation between stages returns OutcomeCancelled without retrying" $ \mPool -> withDb mPool $ \pool -> do
@@ -2432,32 +2586,32 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_ s -> do
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_ s -> do
                       -- Request cancellation during stage 1
                       now <- getCurrentTime
                       runTx pool $ Q.requestCancellation runId "test cancel" now
-                      pure s,
-                    sdMemoryStrategy = defaultMemoryStrategy
-                  },
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = liftChainAction $ \_ s -> do
+                      pure s
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = liftChainAction $ \_ s -> do
                       atomicModifyIORef' stage2Runs (\c -> (c + 1, ()))
-                      pure s,
-                    sdMemoryStrategy = defaultMemoryStrategy
+                      pure s
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -2485,49 +2639,51 @@ spec = beforeAll setupTestDb $ do
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           defs =
             Map.fromList
-              [ ( NodeId "a",
-                  StageDefinition
-                    { sdStageId = TestStageAlpha,
-                      sdTemplateId = stageTemplateId TestStageAlpha,
-                      sdActionId = stageActionId TestStageAlpha,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+              [
+                ( NodeId "a"
+                , StageDefinition
+                    { sdStageId = TestStageAlpha
+                    , sdTemplateId = stageTemplateId TestStageAlpha
+                    , sdActionId = stageActionId TestStageAlpha
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         atomicModifyIORef' workerStarts (\c -> (c + 1, ()))
-                        pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( NodeId "b",
-                  StageDefinition
-                    { sdStageId = TestStageBeta,
-                      sdTemplateId = stageTemplateId TestStageBeta,
-                      sdActionId = stageActionId TestStageBeta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+                )
+              ,
+                ( NodeId "b"
+                , StageDefinition
+                    { sdStageId = TestStageBeta
+                    , sdTemplateId = stageTemplateId TestStageBeta
+                    , sdActionId = stageActionId TestStageBeta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         atomicModifyIORef' workerStarts (\c -> (c + 1, ()))
-                        pure (StageComplete Aeson.Null),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete Aeson.Null)
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
                 )
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       result <- timeout 3000000 $ executeStagePlan taskContext runId task stagePlan
       case result of
@@ -2555,49 +2711,51 @@ spec = beforeAll setupTestDb $ do
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           defs =
             Map.fromList
-              [ ( NodeId "fast",
-                  StageDefinition
-                    { sdStageId = TestStageAlpha,
-                      sdTemplateId = stageTemplateId TestStageAlpha,
-                      sdActionId = stageActionId TestStageAlpha,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+              [
+                ( NodeId "fast"
+                , StageDefinition
+                    { sdStageId = TestStageAlpha
+                    , sdTemplateId = stageTemplateId TestStageAlpha
+                    , sdActionId = stageActionId TestStageAlpha
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         _ <- tryPutMVar fastDone ()
-                        pure (StageComplete (Aeson.String "fast_output")),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete (Aeson.String "fast_output"))
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( NodeId "slow",
-                  StageDefinition
-                    { sdStageId = TestStageBeta,
-                      sdTemplateId = stageTemplateId TestStageBeta,
-                      sdActionId = stageActionId TestStageBeta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+                )
+              ,
+                ( NodeId "slow"
+                , StageDefinition
+                    { sdStageId = TestStageBeta
+                    , sdTemplateId = stageTemplateId TestStageBeta
+                    , sdActionId = stageActionId TestStageBeta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         _ <- readMVar slowGate -- block until released
-                        pure (StageComplete (Aeson.String "slow_output")),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete (Aeson.String "slow_output"))
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
                 )
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       withAsync (executeStagePlan taskContext runId task stagePlan) $ \planAsync -> do
         -- Wait for fast node to complete
@@ -2651,52 +2809,54 @@ spec = beforeAll setupTestDb $ do
           topology = toRelation (mconcat [Vertex n | n <- nodes])
           defs =
             Map.fromList
-              [ ( NodeId "fast",
-                  StageDefinition
-                    { sdStageId = TestStageAlpha,
-                      sdTemplateId = stageTemplateId TestStageAlpha,
-                      sdActionId = stageActionId TestStageAlpha,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> do
+              [
+                ( NodeId "fast"
+                , StageDefinition
+                    { sdStageId = TestStageAlpha
+                    , sdTemplateId = stageTemplateId TestStageAlpha
+                    , sdActionId = stageActionId TestStageAlpha
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> do
                         _ <- readMVar slowStarted
                         _ <- tryPutMVar fastDone ()
-                        pure (StageComplete (Aeson.String "fast_output")),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                        pure (StageComplete (Aeson.String "fast_output"))
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
-                ),
-                ( NodeId "slow",
-                  StageDefinition
-                    { sdStageId = TestStageBeta,
-                      sdTemplateId = stageTemplateId TestStageBeta,
-                      sdActionId = stageActionId TestStageBeta,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ ->
+                )
+              ,
+                ( NodeId "slow"
+                , StageDefinition
+                    { sdStageId = TestStageBeta
+                    , sdTemplateId = stageTemplateId TestStageBeta
+                    , sdActionId = stageActionId TestStageBeta
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ ->
                         flip finally (void (tryPutMVar slowCancelled ())) $ do
                           _ <- tryPutMVar slowStarted ()
                           _ <- readMVar slowGate
-                          pure (StageComplete (Aeson.String "slow_output")),
-                      sdMemoryStrategy = defaultMemoryStrategy
+                          pure (StageComplete (Aeson.String "slow_output"))
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
                 )
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = topology,
-                spDefinitions = defs,
-                spTemplateRegistry = mkTemplateRegistry defs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
               }
       -- The trigger fires on both INSERT and UPDATE.  writeGraphState uses
       -- INSERT ... ON CONFLICT DO UPDATE, so the first call (INSERT) fires
@@ -2721,94 +2881,100 @@ spec = beforeAll setupTestDb $ do
       let errType = fmap Q.pravErrorType runView
       errType `shouldBe` Just (Just "graph_state_persist_failed")
 
-    it "resumes from partial concurrent frontier persistence to the same final state as uninterrupted execution" $ \mPool -> withDb mPool $ \pool -> do
-      let mkConvergencePlan fastDone slowGate =
-            let nodes = [NodeId "fast", NodeId "slow"]
-                topology = toRelation (mconcat [Vertex n | n <- nodes])
-                defs =
-                  Map.fromList
-                    [ ( NodeId "fast",
-                        StageDefinition
-                          { sdStageId = TestStageAlpha,
-                            sdTemplateId = stageTemplateId TestStageAlpha,
-                            sdActionId = stageActionId TestStageAlpha,
-                            sdReplaySafety = SafeToReplay,
-                            sdReplayPolicyOverride = Nothing,
-                            sdTimeoutSeconds = Nothing,
-                            sdRetryPolicy = Nothing,
-                            sdAction = \_ -> do
-                              _ <- tryPutMVar fastDone ()
-                              pure (StageComplete (Aeson.String "fast_output")),
-                            sdMemoryStrategy = defaultMemoryStrategy
-                          }
-                      ),
-                      ( NodeId "slow",
-                        StageDefinition
-                          { sdStageId = TestStageBeta,
-                            sdTemplateId = stageTemplateId TestStageBeta,
-                            sdActionId = stageActionId TestStageBeta,
-                            sdReplaySafety = SafeToReplay,
-                            sdReplayPolicyOverride = Nothing,
-                            sdTimeoutSeconds = Nothing,
-                            sdRetryPolicy = Nothing,
-                            sdAction = \_ -> do
-                              _ <- readMVar slowGate
-                              pure (StageComplete (Aeson.String "slow_output")),
-                            sdMemoryStrategy = defaultMemoryStrategy
-                          }
-                      )
-                    ]
-             in StagePlan
-                  { spInitialState = Aeson.Null,
-                    spCheckpointRuntimeVersion = 1,
-                    spReplayPolicy = ReplayPolicyWarn,
-                    spInitialRewriteBudget = defaultRewriteBudget,
-                    spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                    spBudgetExceededExhaustionPolicy = Nothing,
-                    spMaxRewriteReExecutions = 2,
-                    spTopology = topology,
-                    spDefinitions = defs,
-                    spTemplateRegistry = mkTemplateRegistry defs
-                  }
+    it
+      "resumes from partial concurrent frontier persistence to the same final state as uninterrupted execution"
+      $ \mPool -> withDb mPool $ \pool -> do
+        let mkConvergencePlan fastDone slowGate =
+              let nodes = [NodeId "fast", NodeId "slow"]
+                  topology = toRelation (mconcat [Vertex n | n <- nodes])
+                  defs =
+                    Map.fromList
+                      [
+                        ( NodeId "fast"
+                        , StageDefinition
+                            { sdStageId = TestStageAlpha
+                            , sdTemplateId = stageTemplateId TestStageAlpha
+                            , sdActionId = stageActionId TestStageAlpha
+                            , sdReplaySafety = SafeToReplay
+                            , sdReplayPolicyOverride = Nothing
+                            , sdTimeoutSeconds = Nothing
+                            , sdRetryPolicy = Nothing
+                            , sdAction = \_ -> do
+                                _ <- tryPutMVar fastDone ()
+                                pure (StageComplete (Aeson.String "fast_output"))
+                            , sdMemoryStrategy = defaultMemoryStrategy
+                            }
+                        )
+                      ,
+                        ( NodeId "slow"
+                        , StageDefinition
+                            { sdStageId = TestStageBeta
+                            , sdTemplateId = stageTemplateId TestStageBeta
+                            , sdActionId = stageActionId TestStageBeta
+                            , sdReplaySafety = SafeToReplay
+                            , sdReplayPolicyOverride = Nothing
+                            , sdTimeoutSeconds = Nothing
+                            , sdRetryPolicy = Nothing
+                            , sdAction = \_ -> do
+                                _ <- readMVar slowGate
+                                pure (StageComplete (Aeson.String "slow_output"))
+                            , sdMemoryStrategy = defaultMemoryStrategy
+                            }
+                        )
+                      ]
+               in StagePlan
+                    { spInitialState = Aeson.Null
+                    , spCheckpointRuntimeVersion = 1
+                    , spReplayPolicy = ReplayPolicyWarn
+                    , spInitialRewriteBudget = defaultRewriteBudget
+                    , spRewriteExhaustionPolicy = RewriteExhaustionFail
+                    , spBudgetExceededExhaustionPolicy = Nothing
+                    , spMaxRewriteReExecutions = 2
+                    , spTopology = topology
+                    , spDefinitions = defs
+                    , spTemplateRegistry = mkTemplateRegistry defs
+                    }
 
-      (_, resumeTaskContext) <- mkTaskContextWith pool 4
-      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-partial-persist-resume-convergence"
-      runId <- createTestRun pool taskId
-      task <- loadTaskDef pool taskId
-      fastDone <- newEmptyMVar
-      slowGate <- newEmptyMVar
-      let interruptedPlan = mkConvergencePlan fastDone slowGate
-      withAsync (executeStagePlan resumeTaskContext runId task interruptedPlan) $ \planAsync -> do
-        _ <- readMVar fastDone
-        _ <-
-          waitForGraphStatuses
-            pool
-            runId
-            (\m -> Map.lookup (NodeId "fast") m == Just NodeCompleted)
-        cancel planAsync
-        _ <- waitCatch planAsync
-        pure ()
-      putMVar slowGate ()
-      resumeOutcome <- resumeStagePlan resumeTaskContext runId task interruptedPlan
-      resumeOutcome `shouldBe` OutcomeCompleted
-      resumedStatuses <- readGraphNodeStatuses pool runId
-      resumedOutputs <- readGraphNodeOutputs pool runId
+        (_, resumeTaskContext) <- mkTaskContextWith pool 4
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-partial-persist-resume-convergence"
+        runId <- createTestRun pool taskId
+        task <- loadTaskDef pool taskId
+        fastDone <- newEmptyMVar
+        slowGate <- newEmptyMVar
+        let interruptedPlan = mkConvergencePlan fastDone slowGate
+        withAsync (executeStagePlan resumeTaskContext runId task interruptedPlan) $ \planAsync -> do
+          _ <- readMVar fastDone
+          _ <-
+            waitForGraphStatuses
+              pool
+              runId
+              (\m -> Map.lookup (NodeId "fast") m == Just NodeCompleted)
+          cancel planAsync
+          _ <- waitCatch planAsync
+          pure ()
+        putMVar slowGate ()
+        resumeOutcome <- resumeStagePlan resumeTaskContext runId task interruptedPlan
+        resumeOutcome `shouldBe` OutcomeCompleted
+        resumedStatuses <- readGraphNodeStatuses pool runId
+        resumedOutputs <- readGraphNodeOutputs pool runId
 
-      (_, uninterruptedTaskContext) <- mkTaskContextWith pool 4
-      uninterruptedTaskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-uninterrupted-convergence-baseline"
-      uninterruptedRunId <- createTestRun pool uninterruptedTaskId
-      uninterruptedTask <- loadTaskDef pool uninterruptedTaskId
-      fastDoneBaseline <- newEmptyMVar
-      slowGateBaseline <- newEmptyMVar
-      putMVar slowGateBaseline ()
-      let uninterruptedPlan = mkConvergencePlan fastDoneBaseline slowGateBaseline
-      uninterruptedOutcome <- executeStagePlan uninterruptedTaskContext uninterruptedRunId uninterruptedTask uninterruptedPlan
-      uninterruptedOutcome `shouldBe` OutcomeCompleted
-      uninterruptedStatuses <- readGraphNodeStatuses pool uninterruptedRunId
-      uninterruptedOutputs <- readGraphNodeOutputs pool uninterruptedRunId
+        (_, uninterruptedTaskContext) <- mkTaskContextWith pool 4
+        uninterruptedTaskId <-
+          insertTestTaskDef pool "paper_portfolio_cycle" "test-uninterrupted-convergence-baseline"
+        uninterruptedRunId <- createTestRun pool uninterruptedTaskId
+        uninterruptedTask <- loadTaskDef pool uninterruptedTaskId
+        fastDoneBaseline <- newEmptyMVar
+        slowGateBaseline <- newEmptyMVar
+        putMVar slowGateBaseline ()
+        let uninterruptedPlan = mkConvergencePlan fastDoneBaseline slowGateBaseline
+        uninterruptedOutcome <-
+          executeStagePlan uninterruptedTaskContext uninterruptedRunId uninterruptedTask uninterruptedPlan
+        uninterruptedOutcome `shouldBe` OutcomeCompleted
+        uninterruptedStatuses <- readGraphNodeStatuses pool uninterruptedRunId
+        uninterruptedOutputs <- readGraphNodeOutputs pool uninterruptedRunId
 
-      resumedStatuses `shouldBe` uninterruptedStatuses
-      fmap fst resumedOutputs `shouldBe` fmap fst uninterruptedOutputs
+        resumedStatuses `shouldBe` uninterruptedStatuses
+        fmap fst resumedOutputs `shouldBe` fmap fst uninterruptedOutputs
 
   -- ==========================================================================
   -- Critical safety path tests
@@ -2830,7 +2996,13 @@ spec = beforeAll setupTestDb $ do
       let topology = spTopology stagePlan
           gs :: GraphState Aeson.Value
           gs = initialGraphState topology
-      writeGraphStateCompat pool runId (Aeson.toJSON (gsNodeStatuses gs)) (Aeson.toJSON (gsNodeOutputs gs)) (Just 99) Nothing
+      writeGraphStateCompat
+        pool
+        runId
+        (Aeson.toJSON (gsNodeStatuses gs))
+        (Aeson.toJSON (gsNodeOutputs gs))
+        (Just 99)
+        Nothing
       outcome <- resumeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
       runView <- runSession pool $ Q.getRunAdminView runId
@@ -2851,7 +3023,13 @@ spec = beforeAll setupTestDb $ do
       let topology = spTopology stagePlan
           gs :: GraphState Aeson.Value
           gs = initialGraphState topology
-      writeGraphStateCompat pool runId (Aeson.toJSON (gsNodeStatuses gs)) (Aeson.toJSON (gsNodeOutputs gs)) Nothing Nothing
+      writeGraphStateCompat
+        pool
+        runId
+        (Aeson.toJSON (gsNodeStatuses gs))
+        (Aeson.toJSON (gsNodeOutputs gs))
+        Nothing
+        Nothing
       outcome <- resumeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
 
@@ -2865,22 +3043,22 @@ spec = beforeAll setupTestDb $ do
         DB.runTransaction pool $
           Q.updateRunFailed
             Q.RunFailureUpdate
-              { rfuRunId = runId,
-                rfuCompletedAt = now,
-                rfuErrType = "graph_state_persist_failed",
-                rfuErrMsg = "first failure",
-                rfuRetryable = True
+              { rfuRunId = runId
+              , rfuCompletedAt = now
+              , rfuErrType = "graph_state_persist_failed"
+              , rfuErrMsg = "first failure"
+              , rfuRetryable = True
               }
       -- Second failRun: generic error (should be no-op)
       _ <-
         DB.runTransaction pool $
           Q.updateRunFailed
             Q.RunFailureUpdate
-              { rfuRunId = runId,
-                rfuCompletedAt = now,
-                rfuErrType = "graph_settled_with_failures",
-                rfuErrMsg = "second failure",
-                rfuRetryable = False
+              { rfuRunId = runId
+              , rfuCompletedAt = now
+              , rfuErrType = "graph_settled_with_failures"
+              , rfuErrMsg = "second failure"
+              , rfuRetryable = False
               }
       -- The first error_type should be preserved
       runView <- runSession pool $ Q.getRunAdminView runId
@@ -2896,26 +3074,26 @@ spec = beforeAll setupTestDb $ do
       let stagePlan =
             mkLinearStagePlan
               [ StageDefinition
-                  { sdStageId = TestStageAlpha,
-                    sdTemplateId = stageTemplateId TestStageAlpha,
-                    sdActionId = stageActionId TestStageAlpha,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = \_ctx -> pure (StageSuspend (SignalName "approval")),
-                    sdMemoryStrategy = defaultMemoryStrategy
-                  },
-                StageDefinition
-                  { sdStageId = TestStageBeta,
-                    sdTemplateId = stageTemplateId TestStageBeta,
-                    sdActionId = stageActionId TestStageBeta,
-                    sdReplaySafety = SafeToReplay,
-                    sdReplayPolicyOverride = Nothing,
-                    sdTimeoutSeconds = Nothing,
-                    sdRetryPolicy = Nothing,
-                    sdAction = \_ctx -> pure (StageSuspend (SignalName "approval")),
-                    sdMemoryStrategy = defaultMemoryStrategy
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (SignalName "approval"))
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              , StageDefinition
+                  { sdStageId = TestStageBeta
+                  , sdTemplateId = stageTemplateId TestStageBeta
+                  , sdActionId = stageActionId TestStageBeta
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (SignalName "approval"))
+                  , sdMemoryStrategy = defaultMemoryStrategy
                   }
               ]
               Aeson.Null
@@ -2942,15 +3120,15 @@ spec = beforeAll setupTestDb $ do
     let rewriteRuntimeVersion = 3
         mkDynStageWithTemplate templateId stageId action =
           StageDefinition
-            { sdStageId = DynStageId stageId,
-              sdTemplateId = templateId,
-              sdActionId = stageActionId (DynStageId stageId),
-              sdReplaySafety = SafeToReplay,
-              sdReplayPolicyOverride = Nothing,
-              sdTimeoutSeconds = Nothing,
-              sdRetryPolicy = Nothing,
-              sdAction = action,
-              sdMemoryStrategy = defaultMemoryStrategy
+            { sdStageId = DynStageId stageId
+            , sdTemplateId = templateId
+            , sdActionId = stageActionId (DynStageId stageId)
+            , sdReplaySafety = SafeToReplay
+            , sdReplayPolicyOverride = Nothing
+            , sdTimeoutSeconds = Nothing
+            , sdRetryPolicy = Nothing
+            , sdAction = action
+            , sdMemoryStrategy = defaultMemoryStrategy
             }
         mkDynStage stageId =
           mkDynStageWithTemplate (stageTemplateId (DynStageId stageId)) stageId
@@ -2966,37 +3144,47 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "sub1")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "sub1"))
+              , sgsDefinitions =
                   Map.fromList
                     [ (NodeId "sub1", mkDynLinearStage "sub1" (\_ state -> pure (Aeson.object ["sub" Aeson..= state])))
-                    ],
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub1"]
+                    ]
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub1"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ ->
-                          pure (StageRewrite (Aeson.String "alpha-output") (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ ->
+                          pure
+                            ( StageRewrite
+                                (Aeson.String "alpha-output")
+                                (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec)
+                            )
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ ->
-                            pure (StageRewrite (Aeson.String "alpha-output") (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ ->
+                            pure
+                              ( StageRewrite
+                                  (Aeson.String "alpha-output")
+                                  (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec)
+                              )
                         )
                       ]
               }
@@ -3023,7 +3211,8 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       compiledProposal <-
         case compileWireAppendProposalWithEnv wireSmokeCompileEnv wireSmokeAppendHole wireSmokeProposalSource of
-          Left err -> expectationFailure ("Expected Wire proposal to compile, got: " <> show err) >> error "unreachable"
+          Left err ->
+            expectationFailure ("Expected Wire proposal to compile, got: " <> show err) >> error "unreachable"
           Right compiled -> pure compiled
       proposalPlan <-
         case lowerCompiledCircuitToStagePlan wireSmokePulseConfig wireSmokeBinder compiledProposal of
@@ -3031,10 +3220,10 @@ spec = beforeAll setupTestDb $ do
           Right loweredPlan -> pure loweredPlan
       let subgraph =
             SubgraphSpec
-              { sgsTopology = proposalPlan.spTopology,
-                sgsDefinitions = proposalPlan.spDefinitions,
-                sgsEntryNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitEntryNodes,
-                sgsExitNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitExitNodes
+              { sgsTopology = proposalPlan.spTopology
+              , sgsDefinitions = proposalPlan.spDefinitions
+              , sgsEntryNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitEntryNodes
+              , sgsExitNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitExitNodes
               }
           analystId = NodeId "analyst"
           reviewerId = NodeId "reviewer"
@@ -3052,21 +3241,21 @@ spec = beforeAll setupTestDb $ do
                 )
           definitions =
             Map.fromList
-              [ (analystId, analystDef),
-                (reviewerId, reviewerDef)
+              [ (analystId, analystDef)
+              , (reviewerId, reviewerDef)
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (edge analystId reviewerId),
-                spDefinitions = definitions,
-                spTemplateRegistry = mkTemplateRegistry definitions
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (edge analystId reviewerId)
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -3112,8 +3301,8 @@ spec = beforeAll setupTestDb $ do
               Set.member (NodeId "analyst:stress_beta") topology.relVertices `shouldBe` True
               successors topology (NodeId "analyst")
                 `shouldBe` Set.fromList
-                  [ NodeId "analyst:stress_alpha",
-                    NodeId "analyst:stress_beta"
+                  [ NodeId "analyst:stress_alpha"
+                  , NodeId "analyst:stress_beta"
                   ]
               successors topology (NodeId "analyst:stress_beta") `shouldBe` Set.singleton reviewerId
 
@@ -3129,71 +3318,75 @@ spec = beforeAll setupTestDb $ do
               pure
                 ( StageComplete
                     ( Aeson.object
-                        [ "nodeId" Aeson..= unNodeId ctx.scNodeId,
-                          "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                        [ "nodeId" Aeson..= unNodeId ctx.scNodeId
+                        , "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
                         ]
                     )
                 )
           pairSubgraph leftId rightId =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId leftId) <> Vertex (NodeId rightId)),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId leftId) <> Vertex (NodeId rightId))
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId leftId, completeNode leftId),
-                      (NodeId rightId, completeNode rightId)
-                    ],
-                sgsEntryNodes = [NodeId leftId, NodeId rightId],
-                sgsExitNodes = [NodeId leftId, NodeId rightId]
+                    [ (NodeId leftId, completeNode leftId)
+                    , (NodeId rightId, completeNode rightId)
+                    ]
+              , sgsEntryNodes = [NodeId leftId, NodeId rightId]
+              , sgsExitNodes = [NodeId leftId, NodeId rightId]
               }
           firstSubgraph =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "c") <> Vertex (NodeId "d")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "c") <> Vertex (NodeId "d"))
+              , sgsDefinitions =
                   Map.fromList
-                    [ ( NodeId "c",
-                        nodeStage (NodeId "c") $ \ctx ->
+                    [
+                      ( NodeId "c"
+                      , nodeStage (NodeId "c") $ \ctx ->
                           pure
                             ( StageRewrite
                                 ( Aeson.object
-                                    [ "nodeId" Aeson..= unNodeId ctx.scNodeId,
-                                      "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                                    [ "nodeId" Aeson..= unNodeId ctx.scNodeId
+                                    , "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
                                     ]
                                 )
                                 (AppendAfter ctx.scNodeId (pairSubgraph "e" "f"))
                             )
-                      ),
-                      ( NodeId "d",
-                        nodeStage (NodeId "d") $ \ctx ->
+                      )
+                    ,
+                      ( NodeId "d"
+                      , nodeStage (NodeId "d") $ \ctx ->
                           pure
                             ( StageRewrite
                                 ( Aeson.object
-                                    [ "nodeId" Aeson..= unNodeId ctx.scNodeId,
-                                      "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                                    [ "nodeId" Aeson..= unNodeId ctx.scNodeId
+                                    , "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
                                     ]
                                 )
                                 (AppendAfter ctx.scNodeId (pairSubgraph "g" "h"))
                             )
                       )
-                    ],
-                sgsEntryNodes = [NodeId "c", NodeId "d"],
-                sgsExitNodes = [NodeId "c", NodeId "d"]
+                    ]
+              , sgsEntryNodes = [NodeId "c", NodeId "d"]
+              , sgsExitNodes = [NodeId "c", NodeId "d"]
               }
           definitions =
             Map.fromList
-              [ ( anchorId,
-                  nodeStage anchorId $ \ctx ->
+              [
+                ( anchorId
+                , nodeStage anchorId $ \ctx ->
                     pure
                       ( StageRewrite
                           ( Aeson.object
-                              [ "nodeId" Aeson..= unNodeId ctx.scNodeId,
-                                "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                              [ "nodeId" Aeson..= unNodeId ctx.scNodeId
+                              , "inputs" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
                               ]
                           )
                           (AppendAfter ctx.scNodeId firstSubgraph)
                       )
-                ),
-                ( reviewerId,
-                  nodeStage reviewerId $ \ctx ->
+                )
+              ,
+                ( reviewerId
+                , nodeStage reviewerId $ \ctx ->
                     pure
                       ( StageComplete
                           ( Aeson.object
@@ -3205,32 +3398,32 @@ spec = beforeAll setupTestDb $ do
               ]
           recursiveBudget =
             RewriteBudget
-              { rbAddedNodesMax = 6,
-                rbAddedEdgesMax = 12,
-                rbAddedDepthMax = 3,
-                rbFrontierDeltaMax = 3,
-                rbRewriteOpsMax = 3
+              { rbAddedNodesMax = 6
+              , rbAddedEdgesMax = 12
+              , rbAddedDepthMax = 3
+              , rbFrontierDeltaMax = 3
+              , rbRewriteOpsMax = 3
               }
           spentBudget =
             RewriteBudget
-              { rbAddedNodesMax = 0,
-                rbAddedEdgesMax = 0,
-                rbAddedDepthMax = 0,
-                rbFrontierDeltaMax = 0,
-                rbRewriteOpsMax = 0
+              { rbAddedNodesMax = 0
+              , rbAddedEdgesMax = 0
+              , rbAddedDepthMax = 0
+              , rbFrontierDeltaMax = 0
+              , rbRewriteOpsMax = 0
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = recursiveBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 1,
-                spTopology = toRelation (edge anchorId reviewerId),
-                spDefinitions = definitions,
-                spTemplateRegistry = mkTemplateRegistry definitions
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = recursiveBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 1
+              , spTopology = toRelation (edge anchorId reviewerId)
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -3285,146 +3478,150 @@ spec = beforeAll setupTestDb $ do
             Right (Just topology) -> do
               successors topology anchorId
                 `shouldBe` Set.fromList
-                  [ NodeId "a:c",
-                    NodeId "a:d"
+                  [ NodeId "a:c"
+                  , NodeId "a:d"
                   ]
               successors topology (NodeId "a:c")
                 `shouldBe` Set.fromList
-                  [ NodeId "a:c:e",
-                    NodeId "a:c:f"
+                  [ NodeId "a:c:e"
+                  , NodeId "a:c:f"
                   ]
               successors topology (NodeId "a:c:e") `shouldBe` Set.singleton reviewerId
               successors topology (NodeId "a:c:f") `shouldBe` Set.singleton reviewerId
               successors topology (NodeId "a:d")
                 `shouldBe` Set.fromList
-                  [ NodeId "a:d:g",
-                    NodeId "a:d:h"
+                  [ NodeId "a:d:g"
+                  , NodeId "a:d:h"
                   ]
               successors topology (NodeId "a:d:g") `shouldBe` Set.singleton reviewerId
               successors topology (NodeId "a:d:h") `shouldBe` Set.singleton reviewerId
 
-    it "rejects an over-budget raw Wire append proposal and re-executes the anchor with rejection context" $ \mPool -> withDb mPool $ \pool -> do
-      (_shutdownFlag, taskContext) <- mkTaskContext pool
-      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-wire-proposal-budget-rejection"
-      runId <- createTestRun pool taskId
-      task <- loadTaskDef pool taskId
-      attemptsRef <- newIORef (0 :: Int)
-      compiledProposal <-
-        case compileWireAppendProposalWithEnv wireSmokeCompileEnv wireSmokeAppendHole wireSmokeProposalSource of
-          Left err -> expectationFailure ("Expected Wire proposal to compile, got: " <> show err) >> error "unreachable"
-          Right compiled -> pure compiled
-      proposalPlan <-
-        case lowerCompiledCircuitToStagePlan wireSmokePulseConfig wireSmokeBinder compiledProposal of
-          Left err -> expectationFailure ("Expected Wire proposal to lower, got: " <> show err) >> error "unreachable"
-          Right loweredPlan -> pure loweredPlan
-      let subgraph =
-            SubgraphSpec
-              { sgsTopology = proposalPlan.spTopology,
-                sgsDefinitions = proposalPlan.spDefinitions,
-                sgsEntryNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitEntryNodes,
-                sgsExitNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitExitNodes
-              }
-          analystId = NodeId "analyst"
-          reviewerId = NodeId "reviewer"
-          analystDef =
-            nodeStage analystId $ \ctx -> do
-              atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
-              case ctx.scRewriteRejection of
-                Nothing ->
-                  pure (StageRewrite (Aeson.String "analyst-output") (AppendAfter analystId subgraph))
-                Just rejectionCtx ->
-                  pure
-                    ( StageComplete
-                        ( Aeson.object
-                            [ "degraded" Aeson..= True,
-                              "rejectionType" Aeson..= rejectionCtx.rrcRejectionType,
-                              "exceededDimensions" Aeson..= rejectionCtx.rrcExceededDimensions
-                            ]
-                        )
-                    )
-          reviewerDef =
-            nodeStage reviewerId $ \ctx ->
-              pure
-                ( StageComplete
-                    ( Aeson.object
-                        [ "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs),
-                          "inputs" Aeson..= ctx.scInputs
-                        ]
-                    )
+    it
+      "rejects an over-budget raw Wire append proposal and re-executes the anchor with rejection context"
+      $ \mPool -> withDb mPool $ \pool -> do
+        (_shutdownFlag, taskContext) <- mkTaskContext pool
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-wire-proposal-budget-rejection"
+        runId <- createTestRun pool taskId
+        task <- loadTaskDef pool taskId
+        attemptsRef <- newIORef (0 :: Int)
+        compiledProposal <-
+          case compileWireAppendProposalWithEnv wireSmokeCompileEnv wireSmokeAppendHole wireSmokeProposalSource of
+            Left err ->
+              expectationFailure ("Expected Wire proposal to compile, got: " <> show err) >> error "unreachable"
+            Right compiled -> pure compiled
+        proposalPlan <-
+          case lowerCompiledCircuitToStagePlan wireSmokePulseConfig wireSmokeBinder compiledProposal of
+            Left err -> expectationFailure ("Expected Wire proposal to lower, got: " <> show err) >> error "unreachable"
+            Right loweredPlan -> pure loweredPlan
+        let subgraph =
+              SubgraphSpec
+                { sgsTopology = proposalPlan.spTopology
+                , sgsDefinitions = proposalPlan.spDefinitions
+                , sgsEntryNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitEntryNodes
+                , sgsExitNodes = fmap nodeIdFromCircuitRef compiledProposal.compiledCircuitExitNodes
+                }
+            analystId = NodeId "analyst"
+            reviewerId = NodeId "reviewer"
+            analystDef =
+              nodeStage analystId $ \ctx -> do
+                atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
+                case ctx.scRewriteRejection of
+                  Nothing ->
+                    pure (StageRewrite (Aeson.String "analyst-output") (AppendAfter analystId subgraph))
+                  Just rejectionCtx ->
+                    pure
+                      ( StageComplete
+                          ( Aeson.object
+                              [ "degraded" Aeson..= True
+                              , "rejectionType" Aeson..= rejectionCtx.rrcRejectionType
+                              , "exceededDimensions" Aeson..= rejectionCtx.rrcExceededDimensions
+                              ]
+                          )
+                      )
+            reviewerDef =
+              nodeStage reviewerId $ \ctx ->
+                pure
+                  ( StageComplete
+                      ( Aeson.object
+                          [ "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                          , "inputs" Aeson..= ctx.scInputs
+                          ]
+                      )
+                  )
+            definitions =
+              Map.fromList
+                [ (analystId, analystDef)
+                , (reviewerId, reviewerDef)
+                ]
+            tinyBudget =
+              RewriteBudget
+                { rbAddedNodesMax = 1
+                , rbAddedEdgesMax = 100
+                , rbAddedDepthMax = 100
+                , rbFrontierDeltaMax = 100
+                , rbRewriteOpsMax = 100
+                }
+            stagePlan =
+              StagePlan
+                { spInitialState = Aeson.String "seed"
+                , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+                , spReplayPolicy = ReplayPolicyWarn
+                , spInitialRewriteBudget = tinyBudget
+                , spRewriteExhaustionPolicy = RewriteExhaustionDegrade
+                , spBudgetExceededExhaustionPolicy = Nothing
+                , spMaxRewriteReExecutions = 1
+                , spTopology = toRelation (edge analystId reviewerId)
+                , spDefinitions = definitions
+                , spTemplateRegistry = mkTemplateRegistry definitions
+                }
+        outcome <- executeStagePlan taskContext runId task stagePlan
+        outcome `shouldBe` OutcomeCompleted
+        attempts <- readIORef attemptsRef
+        attempts `shouldBe` 2
+        rewriteRows <- runSession pool $ Q.readGraphRewritesForAdmin runId
+        case rewriteRows of
+          [row] -> do
+            row.pgravStatus `shouldBe` "rejected"
+            row.pgravRejectionReason
+              `shouldSatisfy` maybe False (T.isInfixOf "Rewrite exceeded remaining budget")
+            row.pgravExceededDimensions `shouldSatisfy` isJust
+            row.pgravBudgetBefore `shouldBe` Just (Aeson.toJSON tinyBudget)
+            row.pgravBudgetAfter `shouldBe` Nothing
+          rows -> expectationFailure ("Expected exactly one rejected rewrite row, got " <> show (length rows))
+        maybeStatuses <- readGraphNodeStatuses pool runId
+        case maybeStatuses of
+          Nothing -> expectationFailure "Expected persisted graph state after Wire budget rejection smoke"
+          Just statuses -> do
+            Map.lookup analystId statuses `shouldBe` Just NodeCompleted
+            Map.lookup (NodeId "analyst:stress_alpha") statuses `shouldBe` Nothing
+            Map.lookup (NodeId "analyst:stress_beta") statuses `shouldBe` Nothing
+            Map.lookup reviewerId statuses `shouldBe` Just NodeCompleted
+        maybeOutputs <- readGraphNodeOutputs pool runId
+        case maybeOutputs of
+          Nothing -> expectationFailure "Expected persisted graph outputs after Wire budget rejection smoke"
+          Just (outputs, appliedRewriteId) -> do
+            appliedRewriteId `shouldBe` Nothing
+            Map.lookup reviewerId outputs
+              `shouldBe` Just
+                ( Aeson.object
+                    [ "inputNodeIds" Aeson..= ["analyst" :: Text]
+                    , "inputs"
+                        Aeson..= Map.singleton
+                          analystId
+                          ( Aeson.object
+                              [ "degraded" Aeson..= True
+                              , "rejectionType" Aeson..= ("rewrite_budget_exceeded" :: Text)
+                              , "exceededDimensions"
+                                  Aeson..= [ Aeson.object
+                                               [ "edDimension" Aeson..= ("DimAddedNodes" :: Text)
+                                               , "edRequested" Aeson..= (2 :: Int)
+                                               , "edRemaining" Aeson..= (1 :: Int)
+                                               ]
+                                           ]
+                              ]
+                          )
+                    ]
                 )
-          definitions =
-            Map.fromList
-              [ (analystId, analystDef),
-                (reviewerId, reviewerDef)
-              ]
-          tinyBudget =
-            RewriteBudget
-              { rbAddedNodesMax = 1,
-                rbAddedEdgesMax = 100,
-                rbAddedDepthMax = 100,
-                rbFrontierDeltaMax = 100,
-                rbRewriteOpsMax = 100
-              }
-          stagePlan =
-            StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = tinyBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionDegrade,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 1,
-                spTopology = toRelation (edge analystId reviewerId),
-                spDefinitions = definitions,
-                spTemplateRegistry = mkTemplateRegistry definitions
-              }
-      outcome <- executeStagePlan taskContext runId task stagePlan
-      outcome `shouldBe` OutcomeCompleted
-      attempts <- readIORef attemptsRef
-      attempts `shouldBe` 2
-      rewriteRows <- runSession pool $ Q.readGraphRewritesForAdmin runId
-      case rewriteRows of
-        [row] -> do
-          row.pgravStatus `shouldBe` "rejected"
-          row.pgravRejectionReason `shouldSatisfy` maybe False (T.isInfixOf "Rewrite exceeded remaining budget")
-          row.pgravExceededDimensions `shouldSatisfy` isJust
-          row.pgravBudgetBefore `shouldBe` Just (Aeson.toJSON tinyBudget)
-          row.pgravBudgetAfter `shouldBe` Nothing
-        rows -> expectationFailure ("Expected exactly one rejected rewrite row, got " <> show (length rows))
-      maybeStatuses <- readGraphNodeStatuses pool runId
-      case maybeStatuses of
-        Nothing -> expectationFailure "Expected persisted graph state after Wire budget rejection smoke"
-        Just statuses -> do
-          Map.lookup analystId statuses `shouldBe` Just NodeCompleted
-          Map.lookup (NodeId "analyst:stress_alpha") statuses `shouldBe` Nothing
-          Map.lookup (NodeId "analyst:stress_beta") statuses `shouldBe` Nothing
-          Map.lookup reviewerId statuses `shouldBe` Just NodeCompleted
-      maybeOutputs <- readGraphNodeOutputs pool runId
-      case maybeOutputs of
-        Nothing -> expectationFailure "Expected persisted graph outputs after Wire budget rejection smoke"
-        Just (outputs, appliedRewriteId) -> do
-          appliedRewriteId `shouldBe` Nothing
-          Map.lookup reviewerId outputs
-            `shouldBe` Just
-              ( Aeson.object
-                  [ "inputNodeIds" Aeson..= ["analyst" :: Text],
-                    "inputs"
-                      Aeson..= Map.singleton
-                        analystId
-                        ( Aeson.object
-                            [ "degraded" Aeson..= True,
-                              "rejectionType" Aeson..= ("rewrite_budget_exceeded" :: Text),
-                              "exceededDimensions"
-                                Aeson..= [ Aeson.object
-                                             [ "edDimension" Aeson..= ("DimAddedNodes" :: Text),
-                                               "edRequested" Aeson..= (2 :: Int),
-                                               "edRemaining" Aeson..= (1 :: Int)
-                                             ]
-                                         ]
-                            ]
-                        )
-                  ]
-              )
 
     it "materializes admitted rewrites from lineage when graph_state watermark lags" $ \mPool -> withDb mPool $ \pool -> do
       (shutdownFlag, taskContext) <- mkTaskContext pool
@@ -3433,51 +3630,97 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId),
-                sgsDefinitions =
+              { sgsTopology = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId "sub1", mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                      (NodeId "sub2", mkRegistryDef (StageTemplateId "template/sub2") "sub2" (\_ state -> pure (Aeson.object ["sub2" Aeson..= state])))
-                    ],
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub2"]
+                    [
+                      ( NodeId "sub1"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub1")
+                          "sub1"
+                          (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                      )
+                    ,
+                      ( NodeId "sub2"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub2")
+                          "sub2"
+                          (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
+                      )
+                    ]
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub2"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage
                           "alpha"
                           ( \_ -> do
                               atomically $ writeTVar shutdownFlag True
-                              pure (StageRewrite (Aeson.String "alpha-output") (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
+                              pure
+                                ( StageRewrite
+                                    (Aeson.String "alpha-output")
+                                    (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec)
+                                )
                           )
-                      ),
-                      (NodeId "template_sub1", mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                      (NodeId "template_sub2", mkRegistryDef (StageTemplateId "template/sub2") "sub2" (\_ state -> pure (Aeson.object ["sub2" Aeson..= state])))
-                    ],
-                spTemplateRegistry =
+                      )
+                    ,
+                      ( NodeId "template_sub1"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub1")
+                          "sub1"
+                          (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                      )
+                    ,
+                      ( NodeId "template_sub2"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub2")
+                          "sub2"
+                          (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
+                      )
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage
                             "alpha"
                             ( \_ -> do
                                 atomically $ writeTVar shutdownFlag True
-                                pure (StageRewrite (Aeson.String "alpha-output") (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
+                                pure
+                                  ( StageRewrite
+                                      (Aeson.String "alpha-output")
+                                      (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec)
+                                  )
                             )
-                        ),
-                        (NodeId "template_sub1", mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                        (NodeId "template_sub2", mkRegistryDef (StageTemplateId "template/sub2") "sub2" (\_ state -> pure (Aeson.object ["sub2" Aeson..= state])))
+                        )
+                      ,
+                        ( NodeId "template_sub1"
+                        , mkRegistryDef
+                            (StageTemplateId "template/sub1")
+                            "sub1"
+                            (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                        )
+                      ,
+                        ( NodeId "template_sub2"
+                        , mkRegistryDef
+                            (StageTemplateId "template/sub2")
+                            "sub2"
+                            (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
+                        )
                       ]
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
@@ -3491,7 +3734,13 @@ spec = beforeAll setupTestDb $ do
           staleOutputs =
             Aeson.toJSON
               (Map.singleton (NodeId "alpha") (Aeson.String "alpha-output") :: Map.Map NodeId Aeson.Value)
-      writeGraphStateCompat pool runId staleStatuses staleOutputs (Just (fromIntegral rewriteRuntimeVersion :: Int32)) Nothing
+      writeGraphStateCompat
+        pool
+        runId
+        staleStatuses
+        staleOutputs
+        (Just (fromIntegral rewriteRuntimeVersion :: Int32))
+        Nothing
       atomically $ writeTVar shutdownFlag False
       outcome2 <- resumeStagePlan taskContext runId task stagePlan
       outcome2 `shouldBe` OutcomeCompleted
@@ -3509,18 +3758,23 @@ spec = beforeAll setupTestDb $ do
           appliedRewriteId `shouldBe` Just rewriteId
 
     it "materializes admin topology from latent template registry entries" $ \mPool -> withDb mPool $ \pool -> do
-      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-admin-topology-latent-template-registry"
+      taskId <-
+        insertTestTaskDef pool "paper_portfolio_cycle" "test-admin-topology-latent-template-registry"
       runId <- createTestRun pool taskId
       now <- getCurrentTime
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "sub1")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "sub1"))
+              , sgsDefinitions =
                   Map.singleton
                     (NodeId "sub1")
-                    (mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub1"]
+                    ( mkRegistryDef
+                        (StageTemplateId "template/sub1")
+                        "sub1"
+                        (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                    )
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub1"]
               }
           visibleDefinitions =
             Map.singleton
@@ -3530,19 +3784,23 @@ spec = beforeAll setupTestDb $ do
             visibleDefinitions
               <> Map.singleton
                 (NodeId "template_sub1")
-                (mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state])))
+                ( mkRegistryDef
+                    (StageTemplateId "template/sub1")
+                    "sub1"
+                    (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                )
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions = visibleDefinitions,
-                spTemplateRegistry = mkTemplateRegistry templateDefinitions
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions = visibleDefinitions
+              , spTemplateRegistry = mkTemplateRegistry templateDefinitions
               }
           serializableRewrite =
             Aeson.toJSON $
@@ -3551,18 +3809,18 @@ spec = beforeAll setupTestDb $ do
         runTx pool $
           Q.writeGraphRewrite
             Q.GraphRewriteInsert
-              { griRunId = runId,
-                griSourceNodeId = "alpha",
-                griSourceNodeOutput = Nothing,
-                griRewriteCost = Nothing,
-                griRewriteDelta = Nothing,
-                griBudgetBefore = Nothing,
-                griBudgetAfter = Nothing,
-                griRewriteSpec = serializableRewrite,
-                griStatus = "admitted",
-                griRejectionReason = Nothing,
-                griExceededDimensions = Nothing,
-                griCreatedAt = now
+              { griRunId = runId
+              , griSourceNodeId = "alpha"
+              , griSourceNodeOutput = Nothing
+              , griRewriteCost = Nothing
+              , griRewriteDelta = Nothing
+              , griBudgetBefore = Nothing
+              , griBudgetAfter = Nothing
+              , griRewriteSpec = serializableRewrite
+              , griStatus = "admitted"
+              , griRejectionReason = Nothing
+              , griExceededDimensions = Nothing
+              , griCreatedAt = now
               }
       topologyResult <-
         Executor.materializedTopologyForAdmin
@@ -3588,51 +3846,89 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId),
-                sgsDefinitions =
+              { sgsTopology = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId "sub1", mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                      (NodeId "sub2", mkRegistryDef (StageTemplateId "template/sub2") "sub2" (\_ state -> pure (Aeson.object ["sub2" Aeson..= state])))
-                    ],
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub2"]
+                    [
+                      ( NodeId "sub1"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub1")
+                          "sub1"
+                          (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                      )
+                    ,
+                      ( NodeId "sub2"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub2")
+                          "sub2"
+                          (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
+                      )
+                    ]
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub2"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage
                           "alpha"
                           ( \_ -> do
                               atomically $ writeTVar shutdownFlag True
                               pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
                           )
-                      ),
-                      (NodeId "template_sub1", mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                      (NodeId "template_sub2", mkRegistryDef (StageTemplateId "template/sub2") "sub2" (\_ state -> pure (Aeson.object ["sub2" Aeson..= state])))
-                    ],
-                spTemplateRegistry =
+                      )
+                    ,
+                      ( NodeId "template_sub1"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub1")
+                          "sub1"
+                          (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                      )
+                    ,
+                      ( NodeId "template_sub2"
+                      , mkRegistryDef
+                          (StageTemplateId "template/sub2")
+                          "sub2"
+                          (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
+                      )
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage
                             "alpha"
                             ( \_ -> do
                                 atomically $ writeTVar shutdownFlag True
                                 pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
                             )
-                        ),
-                        (NodeId "template_sub1", mkRegistryDef (StageTemplateId "template/sub1") "sub1" (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))),
-                        (NodeId "template_sub2", mkRegistryDef (StageTemplateId "template/sub2") "sub2" (\_ state -> pure (Aeson.object ["sub2" Aeson..= state])))
+                        )
+                      ,
+                        ( NodeId "template_sub1"
+                        , mkRegistryDef
+                            (StageTemplateId "template/sub1")
+                            "sub1"
+                            (\_ state -> pure (Aeson.object ["sub1" Aeson..= state]))
+                        )
+                      ,
+                        ( NodeId "template_sub2"
+                        , mkRegistryDef
+                            (StageTemplateId "template/sub2")
+                            "sub2"
+                            (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
+                        )
                       ]
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
@@ -3641,8 +3937,15 @@ spec = beforeAll setupTestDb $ do
       rewriteId <-
         case rewriteRows of
           [(rid, _, _, _, _)] -> pure rid
-          rows -> expectationFailure ("Expected exactly one persisted rewrite, got " <> show (length rows)) >> pure 0
-      writeGraphStateCompat pool runId (Aeson.toJSON (Map.empty :: Map.Map NodeId NodeStatus)) (Aeson.toJSON (Map.empty :: Map.Map NodeId Aeson.Value)) (Just (fromIntegral rewriteRuntimeVersion :: Int32)) (Just rewriteId)
+          rows ->
+            expectationFailure ("Expected exactly one persisted rewrite, got " <> show (length rows)) >> pure 0
+      writeGraphStateCompat
+        pool
+        runId
+        (Aeson.toJSON (Map.empty :: Map.Map NodeId NodeStatus))
+        (Aeson.toJSON (Map.empty :: Map.Map NodeId Aeson.Value))
+        (Just (fromIntegral rewriteRuntimeVersion :: Int32))
+        (Just rewriteId)
       atomically $ writeTVar shutdownFlag False
       outcome2 <- resumeStagePlan taskContext runId task stagePlan
       outcome2 `shouldBe` OutcomeCompleted
@@ -3665,19 +3968,19 @@ spec = beforeAll setupTestDb $ do
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.singleton
                     (NodeId "alpha")
-                    (mkDynLinearStage "alpha" (\_ state -> pure (Aeson.object ["alpha" Aeson..= state]))),
-                spTemplateRegistry =
+                    (mkDynLinearStage "alpha" (\_ state -> pure (Aeson.object ["alpha" Aeson..= state])))
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.singleton
                       (NodeId "alpha")
@@ -3687,20 +3990,26 @@ spec = beforeAll setupTestDb $ do
         runTx pool $
           Q.writeGraphRewrite
             Q.GraphRewriteInsert
-              { griRunId = runId,
-                griSourceNodeId = "alpha",
-                griSourceNodeOutput = Nothing,
-                griRewriteCost = Nothing,
-                griRewriteDelta = Nothing,
-                griBudgetBefore = Nothing,
-                griBudgetAfter = Nothing,
-                griRewriteSpec = invalidRejectedRewrite,
-                griStatus = "rejected",
-                griRejectionReason = Just "rewrite anchor missing from snapshot",
-                griExceededDimensions = Nothing,
-                griCreatedAt = now
+              { griRunId = runId
+              , griSourceNodeId = "alpha"
+              , griSourceNodeOutput = Nothing
+              , griRewriteCost = Nothing
+              , griRewriteDelta = Nothing
+              , griBudgetBefore = Nothing
+              , griBudgetAfter = Nothing
+              , griRewriteSpec = invalidRejectedRewrite
+              , griStatus = "rejected"
+              , griRejectionReason = Just "rewrite anchor missing from snapshot"
+              , griExceededDimensions = Nothing
+              , griCreatedAt = now
               }
-      writeGraphStateCompat pool runId (Aeson.toJSON (Map.empty :: Map.Map NodeId NodeStatus)) (Aeson.toJSON (Map.empty :: Map.Map NodeId Aeson.Value)) (Just (fromIntegral rewriteRuntimeVersion :: Int32)) Nothing
+      writeGraphStateCompat
+        pool
+        runId
+        (Aeson.toJSON (Map.empty :: Map.Map NodeId NodeStatus))
+        (Aeson.toJSON (Map.empty :: Map.Map NodeId Aeson.Value))
+        (Just (fromIntegral rewriteRuntimeVersion :: Int32))
+        Nothing
       replayRows <- runSession pool $ Q.readGraphRewrites runId
       replayRows `shouldBe` []
       adminRows <- runSession pool $ Q.readGraphRewritesForAdmin runId
@@ -3720,31 +4029,31 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "sub1")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "sub1"))
+              , sgsDefinitions =
                   Map.singleton
                     (NodeId "sub1")
-                    (mkDynLinearStage "sub1" (\_ state -> pure (Aeson.object ["sub" Aeson..= state]))),
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub1"]
+                    (mkDynLinearStage "sub1" (\_ state -> pure (Aeson.object ["sub" Aeson..= state])))
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub1"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.singleton
                     (NodeId "alpha")
                     ( mkDynStage "alpha" $ \_ ->
                         pure (StageRewrite Aeson.Null (ExpandNode (NodeId "missing-anchor") ExpandReplaceNode rewriteSpec))
-                    ),
-                spTemplateRegistry =
+                    )
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.singleton
                       (NodeId "alpha")
@@ -3767,43 +4076,47 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "sub1")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "sub1"))
+              , sgsDefinitions =
                   Map.singleton
                     (NodeId "sub1")
-                    (mkDynLinearStage "sub1" (\_ state -> pure (Aeson.object ["sub" Aeson..= state]))),
-                sgsEntryNodes = [NodeId "sub1"],
-                sgsExitNodes = [NodeId "sub1"]
+                    (mkDynLinearStage "sub1" (\_ state -> pure (Aeson.object ["sub" Aeson..= state])))
+              , sgsEntryNodes = [NodeId "sub1"]
+              , sgsExitNodes = [NodeId "sub1"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (path [NodeId "alpha", NodeId "beta"]),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [NodeId "alpha", NodeId "beta"])
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ ->
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ ->
                           pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
-                      ),
-                      ( NodeId "beta",
-                        mkDynLinearStage "beta" (\_ state -> pure (Aeson.object ["beta" Aeson..= state]))
                       )
-                    ],
-                spTemplateRegistry =
+                    ,
+                      ( NodeId "beta"
+                      , mkDynLinearStage "beta" (\_ state -> pure (Aeson.object ["beta" Aeson..= state]))
+                      )
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ ->
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ ->
                             pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
-                        ),
-                        ( NodeId "beta",
-                          mkDynLinearStage "beta" (\_ state -> pure (Aeson.object ["beta" Aeson..= state]))
+                        )
+                      ,
+                        ( NodeId "beta"
+                        , mkDynLinearStage "beta" (\_ state -> pure (Aeson.object ["beta" Aeson..= state]))
                         )
                       ]
               }
@@ -3839,48 +4152,50 @@ spec = beforeAll setupTestDb $ do
       task <- loadTaskDef pool taskId
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "mystery")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "mystery"))
+              , sgsDefinitions =
                   Map.singleton
                     (NodeId "mystery")
                     ( StageDefinition
-                        { sdStageId = DynStageId "shared_semantic_stage",
-                          sdTemplateId = StageTemplateId "missing/template",
-                          sdActionId = stageActionId (DynStageId "shared_semantic_stage"),
-                          sdReplaySafety = SafeToReplay,
-                          sdReplayPolicyOverride = Nothing,
-                          sdTimeoutSeconds = Nothing,
-                          sdRetryPolicy = Nothing,
-                          sdAction = liftChainAction (\_ state -> pure state),
-                          sdMemoryStrategy = defaultMemoryStrategy
+                        { sdStageId = DynStageId "shared_semantic_stage"
+                        , sdTemplateId = StageTemplateId "missing/template"
+                        , sdActionId = stageActionId (DynStageId "shared_semantic_stage")
+                        , sdReplaySafety = SafeToReplay
+                        , sdReplayPolicyOverride = Nothing
+                        , sdTimeoutSeconds = Nothing
+                        , sdRetryPolicy = Nothing
+                        , sdAction = liftChainAction (\_ state -> pure state)
+                        , sdMemoryStrategy = defaultMemoryStrategy
                         }
-                    ),
-                sgsEntryNodes = [NodeId "mystery"],
-                sgsExitNodes = [NodeId "mystery"]
+                    )
+              , sgsEntryNodes = [NodeId "mystery"]
+              , sgsExitNodes = [NodeId "mystery"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ -> do
                           atomically $ writeTVar shutdownFlag True
                           pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ -> do
                             atomically $ writeTVar shutdownFlag True
                             pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
                         )
@@ -3902,83 +4217,89 @@ spec = beforeAll setupTestDb $ do
       let duplicateTemplate = StageTemplateId "shared/template"
           rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "shared")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "shared"))
+              , sgsDefinitions =
                   Map.singleton
                     (NodeId "shared")
                     ( StageDefinition
-                        { sdStageId = DynStageId "shared_semantic_stage",
-                          sdTemplateId = duplicateTemplate,
-                          sdActionId = stageActionId (DynStageId "shared_semantic_stage"),
-                          sdReplaySafety = SafeToReplay,
-                          sdReplayPolicyOverride = Nothing,
-                          sdTimeoutSeconds = Nothing,
-                          sdRetryPolicy = Nothing,
-                          sdAction = liftChainAction (\_ state -> pure state),
-                          sdMemoryStrategy = defaultMemoryStrategy
+                        { sdStageId = DynStageId "shared_semantic_stage"
+                        , sdTemplateId = duplicateTemplate
+                        , sdActionId = stageActionId (DynStageId "shared_semantic_stage")
+                        , sdReplaySafety = SafeToReplay
+                        , sdReplayPolicyOverride = Nothing
+                        , sdTimeoutSeconds = Nothing
+                        , sdRetryPolicy = Nothing
+                        , sdAction = liftChainAction (\_ state -> pure state)
+                        , sdMemoryStrategy = defaultMemoryStrategy
                         }
-                    ),
-                sgsEntryNodes = [NodeId "shared"],
-                sgsExitNodes = [NodeId "shared"]
+                    )
+              , sgsEntryNodes = [NodeId "shared"]
+              , sgsExitNodes = [NodeId "shared"]
               }
           duplicateRegistryA =
-            ( NodeId "template_shared_a",
-              StageDefinition
-                { sdStageId = DynStageId "shared_stage_a",
-                  sdTemplateId = duplicateTemplate,
-                  sdActionId = stageActionId (DynStageId "shared_stage_a"),
-                  sdReplaySafety = SafeToReplay,
-                  sdReplayPolicyOverride = Nothing,
-                  sdTimeoutSeconds = Nothing,
-                  sdRetryPolicy = Nothing,
-                  sdAction = liftChainAction (\_ state -> pure (Aeson.object ["template" Aeson..= ("a" :: Text), "state" Aeson..= state])),
-                  sdMemoryStrategy = defaultMemoryStrategy
+            ( NodeId "template_shared_a"
+            , StageDefinition
+                { sdStageId = DynStageId "shared_stage_a"
+                , sdTemplateId = duplicateTemplate
+                , sdActionId = stageActionId (DynStageId "shared_stage_a")
+                , sdReplaySafety = SafeToReplay
+                , sdReplayPolicyOverride = Nothing
+                , sdTimeoutSeconds = Nothing
+                , sdRetryPolicy = Nothing
+                , sdAction =
+                    liftChainAction
+                      (\_ state -> pure (Aeson.object ["template" Aeson..= ("a" :: Text), "state" Aeson..= state]))
+                , sdMemoryStrategy = defaultMemoryStrategy
                 }
             )
           duplicateRegistryB =
-            ( NodeId "template_shared_b",
-              StageDefinition
-                { sdStageId = DynStageId "shared_stage_b",
-                  sdTemplateId = duplicateTemplate,
-                  sdActionId = stageActionId (DynStageId "shared_stage_b"),
-                  sdReplaySafety = SafeToReplay,
-                  sdReplayPolicyOverride = Nothing,
-                  sdTimeoutSeconds = Nothing,
-                  sdRetryPolicy = Nothing,
-                  sdAction = liftChainAction (\_ state -> pure (Aeson.object ["template" Aeson..= ("b" :: Text), "state" Aeson..= state])),
-                  sdMemoryStrategy = defaultMemoryStrategy
+            ( NodeId "template_shared_b"
+            , StageDefinition
+                { sdStageId = DynStageId "shared_stage_b"
+                , sdTemplateId = duplicateTemplate
+                , sdActionId = stageActionId (DynStageId "shared_stage_b")
+                , sdReplaySafety = SafeToReplay
+                , sdReplayPolicyOverride = Nothing
+                , sdTimeoutSeconds = Nothing
+                , sdRetryPolicy = Nothing
+                , sdAction =
+                    liftChainAction
+                      (\_ state -> pure (Aeson.object ["template" Aeson..= ("b" :: Text), "state" Aeson..= state]))
+                , sdMemoryStrategy = defaultMemoryStrategy
                 }
             )
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ -> do
                           atomically $ writeTVar shutdownFlag True
                           pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
-                      ),
-                      duplicateRegistryA,
-                      duplicateRegistryB
-                    ],
-                spTemplateRegistry =
+                      )
+                    , duplicateRegistryA
+                    , duplicateRegistryB
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ -> do
                             atomically $ writeTVar shutdownFlag True
                             pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
-                        ),
-                        duplicateRegistryA,
-                        duplicateRegistryB
+                        )
+                      , duplicateRegistryA
+                      , duplicateRegistryB
                       ]
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
@@ -3994,87 +4315,126 @@ spec = beforeAll setupTestDb $ do
       let templateA = StageTemplateId "shared/template-a"
           templateB = StageTemplateId "shared/template-b"
           sharedTemplateA =
-            ( NodeId "template_shared_a",
-              StageDefinition
-                { sdStageId = DynStageId "shared_sub",
-                  sdTemplateId = templateA,
-                  sdActionId = stageActionId (DynStageId "shared_sub"),
-                  sdReplaySafety = Irreversible,
-                  sdReplayPolicyOverride = Nothing,
-                  sdTimeoutSeconds = Nothing,
-                  sdRetryPolicy = Nothing,
-                  sdAction = liftChainAction (\_ state -> pure (Aeson.object ["template" Aeson..= ("a" :: Text), "state" Aeson..= state])),
-                  sdMemoryStrategy = defaultMemoryStrategy
+            ( NodeId "template_shared_a"
+            , StageDefinition
+                { sdStageId = DynStageId "shared_sub"
+                , sdTemplateId = templateA
+                , sdActionId = stageActionId (DynStageId "shared_sub")
+                , sdReplaySafety = Irreversible
+                , sdReplayPolicyOverride = Nothing
+                , sdTimeoutSeconds = Nothing
+                , sdRetryPolicy = Nothing
+                , sdAction =
+                    liftChainAction
+                      (\_ state -> pure (Aeson.object ["template" Aeson..= ("a" :: Text), "state" Aeson..= state]))
+                , sdMemoryStrategy = defaultMemoryStrategy
                 }
             )
           sharedTemplateB =
-            ( NodeId "template_shared_b",
-              StageDefinition
-                { sdStageId = DynStageId "shared_sub",
-                  sdTemplateId = templateB,
-                  sdActionId = stageActionId (DynStageId "shared_sub"),
-                  sdReplaySafety = Irreversible,
-                  sdReplayPolicyOverride = Nothing,
-                  sdTimeoutSeconds = Nothing,
-                  sdRetryPolicy = Nothing,
-                  sdAction = liftChainAction (\_ state -> pure (Aeson.object ["template" Aeson..= ("b" :: Text), "state" Aeson..= state])),
-                  sdMemoryStrategy = defaultMemoryStrategy
+            ( NodeId "template_shared_b"
+            , StageDefinition
+                { sdStageId = DynStageId "shared_sub"
+                , sdTemplateId = templateB
+                , sdActionId = stageActionId (DynStageId "shared_sub")
+                , sdReplaySafety = Irreversible
+                , sdReplayPolicyOverride = Nothing
+                , sdTimeoutSeconds = Nothing
+                , sdRetryPolicy = Nothing
+                , sdAction =
+                    liftChainAction
+                      (\_ state -> pure (Aeson.object ["template" Aeson..= ("b" :: Text), "state" Aeson..= state]))
+                , sdMemoryStrategy = defaultMemoryStrategy
                 }
             )
           mkSharedRewrite templateId templateTag =
             SubgraphSpec
-              { sgsTopology = toRelation (Vertex (NodeId "shared")),
-                sgsDefinitions =
+              { sgsTopology = toRelation (Vertex (NodeId "shared"))
+              , sgsDefinitions =
                   Map.fromList
-                    [ ( NodeId "shared",
-                        StageDefinition
-                          { sdStageId = DynStageId "shared_sub",
-                            sdTemplateId = templateId,
-                            sdActionId = stageActionId (DynStageId "shared_sub"),
-                            sdReplaySafety = Irreversible,
-                            sdReplayPolicyOverride = Nothing,
-                            sdTimeoutSeconds = Nothing,
-                            sdRetryPolicy = Nothing,
-                            sdAction = liftChainAction (\_ state -> pure (Aeson.object ["template" Aeson..= templateTag, "state" Aeson..= state])),
-                            sdMemoryStrategy = defaultMemoryStrategy
+                    [
+                      ( NodeId "shared"
+                      , StageDefinition
+                          { sdStageId = DynStageId "shared_sub"
+                          , sdTemplateId = templateId
+                          , sdActionId = stageActionId (DynStageId "shared_sub")
+                          , sdReplaySafety = Irreversible
+                          , sdReplayPolicyOverride = Nothing
+                          , sdTimeoutSeconds = Nothing
+                          , sdRetryPolicy = Nothing
+                          , sdAction =
+                              liftChainAction
+                                (\_ state -> pure (Aeson.object ["template" Aeson..= templateTag, "state" Aeson..= state]))
+                          , sdMemoryStrategy = defaultMemoryStrategy
                           }
                       )
-                    ],
-                sgsEntryNodes = [NodeId "shared"],
-                sgsExitNodes = [NodeId "shared"]
+                    ]
+              , sgsEntryNodes = [NodeId "shared"]
+              , sgsExitNodes = [NodeId "shared"]
               }
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = rewriteRuntimeVersion,
-                spReplayPolicy = ReplayPolicyBlockResume,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (path [NodeId "alpha", NodeId "beta"] :: Graph NodeId),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyBlockResume
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [NodeId "alpha", NodeId "beta"] :: Graph NodeId)
+              , spDefinitions =
                   Map.fromList
-                    [ (NodeId "alpha", mkDynStage "alpha" (\_ -> pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode (mkSharedRewrite templateA ("a" :: Text)))))),
-                      ( NodeId "beta",
-                        mkDynStage "beta" $ \_ -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage
+                          "alpha"
+                          ( \_ ->
+                              pure
+                                ( StageRewrite
+                                    Aeson.Null
+                                    (ExpandNode (NodeId "alpha") ExpandReplaceNode (mkSharedRewrite templateA ("a" :: Text)))
+                                )
+                          )
+                      )
+                    ,
+                      ( NodeId "beta"
+                      , mkDynStage "beta" $ \_ -> do
                           atomically $ writeTVar shutdownFlag True
-                          pure (StageRewrite Aeson.Null (ExpandNode (NodeId "beta") ExpandReplaceNode (mkSharedRewrite templateB ("b" :: Text))))
-                      ),
-                      sharedTemplateA,
-                      sharedTemplateB
-                    ],
-                spTemplateRegistry =
+                          pure
+                            ( StageRewrite
+                                Aeson.Null
+                                (ExpandNode (NodeId "beta") ExpandReplaceNode (mkSharedRewrite templateB ("b" :: Text)))
+                            )
+                      )
+                    , sharedTemplateA
+                    , sharedTemplateB
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ (NodeId "alpha", mkDynStage "alpha" (\_ -> pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode (mkSharedRewrite templateA ("a" :: Text)))))),
-                        ( NodeId "beta",
-                          mkDynStage "beta" $ \_ -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage
+                            "alpha"
+                            ( \_ ->
+                                pure
+                                  ( StageRewrite
+                                      Aeson.Null
+                                      (ExpandNode (NodeId "alpha") ExpandReplaceNode (mkSharedRewrite templateA ("a" :: Text)))
+                                  )
+                            )
+                        )
+                      ,
+                        ( NodeId "beta"
+                        , mkDynStage "beta" $ \_ -> do
                             atomically $ writeTVar shutdownFlag True
-                            pure (StageRewrite Aeson.Null (ExpandNode (NodeId "beta") ExpandReplaceNode (mkSharedRewrite templateB ("b" :: Text))))
-                        ),
-                        sharedTemplateA,
-                        sharedTemplateB
+                            pure
+                              ( StageRewrite
+                                  Aeson.Null
+                                  (ExpandNode (NodeId "beta") ExpandReplaceNode (mkSharedRewrite templateB ("b" :: Text)))
+                              )
+                        )
+                      , sharedTemplateA
+                      , sharedTemplateB
                       ]
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
@@ -4091,11 +4451,11 @@ spec = beforeAll setupTestDb $ do
           Map.lookup (NodeId "beta:shared") m
             `shouldBe` Just
               ( Aeson.object
-                  [ "template" Aeson..= ("b" :: Text),
-                    "state"
+                  [ "template" Aeson..= ("b" :: Text)
+                  , "state"
                       Aeson..= Aeson.object
-                        [ "template" Aeson..= ("a" :: Text),
-                          "state" Aeson..= Aeson.String "seed"
+                        [ "template" Aeson..= ("a" :: Text)
+                        , "state" Aeson..= Aeson.String "seed"
                         ]
                   ]
               )
@@ -4107,15 +4467,15 @@ spec = beforeAll setupTestDb $ do
   describe "budget convergence" $ do
     let mkDynStage stageId action =
           StageDefinition
-            { sdStageId = DynStageId stageId,
-              sdTemplateId = stageTemplateId (DynStageId stageId),
-              sdActionId = stageActionId (DynStageId stageId),
-              sdReplaySafety = SafeToReplay,
-              sdReplayPolicyOverride = Nothing,
-              sdTimeoutSeconds = Nothing,
-              sdRetryPolicy = Nothing,
-              sdAction = action,
-              sdMemoryStrategy = defaultMemoryStrategy
+            { sdStageId = DynStageId stageId
+            , sdTemplateId = stageTemplateId (DynStageId stageId)
+            , sdActionId = stageActionId (DynStageId stageId)
+            , sdReplaySafety = SafeToReplay
+            , sdReplayPolicyOverride = Nothing
+            , sdTimeoutSeconds = Nothing
+            , sdRetryPolicy = Nothing
+            , sdAction = action
+            , sdMemoryStrategy = defaultMemoryStrategy
             }
         mkDynLinearStage stageId action =
           mkDynStage stageId (liftChainAction action)
@@ -4144,34 +4504,35 @@ spec = beforeAll setupTestDb $ do
       -- Rewrite spec that would add 5 nodes, exceeding the budget of 1
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"]),
-                sgsDefinitions =
+              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"])
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s)),
-                      (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s)),
-                      (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s)),
-                      (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s)),
-                      (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
-                    ],
-                sgsEntryNodes = [NodeId "s1"],
-                sgsExitNodes = [NodeId "s5"]
+                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s))
+                    , (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s))
+                    , (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s))
+                    , (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s))
+                    , (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
+                    ]
+              , sgsEntryNodes = [NodeId "s1"]
+              , sgsExitNodes = [NodeId "s5"]
               }
           -- Budget allows only 1 added node — rewrite will be rejected
           tinyBudget = RewriteBudget 1 100 100 100 100
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = 3,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = tinyBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionDegrade,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = 3
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = tinyBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionDegrade
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \ctx ->
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \ctx ->
                           case ctx.scRewriteRejection of
                             Just _ ->
                               -- After rejection, produce degraded output
@@ -4180,12 +4541,13 @@ spec = beforeAll setupTestDb $ do
                               -- First execution: attempt a rewrite that exceeds budget
                               pure (StageRewrite (Aeson.String "alpha-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \ctx ->
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \ctx ->
                             case ctx.scRewriteRejection of
                               Just _ ->
                                 pure (StageComplete (Aeson.String "degraded"))
@@ -4197,105 +4559,109 @@ spec = beforeAll setupTestDb $ do
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
 
-    it "uses fresh live gas on stage execution and admits a smaller second rewrite without stale-budget rejection" $ \mPool -> withDb mPool $ \pool -> do
-      (_shutdownFlag, taskContext) <- mkTaskContext pool
-      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-budget-refresh-on-rewrite-retry"
-      runId <- createTestRun pool taskId
-      task <- loadTaskDef pool taskId
-      let mkAppendSubgraph localNodeNames =
-            let localNodeIds = fmap NodeId localNodeNames
-             in SubgraphSpec
-                  { sgsTopology = toRelation (path localNodeIds),
-                    sgsDefinitions =
-                      Map.fromList
-                        [ ( localNodeId,
-                            nodeStage localNodeId $ \ctx ->
-                              pure
-                                ( StageComplete
-                                    ( Aeson.object
-                                        [ "nodeId" Aeson..= unNodeId ctx.scNodeId,
-                                          "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
-                                        ]
-                                    )
-                                )
-                          )
-                        | localNodeId <- localNodeIds
-                        ],
-                    sgsEntryNodes = take 1 localNodeIds,
-                    sgsExitNodes = take 1 (reverse localNodeIds)
-                  }
-          largeSubgraph = mkAppendSubgraph ["l1", "l2", "l3", "l4"]
-          smallSubgraph = mkAppendSubgraph ["s1", "s2"]
-          leftId = NodeId "left"
-          rightId = NodeId "right"
-          reviewerId = NodeId "reviewer"
-          chooseRewrite ctx =
-            let remainingNodes = ctx.scBudgetContext.bcRemainingBudget.rbAddedNodesMax
-             in if remainingNodes >= 4
-                  then pure (StageRewrite (Aeson.String "large") (AppendAfter ctx.scNodeId largeSubgraph))
-                  else
-                    if remainingNodes >= 2
-                      then pure (StageRewrite (Aeson.String "small") (AppendAfter ctx.scNodeId smallSubgraph))
-                      else pure (StageComplete (Aeson.object ["remaining_nodes" Aeson..= remainingNodes]))
-          definitions =
-            Map.fromList
-              [ (leftId, nodeStage leftId chooseRewrite),
-                (rightId, nodeStage rightId chooseRewrite),
-                ( reviewerId,
-                  nodeStage reviewerId $ \ctx ->
-                    pure
-                      ( StageComplete
-                          ( Aeson.object
-                              [ "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
-                              ]
-                          )
-                      )
-                )
-              ]
-          rewriteBudget =
-            RewriteBudget
-              { rbAddedNodesMax = 6,
-                rbAddedEdgesMax = 32,
-                rbAddedDepthMax = 8,
-                rbFrontierDeltaMax = 8,
-                rbRewriteOpsMax = 4
-              }
-          stagePlan =
-            StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = 3,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = rewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 1,
-                spTopology = toRelation (edge leftId reviewerId <> edge rightId reviewerId),
-                spDefinitions = definitions,
-                spTemplateRegistry = mkTemplateRegistry definitions
-              }
-          decodeBudget label = \case
-            Just value ->
-              case Aeson.fromJSON value of
-                Aeson.Success budget -> pure budget
-                Aeson.Error err -> expectationFailure (label <> ": " <> err) >> pure rewriteBudget
-            Nothing ->
-              expectationFailure (label <> ": missing budget payload") >> pure rewriteBudget
-      outcome <- executeStagePlan taskContext runId task stagePlan
-      outcome `shouldBe` OutcomeCompleted
-      rewriteRows <- runSession pool $ Q.readGraphRewritesForAdmin runId
-      let admittedRows = filter ((== "admitted") . (.pgravStatus)) rewriteRows
-          rejectedRows = filter ((== "rejected") . (.pgravStatus)) rewriteRows
-      length rejectedRows `shouldBe` 0
-      case admittedRows of
-        [firstRow, secondRow] -> do
-          firstBudgetAfter <- decodeBudget "first admitted rewrite budget_after" firstRow.pgravBudgetAfter
-          secondBudgetBefore <- decodeBudget "second admitted rewrite budget_before" secondRow.pgravBudgetBefore
-          secondBudgetAfter <- decodeBudget "second admitted rewrite budget_after" secondRow.pgravBudgetAfter
-          firstBudgetAfter `shouldBe` secondBudgetBefore
-          firstBudgetAfter.rbAddedNodesMax `shouldBe` 2
-          secondBudgetAfter.rbAddedNodesMax `shouldBe` 0
-        rows ->
-          expectationFailure ("Expected exactly two admitted rewrites, got " <> show (length rows))
+    it
+      "uses fresh live gas on stage execution and admits a smaller second rewrite without stale-budget rejection"
+      $ \mPool -> withDb mPool $ \pool -> do
+        (_shutdownFlag, taskContext) <- mkTaskContext pool
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-budget-refresh-on-rewrite-retry"
+        runId <- createTestRun pool taskId
+        task <- loadTaskDef pool taskId
+        let mkAppendSubgraph localNodeNames =
+              let localNodeIds = fmap NodeId localNodeNames
+               in SubgraphSpec
+                    { sgsTopology = toRelation (path localNodeIds)
+                    , sgsDefinitions =
+                        Map.fromList
+                          [ ( localNodeId
+                            , nodeStage localNodeId $ \ctx ->
+                                pure
+                                  ( StageComplete
+                                      ( Aeson.object
+                                          [ "nodeId" Aeson..= unNodeId ctx.scNodeId
+                                          , "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                                          ]
+                                      )
+                                  )
+                            )
+                          | localNodeId <- localNodeIds
+                          ]
+                    , sgsEntryNodes = take 1 localNodeIds
+                    , sgsExitNodes = take 1 (reverse localNodeIds)
+                    }
+            largeSubgraph = mkAppendSubgraph ["l1", "l2", "l3", "l4"]
+            smallSubgraph = mkAppendSubgraph ["s1", "s2"]
+            leftId = NodeId "left"
+            rightId = NodeId "right"
+            reviewerId = NodeId "reviewer"
+            chooseRewrite ctx =
+              let remainingNodes = ctx.scBudgetContext.bcRemainingBudget.rbAddedNodesMax
+               in if remainingNodes >= 4
+                    then pure (StageRewrite (Aeson.String "large") (AppendAfter ctx.scNodeId largeSubgraph))
+                    else
+                      if remainingNodes >= 2
+                        then pure (StageRewrite (Aeson.String "small") (AppendAfter ctx.scNodeId smallSubgraph))
+                        else pure (StageComplete (Aeson.object ["remaining_nodes" Aeson..= remainingNodes]))
+            definitions =
+              Map.fromList
+                [ (leftId, nodeStage leftId chooseRewrite)
+                , (rightId, nodeStage rightId chooseRewrite)
+                ,
+                  ( reviewerId
+                  , nodeStage reviewerId $ \ctx ->
+                      pure
+                        ( StageComplete
+                            ( Aeson.object
+                                [ "inputNodeIds" Aeson..= fmap unNodeId (Map.keys ctx.scInputs)
+                                ]
+                            )
+                        )
+                  )
+                ]
+            rewriteBudget =
+              RewriteBudget
+                { rbAddedNodesMax = 6
+                , rbAddedEdgesMax = 32
+                , rbAddedDepthMax = 8
+                , rbFrontierDeltaMax = 8
+                , rbRewriteOpsMax = 4
+                }
+            stagePlan =
+              StagePlan
+                { spInitialState = Aeson.String "seed"
+                , spCheckpointRuntimeVersion = 3
+                , spReplayPolicy = ReplayPolicyWarn
+                , spInitialRewriteBudget = rewriteBudget
+                , spRewriteExhaustionPolicy = RewriteExhaustionFail
+                , spBudgetExceededExhaustionPolicy = Nothing
+                , spMaxRewriteReExecutions = 1
+                , spTopology = toRelation (edge leftId reviewerId <> edge rightId reviewerId)
+                , spDefinitions = definitions
+                , spTemplateRegistry = mkTemplateRegistry definitions
+                }
+            decodeBudget label = \case
+              Just value ->
+                case Aeson.fromJSON value of
+                  Aeson.Success budget -> pure budget
+                  Aeson.Error err -> expectationFailure (label <> ": " <> err) >> pure rewriteBudget
+              Nothing ->
+                expectationFailure (label <> ": missing budget payload") >> pure rewriteBudget
+        outcome <- executeStagePlan taskContext runId task stagePlan
+        outcome `shouldBe` OutcomeCompleted
+        rewriteRows <- runSession pool $ Q.readGraphRewritesForAdmin runId
+        let admittedRows = filter ((== "admitted") . (.pgravStatus)) rewriteRows
+            rejectedRows = filter ((== "rejected") . (.pgravStatus)) rewriteRows
+        length rejectedRows `shouldBe` 0
+        case admittedRows of
+          [firstRow, secondRow] -> do
+            firstBudgetAfter <- decodeBudget "first admitted rewrite budget_after" firstRow.pgravBudgetAfter
+            secondBudgetBefore <-
+              decodeBudget "second admitted rewrite budget_before" secondRow.pgravBudgetBefore
+            secondBudgetAfter <- decodeBudget "second admitted rewrite budget_after" secondRow.pgravBudgetAfter
+            firstBudgetAfter `shouldBe` secondBudgetBefore
+            firstBudgetAfter.rbAddedNodesMax `shouldBe` 2
+            secondBudgetAfter.rbAddedNodesMax `shouldBe` 0
+          rows ->
+            expectationFailure ("Expected exactly two admitted rewrites, got " <> show (length rows))
 
     it "uses the budget-specific exhaustion override to degrade without failing the run" $ \mPool -> withDb mPool $ \pool -> do
       (_shutdownFlag, taskContext) <- mkTaskContext pool
@@ -4305,42 +4671,44 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"]),
-                sgsDefinitions =
+              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"])
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s)),
-                      (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s)),
-                      (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s)),
-                      (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s)),
-                      (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
-                    ],
-                sgsEntryNodes = [NodeId "s1"],
-                sgsExitNodes = [NodeId "s5"]
+                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s))
+                    , (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s))
+                    , (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s))
+                    , (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s))
+                    , (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
+                    ]
+              , sgsEntryNodes = [NodeId "s1"]
+              , sgsExitNodes = [NodeId "s5"]
               }
           tinyBudget = RewriteBudget 1 100 100 100 100
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = 3,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = tinyBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Just RewriteExhaustionDegrade,
-                spMaxRewriteReExecutions = 1,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = 3
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = tinyBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Just RewriteExhaustionDegrade
+              , spMaxRewriteReExecutions = 1
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ -> do
                           atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
                           pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ -> do
                             atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
                             pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )
@@ -4365,23 +4733,25 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let rejectedSpec =
             Aeson.object
-              [ "format" Aeson..= ("cortex.workflow.wire.proposal/v1" :: Text),
-                "source" Aeson..= ("node bad : <- AnalysisFragment -> AnalysisFragment = @stress_dimension {};" :: Text)
+              [ "format" Aeson..= ("cortex.workflow.wire.proposal/v1" :: Text)
+              , "source"
+                  Aeson..= ("node bad : <- AnalysisFragment -> AnalysisFragment = @stress_dimension {};" :: Text)
               ]
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = 3,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionDegrade,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = 3
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionDegrade
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \ctx -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \ctx -> do
                           attemptNumber <- atomicModifyIORef' attemptsRef (\n -> let next = n + 1 in (next, next))
                           case ctx.scRewriteRejection of
                             Nothing ->
@@ -4389,45 +4759,46 @@ spec = beforeAll setupTestDb $ do
                                 ( StageRejectRewrite
                                     (Aeson.String "alpha-output")
                                     StageRejectedRewrite
-                                      { srrRejectionType = "wire_compile_rejected",
-                                        srrMessage = "proposal missing final graph expression",
-                                        srrRejectedSpec = Just rejectedSpec
+                                      { srrRejectionType = "wire_compile_rejected"
+                                      , srrMessage = "proposal missing final graph expression"
+                                      , srrRejectedSpec = Just rejectedSpec
                                       }
                                 )
                             Just rejectionCtx ->
                               pure
                                 ( StageComplete
                                     ( Aeson.object
-                                        [ "attempt" Aeson..= attemptNumber,
-                                          "rejection_type" Aeson..= rejectionCtx.rrcRejectionType,
-                                          "rejection_message" Aeson..= rejectionCtx.rrcMessage
+                                        [ "attempt" Aeson..= attemptNumber
+                                        , "rejection_type" Aeson..= rejectionCtx.rrcRejectionType
+                                        , "rejection_message" Aeson..= rejectionCtx.rrcMessage
                                         ]
                                     )
                                 )
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \ctx -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \ctx -> do
                             case ctx.scRewriteRejection of
                               Nothing ->
                                 pure
                                   ( StageRejectRewrite
                                       (Aeson.String "alpha-output")
                                       StageRejectedRewrite
-                                        { srrRejectionType = "wire_compile_rejected",
-                                          srrMessage = "proposal missing final graph expression",
-                                          srrRejectedSpec = Just rejectedSpec
+                                        { srrRejectionType = "wire_compile_rejected"
+                                        , srrMessage = "proposal missing final graph expression"
+                                        , srrRejectedSpec = Just rejectedSpec
                                         }
                                   )
                               Just rejectionCtx ->
                                 pure
                                   ( StageComplete
                                       ( Aeson.object
-                                          [ "rejection_type" Aeson..= rejectionCtx.rrcRejectionType,
-                                            "rejection_message" Aeson..= rejectionCtx.rrcMessage
+                                          [ "rejection_type" Aeson..= rejectionCtx.rrcRejectionType
+                                          , "rejection_message" Aeson..= rejectionCtx.rrcMessage
                                           ]
                                       )
                                   )
@@ -4456,43 +4827,45 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"]),
-                sgsDefinitions =
+              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"])
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s)),
-                      (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s)),
-                      (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s)),
-                      (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s)),
-                      (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
-                    ],
-                sgsEntryNodes = [NodeId "s1"],
-                sgsExitNodes = [NodeId "s5"]
+                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s))
+                    , (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s))
+                    , (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s))
+                    , (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s))
+                    , (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
+                    ]
+              , sgsEntryNodes = [NodeId "s1"]
+              , sgsExitNodes = [NodeId "s5"]
               }
           tinyBudget = RewriteBudget 1 100 100 100 100
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = 3,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = tinyBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = 3
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = tinyBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ -> do
                           atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
                           -- Always attempt rewrite, ignoring rejection context
                           pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ -> do
                             atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
                             pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )
@@ -4512,43 +4885,45 @@ spec = beforeAll setupTestDb $ do
       attemptsRef <- newIORef (0 :: Int)
       let rewriteSpec =
             SubgraphSpec
-              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"]),
-                sgsDefinitions =
+              { sgsTopology = toRelation (path [NodeId "s1", NodeId "s2", NodeId "s3", NodeId "s4", NodeId "s5"])
+              , sgsDefinitions =
                   Map.fromList
-                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s)),
-                      (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s)),
-                      (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s)),
-                      (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s)),
-                      (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
-                    ],
-                sgsEntryNodes = [NodeId "s1"],
-                sgsExitNodes = [NodeId "s5"]
+                    [ (NodeId "s1", mkDynLinearStage "s1" (\_ s -> pure s))
+                    , (NodeId "s2", mkDynLinearStage "s2" (\_ s -> pure s))
+                    , (NodeId "s3", mkDynLinearStage "s3" (\_ s -> pure s))
+                    , (NodeId "s4", mkDynLinearStage "s4" (\_ s -> pure s))
+                    , (NodeId "s5", mkDynLinearStage "s5" (\_ s -> pure s))
+                    ]
+              , sgsEntryNodes = [NodeId "s1"]
+              , sgsExitNodes = [NodeId "s5"]
               }
           tinyBudget = RewriteBudget 1 100 100 100 100
           stagePlan =
             StagePlan
-              { spInitialState = Aeson.String "seed",
-                spCheckpointRuntimeVersion = 3,
-                spReplayPolicy = ReplayPolicyWarn,
-                spInitialRewriteBudget = tinyBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionDegrade,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = toRelation (Vertex (NodeId "alpha")),
-                spDefinitions =
+              { spInitialState = Aeson.String "seed"
+              , spCheckpointRuntimeVersion = 3
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = tinyBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionDegrade
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (Vertex (NodeId "alpha"))
+              , spDefinitions =
                   Map.fromList
-                    [ ( NodeId "alpha",
-                        mkDynStage "alpha" $ \_ -> do
+                    [
+                      ( NodeId "alpha"
+                      , mkDynStage "alpha" $ \_ -> do
                           atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
                           -- Always attempt rewrite, ignoring rejection context
                           pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                       )
-                    ],
-                spTemplateRegistry =
+                    ]
+              , spTemplateRegistry =
                   mkTemplateRegistry $
                     Map.fromList
-                      [ ( NodeId "alpha",
-                          mkDynStage "alpha" $ \_ -> do
+                      [
+                        ( NodeId "alpha"
+                        , mkDynStage "alpha" $ \_ -> do
                             atomicModifyIORef' attemptsRef (\n -> (n + 1, ()))
                             pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )

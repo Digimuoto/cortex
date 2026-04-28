@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Techne.Activation
-  ( techneCapabilityBundle,
+  ( techneCapabilityBundle
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Techne),
-    NousCapabilityBundle,
-    nousCapabilityBundle,
+  ( NousArchetype (Techne)
+  , NousCapabilityBundle
+  , nousCapabilityBundle
   )
 
 techneCapabilityBundle :: NousCapabilityBundle

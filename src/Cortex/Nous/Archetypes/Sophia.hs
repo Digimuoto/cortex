@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Sophia
-  ( sophiaDefinition,
+  ( sophiaDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Sophia),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Sophia)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 sophiaDefinition :: NousArchetypeDefinition

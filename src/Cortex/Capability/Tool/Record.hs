@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Capability.Tool.Record
-  ( CortexToolCallRecord (..),
-    buildToolCallRecord,
+  ( CortexToolCallRecord (..)
+  , buildToolCallRecord
   )
 where
 
@@ -14,19 +14,20 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
+
 import Platform.Serde.Json.Preview
-  ( toolCallPayloadPreview,
-    truncateJsonValue,
-    truncateText,
+  ( toolCallPayloadPreview
+  , truncateJsonValue
+  , truncateText
   )
 
 data CortexToolCallRecord = CortexToolCallRecord
-  { cortexToolCallRecordId :: Text,
-    cortexToolCallRecordName :: Text,
-    cortexToolCallRecordArgs :: Aeson.Value,
-    cortexToolCallRecordResult :: Aeson.Value,
-    cortexToolCallRecordTimestamp :: UTCTime,
-    cortexToolCallRecordDuration :: Int
+  { cortexToolCallRecordId :: Text
+  , cortexToolCallRecordName :: Text
+  , cortexToolCallRecordArgs :: Aeson.Value
+  , cortexToolCallRecordResult :: Aeson.Value
+  , cortexToolCallRecordTimestamp :: UTCTime
+  , cortexToolCallRecordDuration :: Int
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
@@ -34,21 +35,21 @@ data CortexToolCallRecord = CortexToolCallRecord
 buildToolCallRecord :: Text -> Text -> Text -> Text -> UTCTime -> Int -> CortexToolCallRecord
 buildToolCallRecord callId toolName rawArgs rawResult timestamp durationMs =
   CortexToolCallRecord
-    { cortexToolCallRecordId = callId,
-      cortexToolCallRecordName = toolName,
-      cortexToolCallRecordArgs =
+    { cortexToolCallRecordId = callId
+    , cortexToolCallRecordName = toolName
+    , cortexToolCallRecordArgs =
         case parseToolArgs rawArgs of
           Right jsonValue -> truncateJsonValue 12 40 60 jsonValue
           Left _ ->
             Aeson.object
               [ "rawText" .= truncateText 600 (T.strip rawArgs)
-              ],
-      cortexToolCallRecordResult =
+              ]
+    , cortexToolCallRecordResult =
         fromMaybe
           (Aeson.object ["text" .= truncateText 600 (T.strip rawResult)])
-          (toolCallPayloadPreview 20 50 100 rawResult),
-      cortexToolCallRecordTimestamp = timestamp,
-      cortexToolCallRecordDuration = durationMs
+          (toolCallPayloadPreview 20 50 100 rawResult)
+    , cortexToolCallRecordTimestamp = timestamp
+    , cortexToolCallRecordDuration = durationMs
     }
 
 parseToolArgs :: Text -> Either Text Aeson.Value

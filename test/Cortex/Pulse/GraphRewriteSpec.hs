@@ -2,59 +2,60 @@
 
 module Cortex.Pulse.GraphRewriteSpec (spec) where
 
-import Cortex.Algebra.Graph
-  ( Graph (..),
-    Relation (..),
-    checkCacheInvariant,
-    edge,
-    path,
-    predecessors,
-    successors,
-    toRelation,
-  )
-import Cortex.Pulse.Executor
-  ( RewriteExhaustionPolicy (..),
-    StableStageId (..),
-    StageDefinition (..),
-    StagePlan (..),
-    StageReplaySafety (..),
-    StageRetryBackoff (..),
-    StageRetryExhaustion (..),
-    StageRetryPolicy (..),
-    StageTemplateId (..),
-    applyRewrite,
-    buildStageTemplateRegistry,
-    stageActionId,
-    stageTemplateId,
-  )
-import Cortex.Pulse.Materialize (computeTopologyHash)
-import Cortex.Pulse.Memory (defaultMemoryStrategy)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Rewrite
-  ( BudgetDimension (..),
-    ExceededDimension (..),
-    ExpansionMode (..),
-    GraphRewrite (..),
-    PlannedRewriteDelta (..),
-    RewriteAnchorDisposition (..),
-    RewriteBudget (..),
-    RewriteBudgetError (..),
-    RewriteCost (..),
-    RewritePlanningError (..),
-    SubgraphSpec (..),
-    admitRewriteDelta,
-    admittedRemainingBudget,
-    consumeRewriteBudget,
-    exceededDimensions,
-    planGraphRewrite,
-  )
-import Cortex.Pulse.Types (defaultRewriteBudget)
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( Graph (..)
+  , Relation (..)
+  , checkCacheInvariant
+  , edge
+  , path
+  , predecessors
+  , successors
+  , toRelation
+  )
+import Cortex.Pulse.Executor
+  ( RewriteExhaustionPolicy (..)
+  , StableStageId (..)
+  , StageDefinition (..)
+  , StagePlan (..)
+  , StageReplaySafety (..)
+  , StageRetryBackoff (..)
+  , StageRetryExhaustion (..)
+  , StageRetryPolicy (..)
+  , StageTemplateId (..)
+  , applyRewrite
+  , buildStageTemplateRegistry
+  , stageActionId
+  , stageTemplateId
+  )
+import Cortex.Pulse.Materialize (computeTopologyHash)
+import Cortex.Pulse.Memory (defaultMemoryStrategy)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Rewrite
+  ( BudgetDimension (..)
+  , ExceededDimension (..)
+  , ExpansionMode (..)
+  , GraphRewrite (..)
+  , PlannedRewriteDelta (..)
+  , RewriteAnchorDisposition (..)
+  , RewriteBudget (..)
+  , RewriteBudgetError (..)
+  , RewriteCost (..)
+  , RewritePlanningError (..)
+  , SubgraphSpec (..)
+  , admitRewriteDelta
+  , admittedRemainingBudget
+  , consumeRewriteBudget
+  , exceededDimensions
+  , planGraphRewrite
+  )
+import Cortex.Pulse.Types (defaultRewriteBudget)
 
 data TestStage = StageA | StageB | StageC | Sub1 | Sub2
   deriving stock (Eq, Ord, Show, Generic)
@@ -73,36 +74,36 @@ spec = do
   describe "applyRewrite" $ do
     let mkDef sid =
           StageDefinition
-            { sdStageId = sid,
-              sdTemplateId = stageTemplateId sid,
-              sdActionId = stageActionId sid,
-              sdReplaySafety = SafeToReplay,
-              sdReplayPolicyOverride = Nothing,
-              sdTimeoutSeconds = Nothing,
-              sdRetryPolicy = Nothing,
-              sdAction = \_ -> pure (error "not implemented"),
-              sdMemoryStrategy = defaultMemoryStrategy
+            { sdStageId = sid
+            , sdTemplateId = stageTemplateId sid
+            , sdActionId = stageActionId sid
+            , sdReplaySafety = SafeToReplay
+            , sdReplayPolicyOverride = Nothing
+            , sdTimeoutSeconds = Nothing
+            , sdRetryPolicy = Nothing
+            , sdAction = \_ -> pure (error "not implemented")
+            , sdMemoryStrategy = defaultMemoryStrategy
             }
         -- a -> b -> c
         initialTopo = toRelation (path [NodeId "a", NodeId "b", NodeId "c"] :: Graph NodeId)
         initialDefs =
           Map.fromList
-            [ (NodeId "a", mkDef StageA),
-              (NodeId "b", mkDef StageB),
-              (NodeId "c", mkDef StageC)
+            [ (NodeId "a", mkDef StageA)
+            , (NodeId "b", mkDef StageB)
+            , (NodeId "c", mkDef StageC)
             ]
         initialPlan =
           StagePlan
-            { spInitialState = Aeson.Null,
-              spCheckpointRuntimeVersion = 1,
-              spReplayPolicy = error "not used",
-              spInitialRewriteBudget = defaultRewriteBudget,
-              spRewriteExhaustionPolicy = RewriteExhaustionFail,
-              spBudgetExceededExhaustionPolicy = Nothing,
-              spMaxRewriteReExecutions = 2,
-              spTopology = initialTopo,
-              spDefinitions = initialDefs,
-              spTemplateRegistry = templateRegistry initialDefs
+            { spInitialState = Aeson.Null
+            , spCheckpointRuntimeVersion = 1
+            , spReplayPolicy = error "not used"
+            , spInitialRewriteBudget = defaultRewriteBudget
+            , spRewriteExhaustionPolicy = RewriteExhaustionFail
+            , spBudgetExceededExhaustionPolicy = Nothing
+            , spMaxRewriteReExecutions = 2
+            , spTopology = initialTopo
+            , spDefinitions = initialDefs
+            , spTemplateRegistry = templateRegistry initialDefs
             }
 
     describe "ExpandNode (ExpandReplaceNode)" $ do
@@ -213,17 +214,17 @@ spec = do
             spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub2"]
             invalidPlan =
               initialPlan
-                { spTopology = toRelation (path [NodeId "a", NodeId "ghost", NodeId "c"] :: Graph NodeId),
-                  spDefinitions =
+                { spTopology = toRelation (path [NodeId "a", NodeId "ghost", NodeId "c"] :: Graph NodeId)
+                , spDefinitions =
                     Map.fromList
-                      [ (NodeId "a", mkDef StageA),
-                        (NodeId "c", mkDef StageC)
-                      ],
-                  spTemplateRegistry =
+                      [ (NodeId "a", mkDef StageA)
+                      , (NodeId "c", mkDef StageC)
+                      ]
+                , spTemplateRegistry =
                     templateRegistry $
                       Map.fromList
-                        [ (NodeId "a", mkDef StageA),
-                          (NodeId "c", mkDef StageC)
+                        [ (NodeId "a", mkDef StageA)
+                        , (NodeId "c", mkDef StageC)
                         ]
                 }
             rewrite = AppendAfter (NodeId "ghost") spec'
@@ -353,11 +354,11 @@ spec = do
                     `shouldBe` Set.union (Set.difference (Map.keysSet initialDefs) expectedRemoved) (Set.fromList [entry, exit])
                   prdCost delta
                     `shouldBe` RewriteCost
-                      { rcAddedNodes = 2,
-                        rcAddedEdges = fromIntegral (Set.size expectedAddedEdges),
-                        rcAddedDepth = expectedDepth,
-                        rcFrontierDelta = 0,
-                        rcRewriteOps = 1
+                      { rcAddedNodes = 2
+                      , rcAddedEdges = fromIntegral (Set.size expectedAddedEdges)
+                      , rcAddedDepth = expectedDepth
+                      , rcFrontierDelta = 0
+                      , rcRewriteOps = 1
                       }
 
       it "constructs replace-node deltas from the planned relation formula" $ do
@@ -392,11 +393,11 @@ spec = do
             rewrite = ExpandNode (NodeId "b") ExpandReplaceNode spec'
             remaining =
               RewriteBudget
-                { rbAddedNodesMax = 5,
-                  rbAddedEdgesMax = 6,
-                  rbAddedDepthMax = 4,
-                  rbFrontierDeltaMax = 2,
-                  rbRewriteOpsMax = 3
+                { rbAddedNodesMax = 5
+                , rbAddedEdgesMax = 6
+                , rbAddedDepthMax = 4
+                , rbFrontierDeltaMax = 2
+                , rbRewriteOpsMax = 3
                 }
 
         case planGraphRewrite rewrite initialTopo initialDefs of
@@ -405,20 +406,20 @@ spec = do
           Right delta -> do
             prdCost delta
               `shouldBe` RewriteCost
-                { rcAddedNodes = 2,
-                  rcAddedEdges = 3,
-                  rcAddedDepth = 1,
-                  rcFrontierDelta = 0,
-                  rcRewriteOps = 1
+                { rcAddedNodes = 2
+                , rcAddedEdges = 3
+                , rcAddedDepth = 1
+                , rcFrontierDelta = 0
+                , rcRewriteOps = 1
                 }
             consumeRewriteBudget remaining (prdCost delta)
               `shouldBe` Right
                 RewriteBudget
-                  { rbAddedNodesMax = 3,
-                    rbAddedEdgesMax = 3,
-                    rbAddedDepthMax = 3,
-                    rbFrontierDeltaMax = 2,
-                    rbRewriteOpsMax = 2
+                  { rbAddedNodesMax = 3
+                  , rbAddedEdgesMax = 3
+                  , rbAddedDepthMax = 3
+                  , rbFrontierDeltaMax = 2
+                  , rbRewriteOpsMax = 2
                   }
 
       it "rejects rewrites whose structural cost exceeds the remaining budget" $ do
@@ -428,11 +429,11 @@ spec = do
             rewrite = AppendAfter (NodeId "b") spec'
             remaining =
               RewriteBudget
-                { rbAddedNodesMax = 2,
-                  rbAddedEdgesMax = 2,
-                  rbAddedDepthMax = 1,
-                  rbFrontierDeltaMax = 0,
-                  rbRewriteOpsMax = 1
+                { rbAddedNodesMax = 2
+                , rbAddedEdgesMax = 2
+                , rbAddedDepthMax = 1
+                , rbFrontierDeltaMax = 0
+                , rbRewriteOpsMax = 1
                 }
 
         case planGraphRewrite rewrite initialTopo initialDefs of
@@ -465,11 +466,11 @@ spec = do
             rewrite = AppendAfter (NodeId "b") spec'
             remaining =
               RewriteBudget
-                { rbAddedNodesMax = 2,
-                  rbAddedEdgesMax = 2,
-                  rbAddedDepthMax = 1,
-                  rbFrontierDeltaMax = 0,
-                  rbRewriteOpsMax = 1
+                { rbAddedNodesMax = 2
+                , rbAddedEdgesMax = 2
+                , rbAddedDepthMax = 1
+                , rbFrontierDeltaMax = 0
+                , rbRewriteOpsMax = 1
                 }
         case planGraphRewrite rewrite initialTopo initialDefs of
           Left errs ->
@@ -485,18 +486,18 @@ spec = do
         let budgetErr =
               RewriteBudgetExceeded
                 RewriteBudget
-                  { rbAddedNodesMax = 2,
-                    rbAddedEdgesMax = 10,
-                    rbAddedDepthMax = 1,
-                    rbFrontierDeltaMax = 0,
-                    rbRewriteOpsMax = 1
+                  { rbAddedNodesMax = 2
+                  , rbAddedEdgesMax = 10
+                  , rbAddedDepthMax = 1
+                  , rbFrontierDeltaMax = 0
+                  , rbRewriteOpsMax = 1
                   }
                 RewriteCost
-                  { rcAddedNodes = 4,
-                    rcAddedEdges = 3,
-                    rcAddedDepth = 2,
-                    rcFrontierDelta = 0,
-                    rcRewriteOps = 0
+                  { rcAddedNodes = 4
+                  , rcAddedEdges = 3
+                  , rcAddedDepth = 2
+                  , rcFrontierDelta = 0
+                  , rcRewriteOps = 0
                   }
             dims = exceededDimensions budgetErr
         fmap (\d -> (edDimension d, edRequested d, edRemaining d)) dims
@@ -505,11 +506,11 @@ spec = do
       it "rejects serialized negative rewrite costs before admission" $ do
         let negativeCostJson =
               Aeson.object
-                [ "rcAddedNodes" Aeson..= (-1 :: Int),
-                  "rcAddedEdges" Aeson..= (0 :: Int),
-                  "rcAddedDepth" Aeson..= (0 :: Int),
-                  "rcFrontierDelta" Aeson..= (0 :: Int),
-                  "rcRewriteOps" Aeson..= (0 :: Int)
+                [ "rcAddedNodes" Aeson..= (-1 :: Int)
+                , "rcAddedEdges" Aeson..= (0 :: Int)
+                , "rcAddedDepth" Aeson..= (0 :: Int)
+                , "rcFrontierDelta" Aeson..= (0 :: Int)
+                , "rcRewriteOps" Aeson..= (0 :: Int)
                 ]
 
         case Aeson.fromJSON negativeCostJson :: Aeson.Result RewriteCost of
@@ -521,11 +522,11 @@ spec = do
       it "rejects serialized negative rewrite budgets before runtime use" $ do
         let negativeBudgetJson =
               Aeson.object
-                [ "rbAddedNodesMax" Aeson..= (-1 :: Int),
-                  "rbAddedEdgesMax" Aeson..= (0 :: Int),
-                  "rbAddedDepthMax" Aeson..= (0 :: Int),
-                  "rbFrontierDeltaMax" Aeson..= (0 :: Int),
-                  "rbRewriteOpsMax" Aeson..= (0 :: Int)
+                [ "rbAddedNodesMax" Aeson..= (-1 :: Int)
+                , "rbAddedEdgesMax" Aeson..= (0 :: Int)
+                , "rbAddedDepthMax" Aeson..= (0 :: Int)
+                , "rbFrontierDeltaMax" Aeson..= (0 :: Int)
+                , "rbRewriteOpsMax" Aeson..= (0 :: Int)
                 ]
 
         case Aeson.fromJSON negativeBudgetJson :: Aeson.Result RewriteBudget of
@@ -536,58 +537,60 @@ spec = do
 
   describe "buildStageTemplateRegistry" $ do
     let mkDynDef nid templateId =
-          ( nid,
-            StageDefinition
-              { sdStageId = StageA,
-                sdTemplateId = templateId,
-                sdActionId = stageActionId StageA,
-                sdReplaySafety = SafeToReplay,
-                sdReplayPolicyOverride = Nothing,
-                sdTimeoutSeconds = Nothing,
-                sdRetryPolicy = Nothing,
-                sdAction = \_ -> pure (error "not implemented"),
-                sdMemoryStrategy = defaultMemoryStrategy
+          ( nid
+          , StageDefinition
+              { sdStageId = StageA
+              , sdTemplateId = templateId
+              , sdActionId = stageActionId StageA
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = \_ -> pure (error "not implemented")
+              , sdMemoryStrategy = defaultMemoryStrategy
               }
           )
         mkRetryPolicy name retryable =
           Just
             StageRetryPolicy
-              { srpPredicateName = name,
-                srpMaxAttempts = 3,
-                srpBackoff = FixedBackoffMicros 1000,
-                srpRetryable = retryable,
-                srpExhaustion = ExhaustionFailsRun
+              { srpPredicateName = name
+              , srpMaxAttempts = 3
+              , srpBackoff = FixedBackoffMicros 1000
+              , srpRetryable = retryable
+              , srpExhaustion = ExhaustionFailsRun
               }
 
     it "allows equivalent duplicate template ids for rewritten clones" $ do
       let sharedTemplate = StageTemplateId "shared/template"
           defs =
             Map.fromList
-              [ mkDynDef (NodeId "template_registry") sharedTemplate,
-                mkDynDef (NodeId "alpha:shared") sharedTemplate
+              [ mkDynDef (NodeId "template_registry") sharedTemplate
+              , mkDynDef (NodeId "alpha:shared") sharedTemplate
               ]
 
       case buildStageTemplateRegistry defs of
         Left err ->
-          expectationFailure $ "Expected equivalent duplicate template ids to be accepted, got: " <> T.unpack err
+          expectationFailure $
+            "Expected equivalent duplicate template ids to be accepted, got: " <> T.unpack err
         Right registry ->
           Map.keysSet registry `shouldBe` Set.singleton sharedTemplate
 
     it "rejects duplicate template ids in the runtime registry" $ do
       let defs =
             Map.fromList
-              [ mkDynDef (NodeId "template_a") (StageTemplateId "shared/template"),
-                ( NodeId "template_b",
-                  StageDefinition
-                    { sdStageId = StageB,
-                      sdTemplateId = StageTemplateId "shared/template",
-                      sdActionId = stageActionId StageB,
-                      sdReplaySafety = SafeToReplay,
-                      sdReplayPolicyOverride = Nothing,
-                      sdTimeoutSeconds = Nothing,
-                      sdRetryPolicy = Nothing,
-                      sdAction = \_ -> pure (error "not implemented"),
-                      sdMemoryStrategy = defaultMemoryStrategy
+              [ mkDynDef (NodeId "template_a") (StageTemplateId "shared/template")
+              ,
+                ( NodeId "template_b"
+                , StageDefinition
+                    { sdStageId = StageB
+                    , sdTemplateId = StageTemplateId "shared/template"
+                    , sdActionId = stageActionId StageB
+                    , sdReplaySafety = SafeToReplay
+                    , sdReplayPolicyOverride = Nothing
+                    , sdTimeoutSeconds = Nothing
+                    , sdRetryPolicy = Nothing
+                    , sdAction = \_ -> pure (error "not implemented")
+                    , sdMemoryStrategy = defaultMemoryStrategy
                     }
                 )
               ]
@@ -603,13 +606,15 @@ spec = do
       let sharedTemplate = StageTemplateId "shared/template"
           defs =
             Map.fromList
-              [ ( NodeId "template_a",
-                  (snd (mkDynDef (NodeId "template_a") sharedTemplate))
+              [
+                ( NodeId "template_a"
+                , (snd (mkDynDef (NodeId "template_a") sharedTemplate))
                     { sdRetryPolicy = mkRetryPolicy "always_retry" (const True)
                     }
-                ),
-                ( NodeId "template_b",
-                  (snd (mkDynDef (NodeId "template_b") sharedTemplate))
+                )
+              ,
+                ( NodeId "template_b"
+                , (snd (mkDynDef (NodeId "template_b") sharedTemplate))
                     { sdRetryPolicy = mkRetryPolicy "never_retry" (const False)
                     }
                 )
@@ -637,9 +642,9 @@ spec = do
           topo2 = toRelation (path [NodeId "a", NodeId "b", NodeId "c"])
       computeTopologyHash topo1 `shouldNotBe` computeTopologyHash topo2
 
-templateRegistry ::
-  (Eq stageId) =>
-  Map.Map NodeId (StageDefinition stageId) ->
-  Map.Map StageTemplateId (StageDefinition stageId)
+templateRegistry
+  :: Eq stageId
+  => Map.Map NodeId (StageDefinition stageId)
+  -> Map.Map StageTemplateId (StageDefinition stageId)
 templateRegistry defs =
   either (error . T.unpack) id (buildStageTemplateRegistry defs)

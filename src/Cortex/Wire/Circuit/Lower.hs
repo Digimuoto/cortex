@@ -1,5 +1,5 @@
 module Cortex.Wire.Circuit.Lower
-  ( module Cortex.Wire.Circuit.Lowering,
+  ( module Cortex.Wire.Circuit.Lowering
   )
 where
 

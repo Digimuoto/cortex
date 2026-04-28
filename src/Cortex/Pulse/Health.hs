@@ -5,9 +5,9 @@
 
 -- | Pulse health endpoint: minimal Warp server exposing runtime state.
 module Cortex.Pulse.Health
-  ( PulseHealthState (..),
-    initialHealthState,
-    runHealthServer,
+  ( PulseHealthState (..)
+  , initialHealthState
+  , runHealthServer
   )
 where
 
@@ -24,14 +24,14 @@ import Network.Wai.Handler.Warp qualified as Warp
 
 -- | Mutable health state updated by the scheduler and startup recovery.
 data PulseHealthState = PulseHealthState
-  { phsStatus :: Text,
-    phsLeaseOwner :: Text,
-    phsHeartbeatAt :: Maybe UTCTime,
-    phsReclaimedRunCount :: Int,
-    phsExpiredRecoveryCount :: Int,
-    phsActiveRunCount :: Int,
-    phsMaxConcurrent :: Int,
-    phsActiveRunsByType :: Map Text Int
+  { phsStatus :: Text
+  , phsLeaseOwner :: Text
+  , phsHeartbeatAt :: Maybe UTCTime
+  , phsReclaimedRunCount :: Int
+  , phsExpiredRecoveryCount :: Int
+  , phsActiveRunCount :: Int
+  , phsMaxConcurrent :: Int
+  , phsActiveRunsByType :: Map Text Int
   }
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON)
@@ -39,14 +39,14 @@ data PulseHealthState = PulseHealthState
 initialHealthState :: Text -> Int -> PulseHealthState
 initialHealthState leaseOwner maxConcurrent =
   PulseHealthState
-    { phsStatus = "starting",
-      phsLeaseOwner = leaseOwner,
-      phsHeartbeatAt = Nothing,
-      phsReclaimedRunCount = 0,
-      phsExpiredRecoveryCount = 0,
-      phsActiveRunCount = 0,
-      phsMaxConcurrent = maxConcurrent,
-      phsActiveRunsByType = Map.empty
+    { phsStatus = "starting"
+    , phsLeaseOwner = leaseOwner
+    , phsHeartbeatAt = Nothing
+    , phsReclaimedRunCount = 0
+    , phsExpiredRecoveryCount = 0
+    , phsActiveRunCount = 0
+    , phsMaxConcurrent = maxConcurrent
+    , phsActiveRunsByType = Map.empty
     }
 
 -- | Run the health server on the given port, bound to localhost only.

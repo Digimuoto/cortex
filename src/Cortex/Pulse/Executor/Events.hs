@@ -3,34 +3,35 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StrictData #-}
 
--- |
--- Module      : Cortex.Pulse.Executor.Events
--- Description : Typed observability events for the Pulse executor
---
--- A closed ADT of all executor-emitted observability events, with a
--- 'ToObsEvent' instance that derives level, code, component, message,
--- and structured fields from each constructor.
---
--- Call sites migrate from:
---
--- @
--- emitExecutorEvent ObsError (ObsEventCode "pulse.executor.stage.failed")
---   ("Stage failed: " <> stageName)
---   [("run_id", toJSON runId), ("stage", toJSON stageName)]
--- @
---
--- To:
---
--- @
--- emitObsEvent $ EvtStageFailed runId stageName attempt errorType errorMsg
--- @
+{- |
+Module      : Cortex.Pulse.Executor.Events
+Description : Typed observability events for the Pulse executor
+
+A closed ADT of all executor-emitted observability events, with a
+'ToObsEvent' instance that derives level, code, component, message,
+and structured fields from each constructor.
+
+Call sites migrate from:
+
+@
+emitExecutorEvent ObsError (ObsEventCode "pulse.executor.stage.failed")
+  ("Stage failed: " <> stageName)
+  [("run_id", toJSON runId), ("stage", toJSON stageName)]
+@
+
+To:
+
+@
+emitObsEvent $ EvtStageFailed runId stageName attempt errorType errorMsg
+@
+-}
 module Cortex.Pulse.Executor.Events
-  ( ExecutorEvent (..),
-    StageRetryInfo (..),
-    StageFailureDetail (..),
-    FailrunInfo (..),
-    RewriteAdmissionInfo (..),
-    RewriteRejectionInfo (..),
+  ( ExecutorEvent (..)
+  , StageRetryInfo (..)
+  , StageFailureDetail (..)
+  , FailrunInfo (..)
+  , RewriteAdmissionInfo (..)
+  , RewriteRejectionInfo (..)
   )
 where
 
@@ -39,20 +40,22 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 import Numeric.Natural (Natural)
+
 import Platform.Observability.Fields
-  ( ObsEventCode (ObsEventCode),
-    ObsFields,
-    ToObsEvent (..),
-    field,
-    noFields,
+  ( ObsEventCode (ObsEventCode)
+  , ObsFields
+  , ToObsEvent (..)
+  , field
+  , noFields
   )
 import Platform.Observability.Types (ObservabilityLogLevel (..))
 
--- | All executor-emitted observability events.
---
--- Each constructor carries exactly the data needed to reconstruct the
--- message and structured fields.  The 'ToObsEvent' instance maps each
--- to its canonical level, event code, and field set.
+{- | All executor-emitted observability events.
+
+Each constructor carries exactly the data needed to reconstruct the
+message and structured fields.  The 'ToObsEvent' instance maps each
+to its canonical level, event code, and field set.
+-}
 data ExecutorEvent
   = -- Resume
     EvtResumeGraph UUID
@@ -112,46 +115,47 @@ data ExecutorEvent
 
 -- | Extra context for retry events.
 data StageRetryInfo = StageRetryInfo
-  { sriStageName :: Text,
-    sriAttempt :: Int,
-    sriNextAttempt :: Int,
-    sriRetryDelayMicros :: Int64,
-    sriErrorType :: Text,
-    sriErrorMessage :: Text
+  { sriStageName :: Text
+  , sriAttempt :: Int
+  , sriNextAttempt :: Int
+  , sriRetryDelayMicros :: Int64
+  , sriErrorType :: Text
+  , sriErrorMessage :: Text
   }
   deriving stock (Show)
 
--- | Error type and message for a terminal stage failure.
--- Bundled in a record to prevent the two adjacent 'Text' fields from being swapped.
+{- | Error type and message for a terminal stage failure.
+Bundled in a record to prevent the two adjacent 'Text' fields from being swapped.
+-}
 data StageFailureDetail = StageFailureDetail
-  { sfdErrType :: Text,
-    sfdErrMsg :: Text
+  { sfdErrType :: Text
+  , sfdErrMsg :: Text
   }
   deriving stock (Show)
 
 -- | Extra context for last-resort DB error events.
 data FailrunInfo = FailrunInfo
-  { friOriginalErrorType :: Text,
-    friOriginalErrorMsg :: Text,
-    friDbError :: Text
+  { friOriginalErrorType :: Text
+  , friOriginalErrorMsg :: Text
+  , friDbError :: Text
   }
   deriving stock (Show)
 
 -- | Info for a successfully admitted rewrite.
 data RewriteAdmissionInfo = RewriteAdmissionInfo
-  { raiRewriteId :: Int64,
-    raiCostNodes :: Natural,
-    raiCostEdges :: Natural,
-    raiRewriteOpsRemaining :: Natural
+  { raiRewriteId :: Int64
+  , raiCostNodes :: Natural
+  , raiCostEdges :: Natural
+  , raiRewriteOpsRemaining :: Natural
   }
   deriving stock (Show)
 
 -- | Info for a rejected rewrite (budget or validation).
 data RewriteRejectionInfo = RewriteRejectionInfo
-  { rrjRejectionType :: Text,
-    rrjMessage :: Text,
-    rrjAttemptNumber :: Maybe Int,
-    rrjTopologyChanged :: Bool
+  { rrjRejectionType :: Text
+  , rrjMessage :: Text
+  , rrjAttemptNumber :: Maybe Int
+  , rrjTopologyChanged :: Bool
   }
   deriving stock (Show)
 
@@ -384,13 +388,22 @@ executorEventFields = \case
   EvtStageLogFailed runId stageName _ ->
     field "run_id" runId <> field "stage" stageName
   EvtStageResumed runId stageName logId nextAttempt ->
-    field "run_id" runId <> field "stage" stageName <> field "stage_log_id" logId <> field "next_attempt" nextAttempt
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "stage_log_id" logId
+      <> field "next_attempt" nextAttempt
   EvtStageCompleted runId stageName attempt ->
     field "run_id" runId <> field "stage" stageName <> attemptFieldIf attempt
   EvtStageFailed runId stageName attempt detail ->
-    field "run_id" runId <> field "stage" stageName <> field "attempts" attempt <> field "error_type" detail.sfdErrType
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "attempts" attempt
+      <> field "error_type" detail.sfdErrType
   EvtStageSkipped runId stageName attempt errType ->
-    field "run_id" runId <> field "stage" stageName <> field "attempts" attempt <> field "error_type" errType
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "attempts" attempt
+      <> field "error_type" errType
   EvtStageLogWriteFailed runId stageName _ ->
     field "run_id" runId <> field "stage" stageName
   EvtStageAttemptLogFailed runId stageName _ ->
@@ -425,7 +438,12 @@ executorEventFields = \case
   EvtSignalLookupFailed runId signal node _ ->
     field "run_id" runId <> field "signal" signal <> field "node" node
   EvtRewriteAdmitted runId stageName info ->
-    field "run_id" runId <> field "stage" stageName <> field "rewrite_id" info.raiRewriteId <> field "cost_nodes" info.raiCostNodes <> field "cost_edges" info.raiCostEdges <> field "rewrite_ops_remaining" info.raiRewriteOpsRemaining
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "rewrite_id" info.raiRewriteId
+      <> field "cost_nodes" info.raiCostNodes
+      <> field "cost_edges" info.raiCostEdges
+      <> field "rewrite_ops_remaining" info.raiRewriteOpsRemaining
   EvtRewriteRejected runId stageName info ->
     field "run_id" runId
       <> field "stage" stageName
@@ -438,25 +456,47 @@ executorEventFields = \case
   EvtFrontierStart runId size cap ->
     field "run_id" runId <> field "frontier_size" size <> field "concurrency_cap" cap
   EvtFrontierComplete runId size durationMs terminal ->
-    field "run_id" runId <> field "frontier_size" size <> field "duration_ms" durationMs <> field "terminal" terminal
+    field "run_id" runId
+      <> field "frontier_size" size
+      <> field "duration_ms" durationMs
+      <> field "terminal" terminal
   EvtGraphStateWriteFailed runId _ ->
     field "run_id" runId
   EvtReplayCheckFailed runId stageName err ->
     field "run_id" runId <> field "stage" stageName <> field "error" err
   EvtReplayCheckDbFailed runId stageName replayPolicy err ->
-    field "run_id" runId <> field "stage" stageName <> field "replay_policy" replayPolicy <> field "error" err
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "replay_policy" replayPolicy
+      <> field "error" err
   EvtReplayIrreversibleWarn runId stageName priorStatuses priorAttempts replayPolicy ->
-    field "run_id" runId <> field "stage" stageName <> field "prior_statuses" priorStatuses <> field "prior_attempts" priorAttempts <> field "replay_policy" replayPolicy
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "prior_statuses" priorStatuses
+      <> field "prior_attempts" priorAttempts
+      <> field "replay_policy" replayPolicy
   EvtReplayBlocked runId stageName priorStatuses priorAttempts replayPolicy ->
-    field "run_id" runId <> field "stage" stageName <> field "prior_statuses" priorStatuses <> field "prior_attempts" priorAttempts <> field "replay_policy" replayPolicy
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "prior_statuses" priorStatuses
+      <> field "prior_attempts" priorAttempts
+      <> field "replay_policy" replayPolicy
   EvtReplayBlockedNeedsOverride runId stageName priorStatuses priorAttempts replayPolicy ->
-    field "run_id" runId <> field "stage" stageName <> field "prior_statuses" priorStatuses <> field "prior_attempts" priorAttempts <> field "replay_policy" replayPolicy
+    field "run_id" runId
+      <> field "stage" stageName
+      <> field "prior_statuses" priorStatuses
+      <> field "prior_attempts" priorAttempts
+      <> field "replay_policy" replayPolicy
   EvtDbCritical runId ctx _ ->
     field "run_id" runId <> field "context" ctx
   EvtFailrunDb runId info ->
-    field "run_id" runId <> field "original_error_type" info.friOriginalErrorType <> field "db_error" info.friDbError
+    field "run_id" runId
+      <> field "original_error_type" info.friOriginalErrorType
+      <> field "db_error" info.friDbError
   EvtTimeoutrunDb runId info ->
-    field "run_id" runId <> field "original_error_type" info.friOriginalErrorType <> field "db_error" info.friDbError
+    field "run_id" runId
+      <> field "original_error_type" info.friOriginalErrorType
+      <> field "db_error" info.friDbError
   EvtUnsupportedTaskType runId taskType ->
     field "run_id" runId <> field "task_type" taskType
 

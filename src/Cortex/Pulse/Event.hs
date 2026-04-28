@@ -1,5 +1,5 @@
 module Cortex.Pulse.Event
-  ( module Cortex.Pulse.Executor.Events,
+  ( module Cortex.Pulse.Executor.Events
   )
 where
 

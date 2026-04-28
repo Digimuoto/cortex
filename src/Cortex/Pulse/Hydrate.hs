@@ -1,5 +1,5 @@
 module Cortex.Pulse.Hydrate
-  ( module Cortex.Pulse.PlanHydration,
+  ( module Cortex.Pulse.PlanHydration
   )
 where
 

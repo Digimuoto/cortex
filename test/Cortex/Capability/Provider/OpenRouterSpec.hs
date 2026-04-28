@@ -2,35 +2,36 @@
 
 module Cortex.Capability.Provider.OpenRouterSpec (spec) where
 
-import Cortex.Capability.Model.Output
-  ( appendSourcesSection,
-    shouldAppendExternalSourceFooter,
-  )
-import Cortex.Capability.Model.Types
-  ( CortexChoiceRequest (..),
-    CortexChoiceTimeoutClass (..),
-    CortexGroundingMode (..),
-    CortexResponseFormat (..),
-  )
-import Cortex.Capability.Provider.OpenRouter
-  ( buildOpenRouterRequestPayload,
-    defaultMaxOutputTokens,
-    sourceLinksFromAnnotations,
-  )
-import Cortex.Capability.Provider.OpenRouter.Client
-  ( openRouterRequestPayload,
-    openRouterResolvedMaxOutputTokens,
-  )
-import Cortex.Capability.Provider.OpenRouter.Wire
-  ( OpenRouterChoice (..),
-    OpenRouterCompletion (..),
-    OpenRouterUsage (..),
-  )
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.Text (Text)
 import Data.Text qualified as T
 import Test.Hspec
+
+import Cortex.Capability.Model.Output
+  ( appendSourcesSection
+  , shouldAppendExternalSourceFooter
+  )
+import Cortex.Capability.Model.Types
+  ( CortexChoiceRequest (..)
+  , CortexChoiceTimeoutClass (..)
+  , CortexGroundingMode (..)
+  , CortexResponseFormat (..)
+  )
+import Cortex.Capability.Provider.OpenRouter
+  ( buildOpenRouterRequestPayload
+  , defaultMaxOutputTokens
+  , sourceLinksFromAnnotations
+  )
+import Cortex.Capability.Provider.OpenRouter.Client
+  ( openRouterRequestPayload
+  , openRouterResolvedMaxOutputTokens
+  )
+import Cortex.Capability.Provider.OpenRouter.Wire
+  ( OpenRouterChoice (..)
+  , OpenRouterCompletion (..)
+  , OpenRouterUsage (..)
+  )
 
 spec :: Spec
 spec = do
@@ -41,30 +42,30 @@ spec = do
     it "appends a sources section with markdown links" $ do
       appendSourcesSection
         "Semiconductor equities sold off after weaker macro data."
-        [ ("Reuters on jobs data", "https://www.reuters.com/example"),
-          ("Fed remarks", "https://www.federalreserve.gov/example")
+        [ ("Reuters on jobs data", "https://www.reuters.com/example")
+        , ("Fed remarks", "https://www.federalreserve.gov/example")
         ]
         `shouldBe` T.intercalate
           "\n"
-          [ "Semiconductor equities sold off after weaker macro data.",
-            "",
-            "Sources:",
-            "- [Reuters on jobs data](<https://www.reuters.com/example>)",
-            "- [Fed remarks](<https://www.federalreserve.gov/example>)"
+          [ "Semiconductor equities sold off after weaker macro data."
+          , ""
+          , "Sources:"
+          , "- [Reuters on jobs data](<https://www.reuters.com/example>)"
+          , "- [Fed remarks](<https://www.federalreserve.gov/example>)"
           ]
 
     it "deduplicates repeated source URLs" $ do
       appendSourcesSection
         "Answer"
-        [ ("First title", "https://example.com/a"),
-          ("Second title ignored", "https://example.com/a")
+        [ ("First title", "https://example.com/a")
+        , ("Second title ignored", "https://example.com/a")
         ]
         `shouldBe` T.intercalate
           "\n"
-          [ "Answer",
-            "",
-            "Sources:",
-            "- [First title](<https://example.com/a>)"
+          [ "Answer"
+          , ""
+          , "Sources:"
+          , "- [First title](<https://example.com/a>)"
           ]
 
     it "adds one extra newline when content already ends with a newline" $ do
@@ -73,10 +74,10 @@ spec = do
         [("Source", "https://example.com/a")]
         `shouldBe` T.intercalate
           "\n"
-          [ "Answer",
-            "",
-            "Sources:",
-            "- [Source](<https://example.com/a>)"
+          [ "Answer"
+          , ""
+          , "Sources:"
+          , "- [Source](<https://example.com/a>)"
           ]
 
     it "escapes markdown-sensitive title and URL characters" $ do
@@ -85,10 +86,10 @@ spec = do
         [("Source [1]", "https://example.com/a>(b)")]
         `shouldBe` T.intercalate
           "\n"
-          [ "Answer",
-            "",
-            "Sources:",
-            "- [Source \\[1\\]](<https://example.com/a\\>(b)>)"
+          [ "Answer"
+          , ""
+          , "Sources:"
+          , "- [Source \\[1\\]](<https://example.com/a\\>(b)>)"
           ]
 
   describe "shouldAppendExternalSourceFooter" $ do
@@ -108,11 +109,11 @@ spec = do
     it "extracts nested url_citation annotations" $ do
       sourceLinksFromAnnotations
         [ Aeson.object
-            [ "type" Aeson..= ("url_citation" :: Text),
-              "url_citation"
+            [ "type" Aeson..= ("url_citation" :: Text)
+            , "url_citation"
                 Aeson..= Aeson.object
-                  [ "url" Aeson..= ("https://www.reuters.com/example" :: Text),
-                    "title" Aeson..= ("Reuters" :: Text)
+                  [ "url" Aeson..= ("https://www.reuters.com/example" :: Text)
+                  , "title" Aeson..= ("Reuters" :: Text)
                   ]
             ]
         ]
@@ -121,13 +122,13 @@ spec = do
     it "extracts direct url annotations and deduplicates repeated URLs" $ do
       sourceLinksFromAnnotations
         [ Aeson.object
-            [ "type" Aeson..= ("url_citation" :: Text),
-              "url" Aeson..= ("https://www.federalreserve.gov/example" :: Text)
-            ],
-          Aeson.object
-            [ "type" Aeson..= ("url_citation" :: Text),
-              "url" Aeson..= ("https://www.federalreserve.gov/example" :: Text),
-              "title" Aeson..= ("Ignored duplicate label" :: Text)
+            [ "type" Aeson..= ("url_citation" :: Text)
+            , "url" Aeson..= ("https://www.federalreserve.gov/example" :: Text)
+            ]
+        , Aeson.object
+            [ "type" Aeson..= ("url_citation" :: Text)
+            , "url" Aeson..= ("https://www.federalreserve.gov/example" :: Text)
+            , "title" Aeson..= ("Ignored duplicate label" :: Text)
             ]
         ]
         `shouldBe` [("https://www.federalreserve.gov/example", "https://www.federalreserve.gov/example")]
@@ -135,11 +136,11 @@ spec = do
     it "falls back to the URL when the annotation title is blank" $ do
       sourceLinksFromAnnotations
         [ Aeson.object
-            [ "type" Aeson..= ("url_citation" :: Text),
-              "url_citation"
+            [ "type" Aeson..= ("url_citation" :: Text)
+            , "url_citation"
                 Aeson..= Aeson.object
-                  [ "url" Aeson..= ("https://example.com/fallback" :: Text),
-                    "title" Aeson..= ("   " :: Text)
+                  [ "url" Aeson..= ("https://example.com/fallback" :: Text)
+                  , "title" Aeson..= ("   " :: Text)
                   ]
             ]
         ]
@@ -151,7 +152,9 @@ spec = do
             buildOpenRouterRequestPayload
               "openai/gpt-4o"
               GroundingEnabled
-              [Aeson.object ["role" Aeson..= ("user" :: Text), "content" Aeson..= ("What moved markets today?" :: Text)]]
+              [ Aeson.object
+                  ["role" Aeson..= ("user" :: Text), "content" Aeson..= ("What moved markets today?" :: Text)]
+              ]
               []
               CortexResponseText
               defaultMaxOutputTokens
@@ -159,14 +162,14 @@ spec = do
           maybePlugins =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..:? "plugins"))
-              payload ::
-              Maybe (Maybe [Aeson.Value])
+              payload
+              :: Maybe (Maybe [Aeson.Value])
       maybePlugins
         `shouldBe` Just
           ( Just
               [ Aeson.object
-                  [ "id" Aeson..= ("web" :: Text),
-                    "max_results" Aeson..= (5 :: Int)
+                  [ "id" Aeson..= ("web" :: Text)
+                  , "max_results" Aeson..= (5 :: Int)
                   ]
               ]
           )
@@ -176,7 +179,9 @@ spec = do
             buildOpenRouterRequestPayload
               "openai/gpt-4o"
               GroundingDisabled
-              [Aeson.object ["role" Aeson..= ("user" :: Text), "content" Aeson..= ("Summarize my portfolio." :: Text)]]
+              [ Aeson.object
+                  ["role" Aeson..= ("user" :: Text), "content" Aeson..= ("Summarize my portfolio." :: Text)]
+              ]
               []
               CortexResponseText
               defaultMaxOutputTokens
@@ -184,23 +189,23 @@ spec = do
           maybeModel =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "model"))
-              payload ::
-              Maybe Text
+              payload
+              :: Maybe Text
           maybeToolChoice =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "tool_choice"))
-              payload ::
-              Maybe Text
+              payload
+              :: Maybe Text
           maybeMaxTokens =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "max_tokens"))
-              payload ::
-              Maybe Int
+              payload
+              :: Maybe Int
           maybePlugins =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..:? "plugins"))
-              payload ::
-              Maybe (Maybe [Aeson.Value])
+              payload
+              :: Maybe (Maybe [Aeson.Value])
       maybeModel `shouldBe` Just "openai/gpt-4o"
       maybeToolChoice `shouldBe` Just "auto"
       maybeMaxTokens `shouldBe` Just defaultMaxOutputTokens
@@ -219,22 +224,22 @@ spec = do
           maybeResponseFormat =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "response_format"))
-              payload ::
-              Maybe Aeson.Value
+              payload
+              :: Maybe Aeson.Value
           maybeMaxTokens =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "max_tokens"))
-              payload ::
-              Maybe Int
+              payload
+              :: Maybe Int
       maybeResponseFormat
         `shouldBe` Just
           ( Aeson.object
-              [ "type" Aeson..= ("json_schema" :: Text),
-                "json_schema"
+              [ "type" Aeson..= ("json_schema" :: Text)
+              , "json_schema"
                   Aeson..= Aeson.object
-                    [ "name" Aeson..= ("sample" :: Text),
-                      "strict" Aeson..= True,
-                      "schema" Aeson..= Aeson.object ["type" Aeson..= ("object" :: Text)]
+                    [ "name" Aeson..= ("sample" :: Text)
+                    , "strict" Aeson..= True
+                    , "schema" Aeson..= Aeson.object ["type" Aeson..= ("object" :: Text)]
                     ]
               ]
           )
@@ -251,13 +256,13 @@ spec = do
                                      [ "content" Aeson..= ("Portfolio risk stayed concentrated in semis." :: Text)
                                      ]
                                ]
-                           ],
-                "usage"
+                           ]
+              , "usage"
                   Aeson..= Aeson.object
-                    [ "prompt_tokens" Aeson..= ("157374" :: Text),
-                      "completion_tokens" Aeson..= ("900" :: Text),
-                      "total_tokens" Aeson..= ("158274" :: Text),
-                      "cost" Aeson..= ("0.0495" :: Text)
+                    [ "prompt_tokens" Aeson..= ("157374" :: Text)
+                    , "completion_tokens" Aeson..= ("900" :: Text)
+                    , "total_tokens" Aeson..= ("158274" :: Text)
+                    , "cost" Aeson..= ("0.0495" :: Text)
                     ]
               ]
       case Aeson.fromJSON payload of
@@ -273,8 +278,8 @@ spec = do
             Aeson.object
               [ "choices"
                   Aeson..= [ Aeson.object
-                               [ "content" Aeson..= ("Recovered from choice root" :: Text),
-                                 "finish_reason" Aeson..= ("stop" :: Text)
+                               [ "content" Aeson..= ("Recovered from choice root" :: Text)
+                               , "finish_reason" Aeson..= ("stop" :: Text)
                                ]
                            ]
               ]
@@ -284,13 +289,13 @@ spec = do
         Aeson.Success OpenRouterCompletion {openRouterChoices = choices} ->
           choices
             `shouldBe` [ OpenRouterChoice
-                           { openRouterContent = "Recovered from choice root",
-                             openRouterSourceLinks = [],
-                             openRouterToolCalls = [],
-                             openRouterFinishReason = Just "stop",
-                             openRouterUsage = Nothing,
-                             openRouterReasoning = Nothing,
-                             openRouterReasoningDetails = Nothing
+                           { openRouterContent = "Recovered from choice root"
+                           , openRouterSourceLinks = []
+                           , openRouterToolCalls = []
+                           , openRouterFinishReason = Just "stop"
+                           , openRouterUsage = Nothing
+                           , openRouterReasoning = Nothing
+                           , openRouterReasoningDetails = Nothing
                            }
                        ]
 
@@ -298,15 +303,15 @@ spec = do
       let payload =
             Aeson.object
               [ "choices"
-                  Aeson..= [ Aeson.object ["unexpected" Aeson..= True],
-                             Aeson.object
+                  Aeson..= [ Aeson.object ["unexpected" Aeson..= True]
+                           , Aeson.object
                                [ "message"
                                    Aeson..= Aeson.object
                                      [ "content" Aeson..= ("Recovered choice" :: Text)
                                      ]
                                ]
-                           ],
-                "usage"
+                           ]
+              , "usage"
                   Aeson..= Aeson.object
                     [ "prompt_tokens" Aeson..= ("broken" :: Text)
                     ]
@@ -322,36 +327,36 @@ spec = do
     it "builds an OpenRouter payload directly from a Cortex choice request" $ do
       let request =
             CortexChoiceRequest
-              { cortexChoiceModelId = "openai/gpt-4o",
-                cortexChoiceGroundingMode = GroundingDisabled,
-                cortexChoiceMessages =
+              { cortexChoiceModelId = "openai/gpt-4o"
+              , cortexChoiceGroundingMode = GroundingDisabled
+              , cortexChoiceMessages =
                   [ Aeson.object
-                      [ "role" Aeson..= ("user" :: Text),
-                        "content" Aeson..= ("Summarize this portfolio." :: Text)
+                      [ "role" Aeson..= ("user" :: Text)
+                      , "content" Aeson..= ("Summarize this portfolio." :: Text)
                       ]
-                  ],
-                cortexChoiceTools = [],
-                cortexChoiceResponseFormat = CortexResponseText,
-                cortexChoiceMaxOutputTokens = Nothing,
-                cortexChoiceStageName = "chat",
-                cortexChoiceAgentName = Nothing,
-                cortexChoiceStepIndex = Nothing,
-                cortexChoiceSectionId = Nothing,
-                cortexChoiceAttempt = Nothing,
-                cortexChoiceTimeoutClass = CortexChoiceTimeoutStandard,
-                cortexChoiceReasoningEnabled = False
+                  ]
+              , cortexChoiceTools = []
+              , cortexChoiceResponseFormat = CortexResponseText
+              , cortexChoiceMaxOutputTokens = Nothing
+              , cortexChoiceStageName = "chat"
+              , cortexChoiceAgentName = Nothing
+              , cortexChoiceStepIndex = Nothing
+              , cortexChoiceSectionId = Nothing
+              , cortexChoiceAttempt = Nothing
+              , cortexChoiceTimeoutClass = CortexChoiceTimeoutStandard
+              , cortexChoiceReasoningEnabled = False
               }
           payload = openRouterRequestPayload request
           maybeMaxTokens =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "max_tokens"))
-              payload ::
-              Maybe Int
+              payload
+              :: Maybe Int
           maybeModel =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "model"))
-              payload ::
-              Maybe Text
+              payload
+              :: Maybe Text
       maybeModel `shouldBe` Just "openai/gpt-4o"
       openRouterResolvedMaxOutputTokens request `shouldBe` defaultMaxOutputTokens
       maybeMaxTokens `shouldBe` Just defaultMaxOutputTokens
@@ -359,30 +364,30 @@ spec = do
     it "uses the explicit max token override consistently across typed and payload views" $ do
       let request =
             CortexChoiceRequest
-              { cortexChoiceModelId = "openai/gpt-4o",
-                cortexChoiceGroundingMode = GroundingDisabled,
-                cortexChoiceMessages =
+              { cortexChoiceModelId = "openai/gpt-4o"
+              , cortexChoiceGroundingMode = GroundingDisabled
+              , cortexChoiceMessages =
                   [ Aeson.object
-                      [ "role" Aeson..= ("user" :: Text),
-                        "content" Aeson..= ("Return JSON." :: Text)
+                      [ "role" Aeson..= ("user" :: Text)
+                      , "content" Aeson..= ("Return JSON." :: Text)
                       ]
-                  ],
-                cortexChoiceTools = [],
-                cortexChoiceResponseFormat = CortexResponseText,
-                cortexChoiceMaxOutputTokens = Just 4096,
-                cortexChoiceStageName = "chat",
-                cortexChoiceAgentName = Nothing,
-                cortexChoiceStepIndex = Nothing,
-                cortexChoiceSectionId = Nothing,
-                cortexChoiceAttempt = Nothing,
-                cortexChoiceTimeoutClass = CortexChoiceTimeoutStandard,
-                cortexChoiceReasoningEnabled = False
+                  ]
+              , cortexChoiceTools = []
+              , cortexChoiceResponseFormat = CortexResponseText
+              , cortexChoiceMaxOutputTokens = Just 4096
+              , cortexChoiceStageName = "chat"
+              , cortexChoiceAgentName = Nothing
+              , cortexChoiceStepIndex = Nothing
+              , cortexChoiceSectionId = Nothing
+              , cortexChoiceAttempt = Nothing
+              , cortexChoiceTimeoutClass = CortexChoiceTimeoutStandard
+              , cortexChoiceReasoningEnabled = False
               }
           payload = openRouterRequestPayload request
           maybeMaxTokens =
             AesonTypes.parseMaybe
               (Aeson.withObject "payload" (AesonTypes..: "max_tokens"))
-              payload ::
-              Maybe Int
+              payload
+              :: Maybe Int
       openRouterResolvedMaxOutputTokens request `shouldBe` 4096
       maybeMaxTokens `shouldBe` Just 4096

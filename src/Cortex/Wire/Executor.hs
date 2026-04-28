@@ -3,36 +3,31 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
--- | Source-level executor references and compile-time executor projections.
---
--- Wire only needs the structural projection of registered executor authority:
--- identity, ports, vocabulary, config shape, and effect metadata. Runnable host
--- authority lives in 'Cortex.Capability.Executor'.
+{- | Source-level executor references and compile-time executor projections.
+
+Wire only needs the structural projection of registered executor authority:
+identity, ports, vocabulary, config shape, and effect metadata. Runnable host
+authority lives in 'Cortex.Capability.Executor'.
+-}
 module Cortex.Wire.Executor
-  ( WireExecutor (..),
-    WireExecutorId (..),
-    wireExecutorIdToText,
-    wireExecutorIdFromWireExecutor,
-    WireExecutorEffect (..),
-    WireExecutorConfigShape (..),
-    WireExecutorPortPolicy (..),
-    WireExecutorProjection (..),
-    wireExecutorProjectionFromPorts,
-    wireContractsFromPorts,
-    WireExecutorRegistry (..),
-    emptyWireExecutorRegistry,
-    wireExecutorRegistryFromList,
-    lookupWireExecutorProjection,
-    wireExecutorRegistryVocabulary,
+  ( WireExecutor (..)
+  , WireExecutorId (..)
+  , wireExecutorIdToText
+  , wireExecutorIdFromWireExecutor
+  , WireExecutorEffect (..)
+  , WireExecutorConfigShape (..)
+  , WireExecutorPortPolicy (..)
+  , WireExecutorProjection (..)
+  , wireExecutorProjectionFromPorts
+  , wireContractsFromPorts
+  , WireExecutorRegistry (..)
+  , emptyWireExecutorRegistry
+  , wireExecutorRegistryFromList
+  , lookupWireExecutorProjection
+  , wireExecutorRegistryVocabulary
   )
 where
 
-import Cortex.Wire.AST
-  ( WireExecutor (..),
-    WireInputPort (..),
-    WireOutputPort (..),
-    WirePorts (..),
-  )
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -40,6 +35,13 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import GHC.Generics (Generic)
+
+import Cortex.Wire.AST
+  ( WireExecutor (..)
+  , WireInputPort (..)
+  , WireOutputPort (..)
+  , WirePorts (..)
+  )
 
 newtype WireExecutorId = WireExecutorId {unWireExecutorId :: Text}
   deriving stock (Eq, Ord, Show, Generic)
@@ -70,28 +72,28 @@ data WireExecutorPortPolicy
   deriving stock (Eq, Show, Generic)
 
 data WireExecutorProjection = WireExecutorProjection
-  { wireExecutorProjectionId :: !WireExecutorId,
-    wireExecutorProjectionPorts :: !WirePorts,
-    wireExecutorProjectionVocabulary :: !(Set Text),
-    wireExecutorProjectionEffect :: !WireExecutorEffect,
-    wireExecutorProjectionConfigShape :: !WireExecutorConfigShape,
-    wireExecutorProjectionPortPolicy :: !WireExecutorPortPolicy
+  { wireExecutorProjectionId :: !WireExecutorId
+  , wireExecutorProjectionPorts :: !WirePorts
+  , wireExecutorProjectionVocabulary :: !(Set Text)
+  , wireExecutorProjectionEffect :: !WireExecutorEffect
+  , wireExecutorProjectionConfigShape :: !WireExecutorConfigShape
+  , wireExecutorProjectionPortPolicy :: !WireExecutorPortPolicy
   }
   deriving stock (Eq, Show, Generic)
 
-wireExecutorProjectionFromPorts ::
-  WireExecutorId ->
-  WirePorts ->
-  WireExecutorEffect ->
-  WireExecutorProjection
+wireExecutorProjectionFromPorts
+  :: WireExecutorId
+  -> WirePorts
+  -> WireExecutorEffect
+  -> WireExecutorProjection
 wireExecutorProjectionFromPorts executorId ports effect =
   WireExecutorProjection
-    { wireExecutorProjectionId = executorId,
-      wireExecutorProjectionPorts = ports,
-      wireExecutorProjectionVocabulary = wireContractsFromPorts ports,
-      wireExecutorProjectionEffect = effect,
-      wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked,
-      wireExecutorProjectionPortPolicy = WireExecutorFixedPorts
+    { wireExecutorProjectionId = executorId
+    , wireExecutorProjectionPorts = ports
+    , wireExecutorProjectionVocabulary = wireContractsFromPorts ports
+    , wireExecutorProjectionEffect = effect
+    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionPortPolicy = WireExecutorFixedPorts
     }
 
 wireContractsFromPorts :: WirePorts -> Set Text
@@ -114,7 +116,8 @@ wireExecutorRegistryFromList projections =
   WireExecutorRegistry
     (Map.fromList [(projection.wireExecutorProjectionId, projection) | projection <- projections])
 
-lookupWireExecutorProjection :: WireExecutorId -> WireExecutorRegistry -> Maybe WireExecutorProjection
+lookupWireExecutorProjection
+  :: WireExecutorId -> WireExecutorRegistry -> Maybe WireExecutorProjection
 lookupWireExecutorProjection executorId registry =
   Map.lookup executorId registry.wireExecutorRegistryProjections
 

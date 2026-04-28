@@ -4,18 +4,19 @@ module Platform.DurableTask.TypesSpec (spec) where
 
 import Data.List (nub)
 import Data.Maybe (isNothing)
-import Platform.DurableTask.Types
 import Test.Hspec
 import Test.QuickCheck
+
+import Platform.DurableTask.Types
 
 genRunOutcome :: Gen RunOutcome
 genRunOutcome =
   elements
-    [ OutcomeCompleted,
-      OutcomeFailed,
-      OutcomeCancelled,
-      OutcomeTimedOut,
-      OutcomeShutdown
+    [ OutcomeCompleted
+    , OutcomeFailed
+    , OutcomeCancelled
+    , OutcomeTimedOut
+    , OutcomeShutdown
     ]
 
 genRunStatus :: Gen RunStatus

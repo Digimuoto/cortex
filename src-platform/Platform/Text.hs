@@ -1,17 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Platform.Text
-  ( showText,
-    stripNonEmptyMaybeText,
-    stripNonEmptyText,
-    truncateText,
+  ( showText
+  , stripNonEmptyMaybeText
+  , stripNonEmptyText
+  , truncateText
   )
 where
 
 import Data.Text (Text)
 import Data.Text qualified as T
 
-showText :: (Show a) => a -> Text
+showText :: Show a => a -> Text
 showText = T.pack . show
 
 stripNonEmptyText :: Text -> Maybe Text

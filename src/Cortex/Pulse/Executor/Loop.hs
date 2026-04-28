@@ -3,63 +3,65 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Cortex.Pulse.Executor.Loop
-  ( runGraphPlan,
+  ( runGraphPlan
   )
 where
 
 import Control.Concurrent.STM (TVar, atomically, readTVarIO, writeTVar)
 import Control.Monad (foldM)
+import Data.Time (getCurrentTime)
+import Data.UUID (UUID)
+import Rel8 (Result)
+
 import Cortex.Pulse.Executor.Frontier
-  ( runFrontierConcurrent,
-    runFrontierSequential,
+  ( runFrontierConcurrent
+  , runFrontierSequential
   )
 import Cortex.Pulse.Executor.Outcome
-  ( handleGraphOutcome,
-    handleSettled,
-    handleStuck,
-    handleSuspended,
+  ( handleGraphOutcome
+  , handleSettled
+  , handleStuck
+  , handleSuspended
   )
 import Cortex.Pulse.Executor.Persistence
-  ( failRun,
-    requireGraphStatePersist,
+  ( failRun
+  , requireGraphStatePersist
   )
 import Cortex.Pulse.Executor.Types
-  ( RunTVars (..),
-    StageEnv (..),
-    mkStageEnv,
+  ( RunTVars (..)
+  , StageEnv (..)
+  , mkStageEnv
   )
 import Cortex.Pulse.GraphRuntime
-  ( StepResult (..),
-    classifyGraphState,
+  ( StepResult (..)
+  , classifyGraphState
   )
 import Cortex.Pulse.Materialization
-  ( PersistedGraphState (..),
-    materializeRewrite,
+  ( PersistedGraphState (..)
+  , materializeRewrite
   )
 import Cortex.Pulse.Plan (StableStageId, StagePlan (..))
 import Cortex.Pulse.PlanHydration
-  ( renderRewriteError,
-    rewriteErrorType,
+  ( renderRewriteError
+  , rewriteErrorType
   )
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
 import Cortex.Pulse.Types (PulseConfig)
-import Data.Time (getCurrentTime)
-import Data.UUID (UUID)
+
 import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
-import Rel8 (Result)
 
-runGraphPlan ::
-  forall stageId.
-  (StableStageId stageId) =>
-  DB.Pool ->
-  PulseConfig ->
-  TVar Bool ->
-  UUID ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  RunTVars ->
-  IO RunOutcome
+runGraphPlan
+  :: forall stageId
+   . StableStageId stageId
+  => DB.Pool
+  -> PulseConfig
+  -> TVar Bool
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> RunTVars
+  -> IO RunOutcome
 runGraphPlan pool config shutdownFlag runId task stagePlan tvars = do
   persistedState <- readTVarIO tvars.rvGsVar
   let graphState = persistedState.pgsGraphState
@@ -78,10 +80,19 @@ runGraphPlan pool config shutdownFlag runId task stagePlan tvars = do
           handleGraphOutcome env persistedState'.pgsGraphState outcome
         Just (Right persistedRewrites) -> do
           currentState <- readTVarIO tvars.rvGsVar
-          case foldM (\(plan, persisted) persistedRewrite -> materializeRewrite persistedRewrite plan persisted) (stagePlan, currentState) persistedRewrites of
+          case foldM
+            (\(plan, persisted) persistedRewrite -> materializeRewrite persistedRewrite plan persisted)
+            (stagePlan, currentState)
+            persistedRewrites of
             Left rewriteErr -> do
               now <- getCurrentTime
-              failRun env.sePool env.seRunId now (rewriteErrorType rewriteErr) (renderRewriteError rewriteErr) False
+              failRun
+                env.sePool
+                env.seRunId
+                now
+                (rewriteErrorType rewriteErr)
+                (renderRewriteError rewriteErr)
+                False
               pure OutcomeFailed
             Right (stagePlan', gsWithRewrite) -> do
               persistFailed <- requireGraphStatePersist env gsWithRewrite

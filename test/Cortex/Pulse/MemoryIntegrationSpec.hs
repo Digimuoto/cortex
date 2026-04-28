@@ -1,33 +1,41 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | End-to-end integration spec for 'Cortex.Pulse.Memory' (DIG-529).
---
--- Exercises the IO 'MemoryHandle' constructed by 'newMemoryHandle'
--- against live TVars populated as an executor would populate them.
--- Two properties the issue calls out explicitly:
---
---   * __Sibling preservation__: two analyst branches under a shared
---     planner each emit an observation; the reviewer's query rooted at
---     its own node reaches both of them, not just one.
---
---   * __Within-run determinism__: the IO wrapper is a pure function
---     of the TVar state at snapshot time; two consecutive queries
---     against the same state yield identical matches and identical
---     scores.
---
--- Replay determinism across a crash-resume boundary is partially
--- covered here (the TVar-backed snapshot is a pure function of its
--- inputs; a resume that reconstructs equivalent TVars yields an
--- equivalent view).  A fuller DB-backed resume test belongs alongside
--- the executor integration tests under 'Cortex.Pulse.ExecutorSpec'.
+{- | End-to-end integration spec for 'Cortex.Pulse.Memory' (DIG-529).
+
+Exercises the IO 'MemoryHandle' constructed by 'newMemoryHandle'
+against live TVars populated as an executor would populate them.
+Two properties the issue calls out explicitly:
+
+ * __Sibling preservation__: two analyst branches under a shared
+   planner each emit an observation; the reviewer's query rooted at
+   its own node reaches both of them, not just one.
+
+ * __Within-run determinism__: the IO wrapper is a pure function
+   of the TVar state at snapshot time; two consecutive queries
+   against the same state yield identical matches and identical
+   scores.
+
+Replay determinism across a crash-resume boundary is partially
+covered here (the TVar-backed snapshot is a pure function of its
+inputs; a resume that reconstructs equivalent TVars yields an
+equivalent view).  A fuller DB-backed resume test belongs alongside
+the executor integration tests under 'Cortex.Pulse.ExecutorSpec'.
+-}
 module Cortex.Pulse.MemoryIntegrationSpec (spec) where
 
 import Control.Concurrent.STM (atomically, modifyTVar', newTVarIO, writeTVar)
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Map.Strict qualified as Map
+import Data.Text (Text)
+import Data.Time (UTCTime (..), addUTCTime, fromGregorian, secondsToDiffTime)
+import Test.Hspec
+
 import Cortex.Algebra.Graph
-  ( Relation,
-    edges,
-    toRelation,
+  ( Relation
+  , edges
+  , toRelation
   )
 import Cortex.Pulse.Materialize (PersistedGraphState (..))
 import Cortex.Pulse.Memory
@@ -35,12 +43,6 @@ import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Rewrite (RewriteBudget (..))
 import Cortex.Pulse.Runtime (GraphState (..), NodeStatus (..))
 import Cortex.Wire (unwrapWireStageValue)
-import Data.Aeson qualified as Aeson
-import Data.Aeson.KeyMap qualified as KeyMap
-import Data.Map.Strict qualified as Map
-import Data.Text (Text)
-import Data.Time (UTCTime (..), addUTCTime, fromGregorian, secondsToDiffTime)
-import Test.Hspec
 
 -- ============================================================================
 -- Fixtures
@@ -60,20 +62,20 @@ fanoutTopology :: Relation NodeId
 fanoutTopology =
   toRelation
     ( edges
-        [ (nid "planner", nid "analyst-a"),
-          (nid "planner", nid "analyst-b"),
-          (nid "planner", nid "analyst-c"),
-          (nid "analyst-a", nid "reviewer"),
-          (nid "analyst-b", nid "reviewer"),
-          (nid "analyst-c", nid "reviewer")
+        [ (nid "planner", nid "analyst-a")
+        , (nid "planner", nid "analyst-b")
+        , (nid "planner", nid "analyst-c")
+        , (nid "analyst-a", nid "reviewer")
+        , (nid "analyst-b", nid "reviewer")
+        , (nid "analyst-c", nid "reviewer")
         ]
     )
 
 analystJson :: Text -> Text -> Aeson.Value
 analystJson slot body =
   Aeson.object
-    [ "slot" Aeson..= slot,
-      "text" Aeson..= body
+    [ "slot" Aeson..= slot
+    , "text" Aeson..= body
     ]
 
 plannerJson :: Aeson.Value
@@ -82,17 +84,18 @@ plannerJson = Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..=
 budget :: RewriteBudget
 budget =
   RewriteBudget
-    { rbAddedNodesMax = 0,
-      rbAddedEdgesMax = 0,
-      rbAddedDepthMax = 0,
-      rbFrontierDeltaMax = 0,
-      rbRewriteOpsMax = 0
+    { rbAddedNodesMax = 0
+    , rbAddedEdgesMax = 0
+    , rbAddedDepthMax = 0
+    , rbFrontierDeltaMax = 0
+    , rbRewriteOpsMax = 0
     }
 
--- | A 'PersistedGraphState' shaped as if the planner and all three
--- analysts have settled and the reviewer is still pending.  The
--- analysts all share routing key @"analyst"@ — that's the DIG-529
--- sibling-preservation scenario.
+{- | A 'PersistedGraphState' shaped as if the planner and all three
+analysts have settled and the reviewer is still pending.  The
+analysts all share routing key @"analyst"@ — that's the DIG-529
+sibling-preservation scenario.
+-}
 initialPersistedState :: PersistedGraphState
 initialPersistedState =
   PersistedGraphState
@@ -100,33 +103,33 @@ initialPersistedState =
         GraphState
           { gsNodeStatuses =
               Map.fromList
-                [ (nid "planner", NodeCompleted),
-                  (nid "analyst-a", NodeCompleted),
-                  (nid "analyst-b", NodeCompleted),
-                  (nid "analyst-c", NodeCompleted),
-                  (nid "reviewer", NodePending)
-                ],
-            gsNodeOutputs =
-              Map.fromList
-                [ (nid "planner", plannerJson),
-                  (nid "analyst-a", analystJson "analyst" "alpha revenue grew 12%"),
-                  (nid "analyst-b", analystJson "analyst" "beta revenue grew 5%"),
-                  (nid "analyst-c", analystJson "analyst" "gamma revenue declined 3%")
+                [ (nid "planner", NodeCompleted)
+                , (nid "analyst-a", NodeCompleted)
+                , (nid "analyst-b", NodeCompleted)
+                , (nid "analyst-c", NodeCompleted)
+                , (nid "reviewer", NodePending)
                 ]
-          },
-      pgsRemainingRewriteBudget = budget,
-      pgsAppliedRewriteId = Nothing,
-      pgsNodeProvenance = Map.empty,
-      pgsTopologyHash = Nothing
+          , gsNodeOutputs =
+              Map.fromList
+                [ (nid "planner", plannerJson)
+                , (nid "analyst-a", analystJson "analyst" "alpha revenue grew 12%")
+                , (nid "analyst-b", analystJson "analyst" "beta revenue grew 5%")
+                , (nid "analyst-c", analystJson "analyst" "gamma revenue declined 3%")
+                ]
+          }
+    , pgsRemainingRewriteBudget = budget
+    , pgsAppliedRewriteId = Nothing
+    , pgsNodeProvenance = Map.empty
+    , pgsTopologyHash = Nothing
     }
 
 completedAtMap :: Map.Map NodeId UTCTime
 completedAtMap =
   Map.fromList
-    [ (nid "planner", tAt 0),
-      (nid "analyst-a", tAt 10),
-      (nid "analyst-b", tAt 20),
-      (nid "analyst-c", tAt 30)
+    [ (nid "planner", tAt 0)
+    , (nid "analyst-a", tAt 10)
+    , (nid "analyst-b", tAt 20)
+    , (nid "analyst-c", tAt 30)
     ]
 
 analystExtractor :: Aeson.Value -> Maybe ExtractedFields
@@ -138,44 +141,47 @@ analystExtractor (Aeson.Object obj) =
             _ -> Nothing
        in Just
             ExtractedFields
-              { efRoutingKey = slot,
-                efBodyText = bodyText,
-                efEvidence = []
+              { efRoutingKey = slot
+              , efBodyText = bodyText
+              , efEvidence = []
               }
     _ -> Nothing
 analystExtractor _ = Nothing
 
--- | Extractor that peels a 'WireValue'-shaped envelope before
--- decoding — the pattern the DeepReport reviewer uses so it works
--- against wire-wrapped persisted outputs.
+{- | Extractor that peels a 'WireValue'-shaped envelope before
+decoding — the pattern the DeepReport reviewer uses so it works
+against wire-wrapped persisted outputs.
+-}
 wireAwareAnalystExtractor :: Aeson.Value -> Maybe ExtractedFields
 wireAwareAnalystExtractor = analystExtractor . unwrapWireStageValue
 
--- | Build a 'WireValue'-wrapped analyst payload the way
--- 'wrapWireStageResult' stashes it in 'gsNodeOutputs'.  Shape matches
--- the 'ToJSON WireValue' instance in 'Cortex.Wire.Value'.
+{- | Build a 'WireValue'-wrapped analyst payload the way
+'wrapWireStageResult' stashes it in 'gsNodeOutputs'.  Shape matches
+the 'ToJSON WireValue' instance in 'Cortex.Wire.Value'.
+-}
 wireWrappedAnalyst :: Text -> Text -> Aeson.Value
 wireWrappedAnalyst slot body =
   Aeson.object
-    [ "contract" Aeson..= ("analyst.draft" :: Text),
-      "payloadKind" Aeson..= ("json" :: Text),
-      "mediaType" Aeson..= ("application/json" :: Text),
-      "producer" Aeson..= ("analyst-a" :: Text),
-      "value" Aeson..= analystJson slot body,
-      "provenance" Aeson..= Aeson.Null
+    [ "contract" Aeson..= ("analyst.draft" :: Text)
+    , "payloadKind" Aeson..= ("json" :: Text)
+    , "mediaType" Aeson..= ("application/json" :: Text)
+    , "producer" Aeson..= ("analyst-a" :: Text)
+    , "value" Aeson..= analystJson slot body
+    , "provenance" Aeson..= Aeson.Null
     ]
 
 -- ============================================================================
 -- Spec
 -- ============================================================================
 
--- | Capture a snapshot from the canonical fan-out state and wrap it
--- as a 'MemoryHandle'.  Mirrors what 'StageEnv.seMemoryFactory' does
--- at stage entry.
-fanoutHandle ::
-  PersistedGraphState ->
-  Map.Map NodeId UTCTime ->
-  IO MemoryHandle
+{- | Capture a snapshot from the canonical fan-out state and wrap it
+as a 'MemoryHandle'.  Mirrors what 'StageEnv.seMemoryFactory' does
+at stage entry.
+-}
+fanoutHandle
+  :: PersistedGraphState
+  -> Map.Map NodeId UTCTime
+  -> IO MemoryHandle
 fanoutHandle state completedAt = do
   gsVar <- newTVarIO state
   nodeCompletedAtVar <- newTVarIO completedAt
@@ -188,8 +194,8 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     handle <- fanoutHandle initialPersistedState completedAtMap
     let query =
           emptyQuery
-            { qExtractor = analystExtractor,
-              qRoutingKey = Just "analyst"
+            { qExtractor = analystExtractor
+            , qRoutingKey = Just "analyst"
             }
     matches <- handle.queryMemory (nid "reviewer") analystWalkSpec query
     -- All three analysts share routing_key="analyst".  Reviewer's
@@ -269,10 +275,10 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     -- through 'unwrapWireStageValue' unchanged.
     let wireOutputs =
           Map.fromList
-            [ (nid "planner", plannerJson),
-              (nid "analyst-a", wireWrappedAnalyst "analyst" "alpha revenue grew 12%"),
-              (nid "analyst-b", wireWrappedAnalyst "analyst" "beta revenue grew 5%"),
-              (nid "analyst-c", wireWrappedAnalyst "analyst" "gamma revenue declined 3%")
+            [ (nid "planner", plannerJson)
+            , (nid "analyst-a", wireWrappedAnalyst "analyst" "alpha revenue grew 12%")
+            , (nid "analyst-b", wireWrappedAnalyst "analyst" "beta revenue grew 5%")
+            , (nid "analyst-c", wireWrappedAnalyst "analyst" "gamma revenue declined 3%")
             ]
         wireState =
           initialPersistedState
@@ -315,8 +321,8 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
           initialPersistedState
             { pgsGraphState =
                 (initialPersistedState.pgsGraphState)
-                  { gsNodeStatuses = waitingStatuses,
-                    gsNodeOutputs = waitingOutputs
+                  { gsNodeStatuses = waitingStatuses
+                  , gsNodeOutputs = waitingOutputs
                   }
             }
     handle <- fanoutHandle waitingState completedAtMap
@@ -348,11 +354,11 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     -- the "no same-frontier bleed" property.
     let entryStatuses =
           Map.fromList
-            [ (nid "planner", NodeCompleted),
-              (nid "analyst-a", NodeRunning),
-              (nid "analyst-b", NodeRunning),
-              (nid "analyst-c", NodeRunning),
-              (nid "reviewer", NodePending)
+            [ (nid "planner", NodeCompleted)
+            , (nid "analyst-a", NodeRunning)
+            , (nid "analyst-b", NodeRunning)
+            , (nid "analyst-c", NodeRunning)
+            , (nid "reviewer", NodePending)
             ]
         entryOutputs =
           Map.fromList [(nid "planner", plannerJson)]
@@ -360,8 +366,8 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
           initialPersistedState
             { pgsGraphState =
                 (initialPersistedState.pgsGraphState)
-                  { gsNodeStatuses = entryStatuses,
-                    gsNodeOutputs = entryOutputs
+                  { gsNodeStatuses = entryStatuses
+                  , gsNodeOutputs = entryOutputs
                   }
             }
     gsVar <- newTVarIO entryState
@@ -378,8 +384,8 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
           entryState
             { pgsGraphState =
                 (entryState.pgsGraphState)
-                  { gsNodeStatuses = Map.insert (nid "analyst-a") NodeCompleted entryStatuses,
-                    gsNodeOutputs = Map.insert (nid "analyst-a") (analystJson "analyst" "alpha settled") entryOutputs
+                  { gsNodeStatuses = Map.insert (nid "analyst-a") NodeCompleted entryStatuses
+                  , gsNodeOutputs = Map.insert (nid "analyst-a") (analystJson "analyst" "alpha settled") entryOutputs
                   }
             }
     atomically $ writeTVar gsVar settledAState

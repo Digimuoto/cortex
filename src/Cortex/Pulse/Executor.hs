@@ -3,92 +3,95 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | Pulse graph executor.
--- Advances through typed graph-based stage plans with graph-state persistence,
--- checkpoint audit writes, cancellation checks, replay-safety warnings, signal suspension, and
--- stage-log audit entries.
---
--- A linear stage pipeline is a degenerate graph (chain of single dependencies).
--- The 'mkLinearStagePlan' constructor is a convenience for chain-shaped plans.
+{- | Pulse graph executor.
+Advances through typed graph-based stage plans with graph-state persistence,
+checkpoint audit writes, cancellation checks, replay-safety warnings, signal suspension, and
+stage-log audit entries.
+
+A linear stage pipeline is a degenerate graph (chain of single dependencies).
+The 'mkLinearStagePlan' constructor is a convenience for chain-shaped plans.
+-}
 module Cortex.Pulse.Executor
-  ( executeTask,
-    resumeTask,
-    executeStagePlan,
-    resumeStagePlan,
-    retryDelayMicros,
-    TaskContext (..),
-    TaskHandler (..),
-    TaskRegistry,
+  ( executeTask
+  , resumeTask
+  , executeStagePlan
+  , resumeStagePlan
+  , retryDelayMicros
+  , TaskContext (..)
+  , TaskHandler (..)
+  , TaskRegistry
 
     -- * Hydration/Serialization
-    SerializableStageDefinition (..),
-    toSerializableStageDefinition,
-    hydrateRewrite,
-    module Cortex.Pulse.Plan,
-    applyRewrite,
-    materializedTopologyForAdmin,
+  , SerializableStageDefinition (..)
+  , toSerializableStageDefinition
+  , hydrateRewrite
+  , module Cortex.Pulse.Plan
+  , applyRewrite
+  , materializedTopologyForAdmin
   )
 where
 
 import Control.Concurrent.STM (TVar, newTVarIO)
-import Cortex.Algebra.Graph
-  ( ValidationError (..),
-    validateDAG,
-  )
-import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
-import Cortex.Pulse.Executor.Loop (runGraphPlan)
-import Cortex.Pulse.Executor.Persistence
-  ( failRun,
-    failUnsupportedTaskType,
-    requireGraphStatePersist,
-    retryDelayMicros,
-  )
-import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
-import Cortex.Pulse.Executor.Resume
-  ( materializedTopologyForAdmin,
-    resumeFromPersistedState,
-  )
-import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
-import Cortex.Pulse.GraphRuntime (initialGraphState, readyNodes)
-import Cortex.Pulse.Materialization
-  ( PersistedGraphState (..),
-    applyPlannedRewrite,
-    computeTopologyHash,
-    initialProvenance,
-  )
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Plan
-import Cortex.Pulse.PlanHydration
-  ( RewriteValidationError (..),
-    SerializableStageDefinition (..),
-    hydrateRewrite,
-    planRewriteDelta,
-    toSerializableStageDefinition,
-  )
-import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Rewrite (GraphRewrite (..))
-import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Types (PulseConfig (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, getCurrentTime)
 import Data.UUID (UUID)
+import Rel8 (Result)
+
+import Cortex.Algebra.Graph
+  ( ValidationError (..)
+  , validateDAG
+  )
+import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
+import Cortex.Pulse.Executor.Loop (runGraphPlan)
+import Cortex.Pulse.Executor.Persistence
+  ( failRun
+  , failUnsupportedTaskType
+  , requireGraphStatePersist
+  , retryDelayMicros
+  )
+import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
+import Cortex.Pulse.Executor.Resume
+  ( materializedTopologyForAdmin
+  , resumeFromPersistedState
+  )
+import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
+import Cortex.Pulse.GraphRuntime (initialGraphState, readyNodes)
+import Cortex.Pulse.Materialization
+  ( PersistedGraphState (..)
+  , applyPlannedRewrite
+  , computeTopologyHash
+  , initialProvenance
+  )
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+import Cortex.Pulse.PlanHydration
+  ( RewriteValidationError (..)
+  , SerializableStageDefinition (..)
+  , hydrateRewrite
+  , planRewriteDelta
+  , toSerializableStageDefinition
+  )
+import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Rewrite (GraphRewrite (..))
+import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
+import Cortex.Pulse.Types (PulseConfig (..))
+
 import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
 import Platform.Observability (emitObsEvent)
-import Rel8 (Result)
 
 data TaskContext = TaskContext
-  { tcPool :: DB.Pool,
-    tcConfig :: PulseConfig,
-    tcShutdownFlag :: TVar Bool
+  { tcPool :: DB.Pool
+  , tcConfig :: PulseConfig
+  , tcShutdownFlag :: TVar Bool
   }
 
 data TaskHandler = TaskHandler
-  { executeFresh :: TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO RunOutcome,
-    resumeExisting :: TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO RunOutcome
+  { executeFresh :: TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO RunOutcome
+  , resumeExisting :: TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO RunOutcome
   }
 
 type TaskRegistry = Map Text TaskHandler
@@ -109,13 +112,13 @@ resumeTask registry taskContext runId task =
     Nothing ->
       failUnsupportedTaskType taskContext.tcPool runId task.taskType
 
-executeStagePlan ::
-  (StableStageId stageId) =>
-  TaskContext ->
-  UUID ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  IO RunOutcome
+executeStagePlan
+  :: StableStageId stageId
+  => TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> IO RunOutcome
 executeStagePlan taskContext runId task stagePlan = do
   -- Validate topology is a DAG. mkLinearStagePlan validates at construction,
   -- but StagePlan(..) is exported and raw plans skip validation.
@@ -133,35 +136,50 @@ executeStagePlan taskContext runId task stagePlan = do
     Right () -> do
       let initialPersistedState =
             PersistedGraphState
-              { pgsGraphState = initialGraphState stagePlan.spTopology,
-                pgsRemainingRewriteBudget = stagePlan.spInitialRewriteBudget,
-                pgsAppliedRewriteId = Nothing,
-                pgsNodeProvenance = initialProvenance stagePlan.spTopology,
-                pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              { pgsGraphState = initialGraphState stagePlan.spTopology
+              , pgsRemainingRewriteBudget = stagePlan.spInitialRewriteBudget
+              , pgsAppliedRewriteId = Nothing
+              , pgsNodeProvenance = initialProvenance stagePlan.spTopology
+              , pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
               }
       gsVar <- newTVarIO initialPersistedState
       nodeCompletedAtVar <- newTVarIO Map.empty
       topologyVar <- newTVarIO stagePlan.spTopology
       let tvars =
             RunTVars
-              { rvGsVar = gsVar,
-                rvNodeCompletedAtVar = nodeCompletedAtVar,
-                rvTopologyVar = topologyVar
+              { rvGsVar = gsVar
+              , rvNodeCompletedAtVar = nodeCompletedAtVar
+              , rvTopologyVar = topologyVar
               }
-          env = mkStageEnv taskContext.tcPool (tcConfig taskContext) taskContext.tcShutdownFlag runId task stagePlan tvars
+          env =
+            mkStageEnv
+              taskContext.tcPool
+              (tcConfig taskContext)
+              taskContext.tcShutdownFlag
+              runId
+              task
+              stagePlan
+              tvars
       persistFailed <- requireGraphStatePersist env initialPersistedState
       case persistFailed of
         Just outcome -> pure outcome
         Nothing ->
-          runGraphPlan taskContext.tcPool (tcConfig taskContext) taskContext.tcShutdownFlag runId task stagePlan tvars
+          runGraphPlan
+            taskContext.tcPool
+            (tcConfig taskContext)
+            taskContext.tcShutdownFlag
+            runId
+            task
+            stagePlan
+            tvars
 
-resumeStagePlan ::
-  (StableStageId stageId) =>
-  TaskContext ->
-  UUID ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  IO RunOutcome
+resumeStagePlan
+  :: StableStageId stageId
+  => TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> IO RunOutcome
 resumeStagePlan taskContext runId task stagePlan = do
   let pool = taskContext.tcPool
   graphStateResult <- DB.withConnection pool $ Q.readGraphState runId
@@ -189,11 +207,18 @@ resumeStagePlan taskContext runId task stagePlan = do
             topologyVar <- newTVarIO resumedPlan.spTopology
             let tvars =
                   RunTVars
-                    { rvGsVar = gsVar,
-                      rvNodeCompletedAtVar = nodeCompletedAtVar,
-                      rvTopologyVar = topologyVar
+                    { rvGsVar = gsVar
+                    , rvNodeCompletedAtVar = nodeCompletedAtVar
+                    , rvTopologyVar = topologyVar
                     }
-            runGraphPlan taskContext.tcPool (tcConfig taskContext) taskContext.tcShutdownFlag runId task resumedPlan tvars
+            runGraphPlan
+              taskContext.tcPool
+              (tcConfig taskContext)
+              taskContext.tcShutdownFlag
+              runId
+              task
+              resumedPlan
+              tvars
         )
     Right Nothing -> do
       -- No graph state row: the run crashed before its first node completed
@@ -214,38 +239,41 @@ resumeStagePlan taskContext runId task stagePlan = do
       failRun pool runId now "graph_state_read_failed" errMsg True
       pure OutcomeFailed
 
--- | Apply a graph rewrite to a stage plan, evolving both topology and definitions.
---
--- This function enforces deterministic NodeId namespacing ({parent}:{local})
--- and validates the resulting DAG structure.
-applyRewrite ::
-  (Eq stageId) =>
-  GraphRewrite NodeId (StageDefinition stageId) ->
-  StagePlan stageId ->
-  Either [RewriteValidationError] (StagePlan stageId)
+{- | Apply a graph rewrite to a stage plan, evolving both topology and definitions.
+
+This function enforces deterministic NodeId namespacing ({parent}:{local})
+and validates the resulting DAG structure.
+-}
+applyRewrite
+  :: Eq stageId
+  => GraphRewrite NodeId (StageDefinition stageId)
+  -> StagePlan stageId
+  -> Either [RewriteValidationError] (StagePlan stageId)
 applyRewrite = applyRewriteChecked
 
-applyRewriteChecked ::
-  (Eq stageId) =>
-  GraphRewrite NodeId (StageDefinition stageId) ->
-  StagePlan stageId ->
-  Either [RewriteValidationError] (StagePlan stageId)
+applyRewriteChecked
+  :: Eq stageId
+  => GraphRewrite NodeId (StageDefinition stageId)
+  -> StagePlan stageId
+  -> Either [RewriteValidationError] (StagePlan stageId)
 applyRewriteChecked rewrite plan =
   applyPlannedRewrite <$> planRewriteDelta rewrite plan <*> pure plan
 
--- | DIG-530: read @(stage_name, completed_at)@ rows for a run from
--- @pulse.stage_log@ and turn them into the 'Map NodeId UTCTime' the
--- executor binds into 'RunTVars.rvNodeCompletedAtVar'.
---
--- Logs and returns 'Map.empty' on DB failure so resume still
--- proceeds — memory queries degrade to "no temporal weighting" for
--- pre-restart nodes rather than crashing the run.
+{- | DIG-530: read @(stage_name, completed_at)@ rows for a run from
+@pulse.stage_log@ and turn them into the 'Map NodeId UTCTime' the
+executor binds into 'RunTVars.rvNodeCompletedAtVar'.
+
+Logs and returns 'Map.empty' on DB failure so resume still
+proceeds — memory queries degrade to "no temporal weighting" for
+pre-restart nodes rather than crashing the run.
+-}
 hydrateNodeCompletedAtVar :: DB.Pool -> UUID -> IO (Map NodeId UTCTime)
 hydrateNodeCompletedAtVar pool runId = do
   result <- DB.withConnection pool $ Q.readNodeCompletionTimes runId
   case result of
     Left err -> do
-      emitObsEvent $ EvtResumeGraphParseFailed runId ("node completion timestamps read failed: " <> T.pack err)
+      emitObsEvent $
+        EvtResumeGraphParseFailed runId ("node completion timestamps read failed: " <> T.pack err)
       pure Map.empty
     Right rows ->
       pure (Map.fromList [(NodeId stageName, completedAt) | (stageName, completedAt) <- rows])

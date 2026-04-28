@@ -1,51 +1,56 @@
 -- | DAG validation and cycle detection for graph plans.
 module Cortex.Algebra.Graph.Validate
-  ( ValidationError (..),
-    analyzeDAG,
-    validateDAG,
+  ( ValidationError (..)
+  , analyzeDAG
+  , validateDAG
   )
 where
 
-import Cortex.Algebra.Graph.Core
-import Cortex.Algebra.Graph.Decompose (topSort)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 
+import Cortex.Algebra.Graph.Core
+import Cortex.Algebra.Graph.Decompose (topSort)
+
 -- | Errors from graph plan validation.
 data ValidationError a
-  = -- | The graph contains a cycle. The list is the cycle path
-    -- (last element connects back to first).
+  = {- | The graph contains a cycle. The list is the cycle path
+     (last element connects back to first).
+    -}
     GraphHasCycle [a]
   deriving stock (Eq, Show)
 
--- | Validate that a lowered relation is a DAG and return its topological
--- order.
---
--- Returns @Right topoOrder@ for acyclic graphs, @Left (GraphHasCycle path)@
--- for cyclic ones. On cyclic graphs, two traversals occur: 'topSort' detects
--- the cycle, then 'findCycle' extracts the witness path.
-analyzeDAG :: (Ord a) => Relation a -> Either (ValidationError a) [a]
+{- | Validate that a lowered relation is a DAG and return its topological
+order.
+
+Returns @Right topoOrder@ for acyclic graphs, @Left (GraphHasCycle path)@
+for cyclic ones. On cyclic graphs, two traversals occur: 'topSort' detects
+the cycle, then 'findCycle' extracts the witness path.
+-}
+analyzeDAG :: Ord a => Relation a -> Either (ValidationError a) [a]
 analyzeDAG rel =
   case topSort rel of
     Just order -> Right order
     Nothing -> Left (GraphHasCycle (findCycle rel))
 
--- | Validate that a lowered relation is a DAG (no cycles).
--- Convenience wrapper around 'analyzeDAG' that discards the topological order.
-validateDAG :: (Ord a) => Relation a -> Either (ValidationError a) ()
+{- | Validate that a lowered relation is a DAG (no cycles).
+Convenience wrapper around 'analyzeDAG' that discards the topological order.
+-}
+validateDAG :: Ord a => Relation a -> Either (ValidationError a) ()
 validateDAG rel = case analyzeDAG rel of
   Right _ -> Right ()
   Left err -> Left err
 
--- | Find a cycle in the graph via DFS with explicit path tracking.
--- Returns the cycle as a clean forward path @[a, b, ..., a]@ where the
--- last element connects back to the first.
---
--- Threads a global visited set to avoid revisiting explored subtrees.
--- Maintains the recursion stack in root-to-current order for clean extraction.
---
--- Precondition: the graph contains at least one cycle.
-findCycle :: (Ord a) => Relation a -> [a]
+{- | Find a cycle in the graph via DFS with explicit path tracking.
+Returns the cycle as a clean forward path @[a, b, ..., a]@ where the
+last element connects back to the first.
+
+Threads a global visited set to avoid revisiting explored subtrees.
+Maintains the recursion stack in root-to-current order for clean extraction.
+
+Precondition: the graph contains at least one cycle.
+-}
+findCycle :: Ord a => Relation a -> [a]
 findCycle rel = go Set.empty (Set.toList (relVertices rel))
   where
     adj = relSucc rel

@@ -1,16 +1,16 @@
 -- | Cognitive memory and context construction.
 module Cortex.Nous.Memory
-  ( module Cortex.Nous.Memory.Candidate,
-    module Cortex.Nous.Memory.Compact,
-    module Cortex.Nous.Memory.Conflict,
-    module Cortex.Nous.Memory.Document,
-    module Cortex.Nous.Memory.Host,
-    module Cortex.Nous.Memory.Pack,
-    module Cortex.Nous.Memory.Query,
-    module Cortex.Nous.Memory.Rank,
-    module Cortex.Nous.Memory.Retrieve,
-    module Cortex.Nous.Memory.Source,
-    module Cortex.Nous.Memory.Types,
+  ( module Cortex.Nous.Memory.Candidate
+  , module Cortex.Nous.Memory.Compact
+  , module Cortex.Nous.Memory.Conflict
+  , module Cortex.Nous.Memory.Document
+  , module Cortex.Nous.Memory.Host
+  , module Cortex.Nous.Memory.Pack
+  , module Cortex.Nous.Memory.Query
+  , module Cortex.Nous.Memory.Rank
+  , module Cortex.Nous.Memory.Retrieve
+  , module Cortex.Nous.Memory.Source
+  , module Cortex.Nous.Memory.Types
   )
 where
 

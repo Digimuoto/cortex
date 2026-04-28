@@ -1,7 +1,5 @@
 module Main (main) where
 
-import Cortex.Pulse (runPulse)
-import Cortex.Pulse.Types (PulseConfig (..))
 import Data.Int (Int64)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -9,6 +7,9 @@ import Data.Text.IO qualified as TIO
 import Data.Word (Word16)
 import Options.Applicative
 import System.Environment (setEnv)
+
+import Cortex.Pulse (runPulse)
+import Cortex.Pulse.Types (PulseConfig (..))
 
 main :: IO ()
 main = do
@@ -31,26 +32,26 @@ main = do
 
   let config =
         PulseConfig
-          { pulseDbHost = paDbHost args,
-            pulseDbPort = paDbPort args,
-            pulseDbUser = paDbUser args,
-            pulseDbPassword = password,
-            pulseDbName = paDbName args,
-            pulseDbPoolSize = paDbPoolSize args,
-            pulseApiUrl = paApiUrl args,
-            pulseJwtSecret = jwtSecret,
-            pulseJwtExpirationSeconds = paJwtExpiration args,
-            pulseJwtIssuer = paJwtIssuer args,
-            pulseJwtAudience = paJwtAudience args,
-            pulseAdminApiKey = adminApiKey,
-            pulseServiceCredential = serviceCredential,
-            pulseHealthPort = paHealthPort args,
-            pulseLeaseOwner = paLeaseOwner args,
-            pulseLeaseDurationSeconds = paLeaseDuration args,
-            pulsePollIntervalSeconds = paPollInterval args,
-            pulseMaxConcurrentTasks = paMaxConcurrentTasks args,
-            pulseMaxFrontierConcurrency = paMaxFrontierConcurrency args,
-            pulseTaskTypeLimits = Map.fromList (paTaskTypeLimits args)
+          { pulseDbHost = paDbHost args
+          , pulseDbPort = paDbPort args
+          , pulseDbUser = paDbUser args
+          , pulseDbPassword = password
+          , pulseDbName = paDbName args
+          , pulseDbPoolSize = paDbPoolSize args
+          , pulseApiUrl = paApiUrl args
+          , pulseJwtSecret = jwtSecret
+          , pulseJwtExpirationSeconds = paJwtExpiration args
+          , pulseJwtIssuer = paJwtIssuer args
+          , pulseJwtAudience = paJwtAudience args
+          , pulseAdminApiKey = adminApiKey
+          , pulseServiceCredential = serviceCredential
+          , pulseHealthPort = paHealthPort args
+          , pulseLeaseOwner = paLeaseOwner args
+          , pulseLeaseDurationSeconds = paLeaseDuration args
+          , pulsePollIntervalSeconds = paPollInterval args
+          , pulseMaxConcurrentTasks = paMaxConcurrentTasks args
+          , pulseMaxFrontierConcurrency = paMaxFrontierConcurrency args
+          , pulseTaskTypeLimits = Map.fromList (paTaskTypeLimits args)
           }
   -- Substrate shell: empty task registry. Consumers (e.g. Portman)
   -- build their own binary that imports Cortex.Pulse and passes a
@@ -72,27 +73,27 @@ readRequiredSecretFile flagName path
         else pure secret
 
 data PulseArgs = PulseArgs
-  { paDbHost :: T.Text,
-    paWorkflowDir :: Maybe FilePath,
-    paDbPort :: Word16,
-    paDbUser :: T.Text,
-    paDbName :: T.Text,
-    paDbPoolSize :: Int,
-    paDbPasswordFile :: FilePath,
-    paApiUrl :: T.Text,
-    paJwtSecretFile :: FilePath,
-    paJwtExpiration :: Int64,
-    paJwtIssuer :: T.Text,
-    paJwtAudience :: T.Text,
-    paAdminApiKeyFile :: FilePath,
-    paServiceCredentialFile :: FilePath,
-    paHealthPort :: Int,
-    paLeaseOwner :: T.Text,
-    paLeaseDuration :: Int,
-    paPollInterval :: Int,
-    paMaxConcurrentTasks :: Int,
-    paMaxFrontierConcurrency :: Int,
-    paTaskTypeLimits :: [(T.Text, Int)]
+  { paDbHost :: T.Text
+  , paWorkflowDir :: Maybe FilePath
+  , paDbPort :: Word16
+  , paDbUser :: T.Text
+  , paDbName :: T.Text
+  , paDbPoolSize :: Int
+  , paDbPasswordFile :: FilePath
+  , paApiUrl :: T.Text
+  , paJwtSecretFile :: FilePath
+  , paJwtExpiration :: Int64
+  , paJwtIssuer :: T.Text
+  , paJwtAudience :: T.Text
+  , paAdminApiKeyFile :: FilePath
+  , paServiceCredentialFile :: FilePath
+  , paHealthPort :: Int
+  , paLeaseOwner :: T.Text
+  , paLeaseDuration :: Int
+  , paPollInterval :: Int
+  , paMaxConcurrentTasks :: Int
+  , paMaxFrontierConcurrency :: Int
+  , paTaskTypeLimits :: [(T.Text, Int)]
   }
 
 opts :: ParserInfo PulseArgs

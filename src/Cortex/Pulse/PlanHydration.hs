@@ -3,44 +3,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Pulse.PlanHydration
-  ( RewriteValidationError (..),
-    RewriteError (..),
-    renderRewriteError,
-    rewriteErrorType,
-    SerializableStageDefinition (..),
-    decodeSerializableRewrite,
-    hydrateRewrite,
-    buildStageTemplateRegistry,
-    renderRewriteValidationError,
-    renderRewriteBudgetError,
-    planRewriteDelta,
-    toSerializableStageDefinition,
+  ( RewriteValidationError (..)
+  , RewriteError (..)
+  , renderRewriteError
+  , rewriteErrorType
+  , SerializableStageDefinition (..)
+  , decodeSerializableRewrite
+  , hydrateRewrite
+  , buildStageTemplateRegistry
+  , renderRewriteValidationError
+  , renderRewriteBudgetError
+  , planRewriteDelta
+  , toSerializableStageDefinition
   )
 where
 
-import Cortex.Pulse.Node
-  ( NodeId (..),
-  )
-import Cortex.Pulse.Plan
-  ( ReplayPolicy,
-    StageActionId (..),
-    StageDefinition (..),
-    StagePlan (..),
-    StageReplaySafety,
-    StageRetryPolicy,
-    StageTemplateId (..),
-    buildStageTemplateRegistry,
-  )
-import Cortex.Pulse.Rewrite
-  ( ExceededDimension (..),
-    GraphRewrite (..),
-    PlannedRewriteDelta (..),
-    RewriteBudgetError (..),
-    RewritePlanningError (..),
-    SubgraphSpec (..),
-    exceededDimensions,
-    planGraphRewrite,
-  )
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Functor (($>))
@@ -51,13 +28,38 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
+import Cortex.Pulse.Node
+  ( NodeId (..)
+  )
+import Cortex.Pulse.Plan
+  ( ReplayPolicy
+  , StageActionId (..)
+  , StageDefinition (..)
+  , StagePlan (..)
+  , StageReplaySafety
+  , StageRetryPolicy
+  , StageTemplateId (..)
+  , buildStageTemplateRegistry
+  )
+import Cortex.Pulse.Rewrite
+  ( ExceededDimension (..)
+  , GraphRewrite (..)
+  , PlannedRewriteDelta (..)
+  , RewriteBudgetError (..)
+  , RewritePlanningError (..)
+  , SubgraphSpec (..)
+  , exceededDimensions
+  , planGraphRewrite
+  )
+
 data RewriteValidationError
   = RewritePlanningIssue (RewritePlanningError NodeId)
   | RewriteDuplicateTemplate Text
   deriving stock (Eq, Show)
 
--- | Structured error for rewrite subsystem boundaries. Preserves error
--- category through the executor pipeline instead of collapsing to Text.
+{- | Structured error for rewrite subsystem boundaries. Preserves error
+category through the executor pipeline instead of collapsing to Text.
+-}
 data RewriteError
   = RewriteValidationFailed [RewriteValidationError]
   | RewriteBudgetExhausted RewriteBudgetError
@@ -73,8 +75,9 @@ renderRewriteError = \case
   RewriteHydrationFailed msg -> msg
   RewriteReconciliationFailed msg -> msg
 
--- | Stable error type string for observability. These values appear in
--- dashboards and must not change without coordination.
+{- | Stable error type string for observability. These values appear in
+dashboards and must not change without coordination.
+-}
 rewriteErrorType :: RewriteError -> Text
 rewriteErrorType = \case
   RewriteValidationFailed {} -> "invalid_rewrite"
@@ -82,10 +85,10 @@ rewriteErrorType = \case
   RewriteHydrationFailed {} -> "graph_rewrite_hydration_failed"
   RewriteReconciliationFailed {} -> "graph_state_parse_failed"
 
-decodeSerializableRewrite ::
-  (Aeson.FromJSON stageId) =>
-  Aeson.Value ->
-  Either Text (GraphRewrite NodeId (SerializableStageDefinition stageId))
+decodeSerializableRewrite
+  :: Aeson.FromJSON stageId
+  => Aeson.Value
+  -> Either Text (GraphRewrite NodeId (SerializableStageDefinition stageId))
 decodeSerializableRewrite val =
   case Aeson.fromJSON val of
     Aeson.Success rewrite ->
@@ -93,10 +96,10 @@ decodeSerializableRewrite val =
     Aeson.Error err ->
       Left ("Failed to decode persisted graph rewrite: " <> T.pack err)
 
-hydrateRewrite ::
-  Map StageTemplateId (StageDefinition stageId) ->
-  GraphRewrite NodeId (SerializableStageDefinition stageId) ->
-  Either Text (GraphRewrite NodeId (StageDefinition stageId))
+hydrateRewrite
+  :: Map StageTemplateId (StageDefinition stageId)
+  -> GraphRewrite NodeId (SerializableStageDefinition stageId)
+  -> Either Text (GraphRewrite NodeId (StageDefinition stageId))
 hydrateRewrite templateRegistry rewrite =
   case rewrite of
     ExpandNode nid mode spec ->
@@ -112,15 +115,15 @@ hydrateRewrite templateRegistry rewrite =
           templateDef <- lookupTemplateDef registry ssd.ssdTemplateId ssd.ssdActionId
           pure
             StageDefinition
-              { sdStageId = ssd.ssdStageId,
-                sdTemplateId = ssd.ssdTemplateId,
-                sdActionId = templateDef.sdActionId,
-                sdReplaySafety = ssd.ssdReplaySafety,
-                sdReplayPolicyOverride = ssd.ssdReplayPolicyOverride,
-                sdTimeoutSeconds = ssd.ssdTimeoutSeconds,
-                sdRetryPolicy = templateDef.sdRetryPolicy,
-                sdAction = templateDef.sdAction,
-                -- DIG-530: inherit the memory strategy from the
+              { sdStageId = ssd.ssdStageId
+              , sdTemplateId = ssd.ssdTemplateId
+              , sdActionId = templateDef.sdActionId
+              , sdReplaySafety = ssd.ssdReplaySafety
+              , sdReplayPolicyOverride = ssd.ssdReplayPolicyOverride
+              , sdTimeoutSeconds = ssd.ssdTimeoutSeconds
+              , sdRetryPolicy = templateDef.sdRetryPolicy
+              , sdAction = templateDef.sdAction
+              , -- DIG-530: inherit the memory strategy from the
                 -- template definition.  The wire's @memory = …@
                 -- declaration lands on the template; rewritten
                 -- stages that replay from persistence pick up the
@@ -130,11 +133,11 @@ hydrateRewrite templateRegistry rewrite =
                 sdMemoryStrategy = templateDef.sdMemoryStrategy
               }
 
-lookupTemplateDef ::
-  Map StageTemplateId (StageDefinition stageId) ->
-  StageTemplateId ->
-  StageActionId ->
-  Either Text (StageDefinition stageId)
+lookupTemplateDef
+  :: Map StageTemplateId (StageDefinition stageId)
+  -> StageTemplateId
+  -> StageActionId
+  -> Either Text (StageDefinition stageId)
 lookupTemplateDef templateRegistry templateId actionId =
   case Map.lookup templateId templateRegistry of
     Just sd
@@ -213,11 +216,11 @@ renderRewriteBudgetError budgetErr@(RewriteBudgetExceeded remaining requested) =
         <> T.pack (show dim.edRemaining)
         <> ")"
 
-planRewriteDelta ::
-  (Eq stageId) =>
-  GraphRewrite NodeId (StageDefinition stageId) ->
-  StagePlan stageId ->
-  Either [RewriteValidationError] (PlannedRewriteDelta (StageDefinition stageId))
+planRewriteDelta
+  :: Eq stageId
+  => GraphRewrite NodeId (StageDefinition stageId)
+  -> StagePlan stageId
+  -> Either [RewriteValidationError] (PlannedRewriteDelta (StageDefinition stageId))
 planRewriteDelta rewrite plan = do
   delta <-
     first (fmap RewritePlanningIssue) $
@@ -226,17 +229,17 @@ planRewriteDelta rewrite plan = do
   pure delta
 
 data SerializableStageDefinition stageId = SerializableStageDefinition
-  { ssdStageId :: stageId,
-    ssdTemplateId :: StageTemplateId,
-    ssdActionId :: StageActionId,
-    ssdReplaySafety :: StageReplaySafety,
-    ssdReplayPolicyOverride :: Maybe ReplayPolicy,
-    ssdTimeoutSeconds :: Maybe Int32,
-    ssdRetryPolicy :: Maybe StageRetryPolicy
+  { ssdStageId :: stageId
+  , ssdTemplateId :: StageTemplateId
+  , ssdActionId :: StageActionId
+  , ssdReplaySafety :: StageReplaySafety
+  , ssdReplayPolicyOverride :: Maybe ReplayPolicy
+  , ssdTimeoutSeconds :: Maybe Int32
+  , ssdRetryPolicy :: Maybe StageRetryPolicy
   }
   deriving stock (Eq, Show, Generic)
 
-instance (Aeson.FromJSON stageId) => Aeson.FromJSON (SerializableStageDefinition stageId) where
+instance Aeson.FromJSON stageId => Aeson.FromJSON (SerializableStageDefinition stageId) where
   parseJSON = Aeson.withObject "SerializableStageDefinition" $ \o -> do
     ssdStageId <- o Aeson..: "ssdStageId"
     ssdTemplateId <- o Aeson..: "ssdTemplateId"
@@ -250,37 +253,37 @@ instance (Aeson.FromJSON stageId) => Aeson.FromJSON (SerializableStageDefinition
     ssdRetryPolicy <- o Aeson..:? "ssdRetryPolicy"
     pure
       SerializableStageDefinition
-        { ssdStageId = ssdStageId,
-          ssdTemplateId = ssdTemplateId,
-          ssdActionId = ssdActionId,
-          ssdReplaySafety = ssdReplaySafety,
-          ssdReplayPolicyOverride = ssdReplayPolicyOverride,
-          ssdTimeoutSeconds = ssdTimeoutSeconds,
-          ssdRetryPolicy = ssdRetryPolicy
+        { ssdStageId = ssdStageId
+        , ssdTemplateId = ssdTemplateId
+        , ssdActionId = ssdActionId
+        , ssdReplaySafety = ssdReplaySafety
+        , ssdReplayPolicyOverride = ssdReplayPolicyOverride
+        , ssdTimeoutSeconds = ssdTimeoutSeconds
+        , ssdRetryPolicy = ssdRetryPolicy
         }
 
-instance (Aeson.ToJSON stageId) => Aeson.ToJSON (SerializableStageDefinition stageId) where
+instance Aeson.ToJSON stageId => Aeson.ToJSON (SerializableStageDefinition stageId) where
   toJSON ssd =
     Aeson.object
-      [ "ssdStageId" Aeson..= ssd.ssdStageId,
-        "ssdTemplateId" Aeson..= ssd.ssdTemplateId,
-        "ssdActionId" Aeson..= ssd.ssdActionId,
-        "ssdReplaySafety" Aeson..= ssd.ssdReplaySafety,
-        "ssdReplayPolicyOverride" Aeson..= ssd.ssdReplayPolicyOverride,
-        "ssdTimeoutSeconds" Aeson..= ssd.ssdTimeoutSeconds,
-        "ssdRetryPolicy" Aeson..= ssd.ssdRetryPolicy
+      [ "ssdStageId" Aeson..= ssd.ssdStageId
+      , "ssdTemplateId" Aeson..= ssd.ssdTemplateId
+      , "ssdActionId" Aeson..= ssd.ssdActionId
+      , "ssdReplaySafety" Aeson..= ssd.ssdReplaySafety
+      , "ssdReplayPolicyOverride" Aeson..= ssd.ssdReplayPolicyOverride
+      , "ssdTimeoutSeconds" Aeson..= ssd.ssdTimeoutSeconds
+      , "ssdRetryPolicy" Aeson..= ssd.ssdRetryPolicy
       ]
 
 toSerializableStageDefinition :: StageDefinition stageId -> SerializableStageDefinition stageId
 toSerializableStageDefinition sd =
   SerializableStageDefinition
-    { ssdStageId = sd.sdStageId,
-      ssdTemplateId = sd.sdTemplateId,
-      ssdActionId = sd.sdActionId,
-      ssdReplaySafety = sd.sdReplaySafety,
-      ssdReplayPolicyOverride = sd.sdReplayPolicyOverride,
-      ssdTimeoutSeconds = sd.sdTimeoutSeconds,
-      ssdRetryPolicy = sd.sdRetryPolicy
+    { ssdStageId = sd.sdStageId
+    , ssdTemplateId = sd.sdTemplateId
+    , ssdActionId = sd.sdActionId
+    , ssdReplaySafety = sd.sdReplaySafety
+    , ssdReplayPolicyOverride = sd.sdReplayPolicyOverride
+    , ssdTimeoutSeconds = sd.sdTimeoutSeconds
+    , ssdRetryPolicy = sd.sdRetryPolicy
     }
 
 showNodeIds :: [NodeId] -> Text

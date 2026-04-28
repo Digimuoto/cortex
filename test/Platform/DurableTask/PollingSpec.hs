@@ -1,7 +1,8 @@
 module Platform.DurableTask.PollingSpec (spec) where
 
-import Platform.DurableTask.Polling (jitterInterval)
 import Test.Hspec
+
+import Platform.DurableTask.Polling (jitterInterval)
 
 spec :: Spec
 spec = describe "Platform.DurableTask.Polling" $ do

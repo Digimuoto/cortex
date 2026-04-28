@@ -4,37 +4,37 @@
 
 module Cortex.Artifact.IR
   ( -- * IR types
-    ReportIR (..),
-    ValidatedReportIR (..),
-    Block (..),
-    Inline (..),
-    Source (..),
-    Provenance (..),
-    TableDef (..),
-    EmbedSpec (..),
-    CurrencyCode (..),
-    Alignment (..),
+    ReportIR (..)
+  , ValidatedReportIR (..)
+  , Block (..)
+  , Inline (..)
+  , Source (..)
+  , Provenance (..)
+  , TableDef (..)
+  , EmbedSpec (..)
+  , CurrencyCode (..)
+  , Alignment (..)
 
     -- * Validation
-    ValidationError (..),
-    validateIR,
+  , ValidationError (..)
+  , validateIR
 
     -- * Compilation
-    CompileError (..),
-    compileValidatedToAnnotatedHtml,
-    compileValidatedToMarkdown,
-    compileToMarkdown,
-    compileToAnnotatedHtml,
+  , CompileError (..)
+  , compileValidatedToAnnotatedHtml
+  , compileValidatedToMarkdown
+  , compileToMarkdown
+  , compileToAnnotatedHtml
 
     -- * Formatting helpers (exported for tests)
-    formatCurrency,
-    formatDecimal,
-    formatPct,
-    escapeTableCell,
-    escapePlainText,
+  , formatCurrency
+  , formatDecimal
+  , formatPct
+  , escapeTableCell
+  , escapePlainText
 
     -- * ISO 4217
-    iso4217Codes,
+  , iso4217Codes
   )
 where
 
@@ -60,9 +60,9 @@ import GHC.Generics (Generic)
 
 -- | Top-level report IR.
 data ReportIR = ReportIR
-  { reportVersion :: Int,
-    reportBlocks :: [Block],
-    reportProvenance :: Maybe (Map Int Provenance)
+  { reportVersion :: Int
+  , reportBlocks :: [Block]
+  , reportProvenance :: Maybe (Map Int Provenance)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -100,8 +100,8 @@ data Inline
 
 -- | Provenance source reference.
 data Source = Source
-  { sourceToolCallId :: Text,
-    sourceFieldPath :: Text
+  { sourceToolCallId :: Text
+  , sourceFieldPath :: Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -113,9 +113,9 @@ data Provenance
 
 -- | Table definition.
 data TableDef = TableDef
-  { tableColumns :: [Text],
-    tableAlignments :: Maybe [Alignment],
-    tableRows :: [[[Inline]]]
+  { tableColumns :: [Text]
+  , tableAlignments :: Maybe [Alignment]
+  , tableRows :: [[[Inline]]]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -137,15 +137,17 @@ data Alignment = AlignLeft | AlignCenter | AlignRight | AlignDefault
 -- OpenAPI schema
 --------------------------------------------------------------------------------
 
--- | Opaque schema: the IR uses custom tagged-union JSON encoding that cannot
--- be expressed via Generic-derived ToSchema.  We declare it as an opaque JSON
--- object so the OpenAPI docs don't mislead consumers.
+{- | Opaque schema: the IR uses custom tagged-union JSON encoding that cannot
+be expressed via Generic-derived ToSchema.  We declare it as an opaque JSON
+object so the OpenAPI docs don't mislead consumers.
+-}
 instance ToSchema ReportIR where
   declareNamedSchema _ =
     pure . NamedSchema (Just "ReportIR") $
       mempty
         & type_ ?~ OpenApiObject
-        & description ?~ "Report intermediate representation (v1). Uses custom tagged-union JSON encoding — see IR documentation for the full schema."
+        & description
+          ?~ "Report intermediate representation (v1). Uses custom tagged-union JSON encoding — see IR documentation for the full schema."
 
 --------------------------------------------------------------------------------
 -- FromJSON instances
@@ -236,8 +238,8 @@ instance FromJSON Provenance where
 instance ToJSON ReportIR where
   toJSON ir =
     Aeson.object $
-      [ "version" .= reportVersion ir,
-        "blocks" .= reportBlocks ir
+      [ "version" .= reportVersion ir
+      , "blocks" .= reportBlocks ir
       ]
         <> foldMap (\prov -> ["provenance" .= prov]) (reportProvenance ir)
 
@@ -305,8 +307,8 @@ instance ToJSON TableDef where
 instance ToJSON Source where
   toJSON source =
     Aeson.object
-      [ "toolCallId" .= sourceToolCallId source,
-        "fieldPath" .= sourceFieldPath source
+      [ "toolCallId" .= sourceToolCallId source
+      , "fieldPath" .= sourceFieldPath source
       ]
 
 instance ToJSON Provenance where
@@ -314,9 +316,9 @@ instance ToJSON Provenance where
     Aeson.object ["kind" .= ("direct" :: Text), "source" .= source]
   toJSON (Computed sources operation) =
     Aeson.object
-      [ "kind" .= ("computed" :: Text),
-        "sources" .= sources,
-        "operation" .= operation
+      [ "kind" .= ("computed" :: Text)
+      , "sources" .= sources
+      , "operation" .= operation
       ]
 
 --------------------------------------------------------------------------------
@@ -400,8 +402,8 @@ validateIR ir =
           cellErrors = concatMap (concatMap (concatMap (validateInline provenanceIndex'))) (tableRows td)
           rowWidthErrors =
             [ RaggedTableRow rowIdx colCount (length row)
-            | (rowIdx, row) <- zip [0 :: Int ..] (tableRows td),
-              length row /= colCount
+            | (rowIdx, row) <- zip [0 :: Int ..] (tableRows td)
+            , length row /= colCount
             ]
        in colErrors <> rowErrors <> rowWidthErrors <> cellErrors
 
@@ -423,7 +425,10 @@ validateIR ir =
     validateInline _ (Embed (ChartEmbed symbol range maybeStyle)) =
       validateStringLength "embed symbol" symbol
         <> [InvalidChartRange range | not (Set.member (T.toUpper range) allowedChartRanges)]
-        <> [InvalidChartStyle style | style <- maybeToList maybeStyle, not (Set.member (T.toLower style) allowedChartStyles)]
+        <> [ InvalidChartStyle style
+           | style <- maybeToList maybeStyle
+           , not (Set.member (T.toLower style) allowedChartStyles)
+           ]
     validateInline provenanceIndex' (Sourced provenanceId inner) =
       sourcedShapeErrors inner
         <> [InvalidProvenanceId provenanceId | provenanceId <= 0]
@@ -491,7 +496,9 @@ compileBlock (TableBlock td) =
 compileBlock (BulletListBlock items) =
   T.intercalate "\n" (fmap (\item -> "- " <> compileInlines item) items)
 compileBlock (OrderedListBlock items) =
-  T.intercalate "\n" (zipWith (\i item -> T.pack (show i) <> ". " <> compileInlines item) [1 :: Int ..] items)
+  T.intercalate
+    "\n"
+    (zipWith (\i item -> T.pack (show i) <> ". " <> compileInlines item) [1 :: Int ..] items)
 compileBlock (CodeBlock lang content) =
   "```" <> sanitizeLang lang <> "\n" <> content <> "\n```"
 compileBlock (MathBlock content) =
@@ -509,9 +516,13 @@ compileHtmlBlock provenanceIndex (ParagraphBlock inlines) =
 compileHtmlBlock provenanceIndex (TableBlock td) =
   compileHtmlTable provenanceIndex td
 compileHtmlBlock provenanceIndex (BulletListBlock items) =
-  "<ul>" <> T.concat (fmap (\item -> "<li>" <> compileHtmlInlines provenanceIndex item <> "</li>") items) <> "</ul>"
+  "<ul>"
+    <> T.concat (fmap (\item -> "<li>" <> compileHtmlInlines provenanceIndex item <> "</li>") items)
+    <> "</ul>"
 compileHtmlBlock provenanceIndex (OrderedListBlock items) =
-  "<ol>" <> T.concat (fmap (\item -> "<li>" <> compileHtmlInlines provenanceIndex item <> "</li>") items) <> "</ol>"
+  "<ol>"
+    <> T.concat (fmap (\item -> "<li>" <> compileHtmlInlines provenanceIndex item <> "</li>") items)
+    <> "</ol>"
 compileHtmlBlock _ (CodeBlock lang content) =
   "<pre><code class=\"language-"
     <> escapeHtmlAttribute (sanitizeLang lang)
@@ -681,34 +692,37 @@ currencySymbol "GBP" = ("\x00A3", True)
 currencySymbol "JPY" = ("\x00A5", True)
 currencySymbol cc = (cc <> " ", True)
 
--- | Format a decimal with thousand separators.
--- Uses integer arithmetic on Scientific to avoid Double precision loss.
+{- | Format a decimal with thousand separators.
+Uses integer arithmetic on Scientific to avoid Double precision loss.
+-}
 formatDecimal :: Int -> Scientific -> Text
 formatDecimal decimals sci =
-  let -- Scale by 10^decimals and round half up using Scientific arithmetic.
-      scaled = Sci.scientific 1 decimals -- 10^decimals as Scientific
-      scaledAmount = sci * scaled
-      absScaledAmount = abs scaledAmount
-      wholeUnits = floor absScaledAmount :: Integer
-      fractionalPart = absScaledAmount - fromInteger wholeUnits
-      roundedMagnitude =
-        if fractionalPart >= (0.5 :: Scientific)
-          then wholeUnits + 1
-          else wholeUnits
-      rounded =
-        if scaledAmount < 0
-          then negate roundedMagnitude
-          else roundedMagnitude
-      factor = 10 ^ decimals :: Integer
-      (wholePart, fracPart) = abs rounded `divMod` factor
-      isNeg = rounded < 0
-      wholeText = addThousandSeps (TL.toStrict (TB.toLazyText (TBI.decimal wholePart)))
-      prefix = if isNeg then "-" else ""
-   in if decimals == 0
-        then prefix <> wholeText
-        else
-          let fracText = T.justifyRight decimals '0' (TL.toStrict (TB.toLazyText (TBI.decimal fracPart)))
-           in prefix <> wholeText <> "." <> fracText
+  let
+    -- Scale by 10^decimals and round half up using Scientific arithmetic.
+    scaled = Sci.scientific 1 decimals -- 10^decimals as Scientific
+    scaledAmount = sci * scaled
+    absScaledAmount = abs scaledAmount
+    wholeUnits = floor absScaledAmount :: Integer
+    fractionalPart = absScaledAmount - fromInteger wholeUnits
+    roundedMagnitude =
+      if fractionalPart >= (0.5 :: Scientific)
+        then wholeUnits + 1
+        else wholeUnits
+    rounded =
+      if scaledAmount < 0
+        then negate roundedMagnitude
+        else roundedMagnitude
+    factor = 10 ^ decimals :: Integer
+    (wholePart, fracPart) = abs rounded `divMod` factor
+    isNeg = rounded < 0
+    wholeText = addThousandSeps (TL.toStrict (TB.toLazyText (TBI.decimal wholePart)))
+    prefix = if isNeg then "-" else ""
+   in
+    if decimals == 0
+      then prefix <> wholeText
+      else
+        let fracText = T.justifyRight decimals '0' (TL.toStrict (TB.toLazyText (TBI.decimal fracPart)))
+         in prefix <> wholeText <> "." <> fracText
 
 addThousandSeps :: Text -> Text
 addThousandSeps t =
@@ -777,198 +791,198 @@ sanitizeLang = T.filter (\c -> c /= '`' && c /= '\n' && c /= '\r')
 iso4217Codes :: Set Text
 iso4217Codes =
   Set.fromList
-    [ "AED",
-      "AFN",
-      "ALL",
-      "AMD",
-      "ANG",
-      "AOA",
-      "ARS",
-      "AUD",
-      "AWG",
-      "AZN",
-      "BAM",
-      "BBD",
-      "BDT",
-      "BGN",
-      "BHD",
-      "BIF",
-      "BMD",
-      "BND",
-      "BOB",
-      "BRL",
-      "BSD",
-      "BTN",
-      "BWP",
-      "BYN",
-      "BZD",
-      "CAD",
-      "CDF",
-      "CHF",
-      "CLP",
-      "CNY",
-      "COP",
-      "CRC",
-      "CUP",
-      "CVE",
-      "CZK",
-      "DJF",
-      "DKK",
-      "DOP",
-      "DZD",
-      "EGP",
-      "ERN",
-      "ETB",
-      "EUR",
-      "FJD",
-      "FKP",
-      "GBP",
-      "GEL",
-      "GHS",
-      "GIP",
-      "GMD",
-      "GNF",
-      "GTQ",
-      "GYD",
-      "HKD",
-      "HNL",
-      "HRK",
-      "HTG",
-      "HUF",
-      "IDR",
-      "ILS",
-      "INR",
-      "IQD",
-      "IRR",
-      "ISK",
-      "JMD",
-      "JOD",
-      "JPY",
-      "KES",
-      "KGS",
-      "KHR",
-      "KMF",
-      "KPW",
-      "KRW",
-      "KWD",
-      "KYD",
-      "KZT",
-      "LAK",
-      "LBP",
-      "LKR",
-      "LRD",
-      "LSL",
-      "LYD",
-      "MAD",
-      "MDL",
-      "MGA",
-      "MKD",
-      "MMK",
-      "MNT",
-      "MOP",
-      "MRU",
-      "MUR",
-      "MVR",
-      "MWK",
-      "MXN",
-      "MYR",
-      "MZN",
-      "NAD",
-      "NGN",
-      "NIO",
-      "NOK",
-      "NPR",
-      "NZD",
-      "OMR",
-      "PAB",
-      "PEN",
-      "PGK",
-      "PHP",
-      "PKR",
-      "PLN",
-      "PYG",
-      "QAR",
-      "RON",
-      "RSD",
-      "RUB",
-      "RWF",
-      "SAR",
-      "SBD",
-      "SCR",
-      "SDG",
-      "SEK",
-      "SGD",
-      "SHP",
-      "SLE",
-      "SLL",
-      "SOS",
-      "SRD",
-      "SSP",
-      "STN",
-      "SVC",
-      "SYP",
-      "SZL",
-      "THB",
-      "TJS",
-      "TMT",
-      "TND",
-      "TOP",
-      "TRY",
-      "TTD",
-      "TWD",
-      "TZS",
-      "UAH",
-      "UGX",
-      "USD",
-      "UYU",
-      "UZS",
-      "VED",
-      "VES",
-      "VND",
-      "VUV",
-      "WST",
-      "XAF",
-      "XCD",
-      "XDR",
-      "XOF",
-      "XPF",
-      "YER",
-      "ZAR",
-      "ZMW",
-      "ZWL"
+    [ "AED"
+    , "AFN"
+    , "ALL"
+    , "AMD"
+    , "ANG"
+    , "AOA"
+    , "ARS"
+    , "AUD"
+    , "AWG"
+    , "AZN"
+    , "BAM"
+    , "BBD"
+    , "BDT"
+    , "BGN"
+    , "BHD"
+    , "BIF"
+    , "BMD"
+    , "BND"
+    , "BOB"
+    , "BRL"
+    , "BSD"
+    , "BTN"
+    , "BWP"
+    , "BYN"
+    , "BZD"
+    , "CAD"
+    , "CDF"
+    , "CHF"
+    , "CLP"
+    , "CNY"
+    , "COP"
+    , "CRC"
+    , "CUP"
+    , "CVE"
+    , "CZK"
+    , "DJF"
+    , "DKK"
+    , "DOP"
+    , "DZD"
+    , "EGP"
+    , "ERN"
+    , "ETB"
+    , "EUR"
+    , "FJD"
+    , "FKP"
+    , "GBP"
+    , "GEL"
+    , "GHS"
+    , "GIP"
+    , "GMD"
+    , "GNF"
+    , "GTQ"
+    , "GYD"
+    , "HKD"
+    , "HNL"
+    , "HRK"
+    , "HTG"
+    , "HUF"
+    , "IDR"
+    , "ILS"
+    , "INR"
+    , "IQD"
+    , "IRR"
+    , "ISK"
+    , "JMD"
+    , "JOD"
+    , "JPY"
+    , "KES"
+    , "KGS"
+    , "KHR"
+    , "KMF"
+    , "KPW"
+    , "KRW"
+    , "KWD"
+    , "KYD"
+    , "KZT"
+    , "LAK"
+    , "LBP"
+    , "LKR"
+    , "LRD"
+    , "LSL"
+    , "LYD"
+    , "MAD"
+    , "MDL"
+    , "MGA"
+    , "MKD"
+    , "MMK"
+    , "MNT"
+    , "MOP"
+    , "MRU"
+    , "MUR"
+    , "MVR"
+    , "MWK"
+    , "MXN"
+    , "MYR"
+    , "MZN"
+    , "NAD"
+    , "NGN"
+    , "NIO"
+    , "NOK"
+    , "NPR"
+    , "NZD"
+    , "OMR"
+    , "PAB"
+    , "PEN"
+    , "PGK"
+    , "PHP"
+    , "PKR"
+    , "PLN"
+    , "PYG"
+    , "QAR"
+    , "RON"
+    , "RSD"
+    , "RUB"
+    , "RWF"
+    , "SAR"
+    , "SBD"
+    , "SCR"
+    , "SDG"
+    , "SEK"
+    , "SGD"
+    , "SHP"
+    , "SLE"
+    , "SLL"
+    , "SOS"
+    , "SRD"
+    , "SSP"
+    , "STN"
+    , "SVC"
+    , "SYP"
+    , "SZL"
+    , "THB"
+    , "TJS"
+    , "TMT"
+    , "TND"
+    , "TOP"
+    , "TRY"
+    , "TTD"
+    , "TWD"
+    , "TZS"
+    , "UAH"
+    , "UGX"
+    , "USD"
+    , "UYU"
+    , "UZS"
+    , "VED"
+    , "VES"
+    , "VND"
+    , "VUV"
+    , "WST"
+    , "XAF"
+    , "XCD"
+    , "XDR"
+    , "XOF"
+    , "XPF"
+    , "YER"
+    , "ZAR"
+    , "ZMW"
+    , "ZWL"
     ]
 
 zeroDecimalCurrencyCodes :: Set Text
 zeroDecimalCurrencyCodes =
   Set.fromList
-    [ "BIF",
-      "CLP",
-      "DJF",
-      "GNF",
-      "ISK",
-      "JPY",
-      "KMF",
-      "KRW",
-      "PYG",
-      "RWF",
-      "UGX",
-      "VND",
-      "VUV",
-      "XAF",
-      "XOF",
-      "XPF"
+    [ "BIF"
+    , "CLP"
+    , "DJF"
+    , "GNF"
+    , "ISK"
+    , "JPY"
+    , "KMF"
+    , "KRW"
+    , "PYG"
+    , "RWF"
+    , "UGX"
+    , "VND"
+    , "VUV"
+    , "XAF"
+    , "XOF"
+    , "XPF"
     ]
 
 threeDecimalCurrencyCodes :: Set Text
 threeDecimalCurrencyCodes =
   Set.fromList
-    [ "BHD",
-      "IQD",
-      "JOD",
-      "KWD",
-      "LYD",
-      "OMR",
-      "TND"
+    [ "BHD"
+    , "IQD"
+    , "JOD"
+    , "KWD"
+    , "LYD"
+    , "OMR"
+    , "TND"
     ]
 
 allowedChartRanges :: Set Text

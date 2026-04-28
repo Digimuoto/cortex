@@ -5,38 +5,39 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Cortex.Wire.Circuit.IR
-  ( CircuitNodeRef (..),
-    CircuitIR (..),
-    CircuitExpr (..),
-    CircuitTaskNode (..),
-    CircuitSignalBoundary (..),
-    CircuitArtifactBoundary (..),
-    CircuitCondition (..),
-    CircuitRewriteBoundary (..),
-    circuitNodeRefs,
+  ( CircuitNodeRef (..)
+  , CircuitIR (..)
+  , CircuitExpr (..)
+  , CircuitTaskNode (..)
+  , CircuitSignalBoundary (..)
+  , CircuitArtifactBoundary (..)
+  , CircuitCondition (..)
+  , CircuitRewriteBoundary (..)
+  , circuitNodeRefs
   )
 where
 
 import Control.Lens ((&), (?~))
-import Cortex.Wire.Circuit.Node (CircuitNodeKind)
 import Data.Aeson
-  ( FromJSON,
-    FromJSONKey,
-    ToJSON,
-    ToJSONKey,
-    Value,
+  ( FromJSON
+  , FromJSONKey
+  , ToJSON
+  , ToJSONKey
+  , Value
   )
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.OpenApi
-  ( NamedSchema (..),
-    OpenApiType (..),
-    ToSchema (..),
-    description,
-    type_,
+  ( NamedSchema (..)
+  , OpenApiType (..)
+  , ToSchema (..)
+  , description
+  , type_
   )
 import Data.Text (Text)
 import GHC.Generics (Generic)
+
+import Cortex.Wire.Circuit.Node (CircuitNodeKind)
 
 newtype CircuitNodeRef = CircuitNodeRef
   { unCircuitNodeRef :: Text
@@ -45,10 +46,10 @@ newtype CircuitNodeRef = CircuitNodeRef
   deriving newtype (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 
 data CircuitIR = CircuitIR
-  { circuitIrId :: Text,
-    circuitIrLabel :: Text,
-    circuitIrRoot :: CircuitExpr,
-    circuitIrMetadata :: Value
+  { circuitIrId :: Text
+  , circuitIrLabel :: Text
+  , circuitIrRoot :: CircuitExpr
+  , circuitIrMetadata :: Value
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -58,7 +59,8 @@ instance ToSchema CircuitIR where
     pure . NamedSchema (Just "CircuitIR") $
       mempty
         & type_ ?~ OpenApiObject
-        & description ?~ "Typed Cortex circuit integration-layer IR. Exposed as an opaque JSON object because it contains recursive tagged unions and free-form metadata."
+        & description
+          ?~ "Typed Cortex circuit integration-layer IR. Exposed as an opaque JSON object because it contains recursive tagged unions and free-form metadata."
 
 data CircuitExpr
   = CircuitSequence (NonEmpty CircuitExpr)
@@ -72,28 +74,28 @@ data CircuitExpr
   deriving anyclass (FromJSON, ToJSON)
 
 data CircuitTaskNode = CircuitTaskNode
-  { circuitTaskNodeRef :: CircuitNodeRef,
-    circuitTaskNodeLabel :: Text,
-    circuitTaskNodeKind :: Maybe CircuitNodeKind,
-    circuitTaskNodeMetadata :: Value
+  { circuitTaskNodeRef :: CircuitNodeRef
+  , circuitTaskNodeLabel :: Text
+  , circuitTaskNodeKind :: Maybe CircuitNodeKind
+  , circuitTaskNodeMetadata :: Value
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
 data CircuitSignalBoundary = CircuitSignalBoundary
-  { circuitSignalBoundaryRef :: CircuitNodeRef,
-    circuitSignalName :: Text,
-    circuitSignalDescription :: Maybe Text,
-    circuitSignalMetadata :: Value
+  { circuitSignalBoundaryRef :: CircuitNodeRef
+  , circuitSignalName :: Text
+  , circuitSignalDescription :: Maybe Text
+  , circuitSignalMetadata :: Value
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
 data CircuitArtifactBoundary = CircuitArtifactBoundary
-  { circuitArtifactBoundaryRef :: CircuitNodeRef,
-    circuitArtifactKind :: Text,
-    circuitArtifactLabel :: Text,
-    circuitArtifactMetadata :: Value
+  { circuitArtifactBoundaryRef :: CircuitNodeRef
+  , circuitArtifactKind :: Text
+  , circuitArtifactLabel :: Text
+  , circuitArtifactMetadata :: Value
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -105,10 +107,10 @@ data CircuitCondition
   deriving anyclass (FromJSON, ToJSON)
 
 data CircuitRewriteBoundary = CircuitRewriteBoundary
-  { circuitRewriteBoundaryRef :: CircuitNodeRef,
-    circuitRewriteIntent :: Text,
-    circuitRewriteDescription :: Maybe Text,
-    circuitRewriteMetadata :: Value
+  { circuitRewriteBoundaryRef :: CircuitNodeRef
+  , circuitRewriteIntent :: Text
+  , circuitRewriteDescription :: Maybe Text
+  , circuitRewriteMetadata :: Value
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)

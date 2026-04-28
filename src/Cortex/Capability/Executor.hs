@@ -2,34 +2,36 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 
--- | Authority-bearing executor registration boundary.
---
--- Capability executor specs describe the host authority that may be projected
--- into Wire. They intentionally do not carry runnable Pulse actions; hosts bind
--- those after checking tools, provider policy, config, and codecs.
+{- | Authority-bearing executor registration boundary.
+
+Capability executor specs describe the host authority that may be projected
+into Wire. They intentionally do not carry runnable Pulse actions; hosts bind
+those after checking tools, provider policy, config, and codecs.
+-}
 module Cortex.Capability.Executor
-  ( ExecutorSpec (..),
-    ExecutorConfigDecoder (..),
-    ExecutorRequirement (..),
-    ExecutorCodecBoundary (..),
-    ExecutorBindingAuthority (..),
-    executorProjection,
-    executorProjectionRegistry,
+  ( ExecutorSpec (..)
+  , ExecutorConfigDecoder (..)
+  , ExecutorRequirement (..)
+  , ExecutorCodecBoundary (..)
+  , ExecutorBindingAuthority (..)
+  , executorProjection
+  , executorProjectionRegistry
   )
 where
 
-import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..),
-    WireExecutorEffect,
-    WireExecutorId,
-    WireExecutorProjection (..),
-    WireExecutorRegistry,
-    wireExecutorRegistryFromList,
-  )
 import Data.Aeson qualified as Aeson
 import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+
+import Cortex.Wire.Executor
+  ( WireExecutorConfigShape (..)
+  , WireExecutorEffect
+  , WireExecutorId
+  , WireExecutorProjection (..)
+  , WireExecutorRegistry
+  , wireExecutorRegistryFromList
+  )
 
 data ExecutorConfigDecoder
   = ExecutorConfigUnchecked
@@ -45,8 +47,8 @@ data ExecutorRequirement
   deriving stock (Eq, Ord, Show, Generic)
 
 data ExecutorCodecBoundary = ExecutorCodecBoundary
-  { executorCodecInputContracts :: !(Set Text),
-    executorCodecOutputContracts :: !(Set Text)
+  { executorCodecInputContracts :: !(Set Text)
+  , executorCodecOutputContracts :: !(Set Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -56,22 +58,22 @@ data ExecutorBindingAuthority
   deriving stock (Eq, Show, Generic)
 
 data ExecutorSpec = ExecutorSpec
-  { executorSpecId :: !WireExecutorId,
-    executorSpecPorts :: !WireExecutorProjection,
-    executorSpecEffect :: !WireExecutorEffect,
-    executorSpecConfigDecoder :: !ExecutorConfigDecoder,
-    executorSpecRequirements :: !(Set ExecutorRequirement),
-    executorSpecCodecBoundary :: !ExecutorCodecBoundary,
-    executorSpecBindingAuthority :: !ExecutorBindingAuthority
+  { executorSpecId :: !WireExecutorId
+  , executorSpecPorts :: !WireExecutorProjection
+  , executorSpecEffect :: !WireExecutorEffect
+  , executorSpecConfigDecoder :: !ExecutorConfigDecoder
+  , executorSpecRequirements :: !(Set ExecutorRequirement)
+  , executorSpecCodecBoundary :: !ExecutorCodecBoundary
+  , executorSpecBindingAuthority :: !ExecutorBindingAuthority
   }
   deriving stock (Eq, Show, Generic)
 
 executorProjection :: ExecutorSpec -> WireExecutorProjection
 executorProjection spec =
   (executorSpecPorts spec)
-    { wireExecutorProjectionId = executorSpecId spec,
-      wireExecutorProjectionEffect = executorSpecEffect spec,
-      wireExecutorProjectionConfigShape = configShape (executorSpecConfigDecoder spec)
+    { wireExecutorProjectionId = executorSpecId spec
+    , wireExecutorProjectionEffect = executorSpecEffect spec
+    , wireExecutorProjectionConfigShape = configShape (executorSpecConfigDecoder spec)
     }
   where
     configShape = \case

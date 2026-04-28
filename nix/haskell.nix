@@ -53,7 +53,6 @@
             };
             buildInputs = with pkgs; [
               haskellPackages.fourmolu
-              haskellPackages.ormolu
               pkg-config
               zlib
               xz

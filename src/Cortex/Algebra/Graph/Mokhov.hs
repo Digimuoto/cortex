@@ -1,5 +1,5 @@
 module Cortex.Algebra.Graph.Mokhov
-  ( module Cortex.Algebra.Graph.Core,
+  ( module Cortex.Algebra.Graph.Core
   )
 where
 

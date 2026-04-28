@@ -1,5 +1,5 @@
 module Cortex.Wire.Circuit.Node
-  ( module Cortex.Wire.Circuit.NodeKind,
+  ( module Cortex.Wire.Circuit.NodeKind
   )
 where
 

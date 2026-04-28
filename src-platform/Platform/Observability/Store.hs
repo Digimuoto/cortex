@@ -2,25 +2,26 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | On-disk NDJSON observability store.
---
--- This store is designed for a single-process writer. Concurrent writes from
--- the same process are serialized by the 'writeLock' MVar in 'ObservabilityRuntime'.
--- Multiple processes writing to the same state directory will race on file
--- rotation and may produce interleaved or truncated NDJSON lines.
---
--- If multi-process write support is needed, introduce file-level locking (e.g.
--- @flock@) or switch to a shared append medium.
+{- | On-disk NDJSON observability store.
+
+This store is designed for a single-process writer. Concurrent writes from
+the same process are serialized by the 'writeLock' MVar in 'ObservabilityRuntime'.
+Multiple processes writing to the same state directory will race on file
+rotation and may produce interleaved or truncated NDJSON lines.
+
+If multi-process write support is needed, introduce file-level locking (e.g.
+@flock@) or switch to a shared append medium.
+-}
 module Platform.Observability.Store
   ( -- * Public API (re-exported by Platform.Observability)
-    queryLogs,
-    queryTraces,
-    valueTextField,
-    valueIntField,
+    queryLogs
+  , queryTraces
+  , valueTextField
+  , valueIntField
 
     -- * Internal (used by sibling modules)
-    appendValue,
-    appendLogValue,
+  , appendValue
+  , appendLogValue
   )
 where
 
@@ -41,25 +42,35 @@ import Data.Maybe (isNothing)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
-import Platform.Observability.Redaction (sanitizeStoredValue)
-import Platform.Observability.Types
-import System.Directory (doesDirectoryExist, doesFileExist, getFileSize, listDirectory, removeFile, renameFile)
+import System.Directory
+  ( doesDirectoryExist
+  , doesFileExist
+  , getFileSize
+  , listDirectory
+  , removeFile
+  , renameFile
+  )
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
 import System.IO.Error (isAlreadyInUseError)
 import System.Log.FastLogger (pushLogStrLn, toLogStr)
 import Text.Read (readMaybe)
 
+import Platform.Observability.Redaction (sanitizeStoredValue)
+import Platform.Observability.Types
+
 queryLogs :: ObservabilityRuntime -> ObservabilityQuery -> IO [Value]
 queryLogs runtime query = do
-  values <- readObservabilityValues runtime "events.ndjson" query.queryLimit (matchesObservabilityQuery query)
+  values <-
+    readObservabilityValues runtime "events.ndjson" query.queryLimit (matchesObservabilityQuery query)
   pure
     . fmap (sanitizeStoredValue runtime)
     $ values
 
 queryTraces :: ObservabilityRuntime -> TraceQuery -> IO [Value]
 queryTraces runtime query = do
-  values <- readObservabilityValues runtime "traces.ndjson" query.traceQueryLimit (matchesTraceQuery query)
+  values <-
+    readObservabilityValues runtime "traces.ndjson" query.traceQueryLimit (matchesTraceQuery query)
   pure
     . fmap (sanitizeStoredValue runtime)
     $ values
@@ -90,7 +101,9 @@ appendValue runtime filePath value = do
   case result of
     Right () -> pure ()
     Left exc ->
-      hPutStrLn stderr ("observability: failed to append value to " <> filePath <> ": " <> displayException exc)
+      hPutStrLn
+        stderr
+        ("observability: failed to append value to " <> filePath <> ": " <> displayException exc)
 
 appendLogValue :: ObservabilityRuntime -> FilePath -> Value -> IO ()
 appendLogValue runtime filePath value = do
@@ -112,31 +125,31 @@ appendLogValue runtime filePath value = do
 matchesObservabilityQuery :: ObservabilityQuery -> Value -> Bool
 matchesObservabilityQuery query value =
   and
-    [ matchText "service" query.queryService value,
-      matchText "request_id" query.queryRequestId value,
-      matchText "trace_id" query.queryTraceId value,
-      matchText "run_id" query.queryRunId value,
-      matchText "account_id" query.queryAccountId value,
-      matchText "user_id" query.queryUserId value,
-      matchText "provider" query.queryProvider value,
-      matchText "level" query.queryLevel value,
-      matchText "operation" query.queryOperation value,
-      matchText "route" query.queryRoute value,
-      matchText "tool_name" query.queryToolName value,
-      matchText "assistant_phase" query.queryAssistantPhase value,
-      matchText "stage" query.queryStage value,
-      matchText "error_type" query.queryErrorType value,
-      matchTimeRange query.querySince query.queryUntil value
+    [ matchText "service" query.queryService value
+    , matchText "request_id" query.queryRequestId value
+    , matchText "trace_id" query.queryTraceId value
+    , matchText "run_id" query.queryRunId value
+    , matchText "account_id" query.queryAccountId value
+    , matchText "user_id" query.queryUserId value
+    , matchText "provider" query.queryProvider value
+    , matchText "level" query.queryLevel value
+    , matchText "operation" query.queryOperation value
+    , matchText "route" query.queryRoute value
+    , matchText "tool_name" query.queryToolName value
+    , matchText "assistant_phase" query.queryAssistantPhase value
+    , matchText "stage" query.queryStage value
+    , matchText "error_type" query.queryErrorType value
+    , matchTimeRange query.querySince query.queryUntil value
     ]
 
 matchesTraceQuery :: TraceQuery -> Value -> Bool
 matchesTraceQuery query value =
   and
-    [ matchText "service" query.traceQueryService value,
-      matchText "trace_id" query.traceQueryTraceId value,
-      matchText "run_id" query.traceQueryRunId value,
-      matchText "request_id" query.traceQueryRequestId value,
-      matchTimeRange query.traceQuerySince query.traceQueryUntil value
+    [ matchText "service" query.traceQueryService value
+    , matchText "trace_id" query.traceQueryTraceId value
+    , matchText "run_id" query.traceQueryRunId value
+    , matchText "request_id" query.traceQueryRequestId value
+    , matchTimeRange query.traceQuerySince query.traceQueryUntil value
     ]
 
 matchText :: Text -> Maybe Text -> Value -> Bool

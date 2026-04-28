@@ -2,24 +2,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Patterns.DeepReport.ContractsSpec
-  ( spec,
+  ( spec
   )
 where
 
 import Control.Monad (forM_)
-import Cortex qualified
-import Cortex.Nous.Patterns.DeepReport.Contracts
-import Cortex.Wire
-  ( WireContractRegistry (..),
-    WireContractSpec (..),
-    WirePayloadKind (..),
-  )
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Test.Hspec
+
+import Cortex qualified
+import Cortex.Nous.Patterns.DeepReport.Contracts
+import Cortex.Wire
+  ( WireContractRegistry (..)
+  , WireContractSpec (..)
+  , WirePayloadKind (..)
+  )
 
 spec :: Spec
 spec =
@@ -49,19 +50,19 @@ spec =
 
 expectedContracts :: [(Text, WirePayloadKind)]
 expectedContracts =
-  [ ("PlannerOutput", WirePayloadJson),
-    ("PlannerRewriteNeeded", WirePayloadJson),
-    ("EvidenceBundle", WirePayloadJson),
-    ("EvidenceReady", WirePayloadJson),
-    ("EvidenceRepairNeeded", WirePayloadJson),
-    ("ConditionPassthrough", WirePayloadJson),
-    ("AnalysisFragment", WirePayloadJson),
-    ("ReportFragment", WirePayloadJson),
-    ("ReviewBundle", WirePayloadJson),
-    ("ReviewConcerns", WirePayloadJson),
-    ("ReportArtifactRef", WirePayloadArtifactRef),
-    ("WorkflowAudit", WirePayloadJson),
-    ("AwaitSignal", WirePayloadJson)
+  [ ("PlannerOutput", WirePayloadJson)
+  , ("PlannerRewriteNeeded", WirePayloadJson)
+  , ("EvidenceBundle", WirePayloadJson)
+  , ("EvidenceReady", WirePayloadJson)
+  , ("EvidenceRepairNeeded", WirePayloadJson)
+  , ("ConditionPassthrough", WirePayloadJson)
+  , ("AnalysisFragment", WirePayloadJson)
+  , ("ReportFragment", WirePayloadJson)
+  , ("ReviewBundle", WirePayloadJson)
+  , ("ReviewConcerns", WirePayloadJson)
+  , ("ReportArtifactRef", WirePayloadArtifactRef)
+  , ("WorkflowAudit", WirePayloadJson)
+  , ("AwaitSignal", WirePayloadJson)
   ]
 
 registryContracts :: Map.Map Text WireContractSpec

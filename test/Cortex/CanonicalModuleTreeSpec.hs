@@ -1,5 +1,5 @@
 module Cortex.CanonicalModuleTreeSpec
-  ( spec,
+  ( spec
   )
 where
 
@@ -27,68 +27,68 @@ spec =
 
 removedRootEntries :: [FilePath]
 removedRootEntries =
-  [ "Agent",
-    "Circuit",
-    "Document",
-    "Event.hs",
-    "Events.hs",
-    "Graph",
-    "Json",
-    "Memory",
-    "Memory.hs",
-    "MemoryCompaction.hs",
-    "Provider",
-    "Research",
-    "Run",
-    "Task",
-    "Text.hs"
+  [ "Agent"
+  , "Circuit"
+  , "Document"
+  , "Event.hs"
+  , "Events.hs"
+  , "Graph"
+  , "Json"
+  , "Memory"
+  , "Memory.hs"
+  , "MemoryCompaction.hs"
+  , "Provider"
+  , "Research"
+  , "Run"
+  , "Task"
+  , "Text.hs"
   ]
 
 removedExposedModulePrefixes :: [String]
 removedExposedModulePrefixes =
   fmap
     ("        " <>)
-    [ "Cortex.Agent",
-      "Cortex.Circuit",
-      "Cortex.Document",
-      "Cortex.Event",
-      "Cortex.Events",
-      "Cortex.Graph",
-      "Cortex.Json",
-      "Cortex.Memory",
-      "Cortex.MemoryCompaction",
-      "Cortex.Provider",
-      "Cortex.Research",
-      "Cortex.Run",
-      "Cortex.Task",
-      "Cortex.Text",
-      "Cortex.Nous.Episteme",
-      "Cortex.Nous.Kritikos",
-      "Cortex.Nous.Logos",
-      "Cortex.Nous.Poiesis",
-      "Cortex.Nous.Sophia",
-      "Cortex.Nous.Techne",
-      "Cortex.Nous.Themis"
+    [ "Cortex.Agent"
+    , "Cortex.Circuit"
+    , "Cortex.Document"
+    , "Cortex.Event"
+    , "Cortex.Events"
+    , "Cortex.Graph"
+    , "Cortex.Json"
+    , "Cortex.Memory"
+    , "Cortex.MemoryCompaction"
+    , "Cortex.Provider"
+    , "Cortex.Research"
+    , "Cortex.Run"
+    , "Cortex.Task"
+    , "Cortex.Text"
+    , "Cortex.Nous.Episteme"
+    , "Cortex.Nous.Kritikos"
+    , "Cortex.Nous.Logos"
+    , "Cortex.Nous.Poiesis"
+    , "Cortex.Nous.Sophia"
+    , "Cortex.Nous.Techne"
+    , "Cortex.Nous.Themis"
     ]
 
 removedModuleDeclarationPrefixes :: [String]
 removedModuleDeclarationPrefixes =
   fmap
     ("module " <>)
-    [ "Cortex.Agent",
-      "Cortex.Circuit",
-      "Cortex.Document",
-      "Cortex.Event",
-      "Cortex.Events",
-      "Cortex.Graph",
-      "Cortex.Json",
-      "Cortex.Memory",
-      "Cortex.MemoryCompaction",
-      "Cortex.Provider",
-      "Cortex.Research",
-      "Cortex.Run",
-      "Cortex.Task",
-      "Cortex.Text"
+    [ "Cortex.Agent"
+    , "Cortex.Circuit"
+    , "Cortex.Document"
+    , "Cortex.Event"
+    , "Cortex.Events"
+    , "Cortex.Graph"
+    , "Cortex.Json"
+    , "Cortex.Memory"
+    , "Cortex.MemoryCompaction"
+    , "Cortex.Provider"
+    , "Cortex.Research"
+    , "Cortex.Run"
+    , "Cortex.Task"
+    , "Cortex.Text"
     ]
 
 declaresRemovedRootModule :: FilePath -> IO Bool

@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Kritikos
-  ( kritikosDefinition,
+  ( kritikosDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Kritikos),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Kritikos)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 kritikosDefinition :: NousArchetypeDefinition

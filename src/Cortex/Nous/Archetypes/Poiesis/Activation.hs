@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Poiesis.Activation
-  ( poiesisCapabilityBundle,
+  ( poiesisCapabilityBundle
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Poiesis),
-    NousCapabilityBundle,
-    nousCapabilityBundle,
+  ( NousArchetype (Poiesis)
+  , NousCapabilityBundle
+  , nousCapabilityBundle
   )
 
 poiesisCapabilityBundle :: NousCapabilityBundle

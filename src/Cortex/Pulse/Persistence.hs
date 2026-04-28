@@ -1,5 +1,5 @@
 module Cortex.Pulse.Persistence
-  ( module Cortex.Pulse.Executor.Persistence,
+  ( module Cortex.Pulse.Executor.Persistence
   )
 where
 

@@ -3,27 +3,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Wire.Contracts
-  ( WireContractSpec (..),
-    WireContractRegistry (..),
-    emptyWireContractRegistry,
-    wireContractRegistryFromList,
-    WireProjectionMode (..),
-    WireCompileEnv (..),
-    emptyWireCompileEnv,
-    wireCompileEnvWithContractRegistry,
-    wireCompileEnvWithExecutorRegistry,
-    strictWireCompileEnv,
-    portsMetadataValue,
-    wirePortsFromMetadataValue,
-    validatePorts,
+  ( WireContractSpec (..)
+  , WireContractRegistry (..)
+  , emptyWireContractRegistry
+  , wireContractRegistryFromList
+  , WireProjectionMode (..)
+  , WireCompileEnv (..)
+  , emptyWireCompileEnv
+  , wireCompileEnvWithContractRegistry
+  , wireCompileEnvWithExecutorRegistry
+  , strictWireCompileEnv
+  , portsMetadataValue
+  , wirePortsFromMetadataValue
+  , validatePorts
   )
 where
 
 import Control.Monad (void)
-import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
-import Cortex.Wire.Executor (WireExecutorRegistry, emptyWireExecutorRegistry)
-import Cortex.Wire.Syntax
-import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
 import Data.Aeson (ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
@@ -32,23 +28,28 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
+import Cortex.Wire.Executor (WireExecutorRegistry, emptyWireExecutorRegistry)
+import Cortex.Wire.Syntax
+import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
+
 data WireContractSpec = WireContractSpec
-  { wireContractSpecId :: !Text,
-    wireContractSpecPayloadKind :: !WirePayloadKind,
-    wireContractSpecDescription :: !Text,
-    wireContractSpecSchema :: !(Maybe Aeson.Value),
-    wireContractSpecExamples :: ![Aeson.Value]
+  { wireContractSpecId :: !Text
+  , wireContractSpecPayloadKind :: !WirePayloadKind
+  , wireContractSpecDescription :: !Text
+  , wireContractSpecSchema :: !(Maybe Aeson.Value)
+  , wireContractSpecExamples :: ![Aeson.Value]
   }
   deriving stock (Eq, Show)
 
 instance ToJSON WireContractSpec where
   toJSON spec =
     Aeson.object
-      [ "id" .= spec.wireContractSpecId,
-        "payloadKind" .= renderWirePayloadKind spec.wireContractSpecPayloadKind,
-        "description" .= spec.wireContractSpecDescription,
-        "schema" .= spec.wireContractSpecSchema,
-        "examples" .= spec.wireContractSpecExamples
+      [ "id" .= spec.wireContractSpecId
+      , "payloadKind" .= renderWirePayloadKind spec.wireContractSpecPayloadKind
+      , "description" .= spec.wireContractSpecDescription
+      , "schema" .= spec.wireContractSpecSchema
+      , "examples" .= spec.wireContractSpecExamples
       ]
 
 newtype WireContractRegistry = WireContractRegistry
@@ -72,9 +73,9 @@ wireContractRegistryFromList specs =
     (Map.fromList [(spec.wireContractSpecId, spec) | spec <- specs])
 
 data WireCompileEnv = WireCompileEnv
-  { wireCompileEnvExecutorRegistry :: WireExecutorRegistry,
-    wireCompileEnvProjectionMode :: WireProjectionMode,
-    wireCompileEnvContractRegistry :: Maybe WireContractRegistry
+  { wireCompileEnvExecutorRegistry :: WireExecutorRegistry
+  , wireCompileEnvProjectionMode :: WireProjectionMode
+  , wireCompileEnvContractRegistry :: Maybe WireContractRegistry
   }
   deriving stock (Eq, Show)
 
@@ -86,9 +87,9 @@ data WireProjectionMode
 emptyWireCompileEnv :: WireCompileEnv
 emptyWireCompileEnv =
   WireCompileEnv
-    { wireCompileEnvExecutorRegistry = emptyWireExecutorRegistry,
-      wireCompileEnvProjectionMode = WireProjectionPermissive,
-      wireCompileEnvContractRegistry = Nothing
+    { wireCompileEnvExecutorRegistry = emptyWireExecutorRegistry
+    , wireCompileEnvProjectionMode = WireProjectionPermissive
+    , wireCompileEnvContractRegistry = Nothing
     }
 
 wireCompileEnvWithContractRegistry :: WireContractRegistry -> WireCompileEnv
@@ -102,29 +103,29 @@ wireCompileEnvWithExecutorRegistry registry =
 strictWireCompileEnv :: WireExecutorRegistry -> WireContractRegistry -> WireCompileEnv
 strictWireCompileEnv executorRegistry contractRegistry =
   WireCompileEnv
-    { wireCompileEnvExecutorRegistry = executorRegistry,
-      wireCompileEnvProjectionMode = WireProjectionStrict,
-      wireCompileEnvContractRegistry = Just contractRegistry
+    { wireCompileEnvExecutorRegistry = executorRegistry
+    , wireCompileEnvProjectionMode = WireProjectionStrict
+    , wireCompileEnvContractRegistry = Just contractRegistry
     }
 
 portsMetadataValue :: WirePorts -> Aeson.Value
 portsMetadataValue ports =
   Aeson.object
-    [ "inputs" Aeson..= fmap encodeInputPort (Map.toList ports.wirePortsInputs),
-      "outputs" Aeson..= fmap encodeOutputPort (Map.toList ports.wirePortsOutputs)
+    [ "inputs" Aeson..= fmap encodeInputPort (Map.toList ports.wirePortsInputs)
+    , "outputs" Aeson..= fmap encodeOutputPort (Map.toList ports.wirePortsOutputs)
     ]
   where
     encodeInputPort (portName, portSpec) =
       Aeson.object
-        [ "name" Aeson..= portName,
-          "accepts" Aeson..= portSpec.wireInputPortAccepts,
-          "cardinality" Aeson..= renderCardinality portSpec.wireInputPortCardinality,
-          "required" Aeson..= portSpec.wireInputPortRequired
+        [ "name" Aeson..= portName
+        , "accepts" Aeson..= portSpec.wireInputPortAccepts
+        , "cardinality" Aeson..= renderCardinality portSpec.wireInputPortCardinality
+        , "required" Aeson..= portSpec.wireInputPortRequired
         ]
     encodeOutputPort (portName, portSpec) =
       Aeson.object
-        [ "name" Aeson..= portName,
-          "contract" Aeson..= portSpec.wireOutputPortContract
+        [ "name" Aeson..= portName
+        , "contract" Aeson..= portSpec.wireOutputPortContract
         ]
 
 wirePortsFromMetadataValue :: Aeson.Value -> Either Text WirePorts
@@ -141,8 +142,8 @@ parsePortsMetadata = Aeson.withObject "WirePorts metadata" $ \obj -> do
   outputEntries <- traverse parseOutputMetadataEntry rawOutputEntries
   pure
     WirePorts
-      { wirePortsInputs = Map.fromList inputEntries,
-        wirePortsOutputs = Map.fromList outputEntries
+      { wirePortsInputs = Map.fromList inputEntries
+      , wirePortsOutputs = Map.fromList outputEntries
       }
 
 parseInputMetadataEntry :: Aeson.Value -> AesonTypes.Parser (Text, WireInputPort)
@@ -199,5 +200,5 @@ renderCardinality = \case
   WireInputCardinalityOne -> "one"
   WireInputCardinalityMany -> "many"
 
-traverse_ :: (Applicative f) => (a -> f b) -> [a] -> f ()
+traverse_ :: Applicative f => (a -> f b) -> [a] -> f ()
 traverse_ f = foldr ((*>) . void . f) (pure ())

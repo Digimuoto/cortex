@@ -5,23 +5,24 @@ module Platform.DurableTask.CronSpec (spec) where
 import Data.Maybe (isJust, isNothing)
 import Data.Text (Text)
 import Data.Time
-  ( Day (ModifiedJulianDay),
-    DayOfWeek (..),
-    UTCTime (..),
-    dayOfWeek,
-    fromGregorian,
-    secondsToDiffTime,
-    toGregorian,
-    utctDay,
-  )
-import Platform.DurableTask.Cron
-  ( CronSchedule (..),
-    computeNextCronTime,
-    nextCronTime,
-    parseCron,
+  ( Day (ModifiedJulianDay)
+  , DayOfWeek (..)
+  , UTCTime (..)
+  , dayOfWeek
+  , fromGregorian
+  , secondsToDiffTime
+  , toGregorian
+  , utctDay
   )
 import Test.Hspec
 import Test.QuickCheck
+
+import Platform.DurableTask.Cron
+  ( CronSchedule (..)
+  , computeNextCronTime
+  , nextCronTime
+  , parseCron
+  )
 
 -- | Helper: create a UTCTime from components
 mkTime :: Integer -> Int -> Int -> Int -> Int -> UTCTime
@@ -187,17 +188,18 @@ spec = do
 -- Generators and helpers for property tests
 -- ============================================================================
 
--- | A representative set of valid cron expressions that always have a next
--- fire time (no restrictive day-of-month/day-of-week combinations).
+{- | A representative set of valid cron expressions that always have a next
+fire time (no restrictive day-of-month/day-of-week combinations).
+-}
 validCronExprs :: [Text]
 validCronExprs =
-  [ "* * * * *",
-    "0 * * * *",
-    "*/5 * * * *",
-    "0 9 * * *",
-    "0 0 1 * *",
-    "30 14 * * *",
-    "0,30 * * * *"
+  [ "* * * * *"
+  , "0 * * * *"
+  , "*/5 * * * *"
+  , "0 9 * * *"
+  , "0 0 1 * *"
+  , "30 14 * * *"
+  , "0,30 * * * *"
   ]
 
 -- | Generate a UTC time spread over roughly 1995–2023 with varying time-of-day.

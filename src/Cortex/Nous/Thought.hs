@@ -1,13 +1,13 @@
 -- | One bounded model-mediated cognitive evaluation.
 module Cortex.Nous.Thought
-  ( module Cortex.Nous.Thought.Frame,
-    module Cortex.Nous.Thought.Host,
-    module Cortex.Nous.Thought.Policy,
-    module Cortex.Nous.Thought.Runtime,
-    module Cortex.Nous.Thought.Stage,
-    module Cortex.Nous.Thought.StructuredOutput,
-    module Cortex.Nous.Thought.ToolHost,
-    module Cortex.Nous.Thought.ToolLoop,
+  ( module Cortex.Nous.Thought.Frame
+  , module Cortex.Nous.Thought.Host
+  , module Cortex.Nous.Thought.Policy
+  , module Cortex.Nous.Thought.Runtime
+  , module Cortex.Nous.Thought.Stage
+  , module Cortex.Nous.Thought.StructuredOutput
+  , module Cortex.Nous.Thought.ToolHost
+  , module Cortex.Nous.Thought.ToolLoop
   )
 where
 

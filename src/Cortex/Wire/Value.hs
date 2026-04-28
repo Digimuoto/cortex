@@ -4,16 +4,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Wire.Value
-  ( WirePayloadKind (..),
-    renderWirePayloadKind,
-    parseWirePayloadKindText,
-    wirePayloadKindMediaType,
-    describeWirePayloadKindShape,
-    validateWirePayloadShape,
-    WireValue (..),
-    WireValueSet (..),
-    mkWireValue,
-    singletonWireValueSet,
+  ( WirePayloadKind (..)
+  , renderWirePayloadKind
+  , parseWirePayloadKindText
+  , wirePayloadKindMediaType
+  , describeWirePayloadKindShape
+  , validateWirePayloadShape
+  , WireValue (..)
+  , WireValueSet (..)
+  , mkWireValue
+  , singletonWireValueSet
   )
 where
 
@@ -103,26 +103,26 @@ validateWirePayloadShape payloadKind value =
       describeWirePayloadKindShape payloadKind
 
 data WireValue = WireValue
-  { wireValueContract :: !Text,
-    wireValuePort :: !(Maybe Text),
-    wireValuePayloadKind :: !WirePayloadKind,
-    wireValueMediaType :: !Text,
-    wireValueProducer :: !(Maybe Text),
-    wireValueValue :: !Aeson.Value,
-    wireValueProvenance :: !(Maybe Aeson.Value)
+  { wireValueContract :: !Text
+  , wireValuePort :: !(Maybe Text)
+  , wireValuePayloadKind :: !WirePayloadKind
+  , wireValueMediaType :: !Text
+  , wireValueProducer :: !(Maybe Text)
+  , wireValueValue :: !Aeson.Value
+  , wireValueProvenance :: !(Maybe Aeson.Value)
   }
   deriving stock (Eq, Show, Generic)
 
 instance ToJSON WireValue where
   toJSON wireValue =
     Aeson.object
-      [ "contract" .= wireValue.wireValueContract,
-        "port" .= wireValue.wireValuePort,
-        "payloadKind" .= renderWirePayloadKind wireValue.wireValuePayloadKind,
-        "mediaType" .= wireValue.wireValueMediaType,
-        "producer" .= wireValue.wireValueProducer,
-        "value" .= wireValue.wireValueValue,
-        "provenance" .= wireValue.wireValueProvenance
+      [ "contract" .= wireValue.wireValueContract
+      , "port" .= wireValue.wireValuePort
+      , "payloadKind" .= renderWirePayloadKind wireValue.wireValuePayloadKind
+      , "mediaType" .= wireValue.wireValueMediaType
+      , "producer" .= wireValue.wireValueProducer
+      , "value" .= wireValue.wireValueValue
+      , "provenance" .= wireValue.wireValueProvenance
       ]
 
 instance FromJSON WireValue where
@@ -155,13 +155,13 @@ instance FromJSON WireValueSet where
 mkWireValue :: Text -> WirePayloadKind -> Maybe Text -> Aeson.Value -> WireValue
 mkWireValue contract payloadKind producer value =
   WireValue
-    { wireValueContract = contract,
-      wireValuePort = Nothing,
-      wireValuePayloadKind = payloadKind,
-      wireValueMediaType = wirePayloadKindMediaType payloadKind,
-      wireValueProducer = producer,
-      wireValueValue = value,
-      wireValueProvenance = Nothing
+    { wireValueContract = contract
+    , wireValuePort = Nothing
+    , wireValuePayloadKind = payloadKind
+    , wireValueMediaType = wirePayloadKindMediaType payloadKind
+    , wireValueProducer = producer
+    , wireValueValue = value
+    , wireValueProvenance = Nothing
     }
 
 singletonWireValueSet :: WireValue -> WireValueSet

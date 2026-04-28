@@ -1,20 +1,16 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Cortex.Nous.Memory.Pack
-  ( selectByTokenBudget,
-    packSessionPassages,
-    packReferencePassages,
+  ( selectByTokenBudget
+  , packSessionPassages
+  , packReferencePassages
 
     -- * MMR internals (exported for testing)
-    passageFeatures,
-    jaccardSimilarity,
+  , passageFeatures
+  , jaccardSimilarity
   )
 where
 
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryPassage (..),
-    CortexMemoryRankedPassage (..),
-  )
 import Data.Int (Int64)
 import Data.List (sortBy)
 import Data.Maybe (maybeToList)
@@ -24,12 +20,17 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 
-selectByTokenBudget ::
-  Int64 ->
-  Int ->
-  [a] ->
-  (a -> Int) ->
-  [a]
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryPassage (..)
+  , CortexMemoryRankedPassage (..)
+  )
+
+selectByTokenBudget
+  :: Int64
+  -> Int
+  -> [a]
+  -> (a -> Int)
+  -> [a]
 selectByTokenBudget tokenBudget maxCount rows rowTokens =
   reverse (fst (foldl step ([], 0 :: Int64) (take maxCount rows)))
   where
@@ -40,13 +41,17 @@ selectByTokenBudget tokenBudget maxCount rows rowTokens =
             then (selected, usedTokens)
             else (row : selected, min tokenBudget nextTokens)
 
-packSessionPassages ::
-  Int64 ->
-  Int ->
-  [CortexMemoryPassage] ->
-  [CortexMemoryPassage]
+packSessionPassages
+  :: Int64
+  -> Int
+  -> [CortexMemoryPassage]
+  -> [CortexMemoryPassage]
 packSessionPassages tokenBudget maxCount rows =
-  selectByTokenBudget tokenBudget maxCount (sortedRows rows) (\row -> row.cortexMemoryPassageTokenCount)
+  selectByTokenBudget
+    tokenBudget
+    maxCount
+    (sortedRows rows)
+    (\row -> row.cortexMemoryPassageTokenCount)
   where
     sortedRows =
       sortBy
@@ -54,36 +59,44 @@ packSessionPassages tokenBudget maxCount rows =
             <> comparing (Down . (\row -> row.cortexMemoryPassageOrder))
         )
 
--- | Pack reference passages using MMR (Maximal Marginal Relevance) to balance
--- relevance with diversity. For each selection step, picks the passage that
--- maximizes: lambda * relevance - (1 - lambda) * max_similarity_to_selected.
---
--- Falls back to greedy-by-score for < 3 candidates (MMR overhead not worth it).
--- Similarity is Jaccard on passage feature sets (entities, heading, title terms)
--- since embedding vectors are not available at packing time.
-packReferencePassages ::
-  Int64 ->
-  Int ->
-  [CortexMemoryRankedPassage] ->
-  [CortexMemoryRankedPassage]
+{- | Pack reference passages using MMR (Maximal Marginal Relevance) to balance
+relevance with diversity. For each selection step, picks the passage that
+maximizes: lambda * relevance - (1 - lambda) * max_similarity_to_selected.
+
+Falls back to greedy-by-score for < 3 candidates (MMR overhead not worth it).
+Similarity is Jaccard on passage feature sets (entities, heading, title terms)
+since embedding vectors are not available at packing time.
+-}
+packReferencePassages
+  :: Int64
+  -> Int
+  -> [CortexMemoryRankedPassage]
+  -> [CortexMemoryRankedPassage]
 packReferencePassages tokenBudget maxCount rows
   | length rows < 3 = greedyPack rows
   | otherwise = selectByMMR mmrLambda tokenBudget maxCount (sortedRows rows)
   where
-    greedyPack rs = selectByTokenBudget tokenBudget maxCount (sortedRows rs) (\row -> row.cortexRankedPassage.cortexMemoryPassageTokenCount)
+    greedyPack rs =
+      selectByTokenBudget
+        tokenBudget
+        maxCount
+        (sortedRows rs)
+        (\row -> row.cortexRankedPassage.cortexMemoryPassageTokenCount)
     sortedRows =
       sortBy
         ( comparing (Down . cortexRankedFinalScore)
             <> comparing (Down . (\row -> row.cortexRankedPassage.cortexMemorySourceUpdatedAt))
         )
 
--- | MMR lambda: 0.7 = relevance-dominant. Standard default from Carbonell &
--- Goldstein (1998). Higher values favor relevance over diversity.
+{- | MMR lambda: 0.7 = relevance-dominant. Standard default from Carbonell &
+Goldstein (1998). Higher values favor relevance over diversity.
+-}
 mmrLambda :: Double
 mmrLambda = 0.7
 
--- | Extract feature set from a passage for Jaccard diversity computation.
--- Uses entities, section heading, and title terms as proxy for content overlap.
+{- | Extract feature set from a passage for Jaccard diversity computation.
+Uses entities, section heading, and title terms as proxy for content overlap.
+-}
 passageFeatures :: CortexMemoryRankedPassage -> Set Text
 passageFeatures row =
   Set.fromList $
@@ -99,15 +112,16 @@ jaccardSimilarity a b
       fromIntegral (Set.size (Set.intersection a b))
         / fromIntegral (Set.size (Set.union a b))
 
--- | MMR selection: iteratively pick the passage that maximizes
--- lambda * normalizedRelevance - (1 - lambda) * maxSimilarityToSelected.
--- Respects token budget and max count constraints.
-selectByMMR ::
-  Double ->
-  Int64 ->
-  Int ->
-  [CortexMemoryRankedPassage] ->
-  [CortexMemoryRankedPassage]
+{- | MMR selection: iteratively pick the passage that maximizes
+lambda * normalizedRelevance - (1 - lambda) * maxSimilarityToSelected.
+Respects token budget and max count constraints.
+-}
+selectByMMR
+  :: Double
+  -> Int64
+  -> Int
+  -> [CortexMemoryRankedPassage]
+  -> [CortexMemoryRankedPassage]
 selectByMMR lambda tokenBudget maxCount candidates =
   reverse (go [] [] 0 0 candidatesWithFeatures)
   where

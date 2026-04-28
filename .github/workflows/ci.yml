@@ -178,6 +178,9 @@ jobs:
       - name: Check formatting
         run: nix run '.#_check-format' --print-build-logs
 
+      - name: Check Haskell formatting
+        run: nix run '.#check-haskell-format' --print-build-logs
+
   supported-build:
     name: Build Supported Outputs
     runs-on: [self-hosted, nix, mercury, cortex]

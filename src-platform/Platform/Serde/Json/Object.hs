@@ -1,7 +1,7 @@
 module Platform.Serde.Json.Object
-  ( hasObjectBool,
-    lookupObjectArray,
-    lookupObjectText,
+  ( hasObjectBool
+  , lookupObjectArray
+  , lookupObjectText
   )
 where
 

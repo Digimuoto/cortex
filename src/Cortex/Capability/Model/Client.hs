@@ -1,11 +1,11 @@
 module Cortex.Capability.Model.Client
-  ( CortexModelClient (..),
+  ( CortexModelClient (..)
   )
 where
 
 import Cortex.Capability.Model.Types
-  ( CortexChoice,
-    CortexChoiceRequest,
+  ( CortexChoice
+  , CortexChoiceRequest
   )
 
 data CortexModelClient m = CortexModelClient

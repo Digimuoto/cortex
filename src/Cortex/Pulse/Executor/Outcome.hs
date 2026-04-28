@@ -3,30 +3,32 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Pulse.Executor.Outcome
-  ( handleGraphOutcome,
-    handleSettled,
-    handleSuspended,
-    handleStuck,
+  ( handleGraphOutcome
+  , handleSettled
+  , handleSuspended
+  , handleStuck
   )
 where
 
-import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
-import Cortex.Pulse.Executor.Persistence
-  ( failRun,
-    recordRunEvent,
-    requireTx,
-  )
-import Cortex.Pulse.Executor.Types (StageEnv (..))
-import Cortex.Pulse.GraphRuntime
-  ( GraphState,
-    StuckDiagnostic (..),
-  )
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Query qualified as Q
 import Data.Aeson qualified as Aeson
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
+
+import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
+import Cortex.Pulse.Executor.Persistence
+  ( failRun
+  , recordRunEvent
+  , requireTx
+  )
+import Cortex.Pulse.Executor.Types (StageEnv (..))
+import Cortex.Pulse.GraphRuntime
+  ( GraphState
+  , StuckDiagnostic (..)
+  )
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Query qualified as Q
+
 import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
 import Platform.Observability (emitObsEvent)
@@ -74,16 +76,24 @@ handleSuspended env _gs = do
     Nothing -> pure OutcomeFailed
     Just () -> do
       emitObsEvent $ EvtRunSuspended env.seRunId
-      recordRunEvent env "run.suspended" Q.RunEventInfo "Run suspended, waiting on external signal" Nothing
+      recordRunEvent
+        env
+        "run.suspended"
+        Q.RunEventInfo
+        "Run suspended, waiting on external signal"
+        Nothing
       pure OutcomeSuspended
 
 handleStuck :: StageEnv -> UUID -> GraphState Aeson.Value -> StuckDiagnostic -> IO RunOutcome
 handleStuck env runId _gs diag = do
   let diagnostic =
         Aeson.object
-          [ "pending_nodes" Aeson..= fmap unNodeId (sdPendingNodes diag),
-            "failed_nodes" Aeson..= fmap unNodeId (sdFailedNodes diag),
-            "stuck_on_failed" Aeson..= [Aeson.object ["node" Aeson..= unNodeId n, "blocked_by" Aeson..= fmap unNodeId bs] | (n, bs) <- sdStuckOnFailed diag]
+          [ "pending_nodes" Aeson..= fmap unNodeId (sdPendingNodes diag)
+          , "failed_nodes" Aeson..= fmap unNodeId (sdFailedNodes diag)
+          , "stuck_on_failed"
+              Aeson..= [ Aeson.object ["node" Aeson..= unNodeId n, "blocked_by" Aeson..= fmap unNodeId bs]
+                       | (n, bs) <- sdStuckOnFailed diag
+                       ]
           ]
       errMsg =
         "No ready nodes and graph not settled. "

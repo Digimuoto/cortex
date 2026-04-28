@@ -3,20 +3,20 @@
 
 module Platform.Observability.Runtime
   ( -- * Public API (re-exported by Platform.Observability)
-    loadObservabilityConfig,
-    initObservabilityRuntime,
-    installGlobalObservabilityRuntime,
-    resetGlobalObservabilityRuntime,
-    currentRuntime,
-    debugEnabled,
-    stateLogFile,
-    stateTraceFile,
+    loadObservabilityConfig
+  , initObservabilityRuntime
+  , installGlobalObservabilityRuntime
+  , resetGlobalObservabilityRuntime
+  , currentRuntime
+  , debugEnabled
+  , stateLogFile
+  , stateTraceFile
 
     -- * Internal (used by sibling modules)
-    globalRuntimeVar,
-    serviceStateDir,
-    defaultMaxStateFileBytes,
-    defaultMaxStateFiles,
+  , globalRuntimeVar
+  , serviceStateDir
+  , defaultMaxStateFileBytes
+  , defaultMaxStateFiles
   )
 where
 
@@ -26,7 +26,6 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Platform.Observability.Types
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
@@ -34,6 +33,8 @@ import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Log.FastLogger (defaultBufSize, newStderrLoggerSet)
 import Text.Read (readMaybe)
+
+import Platform.Observability.Types
 
 globalRuntimeVar :: MVar (Maybe ObservabilityRuntime)
 globalRuntimeVar = unsafePerformIO (newMVar Nothing)
@@ -67,16 +68,16 @@ loadObservabilityConfig envCfg service = do
   maybeMaxStateFiles <- lookupEnv envCfg.envMaxFiles
   pure
     ObservabilityConfig
-      { serviceName = service,
-        environment = maybe "local" T.pack maybeEnvironment,
-        deployment = T.pack <$> maybeDeployment,
-        host = T.pack <$> maybeHost,
-        version = maybe "dev" T.pack maybeVersion,
-        minLogLevel = maybe ObsInfo (parseLogLevel . T.pack) maybeLogLevel,
-        stateDir = fromMaybe ".portman" maybeStateDir,
-        maxStateFileBytes =
-          maybe defaultMaxStateFileBytes (max 1024) (maybeMaxStateFileBytes >>= readMaybe),
-        maxStateFiles =
+      { serviceName = service
+      , environment = maybe "local" T.pack maybeEnvironment
+      , deployment = T.pack <$> maybeDeployment
+      , host = T.pack <$> maybeHost
+      , version = maybe "dev" T.pack maybeVersion
+      , minLogLevel = maybe ObsInfo (parseLogLevel . T.pack) maybeLogLevel
+      , stateDir = fromMaybe ".portman" maybeStateDir
+      , maxStateFileBytes =
+          maybe defaultMaxStateFileBytes (max 1024) (maybeMaxStateFileBytes >>= readMaybe)
+      , maxStateFiles =
           maybe defaultMaxStateFiles (max 1) (maybeMaxStateFiles >>= readMaybe)
       }
 
@@ -88,10 +89,10 @@ initObservabilityRuntime cfg = do
   contexts <- newTVarIO Map.empty
   pure
     ObservabilityRuntime
-      { config = cfg,
-        loggerSet = logger,
-        writeLock = lock,
-        threadContexts = contexts
+      { config = cfg
+      , loggerSet = logger
+      , writeLock = lock
+      , threadContexts = contexts
       }
 
 debugEnabled :: ObservabilityRuntime -> Bool

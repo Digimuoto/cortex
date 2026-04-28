@@ -1,6 +1,6 @@
 module Platform.HTTP.Retry
-  ( shouldRetry,
-    retryPolicy,
+  ( shouldRetry
+  , retryPolicy
   )
 where
 

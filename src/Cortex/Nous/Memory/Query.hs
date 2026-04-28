@@ -2,16 +2,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Memory.Query
-  ( CortexMemoryQuery (..),
-    parseMemoryQuery,
-    cortexMemoryQueryFuzzyText,
-    cortexMemoryQueryPositiveTerms,
-    cortexMemoryQueryIsBlank,
-    hasAnyKeyword,
+  ( CortexMemoryQuery (..)
+  , parseMemoryQuery
+  , cortexMemoryQueryFuzzyText
+  , cortexMemoryQueryPositiveTerms
+  , cortexMemoryQueryIsBlank
+  , hasAnyKeyword
   )
 where
 
-import Cortex.Nous.Memory.Types (CortexMemoryEntityConfig (..))
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
@@ -19,39 +18,41 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 
+import Cortex.Nous.Memory.Types (CortexMemoryEntityConfig (..))
+
 data CortexMemoryQuery = CortexMemoryQuery
-  { cortexMemoryQueryRawText :: Text,
-    cortexMemoryQueryNormalizedText :: Text,
-    cortexMemoryQueryWebsearchText :: Text,
-    cortexMemoryQuerySemanticText :: Text,
-    cortexMemoryQueryTerms :: [Text],
-    cortexMemoryQueryPhrases :: [Text],
-    cortexMemoryQueryNegativeTerms :: [Text],
-    cortexMemoryQueryEntities :: [Text],
-    cortexMemoryQueryReportTypeHint :: Maybe Text,
-    cortexMemoryQueryContinuationIntent :: Bool,
-    cortexMemoryQueryRecencyHint :: Maybe Text,
-    cortexMemoryQueryAnchoredItemIds :: [UUID],
-    cortexMemoryQueryExplicitTargetItemId :: Maybe UUID
+  { cortexMemoryQueryRawText :: Text
+  , cortexMemoryQueryNormalizedText :: Text
+  , cortexMemoryQueryWebsearchText :: Text
+  , cortexMemoryQuerySemanticText :: Text
+  , cortexMemoryQueryTerms :: [Text]
+  , cortexMemoryQueryPhrases :: [Text]
+  , cortexMemoryQueryNegativeTerms :: [Text]
+  , cortexMemoryQueryEntities :: [Text]
+  , cortexMemoryQueryReportTypeHint :: Maybe Text
+  , cortexMemoryQueryContinuationIntent :: Bool
+  , cortexMemoryQueryRecencyHint :: Maybe Text
+  , cortexMemoryQueryAnchoredItemIds :: [UUID]
+  , cortexMemoryQueryExplicitTargetItemId :: Maybe UUID
   }
   deriving stock (Eq, Show)
 
 parseMemoryQuery :: CortexMemoryEntityConfig -> Text -> [UUID] -> Maybe UUID -> CortexMemoryQuery
 parseMemoryQuery entityConfig rawText anchoredItemIds explicitTargetItemId =
   CortexMemoryQuery
-    { cortexMemoryQueryRawText = stripped,
-      cortexMemoryQueryNormalizedText = normalizeQueryText stripped,
-      cortexMemoryQueryWebsearchText = stripped,
-      cortexMemoryQuerySemanticText = stripped,
-      cortexMemoryQueryTerms = positiveTerms,
-      cortexMemoryQueryPhrases = phrases,
-      cortexMemoryQueryNegativeTerms = negativeTerms,
-      cortexMemoryQueryEntities = cortexMemoryExtractEntities entityConfig stripped,
-      cortexMemoryQueryReportTypeHint = detectReportType stripped,
-      cortexMemoryQueryContinuationIntent = hasContinuationCue normalized,
-      cortexMemoryQueryRecencyHint = detectRecencyHint normalized,
-      cortexMemoryQueryAnchoredItemIds = dedupeUuids anchoredItemIds,
-      cortexMemoryQueryExplicitTargetItemId = explicitTargetItemId
+    { cortexMemoryQueryRawText = stripped
+    , cortexMemoryQueryNormalizedText = normalizeQueryText stripped
+    , cortexMemoryQueryWebsearchText = stripped
+    , cortexMemoryQuerySemanticText = stripped
+    , cortexMemoryQueryTerms = positiveTerms
+    , cortexMemoryQueryPhrases = phrases
+    , cortexMemoryQueryNegativeTerms = negativeTerms
+    , cortexMemoryQueryEntities = cortexMemoryExtractEntities entityConfig stripped
+    , cortexMemoryQueryReportTypeHint = detectReportType stripped
+    , cortexMemoryQueryContinuationIntent = hasContinuationCue normalized
+    , cortexMemoryQueryRecencyHint = detectRecencyHint normalized
+    , cortexMemoryQueryAnchoredItemIds = dedupeUuids anchoredItemIds
+    , cortexMemoryQueryExplicitTargetItemId = explicitTargetItemId
     }
   where
     stripped = T.strip rawText
@@ -177,18 +178,18 @@ hasContinuationCue :: Text -> Bool
 hasContinuationCue =
   hasAnyKeyword
     <*> pure
-      [ "continue",
-        "continuation",
-        "revise",
-        "revision",
-        "update",
-        "refresh",
-        "follow up",
-        "follow-up",
-        "extend",
-        "what did we say",
-        "prior report",
-        "this report"
+      [ "continue"
+      , "continuation"
+      , "revise"
+      , "revision"
+      , "update"
+      , "refresh"
+      , "follow up"
+      , "follow-up"
+      , "extend"
+      , "what did we say"
+      , "prior report"
+      , "this report"
       ]
 
 detectRecencyHint :: Text -> Maybe Text
@@ -216,29 +217,29 @@ dedupePreservingOrder = go Set.empty
 
 queryNoiseWords :: [Text]
 queryNoiseWords =
-  [ "a",
-    "about",
-    "again",
-    "and",
-    "around",
-    "explain",
-    "for",
-    "from",
-    "give",
-    "me",
-    "my",
-    "our",
-    "show",
-    "tell",
-    "that",
-    "the",
-    "their",
-    "them",
-    "there",
-    "these",
-    "they",
-    "what",
-    "which",
-    "with",
-    "your"
+  [ "a"
+  , "about"
+  , "again"
+  , "and"
+  , "around"
+  , "explain"
+  , "for"
+  , "from"
+  , "give"
+  , "me"
+  , "my"
+  , "our"
+  , "show"
+  , "tell"
+  , "that"
+  , "the"
+  , "their"
+  , "them"
+  , "there"
+  , "these"
+  , "they"
+  , "what"
+  , "which"
+  , "with"
+  , "your"
   ]

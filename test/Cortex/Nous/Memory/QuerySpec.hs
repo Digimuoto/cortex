@@ -3,18 +3,19 @@
 
 module Cortex.Nous.Memory.QuerySpec (spec) where
 
-import Cortex.Nous.Memory.Query
-  ( CortexMemoryQuery (..),
-    cortexMemoryQueryPositiveTerms,
-    parseMemoryQuery,
-  )
-import Cortex.Nous.Memory.Types
-  ( defaultCortexMemoryEntityConfig,
-  )
 import Data.List (sort)
 import Data.UUID qualified as UUID
 import Data.Word (Word32)
 import Test.Hspec
+
+import Cortex.Nous.Memory.Query
+  ( CortexMemoryQuery (..)
+  , cortexMemoryQueryPositiveTerms
+  , parseMemoryQuery
+  )
+import Cortex.Nous.Memory.Types
+  ( defaultCortexMemoryEntityConfig
+  )
 
 spec :: Spec
 spec = do

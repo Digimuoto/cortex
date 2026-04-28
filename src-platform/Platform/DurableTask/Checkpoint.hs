@@ -6,15 +6,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Platform.DurableTask.Checkpoint
-  ( CheckpointEnvelope (..),
-    CheckpointCompatibilityFailure (..),
-    checkpointEnvelopeFormatVersion,
-    buildCheckpointEnvelope,
-    parseCheckpointEnvelope,
-    validateCheckpointEnvelope,
-    renderCheckpointCompatibilityFailure,
-    compatibilityFailureErrorType,
-    compatibilityFailureIsRetryable,
+  ( CheckpointEnvelope (..)
+  , CheckpointCompatibilityFailure (..)
+  , checkpointEnvelopeFormatVersion
+  , buildCheckpointEnvelope
+  , parseCheckpointEnvelope
+  , validateCheckpointEnvelope
+  , renderCheckpointCompatibilityFailure
+  , compatibilityFailureErrorType
+  , compatibilityFailureIsRetryable
   )
 where
 
@@ -28,12 +28,12 @@ checkpointEnvelopeFormatVersion :: Int
 checkpointEnvelopeFormatVersion = 1
 
 data CheckpointEnvelope = CheckpointEnvelope
-  { ceFormatVersion :: Int,
-    ceTaskType :: Text,
-    ceTaskVersion :: Int,
-    ceRuntimeVersion :: Int,
-    ceCheckpointName :: Text,
-    cePayload :: Aeson.Value
+  { ceFormatVersion :: Int
+  , ceTaskType :: Text
+  , ceTaskVersion :: Int
+  , ceRuntimeVersion :: Int
+  , ceCheckpointName :: Text
+  , cePayload :: Aeson.Value
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -46,21 +46,21 @@ data CheckpointCompatibilityFailure
   | CheckpointNameMismatch Text Text
   deriving stock (Eq, Show)
 
-buildCheckpointEnvelope ::
-  Text ->
-  Int ->
-  Int ->
-  Text ->
-  Aeson.Value ->
-  CheckpointEnvelope
+buildCheckpointEnvelope
+  :: Text
+  -> Int
+  -> Int
+  -> Text
+  -> Aeson.Value
+  -> CheckpointEnvelope
 buildCheckpointEnvelope taskType taskVersion runtimeVersion checkpointName payload =
   CheckpointEnvelope
-    { ceFormatVersion = checkpointEnvelopeFormatVersion,
-      ceTaskType = taskType,
-      ceTaskVersion = taskVersion,
-      ceRuntimeVersion = runtimeVersion,
-      ceCheckpointName = checkpointName,
-      cePayload = payload
+    { ceFormatVersion = checkpointEnvelopeFormatVersion
+    , ceTaskType = taskType
+    , ceTaskVersion = taskVersion
+    , ceRuntimeVersion = runtimeVersion
+    , ceCheckpointName = checkpointName
+    , cePayload = payload
     }
 
 parseCheckpointEnvelope :: Aeson.Value -> Either Text CheckpointEnvelope
@@ -69,13 +69,13 @@ parseCheckpointEnvelope rawValue =
     Aeson.Error err -> Left (T.pack err)
     Aeson.Success envelope -> Right envelope
 
-validateCheckpointEnvelope ::
-  Text ->
-  Int ->
-  Int ->
-  Text ->
-  CheckpointEnvelope ->
-  Either CheckpointCompatibilityFailure Aeson.Value
+validateCheckpointEnvelope
+  :: Text
+  -> Int
+  -> Int
+  -> Text
+  -> CheckpointEnvelope
+  -> Either CheckpointCompatibilityFailure Aeson.Value
 validateCheckpointEnvelope expectedTaskType expectedTaskVersion expectedRuntimeVersion expectedCheckpointName envelope
   | envelope.ceFormatVersion /= checkpointEnvelopeFormatVersion =
       Left (UnsupportedCheckpointEnvelopeVersion envelope.ceFormatVersion)
@@ -119,8 +119,9 @@ renderCheckpointCompatibilityFailure = \case
       <> actualCheckpointName
       <> "."
 
--- | Machine-readable error type for each compatibility failure.
--- These map to pulse.runs.error_type for operator-visible diagnosis.
+{- | Machine-readable error type for each compatibility failure.
+These map to pulse.runs.error_type for operator-visible diagnosis.
+-}
 compatibilityFailureErrorType :: CheckpointCompatibilityFailure -> Text
 compatibilityFailureErrorType = \case
   UnsupportedCheckpointEnvelopeVersion _ -> "checkpoint_format_unsupported"
@@ -129,11 +130,12 @@ compatibilityFailureErrorType = \case
   CheckpointRuntimeVersionMismatch _ _ -> "checkpoint_runtime_version_mismatch"
   CheckpointNameMismatch _ _ -> "checkpoint_name_mismatch"
 
--- | Whether a restart-as-new can recover from this failure.
--- Version mismatches and unsupported envelope formats are recoverable
--- because a fresh run uses current code and discards the old checkpoint.
--- Task type and name mismatches indicate misconfiguration, not version
--- evolution — restart-as-new does not resolve them.
+{- | Whether a restart-as-new can recover from this failure.
+Version mismatches and unsupported envelope formats are recoverable
+because a fresh run uses current code and discards the old checkpoint.
+Task type and name mismatches indicate misconfiguration, not version
+evolution — restart-as-new does not resolve them.
+-}
 compatibilityFailureIsRetryable :: CheckpointCompatibilityFailure -> Bool
 compatibilityFailureIsRetryable = \case
   CheckpointTaskVersionMismatch _ _ -> True
@@ -142,5 +144,5 @@ compatibilityFailureIsRetryable = \case
   CheckpointTaskTypeMismatch _ _ -> False
   CheckpointNameMismatch _ _ -> False
 
-showText :: (Show a) => a -> Text
+showText :: Show a => a -> Text
 showText = T.pack . show

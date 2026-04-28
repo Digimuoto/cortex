@@ -1,27 +1,36 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
--- | Bounded concurrent execution pool for durable task runtimes.
---
--- Provides a generic pool of async tasks with atomic slot reservation,
--- duplicate-key rejection, resilient finalization, and graceful drain.
---
--- Intended for small bounded runtime pools (single-digit to low tens of
--- concurrent tasks). Completion detection is poll-based, not callback-based.
+{- | Bounded concurrent execution pool for durable task runtimes.
+
+Provides a generic pool of async tasks with atomic slot reservation,
+duplicate-key rejection, resilient finalization, and graceful drain.
+
+Intended for small bounded runtime pools (single-digit to low tens of
+concurrent tasks). Completion detection is poll-based, not callback-based.
+-}
 module Platform.DurableTask.Pool
-  ( TaskPool,
-    LaunchResult (..),
-    newTaskPool,
-    reapCompleted,
-    tryLaunch,
-    availableSlots,
-    activeCount,
-    drainAll,
+  ( TaskPool
+  , LaunchResult (..)
+  , newTaskPool
+  , reapCompleted
+  , tryLaunch
+  , availableSlots
+  , activeCount
+  , drainAll
   )
 where
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (Async, async, poll)
-import Control.Concurrent.STM (TVar, atomically, modifyTVar', newTVarIO, readTVar, readTVarIO, writeTVar)
+import Control.Concurrent.STM
+  ( TVar
+  , atomically
+  , modifyTVar'
+  , newTVarIO
+  , readTVar
+  , readTVarIO
+  , writeTVar
+  )
 import Control.Exception (SomeException, mask, throwIO, try)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -35,8 +44,8 @@ data TaskEntry a
 
 -- | A bounded pool of concurrent async tasks, keyed by @k@.
 data TaskPool k a = TaskPool
-  { tpActive :: TVar (Map k (TaskEntry a)),
-    tpMaxConcurrent :: Int
+  { tpActive :: TVar (Map k (TaskEntry a))
+  , tpMaxConcurrent :: Int
   }
 
 -- | Result of attempting to launch a task.
@@ -55,15 +64,16 @@ newTaskPool maxConcurrent = do
   active <- newTVarIO Map.empty
   pure TaskPool {tpActive = active, tpMaxConcurrent = maxConcurrent}
 
--- | Poll all active tasks. For each completed task, remove it from the pool
--- and call the finalizer. Finalizer exceptions are caught and reported via
--- the error callback — one failed finalizer does not abort the reap of others.
--- Tasks in 'TaskStarting' state are skipped (not yet pollable).
-reapCompleted ::
-  (Ord k) =>
-  TaskPool k a ->
-  (k -> Either SomeException a -> IO ()) ->
-  IO ()
+{- | Poll all active tasks. For each completed task, remove it from the pool
+and call the finalizer. Finalizer exceptions are caught and reported via
+the error callback — one failed finalizer does not abort the reap of others.
+Tasks in 'TaskStarting' state are skipped (not yet pollable).
+-}
+reapCompleted
+  :: Ord k
+  => TaskPool k a
+  -> (k -> Either SomeException a -> IO ())
+  -> IO ()
 reapCompleted tp finalize = do
   active <- readTVarIO tp.tpActive
   -- Collect completed tasks (poll is non-blocking, skip TaskStarting)
@@ -92,10 +102,11 @@ reapCompleted tp finalize = do
     )
     completed
 
--- | Try to launch a new task in the pool. Atomically checks capacity and
--- key uniqueness before reserving a slot. The async is spawned in a masked
--- region to prevent orphaning between reservation and registration.
-tryLaunch :: (Ord k) => TaskPool k a -> k -> IO a -> IO LaunchResult
+{- | Try to launch a new task in the pool. Atomically checks capacity and
+key uniqueness before reserving a slot. The async is spawned in a masked
+region to prevent orphaning between reservation and registration.
+-}
+tryLaunch :: Ord k => TaskPool k a -> k -> IO a -> IO LaunchResult
 tryLaunch tp key action = do
   reserved <- atomically $ do
     active <- readTVar tp.tpActive
@@ -135,9 +146,10 @@ availableSlots tp = do
 activeCount :: TaskPool k a -> IO Int
 activeCount tp = Map.size <$> readTVarIO tp.tpActive
 
--- | Block until all active tasks have completed. Polls every 500ms.
--- Does not cancel tasks — waits for natural completion.
-drainAll :: (Ord k) => TaskPool k a -> (k -> Either SomeException a -> IO ()) -> IO ()
+{- | Block until all active tasks have completed. Polls every 500ms.
+Does not cancel tasks — waits for natural completion.
+-}
+drainAll :: Ord k => TaskPool k a -> (k -> Either SomeException a -> IO ()) -> IO ()
 drainAll tp finalize = go
   where
     drainPollIntervalUs = 500_000

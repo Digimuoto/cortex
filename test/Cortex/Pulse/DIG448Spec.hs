@@ -3,33 +3,34 @@
 
 module Cortex.Pulse.DIG448Spec (spec) where
 
-import Cortex.Algebra.Graph
-  ( Graph (..),
-    toRelation,
-  )
-import Cortex.Pulse.Executor
-  ( RewriteExhaustionPolicy (..),
-    StableStageId (..),
-    StageDefinition (..),
-    StagePlan (..),
-    StageReplaySafety (..),
-    applyRewrite,
-    buildStageTemplateRegistry,
-    stageActionId,
-    stageTemplateId,
-  )
-import Cortex.Pulse.Memory (defaultMemoryStrategy)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Rewrite
-  ( ExpansionMode (..),
-    GraphRewrite (..),
-    SubgraphSpec (..),
-  )
-import Cortex.Pulse.Types (defaultRewriteBudget)
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import GHC.Generics (Generic)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( Graph (..)
+  , toRelation
+  )
+import Cortex.Pulse.Executor
+  ( RewriteExhaustionPolicy (..)
+  , StableStageId (..)
+  , StageDefinition (..)
+  , StagePlan (..)
+  , StageReplaySafety (..)
+  , applyRewrite
+  , buildStageTemplateRegistry
+  , stageActionId
+  , stageTemplateId
+  )
+import Cortex.Pulse.Memory (defaultMemoryStrategy)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Rewrite
+  ( ExpansionMode (..)
+  , GraphRewrite (..)
+  , SubgraphSpec (..)
+  )
+import Cortex.Pulse.Types (defaultRewriteBudget)
 
 data TestStage = StageA | StageB
   deriving stock (Eq, Ord, Show, Generic)
@@ -45,31 +46,31 @@ spec = do
   describe "DIG-448: StageTemplateId Uniqueness" $ do
     let mkDef sid tid =
           StageDefinition
-            { sdStageId = sid,
-              sdTemplateId = tid,
-              sdActionId = stageActionId sid,
-              sdReplaySafety = SafeToReplay,
-              sdReplayPolicyOverride = Nothing,
-              sdTimeoutSeconds = Nothing,
-              sdRetryPolicy = Nothing,
-              sdAction = \_ -> pure (error "not implemented"),
-              sdMemoryStrategy = defaultMemoryStrategy
+            { sdStageId = sid
+            , sdTemplateId = tid
+            , sdActionId = stageActionId sid
+            , sdReplaySafety = SafeToReplay
+            , sdReplayPolicyOverride = Nothing
+            , sdTimeoutSeconds = Nothing
+            , sdRetryPolicy = Nothing
+            , sdAction = \_ -> pure (error "not implemented")
+            , sdMemoryStrategy = defaultMemoryStrategy
             }
         -- a
         initialTopo = toRelation (Vertex (NodeId "a") :: Graph NodeId)
         initialDefs = Map.fromList [(NodeId "a", mkDef StageA (stageTemplateId StageA))]
         initialPlan =
           StagePlan
-            { spInitialState = Aeson.Null,
-              spCheckpointRuntimeVersion = 1,
-              spReplayPolicy = error "not used",
-              spInitialRewriteBudget = defaultRewriteBudget,
-              spRewriteExhaustionPolicy = RewriteExhaustionFail,
-              spBudgetExceededExhaustionPolicy = Nothing,
-              spMaxRewriteReExecutions = 2,
-              spTopology = initialTopo,
-              spDefinitions = initialDefs,
-              spTemplateRegistry = templateRegistry initialDefs
+            { spInitialState = Aeson.Null
+            , spCheckpointRuntimeVersion = 1
+            , spReplayPolicy = error "not used"
+            , spInitialRewriteBudget = defaultRewriteBudget
+            , spRewriteExhaustionPolicy = RewriteExhaustionFail
+            , spBudgetExceededExhaustionPolicy = Nothing
+            , spMaxRewriteReExecutions = 2
+            , spTopology = initialTopo
+            , spDefinitions = initialDefs
+            , spTemplateRegistry = templateRegistry initialDefs
             }
 
     it "rejects rewrite if it introduces a conflicting template id" $ do

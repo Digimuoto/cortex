@@ -3,23 +3,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Capability.Provider.OpenRouter.Client
-  ( OpenRouterChoiceResponse (..),
-    OpenRouterHttpErrorDetails (..),
-    OpenRouterRequestFailure (..),
-    choiceHeavyTimeoutMicros,
-    choiceStageLabel,
-    choiceStandardTimeoutMicros,
-    choiceTimeoutClassText,
-    choiceTimeoutMicrosForClass,
-    openRouterRequestPayload,
-    openRouterResolvedMaxOutputTokens,
-    decodeOpenRouterHttpErrorDetails,
-    isOpenRouterSchemaRejection,
-    openRouterChatUrl,
-    openRouterHttpFailureErrorType,
-    openRouterHttpFailureMessage,
-    parseOpenRouterRequest,
-    requestOpenRouterChoice,
+  ( OpenRouterChoiceResponse (..)
+  , OpenRouterHttpErrorDetails (..)
+  , OpenRouterRequestFailure (..)
+  , choiceHeavyTimeoutMicros
+  , choiceStageLabel
+  , choiceStandardTimeoutMicros
+  , choiceTimeoutClassText
+  , choiceTimeoutMicrosForClass
+  , openRouterRequestPayload
+  , openRouterResolvedMaxOutputTokens
+  , decodeOpenRouterHttpErrorDetails
+  , isOpenRouterSchemaRejection
+  , openRouterChatUrl
+  , openRouterHttpFailureErrorType
+  , openRouterHttpFailureMessage
+  , parseOpenRouterRequest
+  , requestOpenRouterChoice
   )
 where
 
@@ -28,16 +28,6 @@ import Control.Exception (displayException, throwIO, try)
 import Control.Monad (join, void, when)
 import Control.Monad.Catch qualified as MC
 import Control.Retry (recovering)
-import Cortex.Capability.Model.Types
-  ( CortexChoice (..),
-    CortexChoiceRequest (..),
-    CortexChoiceTimeoutClass (..),
-    CortexUsage,
-  )
-import Cortex.Capability.Provider.OpenRouter qualified as OpenRouterProvider
-import Cortex.Capability.Provider.OpenRouter.Wire
-  ( OpenRouterCompletion (..),
-  )
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (parseMaybe)
@@ -48,28 +38,40 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (diffUTCTime, getCurrentTime)
 import Network.HTTP.Client
-  ( HttpException (..),
-    HttpExceptionContent (StatusCodeException),
-    Manager,
-    Request,
-    RequestBody (RequestBodyLBS),
-    httpLbs,
-    method,
-    parseRequest,
-    requestBody,
-    requestHeaders,
-    responseBody,
-    responseStatus,
+  ( HttpException (..)
+  , HttpExceptionContent (StatusCodeException)
+  , Manager
+  , Request
+  , RequestBody (RequestBodyLBS)
+  , httpLbs
+  , method
+  , parseRequest
+  , requestBody
+  , requestHeaders
+  , responseBody
+  , responseStatus
   )
 import Network.HTTP.Types.Status (status429, status500, status503, status504, statusCode)
+import System.Timeout (timeout)
+
+import Cortex.Capability.Model.Types
+  ( CortexChoice (..)
+  , CortexChoiceRequest (..)
+  , CortexChoiceTimeoutClass (..)
+  , CortexUsage
+  )
+import Cortex.Capability.Provider.OpenRouter qualified as OpenRouterProvider
+import Cortex.Capability.Provider.OpenRouter.Wire
+  ( OpenRouterCompletion (..)
+  )
+
 import Platform.HTTP.Retry (retryPolicy, shouldRetry)
 import Platform.Serde.Json.Preview
-  ( truncateText,
+  ( truncateText
   )
 import Platform.Serde.Json.Text
-  ( decodeLazyUtf8,
+  ( decodeLazyUtf8
   )
-import System.Timeout (timeout)
 
 openRouterChatUrl :: String
 openRouterChatUrl = "https://openrouter.ai/api/v1/chat/completions"
@@ -81,28 +83,28 @@ choiceHeavyTimeoutMicros :: Int
 choiceHeavyTimeoutMicros = 15 * 60 * 1000000
 
 data OpenRouterRequestFailure = OpenRouterRequestFailure
-  { requestFailureOutcome :: Text,
-    requestFailureErrorType :: Text,
-    requestFailureMessage :: Text,
-    requestFailurePayloadPreview :: Maybe Aeson.Value,
-    requestFailureDurationMs :: Maybe Int,
-    requestFailureHttpStatusCode :: Maybe Int,
-    requestFailureHttpErrorDetails :: Maybe OpenRouterHttpErrorDetails,
-    requestFailureUsage :: Maybe CortexUsage
+  { requestFailureOutcome :: Text
+  , requestFailureErrorType :: Text
+  , requestFailureMessage :: Text
+  , requestFailurePayloadPreview :: Maybe Aeson.Value
+  , requestFailureDurationMs :: Maybe Int
+  , requestFailureHttpStatusCode :: Maybe Int
+  , requestFailureHttpErrorDetails :: Maybe OpenRouterHttpErrorDetails
+  , requestFailureUsage :: Maybe CortexUsage
   }
   deriving stock (Eq, Show)
 
 data OpenRouterHttpErrorDetails = OpenRouterHttpErrorDetails
-  { httpErrorProviderName :: Maybe Text,
-    httpErrorProviderMessage :: Maybe Text,
-    httpErrorProviderRequestId :: Maybe Text
+  { httpErrorProviderName :: Maybe Text
+  , httpErrorProviderMessage :: Maybe Text
+  , httpErrorProviderRequestId :: Maybe Text
   }
   deriving stock (Eq, Show)
 
 data OpenRouterChoiceResponse = OpenRouterChoiceResponse
-  { openRouterResponseChoice :: CortexChoice,
-    openRouterResponseDurationMs :: Int,
-    openRouterResponseHttpStatusCode :: Int
+  { openRouterResponseChoice :: CortexChoice
+  , openRouterResponseDurationMs :: Int
+  , openRouterResponseHttpStatusCode :: Int
   }
   deriving stock (Eq, Show)
 
@@ -158,9 +160,9 @@ decodeOpenRouterHttpErrorDetails body = do
             (Aeson.withObject "providerRaw" (Aeson..:? "request_id"))
   pure
     OpenRouterHttpErrorDetails
-      { httpErrorProviderName = join providerName,
-        httpErrorProviderMessage = join providerMessage,
-        httpErrorProviderRequestId = join providerRequestId
+      { httpErrorProviderName = join providerName
+      , httpErrorProviderMessage = join providerMessage
+      , httpErrorProviderRequestId = join providerRequestId
       }
 
 isOpenRouterSchemaRejection :: OpenRouterHttpErrorDetails -> Bool
@@ -219,11 +221,11 @@ openRouterResolvedMaxOutputTokens :: CortexChoiceRequest -> Int
 openRouterResolvedMaxOutputTokens choiceReq =
   fromMaybe OpenRouterProvider.defaultMaxOutputTokens choiceReq.cortexChoiceMaxOutputTokens
 
-requestOpenRouterChoice ::
-  Manager ->
-  Text ->
-  CortexChoiceRequest ->
-  IO (Either OpenRouterRequestFailure OpenRouterChoiceResponse)
+requestOpenRouterChoice
+  :: Manager
+  -> Text
+  -> CortexChoiceRequest
+  -> IO (Either OpenRouterRequestFailure OpenRouterChoiceResponse)
 requestOpenRouterChoice manager apiKey choiceReq = do
   let timeoutMicros = choiceTimeoutMicrosForClass choiceReq.cortexChoiceTimeoutClass
       timeoutMinutes = max 1 ((timeoutMicros `div` 1000000) `div` 60)
@@ -231,30 +233,31 @@ requestOpenRouterChoice manager apiKey choiceReq = do
       requestPayload = openRouterRequestPayload choiceReq
       requestTimeoutFailure durationMs =
         OpenRouterRequestFailure
-          { requestFailureOutcome = "timeout",
-            requestFailureErrorType = "timeout",
-            requestFailureMessage = requestPhaseLabel <> " timed out after " <> T.pack (show timeoutMinutes) <> " minutes.",
-            requestFailurePayloadPreview = Nothing,
-            requestFailureDurationMs = Just durationMs,
-            requestFailureHttpStatusCode = Nothing,
-            requestFailureHttpErrorDetails = Nothing,
-            requestFailureUsage = Nothing
+          { requestFailureOutcome = "timeout"
+          , requestFailureErrorType = "timeout"
+          , requestFailureMessage =
+              requestPhaseLabel <> " timed out after " <> T.pack (show timeoutMinutes) <> " minutes."
+          , requestFailurePayloadPreview = Nothing
+          , requestFailureDurationMs = Just durationMs
+          , requestFailureHttpStatusCode = Nothing
+          , requestFailureHttpErrorDetails = Nothing
+          , requestFailureUsage = Nothing
           }
       requestFailureFromHttpError durationMs err =
         OpenRouterRequestFailure
-          { requestFailureOutcome = "error",
-            requestFailureErrorType = "network_error",
-            requestFailureMessage = requestPhaseLabel <> " failed after network retries.",
-            requestFailurePayloadPreview =
+          { requestFailureOutcome = "error"
+          , requestFailureErrorType = "network_error"
+          , requestFailureMessage = requestPhaseLabel <> " failed after network retries."
+          , requestFailurePayloadPreview =
               Just
                 ( Aeson.object
                     [ "error" .= truncateText 1000 (T.pack (displayException err))
                     ]
-                ),
-            requestFailureDurationMs = Just durationMs,
-            requestFailureHttpStatusCode = Nothing,
-            requestFailureHttpErrorDetails = Nothing,
-            requestFailureUsage = Nothing
+                )
+          , requestFailureDurationMs = Just durationMs
+          , requestFailureHttpStatusCode = Nothing
+          , requestFailureHttpErrorDetails = Nothing
+          , requestFailureUsage = Nothing
           }
       executeRequest request =
         recovering retryPolicy [\_ -> MC.Handler $ \(e :: HttpException) -> pure (shouldRetry e)] $ \_ -> do
@@ -298,41 +301,48 @@ requestOpenRouterChoice manager apiKey choiceReq = do
                 let maybeErrorDetails = decodeOpenRouterHttpErrorDetails body
                 pure . Left $
                   OpenRouterRequestFailure
-                    { requestFailureOutcome = "error",
-                      requestFailureErrorType = openRouterHttpFailureErrorType responseCode maybeErrorDetails,
-                      requestFailureMessage = openRouterHttpFailureMessage requestPhaseLabel responseCode maybeErrorDetails,
-                      requestFailurePayloadPreview =
+                    { requestFailureOutcome = "error"
+                    , requestFailureErrorType = openRouterHttpFailureErrorType responseCode maybeErrorDetails
+                    , requestFailureMessage =
+                        openRouterHttpFailureMessage requestPhaseLabel responseCode maybeErrorDetails
+                    , requestFailurePayloadPreview =
                         Just
                           ( Aeson.object $
                               [ "body" .= truncateText 1500 (decodeLazyUtf8 body)
                               ]
-                                <> foldMap (\providerName -> ["provider" .= providerName]) (maybeErrorDetails >>= (.httpErrorProviderName))
-                                <> foldMap (\providerMessage -> ["providerError" .= truncateText 600 providerMessage]) (maybeErrorDetails >>= (.httpErrorProviderMessage))
-                                <> foldMap (\providerRequestId -> ["providerRequestId" .= providerRequestId]) (maybeErrorDetails >>= (.httpErrorProviderRequestId))
-                          ),
-                      requestFailureDurationMs = Just requestDurationMs,
-                      requestFailureHttpStatusCode = Just responseCode,
-                      requestFailureHttpErrorDetails = maybeErrorDetails,
-                      requestFailureUsage = Nothing
+                                <> foldMap
+                                  (\providerName -> ["provider" .= providerName])
+                                  (maybeErrorDetails >>= (.httpErrorProviderName))
+                                <> foldMap
+                                  (\providerMessage -> ["providerError" .= truncateText 600 providerMessage])
+                                  (maybeErrorDetails >>= (.httpErrorProviderMessage))
+                                <> foldMap
+                                  (\providerRequestId -> ["providerRequestId" .= providerRequestId])
+                                  (maybeErrorDetails >>= (.httpErrorProviderRequestId))
+                          )
+                    , requestFailureDurationMs = Just requestDurationMs
+                    , requestFailureHttpStatusCode = Just responseCode
+                    , requestFailureHttpErrorDetails = maybeErrorDetails
+                    , requestFailureUsage = Nothing
                     }
               else case (Aeson.eitherDecode body :: Either String OpenRouterCompletion) of
                 Left err ->
                   pure . Left $
                     OpenRouterRequestFailure
-                      { requestFailureOutcome = "error",
-                        requestFailureErrorType = "decode_error",
-                        requestFailureMessage = requestPhaseLabel <> " returned an unreadable completion response.",
-                        requestFailurePayloadPreview =
+                      { requestFailureOutcome = "error"
+                      , requestFailureErrorType = "decode_error"
+                      , requestFailureMessage = requestPhaseLabel <> " returned an unreadable completion response."
+                      , requestFailurePayloadPreview =
                           Just
                             ( Aeson.object
-                                [ "body" .= truncateText 1500 (decodeLazyUtf8 body),
-                                  "decodeError" .= truncateText 1000 (T.pack err)
+                                [ "body" .= truncateText 1500 (decodeLazyUtf8 body)
+                                , "decodeError" .= truncateText 1000 (T.pack err)
                                 ]
-                            ),
-                        requestFailureDurationMs = Just requestDurationMs,
-                        requestFailureHttpStatusCode = Just responseCode,
-                        requestFailureHttpErrorDetails = Nothing,
-                        requestFailureUsage = Nothing
+                            )
+                      , requestFailureDurationMs = Just requestDurationMs
+                      , requestFailureHttpStatusCode = Just responseCode
+                      , requestFailureHttpErrorDetails = Nothing
+                      , requestFailureUsage = Nothing
                       }
                 Right completion ->
                   case completion.openRouterChoices of
@@ -340,28 +350,28 @@ requestOpenRouterChoice manager apiKey choiceReq = do
                       let usage = fmap OpenRouterProvider.openRouterUsageToCortex completion.openRouterUsage
                        in pure . Left $
                             OpenRouterRequestFailure
-                              { requestFailureOutcome = "error",
-                                requestFailureErrorType = "external_service_error",
-                                requestFailureMessage = requestPhaseLabel <> " returned no completion choices.",
-                                requestFailurePayloadPreview = Nothing,
-                                requestFailureDurationMs = Just requestDurationMs,
-                                requestFailureHttpStatusCode = Just responseCode,
-                                requestFailureHttpErrorDetails = Nothing,
-                                requestFailureUsage = usage
+                              { requestFailureOutcome = "error"
+                              , requestFailureErrorType = "external_service_error"
+                              , requestFailureMessage = requestPhaseLabel <> " returned no completion choices."
+                              , requestFailurePayloadPreview = Nothing
+                              , requestFailureDurationMs = Just requestDurationMs
+                              , requestFailureHttpStatusCode = Just responseCode
+                              , requestFailureHttpErrorDetails = Nothing
+                              , requestFailureUsage = usage
                               }
                     (choice : _) -> do
                       let mergedUsage = fmap OpenRouterProvider.openRouterUsageToCortex completion.openRouterUsage
                           mergedChoice =
                             (OpenRouterProvider.openRouterChoiceToCortex choice)
-                              { cortexChoiceUsage = mergedUsage,
-                                cortexChoiceReasoning = Nothing,
-                                cortexChoiceReasoningDetails = Nothing
+                              { cortexChoiceUsage = mergedUsage
+                              , cortexChoiceReasoning = Nothing
+                              , cortexChoiceReasoningDetails = Nothing
                               }
                       pure . Right $
                         OpenRouterChoiceResponse
-                          { openRouterResponseChoice = mergedChoice,
-                            openRouterResponseDurationMs = requestDurationMs,
-                            openRouterResponseHttpStatusCode = responseCode
+                          { openRouterResponseChoice = mergedChoice
+                          , openRouterResponseDurationMs = requestDurationMs
+                          , openRouterResponseHttpStatusCode = responseCode
                           }
       runWithEmptyChoicesRetry request = loop 0
         where
@@ -369,8 +379,8 @@ requestOpenRouterChoice manager apiKey choiceReq = do
             result <- runSingleAttempt request
             case result of
               Left failure
-                | isEmptyChoicesFailure failure,
-                  attempt < maxEmptyChoicesRetries -> do
+                | isEmptyChoicesFailure failure
+                , attempt < maxEmptyChoicesRetries -> do
                     threadDelay (emptyChoicesBackoffMicros attempt)
                     loop (attempt + 1)
               _ -> pure result
@@ -381,14 +391,14 @@ parseOpenRouterRequest :: Text -> Aeson.Value -> IO Request
 parseOpenRouterRequest apiKey payload = do
   base <- parseRequest openRouterChatUrl
   let headers =
-        [ ("Accept", "application/json"),
-          ("Content-Type", "application/json"),
-          ("User-Agent", "Portman/1.0"),
-          ("Authorization", TE.encodeUtf8 ("Bearer " <> apiKey))
+        [ ("Accept", "application/json")
+        , ("Content-Type", "application/json")
+        , ("User-Agent", "Portman/1.0")
+        , ("Authorization", TE.encodeUtf8 ("Bearer " <> apiKey))
         ]
   pure
     base
-      { method = "POST",
-        requestHeaders = headers,
-        requestBody = RequestBodyLBS (Aeson.encode payload)
+      { method = "POST"
+      , requestHeaders = headers
+      , requestBody = RequestBodyLBS (Aeson.encode payload)
       }

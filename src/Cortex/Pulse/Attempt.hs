@@ -1,5 +1,5 @@
 module Cortex.Pulse.Attempt
-  ( module Cortex.Pulse.Executor.Attempt,
+  ( module Cortex.Pulse.Executor.Attempt
   )
 where
 

@@ -3,44 +3,46 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Patterns.DeepReport.LegacyReportTask
-  ( CortexReportTaskConfig (..),
-    CortexReportTaskFailure (..),
-    CortexReportTaskResult (..),
-    CortexRequiredToolEvidenceStatus (..),
-    CortexToolCallResultStatus (..),
-    hasSuccessfulToolEvidence,
-    latestSuccessfulToolResult,
-    missingRequiredTools,
-    requiredToolEvidenceStatus,
-    runReportTask,
-    toolCallResultStatus,
+  ( CortexReportTaskConfig (..)
+  , CortexReportTaskFailure (..)
+  , CortexReportTaskResult (..)
+  , CortexRequiredToolEvidenceStatus (..)
+  , CortexToolCallResultStatus (..)
+  , hasSuccessfulToolEvidence
+  , latestSuccessfulToolResult
+  , missingRequiredTools
+  , requiredToolEvidenceStatus
+  , runReportTask
+  , toolCallResultStatus
   )
 where
 
 import Control.Monad.IO.Class (MonadIO)
-import Cortex.Capability.Model.Types
-  ( CortexChoiceTimeoutClass,
-    CortexGroundingMode (..),
-  )
-import Cortex.Capability.Tool.Definition (toolDefinitionName)
-import Cortex.Capability.Tool.Record (CortexToolCallRecord (..))
-import Cortex.Nous.Patterns.DeepReport.Gather
-  ( CortexGatherRepairTaskConfig (..),
-    CortexGatherTaskConfig (..),
-    CortexGatherTaskResult (..),
-    runGatherRepairTask,
-    runGatherTask,
-  )
-import Cortex.Nous.Thought.Runtime qualified as TaskRuntime
-import Cortex.Nous.Thought.Stage (CortexStageDescriptor (..))
-import Cortex.Nous.Thought.ToolHost qualified as TaskToolHost
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Text (Text)
 import Data.Text qualified as T
+
+import Cortex.Capability.Model.Types
+  ( CortexChoiceTimeoutClass
+  , CortexGroundingMode (..)
+  )
+import Cortex.Capability.Tool.Definition (toolDefinitionName)
+import Cortex.Capability.Tool.Record (CortexToolCallRecord (..))
+import Cortex.Nous.Patterns.DeepReport.Gather
+  ( CortexGatherRepairTaskConfig (..)
+  , CortexGatherTaskConfig (..)
+  , CortexGatherTaskResult (..)
+  , runGatherRepairTask
+  , runGatherTask
+  )
+import Cortex.Nous.Thought.Runtime qualified as TaskRuntime
+import Cortex.Nous.Thought.Stage (CortexStageDescriptor (..))
+import Cortex.Nous.Thought.ToolHost qualified as TaskToolHost
+
 import Platform.Serde.Json.Object
-  ( hasObjectBool,
-    lookupObjectText,
+  ( hasObjectBool
+  , lookupObjectText
   )
 
 data CortexToolCallResultStatus
@@ -57,45 +59,45 @@ data CortexRequiredToolEvidenceStatus
   deriving stock (Eq, Show)
 
 data CortexReportTaskFailure = CortexReportTaskFailure
-  { cortexReportTaskFailureText :: Text,
-    cortexReportTaskFailureToolCallRecords :: [CortexToolCallRecord]
+  { cortexReportTaskFailureText :: Text
+  , cortexReportTaskFailureToolCallRecords :: [CortexToolCallRecord]
   }
   deriving stock (Eq, Show)
 
 data CortexReportTaskResult artifact = CortexReportTaskResult
-  { cortexReportTaskResultArtifact :: artifact,
-    cortexReportTaskResultToolCallRecords :: [CortexToolCallRecord]
+  { cortexReportTaskResultArtifact :: artifact
+  , cortexReportTaskResultToolCallRecords :: [CortexToolCallRecord]
   }
   deriving stock (Eq, Show)
 
 data CortexReportTaskConfig m artifact = CortexReportTaskConfig
-  { cortexReportTaskPlannerModelId :: Text,
-    cortexReportTaskPlannerSystemPrompt :: Text,
-    cortexReportTaskPlannerInput :: Text,
-    cortexReportTaskPlannerTimeoutClass :: CortexChoiceTimeoutClass,
-    cortexReportTaskGatherModelId :: Text,
-    cortexReportTaskGatherGroundingMode :: CortexGroundingMode,
-    cortexReportTaskGatherSystemPrompt :: Text,
-    cortexReportTaskBuildGatherInput :: Text -> Text,
-    cortexReportTaskGatherTools :: [Aeson.Value],
-    cortexReportTaskGatherStageName :: Text,
-    cortexReportTaskGatherTimeoutClass :: CortexChoiceTimeoutClass,
-    cortexReportTaskGatherStepBudget :: Int,
-    cortexReportTaskGatherBudgetExceededText :: Text,
-    cortexReportTaskRequiredToolNames :: [Text],
-    cortexReportTaskBuildGatherRepairInput :: Text -> Text -> Int -> [Text] -> Text,
-    cortexReportTaskGatherRepairStageName :: Text,
-    cortexReportTaskGatherRepairMaxSteps :: Int,
-    cortexReportTaskAnalystModelId :: Text,
-    cortexReportTaskAnalystSystemPrompt :: Text,
-    cortexReportTaskBuildAnalystInput :: Text -> Text -> [CortexToolCallRecord] -> Text,
-    cortexReportTaskAnalystTimeoutClass :: CortexChoiceTimeoutClass,
-    cortexReportTaskReviewerModelId :: Text,
-    cortexReportTaskReviewerSystemPrompt :: Text,
-    cortexReportTaskBuildReviewerInput :: Text -> Text -> Text -> [CortexToolCallRecord] -> Text,
-    cortexReportTaskReviewerTimeoutClass :: CortexChoiceTimeoutClass,
-    cortexReportTaskBeforeAnalysis :: [CortexToolCallRecord] -> m (Either Text ()),
-    cortexReportTaskFinalize :: Text -> [CortexToolCallRecord] -> m (Either Text artifact)
+  { cortexReportTaskPlannerModelId :: Text
+  , cortexReportTaskPlannerSystemPrompt :: Text
+  , cortexReportTaskPlannerInput :: Text
+  , cortexReportTaskPlannerTimeoutClass :: CortexChoiceTimeoutClass
+  , cortexReportTaskGatherModelId :: Text
+  , cortexReportTaskGatherGroundingMode :: CortexGroundingMode
+  , cortexReportTaskGatherSystemPrompt :: Text
+  , cortexReportTaskBuildGatherInput :: Text -> Text
+  , cortexReportTaskGatherTools :: [Aeson.Value]
+  , cortexReportTaskGatherStageName :: Text
+  , cortexReportTaskGatherTimeoutClass :: CortexChoiceTimeoutClass
+  , cortexReportTaskGatherStepBudget :: Int
+  , cortexReportTaskGatherBudgetExceededText :: Text
+  , cortexReportTaskRequiredToolNames :: [Text]
+  , cortexReportTaskBuildGatherRepairInput :: Text -> Text -> Int -> [Text] -> Text
+  , cortexReportTaskGatherRepairStageName :: Text
+  , cortexReportTaskGatherRepairMaxSteps :: Int
+  , cortexReportTaskAnalystModelId :: Text
+  , cortexReportTaskAnalystSystemPrompt :: Text
+  , cortexReportTaskBuildAnalystInput :: Text -> Text -> [CortexToolCallRecord] -> Text
+  , cortexReportTaskAnalystTimeoutClass :: CortexChoiceTimeoutClass
+  , cortexReportTaskReviewerModelId :: Text
+  , cortexReportTaskReviewerSystemPrompt :: Text
+  , cortexReportTaskBuildReviewerInput :: Text -> Text -> Text -> [CortexToolCallRecord] -> Text
+  , cortexReportTaskReviewerTimeoutClass :: CortexChoiceTimeoutClass
+  , cortexReportTaskBeforeAnalysis :: [CortexToolCallRecord] -> m (Either Text ())
+  , cortexReportTaskFinalize :: Text -> [CortexToolCallRecord] -> m (Either Text artifact)
   }
 
 toolCallResultStatus :: Aeson.Value -> CortexToolCallResultStatus
@@ -155,11 +157,11 @@ missingRequiredTools requiredToolNames toolCallRecords =
         CortexRequiredToolEvidenceSuccess -> False
         CortexRequiredToolEvidenceNoData -> False
 
-runReportTask ::
-  (MonadIO m) =>
-  TaskToolHost.CortexTaskToolHost m ->
-  CortexReportTaskConfig m artifact ->
-  m (Either CortexReportTaskFailure (CortexReportTaskResult artifact))
+runReportTask
+  :: MonadIO m
+  => TaskToolHost.CortexTaskToolHost m
+  -> CortexReportTaskConfig m artifact
+  -> m (Either CortexReportTaskFailure (CortexReportTaskResult artifact))
 runReportTask taskToolHost config = do
   let taskHost = TaskToolHost.taskToolHostBase taskToolHost
   TaskRuntime.emitSummary
@@ -185,16 +187,16 @@ runReportTask taskToolHost config = do
     runGatherTask
       taskToolHost
       CortexGatherTaskConfig
-        { cortexGatherTaskModelId = config.cortexReportTaskGatherModelId,
-          cortexGatherTaskGroundingMode = config.cortexReportTaskGatherGroundingMode,
-          cortexGatherTaskSystemPrompt = config.cortexReportTaskGatherSystemPrompt,
-          cortexGatherTaskUserInput = config.cortexReportTaskBuildGatherInput plannerNotes,
-          cortexGatherTaskTools = config.cortexReportTaskGatherTools,
-          cortexGatherTaskStageName = config.cortexReportTaskGatherStageName,
-          cortexGatherTaskTimeoutClass = config.cortexReportTaskGatherTimeoutClass,
-          cortexGatherTaskMaxOutputTokens = Nothing,
-          cortexGatherTaskStepBudget = config.cortexReportTaskGatherStepBudget,
-          cortexGatherTaskBudgetExceededText = config.cortexReportTaskGatherBudgetExceededText
+        { cortexGatherTaskModelId = config.cortexReportTaskGatherModelId
+        , cortexGatherTaskGroundingMode = config.cortexReportTaskGatherGroundingMode
+        , cortexGatherTaskSystemPrompt = config.cortexReportTaskGatherSystemPrompt
+        , cortexGatherTaskUserInput = config.cortexReportTaskBuildGatherInput plannerNotes
+        , cortexGatherTaskTools = config.cortexReportTaskGatherTools
+        , cortexGatherTaskStageName = config.cortexReportTaskGatherStageName
+        , cortexGatherTaskTimeoutClass = config.cortexReportTaskGatherTimeoutClass
+        , cortexGatherTaskMaxOutputTokens = Nothing
+        , cortexGatherTaskStepBudget = config.cortexReportTaskGatherStepBudget
+        , cortexGatherTaskBudgetExceededText = config.cortexReportTaskGatherBudgetExceededText
         }
   gatheredResult <- ensureRequiredEvidence taskToolHost config plannerNotes gatheredInitial
   case gatheredResult of
@@ -205,10 +207,10 @@ runReportTask taskToolHost config = do
           TaskRuntime.emitError
             taskHost
             CortexStageDescriptor
-              { cortexStageAgentName = Just "Gatherer",
-                cortexStageStageName = Just "pre_analysis_validation",
-                cortexStageStep = Just 1,
-                cortexStageToolName = Nothing
+              { cortexStageAgentName = Just "Gatherer"
+              , cortexStageStageName = Just "pre_analysis_validation"
+              , cortexStageStep = Just 1
+              , cortexStageToolName = Nothing
               }
             "Evidence validation failed"
             (Just errText)
@@ -254,26 +256,28 @@ runReportTask taskToolHost config = do
               pure
                 ( Right
                     CortexReportTaskResult
-                      { cortexReportTaskResultArtifact = artifact,
-                        cortexReportTaskResultToolCallRecords = gathered.cortexGatherTaskResultToolCallRecords
+                      { cortexReportTaskResultArtifact = artifact
+                      , cortexReportTaskResultToolCallRecords = gathered.cortexGatherTaskResultToolCallRecords
                       }
                 )
   where
     mkFailure errText toolCallRecords =
       CortexReportTaskFailure
-        { cortexReportTaskFailureText = errText,
-          cortexReportTaskFailureToolCallRecords = toolCallRecords
+        { cortexReportTaskFailureText = errText
+        , cortexReportTaskFailureToolCallRecords = toolCallRecords
         }
 
-ensureRequiredEvidence ::
-  (MonadIO m) =>
-  TaskToolHost.CortexTaskToolHost m ->
-  CortexReportTaskConfig m artifact ->
-  Text ->
-  CortexGatherTaskResult ->
-  m (Either CortexReportTaskFailure CortexGatherTaskResult)
+ensureRequiredEvidence
+  :: MonadIO m
+  => TaskToolHost.CortexTaskToolHost m
+  -> CortexReportTaskConfig m artifact
+  -> Text
+  -> CortexGatherTaskResult
+  -> m (Either CortexReportTaskFailure CortexGatherTaskResult)
 ensureRequiredEvidence taskToolHost config plannerNotes gathered =
-  case missingRequiredTools config.cortexReportTaskRequiredToolNames gathered.cortexGatherTaskResultToolCallRecords of
+  case missingRequiredTools
+    config.cortexReportTaskRequiredToolNames
+    gathered.cortexGatherTaskResultToolCallRecords of
     [] -> pure (Right gathered)
     missingTools -> do
       TaskRuntime.emitSummary
@@ -282,26 +286,28 @@ ensureRequiredEvidence taskToolHost config plannerNotes gathered =
         (Just "required_evidence")
         (Just 1)
         "Missing required evidence"
-        (Just ("Repairing missing deterministic tools before analysis: " <> T.intercalate ", " missingTools <> "."))
+        ( Just
+            ("Repairing missing deterministic tools before analysis: " <> T.intercalate ", " missingTools <> ".")
+        )
         (Just (Aeson.object ["missingTools" Aeson..= missingTools]))
       let repairTools = filterToolsByName missingTools config.cortexReportTaskGatherTools
       repairResult <-
         runGatherRepairTask
           taskToolHost
           CortexGatherRepairTaskConfig
-            { cortexGatherRepairTaskModelId = config.cortexReportTaskGatherModelId,
-              cortexGatherRepairTaskGroundingMode = config.cortexReportTaskGatherGroundingMode,
-              cortexGatherRepairTaskSystemPrompt = config.cortexReportTaskGatherSystemPrompt,
-              cortexGatherRepairTaskBuildInput =
+            { cortexGatherRepairTaskModelId = config.cortexReportTaskGatherModelId
+            , cortexGatherRepairTaskGroundingMode = config.cortexReportTaskGatherGroundingMode
+            , cortexGatherRepairTaskSystemPrompt = config.cortexReportTaskGatherSystemPrompt
+            , cortexGatherRepairTaskBuildInput =
                 config.cortexReportTaskBuildGatherRepairInput
                   plannerNotes
-                  gathered.cortexGatherTaskResultSummary,
-              cortexGatherRepairTaskTools = repairTools,
-              cortexGatherRepairTaskMissingToolNames = missingTools,
-              cortexGatherRepairTaskStageName = config.cortexReportTaskGatherRepairStageName,
-              cortexGatherRepairTaskTimeoutClass = config.cortexReportTaskGatherTimeoutClass,
-              cortexGatherRepairTaskMaxOutputTokens = Nothing,
-              cortexGatherRepairTaskMaxSteps =
+                  gathered.cortexGatherTaskResultSummary
+            , cortexGatherRepairTaskTools = repairTools
+            , cortexGatherRepairTaskMissingToolNames = missingTools
+            , cortexGatherRepairTaskStageName = config.cortexReportTaskGatherRepairStageName
+            , cortexGatherRepairTaskTimeoutClass = config.cortexReportTaskGatherTimeoutClass
+            , cortexGatherRepairTaskMaxOutputTokens = Nothing
+            , cortexGatherRepairTaskMaxSteps =
                 min
                   config.cortexReportTaskGatherRepairMaxSteps
                   (max 1 (length missingTools))
@@ -313,11 +319,11 @@ ensureRequiredEvidence taskToolHost config plannerNotes gathered =
                     "\n\n"
                     ( filter
                         (not . T.null . T.strip)
-                        [ gathered.cortexGatherTaskResultSummary,
-                          repairResult.cortexGatherTaskResultSummary
+                        [ gathered.cortexGatherTaskResultSummary
+                        , repairResult.cortexGatherTaskResultSummary
                         ]
-                    ),
-                cortexGatherTaskResultToolCallRecords =
+                    )
+              , cortexGatherTaskResultToolCallRecords =
                   gathered.cortexGatherTaskResultToolCallRecords
                     <> repairResult.cortexGatherTaskResultToolCallRecords
               }
@@ -331,10 +337,10 @@ ensureRequiredEvidence taskToolHost config plannerNotes gathered =
           TaskRuntime.emitError
             taskHost
             CortexStageDescriptor
-              { cortexStageAgentName = Just "Gatherer",
-                cortexStageStageName = Just "required_evidence",
-                cortexStageStep = Just 1,
-                cortexStageToolName = Nothing
+              { cortexStageAgentName = Just "Gatherer"
+              , cortexStageStageName = Just "required_evidence"
+              , cortexStageStep = Just 1
+              , cortexStageToolName = Nothing
               }
             "Required evidence missing"
             (Just ("Missing required tools after repair pass: " <> T.intercalate ", " stillMissing <> "."))
@@ -344,8 +350,8 @@ ensureRequiredEvidence taskToolHost config plannerNotes gathered =
                   { cortexReportTaskFailureText =
                       "Report gathering failed: missing required deterministic evidence after one repair pass: "
                         <> T.intercalate ", " stillMissing
-                        <> ".",
-                    cortexReportTaskFailureToolCallRecords =
+                        <> "."
+                  , cortexReportTaskFailureToolCallRecords =
                       mergedGathered.cortexGatherTaskResultToolCallRecords
                   }
             )
@@ -355,9 +361,9 @@ ensureRequiredEvidence taskToolHost config plannerNotes gathered =
 successfulToolResults :: Text -> [CortexToolCallRecord] -> [Aeson.Value]
 successfulToolResults toolName toolCallRecords =
   [ record.cortexToolCallRecordResult
-  | record <- toolCallRecords,
-    record.cortexToolCallRecordName == toolName,
-    toolCallResultStatus record.cortexToolCallRecordResult == CortexToolCallResultSuccess
+  | record <- toolCallRecords
+  , record.cortexToolCallRecordName == toolName
+  , toolCallResultStatus record.cortexToolCallRecordResult == CortexToolCallResultSuccess
   ]
 
 filterToolsByName :: [Text] -> [Aeson.Value] -> [Aeson.Value]

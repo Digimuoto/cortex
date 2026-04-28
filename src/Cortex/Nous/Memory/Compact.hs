@@ -5,14 +5,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Memory.Compact
-  ( CompactionConfig (..),
-    defaultCompactionConfig,
-    MessageForCompaction (..),
-    CheckpointSourceReference (..),
-    CheckpointSummary (..),
-    buildCheckpointSummary,
-    estimateTextTokens,
-    estimateMessageTokens,
+  ( CompactionConfig (..)
+  , defaultCompactionConfig
+  , MessageForCompaction (..)
+  , CheckpointSourceReference (..)
+  , CheckpointSummary (..)
+  , buildCheckpointSummary
+  , estimateTextTokens
+  , estimateMessageTokens
   )
 where
 
@@ -26,57 +26,58 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
+
 import Platform.Text (truncateText)
 
 -- | Deterministic compaction controls.
 data CompactionConfig = CompactionConfig
-  { keepRecentMessageCount :: Int,
-    minMessagesToCompact :: Int,
-    maxExcerptCount :: Int
+  { keepRecentMessageCount :: Int
+  , minMessagesToCompact :: Int
+  , maxExcerptCount :: Int
   }
   deriving stock (Eq, Show, Generic)
 
 defaultCompactionConfig :: CompactionConfig
 defaultCompactionConfig =
   CompactionConfig
-    { keepRecentMessageCount = 12,
-      minMessagesToCompact = 8,
-      maxExcerptCount = 6
+    { keepRecentMessageCount = 12
+    , minMessagesToCompact = 8
+    , maxExcerptCount = 6
     }
 
 data MessageForCompaction = MessageForCompaction
-  { messageId :: UUID,
-    messageSequence :: Int64,
-    role :: Text,
-    content :: Text,
-    toolName :: Maybe Text,
-    toolCallId :: Maybe Text
+  { messageId :: UUID
+  , messageSequence :: Int64
+  , role :: Text
+  , content :: Text
+  , toolName :: Maybe Text
+  , toolCallId :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Source mapping retained for replayability from compacted summary back to raw messages.
 data CheckpointSourceReference = CheckpointSourceReference
-  { sourceMessageId :: UUID,
-    sourceMessageSequence :: Int64,
-    sourceRole :: Text,
-    sourceToolName :: Maybe Text
+  { sourceMessageId :: UUID
+  , sourceMessageSequence :: Int64
+  , sourceRole :: Text
+  , sourceToolName :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
 data CheckpointSummary = CheckpointSummary
-  { summaryText :: Text,
-    sourceMessageCount :: Int64,
-    sourceStartSequence :: Int64,
-    sourceEndSequence :: Int64,
-    sourceReferences :: [CheckpointSourceReference],
-    estimatedTokensBefore :: Int64,
-    estimatedTokensAfter :: Int64
+  { summaryText :: Text
+  , sourceMessageCount :: Int64
+  , sourceStartSequence :: Int64
+  , sourceEndSequence :: Int64
+  , sourceReferences :: [CheckpointSourceReference]
+  , estimatedTokensBefore :: Int64
+  , estimatedTokensAfter :: Int64
   }
   deriving stock (Eq, Show, Generic)
 
-buildCheckpointSummary ::
-  CompactionConfig -> [MessageForCompaction] -> Either Text CheckpointSummary
+buildCheckpointSummary
+  :: CompactionConfig -> [MessageForCompaction] -> Either Text CheckpointSummary
 buildCheckpointSummary rawConfig rawMessages = do
   let messages = sortOn messageSequence rawMessages
       keepCount = clampInt 1 200 rawConfig.keepRecentMessageCount
@@ -104,36 +105,36 @@ buildCheckpointSummary rawConfig rawMessages = do
     else
       Right
         CheckpointSummary
-          { summaryText = summary,
-            sourceMessageCount = fromIntegral (length compacted),
-            sourceStartSequence = startSeq,
-            sourceEndSequence = endSeq,
-            sourceReferences = sourceRefs,
-            estimatedTokensBefore = beforeTokens,
-            estimatedTokensAfter = afterTokens
+          { summaryText = summary
+          , sourceMessageCount = fromIntegral (length compacted)
+          , sourceStartSequence = startSeq
+          , sourceEndSequence = endSeq
+          , sourceReferences = sourceRefs
+          , estimatedTokensBefore = beforeTokens
+          , estimatedTokensAfter = afterTokens
           }
 
 toSourceReference :: MessageForCompaction -> CheckpointSourceReference
 toSourceReference msg =
   CheckpointSourceReference
-    { sourceMessageId = msg.messageId,
-      sourceMessageSequence = msg.messageSequence,
-      sourceRole = normalizeRole msg.role,
-      sourceToolName = msg.toolName >>= nonEmptyText . T.strip
+    { sourceMessageId = msg.messageId
+    , sourceMessageSequence = msg.messageSequence
+    , sourceRole = normalizeRole msg.role
+    , sourceToolName = msg.toolName >>= nonEmptyText . T.strip
     }
 
 renderSummary :: CompactionConfig -> [MessageForCompaction] -> Int64 -> Text
 renderSummary config compacted beforeTokens =
   T.unlines $
-    [ "Deterministic checkpoint summary.",
-      "Compacted message range: #"
+    [ "Deterministic checkpoint summary."
+    , "Compacted message range: #"
         <> tShow startSeq
         <> " to #"
         <> tShow endSeq
         <> " ("
         <> tShow (length compacted)
-        <> " messages).",
-      "Role counts: "
+        <> " messages)."
+    , "Role counts: "
         <> "user="
         <> countOf "user"
         <> ", assistant="
@@ -142,8 +143,8 @@ renderSummary config compacted beforeTokens =
         <> countOf "tool"
         <> ", system="
         <> countOf "system"
-        <> ".",
-      "Estimated tokens (before -> summary): "
+        <> "."
+    , "Estimated tokens (before -> summary): "
         <> tShow beforeTokens
         <> " -> "
         <> tShow (estimateTextTokens draftWithoutTokenLine)
@@ -181,21 +182,21 @@ renderSummary config compacted beforeTokens =
       if null firstUserIntents && null lastUserIntents
         then []
         else
-          [ "User intent snapshots:",
-            "First intents: " <> intentLine firstUserIntents,
-            "Latest intents: " <> intentLine (reverse lastUserIntents)
+          [ "User intent snapshots:"
+          , "First intents: " <> intentLine firstUserIntents
+          , "Latest intents: " <> intentLine (reverse lastUserIntents)
           ]
     draftWithoutTokenLine =
       T.unlines
-        [ "Deterministic checkpoint summary.",
-          "Compacted message range: #"
+        [ "Deterministic checkpoint summary."
+        , "Compacted message range: #"
             <> tShow startSeq
             <> " to #"
             <> tShow endSeq
             <> " ("
             <> tShow (length compacted)
-            <> " messages).",
-          "Role counts: "
+            <> " messages)."
+        , "Role counts: "
             <> "user="
             <> countOf "user"
             <> ", assistant="
@@ -295,7 +296,7 @@ clampInt :: Int -> Int -> Int -> Int
 clampInt minValue maxValue value =
   max minValue (min maxValue value)
 
-tShow :: (Show a) => a -> Text
+tShow :: Show a => a -> Text
 tShow = T.pack . show
 
 sequenceBounds :: [MessageForCompaction] -> (Int64, Int64)

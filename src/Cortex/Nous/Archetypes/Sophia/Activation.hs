@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Sophia.Activation
-  ( sophiaCapabilityBundle,
+  ( sophiaCapabilityBundle
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Sophia),
-    NousCapabilityBundle,
-    nousCapabilityBundle,
+  ( NousArchetype (Sophia)
+  , NousCapabilityBundle
+  , nousCapabilityBundle
   )
 
 sophiaCapabilityBundle :: NousCapabilityBundle

@@ -3,9 +3,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Cortex.Capability.Provider.OpenRouter.Embedding
-  ( openRouterEmbeddingModelId,
-    requestOpenRouterEmbeddings,
-    renderPgVectorLiteral,
+  ( openRouterEmbeddingModelId
+  , requestOpenRouterEmbeddings
+  , renderPgVectorLiteral
   )
 where
 
@@ -13,10 +13,6 @@ import Control.Exception (throwIO, try)
 import Control.Monad (void, when)
 import Control.Monad.Catch qualified as MC
 import Control.Retry (recovering)
-import Cortex.Capability.Provider.OpenRouter.Client
-  ( OpenRouterHttpErrorDetails (httpErrorProviderMessage),
-    decodeOpenRouterHttpErrorDetails,
-  )
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BSL
@@ -25,26 +21,32 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Network.HTTP.Client
-  ( HttpException (..),
-    HttpExceptionContent (StatusCodeException),
-    Manager,
-    Request,
-    RequestBody (RequestBodyLBS),
-    httpLbs,
-    method,
-    parseRequest,
-    requestBody,
-    requestHeaders,
-    responseBody,
-    responseStatus,
+  ( HttpException (..)
+  , HttpExceptionContent (StatusCodeException)
+  , Manager
+  , Request
+  , RequestBody (RequestBodyLBS)
+  , httpLbs
+  , method
+  , parseRequest
+  , requestBody
+  , requestHeaders
+  , responseBody
+  , responseStatus
   )
 import Network.HTTP.Types.Status (status429, status500, status503, status504, statusCode)
+
+import Cortex.Capability.Provider.OpenRouter.Client
+  ( OpenRouterHttpErrorDetails (httpErrorProviderMessage)
+  , decodeOpenRouterHttpErrorDetails
+  )
+
 import Platform.HTTP.Retry
-  ( retryPolicy,
-    shouldRetry,
+  ( retryPolicy
+  , shouldRetry
   )
 import Platform.Serde.Json.Text
-  ( decodeLazyUtf8,
+  ( decodeLazyUtf8
   )
 
 openRouterEmbeddingsUrl :: String
@@ -59,8 +61,8 @@ data OpenRouterEmbeddingResponse = OpenRouterEmbeddingResponse
   deriving stock (Eq, Show)
 
 data OpenRouterEmbeddingDatum = OpenRouterEmbeddingDatum
-  { orembIndex :: Int,
-    orembEmbedding :: [Double]
+  { orembIndex :: Int
+  , orembEmbedding :: [Double]
   }
   deriving stock (Eq, Show)
 
@@ -75,11 +77,11 @@ instance Aeson.FromJSON OpenRouterEmbeddingDatum where
       <$> o Aeson..:? "index" Aeson..!= 0
       <*> o Aeson..: "embedding"
 
-requestOpenRouterEmbeddings ::
-  Manager ->
-  Text ->
-  [Text] ->
-  IO (Either Text [[Double]])
+requestOpenRouterEmbeddings
+  :: Manager
+  -> Text
+  -> [Text]
+  -> IO (Either Text [[Double]])
 requestOpenRouterEmbeddings _manager _apiKey [] = pure (Right [])
 requestOpenRouterEmbeddings manager apiKey inputs = do
   request <- parseEmbeddingsRequest apiKey inputs
@@ -133,21 +135,21 @@ parseEmbeddingsRequest :: Text -> [Text] -> IO Request
 parseEmbeddingsRequest apiKey inputs = do
   base <- parseRequest openRouterEmbeddingsUrl
   let headers =
-        [ ("Accept", "application/json"),
-          ("Content-Type", "application/json"),
-          ("User-Agent", "Portman/1.0"),
-          ("Authorization", TE.encodeUtf8 ("Bearer " <> apiKey))
+        [ ("Accept", "application/json")
+        , ("Content-Type", "application/json")
+        , ("User-Agent", "Portman/1.0")
+        , ("Authorization", TE.encodeUtf8 ("Bearer " <> apiKey))
         ]
       payload =
         Aeson.object
-          [ "model" .= openRouterEmbeddingModelId,
-            "input" .= inputs
+          [ "model" .= openRouterEmbeddingModelId
+          , "input" .= inputs
           ]
   pure
     base
-      { method = "POST",
-        requestHeaders = headers,
-        requestBody = RequestBodyLBS (Aeson.encode payload)
+      { method = "POST"
+      , requestHeaders = headers
+      , requestBody = RequestBodyLBS (Aeson.encode payload)
       }
 
 renderPgVectorLiteral :: [Double] -> Either Text Text

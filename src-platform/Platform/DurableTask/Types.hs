@@ -4,18 +4,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Platform.DurableTask.Types
-  ( RunStatus (..),
-    runStatusToText,
-    runStatusFromText,
-    StageStatus (..),
-    stageStatusToText,
-    stageStatusFromText,
-    TriggerSource (..),
-    triggerSourceToText,
-    triggerSourceFromText,
-    RunOutcome (..),
-    runOutcomeToText,
-    runOutcomeToFinalStatus,
+  ( RunStatus (..)
+  , runStatusToText
+  , runStatusFromText
+  , StageStatus (..)
+  , stageStatusToText
+  , stageStatusFromText
+  , TriggerSource (..)
+  , triggerSourceToText
+  , triggerSourceFromText
+  , RunOutcome (..)
+  , runOutcomeToText
+  , runOutcomeToFinalStatus
   )
 where
 

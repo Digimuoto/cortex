@@ -1,8 +1,8 @@
 -- | Generic durable output and provenance substrate.
 module Cortex.Artifact
-  ( module Cortex.Artifact.Host,
-    module Cortex.Artifact.IR,
-    module Cortex.Artifact.Metadata,
+  ( module Cortex.Artifact.Host
+  , module Cortex.Artifact.IR
+  , module Cortex.Artifact.Metadata
   )
 where
 

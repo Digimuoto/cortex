@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Poiesis
-  ( poiesisDefinition,
+  ( poiesisDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Poiesis),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Poiesis)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 poiesisDefinition :: NousArchetypeDefinition

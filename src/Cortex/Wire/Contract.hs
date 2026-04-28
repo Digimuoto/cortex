@@ -1,5 +1,5 @@
 module Cortex.Wire.Contract
-  ( module Cortex.Wire.Contracts,
+  ( module Cortex.Wire.Contracts
   )
 where
 

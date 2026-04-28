@@ -4,41 +4,42 @@
 
 module Cortex.Pulse.DIG449Spec (spec) where
 
-import Cortex.Algebra.Graph
-  ( Graph (..),
-    toRelation,
-  )
-import Cortex.Pulse.Executor
-  ( RewriteExhaustionPolicy (..),
-    SerializableStageDefinition (..),
-    StableStageId (..),
-    StageDefinition (..),
-    StagePlan (..),
-    StageReplaySafety (..),
-    StageRetryBackoff (..),
-    StageRetryExhaustion (..),
-    StageRetryPolicy (..),
-    applyRewrite,
-    buildStageTemplateRegistry,
-    hydrateRewrite,
-    stageActionId,
-    stageTemplateId,
-    toSerializableStageDefinition,
-  )
-import Cortex.Pulse.Memory (defaultMemoryStrategy)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Rewrite
-  ( ExpansionMode (..),
-    GraphRewrite (..),
-    SubgraphSpec (..),
-  )
-import Cortex.Pulse.Types (defaultRewriteBudget)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( Graph (..)
+  , toRelation
+  )
+import Cortex.Pulse.Executor
+  ( RewriteExhaustionPolicy (..)
+  , SerializableStageDefinition (..)
+  , StableStageId (..)
+  , StageDefinition (..)
+  , StagePlan (..)
+  , StageReplaySafety (..)
+  , StageRetryBackoff (..)
+  , StageRetryExhaustion (..)
+  , StageRetryPolicy (..)
+  , applyRewrite
+  , buildStageTemplateRegistry
+  , hydrateRewrite
+  , stageActionId
+  , stageTemplateId
+  , toSerializableStageDefinition
+  )
+import Cortex.Pulse.Memory (defaultMemoryStrategy)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Rewrite
+  ( ExpansionMode (..)
+  , GraphRewrite (..)
+  , SubgraphSpec (..)
+  )
+import Cortex.Pulse.Types (defaultRewriteBudget)
 
 data TestStage = StageA | Sub1
   deriving stock (Eq, Ord, Show, Generic)
@@ -55,23 +56,23 @@ spec = do
     it "round-trips rewrite retry predicates through JSON and legacy payloads" $ do
       let customRetryPolicy =
             StageRetryPolicy
-              { srpPredicateName = "never_retry",
-                srpMaxAttempts = 3,
-                srpBackoff = FixedBackoffMicros 1000000,
-                srpRetryable = const False, -- NEVER retry
-                srpExhaustion = ExhaustionFailsRun
+              { srpPredicateName = "never_retry"
+              , srpMaxAttempts = 3
+              , srpBackoff = FixedBackoffMicros 1000000
+              , srpRetryable = const False -- NEVER retry
+              , srpExhaustion = ExhaustionFailsRun
               }
           mkDef sid tid retry =
             StageDefinition
-              { sdStageId = sid,
-                sdTemplateId = tid,
-                sdActionId = stageActionId sid,
-                sdReplaySafety = SafeToReplay,
-                sdReplayPolicyOverride = Nothing,
-                sdTimeoutSeconds = Nothing,
-                sdRetryPolicy = Just retry,
-                sdAction = \_ -> pure (error "not implemented"),
-                sdMemoryStrategy = defaultMemoryStrategy
+              { sdStageId = sid
+              , sdTemplateId = tid
+              , sdActionId = stageActionId sid
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Just retry
+              , sdAction = \_ -> pure (error "not implemented")
+              , sdMemoryStrategy = defaultMemoryStrategy
               }
 
           -- 1. Initial plan with StageA
@@ -79,16 +80,16 @@ spec = do
           initialDefs = Map.fromList [(NodeId "a", mkDef StageA (stageTemplateId StageA) customRetryPolicy)]
           initialPlan =
             StagePlan
-              { spInitialState = Aeson.Null,
-                spCheckpointRuntimeVersion = 1,
-                spReplayPolicy = error "not used",
-                spInitialRewriteBudget = defaultRewriteBudget,
-                spRewriteExhaustionPolicy = RewriteExhaustionFail,
-                spBudgetExceededExhaustionPolicy = Nothing,
-                spMaxRewriteReExecutions = 2,
-                spTopology = initialTopo,
-                spDefinitions = initialDefs,
-                spTemplateRegistry = templateRegistry initialDefs
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = error "not used"
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = initialTopo
+              , spDefinitions = initialDefs
+              , spTemplateRegistry = templateRegistry initialDefs
               }
 
           -- 2. Rewrite StageA into Sub1

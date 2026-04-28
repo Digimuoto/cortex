@@ -1,29 +1,30 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Minimal cron schedule parser and next-fire-time computation.
---
--- Supports standard 5-field cron expressions:
---   minute hour day-of-month month day-of-week
---
--- Field syntax:
---   *        = any value
---   N        = exact value
---   N-M      = range (inclusive)
---   N,M,...  = list
---   *\/N     = step (every Nth from start of range)
---
--- Day-of-week: 0 = Sunday, 1 = Monday, ..., 6 = Saturday (also 7 = Sunday)
---
--- This does NOT support:
---   - @yearly, @monthly, @weekly, @daily, @hourly aliases
---   - L, W, # modifiers
---   - Seconds or year fields
+{- | Minimal cron schedule parser and next-fire-time computation.
+
+Supports standard 5-field cron expressions:
+ minute hour day-of-month month day-of-week
+
+Field syntax:
+ *        = any value
+ N        = exact value
+ N-M      = range (inclusive)
+ N,M,...  = list
+ *\/N     = step (every Nth from start of range)
+
+Day-of-week: 0 = Sunday, 1 = Monday, ..., 6 = Saturday (also 7 = Sunday)
+
+This does NOT support:
+ - @yearly, @monthly, @weekly, @daily, @hourly aliases
+ - L, W, # modifiers
+ - Seconds or year fields
+-}
 module Platform.DurableTask.Cron
-  ( CronSchedule (..),
-    parseCron,
-    nextCronTime,
-    computeNextCronTime,
+  ( CronSchedule (..)
+  , parseCron
+  , nextCronTime
+  , computeNextCronTime
   )
 where
 
@@ -32,33 +33,33 @@ import Data.List (nub, sort)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time
-  ( DayOfWeek (..),
-    LocalTime (..),
-    TimeOfDay (..),
-    TimeZone,
-    UTCTime,
-    addDays,
-    dayOfWeek,
-    diffDays,
-    fromGregorian,
-    localTimeToUTC,
-    midnight,
-    toGregorian,
-    utc,
-    utcToLocalTime,
+  ( DayOfWeek (..)
+  , LocalTime (..)
+  , TimeOfDay (..)
+  , TimeZone
+  , UTCTime
+  , addDays
+  , dayOfWeek
+  , diffDays
+  , fromGregorian
+  , localTimeToUTC
+  , midnight
+  , toGregorian
+  , utc
+  , utcToLocalTime
   )
 
 -- | Parsed cron schedule. Each field is a sorted list of valid values.
 data CronSchedule = CronSchedule
-  { cronMinutes :: ![Int],
-    cronHours :: ![Int],
-    cronDaysOfMonth :: ![Int],
-    cronMonths :: ![Int],
-    cronDaysOfWeek :: ![Int],
-    -- | True if day-of-month was specified as '*' (affects OR/AND semantics)
-    cronDomIsWildcard :: !Bool,
-    -- | True if day-of-week was specified as '*' (affects OR/AND semantics)
-    cronDowIsWildcard :: !Bool
+  { cronMinutes :: ![Int]
+  , cronHours :: ![Int]
+  , cronDaysOfMonth :: ![Int]
+  , cronMonths :: ![Int]
+  , cronDaysOfWeek :: ![Int]
+  , cronDomIsWildcard :: !Bool
+  -- ^ True if day-of-month was specified as '*' (affects OR/AND semantics)
+  , cronDowIsWildcard :: !Bool
+  -- ^ True if day-of-week was specified as '*' (affects OR/AND semantics)
   }
   deriving (Show, Eq)
 
@@ -76,18 +77,19 @@ parseCron expr =
       let normalizedDows = sort . nub $ fmap (\d -> if d == 7 then 0 else d) dows
       Just
         CronSchedule
-          { cronMinutes = mins,
-            cronHours = hours,
-            cronDaysOfMonth = doms,
-            cronMonths = mons,
-            cronDaysOfWeek = normalizedDows,
-            cronDomIsWildcard = domF == "*",
-            cronDowIsWildcard = dowF == "*"
+          { cronMinutes = mins
+          , cronHours = hours
+          , cronDaysOfMonth = doms
+          , cronMonths = mons
+          , cronDaysOfWeek = normalizedDows
+          , cronDomIsWildcard = domF == "*"
+          , cronDowIsWildcard = dowF == "*"
           }
     _ -> Nothing
 
--- | Compute the next fire time after the given UTC time.
--- Returns Nothing if no valid time exists within ~4 years (safety bound).
+{- | Compute the next fire time after the given UTC time.
+Returns Nothing if no valid time exists within ~4 years (safety bound).
+-}
 nextCronTime :: CronSchedule -> UTCTime -> Maybe UTCTime
 nextCronTime = nextCronTimeIn utc
 
@@ -99,8 +101,9 @@ nextCronTimeIn tz sched now =
       startLocal = advanceOneMinute local
    in fmap (localTimeToUTC tz) (searchNext sched startLocal 0)
 
--- | Convenience: parse a cron expression and compute next fire time.
--- Returns Nothing if the expression is empty, unparseable, or has no match.
+{- | Convenience: parse a cron expression and compute next fire time.
+Returns Nothing if the expression is empty, unparseable, or has no match.
+-}
 computeNextCronTime :: Text -> UTCTime -> Maybe UTCTime
 computeNextCronTime expr now
   | T.null (T.strip expr) = Nothing
@@ -112,8 +115,9 @@ computeNextCronTime expr now
 -- Internal
 -- ============================================================================
 
--- | Search for the next matching local time, with a safety bound.
--- Searches up to ~1500 days (~4 years) to handle leap year edge cases.
+{- | Search for the next matching local time, with a safety bound.
+Searches up to ~1500 days (~4 years) to handle leap year edge cases.
+-}
 searchNext :: CronSchedule -> LocalTime -> Int -> Maybe LocalTime
 searchNext sched candidate daysTried
   | daysTried > 1500 = Nothing

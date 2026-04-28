@@ -2,40 +2,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Nous.Patterns.DeepReport.Section.Runtime
-  ( ResearchChunkCompileSuccess (..),
-    chunkCompileFailureFromErrorText,
-    classifyResearchChunkFailure,
-    classifyResearchChunkFailureFromErrorText,
-    parseResearchChunkChoice,
-    parseResearchSectionPlanChoice,
-    renderSectionValidationErrors,
-    researchChunkCompileSuccessSummary,
+  ( ResearchChunkCompileSuccess (..)
+  , chunkCompileFailureFromErrorText
+  , classifyResearchChunkFailure
+  , classifyResearchChunkFailureFromErrorText
+  , parseResearchChunkChoice
+  , parseResearchSectionPlanChoice
+  , renderSectionValidationErrors
+  , researchChunkCompileSuccessSummary
   )
 where
 
 import Control.Applicative ((<|>))
-import Cortex.Capability.Model.Types (CortexChoice (..))
-import Cortex.Capability.StructuredOutput
-  ( decodeStructuredChoice,
-    structuredOutputSchemaRejected,
-  )
-import Cortex.Nous.Patterns.DeepReport.Section
-  ( ChunkCompileFailure (..),
-    ChunkFailureType (..),
-    ExternalRef (..),
-    ResearchChunk (..),
-    ResearchChunkLimits,
-    ResearchFinding (..),
-    ResearchSectionPlan,
-    ResearchSectionSpec (..),
-    SectionValidationError (..),
-    normalizeResearchChunkToLimits,
-    parseResearchChunkLlmOutput,
-    researchChunkHasVisibleBody,
-    researchChunkHasVisibleContent,
-    validateResearchChunk,
-    validateResearchSectionPlan,
-  )
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.List (nub)
@@ -44,10 +22,33 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 
+import Cortex.Capability.Model.Types (CortexChoice (..))
+import Cortex.Capability.StructuredOutput
+  ( decodeStructuredChoice
+  , structuredOutputSchemaRejected
+  )
+import Cortex.Nous.Patterns.DeepReport.Section
+  ( ChunkCompileFailure (..)
+  , ChunkFailureType (..)
+  , ExternalRef (..)
+  , ResearchChunk (..)
+  , ResearchChunkLimits
+  , ResearchFinding (..)
+  , ResearchSectionPlan
+  , ResearchSectionSpec (..)
+  , SectionValidationError (..)
+  , normalizeResearchChunkToLimits
+  , parseResearchChunkLlmOutput
+  , researchChunkHasVisibleBody
+  , researchChunkHasVisibleContent
+  , validateResearchChunk
+  , validateResearchSectionPlan
+  )
+
 data ResearchChunkCompileSuccess = ResearchChunkCompileSuccess
-  { researchChunkCompileChunk :: ResearchChunk,
-    researchChunkCompileRepairSummary :: Maybe Text,
-    researchChunkCompileRepairPayload :: Maybe Aeson.Value
+  { researchChunkCompileChunk :: ResearchChunk
+  , researchChunkCompileRepairSummary :: Maybe Text
+  , researchChunkCompileRepairPayload :: Maybe Aeson.Value
   }
   deriving stock (Eq, Show)
 
@@ -56,20 +57,28 @@ parseResearchSectionPlanChoice choice = do
   plan <- decodeStructuredChoice choice
   first renderSectionValidationErrors (validateResearchSectionPlan plan)
 
-parseResearchChunkChoice ::
-  (ResearchSectionSpec -> ResearchChunk -> ResearchChunk) ->
-  ResearchSectionSpec ->
-  Int ->
-  ResearchChunkLimits ->
-  -- | External ref candidates offered to the LLM, in the same order as
-  -- the 'externalRefs' integer indices it emits.
-  [ExternalRef] ->
-  CortexChoice ->
-  Either ChunkCompileFailure ResearchChunkCompileSuccess
+parseResearchChunkChoice
+  :: (ResearchSectionSpec -> ResearchChunk -> ResearchChunk)
+  -> ResearchSectionSpec
+  -> Int
+  -> ResearchChunkLimits
+  -> [ExternalRef]
+  {- ^ External ref candidates offered to the LLM, in the same order as
+   the 'externalRefs' integer indices it emits.
+  -}
+  -> CortexChoice
+  -> Either ChunkCompileFailure ResearchChunkCompileSuccess
 parseResearchChunkChoice shapeChunk spec attemptNumber limits candidates choice =
   case decodeChunkWithCandidates candidates choice of
     Left errText ->
-      Left (mkChunkFailure spec attemptNumber (classifyResearchChunkFailure choice errText) ("Section output was invalid. " <> errText) Nothing)
+      Left
+        ( mkChunkFailure
+            spec
+            attemptNumber
+            (classifyResearchChunkFailure choice errText)
+            ("Section output was invalid. " <> errText)
+            Nothing
+        )
     Right chunk ->
       let normalizedChunk = normalizeResearchChunkToLimits limits chunk
           maybeNormalizationRepair = chunkRepairSummary chunk normalizedChunk
@@ -80,7 +89,9 @@ parseResearchChunkChoice shapeChunk spec attemptNumber limits candidates choice 
                     spec
                     attemptNumber
                     (classifyResearchChunkFailure choice (renderSectionValidationErrors validationErrors))
-                    ("Section output did not satisfy the bounded chunk contract. " <> renderSectionValidationErrors validationErrors)
+                    ( "Section output did not satisfy the bounded chunk contract. "
+                        <> renderSectionValidationErrors validationErrors
+                    )
                     (Just normalizedChunk)
                 )
             Right validChunk
@@ -111,7 +122,9 @@ parseResearchChunkChoice shapeChunk spec attemptNumber limits candidates choice 
                                 spec
                                 attemptNumber
                                 ChunkFailureStructuredOutput
-                                ("Section output could not be normalized into the backend layout contract. " <> renderSectionValidationErrors validationErrors)
+                                ( "Section output could not be normalized into the backend layout contract. "
+                                    <> renderSectionValidationErrors validationErrors
+                                )
                                 (Just referenceNormalizedChunk)
                             )
                         Right finalChunk
@@ -141,16 +154,17 @@ parseResearchChunkChoice shapeChunk spec attemptNumber limits candidates choice 
                                     mergeRepairSummaries [maybeNormalizationRepair, maybeLayoutRepair, maybeReferenceRepair]
                                in Right
                                     ResearchChunkCompileSuccess
-                                      { researchChunkCompileChunk = finalChunk,
-                                        researchChunkCompileRepairSummary = repairSummary,
-                                        researchChunkCompileRepairPayload = repairPayload
+                                      { researchChunkCompileChunk = finalChunk
+                                      , researchChunkCompileRepairSummary = repairSummary
+                                      , researchChunkCompileRepairPayload = repairPayload
                                       }
 
--- | Decode the section compiler LLM's structured output. The 'ResearchChunk'
--- expects external refs as full 'ExternalRef' records, while the LLM emits
--- integer indices into the candidate list (see 'parseResearchChunkLlmOutput').
--- This helper parses the raw JSON as 'Aeson.Value' and resolves indices
--- against 'candidates' in one step.
+{- | Decode the section compiler LLM's structured output. The 'ResearchChunk'
+expects external refs as full 'ExternalRef' records, while the LLM emits
+integer indices into the candidate list (see 'parseResearchChunkLlmOutput').
+This helper parses the raw JSON as 'Aeson.Value' and resolves indices
+against 'candidates' in one step.
+-}
 decodeChunkWithCandidates :: [ExternalRef] -> CortexChoice -> Either Text ResearchChunk
 decodeChunkWithCandidates candidates choice
   | T.null stripped = Left "Structured output was empty."
@@ -164,7 +178,12 @@ decodeChunkWithCandidates candidates choice
 
 chunkCompileFailureFromErrorText :: ResearchSectionSpec -> Int -> Text -> ChunkCompileFailure
 chunkCompileFailureFromErrorText spec attemptNumber errText =
-  mkChunkFailure spec attemptNumber (classifyResearchChunkFailureFromErrorText errText) errText Nothing
+  mkChunkFailure
+    spec
+    attemptNumber
+    (classifyResearchChunkFailureFromErrorText errText)
+    errText
+    Nothing
 
 classifyResearchChunkFailure :: CortexChoice -> Text -> ChunkFailureType
 classifyResearchChunkFailure choice errText
@@ -191,13 +210,13 @@ researchChunkCompileSuccessSummary :: ResearchChunk -> Text
 researchChunkCompileSuccessSummary chunk =
   T.intercalate
     " "
-    [ chunk.researchChunkSectionId <> ".",
-      "Paragraphs:",
-      tShow (length chunk.researchChunkParagraphs) <> ",",
-      "findings:",
-      tShow (length chunk.researchChunkFindings) <> ",",
-      "tables:",
-      tShow (length chunk.researchChunkTables) <> "."
+    [ chunk.researchChunkSectionId <> "."
+    , "Paragraphs:"
+    , tShow (length chunk.researchChunkParagraphs) <> ","
+    , "findings:"
+    , tShow (length chunk.researchChunkFindings) <> ","
+    , "tables:"
+    , tShow (length chunk.researchChunkTables) <> "."
     ]
 
 renderSectionValidationErrors :: [SectionValidationError] -> Text
@@ -209,8 +228,8 @@ mergeRepairSummaries summaries =
   case catMaybes summaries of
     [] -> (Nothing, Nothing)
     present ->
-      ( Just (T.intercalate " " (fmap fst present)),
-        Just (Aeson.object ["repairs" Aeson..= fmap snd present])
+      ( Just (T.intercalate " " (fmap fst present))
+      , Just (Aeson.object ["repairs" Aeson..= fmap snd present])
       )
 
 chunkRepairSummary :: ResearchChunk -> ResearchChunk -> Maybe (Text, Aeson.Value)
@@ -220,14 +239,24 @@ chunkRepairSummary original normalized
       Just
         ( "Applied local chunk repair to fit bounded section limits: "
             <> T.intercalate "; " changeMessages
-            <> ".",
-          Aeson.object
-            [ "section_id" Aeson..= normalized.researchChunkSectionId,
-              "changes" Aeson..= changeMessages
+            <> "."
+        , Aeson.object
+            [ "section_id" Aeson..= normalized.researchChunkSectionId
+            , "changes" Aeson..= changeMessages
             ]
         )
   where
-    changeMessages = catMaybes [titleChange, summaryChange, paragraphChange, findingChange, tableChange, evidenceRefChange, externalRefChange, openGapChange]
+    changeMessages =
+      catMaybes
+        [ titleChange
+        , summaryChange
+        , paragraphChange
+        , findingChange
+        , tableChange
+        , evidenceRefChange
+        , externalRefChange
+        , openGapChange
+        ]
 
     titleChange =
       boolChange "clipped title" (original.researchChunkTitle /= normalized.researchChunkTitle)
@@ -236,26 +265,47 @@ chunkRepairSummary original normalized
       boolChange "clipped summary" (original.researchChunkSummary /= normalized.researchChunkSummary)
 
     paragraphChange =
-      lengthChange "paragraph" (length original.researchChunkParagraphs) (length normalized.researchChunkParagraphs)
-        <|> boolChange "clipped paragraph text" (original.researchChunkParagraphs /= normalized.researchChunkParagraphs)
+      lengthChange
+        "paragraph"
+        (length original.researchChunkParagraphs)
+        (length normalized.researchChunkParagraphs)
+        <|> boolChange
+          "clipped paragraph text"
+          (original.researchChunkParagraphs /= normalized.researchChunkParagraphs)
 
     findingChange =
-      lengthChange "finding" (length original.researchChunkFindings) (length normalized.researchChunkFindings)
-        <|> boolChange "clipped finding content" (original.researchChunkFindings /= normalized.researchChunkFindings)
+      lengthChange
+        "finding"
+        (length original.researchChunkFindings)
+        (length normalized.researchChunkFindings)
+        <|> boolChange
+          "clipped finding content"
+          (original.researchChunkFindings /= normalized.researchChunkFindings)
 
     tableChange =
       lengthChange "table" (length original.researchChunkTables) (length normalized.researchChunkTables)
         <|> boolChange "trimmed table layout" (original.researchChunkTables /= normalized.researchChunkTables)
 
     evidenceRefChange =
-      lengthChange "evidence ref" (length original.researchChunkEvidenceRefs) (length normalized.researchChunkEvidenceRefs)
+      lengthChange
+        "evidence ref"
+        (length original.researchChunkEvidenceRefs)
+        (length normalized.researchChunkEvidenceRefs)
 
     externalRefChange =
-      lengthChange "external ref" (length original.researchChunkExternalRefs) (length normalized.researchChunkExternalRefs)
+      lengthChange
+        "external ref"
+        (length original.researchChunkExternalRefs)
+        (length normalized.researchChunkExternalRefs)
 
     openGapChange =
-      lengthChange "open gap" (length original.researchChunkOpenGaps) (length normalized.researchChunkOpenGaps)
-        <|> boolChange "clipped open-gap text" (original.researchChunkOpenGaps /= normalized.researchChunkOpenGaps)
+      lengthChange
+        "open gap"
+        (length original.researchChunkOpenGaps)
+        (length normalized.researchChunkOpenGaps)
+        <|> boolChange
+          "clipped open-gap text"
+          (original.researchChunkOpenGaps /= normalized.researchChunkOpenGaps)
 
     boolChange label changed
       | changed = Just label
@@ -263,7 +313,12 @@ chunkRepairSummary original normalized
 
     lengthChange label originalCount normalizedCount
       | originalCount > normalizedCount =
-          Just ("removed " <> tShow (originalCount - normalizedCount) <> " " <> pluralize label (originalCount - normalizedCount))
+          Just
+            ( "removed "
+                <> tShow (originalCount - normalizedCount)
+                <> " "
+                <> pluralize label (originalCount - normalizedCount)
+            )
       | otherwise = Nothing
 
 pluralize :: Text -> Int -> Text
@@ -271,7 +326,7 @@ pluralize singular count
   | count == 1 = singular
   | otherwise = singular <> "s"
 
-tShow :: (Show a) => a -> Text
+tShow :: Show a => a -> Text
 tShow = T.pack . show
 
 repairChunkReferenceCoverage :: ResearchChunk -> ResearchChunk
@@ -285,9 +340,15 @@ promoteFindingRefsIntoChunk chunk
   | otherwise =
       chunk
         { researchChunkEvidenceRefs =
-            nub (chunk.researchChunkEvidenceRefs <> concatMap (.researchFindingEvidenceRefs) chunk.researchChunkFindings),
-          researchChunkExternalRefs =
-            nub (chunk.researchChunkExternalRefs <> concatMap (.researchFindingExternalRefs) chunk.researchChunkFindings)
+            nub
+              ( chunk.researchChunkEvidenceRefs
+                  <> concatMap (.researchFindingEvidenceRefs) chunk.researchChunkFindings
+              )
+        , researchChunkExternalRefs =
+            nub
+              ( chunk.researchChunkExternalRefs
+                  <> concatMap (.researchFindingExternalRefs) chunk.researchChunkFindings
+              )
         }
 
 inheritChunkRefsIntoFindings :: ResearchChunk -> ResearchChunk
@@ -303,8 +364,8 @@ inheritChunkRefsIntoFindings chunk
       | findingHasRefs finding = finding
       | otherwise =
           finding
-            { researchFindingEvidenceRefs = chunk.researchChunkEvidenceRefs,
-              researchFindingExternalRefs = chunk.researchChunkExternalRefs
+            { researchFindingEvidenceRefs = chunk.researchChunkEvidenceRefs
+            , researchFindingExternalRefs = chunk.researchChunkExternalRefs
             }
 
 validateChunkReferenceCoverage :: ResearchChunk -> [SectionValidationError]
@@ -318,8 +379,8 @@ validateChunkReferenceCoverage chunk =
           [SectionValidationError "Rendered section body must carry at least one evidenceRef or externalRef."]
     findingErrors =
       [ SectionValidationError "Every rendered finding must carry at least one evidenceRef or externalRef."
-      | finding <- chunk.researchChunkFindings,
-        not (findingHasRefs finding)
+      | finding <- chunk.researchChunkFindings
+      , not (findingHasRefs finding)
       ]
 
 chunkHasRefs :: ResearchChunk -> Bool
@@ -335,21 +396,21 @@ findingHasRefs finding =
 hasNonEmptyTextList :: [Text] -> Bool
 hasNonEmptyTextList = not . all (T.null . T.strip)
 
-mkChunkFailure ::
-  ResearchSectionSpec ->
-  Int ->
-  ChunkFailureType ->
-  Text ->
-  Maybe ResearchChunk ->
-  ChunkCompileFailure
+mkChunkFailure
+  :: ResearchSectionSpec
+  -> Int
+  -> ChunkFailureType
+  -> Text
+  -> Maybe ResearchChunk
+  -> ChunkCompileFailure
 mkChunkFailure spec attemptNumber failureType message maybeChunk =
   ChunkCompileFailure
-    { chunkFailureSectionId = spec.researchSectionId,
-      chunkFailureSectionTitle = Just spec.researchSectionTitle,
-      chunkFailureAttempt = attemptNumber,
-      chunkFailureType = failureType,
-      chunkFailureMessage = message,
-      chunkFailureCandidateEvidenceRefs = [],
-      chunkFailureCandidateExternalRefs = [],
-      chunkFailureOpenGaps = foldMap (.researchChunkOpenGaps) maybeChunk
+    { chunkFailureSectionId = spec.researchSectionId
+    , chunkFailureSectionTitle = Just spec.researchSectionTitle
+    , chunkFailureAttempt = attemptNumber
+    , chunkFailureType = failureType
+    , chunkFailureMessage = message
+    , chunkFailureCandidateEvidenceRefs = []
+    , chunkFailureCandidateExternalRefs = []
+    , chunkFailureOpenGaps = foldMap (.researchChunkOpenGaps) maybeChunk
     }

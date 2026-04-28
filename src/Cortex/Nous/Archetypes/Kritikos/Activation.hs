@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Kritikos.Activation
-  ( kritikosCapabilityBundle,
+  ( kritikosCapabilityBundle
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Kritikos),
-    NousCapabilityBundle,
-    nousCapabilityBundle,
+  ( NousArchetype (Kritikos)
+  , NousCapabilityBundle
+  , nousCapabilityBundle
   )
 
 kritikosCapabilityBundle :: NousCapabilityBundle

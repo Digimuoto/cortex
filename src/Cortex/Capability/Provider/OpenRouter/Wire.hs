@@ -2,16 +2,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Capability.Provider.OpenRouter.Wire
-  ( OpenRouterCompletion (..),
-    OpenRouterUsage (..),
-    OpenRouterChoice (..),
-    OpenRouterToolCall (..),
-    parseCostValue,
-    parseFunctionPayload,
-    parseOpenRouterContent,
-    parseOpenRouterMessage,
-    parseSourceLinkAnnotation,
-    sourceLinksFromAnnotations,
+  ( OpenRouterCompletion (..)
+  , OpenRouterUsage (..)
+  , OpenRouterChoice (..)
+  , OpenRouterToolCall (..)
+  , parseCostValue
+  , parseFunctionPayload
+  , parseOpenRouterContent
+  , parseOpenRouterMessage
+  , parseSourceLinkAnnotation
+  , sourceLinksFromAnnotations
   )
 where
 
@@ -28,40 +28,41 @@ import Data.Scientific qualified as Scientific
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Vector qualified as V
-import Platform.Serde.Json.Text
-  ( jsonValueText,
-  )
 import Text.Read (readMaybe)
 
+import Platform.Serde.Json.Text
+  ( jsonValueText
+  )
+
 data OpenRouterCompletion = OpenRouterCompletion
-  { openRouterChoices :: [OpenRouterChoice],
-    openRouterUsage :: Maybe OpenRouterUsage
+  { openRouterChoices :: [OpenRouterChoice]
+  , openRouterUsage :: Maybe OpenRouterUsage
   }
   deriving stock (Eq, Show)
 
 data OpenRouterUsage = OpenRouterUsage
-  { openRouterInputTokens :: Maybe Int,
-    openRouterOutputTokens :: Maybe Int,
-    openRouterTotalTokens :: Maybe Int,
-    openRouterCostUsd :: Maybe Scientific
+  { openRouterInputTokens :: Maybe Int
+  , openRouterOutputTokens :: Maybe Int
+  , openRouterTotalTokens :: Maybe Int
+  , openRouterCostUsd :: Maybe Scientific
   }
   deriving stock (Eq, Show)
 
 data OpenRouterChoice = OpenRouterChoice
-  { openRouterContent :: Text,
-    openRouterSourceLinks :: [(Text, Text)],
-    openRouterToolCalls :: [OpenRouterToolCall],
-    openRouterFinishReason :: Maybe Text,
-    openRouterUsage :: Maybe OpenRouterUsage,
-    openRouterReasoning :: Maybe Text,
-    openRouterReasoningDetails :: Maybe Aeson.Value
+  { openRouterContent :: Text
+  , openRouterSourceLinks :: [(Text, Text)]
+  , openRouterToolCalls :: [OpenRouterToolCall]
+  , openRouterFinishReason :: Maybe Text
+  , openRouterUsage :: Maybe OpenRouterUsage
+  , openRouterReasoning :: Maybe Text
+  , openRouterReasoningDetails :: Maybe Aeson.Value
   }
   deriving stock (Eq, Show)
 
 data OpenRouterToolCall = OpenRouterToolCall
-  { openRouterToolCallId :: Text,
-    openRouterToolCallName :: Text,
-    openRouterToolCallArguments :: Text
+  { openRouterToolCallId :: Text
+  , openRouterToolCallName :: Text
+  , openRouterToolCallArguments :: Text
   }
   deriving stock (Eq, Show)
 
@@ -78,8 +79,8 @@ instance Aeson.FromJSON OpenRouterCompletion where
       OpenRouterCompletion
         { openRouterChoices =
             filter isMeaningfulOpenRouterChoice $
-              mapMaybe (parseMaybe Aeson.parseJSON) rawChoices,
-          openRouterUsage = maybeUsageValue >>= parseMaybe Aeson.parseJSON >>= meaningfulOpenRouterUsage
+              mapMaybe (parseMaybe Aeson.parseJSON) rawChoices
+        , openRouterUsage = maybeUsageValue >>= parseMaybe Aeson.parseJSON >>= meaningfulOpenRouterUsage
         }
 
 instance Aeson.FromJSON OpenRouterUsage where
@@ -115,13 +116,14 @@ instance Aeson.FromJSON OpenRouterChoice where
           _ -> Nothing
     pure
       OpenRouterChoice
-        { openRouterContent = content,
-          openRouterSourceLinks = sourceLinks,
-          openRouterToolCalls = toolCalls,
-          openRouterFinishReason = finishReason,
-          openRouterUsage = lookupOptionalValue o "usage" >>= parseMaybe Aeson.parseJSON >>= meaningfulOpenRouterUsage,
-          openRouterReasoning = reasoning,
-          openRouterReasoningDetails = reasoningDetails
+        { openRouterContent = content
+        , openRouterSourceLinks = sourceLinks
+        , openRouterToolCalls = toolCalls
+        , openRouterFinishReason = finishReason
+        , openRouterUsage =
+            lookupOptionalValue o "usage" >>= parseMaybe Aeson.parseJSON >>= meaningfulOpenRouterUsage
+        , openRouterReasoning = reasoning
+        , openRouterReasoningDetails = reasoningDetails
         }
 
 instance Aeson.FromJSON OpenRouterToolCall where
@@ -131,9 +133,9 @@ instance Aeson.FromJSON OpenRouterToolCall where
     (name, argumentsText) <- parseFunctionPayload functionValue
     pure
       OpenRouterToolCall
-        { openRouterToolCallId = callId,
-          openRouterToolCallName = name,
-          openRouterToolCallArguments = argumentsText
+        { openRouterToolCallId = callId
+        , openRouterToolCallName = name
+        , openRouterToolCallArguments = argumentsText
         }
 
 parseCostValue :: Aeson.Value -> Parser Scientific
@@ -254,7 +256,9 @@ isMeaningfulOpenRouterChoice choice =
 
 meaningfulOpenRouterUsage :: OpenRouterUsage -> Maybe OpenRouterUsage
 meaningfulOpenRouterUsage usage
-  | all isNothing [openRouterInputTokens usage, openRouterOutputTokens usage, openRouterTotalTokens usage]
+  | all
+      isNothing
+      [openRouterInputTokens usage, openRouterOutputTokens usage, openRouterTotalTokens usage]
       && isNothing (openRouterCostUsd usage) =
       Nothing
   | otherwise =

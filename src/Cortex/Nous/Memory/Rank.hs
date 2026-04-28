@@ -3,24 +3,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Cortex.Nous.Memory.Rank
-  ( CortexMemoryRankWeights (..),
-    defaultCortexMemoryRankWeights,
-    loadCortexMemoryRankWeights,
-    rankMemoryCandidates,
+  ( CortexMemoryRankWeights (..)
+  , defaultCortexMemoryRankWeights
+  , loadCortexMemoryRankWeights
+  , rankMemoryCandidates
   )
 where
 
 import Control.Exception (IOException, try)
-import Cortex.Nous.Memory.Query
-  ( CortexMemoryQuery (..),
-  )
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryMatchedField (..),
-    CortexMemoryPassage (..),
-    CortexMemoryRankedPassage (..),
-    CortexMemoryRetrievalSource (..),
-  )
 import Data.List (sortBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -32,33 +22,44 @@ import Data.Time (UTCTime, diffUTCTime)
 import Data.Yaml qualified as Yaml
 import Paths_cortex qualified
 
+import Cortex.Nous.Memory.Query
+  ( CortexMemoryQuery (..)
+  )
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryMatchedField (..)
+  , CortexMemoryPassage (..)
+  , CortexMemoryRankedPassage (..)
+  , CortexMemoryRetrievalSource (..)
+  )
+
 data CortexMemoryRankWeights = CortexMemoryRankWeights
-  { cmrwLexical :: Double,
-    cmrwSemantic :: Double,
-    cmrwFuzzy :: Double,
-    cmrwDirectTarget :: Double,
-    cmrwAnchored :: Double,
-    cmrwSessionLocal :: Double,
-    cmrwEntityMatch :: Double,
-    cmrwTitleHeadingMatch :: Double,
-    cmrwRecency :: Double,
-    cmrwSourcePrior :: Double
+  { cmrwLexical :: Double
+  , cmrwSemantic :: Double
+  , cmrwFuzzy :: Double
+  , cmrwDirectTarget :: Double
+  , cmrwAnchored :: Double
+  , cmrwSessionLocal :: Double
+  , cmrwEntityMatch :: Double
+  , cmrwTitleHeadingMatch :: Double
+  , cmrwRecency :: Double
+  , cmrwSourcePrior :: Double
   }
   deriving stock (Eq, Show)
 
 defaultCortexMemoryRankWeights :: CortexMemoryRankWeights
 defaultCortexMemoryRankWeights =
   CortexMemoryRankWeights
-    { cmrwLexical = 0.22,
-      cmrwSemantic = 0.22,
-      cmrwFuzzy = 0.11,
-      cmrwDirectTarget = 0.14,
-      cmrwAnchored = 0.10,
-      cmrwSessionLocal = 0.08,
-      cmrwEntityMatch = 0.06,
-      cmrwTitleHeadingMatch = 0.04,
-      cmrwRecency = 0.03,
-      cmrwSourcePrior = 0.03
+    { cmrwLexical = 0.22
+    , cmrwSemantic = 0.22
+    , cmrwFuzzy = 0.11
+    , cmrwDirectTarget = 0.14
+    , cmrwAnchored = 0.10
+    , cmrwSessionLocal = 0.08
+    , cmrwEntityMatch = 0.06
+    , cmrwTitleHeadingMatch = 0.04
+    , cmrwRecency = 0.03
+    , cmrwSourcePrior = 0.03
     }
 
 loadCortexMemoryRankWeights :: IO (Either Text CortexMemoryRankWeights)
@@ -72,17 +73,22 @@ loadCortexMemoryRankWeights = do
       pure $
         case decoded of
           Left err ->
-            Left ("Failed to parse memory ranking config " <> T.pack absolutePath <> ": " <> T.pack (Yaml.prettyPrintParseException err))
+            Left
+              ( "Failed to parse memory ranking config "
+                  <> T.pack absolutePath
+                  <> ": "
+                  <> T.pack (Yaml.prettyPrintParseException err)
+              )
           Right weights -> Right weights
 
-rankMemoryCandidates ::
-  UTCTime ->
-  Map Text Double ->
-  Double ->
-  CortexMemoryRankWeights ->
-  CortexMemoryQuery ->
-  [CortexMemoryCandidate] ->
-  [CortexMemoryRankedPassage]
+rankMemoryCandidates
+  :: UTCTime
+  -> Map Text Double
+  -> Double
+  -> CortexMemoryRankWeights
+  -> CortexMemoryQuery
+  -> [CortexMemoryCandidate]
+  -> [CortexMemoryRankedPassage]
 rankMemoryCandidates now sourcePriorWeights sourcePriorDefault weights query =
   sortBy
     ( comparing (Down . cortexRankedFinalScore)
@@ -92,10 +98,10 @@ rankMemoryCandidates now sourcePriorWeights sourcePriorDefault weights query =
   where
     rankOne candidate =
       CortexMemoryRankedPassage
-        { cortexRankedPassage = passage,
-          cortexRankedCandidate = candidate,
-          cortexRankedFinalScore = finalScore,
-          cortexRankedConflictNote = Nothing
+        { cortexRankedPassage = passage
+        , cortexRankedCandidate = candidate
+        , cortexRankedFinalScore = finalScore
+        , cortexRankedConflictNote = Nothing
         }
       where
         passage = candidate.cortexCandidatePassage
@@ -121,13 +127,17 @@ sourceFeature source candidate =
 entityFeature :: CortexMemoryQuery -> CortexMemoryCandidate -> Double
 entityFeature query candidate
   | null query.cortexMemoryQueryEntities = 0
-  | any (`elem` candidate.cortexCandidatePassage.cortexMemoryEntities) query.cortexMemoryQueryEntities = 1
+  | any (`elem` candidate.cortexCandidatePassage.cortexMemoryEntities) query.cortexMemoryQueryEntities =
+      1
   | CortexMemoryMatchedEntity `elem` candidate.cortexCandidateMatchedFields = 1
   | otherwise = 0
 
 titleHeadingFeature :: CortexMemoryCandidate -> Double
 titleHeadingFeature candidate
-  | any (`elem` candidate.cortexCandidateMatchedFields) [CortexMemoryMatchedTitle, CortexMemoryMatchedHeading] = 1
+  | any
+      (`elem` candidate.cortexCandidateMatchedFields)
+      [CortexMemoryMatchedTitle, CortexMemoryMatchedHeading] =
+      1
   | otherwise = 0
 
 recencyFeature :: UTCTime -> CortexMemoryQuery -> CortexMemoryPassage -> Double
@@ -143,8 +153,9 @@ recencyFeature now query passage =
         Just "recent" -> 14
         _ -> 30
 
--- | Source prior feature using app-defined weights keyed by source kind.
--- Source kinds not in the map get the default value.
+{- | Source prior feature using app-defined weights keyed by source kind.
+Source kinds not in the map get the default value.
+-}
 sourcePriorFeature :: Map Text Double -> Double -> CortexMemoryPassage -> Double
 sourcePriorFeature priorWeights defaultPrior passage =
   Map.findWithDefault defaultPrior (T.toLower passage.cortexMemorySourceKind) priorWeights

@@ -1,5 +1,5 @@
 module Cortex.Pulse.Replay
-  ( module Cortex.Pulse.Executor.ReplayPolicy,
+  ( module Cortex.Pulse.Executor.ReplayPolicy
   )
 where
 

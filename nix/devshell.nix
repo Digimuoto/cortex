@@ -31,7 +31,6 @@
       packages =
         (with haskellNixPkgs; [
           haskellPackages.fourmolu
-          haskellPackages.ormolu
         ])
         ++ (with pkgs; [
           pkg-config

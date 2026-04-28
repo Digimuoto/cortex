@@ -1,17 +1,17 @@
 {-# LANGUAGE DerivingStrategies #-}
 
 module Cortex.Nous.Thought.Policy
-  ( CortexActionApproval (..),
-    CortexAgentPolicy (..),
-    CortexToolScope (..),
+  ( CortexActionApproval (..)
+  , CortexAgentPolicy (..)
+  , CortexToolScope (..)
   )
 where
 
 import Data.Text (Text)
 
 data CortexToolScope = CortexToolScope
-  { cortexReadableTools :: [Text],
-    cortexWritableTools :: [Text]
+  { cortexReadableTools :: [Text]
+  , cortexWritableTools :: [Text]
   }
   deriving stock (Eq, Show)
 
@@ -21,8 +21,8 @@ data CortexActionApproval
   deriving stock (Eq, Show)
 
 data CortexAgentPolicy = CortexAgentPolicy
-  { cortexToolScope :: CortexToolScope,
-    cortexActionApproval :: CortexActionApproval,
-    cortexRequireGrounding :: Bool
+  { cortexToolScope :: CortexToolScope
+  , cortexActionApproval :: CortexActionApproval
+  , cortexRequireGrounding :: Bool
   }
   deriving stock (Eq, Show)

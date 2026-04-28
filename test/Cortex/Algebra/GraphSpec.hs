@@ -2,9 +2,6 @@
 
 module Cortex.Algebra.GraphSpec (spec) where
 
-import Cortex.Algebra.Graph
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Runtime
 import Data.Aeson qualified as Aeson
 import Data.List (sort, sortOn)
 import Data.Map.Strict qualified as Map
@@ -13,14 +10,20 @@ import Data.Ord (Down (..))
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Platform.DurableTask.Types (RunOutcome (..))
 import Test.Hspec
 import Test.QuickCheck (Gen, choose, elements, forAll, property, shuffle, sized, sublistOf, (===))
 
--- | Normalize SCC output: sort each component, then sort components by
--- first element. This makes assertions deterministic regardless of
--- internal traversal order.
-normalizeSCCs :: (Ord a) => [[a]] -> [[a]]
+import Cortex.Algebra.Graph
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Runtime
+
+import Platform.DurableTask.Types (RunOutcome (..))
+
+{- | Normalize SCC output: sort each component, then sort components by
+first element. This makes assertions deterministic regardless of
+internal traversal order.
+-}
+normalizeSCCs :: Ord a => [[a]] -> [[a]]
 normalizeSCCs = sortOn safeMin . fmap sort
   where
     safeMin [] = Nothing
@@ -135,9 +138,9 @@ spec = do
           rel =
             toRelation
               ( edges
-                  [ (root, a),
-                    (a, b),
-                    (root, c)
+                  [ (root, a)
+                  , (a, b)
+                  , (root, c)
                   ]
               )
           heur (v, _) = case v of
@@ -217,10 +220,10 @@ spec = do
           rel =
             toRelation
               ( edges
-                  [ (NodeId "a", NodeId "b1"),
-                    (NodeId "a", NodeId "b2"),
-                    (NodeId "b1", NodeId "c"),
-                    (NodeId "b2", NodeId "c")
+                  [ (NodeId "a", NodeId "b1")
+                  , (NodeId "a", NodeId "b2")
+                  , (NodeId "b1", NodeId "c")
+                  , (NodeId "b2", NodeId "c")
                   ]
               )
           influence = dagRandomWalkInfluence alpha (NodeId "a") rel
@@ -234,12 +237,12 @@ spec = do
           rel =
             toRelation
               ( edges
-                  [ (NodeId "origin", NodeId "p1"),
-                    (NodeId "origin", NodeId "p2"),
-                    (NodeId "p1", NodeId "merge"),
-                    (NodeId "p2", NodeId "merge"),
-                    (NodeId "origin", NodeId "link"),
-                    (NodeId "link", NodeId "chain")
+                  [ (NodeId "origin", NodeId "p1")
+                  , (NodeId "origin", NodeId "p2")
+                  , (NodeId "p1", NodeId "merge")
+                  , (NodeId "p2", NodeId "merge")
+                  , (NodeId "origin", NodeId "link")
+                  , (NodeId "link", NodeId "chain")
                   ]
               )
           influence = dagRandomWalkInfluence alpha (NodeId "origin") rel
@@ -409,15 +412,15 @@ spec = do
             GraphState
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodePending),
-                      (NodeId "b", NodeRunning),
-                      (NodeId "c", NodeCompleted),
-                      (NodeId "d", NodeFailed),
-                      (NodeId "e", NodeRunning),
-                      (NodeId "f", NodeWaiting "sig"),
-                      (NodeId "g", NodeInterrupted InterruptedShutdown)
-                    ],
-                gsNodeOutputs = Map.empty :: Map.Map NodeId Int
+                    [ (NodeId "a", NodePending)
+                    , (NodeId "b", NodeRunning)
+                    , (NodeId "c", NodeCompleted)
+                    , (NodeId "d", NodeFailed)
+                    , (NodeId "e", NodeRunning)
+                    , (NodeId "f", NodeWaiting "sig")
+                    , (NodeId "g", NodeInterrupted InterruptedShutdown)
+                    ]
+              , gsNodeOutputs = Map.empty :: Map.Map NodeId Int
               }
           result = normalizeForResume gs
       Map.lookup (NodeId "a") (gsNodeStatuses result) `shouldBe` Just NodePending
@@ -433,10 +436,10 @@ spec = do
             GraphState
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeCompleted),
-                      (NodeId "b", NodeFailed)
-                    ],
-                gsNodeOutputs = Map.empty :: Map.Map NodeId Int
+                    [ (NodeId "a", NodeCompleted)
+                    , (NodeId "b", NodeFailed)
+                    ]
+              , gsNodeOutputs = Map.empty :: Map.Map NodeId Int
               }
       normalizeForResume gs `shouldBe` gs
 
@@ -460,7 +463,8 @@ spec = do
           results = [NodeResult (NodeId "a") OutcomeNodeRunCancelled]
           stepResult = applyFrontierResults rel results gs0
           gs' = stepResultState stepResult
-      Map.lookup (NodeId "a") (gsNodeStatuses gs') `shouldBe` Just (NodeInterrupted InterruptedRunCancelled)
+      Map.lookup (NodeId "a") (gsNodeStatuses gs')
+        `shouldBe` Just (NodeInterrupted InterruptedRunCancelled)
       case stepResult of
         Stuck _ _ -> pure ()
         other -> expectationFailure $ "Expected Stuck, got: " <> show other
@@ -476,9 +480,9 @@ spec = do
             (initialGraphState rel)
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodePending),
-                      (NodeId "c", NodePending)
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodePending)
+                    , (NodeId "c", NodePending)
                     ]
               }
           result = propagateFailure rel gs
@@ -491,8 +495,8 @@ spec = do
             (initialGraphState rel)
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodeWaiting "sig")
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodeWaiting "sig")
                     ]
               }
           result = propagateFailure rel gs
@@ -504,23 +508,29 @@ spec = do
             (initialGraphState rel)
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodeCompleted)
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodeCompleted)
                     ]
               }
           result = propagateFailure rel gs
       Map.lookup (NodeId "b") (gsNodeStatuses result) `shouldBe` Just NodeCompleted
 
     it "is idempotent: applying twice gives same result as once" $ do
-      let rel = toRelation (edge (NodeId "a") (NodeId "b") <> edge (NodeId "a") (NodeId "c") <> edge (NodeId "b") (NodeId "d") <> edge (NodeId "c") (NodeId "d"))
+      let rel =
+            toRelation
+              ( edge (NodeId "a") (NodeId "b")
+                  <> edge (NodeId "a") (NodeId "c")
+                  <> edge (NodeId "b") (NodeId "d")
+                  <> edge (NodeId "c") (NodeId "d")
+              )
           gs =
             (initialGraphState rel)
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodePending),
-                      (NodeId "c", NodeWaiting "sig"),
-                      (NodeId "d", NodePending)
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodePending)
+                    , (NodeId "c", NodeWaiting "sig")
+                    , (NodeId "d", NodePending)
                     ]
               }
           applied1 = propagateFailure rel gs
@@ -533,8 +543,8 @@ spec = do
             (initialGraphState rel)
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodePending)
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodePending)
                     ]
               }
           result = propagateFailure rel gs
@@ -557,8 +567,8 @@ spec = do
       let rel = toRelation (path [NodeId "a", NodeId "b"])
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeCompleted), (NodeId "b", NodeCompleted)],
-                gsNodeOutputs = Map.fromList [(NodeId "a", Aeson.Null), (NodeId "b", Aeson.Null)]
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeCompleted), (NodeId "b", NodeCompleted)]
+              , gsNodeOutputs = Map.fromList [(NodeId "a", Aeson.Null), (NodeId "b", Aeson.Null)]
               }
       case classifyGraphState rel gs of
         Settled _ OutcomeCompleted -> pure ()
@@ -568,8 +578,8 @@ spec = do
       let rel = toRelation (Vertex (NodeId "a"))
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed)]
+              , gsNodeOutputs = Map.empty
               }
       case classifyGraphState rel gs of
         Settled _ OutcomeFailed -> pure ()
@@ -579,8 +589,8 @@ spec = do
       let rel = toRelation (path [NodeId "a", NodeId "b"])
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeWaiting "sig"), (NodeId "b", NodePending)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeWaiting "sig"), (NodeId "b", NodePending)]
+              , gsNodeOutputs = Map.empty
               }
       case classifyGraphState rel gs of
         Suspended _ -> pure ()
@@ -592,8 +602,8 @@ spec = do
       let rel = toRelation (path [NodeId "a", NodeId "b"])
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed), (NodeId "b", NodePending)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed), (NodeId "b", NodePending)]
+              , gsNodeOutputs = Map.empty
               }
       case classifyGraphState rel gs of
         Settled _ OutcomeFailed -> pure ()
@@ -619,7 +629,13 @@ spec = do
         other -> expectationFailure $ "Expected Settled Completed, got: " <> show other
 
     it "runs a diamond graph with concurrent frontier" $ do
-      let rel = toRelation (edge (NodeId "a") (NodeId "b") <> edge (NodeId "a") (NodeId "c") <> edge (NodeId "b") (NodeId "d") <> edge (NodeId "c") (NodeId "d"))
+      let rel =
+            toRelation
+              ( edge (NodeId "a") (NodeId "b")
+                  <> edge (NodeId "a") (NodeId "c")
+                  <> edge (NodeId "b") (NodeId "d")
+                  <> edge (NodeId "c") (NodeId "d")
+              )
           gs0 = initialGraphState rel
           oracle _ _ = OutcomeSucceeded Aeson.Null
           (waves, result) = simulateRun rel gs0 Aeson.Null oracle 10
@@ -635,7 +651,10 @@ spec = do
     it "handles mid-graph failure with propagation" $ do
       let rel = toRelation (path [NodeId "a", NodeId "b", NodeId "c"])
           gs0 = initialGraphState rel
-          oracle nid _ = if nid == NodeId "b" then OutcomeNodeFailed (FailureDetail "test" "fail" True) else OutcomeSucceeded Aeson.Null
+          oracle nid _ =
+            if nid == NodeId "b"
+              then OutcomeNodeFailed (FailureDetail "test" "fail" True)
+              else OutcomeSucceeded Aeson.Null
           (waves, result) = simulateRun rel gs0 Aeson.Null oracle 10
       length waves `shouldBe` 2
       case result of
@@ -680,21 +699,23 @@ spec = do
     -- Property tests on random DAGs
     -- ========================================================================
 
-    it "crash recovery preserves structural safety: partial frontier + normalize + re-classify is valid" . property $ do
-      let prop (rel, gs, results) =
-            -- Simulate a partial frontier: apply only some facts, then crash
-            let half = take (length results `div` 2) results
-                gs_partial = reduceFacts half gs
-                -- Crash: normalize resumable statuses back to pending.
-                gs_recovered = normalizeForResume gs_partial
-                -- The recovered state should be validly classifiable
-                stepResult = classifyGraphState rel gs_recovered
-             in case stepResult of
-                  Progressing _ frontier -> not (null frontier) -- should have work to do
-                  Settled _ _ -> True -- if all nodes happened to complete in the first half
-                  Suspended _ -> True
-                  Stuck _ _ -> False -- should never be stuck after recovery
-      forAll genFrontierScenario prop
+    it "crash recovery preserves structural safety: partial frontier + normalize + re-classify is valid"
+      . property
+      $ do
+        let prop (rel, gs, results) =
+              -- Simulate a partial frontier: apply only some facts, then crash
+              let half = take (length results `div` 2) results
+                  gs_partial = reduceFacts half gs
+                  -- Crash: normalize resumable statuses back to pending.
+                  gs_recovered = normalizeForResume gs_partial
+                  -- The recovered state should be validly classifiable
+                  stepResult = classifyGraphState rel gs_recovered
+               in case stepResult of
+                    Progressing _ frontier -> not (null frontier) -- should have work to do
+                    Settled _ _ -> True -- if all nodes happened to complete in the first half
+                    Suspended _ -> True
+                    Stuck _ _ -> False -- should never be stuck after recovery
+        forAll genFrontierScenario prop
 
   describe "algebra properties (random DAGs)" $ do
     it "propagateFailure is idempotent on random graphs" $ do
@@ -721,7 +742,11 @@ spec = do
     it "sequential and batch reduction produce the same classification" $ do
       let prop (rel, gs, results) =
             let batchResult = applyFrontierResults rel results gs
-                seqResult = foldl' (\s r -> applyFrontierResults rel [r] (stepResultState s)) (classifyGraphState rel gs) results
+                seqResult =
+                  foldl'
+                    (\s r -> applyFrontierResults rel [r] (stepResultState s))
+                    (classifyGraphState rel gs)
+                    results
              in stepResultState batchResult === stepResultState seqResult
       property (forAll genFrontierScenario prop)
 
@@ -764,8 +789,8 @@ spec = do
           -- a=Running (not terminal), b=Pending (not ready because a not completed).
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeRunning), (NodeId "b", NodePending)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeRunning), (NodeId "b", NodePending)]
+              , gsNodeOutputs = Map.empty
               }
       case classifyGraphState rel gs of
         Stuck _ diag -> do
@@ -782,8 +807,8 @@ spec = do
       let rel = toRelation (edge (NodeId "a") (NodeId "b"))
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed), (NodeId "b", NodePending)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed), (NodeId "b", NodePending)]
+              , gsNodeOutputs = Map.empty
               }
       case classifyGraphState rel gs of
         Settled _ OutcomeFailed -> pure () -- correct: after propagation, "b" fails too
@@ -793,8 +818,8 @@ spec = do
       let rel = toRelation (edge (NodeId "a") (NodeId "b"))
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed), (NodeId "b", NodePending)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodeFailed), (NodeId "b", NodePending)]
+              , gsNodeOutputs = Map.empty
               }
       blockedReasons rel gs `shouldBe` [(NodeId "b", BlockedByFailed [NodeId "a"])]
 
@@ -802,8 +827,8 @@ spec = do
       let rel = toRelation (edge (NodeId "a") (NodeId "b"))
           gs =
             GraphState
-              { gsNodeStatuses = Map.fromList [(NodeId "a", NodePending), (NodeId "b", NodePending)],
-                gsNodeOutputs = Map.empty
+              { gsNodeStatuses = Map.fromList [(NodeId "a", NodePending), (NodeId "b", NodePending)]
+              , gsNodeOutputs = Map.empty
               }
       -- "a" is ready (no predecessors), so it's excluded from blockedReasons.
       -- Only "b" appears, blocked by its pending predecessor "a".
@@ -826,7 +851,13 @@ spec = do
       isLinearTopology rel `shouldBe` False
 
     it "isLinearTopology rejects diamond" $ do
-      let rel = toRelation (edge (NodeId "a") (NodeId "b") <> edge (NodeId "a") (NodeId "c") <> edge (NodeId "b") (NodeId "d") <> edge (NodeId "c") (NodeId "d"))
+      let rel =
+            toRelation
+              ( edge (NodeId "a") (NodeId "b")
+                  <> edge (NodeId "a") (NodeId "c")
+                  <> edge (NodeId "b") (NodeId "d")
+                  <> edge (NodeId "c") (NodeId "d")
+              )
       isLinearTopology rel `shouldBe` False
 
     it "isLinearTopology rejects fan-out" $ do
@@ -845,20 +876,20 @@ spec = do
     it "holds for all algebra combinators" $ do
       let cases :: [Relation Int]
           cases =
-            [ toRelation Empty,
-              toRelation (Vertex 1),
-              toRelation (edge 1 2),
-              toRelation (path [1, 2, 3, 4]),
-              toRelation (vertices [1, 2, 3]),
-              toRelation (star 1 [2, 3, 4]),
-              toRelation (clique [1, 2, 3]),
-              toRelation (clique [1, 2]),
-              toRelation (edges [(1, 2), (2, 3), (3, 1)]),
-              toRelation (edge 1 2 <> edge 3 4),
-              toRelation (Connect (vertices [1, 2]) (vertices [3, 4])),
-              toRelation (Connect Empty (Vertex 1)),
-              toRelation (Connect (Vertex 1) Empty),
-              toRelation (Connect Empty Empty)
+            [ toRelation Empty
+            , toRelation (Vertex 1)
+            , toRelation (edge 1 2)
+            , toRelation (path [1, 2, 3, 4])
+            , toRelation (vertices [1, 2, 3])
+            , toRelation (star 1 [2, 3, 4])
+            , toRelation (clique [1, 2, 3])
+            , toRelation (clique [1, 2])
+            , toRelation (edges [(1, 2), (2, 3), (3, 1)])
+            , toRelation (edge 1 2 <> edge 3 4)
+            , toRelation (Connect (vertices [1, 2]) (vertices [3, 4]))
+            , toRelation (Connect Empty (Vertex 1))
+            , toRelation (Connect (Vertex 1) Empty)
+            , toRelation (Connect Empty Empty)
             ]
       mapM_ (\rel -> checkCacheInvariant rel `shouldBe` True) cases
 
@@ -953,11 +984,11 @@ spec = do
             GraphState
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodeRunning),
-                      (NodeId "c", NodePending)
-                    ],
-                gsNodeOutputs = Map.empty
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodeRunning)
+                    , (NodeId "c", NodePending)
+                    ]
+              , gsNodeOutputs = Map.empty
               }
           result = propagateFailure rel gs
       -- b is Running (not propagatable) — should remain Running
@@ -971,11 +1002,11 @@ spec = do
             GraphState
               { gsNodeStatuses =
                   Map.fromList
-                    [ (NodeId "a", NodeFailed),
-                      (NodeId "b", NodeCompleted),
-                      (NodeId "c", NodePending)
-                    ],
-                gsNodeOutputs = Map.empty
+                    [ (NodeId "a", NodeFailed)
+                    , (NodeId "b", NodeCompleted)
+                    , (NodeId "c", NodePending)
+                    ]
+              , gsNodeOutputs = Map.empty
               }
           result = propagateFailure rel gs
       Map.lookup (NodeId "b") (gsNodeStatuses result) `shouldBe` Just NodeCompleted
@@ -995,10 +1026,10 @@ genGraph = sized go
       v <- choose (1 :: Int, 10)
       elements
         =<< sequence
-          [ pure Empty,
-            pure (Vertex v),
-            Overlay <$> sub <*> sub,
-            Connect <$> sub <*> sub
+          [ pure Empty
+          , pure (Vertex v)
+          , Overlay <$> sub <*> sub
+          , Connect <$> sub <*> sub
           ]
 
 -- | Pick a random vertex from a relation.
@@ -1021,8 +1052,9 @@ genDAGWithEdge = do
       (u, v) <- elements es
       pure (rel, u, v)
 
--- | Generate a random DAG by creating nodes 0..n and adding forward edges
--- (i → j where i < j) randomly. This guarantees acyclicity.
+{- | Generate a random DAG by creating nodes 0..n and adding forward edges
+(i → j where i < j) randomly. This guarantees acyclicity.
+-}
 genDAG :: Gen (Relation NodeId)
 genDAG = sized $ \size -> do
   let n = min size 8 + 2 -- 2 to 10 nodes
@@ -1034,8 +1066,9 @@ genDAG = sized $ \size -> do
           <> mconcat [Vertex v | v <- nodes]
   pure (toRelation g)
 
--- | Generate a random graph state where some nodes are Failed and the
--- rest are Pending. Good for testing propagateFailure.
+{- | Generate a random graph state where some nodes are Failed and the
+rest are Pending. Good for testing propagateFailure.
+-}
 genGraphWithFailures :: Gen (Relation NodeId, GraphState Aeson.Value)
 genGraphWithFailures = do
   rel <- genDAG
@@ -1049,8 +1082,9 @@ genGraphWithFailures = do
       nodes
   pure (rel, GraphState (Map.fromList statuses) Map.empty)
 
--- | Generate a frontier scenario: a DAG, a valid initial state where some
--- nodes have completed, and a set of NodeResults for the current frontier.
+{- | Generate a frontier scenario: a DAG, a valid initial state where some
+nodes have completed, and a set of NodeResults for the current frontier.
+-}
 genFrontierScenario :: Gen (Relation NodeId, GraphState Aeson.Value, [NodeResult])
 genFrontierScenario = do
   rel <- genDAG
@@ -1079,10 +1113,10 @@ genResultFor :: NodeId -> Gen NodeResult
 genResultFor nid = do
   outcome <-
     elements
-      [ OutcomeSucceeded Aeson.Null,
-        OutcomeSkipped,
-        OutcomeNodeFailed (FailureDetail "test" "test failure" True),
-        OutcomeNodeTimedOut
+      [ OutcomeSucceeded Aeson.Null
+      , OutcomeSkipped
+      , OutcomeNodeFailed (FailureDetail "test" "test failure" True)
+      , OutcomeNodeTimedOut
       ]
   pure (NodeResult nid outcome)
 
@@ -1095,8 +1129,9 @@ countStatus :: NodeStatus -> GraphState o -> Int
 countStatus target gs =
   length [() | s <- Map.elems (gsNodeStatuses gs), s == target]
 
--- | Generate a pair of distinct frontier NodeResults and the graph state.
--- Used for testing pairwise commutativity of applyNodeFact.
+{- | Generate a pair of distinct frontier NodeResults and the graph state.
+Used for testing pairwise commutativity of applyNodeFact.
+-}
 genFrontierPairScenario :: Gen (NodeResult, NodeResult, GraphState Aeson.Value)
 genFrontierPairScenario = do
   (_rel, gs, results) <- genFrontierScenario
@@ -1119,8 +1154,9 @@ genFrontierPairScenario = do
           r2 <- genResultFor (NodeId "1")
           pure (r1, r2, gs')
 
--- | Generate a pair of graph states where the second has a superset of failures.
--- Used for testing monotonicity of propagateFailure.
+{- | Generate a pair of graph states where the second has a superset of failures.
+Used for testing monotonicity of propagateFailure.
+-}
 genMonotonePair :: Gen (Relation NodeId, GraphState Aeson.Value, GraphState Aeson.Value)
 genMonotonePair = do
   rel <- genDAG

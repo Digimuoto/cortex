@@ -1,19 +1,19 @@
 -- | Canonical epistemological archetype catalog.
 module Cortex.Nous.Archetypes
-  ( module Cortex.Nous.Archetypes.Episteme,
-    module Cortex.Nous.Archetypes.Episteme.Activation,
-    module Cortex.Nous.Archetypes.Kritikos,
-    module Cortex.Nous.Archetypes.Kritikos.Activation,
-    module Cortex.Nous.Archetypes.Logos,
-    module Cortex.Nous.Archetypes.Logos.Activation,
-    module Cortex.Nous.Archetypes.Poiesis,
-    module Cortex.Nous.Archetypes.Poiesis.Activation,
-    module Cortex.Nous.Archetypes.Sophia,
-    module Cortex.Nous.Archetypes.Sophia.Activation,
-    module Cortex.Nous.Archetypes.Techne,
-    module Cortex.Nous.Archetypes.Techne.Activation,
-    module Cortex.Nous.Archetypes.Themis,
-    module Cortex.Nous.Archetypes.Themis.Activation,
+  ( module Cortex.Nous.Archetypes.Episteme
+  , module Cortex.Nous.Archetypes.Episteme.Activation
+  , module Cortex.Nous.Archetypes.Kritikos
+  , module Cortex.Nous.Archetypes.Kritikos.Activation
+  , module Cortex.Nous.Archetypes.Logos
+  , module Cortex.Nous.Archetypes.Logos.Activation
+  , module Cortex.Nous.Archetypes.Poiesis
+  , module Cortex.Nous.Archetypes.Poiesis.Activation
+  , module Cortex.Nous.Archetypes.Sophia
+  , module Cortex.Nous.Archetypes.Sophia.Activation
+  , module Cortex.Nous.Archetypes.Techne
+  , module Cortex.Nous.Archetypes.Techne.Activation
+  , module Cortex.Nous.Archetypes.Themis
+  , module Cortex.Nous.Archetypes.Themis.Activation
   )
 where
 

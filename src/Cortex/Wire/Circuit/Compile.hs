@@ -1,5 +1,5 @@
 module Cortex.Wire.Circuit.Compile
-  ( module Cortex.Wire.Circuit.Compiler,
+  ( module Cortex.Wire.Circuit.Compiler
   )
 where
 

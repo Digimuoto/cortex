@@ -1,16 +1,17 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Platform.DurableTask.Schedule
-  ( ScheduleKind (..),
-    ExecutionOrigin (..),
-    ScheduleConfig (..),
-    ScheduleDecision (..),
-    decideScheduleAction,
+  ( ScheduleKind (..)
+  , ExecutionOrigin (..)
+  , ScheduleConfig (..)
+  , ScheduleDecision (..)
+  , decideScheduleAction
   )
 where
 
 import Data.Text (Text)
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime)
+
 import Platform.DurableTask.Cron qualified as Cron
 import Platform.DurableTask.Types (RunOutcome (..))
 
@@ -25,8 +26,8 @@ data ExecutionOrigin
   deriving stock (Eq, Show)
 
 data ScheduleConfig = ScheduleConfig
-  { scOneOffFailureBackoff :: NominalDiffTime,
-    scCronParseBackoff :: NominalDiffTime
+  { scOneOffFailureBackoff :: NominalDiffTime
+  , scCronParseBackoff :: NominalDiffTime
   }
   deriving stock (Eq, Show)
 
@@ -39,20 +40,21 @@ data ScheduleDecision
   | RestoreRecurringAfterCronErrorAt UTCTime
   deriving stock (Eq, Show)
 
--- | Shared schedule-finalization policy:
---   - one-off work completes only on explicit success
---   - manual/retry one-off executions record terminal failure outcomes but do
---     not auto-restore themselves into a fresh background run
---   - scheduled recurring work always advances to the next cron fire time,
---     regardless of run outcome
---   - manual/retry recurring work records outcome only and does not advance cron
-decideScheduleAction ::
-  ScheduleConfig ->
-  ExecutionOrigin ->
-  ScheduleKind ->
-  UTCTime ->
-  RunOutcome ->
-  ScheduleDecision
+{- | Shared schedule-finalization policy:
+ - one-off work completes only on explicit success
+ - manual/retry one-off executions record terminal failure outcomes but do
+   not auto-restore themselves into a fresh background run
+ - scheduled recurring work always advances to the next cron fire time,
+   regardless of run outcome
+ - manual/retry recurring work records outcome only and does not advance cron
+-}
+decideScheduleAction
+  :: ScheduleConfig
+  -> ExecutionOrigin
+  -> ScheduleKind
+  -> UTCTime
+  -> RunOutcome
+  -> ScheduleDecision
 decideScheduleAction _ _ _ _ OutcomeShutdown =
   NoScheduleChange
 decideScheduleAction _ _ _ _ OutcomeSuspended =

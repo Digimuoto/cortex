@@ -3,31 +3,9 @@
 
 module Cortex.Nous.Memory.CandidatesSpec (spec) where
 
-import Cortex.Nous.Memory.Candidates
-  ( CortexMemorySearchPlan (..),
-    QueryComplexity (..),
-    buildMemorySearchPlan,
-    classifyQueryComplexity,
-    generateMemoryCandidates,
-    mergeMemoryCandidates,
-  )
-import Cortex.Nous.Memory.Host
-  ( CortexMemoryHost (..),
-  )
-import Cortex.Nous.Memory.Query
-  ( parseMemoryQuery,
-  )
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryEntityConfig (..),
-    CortexMemoryMatchedField (..),
-    CortexMemoryPassage (..),
-    CortexMemoryRetrievalSource (..),
-    defaultCortexMemoryEntityConfig,
-  )
 import Data.Char (isAsciiUpper, isDigit)
 import Data.Functor.Identity
-  ( Identity (..),
+  ( Identity (..)
   )
 import Data.List (sort)
 import Data.Text qualified as T
@@ -36,20 +14,44 @@ import Data.UUID qualified as UUID
 import Data.Word (Word32)
 import Test.Hspec
 
--- | Test entity config that mimics ticker extraction for verifying
--- entity-aware query routing without Cortex depending on Portman.
+import Cortex.Nous.Memory.Candidates
+  ( CortexMemorySearchPlan (..)
+  , QueryComplexity (..)
+  , buildMemorySearchPlan
+  , classifyQueryComplexity
+  , generateMemoryCandidates
+  , mergeMemoryCandidates
+  )
+import Cortex.Nous.Memory.Host
+  ( CortexMemoryHost (..)
+  )
+import Cortex.Nous.Memory.Query
+  ( parseMemoryQuery
+  )
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryEntityConfig (..)
+  , CortexMemoryMatchedField (..)
+  , CortexMemoryPassage (..)
+  , CortexMemoryRetrievalSource (..)
+  , defaultCortexMemoryEntityConfig
+  )
+
+{- | Test entity config that mimics ticker extraction for verifying
+entity-aware query routing without Cortex depending on Portman.
+-}
 testEntityConfig :: CortexMemoryEntityConfig
 testEntityConfig =
   CortexMemoryEntityConfig
     { cortexMemoryExtractEntities =
-        filter isUppercaseToken . T.words . T.strip,
-      cortexMemoryIsEntityOnlyQuery = \rawText ->
+        filter isUppercaseToken . T.words . T.strip
+    , cortexMemoryIsEntityOnlyQuery = \rawText ->
         let tokens = T.words (T.strip rawText)
-         in not (null tokens) && all isUppercaseToken tokens,
-      cortexMemoryQueryHasEntityIntent =
-        any isUppercaseToken . T.words . T.strip,
-      cortexMemoryPositiveStanceTerms = [],
-      cortexMemoryNegativeStanceTerms = []
+         in not (null tokens) && all isUppercaseToken tokens
+    , cortexMemoryQueryHasEntityIntent =
+        any isUppercaseToken . T.words . T.strip
+    , cortexMemoryPositiveStanceTerms = []
+    , cortexMemoryNegativeStanceTerms = []
     }
   where
     isUppercaseToken w =
@@ -67,20 +69,20 @@ spec = do
             mergeMemoryCandidates
               query
               [ (baseCandidate passage)
-                  { cortexCandidateLexicalScore = Just 0.8,
-                    cortexCandidateMatchedTerms = ["amd"],
-                    cortexCandidateMatchedFields = [CortexMemoryMatchedTitle],
-                    cortexCandidateSources = [CortexMemoryRetrievedFromLexical]
-                  },
-                (baseCandidate passage)
-                  { cortexCandidateFuzzyScore = Just 0.5,
-                    cortexCandidateMatchedTerms = ["downside"],
-                    cortexCandidateMatchedFields = [CortexMemoryMatchedBody],
-                    cortexCandidateSources = [CortexMemoryRetrievedFromFuzzy]
-                  },
-                (baseCandidate passage)
-                  { cortexCandidateSemanticScore = Just 0.7,
-                    cortexCandidateSources = [CortexMemoryRetrievedFromSemantic]
+                  { cortexCandidateLexicalScore = Just 0.8
+                  , cortexCandidateMatchedTerms = ["amd"]
+                  , cortexCandidateMatchedFields = [CortexMemoryMatchedTitle]
+                  , cortexCandidateSources = [CortexMemoryRetrievedFromLexical]
+                  }
+              , (baseCandidate passage)
+                  { cortexCandidateFuzzyScore = Just 0.5
+                  , cortexCandidateMatchedTerms = ["downside"]
+                  , cortexCandidateMatchedFields = [CortexMemoryMatchedBody]
+                  , cortexCandidateSources = [CortexMemoryRetrievedFromFuzzy]
+                  }
+              , (baseCandidate passage)
+                  { cortexCandidateSemanticScore = Just 0.7
+                  , cortexCandidateSources = [CortexMemoryRetrievedFromSemantic]
                   }
               ]
 
@@ -92,9 +94,9 @@ spec = do
       sort candidate.cortexCandidateMatchedTerms `shouldBe` ["amd", "downside"]
       sort candidate.cortexCandidateSources
         `shouldBe` sort
-          [ CortexMemoryRetrievedFromLexical,
-            CortexMemoryRetrievedFromFuzzy,
-            CortexMemoryRetrievedFromSemantic
+          [ CortexMemoryRetrievedFromLexical
+          , CortexMemoryRetrievedFromFuzzy
+          , CortexMemoryRetrievedFromSemantic
           ]
       candidate.cortexCandidateFusionScore
         `shouldSatisfy` \score ->
@@ -105,20 +107,22 @@ spec = do
           semanticPassage = mkPassage (uuidFromWord 300)
           lexicalCandidates =
             [ (baseCandidate (mkPassage (uuidFromWord n)))
-                { cortexCandidateLexicalScore = Just (1.0 - fromIntegral (n - 100) / 100),
-                  cortexCandidateSources = [CortexMemoryRetrievedFromLexical]
+                { cortexCandidateLexicalScore = Just (1.0 - fromIntegral (n - 100) / 100)
+                , cortexCandidateSources = [CortexMemoryRetrievedFromLexical]
                 }
             | n <- [100 .. 139]
             ]
           semanticCandidate =
             (baseCandidate semanticPassage)
-              { cortexCandidateSemanticScore = Just 0.9,
-                cortexCandidateSources = [CortexMemoryRetrievedFromSemantic]
+              { cortexCandidateSemanticScore = Just 0.9
+              , cortexCandidateSources = [CortexMemoryRetrievedFromSemantic]
               }
           merged = mergeMemoryCandidates query (lexicalCandidates <> [semanticCandidate])
 
       let candidate =
-            case filter ((== semanticPassage.cortexMemoryPassageId) . (.cortexMemoryPassageId) . cortexCandidatePassage) merged of
+            case filter
+              ((== semanticPassage.cortexMemoryPassageId) . (.cortexMemoryPassageId) . cortexCandidatePassage)
+              merged of
               (c : _) -> c
               [] -> error "semantic candidate missing"
       candidate.cortexCandidateFusionScore
@@ -158,34 +162,39 @@ spec = do
               ]
           lexicalCandidates =
             [ (baseCandidate (mkPassageForItem (uuidFromWord (700 + n)) (Just (uuidFromWord (800 + n))) fixedTime))
-                { cortexCandidateLexicalScore = Just (0.9 - fromIntegral n / 100),
-                  cortexCandidateSources = [CortexMemoryRetrievedFromLexical]
+                { cortexCandidateLexicalScore = Just (0.9 - fromIntegral n / 100)
+                , cortexCandidateSources = [CortexMemoryRetrievedFromLexical]
                 }
             | n <- [0 .. 9]
             ]
           fuzzyCandidate =
             (baseCandidate (mkPassageForItem (uuidFromWord 900) (Just (uuidFromWord 901)) fixedTime))
-              { cortexCandidateFuzzyScore = Just 0.7,
-                cortexCandidateSources = [CortexMemoryRetrievedFromFuzzy]
+              { cortexCandidateFuzzyScore = Just 0.7
+              , cortexCandidateSources = [CortexMemoryRetrievedFromFuzzy]
               }
           semanticCandidate =
             (baseCandidate (mkPassageForItem (uuidFromWord 902) (Just (uuidFromWord 903)) fixedTime))
-              { cortexCandidateSemanticScore = Just 0.8,
-                cortexCandidateSources = [CortexMemoryRetrievedFromSemantic]
+              { cortexCandidateSemanticScore = Just 0.8
+              , cortexCandidateSources = [CortexMemoryRetrievedFromSemantic]
               }
           host =
             CortexMemoryHost
-              { cortexMemoryLoadSessionPassages = \_ _ -> pure [],
-                cortexMemorySearchLexical = \_ _ -> pure lexicalCandidates,
-                cortexMemorySearchFuzzy = \_ _ -> pure [fuzzyCandidate],
-                cortexMemorySearchSemantic = \_ _ -> pure [semanticCandidate],
-                cortexMemoryLoadItemPassages = \_ -> pure (targetPassages <> linkedPassages)
+              { cortexMemoryLoadSessionPassages = \_ _ -> pure []
+              , cortexMemorySearchLexical = \_ _ -> pure lexicalCandidates
+              , cortexMemorySearchFuzzy = \_ _ -> pure [fuzzyCandidate]
+              , cortexMemorySearchSemantic = \_ _ -> pure [semanticCandidate]
+              , cortexMemoryLoadItemPassages = \_ -> pure (targetPassages <> linkedPassages)
               }
           generated = runIdentity (generateMemoryCandidates host plan sessionPassages)
           searchCandidates =
             filter
               ( any
-                  (`elem` [CortexMemoryRetrievedFromLexical, CortexMemoryRetrievedFromFuzzy, CortexMemoryRetrievedFromSemantic])
+                  ( `elem`
+                      [ CortexMemoryRetrievedFromLexical
+                      , CortexMemoryRetrievedFromFuzzy
+                      , CortexMemoryRetrievedFromSemantic
+                      ]
+                  )
                   . cortexCandidateSources
               )
               generated
@@ -242,35 +251,35 @@ spec = do
 baseCandidate :: CortexMemoryPassage -> CortexMemoryCandidate
 baseCandidate passage =
   CortexMemoryCandidate
-    { cortexCandidatePassage = passage,
-      cortexCandidateLexicalScore = Nothing,
-      cortexCandidateFuzzyScore = Nothing,
-      cortexCandidateSemanticScore = Nothing,
-      cortexCandidateMatchedTerms = [],
-      cortexCandidateMatchedFields = [],
-      cortexCandidateSources = [],
-      cortexCandidateFusionScore = 0
+    { cortexCandidatePassage = passage
+    , cortexCandidateLexicalScore = Nothing
+    , cortexCandidateFuzzyScore = Nothing
+    , cortexCandidateSemanticScore = Nothing
+    , cortexCandidateMatchedTerms = []
+    , cortexCandidateMatchedFields = []
+    , cortexCandidateSources = []
+    , cortexCandidateFusionScore = 0
     }
 
 mkPassage :: UUID.UUID -> CortexMemoryPassage
 mkPassage passageId' =
   CortexMemoryPassage
-    { cortexMemoryPassageId = passageId',
-      cortexMemorySourceKind = "saved_report",
-      cortexMemorySourceItemId = Just (uuidFromWord 2),
-      cortexMemorySourceCheckpointId = Nothing,
-      cortexMemorySourceVersionId = uuidFromWord 3,
-      cortexMemoryChatSessionId = Nothing,
-      cortexMemoryPassageOrder = 0,
-      cortexMemorySourceTitle = "AMD note",
-      cortexMemorySectionHeading = Just "Thesis",
-      cortexMemoryPassageText = "AMD downside watch remains active.",
-      cortexMemoryEntities = ["AMD"],
-      cortexMemoryReportType = Nothing,
-      cortexMemoryTimeRange = Nothing,
-      cortexMemoryPassageTokenCount = 8,
-      cortexMemorySourceCreatedAt = fixedTime,
-      cortexMemorySourceUpdatedAt = fixedTime
+    { cortexMemoryPassageId = passageId'
+    , cortexMemorySourceKind = "saved_report"
+    , cortexMemorySourceItemId = Just (uuidFromWord 2)
+    , cortexMemorySourceCheckpointId = Nothing
+    , cortexMemorySourceVersionId = uuidFromWord 3
+    , cortexMemoryChatSessionId = Nothing
+    , cortexMemoryPassageOrder = 0
+    , cortexMemorySourceTitle = "AMD note"
+    , cortexMemorySectionHeading = Just "Thesis"
+    , cortexMemoryPassageText = "AMD downside watch remains active."
+    , cortexMemoryEntities = ["AMD"]
+    , cortexMemoryReportType = Nothing
+    , cortexMemoryTimeRange = Nothing
+    , cortexMemoryPassageTokenCount = 8
+    , cortexMemorySourceCreatedAt = fixedTime
+    , cortexMemorySourceUpdatedAt = fixedTime
     }
 
 fixedTime :: UTCTime
@@ -282,9 +291,9 @@ reciprocalRank rankIndex = 1 / fromIntegral (60 + rankIndex)
 mkPassageForItem :: UUID.UUID -> Maybe UUID.UUID -> UTCTime -> CortexMemoryPassage
 mkPassageForItem passageId' itemId' updatedAt' =
   (mkPassage passageId')
-    { cortexMemorySourceItemId = itemId',
-      cortexMemorySourceCreatedAt = updatedAt',
-      cortexMemorySourceUpdatedAt = updatedAt'
+    { cortexMemorySourceItemId = itemId'
+    , cortexMemorySourceCreatedAt = updatedAt'
+    , cortexMemorySourceUpdatedAt = updatedAt'
     }
 
 uuidFromWord :: Word32 -> UUID.UUID

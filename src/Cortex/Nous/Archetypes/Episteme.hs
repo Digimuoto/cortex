@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Episteme
-  ( epistemeDefinition,
+  ( epistemeDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Episteme),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Episteme)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 epistemeDefinition :: NousArchetypeDefinition

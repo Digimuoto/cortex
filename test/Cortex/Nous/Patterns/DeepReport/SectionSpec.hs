@@ -2,27 +2,28 @@
 
 module Cortex.Nous.Patterns.DeepReport.SectionSpec (spec) where
 
-import Cortex.Nous.Patterns.DeepReport.Section
-  ( ResearchChunk (..),
-    ResearchFinding (..),
-    ResearchSectionPlan (..),
-    ResearchSectionSpec (..),
-    ResearchTable (..),
-    ResearchTableAlignment (..),
-    SectionValidationError (..),
-    compressedResearchChunkLimits,
-    defaultResearchChunkLimits,
-    normalizeResearchChunkToLimits,
-    researchChunkSchema,
-    researchSectionPlanSchema,
-    validateResearchChunk,
-    validateResearchSectionPlan,
-  )
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.List (isInfixOf)
 import Data.Text qualified as T
 import Test.Hspec
+
+import Cortex.Nous.Patterns.DeepReport.Section
+  ( ResearchChunk (..)
+  , ResearchFinding (..)
+  , ResearchSectionPlan (..)
+  , ResearchSectionSpec (..)
+  , ResearchTable (..)
+  , ResearchTableAlignment (..)
+  , SectionValidationError (..)
+  , compressedResearchChunkLimits
+  , defaultResearchChunkLimits
+  , normalizeResearchChunkToLimits
+  , researchChunkSchema
+  , researchSectionPlanSchema
+  , validateResearchChunk
+  , validateResearchSectionPlan
+  )
 
 spec :: Spec
 spec = do
@@ -48,7 +49,10 @@ spec = do
 
     it "rejects chunks with no renderable content" $ do
       validateResearchChunk defaultResearchChunkLimits emptyChunk
-        `shouldBe` Left [SectionValidationError "Chunk must include at least one summary, paragraph, finding, table, or open gap."]
+        `shouldBe` Left
+          [ SectionValidationError
+              "Chunk must include at least one summary, paragraph, finding, table, or open gap."
+          ]
 
     it "normalizes count overflows (paragraphs, refs, open gaps) so repaired chunks validate cleanly" $ do
       let repaired = normalizeResearchChunkToLimits defaultResearchChunkLimits overflowingChunk
@@ -80,22 +84,24 @@ spec = do
 
     it "keeps nullable section summary in the required set for strict providers" $ do
       let encoded = LBS8.unpack (Aeson.encode (researchChunkSchema defaultResearchChunkLimits))
-      encoded `shouldSatisfy` isInfixOf "\"required\":[\"sectionId\",\"title\",\"summary\",\"paragraphs\",\"findings\",\"tables\",\"evidenceRefs\",\"externalRefs\",\"openGaps\"]"
+      encoded
+        `shouldSatisfy` isInfixOf
+          "\"required\":[\"sectionId\",\"title\",\"summary\",\"paragraphs\",\"findings\",\"tables\",\"evidenceRefs\",\"externalRefs\",\"openGaps\"]"
 
 validPlan :: ResearchSectionPlan
 validPlan =
   ResearchSectionPlan
-    { researchSectionPlanTitle = "Weekly IBKR Portfolio Analysis",
-      researchSectionPlanSections =
+    { researchSectionPlanTitle = "Weekly IBKR Portfolio Analysis"
+    , researchSectionPlanSections =
         [ ResearchSectionSpec
-            { researchSectionId = "executive_summary",
-              researchSectionTitle = "Executive summary",
-              researchSectionBrief = "Summarize the week's portfolio outcome."
-            },
-          ResearchSectionSpec
-            { researchSectionId = "risk",
-              researchSectionTitle = "Risk",
-              researchSectionBrief = "Highlight concentration and sector risks."
+            { researchSectionId = "executive_summary"
+            , researchSectionTitle = "Executive summary"
+            , researchSectionBrief = "Summarize the week's portfolio outcome."
+            }
+        , ResearchSectionSpec
+            { researchSectionId = "risk"
+            , researchSectionTitle = "Risk"
+            , researchSectionBrief = "Highlight concentration and sector risks."
             }
         ]
     }
@@ -105,14 +111,14 @@ invalidPlan =
   validPlan
     { researchSectionPlanSections =
         [ ResearchSectionSpec
-            { researchSectionId = "performance",
-              researchSectionTitle = "Performance",
-              researchSectionBrief = "Summarize portfolio performance."
-            },
-          ResearchSectionSpec
-            { researchSectionId = "risk",
-              researchSectionTitle = "Risk",
-              researchSectionBrief = "Highlight concentration and sector risks."
+            { researchSectionId = "performance"
+            , researchSectionTitle = "Performance"
+            , researchSectionBrief = "Summarize portfolio performance."
+            }
+        , ResearchSectionSpec
+            { researchSectionId = "risk"
+            , researchSectionTitle = "Risk"
+            , researchSectionBrief = "Highlight concentration and sector risks."
             }
         ]
     }
@@ -120,23 +126,23 @@ invalidPlan =
 validChunk :: ResearchChunk
 validChunk =
   ResearchChunk
-    { researchChunkSectionId = "executive_summary",
-      researchChunkTitle = "Executive summary",
-      researchChunkSummary = Just "The portfolio outperformed its benchmark over the week.",
-      researchChunkParagraphs =
+    { researchChunkSectionId = "executive_summary"
+    , researchChunkTitle = "Executive summary"
+    , researchChunkSummary = Just "The portfolio outperformed its benchmark over the week."
+    , researchChunkParagraphs =
         [ "Performance was driven by technology holdings and disciplined cash management."
-        ],
-      researchChunkFindings =
+        ]
+    , researchChunkFindings =
         [ ResearchFinding
-            { researchFindingText = "AAPL and NVDA contributed most of the weekly gains.",
-              researchFindingEvidenceRefs = ["call_prices"],
-              researchFindingExternalRefs = []
+            { researchFindingText = "AAPL and NVDA contributed most of the weekly gains."
+            , researchFindingEvidenceRefs = ["call_prices"]
+            , researchFindingExternalRefs = []
             }
-        ],
-      researchChunkTables = [],
-      researchChunkEvidenceRefs = ["call_prices", "call_positions"],
-      researchChunkExternalRefs = [],
-      researchChunkOpenGaps = []
+        ]
+    , researchChunkTables = []
+    , researchChunkEvidenceRefs = ["call_prices", "call_positions"]
+    , researchChunkExternalRefs = []
+    , researchChunkOpenGaps = []
     }
 
 validChunkWithTable :: ResearchChunk
@@ -144,9 +150,9 @@ validChunkWithTable =
   validChunk
     { researchChunkTables =
         [ ResearchTable
-            { researchTableColumns = ["Asset", "Weekly Return"],
-              researchTableAlignments = Just [ResearchAlignLeft, ResearchAlignRight],
-              researchTableRows = [["AAPL", "+2.1%"], ["NVDA", "+3.4%"]]
+            { researchTableColumns = ["Asset", "Weekly Return"]
+            , researchTableAlignments = Just [ResearchAlignLeft, ResearchAlignRight]
+            , researchTableRows = [["AAPL", "+2.1%"], ["NVDA", "+3.4%"]]
             }
         ]
     }
@@ -156,9 +162,9 @@ raggedTableChunk =
   validChunkWithTable
     { researchChunkTables =
         [ ResearchTable
-            { researchTableColumns = ["Asset", "Weekly Return"],
-              researchTableAlignments = Just [ResearchAlignLeft, ResearchAlignRight],
-              researchTableRows = [["AAPL"], ["NVDA", "+3.4%"]]
+            { researchTableColumns = ["Asset", "Weekly Return"]
+            , researchTableAlignments = Just [ResearchAlignLeft, ResearchAlignRight]
+            , researchTableRows = [["AAPL"], ["NVDA", "+3.4%"]]
             }
         ]
     }
@@ -166,26 +172,26 @@ raggedTableChunk =
 emptyChunk :: ResearchChunk
 emptyChunk =
   validChunk
-    { researchChunkSummary = Just "   ",
-      researchChunkParagraphs = [],
-      researchChunkFindings = [],
-      researchChunkTables = [],
-      researchChunkEvidenceRefs = [],
-      researchChunkExternalRefs = [],
-      researchChunkOpenGaps = []
+    { researchChunkSummary = Just "   "
+    , researchChunkParagraphs = []
+    , researchChunkFindings = []
+    , researchChunkTables = []
+    , researchChunkEvidenceRefs = []
+    , researchChunkExternalRefs = []
+    , researchChunkOpenGaps = []
     }
 
 overflowingChunk :: ResearchChunk
 overflowingChunk =
   validChunk
-    { researchChunkParagraphs = replicate 6 (T.replicate 1300 "p"),
-      researchChunkFindings =
+    { researchChunkParagraphs = replicate 6 (T.replicate 1300 "p")
+    , researchChunkFindings =
         [ ResearchFinding
-            { researchFindingText = T.replicate 280 "x",
-              researchFindingEvidenceRefs = replicate 30 "call_prices",
-              researchFindingExternalRefs = []
+            { researchFindingText = T.replicate 280 "x"
+            , researchFindingEvidenceRefs = replicate 30 "call_prices"
+            , researchFindingExternalRefs = []
             }
-        ],
-      researchChunkEvidenceRefs = replicate 24 "call_positions",
-      researchChunkOpenGaps = replicate 9 (T.replicate 320 "g")
+        ]
+    , researchChunkEvidenceRefs = replicate 24 "call_positions"
+    , researchChunkOpenGaps = replicate 9 (T.replicate 320 "g")
     }

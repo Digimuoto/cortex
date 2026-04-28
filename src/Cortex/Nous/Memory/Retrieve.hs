@@ -1,43 +1,13 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Cortex.Nous.Memory.Retrieve
-  ( CortexMemoryRetrievalContext (..),
-    CortexMemoryRetrievalRequest (..),
-    CortexMemorySelectionProfile (..),
-    resolveMemoryContext,
+  ( CortexMemoryRetrievalContext (..)
+  , CortexMemoryRetrievalRequest (..)
+  , CortexMemorySelectionProfile (..)
+  , resolveMemoryContext
   )
 where
 
-import Cortex.Nous.Memory.Candidates
-  ( buildMemorySearchPlan,
-    generateMemoryCandidates,
-  )
-import Cortex.Nous.Memory.Conflict
-  ( resolveMemoryConflicts,
-  )
-import Cortex.Nous.Memory.Host
-  ( CortexMemoryHost (..),
-  )
-import Cortex.Nous.Memory.Pack
-  ( packReferencePassages,
-    packSessionPassages,
-  )
-import Cortex.Nous.Memory.Query
-  ( CortexMemoryQuery (..),
-    cortexMemoryQueryIsBlank,
-    parseMemoryQuery,
-  )
-import Cortex.Nous.Memory.Rank
-  ( CortexMemoryRankWeights,
-    rankMemoryCandidates,
-  )
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryEntityConfig,
-    CortexMemoryPassage (..),
-    CortexMemoryRankedPassage (..),
-    CortexMemoryRetrievalSource (..),
-  )
 import Data.Int (Int64)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -48,52 +18,85 @@ import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
 
+import Cortex.Nous.Memory.Candidates
+  ( buildMemorySearchPlan
+  , generateMemoryCandidates
+  )
+import Cortex.Nous.Memory.Conflict
+  ( resolveMemoryConflicts
+  )
+import Cortex.Nous.Memory.Host
+  ( CortexMemoryHost (..)
+  )
+import Cortex.Nous.Memory.Pack
+  ( packReferencePassages
+  , packSessionPassages
+  )
+import Cortex.Nous.Memory.Query
+  ( CortexMemoryQuery (..)
+  , cortexMemoryQueryIsBlank
+  , parseMemoryQuery
+  )
+import Cortex.Nous.Memory.Rank
+  ( CortexMemoryRankWeights
+  , rankMemoryCandidates
+  )
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryEntityConfig
+  , CortexMemoryPassage (..)
+  , CortexMemoryRankedPassage (..)
+  , CortexMemoryRetrievalSource (..)
+  )
+
 data CortexMemorySelectionProfile = CortexMemorySelectionProfile
-  { cortexMemoryRawQuery :: Text,
-    cortexMemoryAnchoredItemIds :: [UUID],
-    cortexMemoryTargetItemId :: Maybe UUID,
-    cortexMemorySessionTokenBudget :: Int64,
-    cortexMemorySessionMaxCount :: Int,
-    cortexMemoryReferenceTokenBudget :: Int64,
-    cortexMemoryReferenceMaxCount :: Int,
-    cortexMemoryRankWeights :: CortexMemoryRankWeights,
-    -- | Source-kind-keyed prior weights for ranking. App-defined labels
-    -- (e.g. "checkpoint", "saved_report") map to prior scores in [0,1].
-    -- Source kinds not in the map get 'cortexMemorySourcePriorDefault'.
-    cortexMemorySourcePriorWeights :: Map Text Double,
-    -- | Default source prior for source kinds not in the weight map.
-    cortexMemorySourcePriorDefault :: Double,
-    -- | Minimum retrieval score by source kind. Source kinds not in the
-    -- map get 'cortexMemoryMinScoreDefault'.
-    cortexMemoryMinScoreBySourceKind :: Map Text Double,
-    cortexMemoryMinScoreDefault :: Double
+  { cortexMemoryRawQuery :: Text
+  , cortexMemoryAnchoredItemIds :: [UUID]
+  , cortexMemoryTargetItemId :: Maybe UUID
+  , cortexMemorySessionTokenBudget :: Int64
+  , cortexMemorySessionMaxCount :: Int
+  , cortexMemoryReferenceTokenBudget :: Int64
+  , cortexMemoryReferenceMaxCount :: Int
+  , cortexMemoryRankWeights :: CortexMemoryRankWeights
+  , cortexMemorySourcePriorWeights :: Map Text Double
+  {- ^ Source-kind-keyed prior weights for ranking. App-defined labels
+   (e.g. "checkpoint", "saved_report") map to prior scores in [0,1].
+   Source kinds not in the map get 'cortexMemorySourcePriorDefault'.
+  -}
+  , cortexMemorySourcePriorDefault :: Double
+  -- ^ Default source prior for source kinds not in the weight map.
+  , cortexMemoryMinScoreBySourceKind :: Map Text Double
+  {- ^ Minimum retrieval score by source kind. Source kinds not in the
+   map get 'cortexMemoryMinScoreDefault'.
+  -}
+  , cortexMemoryMinScoreDefault :: Double
   }
   deriving stock (Eq, Show)
 
 data CortexMemoryRetrievalRequest = CortexMemoryRetrievalRequest
-  { cortexMemorySelectionProfile :: CortexMemorySelectionProfile,
-    cortexMemorySessionId :: Maybe UUID,
-    cortexMemorySearchQuery :: Text,
-    cortexMemoryExplicitTargetItemId :: Maybe UUID,
-    cortexMemoryLinkedItemIds :: [UUID],
-    cortexMemorySessionPassageLimit :: Int,
-    cortexMemorySearchResultLimit :: Int
+  { cortexMemorySelectionProfile :: CortexMemorySelectionProfile
+  , cortexMemorySessionId :: Maybe UUID
+  , cortexMemorySearchQuery :: Text
+  , cortexMemoryExplicitTargetItemId :: Maybe UUID
+  , cortexMemoryLinkedItemIds :: [UUID]
+  , cortexMemorySessionPassageLimit :: Int
+  , cortexMemorySearchResultLimit :: Int
   }
   deriving stock (Eq, Show)
 
 data CortexMemoryRetrievalContext = CortexMemoryRetrievalContext
-  { cortexMemorySessionPassages :: [CortexMemoryPassage],
-    cortexMemoryReferencePassages :: [CortexMemoryRankedPassage]
+  { cortexMemorySessionPassages :: [CortexMemoryPassage]
+  , cortexMemoryReferencePassages :: [CortexMemoryRankedPassage]
   }
   deriving stock (Eq, Show)
 
-resolveMemoryContext ::
-  (Monad m) =>
-  CortexMemoryHost m ->
-  CortexMemoryEntityConfig ->
-  UTCTime ->
-  CortexMemoryRetrievalRequest ->
-  m CortexMemoryRetrievalContext
+resolveMemoryContext
+  :: Monad m
+  => CortexMemoryHost m
+  -> CortexMemoryEntityConfig
+  -> UTCTime
+  -> CortexMemoryRetrievalRequest
+  -> m CortexMemoryRetrievalContext
 resolveMemoryContext host entityConfig now request = do
   sessionPassages0 <-
     case request.cortexMemorySessionId of
@@ -130,7 +133,10 @@ resolveMemoryContext host entityConfig now request = do
       candidateRows =
         filter
           ( \candidate ->
-              maybe True (`Set.notMember` loadedSessionCheckpointIds) candidate.cortexCandidatePassage.cortexMemorySourceCheckpointId
+              maybe
+                True
+                (`Set.notMember` loadedSessionCheckpointIds)
+                candidate.cortexCandidatePassage.cortexMemorySourceCheckpointId
           )
           afterNegativeFilter
       rankedRows =
@@ -148,8 +154,8 @@ resolveMemoryContext host entityConfig now request = do
 
   pure $
     CortexMemoryRetrievalContext
-      { cortexMemorySessionPassages = selectedSession,
-        cortexMemoryReferencePassages =
+      { cortexMemorySessionPassages = selectedSession
+      , cortexMemoryReferencePassages =
           packReferencePassages
             request.cortexMemorySelectionProfile.cortexMemoryReferenceTokenBudget
             request.cortexMemorySelectionProfile.cortexMemoryReferenceMaxCount
@@ -171,12 +177,14 @@ resolveMemoryContext host entityConfig now request = do
         (`elem` row.cortexRankedCandidate.cortexCandidateSources)
         [CortexMemoryRetrievedFromDirectTarget, CortexMemoryRetrievedFromAnchored]
 
--- | Filter out candidates whose text, title, heading, or entities contain
--- any of the query's negative terms (terms prefixed with "-" in the
--- original query). Preserves explicitly anchored passages (direct target
--- or linked items) since the user explicitly requested them in context.
--- Uses word-boundary tokenization that preserves dots for dotted symbols.
-filterNegativeTerms :: [UUID] -> CortexMemoryQuery -> [CortexMemoryCandidate] -> [CortexMemoryCandidate]
+{- | Filter out candidates whose text, title, heading, or entities contain
+any of the query's negative terms (terms prefixed with "-" in the
+original query). Preserves explicitly anchored passages (direct target
+or linked items) since the user explicitly requested them in context.
+Uses word-boundary tokenization that preserves dots for dotted symbols.
+-}
+filterNegativeTerms
+  :: [UUID] -> CortexMemoryQuery -> [CortexMemoryCandidate] -> [CortexMemoryCandidate]
 filterNegativeTerms anchoredItemIds query
   | null query.cortexMemoryQueryNegativeTerms = id
   | otherwise = filter (\c -> isAnchored c || not (matchesNegativeTerm c))

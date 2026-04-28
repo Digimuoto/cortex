@@ -6,29 +6,26 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Wire.AST
-  ( QualifiedRef (..),
-    renderQualifiedRef,
-    EndpointRef (..),
-    renderEndpointRef,
-    Connection (..),
-    connect,
-    WireInputCardinality (..),
-    WireInputPort (..),
-    WireOutputPort (..),
-    WirePorts (..),
-    defaultInputPortName,
-    defaultOutputPortName,
-    WireExecutor (..),
-    WireNodeRuntimeOptions (..),
-    emptyWireNodeRuntimeOptions,
-    WireError (..),
-    renderWireError,
+  ( QualifiedRef (..)
+  , renderQualifiedRef
+  , EndpointRef (..)
+  , renderEndpointRef
+  , Connection (..)
+  , connect
+  , WireInputCardinality (..)
+  , WireInputPort (..)
+  , WireOutputPort (..)
+  , WirePorts (..)
+  , defaultInputPortName
+  , defaultOutputPortName
+  , WireExecutor (..)
+  , WireNodeRuntimeOptions (..)
+  , emptyWireNodeRuntimeOptions
+  , WireError (..)
+  , renderWireError
   )
 where
 
-import Cortex.Algebra.Graph (ValidationError (..))
-import Cortex.Pulse.Memory.Types (MemoryStrategy)
-import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson qualified as Aeson
 import Data.Int (Int32)
@@ -38,6 +35,10 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+
+import Cortex.Algebra.Graph (ValidationError (..))
+import Cortex.Pulse.Memory.Types (MemoryStrategy)
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 
 newtype QualifiedRef = QualifiedRef
   { qualifiedRefSegments :: NonEmpty Text
@@ -49,8 +50,8 @@ renderQualifiedRef :: QualifiedRef -> Text
 renderQualifiedRef = T.intercalate "." . NE.toList . qualifiedRefSegments
 
 data EndpointRef = EndpointRef
-  { endpointNodeRef :: !CircuitNodeRef,
-    endpointPortName :: !(Maybe Text)
+  { endpointNodeRef :: !CircuitNodeRef
+  , endpointPortName :: !(Maybe Text)
   }
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON)
@@ -61,8 +62,8 @@ renderEndpointRef endpointRef =
     <> foldMap ("." <>) endpointRef.endpointPortName
 
 data Connection = Connection
-  { connectionFrom :: !EndpointRef,
-    connectionTo :: !EndpointRef
+  { connectionFrom :: !EndpointRef
+  , connectionTo :: !EndpointRef
   }
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON)
@@ -86,9 +87,9 @@ instance FromJSON WireInputCardinality where
           ("Unknown input port cardinality: " <> T.unpack other)
 
 data WireInputPort = WireInputPort
-  { wireInputPortAccepts :: ![Text],
-    wireInputPortCardinality :: !WireInputCardinality,
-    wireInputPortRequired :: !Bool
+  { wireInputPortAccepts :: ![Text]
+  , wireInputPortCardinality :: !WireInputCardinality
+  , wireInputPortRequired :: !Bool
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -112,8 +113,8 @@ instance FromJSON WireOutputPort where
       <$> obj Aeson..: "contract"
 
 data WirePorts = WirePorts
-  { wirePortsInputs :: !(Map Text WireInputPort),
-    wirePortsOutputs :: !(Map Text WireOutputPort)
+  { wirePortsInputs :: !(Map Text WireInputPort)
+  , wirePortsOutputs :: !(Map Text WireOutputPort)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -137,13 +138,13 @@ data WireExecutor
   deriving anyclass (ToJSON)
 
 data WireNodeRuntimeOptions = WireNodeRuntimeOptions
-  { wireNodeRuntimeTimeoutSeconds :: !(Maybe Int32),
-    wireNodeRuntimeRetryCount :: !(Maybe Int32),
-    wireNodeRuntimeStepBudget :: !(Maybe Int32),
-    wireNodeRuntimeToolLoopMinSteps :: !(Maybe Int32),
-    wireNodeRuntimeMaxOutputTokens :: !(Maybe Int32),
-    wireNodeRuntimeReasoningEnabled :: !(Maybe Bool),
-    wireNodeRuntimeMemory :: !(Maybe MemoryStrategy)
+  { wireNodeRuntimeTimeoutSeconds :: !(Maybe Int32)
+  , wireNodeRuntimeRetryCount :: !(Maybe Int32)
+  , wireNodeRuntimeStepBudget :: !(Maybe Int32)
+  , wireNodeRuntimeToolLoopMinSteps :: !(Maybe Int32)
+  , wireNodeRuntimeMaxOutputTokens :: !(Maybe Int32)
+  , wireNodeRuntimeReasoningEnabled :: !(Maybe Bool)
+  , wireNodeRuntimeMemory :: !(Maybe MemoryStrategy)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -162,13 +163,13 @@ instance FromJSON WireNodeRuntimeOptions where
 emptyWireNodeRuntimeOptions :: WireNodeRuntimeOptions
 emptyWireNodeRuntimeOptions =
   WireNodeRuntimeOptions
-    { wireNodeRuntimeTimeoutSeconds = Nothing,
-      wireNodeRuntimeRetryCount = Nothing,
-      wireNodeRuntimeStepBudget = Nothing,
-      wireNodeRuntimeToolLoopMinSteps = Nothing,
-      wireNodeRuntimeMaxOutputTokens = Nothing,
-      wireNodeRuntimeReasoningEnabled = Nothing,
-      wireNodeRuntimeMemory = Nothing
+    { wireNodeRuntimeTimeoutSeconds = Nothing
+    , wireNodeRuntimeRetryCount = Nothing
+    , wireNodeRuntimeStepBudget = Nothing
+    , wireNodeRuntimeToolLoopMinSteps = Nothing
+    , wireNodeRuntimeMaxOutputTokens = Nothing
+    , wireNodeRuntimeReasoningEnabled = Nothing
+    , wireNodeRuntimeMemory = Nothing
     }
 
 data WireError
@@ -232,9 +233,17 @@ renderWireError = \case
   WireUnknownPort nodeRef portName ->
     "Node " <> unCircuitNodeRef nodeRef <> " does not declare port " <> portName <> "."
   WireMissingDefaultInputPort nodeRef ->
-    "Node " <> unCircuitNodeRef nodeRef <> " does not declare the default input port " <> defaultInputPortName <> "."
+    "Node "
+      <> unCircuitNodeRef nodeRef
+      <> " does not declare the default input port "
+      <> defaultInputPortName
+      <> "."
   WireMissingDefaultOutputPort nodeRef ->
-    "Node " <> unCircuitNodeRef nodeRef <> " does not declare the default output port " <> defaultOutputPortName <> "."
+    "Node "
+      <> unCircuitNodeRef nodeRef
+      <> " does not declare the default output port "
+      <> defaultOutputPortName
+      <> "."
   WireNoCompatiblePorts fromRef toRef ->
     "Connection "
       <> renderEndpointRef fromRef

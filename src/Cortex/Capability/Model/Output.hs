@@ -2,18 +2,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Capability.Model.Output
-  ( appendSourcesSection,
-    renderChoiceContentWithSources,
-    shouldAppendExternalSourceFooter,
+  ( appendSourcesSection
+  , renderChoiceContentWithSources
+  , shouldAppendExternalSourceFooter
   )
 where
 
-import Cortex.Capability.Model.Types
-  ( CortexChoice (..),
-    CortexGroundingMode (..),
-  )
 import Data.Text (Text)
 import Data.Text qualified as T
+
+import Cortex.Capability.Model.Types
+  ( CortexChoice (..)
+  , CortexGroundingMode (..)
+  )
 
 renderChoiceContentWithSources :: CortexGroundingMode -> CortexChoice -> Text
 renderChoiceContentWithSources groundingMode choice

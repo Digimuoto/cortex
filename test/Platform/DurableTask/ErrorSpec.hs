@@ -1,8 +1,9 @@
 module Platform.DurableTask.ErrorSpec (spec) where
 
 import Data.IORef (newIORef, readIORef, writeIORef)
-import Platform.DurableTask.Error (logDbFailure, logDbFailure_)
 import Test.Hspec
+
+import Platform.DurableTask.Error (logDbFailure, logDbFailure_)
 
 spec :: Spec
 spec = describe "Platform.DurableTask.Error" $ do
@@ -26,6 +27,7 @@ spec = describe "Platform.DurableTask.Error" $ do
 
     it "returns Nothing and calls callback on Left" $ do
       ref <- newIORef Nothing
-      result <- logDbFailure (writeIORef ref . Just) (pure (Left "connection refused") :: IO (Either String Int))
+      result <-
+        logDbFailure (writeIORef ref . Just) (pure (Left "connection refused") :: IO (Either String Int))
       result `shouldBe` Nothing
       readIORef ref `shouldReturn` Just "connection refused"

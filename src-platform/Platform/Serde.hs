@@ -1,5 +1,5 @@
 module Platform.Serde
-  ( module Platform.Serde.Json,
+  ( module Platform.Serde.Json
   )
 where
 

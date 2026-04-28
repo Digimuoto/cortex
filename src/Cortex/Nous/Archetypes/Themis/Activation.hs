@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Themis.Activation
-  ( themisCapabilityBundle,
+  ( themisCapabilityBundle
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Themis),
-    NousCapabilityBundle,
-    nousCapabilityBundle,
+  ( NousArchetype (Themis)
+  , NousCapabilityBundle
+  , nousCapabilityBundle
   )
 
 themisCapabilityBundle :: NousCapabilityBundle

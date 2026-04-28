@@ -1,5 +1,5 @@
 module Cortex.Pulse.Frontier
-  ( module Cortex.Pulse.Executor.Frontier,
+  ( module Cortex.Pulse.Executor.Frontier
   )
 where
 

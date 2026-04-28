@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Techne
-  ( techneDefinition,
+  ( techneDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Techne),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Techne)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 techneDefinition :: NousArchetypeDefinition

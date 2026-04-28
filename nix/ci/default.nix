@@ -14,6 +14,19 @@
       '';
     };
 
+    check-haskell-format = pkgs.writeShellApplication {
+      name = "check-haskell-format";
+      runtimeInputs = [
+        pkgs.fd
+        pkgs.haskellPackages.fourmolu
+      ];
+      text = ''
+        set -euo pipefail
+        fd -e hs . src src-platform app test -0 \
+          | xargs -0 fourmolu --mode check
+      '';
+    };
+
     lint-haskell = pkgs.writeShellApplication {
       name = "lint-haskell";
       runtimeInputs = [pkgs.haskellPackages.hlint];
@@ -67,23 +80,27 @@
         check-format
         echo
 
-        echo "Step 2: Haskell lint"
+        echo "Step 2: Haskell formatting"
+        check-haskell-format
+        echo
+
+        echo "Step 3: Haskell lint"
         lint-haskell
         echo
 
-        echo "Step 3: Lean lint"
+        echo "Step 4: Lean lint"
         lean-lint
         echo
 
-        echo "Step 4: docs lint"
+        echo "Step 5: docs lint"
         docs-lint
         echo
 
-        echo "Step 5: Lean theory"
+        echo "Step 6: Lean theory"
         check-theory
         echo
 
-        echo "Step 6: flake checks"
+        echo "Step 7: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -92,6 +109,7 @@
       _check-format = check-format;
       _check-theory = check-theory;
       _ci-check = ci-check;
+      check-haskell-format = check-haskell-format;
       docs-lint = docs-lint;
       lean-lint = lean-lint;
       lint-haskell = lint-haskell;
@@ -108,6 +126,12 @@
         type = "app";
         program = "${check-theory}/bin/check-theory";
         meta.description = "Build the Lean theory through the flake surface";
+      };
+
+      check-haskell-format = {
+        type = "app";
+        program = "${check-haskell-format}/bin/check-haskell-format";
+        meta.description = "Fail when Fourmolu formatting drifts";
       };
 
       _ci-check = {

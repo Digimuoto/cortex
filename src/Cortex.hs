@@ -1,19 +1,20 @@
--- | Supported Cortex import surface for downstream consumers.
---
--- Downstream products should prefer @import Cortex@ for the stable substrate
--- API. Area modules remain available for advanced use, but this module is the
--- boundary that accumulates public compatibility promises.
+{- | Supported Cortex import surface for downstream consumers.
+
+Downstream products should prefer @import Cortex@ for the stable substrate
+API. Area modules remain available for advanced use, but this module is the
+boundary that accumulates public compatibility promises.
+-}
 module Cortex
-  ( module Cortex.Algebra.Graph,
-    module Cortex.Artifact,
-    module Cortex.Capability,
-    DocumentValidationError,
-    GraphValidationError,
-    module Cortex.Nous.Memory,
-    module Cortex.Nous,
-    module Cortex.Pulse,
-    module Cortex.Wire,
-    module Cortex.Wire.Circuit,
+  ( module Cortex.Algebra.Graph
+  , module Cortex.Artifact
+  , module Cortex.Capability
+  , DocumentValidationError
+  , GraphValidationError
+  , module Cortex.Nous.Memory
+  , module Cortex.Nous
+  , module Cortex.Pulse
+  , module Cortex.Wire
+  , module Cortex.Wire.Circuit
   )
 where
 

@@ -1,10 +1,10 @@
 {-# LANGUAGE DerivingStrategies #-}
 
 module Cortex.Nous.Thought.Stage
-  ( CortexDeploymentId (..),
-    CortexRunHandle (..),
-    CortexRunId (..),
-    CortexStageDescriptor (..),
+  ( CortexDeploymentId (..)
+  , CortexRunHandle (..)
+  , CortexRunId (..)
+  , CortexStageDescriptor (..)
   )
 where
 
@@ -18,15 +18,15 @@ newtype CortexDeploymentId = CortexDeploymentId Text
   deriving stock (Eq, Show)
 
 data CortexRunHandle = CortexRunHandle
-  { cortexRunHandleRunId :: CortexRunId,
-    cortexRunHandleDeploymentId :: Maybe CortexDeploymentId
+  { cortexRunHandleRunId :: CortexRunId
+  , cortexRunHandleDeploymentId :: Maybe CortexDeploymentId
   }
   deriving stock (Eq, Show)
 
 data CortexStageDescriptor = CortexStageDescriptor
-  { cortexStageAgentName :: Maybe Text,
-    cortexStageStageName :: Maybe Text,
-    cortexStageStep :: Maybe Int,
-    cortexStageToolName :: Maybe Text
+  { cortexStageAgentName :: Maybe Text
+  , cortexStageStageName :: Maybe Text
+  , cortexStageStep :: Maybe Int
+  , cortexStageToolName :: Maybe Text
   }
   deriving stock (Eq, Show)

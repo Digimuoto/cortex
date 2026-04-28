@@ -3,33 +3,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Wire.Proposal
-  ( WireAppendHole (..),
-    WireProposalError (..),
-    wireProposalErrorCategory,
-    renderWireProposalError,
-    normalizeWireProposalResponse,
-    wireProposalGrammarReference,
-    wireProposalSingleNodeExample,
-    wireProposalSingleNodeShorthandExample,
-    wireProposalInvalidMissingGraphExample,
-    wireProposalInvalidOuterReferenceExample,
-    compileWireAppendProposalWithEnv,
+  ( WireAppendHole (..)
+  , WireProposalError (..)
+  , wireProposalErrorCategory
+  , renderWireProposalError
+  , normalizeWireProposalResponse
+  , wireProposalGrammarReference
+  , wireProposalSingleNodeExample
+  , wireProposalSingleNodeShorthandExample
+  , wireProposalInvalidMissingGraphExample
+  , wireProposalInvalidOuterReferenceExample
+  , compileWireAppendProposalWithEnv
   )
 where
 
 import Control.Applicative ((<|>))
 import Control.Monad (when)
-import Cortex.Wire.Circuit.Artifact (CircuitConditionNode (..), CompiledCircuit (..), CompiledCircuitNode (..))
-import Cortex.Wire.Circuit.IR
-  ( CircuitArtifactBoundary (..),
-    CircuitNodeRef (..),
-    CircuitRewriteBoundary (..),
-    CircuitSignalBoundary (..),
-    CircuitTaskNode (..),
-  )
-import Cortex.Wire.Compile qualified as WireCompile
-import Cortex.Wire.Contract (WireCompileEnv, wirePortsFromMetadataValue)
-import Cortex.Wire.Syntax
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -43,10 +32,26 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 
+import Cortex.Wire.Circuit.Artifact
+  ( CircuitConditionNode (..)
+  , CompiledCircuit (..)
+  , CompiledCircuitNode (..)
+  )
+import Cortex.Wire.Circuit.IR
+  ( CircuitArtifactBoundary (..)
+  , CircuitNodeRef (..)
+  , CircuitRewriteBoundary (..)
+  , CircuitSignalBoundary (..)
+  , CircuitTaskNode (..)
+  )
+import Cortex.Wire.Compile qualified as WireCompile
+import Cortex.Wire.Contract (WireCompileEnv, wirePortsFromMetadataValue)
+import Cortex.Wire.Syntax
+
 data WireAppendHole = WireAppendHole
-  { wireAppendHoleAnchor :: !CircuitNodeRef,
-    wireAppendHoleAnchorPorts :: !WirePorts,
-    wireAppendHoleSuccessors :: !(Map CircuitNodeRef WirePorts)
+  { wireAppendHoleAnchor :: !CircuitNodeRef
+  , wireAppendHoleAnchorPorts :: !WirePorts
+  , wireAppendHoleSuccessors :: !(Map CircuitNodeRef WirePorts)
   }
   deriving stock (Eq, Show)
 
@@ -130,11 +135,11 @@ guardText :: Bool -> Maybe ()
 guardText True = Just ()
 guardText False = Nothing
 
-compileWireAppendProposalWithEnv ::
-  WireCompileEnv ->
-  WireAppendHole ->
-  Text ->
-  Either WireProposalError CompiledCircuit
+compileWireAppendProposalWithEnv
+  :: WireCompileEnv
+  -> WireAppendHole
+  -> Text
+  -> Either WireProposalError CompiledCircuit
 compileWireAppendProposalWithEnv compileEnv appendHole rawSource = do
   compiled <-
     mapLeft
@@ -144,7 +149,8 @@ compileWireAppendProposalWithEnv compileEnv appendHole rawSource = do
   validateAppendHole appendHole nodePorts compiled
   Right compiled
 
-proposalPortsCatalogFromCompiled :: CompiledCircuit -> Either WireProposalError (Map CircuitNodeRef WirePorts)
+proposalPortsCatalogFromCompiled
+  :: CompiledCircuit -> Either WireProposalError (Map CircuitNodeRef WirePorts)
 proposalPortsCatalogFromCompiled compiled =
   traverse extractNodePorts compiled.compiledCircuitNodes
   where
@@ -152,13 +158,21 @@ proposalPortsCatalogFromCompiled compiled =
       CompiledCircuitTask taskNode ->
         extractPortsFromMetadata taskNode.circuitTaskNodeRef taskNode.circuitTaskNodeMetadata
       CompiledCircuitSignal signalBoundary ->
-        extractPortsFromMetadata signalBoundary.circuitSignalBoundaryRef signalBoundary.circuitSignalMetadata
+        extractPortsFromMetadata
+          signalBoundary.circuitSignalBoundaryRef
+          signalBoundary.circuitSignalMetadata
       CompiledCircuitArtifact artifactBoundary ->
-        extractPortsFromMetadata artifactBoundary.circuitArtifactBoundaryRef artifactBoundary.circuitArtifactMetadata
+        extractPortsFromMetadata
+          artifactBoundary.circuitArtifactBoundaryRef
+          artifactBoundary.circuitArtifactMetadata
       CompiledCircuitRewriteBoundary rewriteBoundary ->
-        extractPortsFromMetadata rewriteBoundary.circuitRewriteBoundaryRef rewriteBoundary.circuitRewriteMetadata
+        extractPortsFromMetadata
+          rewriteBoundary.circuitRewriteBoundaryRef
+          rewriteBoundary.circuitRewriteMetadata
       CompiledCircuitCondition conditionNode ->
-        extractPortsFromMetadata conditionNode.circuitConditionNodeRef conditionNode.circuitConditionNodeMetadata
+        extractPortsFromMetadata
+          conditionNode.circuitConditionNodeRef
+          conditionNode.circuitConditionNodeMetadata
     extractPortsFromMetadata nodeRef metadataValue = do
       metadataObj <-
         case metadataValue of
@@ -173,7 +187,11 @@ proposalPortsCatalogFromCompiled compiled =
               )
       portsValue <-
         maybe
-          (Left (WireProposalHoleFitError ("proposal node " <> unCircuitNodeRef nodeRef <> " has no lowered ports metadata")))
+          ( Left
+              ( WireProposalHoleFitError
+                  ("proposal node " <> unCircuitNodeRef nodeRef <> " has no lowered ports metadata")
+              )
+          )
           Right
           (KeyMap.lookup (Key.fromText "ports") metadataObj)
       case wirePortsFromMetadataValue portsValue of
@@ -188,11 +206,11 @@ proposalPortsCatalogFromCompiled compiled =
             )
         Right ports -> Right ports
 
-validateAppendHole ::
-  WireAppendHole ->
-  Map CircuitNodeRef WirePorts ->
-  CompiledCircuit ->
-  Either WireProposalError ()
+validateAppendHole
+  :: WireAppendHole
+  -> Map CircuitNodeRef WirePorts
+  -> CompiledCircuit
+  -> Either WireProposalError ()
 validateAppendHole appendHole proposalPorts compiled = do
   when (null compiled.compiledCircuitEntryNodes) $
     Left (WireProposalHoleFitError "proposal has no entry nodes")
@@ -248,17 +266,17 @@ portContractOverlap :: WirePorts -> WirePorts -> [Text]
 portContractOverlap sourcePorts sinkPorts =
   Set.toAscList . Set.fromList $
     [ outputPort.wireOutputPortContract
-    | outputPort <- Map.elems sourcePorts.wirePortsOutputs,
-      inputPort <- Map.elems sinkPorts.wirePortsInputs,
-      outputPort.wireOutputPortContract `elem` inputPort.wireInputPortAccepts
+    | outputPort <- Map.elems sourcePorts.wirePortsOutputs
+    , inputPort <- Map.elems sinkPorts.wirePortsInputs
+    , outputPort.wireOutputPortContract `elem` inputPort.wireInputPortAccepts
     ]
 
-renderEntryHoleFitFailure ::
-  WireAppendHole ->
-  CircuitNodeRef ->
-  WirePorts ->
-  [Text] ->
-  Text
+renderEntryHoleFitFailure
+  :: WireAppendHole
+  -> CircuitNodeRef
+  -> WirePorts
+  -> [Text]
+  -> Text
 renderEntryHoleFitFailure appendHole entryRef entryPorts compatibleContracts =
   T.intercalate
     "\n"
@@ -266,21 +284,21 @@ renderEntryHoleFitFailure appendHole entryRef entryPorts compatibleContracts =
         <> unCircuitNodeRef appendHole.wireAppendHoleAnchor
         <> " cannot feed proposal entry "
         <> unCircuitNodeRef entryRef
-        <> ".",
-      "Hole-fit rule: the first inserted node must accept at least one contract emitted by the anchor.",
-      "Anchor outputs: " <> renderOutputPorts appendHole.wireAppendHoleAnchorPorts,
-      "Entry inputs: " <> renderInputPorts entryPorts,
-      "Shared contracts: " <> renderContractList compatibleContracts,
-      "Proposal-local config overrides do not change ports or contracts."
+        <> "."
+    , "Hole-fit rule: the first inserted node must accept at least one contract emitted by the anchor."
+    , "Anchor outputs: " <> renderOutputPorts appendHole.wireAppendHoleAnchorPorts
+    , "Entry inputs: " <> renderInputPorts entryPorts
+    , "Shared contracts: " <> renderContractList compatibleContracts
+    , "Proposal-local config overrides do not change ports or contracts."
     ]
 
-renderExitHoleFitFailure ::
-  CircuitNodeRef ->
-  WirePorts ->
-  CircuitNodeRef ->
-  WirePorts ->
-  [Text] ->
-  Text
+renderExitHoleFitFailure
+  :: CircuitNodeRef
+  -> WirePorts
+  -> CircuitNodeRef
+  -> WirePorts
+  -> [Text]
+  -> Text
 renderExitHoleFitFailure exitRef exitPorts successorRef successorPorts compatibleContracts =
   T.intercalate
     "\n"
@@ -288,12 +306,12 @@ renderExitHoleFitFailure exitRef exitPorts successorRef successorPorts compatibl
         <> unCircuitNodeRef exitRef
         <> " cannot feed original successor "
         <> unCircuitNodeRef successorRef
-        <> ".",
-      "Hole-fit rule: every proposal exit must emit at least one contract accepted by every original successor.",
-      "Exit outputs: " <> renderOutputPorts exitPorts,
-      "Successor inputs: " <> renderInputPorts successorPorts,
-      "Shared contracts: " <> renderContractList compatibleContracts,
-      "Proposal-local config overrides do not change ports or contracts."
+        <> "."
+    , "Hole-fit rule: every proposal exit must emit at least one contract accepted by every original successor."
+    , "Exit outputs: " <> renderOutputPorts exitPorts
+    , "Successor inputs: " <> renderInputPorts successorPorts
+    , "Shared contracts: " <> renderContractList compatibleContracts
+    , "Proposal-local config overrides do not change ports or contracts."
     ]
 
 renderInputPorts :: WirePorts -> Text
@@ -340,24 +358,24 @@ renderContractBracketList contracts = "[" <> renderContractList contracts <> "]"
 wireProposalGrammarReference :: Text
 wireProposalGrammarReference =
   T.unlines
-    [ "proposal ::= (node_decl | let_decl)* final_graph_expr",
-      "node_decl ::= node IDENT : port_decl* = @executor { config_fields };",
-      "let_decl ::= let IDENT = expr;",
-      "final_graph_expr ::= graph_expr   # file-return syntax: no trailing ';' on the final expression",
-      "graph_expr ::= node | (graph_expr) | () | graph_expr => graph_expr | graph_expr <> graph_expr | graph_expr, graph_expr",
-      "hard constraints: every referenced node must be declared locally in this proposal; graph must be a DAG; proposal entries must fit the anchor outputs; proposal exits must fit every original successor; outer workflow nodes are not in proposal scope."
+    [ "proposal ::= (node_decl | let_decl)* final_graph_expr"
+    , "node_decl ::= node IDENT : port_decl* = @executor { config_fields };"
+    , "let_decl ::= let IDENT = expr;"
+    , "final_graph_expr ::= graph_expr   # file-return syntax: no trailing ';' on the final expression"
+    , "graph_expr ::= node | (graph_expr) | () | graph_expr => graph_expr | graph_expr <> graph_expr | graph_expr, graph_expr"
+    , "hard constraints: every referenced node must be declared locally in this proposal; graph must be a DAG; proposal entries must fit the anchor outputs; proposal exits must fit every original successor; outer workflow nodes are not in proposal scope."
     ]
 
 wireProposalSingleNodeExample :: Text
 wireProposalSingleNodeExample =
   T.unlines
-    [ "node audit_pass :",
-      "  <- AnalysisFragment",
-      "  -> AnalysisFragment",
-      "= @auditor {",
-      "  prompt = \"Audit the current draft for stale dates and unsupported current-claims.\";",
-      "};",
-      "audit_pass"
+    [ "node audit_pass :"
+    , "  <- AnalysisFragment"
+    , "  -> AnalysisFragment"
+    , "= @auditor {"
+    , "  prompt = \"Audit the current draft for stale dates and unsupported current-claims.\";"
+    , "};"
+    , "audit_pass"
     ]
 
 wireProposalSingleNodeShorthandExample :: Text
@@ -367,38 +385,38 @@ wireProposalSingleNodeShorthandExample =
 wireProposalInvalidMissingGraphExample :: Text
 wireProposalInvalidMissingGraphExample =
   T.unlines
-    [ "node probe_a :",
-      "  <- PlannerOutput",
-      "  -> EvidenceBundle",
-      "= @gatherer {",
-      "  prompt = \"Fetch the freshest company evidence needed to resolve the key open claim.\";",
-      "};",
-      "",
-      "node audit_pass :",
-      "  <- EvidenceBundle",
-      "  -> AnalysisFragment",
-      "= @auditor {",
-      "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";",
-      "};"
+    [ "node probe_a :"
+    , "  <- PlannerOutput"
+    , "  -> EvidenceBundle"
+    , "= @gatherer {"
+    , "  prompt = \"Fetch the freshest company evidence needed to resolve the key open claim.\";"
+    , "};"
+    , ""
+    , "node audit_pass :"
+    , "  <- EvidenceBundle"
+    , "  -> AnalysisFragment"
+    , "= @auditor {"
+    , "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
+    , "};"
     ]
 
 wireProposalInvalidOuterReferenceExample :: Text
 wireProposalInvalidOuterReferenceExample =
   T.unlines
-    [ "node probe_a :",
-      "  <- PlannerOutput",
-      "  -> EvidenceBundle",
-      "= @gatherer {",
-      "  prompt = \"Fetch the freshest dated evidence needed to resolve the key open claim.\";",
-      "};",
-      "",
-      "node audit_pass :",
-      "  <- EvidenceBundle",
-      "  -> AnalysisFragment",
-      "= @auditor {",
-      "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";",
-      "};",
-      "current_evidence => audit_pass"
+    [ "node probe_a :"
+    , "  <- PlannerOutput"
+    , "  -> EvidenceBundle"
+    , "= @gatherer {"
+    , "  prompt = \"Fetch the freshest dated evidence needed to resolve the key open claim.\";"
+    , "};"
+    , ""
+    , "node audit_pass :"
+    , "  <- EvidenceBundle"
+    , "  -> AnalysisFragment"
+    , "= @auditor {"
+    , "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
+    , "};"
+    , "current_evidence => audit_pass"
     ]
 
 mapLeft :: (err -> err') -> Either err a -> Either err' a

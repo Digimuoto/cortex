@@ -4,88 +4,90 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 
 module Cortex.Nous.Thought.Frame
-  ( CortexAgentBudget (..),
-    CortexAgentBudgetLimits (..),
-    CortexAgentOverrideConfig (..),
-    CortexAgentProfileConfig (..),
-    CortexResolvedAgentConfig (..),
-    CortexAgentDefinition (..),
-    CortexAgentIdentity (..),
-    combinePromptAppendices,
-    emptyCortexAgentBudget,
-    emptyCortexAgentOverrideConfig,
-    emptyCortexAgentProfileConfig,
-    mergeCortexAgentBudget,
-    mergeCortexAgentBudgetLayers,
-    normalizeCortexAgentBudget,
-    normalizeCortexAgentOverrideConfig,
-    normalizeCortexAgentProfileConfig,
-    validateCortexAgentBudget,
+  ( CortexAgentBudget (..)
+  , CortexAgentBudgetLimits (..)
+  , CortexAgentOverrideConfig (..)
+  , CortexAgentProfileConfig (..)
+  , CortexResolvedAgentConfig (..)
+  , CortexAgentDefinition (..)
+  , CortexAgentIdentity (..)
+  , combinePromptAppendices
+  , emptyCortexAgentBudget
+  , emptyCortexAgentOverrideConfig
+  , emptyCortexAgentProfileConfig
+  , mergeCortexAgentBudget
+  , mergeCortexAgentBudgetLayers
+  , normalizeCortexAgentBudget
+  , normalizeCortexAgentOverrideConfig
+  , normalizeCortexAgentProfileConfig
+  , validateCortexAgentBudget
   )
 where
 
 import Control.Applicative ((<|>))
-import Cortex.Nous.Thought.Policy (CortexAgentPolicy)
 import Data.Aeson qualified as Aeson
 import Data.Maybe (isNothing, maybeToList)
 import Data.OpenApi (ToSchema)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+
+import Cortex.Nous.Thought.Policy (CortexAgentPolicy)
+
 import Platform.Text (stripNonEmptyMaybeText)
 
 data CortexAgentBudget = CortexAgentBudget
-  { maxToolSteps :: Maybe Int,
-    maxAttempts :: Maybe Int
+  { maxToolSteps :: Maybe Int
+  , maxAttempts :: Maybe Int
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToSchema)
 
 data CortexAgentBudgetLimits = CortexAgentBudgetLimits
-  { cortexMaxToolSteps :: Int,
-    cortexMaxAttempts :: Int
+  { cortexMaxToolSteps :: Int
+  , cortexMaxAttempts :: Int
   }
   deriving stock (Eq, Show, Generic)
 
 data CortexAgentProfileConfig = CortexAgentProfileConfig
-  { model :: Maybe Text,
-    budget :: Maybe CortexAgentBudget,
-    promptAppendix :: Maybe Text
+  { model :: Maybe Text
+  , budget :: Maybe CortexAgentBudget
+  , promptAppendix :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToSchema)
 
 data CortexAgentOverrideConfig = CortexAgentOverrideConfig
-  { profileId :: Maybe Text,
-    model :: Maybe Text,
-    budget :: Maybe CortexAgentBudget,
-    promptAppendix :: Maybe Text
+  { profileId :: Maybe Text
+  , model :: Maybe Text
+  , budget :: Maybe CortexAgentBudget
+  , promptAppendix :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToSchema)
 
 data CortexResolvedAgentConfig = CortexResolvedAgentConfig
-  { resolvedSlotId :: Text,
-    resolvedProfileId :: Text,
-    resolvedExplicitModelOverride :: Bool,
-    resolvedModel :: Text,
-    resolvedBudget :: CortexAgentBudget,
-    resolvedPromptAppendix :: Maybe Text
+  { resolvedSlotId :: Text
+  , resolvedProfileId :: Text
+  , resolvedExplicitModelOverride :: Bool
+  , resolvedModel :: Text
+  , resolvedBudget :: CortexAgentBudget
+  , resolvedPromptAppendix :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
 data CortexAgentIdentity = CortexAgentIdentity
-  { cortexAgentId :: Text,
-    cortexAgentDisplayName :: Text
+  { cortexAgentId :: Text
+  , cortexAgentDisplayName :: Text
   }
   deriving stock (Eq, Show)
 
 data CortexAgentDefinition state = CortexAgentDefinition
-  { cortexAgentIdentity :: CortexAgentIdentity,
-    cortexAgentDescription :: Maybe Text,
-    cortexAgentDefaultModelId :: Maybe Text,
-    cortexAgentInitialState :: state,
-    cortexAgentPolicy :: CortexAgentPolicy
+  { cortexAgentIdentity :: CortexAgentIdentity
+  , cortexAgentDescription :: Maybe Text
+  , cortexAgentDefaultModelId :: Maybe Text
+  , cortexAgentInitialState :: state
+  , cortexAgentPolicy :: CortexAgentPolicy
   }
   deriving stock (Eq, Show)
 
@@ -116,25 +118,25 @@ instance Aeson.FromJSON CortexAgentOverrideConfig where
 emptyCortexAgentBudget :: CortexAgentBudget
 emptyCortexAgentBudget =
   CortexAgentBudget
-    { maxToolSteps = Nothing,
-      maxAttempts = Nothing
+    { maxToolSteps = Nothing
+    , maxAttempts = Nothing
     }
 
 emptyCortexAgentProfileConfig :: CortexAgentProfileConfig
 emptyCortexAgentProfileConfig =
   CortexAgentProfileConfig
-    { model = Nothing,
-      budget = Nothing,
-      promptAppendix = Nothing
+    { model = Nothing
+    , budget = Nothing
+    , promptAppendix = Nothing
     }
 
 emptyCortexAgentOverrideConfig :: CortexAgentOverrideConfig
 emptyCortexAgentOverrideConfig =
   CortexAgentOverrideConfig
-    { profileId = Nothing,
-      model = Nothing,
-      budget = Nothing,
-      promptAppendix = Nothing
+    { profileId = Nothing
+    , model = Nothing
+    , budget = Nothing
+    , promptAppendix = Nothing
     }
 
 mergeCortexAgentBudgetLayers :: [Maybe CortexAgentBudget] -> CortexAgentBudget
@@ -145,72 +147,76 @@ mergeCortexAgentBudget :: CortexAgentBudget -> Maybe CortexAgentBudget -> Cortex
 mergeCortexAgentBudget budget Nothing = budget
 mergeCortexAgentBudget budget (Just overrideBudget) =
   CortexAgentBudget
-    { maxToolSteps = maxToolSteps overrideBudget <|> maxToolSteps budget,
-      maxAttempts = maxAttempts overrideBudget <|> maxAttempts budget
+    { maxToolSteps = maxToolSteps overrideBudget <|> maxToolSteps budget
+    , maxAttempts = maxAttempts overrideBudget <|> maxAttempts budget
     }
 
-normalizeCortexAgentBudget :: CortexAgentBudgetLimits -> CortexAgentBudget -> Maybe CortexAgentBudget
+normalizeCortexAgentBudget
+  :: CortexAgentBudgetLimits -> CortexAgentBudget -> Maybe CortexAgentBudget
 normalizeCortexAgentBudget limits rawBudget =
   let normalized =
         CortexAgentBudget
-          { maxToolSteps = clampBudgetValue (cortexMaxToolSteps limits) =<< maxToolSteps rawBudget,
-            maxAttempts = clampBudgetValue (cortexMaxAttempts limits) =<< maxAttempts rawBudget
+          { maxToolSteps = clampBudgetValue (cortexMaxToolSteps limits) =<< maxToolSteps rawBudget
+          , maxAttempts = clampBudgetValue (cortexMaxAttempts limits) =<< maxAttempts rawBudget
           }
    in if normalized == emptyCortexAgentBudget
         then Nothing
         else Just normalized
 
-normalizeCortexAgentProfileConfig ::
-  (Maybe Text -> Maybe Text) ->
-  CortexAgentBudgetLimits ->
-  CortexAgentProfileConfig ->
-  Maybe CortexAgentProfileConfig
+normalizeCortexAgentProfileConfig
+  :: (Maybe Text -> Maybe Text)
+  -> CortexAgentBudgetLimits
+  -> CortexAgentProfileConfig
+  -> Maybe CortexAgentProfileConfig
 normalizeCortexAgentProfileConfig normalizeModel limits rawConfig =
   let CortexAgentProfileConfig
-        { model = rawModel,
-          budget = rawBudget,
-          promptAppendix = rawPromptAppendix
+        { model = rawModel
+        , budget = rawBudget
+        , promptAppendix = rawPromptAppendix
         } = rawConfig
       normalized =
         CortexAgentProfileConfig
-          { model = normalizeModel rawModel,
-            budget = normalizeCortexAgentBudget limits =<< rawBudget,
-            promptAppendix = stripNonEmptyMaybeText rawPromptAppendix
+          { model = normalizeModel rawModel
+          , budget = normalizeCortexAgentBudget limits =<< rawBudget
+          , promptAppendix = stripNonEmptyMaybeText rawPromptAppendix
           }
    in if isCortexAgentProfileConfigEmpty normalized
         then Nothing
         else Just normalized
 
-normalizeCortexAgentOverrideConfig ::
-  (Maybe Text -> Maybe Text) ->
-  CortexAgentBudgetLimits ->
-  CortexAgentOverrideConfig ->
-  Maybe CortexAgentOverrideConfig
+normalizeCortexAgentOverrideConfig
+  :: (Maybe Text -> Maybe Text)
+  -> CortexAgentBudgetLimits
+  -> CortexAgentOverrideConfig
+  -> Maybe CortexAgentOverrideConfig
 normalizeCortexAgentOverrideConfig normalizeModel limits rawConfig =
   let CortexAgentOverrideConfig
-        { profileId = rawProfileId,
-          model = rawModel,
-          budget = rawBudget,
-          promptAppendix = rawPromptAppendix
+        { profileId = rawProfileId
+        , model = rawModel
+        , budget = rawBudget
+        , promptAppendix = rawPromptAppendix
         } = rawConfig
       normalized =
         CortexAgentOverrideConfig
-          { profileId = stripNonEmptyMaybeText rawProfileId,
-            model = normalizeModel rawModel,
-            budget = normalizeCortexAgentBudget limits =<< rawBudget,
-            promptAppendix = stripNonEmptyMaybeText rawPromptAppendix
+          { profileId = stripNonEmptyMaybeText rawProfileId
+          , model = normalizeModel rawModel
+          , budget = normalizeCortexAgentBudget limits =<< rawBudget
+          , promptAppendix = stripNonEmptyMaybeText rawPromptAppendix
           }
    in if isCortexAgentOverrideConfigEmpty normalized
         then Nothing
         else Just normalized
 
-validateCortexAgentBudget ::
-  Text ->
-  CortexAgentBudgetLimits ->
-  CortexAgentBudget ->
-  Either Text ()
+validateCortexAgentBudget
+  :: Text
+  -> CortexAgentBudgetLimits
+  -> CortexAgentBudget
+  -> Either Text ()
 validateCortexAgentBudget prefix limits budget = do
-  validateBoundedPositive (prefix <> ".maxToolSteps") (cortexMaxToolSteps limits) (maxToolSteps budget)
+  validateBoundedPositive
+    (prefix <> ".maxToolSteps")
+    (cortexMaxToolSteps limits)
+    (maxToolSteps budget)
   validateBoundedPositive (prefix <> ".maxAttempts") (cortexMaxAttempts limits) (maxAttempts budget)
 
 combinePromptAppendices :: [Maybe Text] -> Maybe Text
@@ -220,17 +226,28 @@ combinePromptAppendices appendices =
     parts -> Just (T.intercalate "\n\n" parts)
 
 isCortexAgentProfileConfigEmpty :: CortexAgentProfileConfig -> Bool
-isCortexAgentProfileConfigEmpty CortexAgentProfileConfig {model = maybeModel, budget = maybeBudget, promptAppendix = maybePromptAppendix} =
-  isNothing maybeModel
-    && isNothing maybeBudget
-    && isNothing maybePromptAppendix
+isCortexAgentProfileConfigEmpty
+  CortexAgentProfileConfig
+    { model = maybeModel
+    , budget = maybeBudget
+    , promptAppendix = maybePromptAppendix
+    } =
+    isNothing maybeModel
+      && isNothing maybeBudget
+      && isNothing maybePromptAppendix
 
 isCortexAgentOverrideConfigEmpty :: CortexAgentOverrideConfig -> Bool
-isCortexAgentOverrideConfigEmpty CortexAgentOverrideConfig {profileId = maybeProfileId, model = maybeModel, budget = maybeBudget, promptAppendix = maybePromptAppendix} =
-  isNothing maybeProfileId
-    && isNothing maybeModel
-    && isNothing maybeBudget
-    && isNothing maybePromptAppendix
+isCortexAgentOverrideConfigEmpty
+  CortexAgentOverrideConfig
+    { profileId = maybeProfileId
+    , model = maybeModel
+    , budget = maybeBudget
+    , promptAppendix = maybePromptAppendix
+    } =
+    isNothing maybeProfileId
+      && isNothing maybeModel
+      && isNothing maybeBudget
+      && isNothing maybePromptAppendix
 
 validateBoundedPositive :: Text -> Int -> Maybe Int -> Either Text ()
 validateBoundedPositive _ _ Nothing = Right ()

@@ -1,5 +1,5 @@
 module Cortex.Pulse.Resume
-  ( module Cortex.Pulse.Executor.Resume,
+  ( module Cortex.Pulse.Executor.Resume
   )
 where
 

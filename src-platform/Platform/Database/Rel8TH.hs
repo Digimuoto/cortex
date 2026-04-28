@@ -1,24 +1,25 @@
 {-# LANGUAGE TemplateHaskell #-}
 
--- |
--- Module      : Platform.Database.Rel8TH
--- Description : Template Haskell helpers for Rel8 schema generation
--- Copyright   : (c) Julius Koskela, 2024
--- License     : MIT
---
--- This module provides Template Haskell utilities to auto-generate Rel8 TableSchema
--- definitions from record types, eliminating repetitive column name mappings.
---
--- The naming convention is: Haskell @fooBarBaz@ maps to SQL @foo_bar_baz@.
+{- |
+Module      : Platform.Database.Rel8TH
+Description : Template Haskell helpers for Rel8 schema generation
+Copyright   : (c) Julius Koskela, 2024
+License     : MIT
+
+This module provides Template Haskell utilities to auto-generate Rel8 TableSchema
+definitions from record types, eliminating repetitive column name mappings.
+
+The naming convention is: Haskell @fooBarBaz@ maps to SQL @foo_bar_baz@.
+-}
 module Platform.Database.Rel8TH
   ( -- * Schema Generation
-    mkRel8Schema,
+    mkRel8Schema
 
     -- * Naming Utilities
-    camelToSnake,
+  , camelToSnake
 
     -- * Validation
-    checkValidCamelCase,
+  , checkValidCamelCase
   )
 where
 
@@ -26,17 +27,18 @@ import Data.Char (isAlphaNum, isDigit, isLower, isUpper, toLower)
 import Language.Haskell.TH
 import Rel8 (TableSchema (..))
 
--- | Validate that a field name follows strict camelCase convention.
---
--- Rules:
--- 1. Must start with lowercase letter
--- 2. Must be alphanumeric (no underscores, primes, or punctuation)
--- 3. No consecutive uppercase letters (no acronym runs like @HTTPServer@)
---
--- Valid: @userId@, @ibkrFee@, @fxRateToBase@, @s3Bucket@, @oauth2Token@
--- Invalid: @UserId@, @HTTPServer@, @myUUID@, @ibkrFEE@, @foo_bar@, @foo'bar@
---
--- Returns @Right ()@ if valid, @Left errorMessage@ if invalid.
+{- | Validate that a field name follows strict camelCase convention.
+
+Rules:
+1. Must start with lowercase letter
+2. Must be alphanumeric (no underscores, primes, or punctuation)
+3. No consecutive uppercase letters (no acronym runs like @HTTPServer@)
+
+Valid: @userId@, @ibkrFee@, @fxRateToBase@, @s3Bucket@, @oauth2Token@
+Invalid: @UserId@, @HTTPServer@, @myUUID@, @ibkrFEE@, @foo_bar@, @foo'bar@
+
+Returns @Right ()@ if valid, @Left errorMessage@ if invalid.
+-}
 checkValidCamelCase :: String -> Either String ()
 checkValidCamelCase [] = Left "empty field name"
 checkValidCamelCase (c : cs)
@@ -56,30 +58,31 @@ checkValidCamelCase (c : cs)
 isLowerOrDigit :: Char -> Bool
 isLowerOrDigit c = isLower c || isDigit c
 
--- | Convert camelCase to snake_case.
---
--- IMPORTANT: This assumes field names follow the @xxYyyy@ convention (lowercase start,
--- no all-caps acronym runs). Use @ibkrFee@ not @IBKRFee@, @httpServer@ not @HTTPServer@.
---
--- Numbers are treated as lowercase/continuation characters. They do not trigger a split,
--- but an uppercase letter following a number DOES trigger a split.
---
--- Examples:
---
--- >>> camelToSnake "tradeId"
--- "trade_id"
---
--- >>> camelToSnake "ibkrFee"
--- "ibkr_fee"
---
--- >>> camelToSnake "s3Bucket"
--- "s3_bucket"
---
--- >>> camelToSnake "oauth2Token"
--- "oauth2_token"
---
--- >>> camelToSnake "x567Data"
--- "x567_data"
+{- | Convert camelCase to snake_case.
+
+IMPORTANT: This assumes field names follow the @xxYyyy@ convention (lowercase start,
+no all-caps acronym runs). Use @ibkrFee@ not @IBKRFee@, @httpServer@ not @HTTPServer@.
+
+Numbers are treated as lowercase/continuation characters. They do not trigger a split,
+but an uppercase letter following a number DOES trigger a split.
+
+Examples:
+
+>>> camelToSnake "tradeId"
+"trade_id"
+
+>>> camelToSnake "ibkrFee"
+"ibkr_fee"
+
+>>> camelToSnake "s3Bucket"
+"s3_bucket"
+
+>>> camelToSnake "oauth2Token"
+"oauth2_token"
+
+>>> camelToSnake "x567Data"
+"x567_data"
+-}
 camelToSnake :: String -> String
 camelToSnake = go
   where
@@ -91,36 +94,37 @@ camelToSnake = go
       -- Default: emit c1 lowercased
       | otherwise = toLower c1 : go (c2 : cs)
 
--- | Generate a Rel8 TableSchema for a record type.
---
--- Usage:
---
--- @
--- data MyRow f = MyRow
--- { rowId :: Column f UUID
--- , userName :: Column f Text
--- , createdAt :: Column f UTCTime
--- }
--- deriving stock (Generic)
--- deriving anyclass (Rel8able)
---
--- mySchema :: TableSchema (MyRow Name)
--- mySchema = $(mkRel8Schema "my_table" ''MyRow)
--- @
---
--- This generates:
---
--- @
--- mySchema :: TableSchema (MyRow Name)
--- mySchema = TableSchema
--- { name = "my_table"
--- , columns = MyRow
---     { rowId = "row_id"
---     , userName = "user_name"
---     , createdAt = "created_at"
---     }
--- }
--- @
+{- | Generate a Rel8 TableSchema for a record type.
+
+Usage:
+
+@
+data MyRow f = MyRow
+{ rowId :: Column f UUID
+, userName :: Column f Text
+, createdAt :: Column f UTCTime
+}
+deriving stock (Generic)
+deriving anyclass (Rel8able)
+
+mySchema :: TableSchema (MyRow Name)
+mySchema = $(mkRel8Schema "my_table" ''MyRow)
+@
+
+This generates:
+
+@
+mySchema :: TableSchema (MyRow Name)
+mySchema = TableSchema
+{ name = "my_table"
+, columns = MyRow
+   { rowId = "row_id"
+   , userName = "user_name"
+   , createdAt = "created_at"
+   }
+}
+@
+-}
 mkRel8Schema :: String -> Name -> Q Exp
 mkRel8Schema tableName typeName = do
   info <- reify typeName
@@ -140,8 +144,8 @@ generateSchema tableName conName fields = do
   let columnsExp = recConE conName fieldExps
   [|
     TableSchema
-      { name = $(litE (stringL tableName)),
-        columns = $columnsExp
+      { name = $(litE (stringL tableName))
+      , columns = $columnsExp
       }
     |]
   where

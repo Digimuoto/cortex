@@ -3,64 +3,58 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Cortex.Pulse.GraphRuntime
-  ( InterruptReason (..),
-    NodeStatus (..),
-    GraphState (..),
-    initialGraphState,
-    readyNodes,
-    allSettled,
-    hasFailedNodes,
-    hasWaitingNodes,
-    isTerminal,
-    TransitionError (..),
-    transitionRunning,
-    transitionCompleted,
-    transitionFailed,
-    transitionSkipped,
-    transitionWaiting,
-    transitionRewritten,
-    resumeFromWaiting,
-    markRunning,
-    markCompleted,
-    markFailed,
-    markSkipped,
-    markWaiting,
-    normalizeForResume,
-    StepResult (..),
-    StuckDiagnostic (..),
-    classifyGraphState,
-    propagateFailure,
-    BlockedReason (..),
-    blockedReasons,
-    isLinearTopology,
-    runTerminal,
-    runOutcomeToNodeOutcome,
-    NodeOutcome (..),
-    FailureDetail (..),
-    NodeResult (..),
-    applyNodeFact,
-    reduceFacts,
-    isForwardOutcome,
-    isResetOutcome,
-    finalizeGraphStep,
-    applyFrontierResults,
-    stepResultState,
-    stepResultToOutcome,
-    simulateRun,
-    WorkerOracle,
-    nodeInputs,
-    nodeInputsWithDefault,
-    NodeInputError (..),
-    nodeInputsChecked,
+  ( InterruptReason (..)
+  , NodeStatus (..)
+  , GraphState (..)
+  , initialGraphState
+  , readyNodes
+  , allSettled
+  , hasFailedNodes
+  , hasWaitingNodes
+  , isTerminal
+  , TransitionError (..)
+  , transitionRunning
+  , transitionCompleted
+  , transitionFailed
+  , transitionSkipped
+  , transitionWaiting
+  , transitionRewritten
+  , resumeFromWaiting
+  , markRunning
+  , markCompleted
+  , markFailed
+  , markSkipped
+  , markWaiting
+  , normalizeForResume
+  , StepResult (..)
+  , StuckDiagnostic (..)
+  , classifyGraphState
+  , propagateFailure
+  , BlockedReason (..)
+  , blockedReasons
+  , isLinearTopology
+  , runTerminal
+  , runOutcomeToNodeOutcome
+  , NodeOutcome (..)
+  , FailureDetail (..)
+  , NodeResult (..)
+  , applyNodeFact
+  , reduceFacts
+  , isForwardOutcome
+  , isResetOutcome
+  , finalizeGraphStep
+  , applyFrontierResults
+  , stepResultState
+  , stepResultToOutcome
+  , simulateRun
+  , WorkerOracle
+  , nodeInputs
+  , nodeInputsWithDefault
+  , NodeInputError (..)
+  , nodeInputsChecked
   )
 where
 
-import Cortex.Algebra.Graph
-  ( Relation (..),
-    predecessors,
-    successors,
-  )
-import Cortex.Pulse.Node (NodeId (..))
 import Data.Aeson (FromJSON, ToJSON, Value)
 import Data.Either (lefts)
 import Data.Map.Strict (Map)
@@ -68,6 +62,14 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import GHC.Generics (Generic)
+
+import Cortex.Algebra.Graph
+  ( Relation (..)
+  , predecessors
+  , successors
+  )
+import Cortex.Pulse.Node (NodeId (..))
+
 import Platform.DurableTask.Types (RunOutcome (..))
 
 data NodeStatus
@@ -90,8 +92,8 @@ data InterruptReason
   deriving anyclass (FromJSON, ToJSON)
 
 data GraphState o = GraphState
-  { gsNodeStatuses :: !(Map NodeId NodeStatus),
-    gsNodeOutputs :: !(Map NodeId o)
+  { gsNodeStatuses :: !(Map NodeId NodeStatus)
+  , gsNodeOutputs :: !(Map NodeId o)
   }
   deriving stock (Eq, Show, Generic, Functor)
   deriving anyclass (FromJSON, ToJSON)
@@ -99,16 +101,16 @@ data GraphState o = GraphState
 initialGraphState :: Relation NodeId -> GraphState o
 initialGraphState rel =
   GraphState
-    { gsNodeStatuses = Map.fromSet (const NodePending) (relVertices rel),
-      gsNodeOutputs = Map.empty
+    { gsNodeStatuses = Map.fromSet (const NodePending) (relVertices rel)
+    , gsNodeOutputs = Map.empty
     }
 
 readyNodes :: Relation NodeId -> GraphState o -> [NodeId]
 readyNodes rel state =
   [ v
-  | v <- Set.toList (relVertices rel),
-    Map.lookup v (gsNodeStatuses state) == Just NodePending,
-    all (isCompletedOrSkipped state) (Set.toList (predecessors rel v))
+  | v <- Set.toList (relVertices rel)
+  , Map.lookup v (gsNodeStatuses state) == Just NodePending
+  , all (isCompletedOrSkipped state) (Set.toList (predecessors rel v))
   ]
 
 allSettled :: Relation NodeId -> GraphState o -> Bool
@@ -173,7 +175,12 @@ resumeFromWaiting = checkedTransition NodePending (\case NodeWaiting _ -> True; 
 transitionRewritten :: NodeId -> GraphState o -> Either TransitionError (GraphState o)
 transitionRewritten = checkedTransition NodeRewritten (\case NodeRunning -> True; _ -> False)
 
-checkedTransition :: NodeStatus -> (NodeStatus -> Bool) -> NodeId -> GraphState o -> Either TransitionError (GraphState o)
+checkedTransition
+  :: NodeStatus
+  -> (NodeStatus -> Bool)
+  -> NodeId
+  -> GraphState o
+  -> Either TransitionError (GraphState o)
 checkedTransition target allowed nid gs =
   case Map.lookup nid (gsNodeStatuses gs) of
     Nothing -> Left (UnknownNode nid)
@@ -187,8 +194,8 @@ markRunning nid gs = gs {gsNodeStatuses = Map.insert nid NodeRunning (gsNodeStat
 markCompleted :: NodeId -> o -> GraphState o -> GraphState o
 markCompleted nid output gs =
   gs
-    { gsNodeStatuses = Map.insert nid NodeCompleted (gsNodeStatuses gs),
-      gsNodeOutputs = Map.insert nid output (gsNodeOutputs gs)
+    { gsNodeStatuses = Map.insert nid NodeCompleted (gsNodeStatuses gs)
+    , gsNodeOutputs = Map.insert nid output (gsNodeOutputs gs)
     }
 
 markSkipped :: NodeId -> GraphState o -> GraphState o
@@ -218,7 +225,8 @@ data NodeInputError
   = MissingOutput NodeId
   deriving stock (Eq, Show)
 
-nodeInputsChecked :: Relation NodeId -> GraphState o -> NodeId -> Either [NodeInputError] (Map NodeId o)
+nodeInputsChecked
+  :: Relation NodeId -> GraphState o -> NodeId -> Either [NodeInputError] (Map NodeId o)
 nodeInputsChecked rel state nid =
   let deps = Set.toList (predecessors rel nid)
       results =
@@ -239,8 +247,8 @@ nodeInputs :: Relation NodeId -> GraphState o -> NodeId -> Map NodeId o
 nodeInputs rel state nid =
   Map.fromList
     [ (depId, output)
-    | depId <- Set.toList (predecessors rel nid),
-      Just output <- [Map.lookup depId (gsNodeOutputs state)]
+    | depId <- Set.toList (predecessors rel nid)
+    , Just output <- [Map.lookup depId (gsNodeOutputs state)]
     ]
 
 nodeInputsWithDefault :: Relation NodeId -> GraphState Value -> Value -> NodeId -> Map NodeId Value
@@ -265,16 +273,16 @@ data NodeOutcome
   deriving anyclass (FromJSON, ToJSON)
 
 data FailureDetail = FailureDetail
-  { fdErrorType :: !Text,
-    fdErrorMessage :: !Text,
-    fdRetryable :: !Bool
+  { fdErrorType :: !Text
+  , fdErrorMessage :: !Text
+  , fdRetryable :: !Bool
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
 data NodeResult = NodeResult
-  { nrNodeId :: !NodeId,
-    nrOutcome :: !NodeOutcome
+  { nrNodeId :: !NodeId
+  , nrOutcome :: !NodeOutcome
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -283,31 +291,34 @@ applyNodeFact :: NodeResult -> GraphState Value -> GraphState Value
 applyNodeFact (NodeResult nid outcome) gs = case outcome of
   OutcomeSucceeded output ->
     gs
-      { gsNodeStatuses = Map.insert nid NodeCompleted (gsNodeStatuses gs),
-        gsNodeOutputs = Map.insert nid output (gsNodeOutputs gs)
+      { gsNodeStatuses = Map.insert nid NodeCompleted (gsNodeStatuses gs)
+      , gsNodeOutputs = Map.insert nid output (gsNodeOutputs gs)
       }
   OutcomeSkipped -> gs {gsNodeStatuses = Map.insert nid NodeSkipped (gsNodeStatuses gs)}
   OutcomeSuspendedOn sigName ->
     gs {gsNodeStatuses = Map.insert nid (NodeWaiting sigName) (gsNodeStatuses gs)}
   OutcomeRewritten output _ ->
     gs
-      { gsNodeStatuses = Map.insert nid NodeRewritten (gsNodeStatuses gs),
-        gsNodeOutputs = Map.insert nid output (gsNodeOutputs gs)
+      { gsNodeStatuses = Map.insert nid NodeRewritten (gsNodeStatuses gs)
+      , gsNodeOutputs = Map.insert nid output (gsNodeOutputs gs)
       }
   OutcomeNodeFailed _ -> gs {gsNodeStatuses = Map.insert nid NodeFailed (gsNodeStatuses gs)}
   OutcomeNodeTimedOut -> gs {gsNodeStatuses = Map.insert nid NodeFailed (gsNodeStatuses gs)}
   OutcomeNodeCancelled ->
-    gs {gsNodeStatuses = Map.insert nid (NodeInterrupted InterruptedSiblingCancelled) (gsNodeStatuses gs)}
+    gs
+      { gsNodeStatuses = Map.insert nid (NodeInterrupted InterruptedSiblingCancelled) (gsNodeStatuses gs)
+      }
   OutcomeNodeShutdown ->
     gs {gsNodeStatuses = Map.insert nid (NodeInterrupted InterruptedShutdown) (gsNodeStatuses gs)}
   OutcomeNodeRunCancelled ->
     gs {gsNodeStatuses = Map.insert nid (NodeInterrupted InterruptedRunCancelled) (gsNodeStatuses gs)}
 
--- | Propagate failure to all pending/waiting descendants of failed nodes.
---
--- Uses a single BFS from all failed roots, visiting each vertex at most
--- once.  This avoids redundant 'reachable' calls that would each traverse
--- O(|V| + |E|).
+{- | Propagate failure to all pending/waiting descendants of failed nodes.
+
+Uses a single BFS from all failed roots, visiting each vertex at most
+once.  This avoids redundant 'reachable' calls that would each traverse
+O(|V| + |E|).
+-}
 propagateFailure :: Relation NodeId -> GraphState o -> GraphState o
 propagateFailure rel gs0 =
   let seeds =
@@ -362,9 +373,9 @@ stepResultToOutcome (Progressing _ _) = Nothing
 stepResultToOutcome (Stuck _ _) = Nothing
 
 data StuckDiagnostic = StuckDiagnostic
-  { sdPendingNodes :: ![NodeId],
-    sdFailedNodes :: ![NodeId],
-    sdStuckOnFailed :: ![(NodeId, [NodeId])]
+  { sdPendingNodes :: ![NodeId]
+  , sdFailedNodes :: ![NodeId]
+  , sdStuckOnFailed :: ![(NodeId, [NodeId])]
   }
   deriving stock (Eq, Show)
 
@@ -386,23 +397,23 @@ classifyGraphState rel gs0 =
                         else
                           let pendingNodes =
                                 [ nid
-                                | nid <- Set.toList (relVertices rel),
-                                  Map.lookup nid (gsNodeStatuses gs) == Just NodePending
+                                | nid <- Set.toList (relVertices rel)
+                                , Map.lookup nid (gsNodeStatuses gs) == Just NodePending
                                 ]
                               failedNodes =
                                 [ nid
-                                | nid <- Set.toList (relVertices rel),
-                                  Map.lookup nid (gsNodeStatuses gs) == Just NodeFailed
+                                | nid <- Set.toList (relVertices rel)
+                                , Map.lookup nid (gsNodeStatuses gs) == Just NodeFailed
                                 ]
                               stuckOnFailed =
                                 [ (nid, failedPreds)
-                                | nid <- pendingNodes,
-                                  let failedPreds =
+                                | nid <- pendingNodes
+                                , let failedPreds =
                                         [ p
-                                        | p <- Set.toList (predecessors rel nid),
-                                          Map.lookup p (gsNodeStatuses gs) == Just NodeFailed
-                                        ],
-                                  not (null failedPreds)
+                                        | p <- Set.toList (predecessors rel nid)
+                                        , Map.lookup p (gsNodeStatuses gs) == Just NodeFailed
+                                        ]
+                                , not (null failedPreds)
                                 ]
                            in Stuck gs (StuckDiagnostic pendingNodes failedNodes stuckOnFailed)
 
@@ -415,9 +426,9 @@ data BlockedReason
 blockedReasons :: Relation NodeId -> GraphState o -> [(NodeId, BlockedReason)]
 blockedReasons rel gs =
   [ (nid, blockedReason nid)
-  | nid <- Set.toList (relVertices rel),
-    Map.lookup nid (gsNodeStatuses gs) == Just NodePending,
-    not (Set.member nid ready)
+  | nid <- Set.toList (relVertices rel)
+  , Map.lookup nid (gsNodeStatuses gs) == Just NodePending
+  , not (Set.member nid ready)
   ]
   where
     ready = Set.fromList (readyNodes rel gs)
@@ -426,8 +437,8 @@ blockedReasons rel gs =
           failed = [p | p <- preds, Map.lookup p (gsNodeStatuses gs) == Just NodeFailed]
           pendingish =
             [ p
-            | p <- preds,
-              case Map.lookup p (gsNodeStatuses gs) of
+            | p <- preds
+            , case Map.lookup p (gsNodeStatuses gs) of
                 Just NodePending -> True
                 Just NodeRunning -> True
                 Just (NodeInterrupted _) -> True
@@ -457,10 +468,10 @@ runTerminal (OutcomeNodeFailed _) = Nothing
 runTerminal OutcomeNodeCancelled = Nothing
 runTerminal (OutcomeRewritten _ _) = Nothing
 
-finalizeGraphStep ::
-  Relation NodeId ->
-  GraphState Value ->
-  (GraphState Value, Maybe RunOutcome)
+finalizeGraphStep
+  :: Relation NodeId
+  -> GraphState Value
+  -> (GraphState Value, Maybe RunOutcome)
 finalizeGraphStep rel gs0 =
   case classifyGraphState rel gs0 of
     Progressing gs _ -> (gs, Nothing)
@@ -471,11 +482,11 @@ finalizeGraphStep rel gs0 =
 reduceFacts :: [NodeResult] -> GraphState Value -> GraphState Value
 reduceFacts results gs = foldl' (flip applyNodeFact) gs results
 
-applyFrontierResults ::
-  Relation NodeId ->
-  [NodeResult] ->
-  GraphState Value ->
-  StepResult
+applyFrontierResults
+  :: Relation NodeId
+  -> [NodeResult]
+  -> GraphState Value
+  -> StepResult
 applyFrontierResults rel results gs =
   classifyGraphState rel (reduceFacts results gs)
 
@@ -485,8 +496,12 @@ runOutcomeToNodeOutcome = \case
   OutcomeCancelled -> OutcomeNodeRunCancelled
   OutcomeFailed -> OutcomeNodeFailed (FailureDetail "stage_failed" "Stage execution failed" True)
   OutcomeTimedOut -> OutcomeNodeTimedOut
-  OutcomeCompleted -> OutcomeNodeFailed (FailureDetail "internal_error" "Unexpected OutcomeCompleted in StageTerminal" False)
-  OutcomeSuspended -> OutcomeNodeFailed (FailureDetail "internal_error" "Unexpected OutcomeSuspended in StageTerminal" False)
+  OutcomeCompleted ->
+    OutcomeNodeFailed
+      (FailureDetail "internal_error" "Unexpected OutcomeCompleted in StageTerminal" False)
+  OutcomeSuspended ->
+    OutcomeNodeFailed
+      (FailureDetail "internal_error" "Unexpected OutcomeSuspended in StageTerminal" False)
 
 isForwardOutcome :: NodeOutcome -> Bool
 isForwardOutcome = \case
@@ -505,13 +520,13 @@ isResetOutcome = not . isForwardOutcome
 
 type WorkerOracle = NodeId -> Map NodeId Value -> NodeOutcome
 
-simulateRun ::
-  Relation NodeId ->
-  GraphState Value ->
-  Value ->
-  WorkerOracle ->
-  Int ->
-  ([(Int, [NodeId], [NodeResult])], StepResult)
+simulateRun
+  :: Relation NodeId
+  -> GraphState Value
+  -> Value
+  -> WorkerOracle
+  -> Int
+  -> ([(Int, [NodeId], [NodeResult])], StepResult)
 simulateRun rel gs0 initialValue oracle maxWaves = go 0 gs0 []
   where
     go wave gs history
@@ -555,7 +570,7 @@ isTerminalStatus = \case
   NodeInterrupted _ -> False
   NodeWaiting _ -> False
 
-isWeaklyConnected :: (Ord a) => Relation a -> Bool
+isWeaklyConnected :: Ord a => Relation a -> Bool
 isWeaklyConnected rel =
   case Set.toList (relVertices rel) of
     [] -> True

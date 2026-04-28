@@ -3,34 +3,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Wire.Runtime
-  ( unwrapWireStageInputs,
-    unwrapWireStageValue,
-    WireInputBundle (..),
-    wireInputBundleFromStageInputs,
-    wireInputBundlePromptSummary,
-    wrapWireStageOutput,
-    wrapWireStageOutputs,
-    wrapWireStageResult,
-    wrapWireStageDefinition,
+  ( unwrapWireStageInputs
+  , unwrapWireStageValue
+  , WireInputBundle (..)
+  , wireInputBundleFromStageInputs
+  , wireInputBundlePromptSummary
+  , wrapWireStageOutput
+  , wrapWireStageOutputs
+  , wrapWireStageResult
+  , wrapWireStageDefinition
   )
 where
 
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Plan
-  ( StageContext (..),
-    StageDefinition (..),
-    StageResult (..),
-  )
-import Cortex.Wire.Contract (WireContractRegistry (..), WireContractSpec (..))
-import Cortex.Wire.Syntax (WireOutputPort (..), WirePorts (..))
-import Cortex.Wire.Value
-  ( WirePayloadKind (..),
-    WireValue (..),
-    WireValueSet (..),
-    mkWireValue,
-    renderWirePayloadKind,
-    validateWirePayloadShape,
-  )
 import Data.Aeson qualified as Aeson
 import Data.Foldable (traverse_)
 import Data.Map.Strict (Map)
@@ -41,6 +25,23 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
+
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+  ( StageContext (..)
+  , StageDefinition (..)
+  , StageResult (..)
+  )
+import Cortex.Wire.Contract (WireContractRegistry (..), WireContractSpec (..))
+import Cortex.Wire.Syntax (WireOutputPort (..), WirePorts (..))
+import Cortex.Wire.Value
+  ( WirePayloadKind (..)
+  , WireValue (..)
+  , WireValueSet (..)
+  , mkWireValue
+  , renderWirePayloadKind
+  , validateWirePayloadShape
+  )
 
 unwrapWireStageInputs :: Map NodeId Aeson.Value -> Map NodeId Aeson.Value
 unwrapWireStageInputs =
@@ -62,11 +63,11 @@ unwrapWireStageValue value =
           value
 
 data WireInputBundle = WireInputBundle
-  { wireInputBundleOriginalInputs :: !(Map NodeId Aeson.Value),
-    wireInputBundleUnwrappedInputs :: !(Map NodeId Aeson.Value),
-    wireInputBundleValues :: ![WireValue],
-    wireInputBundleByContract :: !(Map Text [WireValue]),
-    wireInputBundleByProducer :: !(Map NodeId [WireValue])
+  { wireInputBundleOriginalInputs :: !(Map NodeId Aeson.Value)
+  , wireInputBundleUnwrappedInputs :: !(Map NodeId Aeson.Value)
+  , wireInputBundleValues :: ![WireValue]
+  , wireInputBundleByContract :: !(Map Text [WireValue])
+  , wireInputBundleByProducer :: !(Map NodeId [WireValue])
   }
   deriving stock (Eq, Show)
 
@@ -77,14 +78,14 @@ wireInputBundleFromStageInputs inputs =
       allValues =
         concat (Map.elems valuesByProducer)
    in WireInputBundle
-        { wireInputBundleOriginalInputs = inputs,
-          wireInputBundleUnwrappedInputs = unwrapWireStageInputs inputs,
-          wireInputBundleValues = allValues,
-          wireInputBundleByContract =
+        { wireInputBundleOriginalInputs = inputs
+        , wireInputBundleUnwrappedInputs = unwrapWireStageInputs inputs
+        , wireInputBundleValues = allValues
+        , wireInputBundleByContract =
             Map.fromListWith
               (<>)
-              [(wireValue.wireValueContract, [wireValue]) | wireValue <- allValues],
-          wireInputBundleByProducer = Map.filter (not . null) valuesByProducer
+              [(wireValue.wireValueContract, [wireValue]) | wireValue <- allValues]
+        , wireInputBundleByProducer = Map.filter (not . null) valuesByProducer
         }
 
 wireInputBundlePromptSummary :: WireInputBundle -> Text
@@ -119,11 +120,11 @@ wireValuesFromStageValue value =
         Aeson.Success (WireValueSet wireValues) -> wireValues
         Aeson.Error _ -> []
 
-wrapWireStageDefinition ::
-  Maybe WireContractRegistry ->
-  WirePorts ->
-  StageDefinition NodeId ->
-  StageDefinition NodeId
+wrapWireStageDefinition
+  :: Maybe WireContractRegistry
+  -> WirePorts
+  -> StageDefinition NodeId
+  -> StageDefinition NodeId
 wrapWireStageDefinition maybeRegistry ports stageDef =
   stageDef
     { sdAction = \ctx -> do
@@ -138,30 +139,31 @@ wrapWireStageDefinition maybeRegistry ports stageDef =
           Left errText -> fail (T.unpack errText)
     }
 
-wrapWireStageResult ::
-  Maybe WireContractRegistry ->
-  NodeId ->
-  UUID ->
-  WirePorts ->
-  StageResult NodeId ->
-  Either Text (StageResult NodeId)
+wrapWireStageResult
+  :: Maybe WireContractRegistry
+  -> NodeId
+  -> UUID
+  -> WirePorts
+  -> StageResult NodeId
+  -> Either Text (StageResult NodeId)
 wrapWireStageResult maybeRegistry producer runId ports = \case
   StageComplete outputValue ->
     StageComplete <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
   StageRewrite outputValue rewrite ->
     (`StageRewrite` rewrite) <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
   StageRejectRewrite outputValue rejectedRewrite ->
-    (`StageRejectRewrite` rejectedRewrite) <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
+    (`StageRejectRewrite` rejectedRewrite)
+      <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
   StageSuspend signalName ->
     Right (StageSuspend signalName)
 
-wrapWireStageOutput ::
-  Maybe WireContractRegistry ->
-  NodeId ->
-  UUID ->
-  WirePorts ->
-  Aeson.Value ->
-  Either Text Aeson.Value
+wrapWireStageOutput
+  :: Maybe WireContractRegistry
+  -> NodeId
+  -> UUID
+  -> WirePorts
+  -> Aeson.Value
+  -> Either Text Aeson.Value
 wrapWireStageOutput maybeRegistry producer runId ports outputValue =
   case explicitWireOutput outputValue of
     Just wireOutput -> validateExplicitWireOutput maybeRegistry ports wireOutput *> Right outputValue
@@ -185,11 +187,11 @@ wrapWireStageOutput maybeRegistry producer runId ports outputValue =
                   { wireValueProvenance =
                       Just
                         ( Aeson.object
-                            [ "runId" Aeson..= UUID.toText runId,
-                              "nodeId" Aeson..= unNodeId producer
+                            [ "runId" Aeson..= UUID.toText runId
+                            , "nodeId" Aeson..= unNodeId producer
                             ]
-                        ),
-                    wireValuePort = Just outputPortName
+                        )
+                  , wireValuePort = Just outputPortName
                   }
           Right (Aeson.toJSON wireValue)
         _ ->
@@ -204,13 +206,13 @@ wrapWireStageOutput maybeRegistry producer runId ports outputValue =
     outputContracts =
       fmap (.wireOutputPortContract) (Map.elems ports.wirePortsOutputs)
 
-wrapWireStageOutputs ::
-  Maybe WireContractRegistry ->
-  NodeId ->
-  UUID ->
-  WirePorts ->
-  Map Text Aeson.Value ->
-  Either Text Aeson.Value
+wrapWireStageOutputs
+  :: Maybe WireContractRegistry
+  -> NodeId
+  -> UUID
+  -> WirePorts
+  -> Map Text Aeson.Value
+  -> Either Text Aeson.Value
 wrapWireStageOutputs maybeRegistry producer runId ports outputValues = do
   let expectedPorts = Map.keysSet ports.wirePortsOutputs
       actualPorts = Map.keysSet outputValues
@@ -248,11 +250,11 @@ wrapWireStageOutputs maybeRegistry producer runId ports outputValues = do
             { wireValueProvenance =
                 Just
                   ( Aeson.object
-                      [ "runId" Aeson..= UUID.toText runId,
-                        "nodeId" Aeson..= unNodeId producer
+                      [ "runId" Aeson..= UUID.toText runId
+                      , "nodeId" Aeson..= unNodeId producer
                       ]
-                  ),
-              wireValuePort = Just portName
+                  )
+            , wireValuePort = Just portName
             }
         )
 
@@ -272,22 +274,22 @@ explicitWireOutput value =
         Aeson.Error _ ->
           Nothing
 
-validateExplicitWireOutput ::
-  Maybe WireContractRegistry ->
-  WirePorts ->
-  ExplicitWireOutput ->
-  Either Text ()
+validateExplicitWireOutput
+  :: Maybe WireContractRegistry
+  -> WirePorts
+  -> ExplicitWireOutput
+  -> Either Text ()
 validateExplicitWireOutput maybeRegistry ports = \case
   ExplicitWireValue wireValue ->
     validateWireValue maybeRegistry ports wireValue
   ExplicitWireValueSet (WireValueSet wireValues) ->
     traverse_ (validateWireValue maybeRegistry ports) wireValues
 
-validateWireValue ::
-  Maybe WireContractRegistry ->
-  WirePorts ->
-  WireValue ->
-  Either Text ()
+validateWireValue
+  :: Maybe WireContractRegistry
+  -> WirePorts
+  -> WireValue
+  -> Either Text ()
 validateWireValue maybeRegistry ports wireValue = do
   case wireValuePortMatch ports wireValue of
     WireValuePortMatched ->
@@ -360,8 +362,8 @@ wireValuePortMatch ports wireValue =
             Set.fromList (fmap (.wireOutputPortContract) (Map.elems ports.wirePortsOutputs))
           matchingPorts =
             [ portName
-            | (portName, portSpec) <- Map.toList ports.wirePortsOutputs,
-              portSpec.wireOutputPortContract == wireValue.wireValueContract
+            | (portName, portSpec) <- Map.toList ports.wirePortsOutputs
+            , portSpec.wireOutputPortContract == wireValue.wireValueContract
             ]
        in case matchingPorts of
             [] -> WireValuePortMissingContract offeredContracts

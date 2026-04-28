@@ -3,8 +3,8 @@
 
 module Platform.Observability.Wai
   ( -- * Public API (re-exported by Platform.Observability)
-    newRequestContext,
-    mkRequestMiddleware,
+    newRequestContext
+  , mkRequestMiddleware
   )
 where
 
@@ -19,7 +19,16 @@ import Data.Text.Encoding.Error (lenientDecode)
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.UUID qualified as UUID
 import Network.HTTP.Types (HeaderName, statusCode)
-import Network.Wai (Middleware, Request, mapResponseHeaders, pathInfo, requestHeaders, requestMethod, responseStatus)
+import Network.Wai
+  ( Middleware
+  , Request
+  , mapResponseHeaders
+  , pathInfo
+  , requestHeaders
+  , requestMethod
+  , responseStatus
+  )
+
 import Platform.Observability.Context (nextRequestId, randomHexText, withThreadContext)
 import Platform.Observability.Emit (emitEvent, withSpanIO)
 import Platform.Observability.Runtime (debugEnabled)
@@ -35,26 +44,26 @@ newRequestContext req = do
       methodText = decodeMethod req
   pure
     ObservabilityContext
-      { requestId = Just requestIdText,
-        upstreamRequestId = incomingRequestId,
-        traceId = traceTxt,
-        spanId = spanTxt,
-        runId = Nothing,
-        userId = Nothing,
-        accountId = Nothing,
-        assetId = Nothing,
-        provider = Nothing,
-        httpMethod = Just methodText,
-        route = Just normalizedRoute,
-        operation = Just "http.request",
-        stage = Nothing,
-        toolName = Nothing,
-        assistantPhase = Nothing,
-        model = Nothing,
-        stepIndex = Nothing,
-        linkedTraceId = Nothing,
-        linkedRequestId = Nothing,
-        linkedSpanId = Nothing
+      { requestId = Just requestIdText
+      , upstreamRequestId = incomingRequestId
+      , traceId = traceTxt
+      , spanId = spanTxt
+      , runId = Nothing
+      , userId = Nothing
+      , accountId = Nothing
+      , assetId = Nothing
+      , provider = Nothing
+      , httpMethod = Just methodText
+      , route = Just normalizedRoute
+      , operation = Just "http.request"
+      , stage = Nothing
+      , toolName = Nothing
+      , assistantPhase = Nothing
+      , model = Nothing
+      , stepIndex = Nothing
+      , linkedTraceId = Nothing
+      , linkedRequestId = Nothing
+      , linkedSpanId = Nothing
       }
 
 mkRequestMiddleware :: ObservabilityRuntime -> Middleware
@@ -84,11 +93,11 @@ mkRequestMiddleware runtime app req respond = do
                 | otherwise = "success"
               spec =
                 (defaultLogEvent level "http" "http.request.complete" "HTTP request completed")
-                  { eventOutcome = outcome,
-                    eventHttpStatusCode = Just code,
-                    eventDurationMs = Just durationMs,
-                    eventRoute = ctx.route,
-                    eventHttpMethod = ctx.httpMethod
+                  { eventOutcome = outcome
+                  , eventHttpStatusCode = Just code
+                  , eventDurationMs = Just durationMs
+                  , eventRoute = ctx.route
+                  , eventHttpMethod = ctx.httpMethod
                   }
           emitEvent (Just runtime) spec
           respond (mapResponseHeaders (requestHeader <>) response)
@@ -98,16 +107,16 @@ mkRequestMiddleware runtime app req respond = do
         let durationMs = max 0 (floor (realToFrac (diffUTCTime finishedAt startedAt) * (1000 :: Double)))
             spec =
               (defaultLogEvent ObsError "http" "http.request.exception" "HTTP request failed")
-                { eventOutcome = "error",
-                  eventDurationMs = Just durationMs,
-                  eventRoute = ctx.route,
-                  eventHttpMethod = ctx.httpMethod,
-                  eventErrorType = Just "internal_error",
-                  eventPayloadPreviewVisibility =
+                { eventOutcome = "error"
+                , eventDurationMs = Just durationMs
+                , eventRoute = ctx.route
+                , eventHttpMethod = ctx.httpMethod
+                , eventErrorType = Just "internal_error"
+                , eventPayloadPreviewVisibility =
                     if debugEnabled runtime
                       then Just PreviewAdminOnly
-                      else Nothing,
-                  eventPayloadPreview =
+                      else Nothing
+                , eventPayloadPreview =
                     if debugEnabled runtime
                       then
                         Just $

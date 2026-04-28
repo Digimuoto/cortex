@@ -4,67 +4,27 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Cortex.Pulse.Executor.Frontier
-  ( runFrontierSequential,
-    runFrontierConcurrent,
-    resolveDeliveredSignals,
+  ( runFrontierSequential
+  , runFrontierConcurrent
+  , resolveDeliveredSignals
   )
 where
 
 import Control.Concurrent.Async (Async, async, cancel, waitAnyCatch)
 import Control.Concurrent.MVar (newMVar)
 import Control.Concurrent.QSem (QSem, newQSem, signalQSem, waitQSem)
-import Control.Concurrent.STM (TVar, atomically, check, modifyTVar', newTVarIO, readTVar, readTVarIO, writeTVar)
+import Control.Concurrent.STM
+  ( TVar
+  , atomically
+  , check
+  , modifyTVar'
+  , newTVarIO
+  , readTVar
+  , readTVarIO
+  , writeTVar
+  )
 import Control.Exception (SomeException, bracket_, displayException, mask, try)
 import Control.Monad (foldM, forM, forM_, unless, when)
-import Cortex.Algebra.Graph (Relation)
-import Cortex.Pulse.Executor.Attempt
-  ( attemptStage,
-    withPreAttemptGuards,
-  )
-import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
-import Cortex.Pulse.Executor.Persistence
-  ( failRun,
-    persistGraphState,
-    recordRunEvent,
-    requireGraphStatePersist,
-  )
-import Cortex.Pulse.Executor.Types
-  ( RewriteAdmissionState (..),
-    StageAttemptResult (..),
-    StageCall (..),
-    StageEnv (..),
-    isWorkerCancellation,
-  )
-import Cortex.Pulse.GraphRuntime
-  ( BlockedReason (..),
-    FailureDetail (..),
-    GraphState (..),
-    NodeOutcome (..),
-    NodeResult (..),
-    NodeStatus (..),
-    StepResult (..),
-    applyFrontierResults,
-    applyNodeFact,
-    blockedReasons,
-    classifyGraphState,
-    markCompleted,
-    markRunning,
-    nodeInputsWithDefault,
-    runOutcomeToNodeOutcome,
-    runTerminal,
-    stepResultState,
-  )
-import Cortex.Pulse.Materialization
-  ( PersistedGraphState (..),
-    PersistedRewrite (..),
-  )
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Plan
-import Cortex.Pulse.PlanHydration (toSerializableStageDefinition)
-import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Rewrite (RewriteBudget)
-import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Signal (unSignalName)
 import Data.Aeson qualified as Aeson
 import Data.List (sortOn)
 import Data.Map.Strict (Map)
@@ -73,27 +33,83 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.UUID (UUID)
+import Rel8 (Result)
+
+import Cortex.Algebra.Graph (Relation)
+import Cortex.Pulse.Executor.Attempt
+  ( attemptStage
+  , withPreAttemptGuards
+  )
+import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
+import Cortex.Pulse.Executor.Persistence
+  ( failRun
+  , persistGraphState
+  , recordRunEvent
+  , requireGraphStatePersist
+  )
+import Cortex.Pulse.Executor.Types
+  ( RewriteAdmissionState (..)
+  , StageAttemptResult (..)
+  , StageCall (..)
+  , StageEnv (..)
+  , isWorkerCancellation
+  )
+import Cortex.Pulse.GraphRuntime
+  ( BlockedReason (..)
+  , FailureDetail (..)
+  , GraphState (..)
+  , NodeOutcome (..)
+  , NodeResult (..)
+  , NodeStatus (..)
+  , StepResult (..)
+  , applyFrontierResults
+  , applyNodeFact
+  , blockedReasons
+  , classifyGraphState
+  , markCompleted
+  , markRunning
+  , nodeInputsWithDefault
+  , runOutcomeToNodeOutcome
+  , runTerminal
+  , stepResultState
+  )
+import Cortex.Pulse.Materialization
+  ( PersistedGraphState (..)
+  , PersistedRewrite (..)
+  )
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+import Cortex.Pulse.PlanHydration (toSerializableStageDefinition)
+import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Rewrite (RewriteBudget)
+import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
+import Cortex.Pulse.Signal (unSignalName)
+
 import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
 import Platform.Observability (emitObsEvent)
-import Rel8 (Result)
 
--- | Use the materialized node identity as the durable stage identity for
--- graph execution. NodeId survives namespacing, rewrites, resume, stage logs,
--- audit writes, and replay-policy enforcement.
+{- | Use the materialized node identity as the durable stage identity for
+graph execution. NodeId survives namespacing, rewrites, resume, stage logs,
+audit writes, and replay-policy enforcement.
+-}
 graphStageName :: NodeId -> T.Text
 graphStageName = unNodeId
 
 data WorkerHandle stageId = WorkerHandle
-  { whNodeId :: !NodeId,
-    whAsync :: !(Async (NodeResult, Maybe (PersistedRewrite stageId)))
+  { whNodeId :: !NodeId
+  , whAsync :: !(Async (NodeResult, Maybe (PersistedRewrite stageId)))
   }
 
 workerExceptionResult :: NodeId -> SomeException -> (NodeResult, Maybe (PersistedRewrite stageId))
 workerExceptionResult nid e
   | isWorkerCancellation e = (NodeResult nid OutcomeNodeCancelled, Nothing)
   | otherwise =
-      (NodeResult nid (OutcomeNodeFailed (FailureDetail "worker_exception" (T.pack (displayException e)) True)), Nothing)
+      ( NodeResult
+          nid
+          (OutcomeNodeFailed (FailureDetail "worker_exception" (T.pack (displayException e)) True))
+      , Nothing
+      )
 
 markTerminalOutcome :: TVar Bool -> NodeOutcome -> IO ()
 markTerminalOutcome terminalFlag = \case
@@ -103,10 +119,10 @@ markTerminalOutcome terminalFlag = \case
   OutcomeNodeRunCancelled -> atomically $ writeTVar terminalFlag True
   _ -> pure ()
 
-takeCompletedWorker ::
-  Async (NodeResult, Maybe (PersistedRewrite stageId)) ->
-  [WorkerHandle stageId] ->
-  (Maybe (WorkerHandle stageId), [WorkerHandle stageId])
+takeCompletedWorker
+  :: Async (NodeResult, Maybe (PersistedRewrite stageId))
+  -> [WorkerHandle stageId]
+  -> (Maybe (WorkerHandle stageId), [WorkerHandle stageId])
 takeCompletedWorker completed = go []
   where
     go acc [] = (Nothing, reverse acc)
@@ -115,18 +131,18 @@ takeCompletedWorker completed = go []
       | otherwise = go (worker : acc) rest
 
 -- | Open or reuse a stage log, then delegate to 'attemptStage'.
-executeStage ::
-  (StableStageId stageId) =>
-  StageEnv ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  RewriteAdmissionState ->
-  RewriteBudget ->
-  NodeId ->
-  StageDefinition stageId ->
-  T.Text ->
-  Map NodeId Aeson.Value ->
-  IO (StageAttemptResult stageId)
+executeStage
+  :: StableStageId stageId
+  => StageEnv
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> RewriteAdmissionState
+  -> RewriteBudget
+  -> NodeId
+  -> StageDefinition stageId
+  -> T.Text
+  -> Map NodeId Aeson.Value
+  -> IO (StageAttemptResult stageId)
 executeStage env task stagePlan rewriteAdmission remainingBudget nid stageDef stageName inputs = do
   now <- getCurrentTime
   stageAuditResult <-
@@ -148,37 +164,49 @@ executeStage env task stagePlan rewriteAdmission remainingBudget nid stageDef st
         task
         stagePlan
         StageCall
-          { scRemainingBudget = remainingBudget,
-            scRewriteAdmission = rewriteAdmission,
-            scNodeId = nid,
-            scStageDef = stageDef,
-            scStageName = stageName,
-            scInputs = inputs,
-            scLogId = logId,
-            scAttempt = fromIntegral nextAttemptNumber,
-            scRetryFailure = Nothing
+          { scRemainingBudget = remainingBudget
+          , scRewriteAdmission = rewriteAdmission
+          , scNodeId = nid
+          , scStageDef = stageDef
+          , scStageName = stageName
+          , scInputs = inputs
+          , scLogId = logId
+          , scAttempt = fromIntegral nextAttemptNumber
+          , scRetryFailure = Nothing
           }
 
--- | Execute a single node and produce a NodeResult. The worker receives
--- immutable inputs (pre-computed from the graph state snapshot) and has
--- no access to the shared TVar. Side effects are limited to the stage
--- action itself and signal registration.
-executeNodeWorker ::
-  (StableStageId stageId) =>
-  StageEnv ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  RewriteAdmissionState ->
-  RewriteBudget ->
-  NodeId ->
-  Map NodeId Aeson.Value ->
-  IO (NodeResult, Maybe (PersistedRewrite stageId))
+{- | Execute a single node and produce a NodeResult. The worker receives
+immutable inputs (pre-computed from the graph state snapshot) and has
+no access to the shared TVar. Side effects are limited to the stage
+action itself and signal registration.
+-}
+executeNodeWorker
+  :: StableStageId stageId
+  => StageEnv
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> RewriteAdmissionState
+  -> RewriteBudget
+  -> NodeId
+  -> Map NodeId Aeson.Value
+  -> IO (NodeResult, Maybe (PersistedRewrite stageId))
 executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs = do
   case Map.lookup nid (spDefinitions stagePlan) of
     Nothing -> do
       now <- getCurrentTime
-      failRun env.sePool env.seRunId now "internal_error" ("Node not found in graph: " <> unNodeId nid) False
-      pure (NodeResult nid (OutcomeNodeFailed (FailureDetail "internal_error" ("Node not found: " <> unNodeId nid) False)), Nothing)
+      failRun
+        env.sePool
+        env.seRunId
+        now
+        "internal_error"
+        ("Node not found in graph: " <> unNodeId nid)
+        False
+      pure
+        ( NodeResult
+            nid
+            (OutcomeNodeFailed (FailureDetail "internal_error" ("Node not found: " <> unNodeId nid) False))
+        , Nothing
+        )
     Just stageDef -> do
       let stageName = graphStageName nid
       result <-
@@ -189,7 +217,10 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
           pure (NodeResult nid (OutcomeSucceeded newOutput), Nothing)
         StageAdvanceWithRewrite newOutput persistedRewrite -> do
           let serializableRewrite = fmap toSerializableStageDefinition persistedRewrite.prRewrite
-          pure (NodeResult nid (OutcomeRewritten newOutput (Aeson.toJSON serializableRewrite)), Just persistedRewrite)
+          pure
+            ( NodeResult nid (OutcomeRewritten newOutput (Aeson.toJSON serializableRewrite))
+            , Just persistedRewrite
+            )
         StageSkip ->
           pure (NodeResult nid OutcomeSkipped, Nothing)
         StageSuspended signalName -> do
@@ -201,8 +232,21 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
             Left err -> do
               emitObsEvent $ EvtSuspendWriteFailed env.seRunId (unSignalName signalName) (T.pack err)
               now' <- getCurrentTime
-              failRun env.sePool env.seRunId now' "signal_registration_failed" ("Failed to register signal wait: " <> T.pack err) True
-              pure (NodeResult nid (OutcomeNodeFailed (FailureDetail "signal_registration_failed" ("Failed to register signal wait: " <> T.pack err) True)), Nothing)
+              failRun
+                env.sePool
+                env.seRunId
+                now'
+                "signal_registration_failed"
+                ("Failed to register signal wait: " <> T.pack err)
+                True
+              pure
+                ( NodeResult
+                    nid
+                    ( OutcomeNodeFailed
+                        (FailureDetail "signal_registration_failed" ("Failed to register signal wait: " <> T.pack err) True)
+                    )
+                , Nothing
+                )
             Right () ->
               pure (NodeResult nid (OutcomeSuspendedOn (unSignalName signalName)), Nothing)
         StageTerminal outcome ->
@@ -211,21 +255,32 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
           -- StageRewriteRejected should never propagate to the frontier level;
           -- attemptStage resolves it via the re-execution loop.
           now <- getCurrentTime
-          failRun env.sePool env.seRunId now "internal_error" "StageRewriteRejected reached frontier (bug)" False
-          pure (NodeResult nid (OutcomeNodeFailed (FailureDetail "internal_error" "StageRewriteRejected reached frontier" False)), Nothing)
+          failRun
+            env.sePool
+            env.seRunId
+            now
+            "internal_error"
+            "StageRewriteRejected reached frontier (bug)"
+            False
+          pure
+            ( NodeResult
+                nid
+                (OutcomeNodeFailed (FailureDetail "internal_error" "StageRewriteRejected reached frontier" False))
+            , Nothing
+            )
 
 computeNodeInputs :: StagePlan stageId -> GraphState Aeson.Value -> NodeId -> Map NodeId Aeson.Value
 computeNodeInputs stagePlan gs =
   nodeInputsWithDefault stagePlan.spTopology gs stagePlan.spInitialState
 
-runFrontierSequential ::
-  (StableStageId stageId) =>
-  StageEnv ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  TVar PersistedGraphState ->
-  [NodeId] ->
-  IO (Maybe (Either RunOutcome [PersistedRewrite stageId]))
+runFrontierSequential
+  :: StableStageId stageId
+  => StageEnv
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> TVar PersistedGraphState
+  -> [NodeId]
+  -> IO (Maybe (Either RunOutcome [PersistedRewrite stageId]))
 runFrontierSequential _ _ _ _ [] = pure Nothing
 runFrontierSequential env task stagePlan gsVar (nid : rest) = do
   persistedState <- readTVarIO gsVar
@@ -246,10 +301,18 @@ runFrontierSequential env task stagePlan gsVar (nid : rest) = do
           admissionLock <- newMVar ()
           let rewriteAdmission =
                 RewriteAdmissionState
-                  { rasRemainingBudget = budgetRef,
-                    rasAdmissionLock = admissionLock
+                  { rasRemainingBudget = budgetRef
+                  , rasAdmissionLock = admissionLock
                   }
-          (nodeResult, mRewrite) <- executeNodeWorker env task stagePlan rewriteAdmission persistedState.pgsRemainingRewriteBudget nid inputs
+          (nodeResult, mRewrite) <-
+            executeNodeWorker
+              env
+              task
+              stagePlan
+              rewriteAdmission
+              persistedState.pgsRemainingRewriteBudget
+              nid
+              inputs
           recordUnexpectedNodeFailure env nodeResult
           -- Re-read current state after worker completes so we apply results
           -- against the running-marked state, not the stale pre-mark snapshot.
@@ -286,21 +349,22 @@ runFrontierSequential env task stagePlan gsVar (nid : rest) = do
     _ ->
       runFrontierSequential env task stagePlan gsVar rest
 
--- | Spawn a semaphore-bounded async worker for a single node.  The worker
--- checks the terminal flag before running and sets it when the node produces
--- a terminal outcome (failed, timed-out, shutdown, cancelled).
-spawnNodeWorker ::
-  (StableStageId stageId) =>
-  StageEnv ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  RewriteAdmissionState ->
-  RewriteBudget ->
-  TVar Bool ->
-  QSem ->
-  Map NodeId (Map NodeId Aeson.Value) ->
-  NodeId ->
-  IO (WorkerHandle stageId)
+{- | Spawn a semaphore-bounded async worker for a single node.  The worker
+checks the terminal flag before running and sets it when the node produces
+a terminal outcome (failed, timed-out, shutdown, cancelled).
+-}
+spawnNodeWorker
+  :: StableStageId stageId
+  => StageEnv
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> RewriteAdmissionState
+  -> RewriteBudget
+  -> TVar Bool
+  -> QSem
+  -> Map NodeId (Map NodeId Aeson.Value)
+  -> NodeId
+  -> IO (WorkerHandle stageId)
 spawnNodeWorker env task stagePlan rewriteAdmission budget terminalFlag sem inputsMap nid = do
   let nodeInputs' = Map.findWithDefault Map.empty nid inputsMap
   -- Mask startup so cancellation cannot land before the outer try is installed.
@@ -332,20 +396,21 @@ spawnNodeWorker env task stagePlan rewriteAdmission budget terminalFlag sem inpu
       )
   pure WorkerHandle {whNodeId = nid, whAsync = workerAsync}
 
--- | Wait on all async handles, applying each completed node result to the
--- shared graph state and persisting incrementally.
---
--- 'spawnNodeWorker' masks startup so the outer 'try' is installed before
--- cancellation can arrive.  If an async still escapes, reify it into a node
--- result here so we never leave the frontier with a stale 'NodeRunning' fact.
-collectWorkerResults ::
-  StageEnv ->
-  TVar PersistedGraphState ->
-  TVar Bool ->
-  TVar (Maybe T.Text) ->
-  [WorkerHandle stageId] ->
-  [(NodeResult, Maybe (PersistedRewrite stageId))] ->
-  IO [(NodeResult, Maybe (PersistedRewrite stageId))]
+{- | Wait on all async handles, applying each completed node result to the
+shared graph state and persisting incrementally.
+
+'spawnNodeWorker' masks startup so the outer 'try' is installed before
+cancellation can arrive.  If an async still escapes, reify it into a node
+result here so we never leave the frontier with a stale 'NodeRunning' fact.
+-}
+collectWorkerResults
+  :: StageEnv
+  -> TVar PersistedGraphState
+  -> TVar Bool
+  -> TVar (Maybe T.Text)
+  -> [WorkerHandle stageId]
+  -> [(NodeResult, Maybe (PersistedRewrite stageId))]
+  -> IO [(NodeResult, Maybe (PersistedRewrite stageId))]
 collectWorkerResults _ _ _ _ [] acc = pure (reverse acc)
 collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
   (completed, result) <- waitAnyCatch (fmap whAsync remaining)
@@ -393,20 +458,23 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
             env
             "stage.worker_exception_unattributed"
             Q.RunEventError
-            ("Async worker exception escaped spawnNodeWorker but no matching worker handle was found: " <> T.pack (displayException ex))
+            ( "Async worker exception escaped spawnNodeWorker but no matching worker handle was found: "
+                <> T.pack (displayException ex)
+            )
             Nothing
           atomically $ writeTVar terminalFlag True
           collectWorkerResults env gsVar terminalFlag persistFailRef remaining' acc
 
--- | Classify the graph after a concurrent frontier completes.  Persists the
--- classified state when it differs from the raw accumulated state, then
--- determines the overall frontier outcome.
-classifyFrontierOutcome ::
-  StageEnv ->
-  Relation NodeId ->
-  TVar PersistedGraphState ->
-  [(NodeResult, Maybe (PersistedRewrite stageId))] ->
-  IO (Maybe (Either RunOutcome [PersistedRewrite stageId]))
+{- | Classify the graph after a concurrent frontier completes.  Persists the
+classified state when it differs from the raw accumulated state, then
+determines the overall frontier outcome.
+-}
+classifyFrontierOutcome
+  :: StageEnv
+  -> Relation NodeId
+  -> TVar PersistedGraphState
+  -> [(NodeResult, Maybe (PersistedRewrite stageId))]
+  -> IO (Maybe (Either RunOutcome [PersistedRewrite stageId]))
 classifyFrontierOutcome env topology gsVar results = do
   currentState <- readTVarIO gsVar
   let gs1 = currentState.pgsGraphState
@@ -429,8 +497,8 @@ classifyFrontierOutcome env topology gsVar results = do
       "Frontier classified failed nodes"
       ( Just
           ( Aeson.object
-              [ "failed_nodes" Aeson..= failedNodeIds,
-                "blocked_on_failed" Aeson..= blockedOnFailedDetails
+              [ "failed_nodes" Aeson..= failedNodeIds
+              , "blocked_on_failed" Aeson..= blockedOnFailedDetails
               ]
           )
       )
@@ -464,14 +532,14 @@ classifyFrontierOutcome env topology gsVar results = do
                       Stuck {} -> Nothing
                   _ -> Just (Right rewriteResults)
 
-runFrontierConcurrent ::
-  (StableStageId stageId) =>
-  StageEnv ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  TVar PersistedGraphState ->
-  [NodeId] ->
-  IO (Maybe (Either RunOutcome [PersistedRewrite stageId]))
+runFrontierConcurrent
+  :: StableStageId stageId
+  => StageEnv
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> TVar PersistedGraphState
+  -> [NodeId]
+  -> IO (Maybe (Either RunOutcome [PersistedRewrite stageId]))
 runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
   let frontierSize = length readyNodeIds
       cap = max 1 env.seMaxFrontierConcurrency
@@ -512,13 +580,21 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
           admissionLock <- newMVar ()
           let rewriteAdmission =
                 RewriteAdmissionState
-                  { rasRemainingBudget = budgetRef,
-                    rasAdmissionLock = admissionLock
+                  { rasRemainingBudget = budgetRef
+                  , rasAdmissionLock = admissionLock
                   }
           terminalFlag <- newTVarIO False
           asyncHandles <-
             forM pendingNodeIds $
-              spawnNodeWorker env task stagePlan rewriteAdmission persistedState.pgsRemainingRewriteBudget terminalFlag sem inputsMap
+              spawnNodeWorker
+                env
+                task
+                stagePlan
+                rewriteAdmission
+                persistedState.pgsRemainingRewriteBudget
+                terminalFlag
+                sem
+                inputsMap
           monitor <- async $ do
             atomically $ readTVar terminalFlag >>= check
             forM_ asyncHandles (cancel . whAsync)
@@ -529,8 +605,19 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
           case mPersistFail of
             Just err -> do
               now <- getCurrentTime
-              recordRunEvent env "run.graph_state_persist_failed" Q.RunEventError ("Graph state persistence failed during frontier: " <> err) Nothing
-              failRun env.sePool env.seRunId now "graph_state_persist_failed" ("Graph state persistence failed: " <> err) True
+              recordRunEvent
+                env
+                "run.graph_state_persist_failed"
+                Q.RunEventError
+                ("Graph state persistence failed during frontier: " <> err)
+                Nothing
+              failRun
+                env.sePool
+                env.seRunId
+                now
+                "graph_state_persist_failed"
+                ("Graph state persistence failed: " <> err)
+                True
               pure (Just (Left OutcomeFailed))
             Nothing -> do
               frontierResult <- classifyFrontierOutcome env topology gsVar results
@@ -551,10 +638,10 @@ recordUnexpectedNodeFailure env nr =
             ("Node failed in frontier: " <> graphStageName nr.nrNodeId)
             ( Just
                 ( Aeson.object
-                    [ "stage" Aeson..= graphStageName nr.nrNodeId,
-                      "error_type" Aeson..= failureDetail.fdErrorType,
-                      "error" Aeson..= failureDetail.fdErrorMessage,
-                      "retryable" Aeson..= failureDetail.fdRetryable
+                    [ "stage" Aeson..= graphStageName nr.nrNodeId
+                    , "error_type" Aeson..= failureDetail.fdErrorType
+                    , "error" Aeson..= failureDetail.fdErrorMessage
+                    , "retryable" Aeson..= failureDetail.fdRetryable
                     ]
                 )
             )

@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Themis
-  ( themisDefinition,
+  ( themisDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Themis),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Themis)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 themisDefinition :: NousArchetypeDefinition

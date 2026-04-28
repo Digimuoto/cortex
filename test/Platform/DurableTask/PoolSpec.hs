@@ -7,18 +7,19 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, takeMVar)
 import Control.Exception (ErrorCall (..), SomeException, throwIO)
 import Data.IORef (modifyIORef', newIORef, readIORef)
-import Platform.DurableTask.Pool
-  ( LaunchResult (..),
-    TaskPool,
-    activeCount,
-    availableSlots,
-    drainAll,
-    newTaskPool,
-    reapCompleted,
-    tryLaunch,
-  )
 import Test.Hspec
 import Test.QuickCheck (choose, forAll, ioProperty)
+
+import Platform.DurableTask.Pool
+  ( LaunchResult (..)
+  , TaskPool
+  , activeCount
+  , availableSlots
+  , drainAll
+  , newTaskPool
+  , reapCompleted
+  , tryLaunch
+  )
 
 spec :: Spec
 spec = do

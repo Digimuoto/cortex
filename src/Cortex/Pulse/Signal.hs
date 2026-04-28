@@ -3,22 +3,23 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Durable signal types for Pulse external event primitives.
---
--- A signal is a named, durably-stored event that a running stage can wait on.
--- When a stage suspends on a signal, the executor persists the wait and
--- transitions the run to 'waiting'. When the signal is delivered (via admin
--- API or internal event), the run is woken and resumes from the waiting node.
+{- | Durable signal types for Pulse external event primitives.
+
+A signal is a named, durably-stored event that a running stage can wait on.
+When a stage suspends on a signal, the executor persists the wait and
+transitions the run to 'waiting'. When the signal is delivered (via admin
+API or internal event), the run is woken and resumes from the waiting node.
+-}
 module Cortex.Pulse.Signal
   ( -- * Signal identity
-    SignalName (..),
+    SignalName (..)
 
     -- * Signal records
-    SignalWait (..),
-    SignalDelivery (..),
-    SignalStatus (..),
-    signalStatusToText,
-    signalStatusFromText,
+  , SignalWait (..)
+  , SignalDelivery (..)
+  , SignalStatus (..)
+  , signalStatusToText
+  , signalStatusFromText
   )
 where
 
@@ -36,20 +37,20 @@ newtype SignalName = SignalName {unSignalName :: Text}
 
 -- | A pending signal wait registered by a stage.
 data SignalWait = SignalWait
-  { swRunId :: UUID,
-    swNodeId :: Text,
-    swSignalName :: SignalName,
-    swCreatedAt :: UTCTime,
-    swExpiresAt :: Maybe UTCTime
+  { swRunId :: UUID
+  , swNodeId :: Text
+  , swSignalName :: SignalName
+  , swCreatedAt :: UTCTime
+  , swExpiresAt :: Maybe UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A delivered signal with payload.
 data SignalDelivery = SignalDelivery
-  { sdRunId :: UUID,
-    sdSignalName :: SignalName,
-    sdPayload :: Aeson.Value,
-    sdDeliveredAt :: UTCTime
+  { sdRunId :: UUID
+  , sdSignalName :: SignalName
+  , sdPayload :: Aeson.Value
+  , sdDeliveredAt :: UTCTime
   }
   deriving stock (Eq, Show, Generic)
 

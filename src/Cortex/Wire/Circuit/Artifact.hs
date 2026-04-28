@@ -1,5 +1,5 @@
 module Cortex.Wire.Circuit.Artifact
-  ( module Cortex.Wire.Circuit.Compiled,
+  ( module Cortex.Wire.Circuit.Compiled
   )
 where
 

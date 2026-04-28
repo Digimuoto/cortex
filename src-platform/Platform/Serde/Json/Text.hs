@@ -1,8 +1,8 @@
 module Platform.Serde.Json.Text
-  ( decodeLazyUtf8,
-    jsonValueText,
-    toolError,
-    toolValidationError,
+  ( decodeLazyUtf8
+  , jsonValueText
+  , toolError
+  , toolValidationError
   )
 where
 

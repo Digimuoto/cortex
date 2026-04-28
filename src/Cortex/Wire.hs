@@ -1,130 +1,130 @@
 module Cortex.Wire
-  ( module Cortex.Wire.Syntax,
-    module Cortex.Wire.Circuit,
-    module Cortex.Wire.Executor,
-    module Cortex.Wire.Pure,
-    WireCompileEnv (..),
-    WireProjectionMode (..),
-    WireContractSpec (..),
-    WireContractRegistry (..),
-    WirePayloadKind (..),
-    WireValue (..),
-    WireValueSet (..),
-    WireInputBundle (..),
-    WireAppendHole (..),
-    WireProposalError (..),
-    normalizeWireProposalResponse,
-    wireProposalGrammarReference,
-    wireProposalSingleNodeExample,
-    wireProposalSingleNodeShorthandExample,
-    wireProposalInvalidMissingGraphExample,
-    wireProposalInvalidOuterReferenceExample,
-    unwrapWireStageInputs,
-    unwrapWireStageValue,
-    wireInputBundleFromStageInputs,
-    wireInputBundlePromptSummary,
-    wrapWireStageOutput,
-    wrapWireStageOutputs,
-    wrapWireStageResult,
-    wrapWireStageDefinition,
-    emptyWireCompileEnv,
-    wireCompileEnvWithContractRegistry,
-    wireCompileEnvWithExecutorRegistry,
-    strictWireCompileEnv,
-    emptyWireContractRegistry,
-    wireContractRegistryFromList,
-    wirePortsFromMetadataValue,
-    renderWirePayloadKind,
-    parseWirePayloadKindText,
-    wirePayloadKindMediaType,
-    describeWirePayloadKindShape,
-    validateWirePayloadShape,
-    mkWireValue,
-    singletonWireValueSet,
-    wireProposalErrorCategory,
-    renderWireProposalError,
-    compileWireAppendProposalWithEnv,
-    parseWireFile,
-    parseWireExpr,
-    ParseError,
-    renderParseError,
-    compileWireFile,
-    compileWireFileWithEnv,
-    compileWireFragmentFile,
-    compileWireFragmentFileWithEnv,
-    compileWireText,
-    compileWireTextWithEnv,
-    compileWireFragmentText,
-    compileWireFragmentTextWithEnv,
+  ( module Cortex.Wire.Syntax
+  , module Cortex.Wire.Circuit
+  , module Cortex.Wire.Executor
+  , module Cortex.Wire.Pure
+  , WireCompileEnv (..)
+  , WireProjectionMode (..)
+  , WireContractSpec (..)
+  , WireContractRegistry (..)
+  , WirePayloadKind (..)
+  , WireValue (..)
+  , WireValueSet (..)
+  , WireInputBundle (..)
+  , WireAppendHole (..)
+  , WireProposalError (..)
+  , normalizeWireProposalResponse
+  , wireProposalGrammarReference
+  , wireProposalSingleNodeExample
+  , wireProposalSingleNodeShorthandExample
+  , wireProposalInvalidMissingGraphExample
+  , wireProposalInvalidOuterReferenceExample
+  , unwrapWireStageInputs
+  , unwrapWireStageValue
+  , wireInputBundleFromStageInputs
+  , wireInputBundlePromptSummary
+  , wrapWireStageOutput
+  , wrapWireStageOutputs
+  , wrapWireStageResult
+  , wrapWireStageDefinition
+  , emptyWireCompileEnv
+  , wireCompileEnvWithContractRegistry
+  , wireCompileEnvWithExecutorRegistry
+  , strictWireCompileEnv
+  , emptyWireContractRegistry
+  , wireContractRegistryFromList
+  , wirePortsFromMetadataValue
+  , renderWirePayloadKind
+  , parseWirePayloadKindText
+  , wirePayloadKindMediaType
+  , describeWirePayloadKindShape
+  , validateWirePayloadShape
+  , mkWireValue
+  , singletonWireValueSet
+  , wireProposalErrorCategory
+  , renderWireProposalError
+  , compileWireAppendProposalWithEnv
+  , parseWireFile
+  , parseWireExpr
+  , ParseError
+  , renderParseError
+  , compileWireFile
+  , compileWireFileWithEnv
+  , compileWireFragmentFile
+  , compileWireFragmentFileWithEnv
+  , compileWireText
+  , compileWireTextWithEnv
+  , compileWireFragmentText
+  , compileWireFragmentTextWithEnv
   )
 where
 
 import Cortex.Wire.Circuit
 import Cortex.Wire.Compile
-  ( compileWireFile,
-    compileWireFileWithEnv,
-    compileWireFragmentFile,
-    compileWireFragmentFileWithEnv,
-    compileWireFragmentText,
-    compileWireFragmentTextWithEnv,
-    compileWireText,
-    compileWireTextWithEnv,
+  ( compileWireFile
+  , compileWireFileWithEnv
+  , compileWireFragmentFile
+  , compileWireFragmentFileWithEnv
+  , compileWireFragmentText
+  , compileWireFragmentTextWithEnv
+  , compileWireText
+  , compileWireTextWithEnv
   )
 import Cortex.Wire.Contract
-  ( WireCompileEnv (..),
-    WireContractRegistry (..),
-    WireContractSpec (..),
-    WireProjectionMode (..),
-    emptyWireCompileEnv,
-    emptyWireContractRegistry,
-    strictWireCompileEnv,
-    wireCompileEnvWithContractRegistry,
-    wireCompileEnvWithExecutorRegistry,
-    wireContractRegistryFromList,
-    wirePortsFromMetadataValue,
+  ( WireCompileEnv (..)
+  , WireContractRegistry (..)
+  , WireContractSpec (..)
+  , WireProjectionMode (..)
+  , emptyWireCompileEnv
+  , emptyWireContractRegistry
+  , strictWireCompileEnv
+  , wireCompileEnvWithContractRegistry
+  , wireCompileEnvWithExecutorRegistry
+  , wireContractRegistryFromList
+  , wirePortsFromMetadataValue
   )
 import Cortex.Wire.Executor
 import Cortex.Wire.Parser
-  ( ParseError,
-    parseWireExpr,
-    parseWireFile,
-    renderParseError,
+  ( ParseError
+  , parseWireExpr
+  , parseWireFile
+  , renderParseError
   )
 import Cortex.Wire.Proposal
-  ( WireAppendHole (..),
-    WireProposalError (..),
-    compileWireAppendProposalWithEnv,
-    normalizeWireProposalResponse,
-    renderWireProposalError,
-    wireProposalErrorCategory,
-    wireProposalGrammarReference,
-    wireProposalInvalidMissingGraphExample,
-    wireProposalInvalidOuterReferenceExample,
-    wireProposalSingleNodeExample,
-    wireProposalSingleNodeShorthandExample,
+  ( WireAppendHole (..)
+  , WireProposalError (..)
+  , compileWireAppendProposalWithEnv
+  , normalizeWireProposalResponse
+  , renderWireProposalError
+  , wireProposalErrorCategory
+  , wireProposalGrammarReference
+  , wireProposalInvalidMissingGraphExample
+  , wireProposalInvalidOuterReferenceExample
+  , wireProposalSingleNodeExample
+  , wireProposalSingleNodeShorthandExample
   )
 import Cortex.Wire.Pure
 import Cortex.Wire.Runtime
-  ( WireInputBundle (..),
-    unwrapWireStageInputs,
-    unwrapWireStageValue,
-    wireInputBundleFromStageInputs,
-    wireInputBundlePromptSummary,
-    wrapWireStageDefinition,
-    wrapWireStageOutput,
-    wrapWireStageOutputs,
-    wrapWireStageResult,
+  ( WireInputBundle (..)
+  , unwrapWireStageInputs
+  , unwrapWireStageValue
+  , wireInputBundleFromStageInputs
+  , wireInputBundlePromptSummary
+  , wrapWireStageDefinition
+  , wrapWireStageOutput
+  , wrapWireStageOutputs
+  , wrapWireStageResult
   )
 import Cortex.Wire.Syntax
 import Cortex.Wire.Value
-  ( WirePayloadKind (..),
-    WireValue (..),
-    WireValueSet (..),
-    describeWirePayloadKindShape,
-    mkWireValue,
-    parseWirePayloadKindText,
-    renderWirePayloadKind,
-    singletonWireValueSet,
-    validateWirePayloadShape,
-    wirePayloadKindMediaType,
+  ( WirePayloadKind (..)
+  , WireValue (..)
+  , WireValueSet (..)
+  , describeWirePayloadKindShape
+  , mkWireValue
+  , parseWirePayloadKindText
+  , renderWirePayloadKind
+  , singletonWireValueSet
+  , validateWirePayloadShape
+  , wirePayloadKindMediaType
   )

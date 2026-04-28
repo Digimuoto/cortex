@@ -3,53 +3,54 @@
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- |
--- Module      : Platform.Crypto
--- Description : AES-256-GCM encryption for organization credentials
--- Copyright   : (c) 2026
--- License     : MIT
--- Maintainer  : julius@koskela.email
---
--- Provides encryption/decryption for organization-level API credentials.
---
--- Security design:
--- - AES-256-GCM for authenticated encryption
--- - HKDF-SHA256 for key derivation from admin pepper
--- - Unique 12-byte nonce per encryption
--- - Context-specific key derivation (one key per provider)
---
--- The admin pepper is loaded from systemd LoadCredential at startup.
--- Each provider gets a derived key using HKDF with provider name as info.
+{- |
+Module      : Platform.Crypto
+Description : AES-256-GCM encryption for organization credentials
+Copyright   : (c) 2026
+License     : MIT
+Maintainer  : julius@koskela.email
+
+Provides encryption/decryption for organization-level API credentials.
+
+Security design:
+- AES-256-GCM for authenticated encryption
+- HKDF-SHA256 for key derivation from admin pepper
+- Unique 12-byte nonce per encryption
+- Context-specific key derivation (one key per provider)
+
+The admin pepper is loaded from systemd LoadCredential at startup.
+Each provider gets a derived key using HKDF with provider name as info.
+-}
 module Platform.Crypto
   ( -- * Key derivation
-    deriveCredentialKey,
-    CredentialKey (..),
+    deriveCredentialKey
+  , CredentialKey (..)
 
     -- * Encryption/Decryption
-    encryptCredential,
-    decryptCredential,
-    EncryptedCredential (..),
-    CryptoError (..),
+  , encryptCredential
+  , decryptCredential
+  , EncryptedCredential (..)
+  , CryptoError (..)
 
     -- * Nonce generation
-    generateNonce,
-    Nonce (..),
+  , generateNonce
+  , Nonce (..)
 
     -- * Types
-    AdminPepper (..),
-    Provider (..),
+  , AdminPepper (..)
+  , Provider (..)
   )
 where
 
 import Crypto.Cipher.AES (AES256)
 import Crypto.Cipher.Types
-  ( AEAD,
-    AEADMode (..),
-    AuthTag (..),
-    aeadInit,
-    aeadSimpleDecrypt,
-    aeadSimpleEncrypt,
-    cipherInit,
+  ( AEAD
+  , AEADMode (..)
+  , AuthTag (..)
+  , aeadInit
+  , aeadSimpleDecrypt
+  , aeadSimpleEncrypt
+  , cipherInit
   )
 import Crypto.Error (CryptoFailable (..))
 import Crypto.Hash (SHA256)
@@ -87,10 +88,10 @@ newtype Nonce = Nonce {unNonce :: ByteString}
 
 -- | Encrypted credential with nonce
 data EncryptedCredential = EncryptedCredential
-  { -- | AES-GCM ciphertext including 16-byte auth tag
-    ecCiphertext :: !ByteString,
-    -- | 12-byte nonce used for encryption
-    ecNonce :: !Nonce
+  { ecCiphertext :: !ByteString
+  -- ^ AES-GCM ciphertext including 16-byte auth tag
+  , ecNonce :: !Nonce
+  -- ^ 12-byte nonce used for encryption
   }
   deriving (Eq, Show)
 
@@ -108,56 +109,61 @@ data CryptoError
 hkdfSalt :: ByteString
 hkdfSalt = "portman-org-credentials-v1"
 
--- |
--- Derive a provider-specific encryption key from admin pepper.
---
--- Uses HKDF-SHA256 with:
--- - IKM: admin pepper
--- - Salt: fixed public salt
--- - Info: provider name (for domain separation)
--- - Output: 32 bytes (AES-256 key)
---
--- Each provider gets a unique derived key, so compromise of one
--- credential doesn't expose others.
+{- |
+Derive a provider-specific encryption key from admin pepper.
+
+Uses HKDF-SHA256 with:
+- IKM: admin pepper
+- Salt: fixed public salt
+- Info: provider name (for domain separation)
+- Output: 32 bytes (AES-256 key)
+
+Each provider gets a unique derived key, so compromise of one
+credential doesn't expose others.
+-}
 deriveCredentialKey :: AdminPepper -> Provider -> CredentialKey
 deriveCredentialKey (AdminPepper pepper) (Provider provider) =
-  let -- Extract phase: PRK = HKDF-Extract(salt, IKM)
-      prk :: PRK SHA256
-      prk = extract hkdfSalt pepper
-      -- Expand phase: OKM = HKDF-Expand(PRK, info, L)
-      info = "credential:" <> TE.encodeUtf8 provider
-      okm = expand prk info 32 :: ByteString
-   in CredentialKey okm
+  let
+    -- Extract phase: PRK = HKDF-Extract(salt, IKM)
+    prk :: PRK SHA256
+    prk = extract hkdfSalt pepper
+    -- Expand phase: OKM = HKDF-Expand(PRK, info, L)
+    info = "credential:" <> TE.encodeUtf8 provider
+    okm = expand prk info 32 :: ByteString
+   in
+    CredentialKey okm
 
--- |
--- Generate a cryptographically secure 12-byte nonce.
---
--- IMPORTANT: Each encryption MUST use a unique nonce.
--- With AES-GCM, nonce reuse is catastrophic (reveals key).
+{- |
+Generate a cryptographically secure 12-byte nonce.
+
+IMPORTANT: Each encryption MUST use a unique nonce.
+With AES-GCM, nonce reuse is catastrophic (reveals key).
+-}
 generateNonce :: IO Nonce
 generateNonce = Nonce <$> getRandomBytes 12
 
--- |
--- Encrypt an API credential using AES-256-GCM.
---
--- Returns ciphertext with appended 16-byte authentication tag.
--- The nonce must be stored alongside the ciphertext for decryption.
---
--- Example usage:
--- @
--- pepper <- loadAdminPepper
--- let key = deriveCredentialKey pepper (Provider "eodhd")
--- nonce <- generateNonce
--- case encryptCredential key nonce "my-api-key-12345" of
---   Left err -> handleError err
---   Right encrypted -> storeInDatabase encrypted
--- @
-encryptCredential ::
-  CredentialKey ->
-  Nonce ->
-  -- | Plaintext API key
-  ByteString ->
-  Either CryptoError EncryptedCredential
+{- |
+Encrypt an API credential using AES-256-GCM.
+
+Returns ciphertext with appended 16-byte authentication tag.
+The nonce must be stored alongside the ciphertext for decryption.
+
+Example usage:
+@
+pepper <- loadAdminPepper
+let key = deriveCredentialKey pepper (Provider "eodhd")
+nonce <- generateNonce
+case encryptCredential key nonce "my-api-key-12345" of
+  Left err -> handleError err
+  Right encrypted -> storeInDatabase encrypted
+@
+-}
+encryptCredential
+  :: CredentialKey
+  -> Nonce
+  -> ByteString
+  -- ^ Plaintext API key
+  -> Either CryptoError EncryptedCredential
 encryptCredential (CredentialKey keyBytes) (Nonce nonceBytes) plaintext
   | BS.length keyBytes /= 32 = Left $ InvalidKeyLength (BS.length keyBytes)
   | BS.length nonceBytes /= 12 = Left $ InvalidNonceLength (BS.length nonceBytes)
@@ -180,24 +186,25 @@ encryptCredential (CredentialKey keyBytes) (Nonce nonceBytes) plaintext
 
       Right $ EncryptedCredential ciphertextWithTag (Nonce nonceBytes)
 
--- |
--- Decrypt an API credential using AES-256-GCM.
---
--- Verifies the authentication tag and returns plaintext on success.
--- Returns DecryptionFailed if the tag doesn't match (tampering detected).
---
--- Example usage:
--- @
--- pepper <- loadAdminPepper
--- let key = deriveCredentialKey pepper (Provider "eodhd")
--- case decryptCredential key encrypted of
---   Left err -> handleError err
---   Right plaintext -> useApiKey plaintext
--- @
-decryptCredential ::
-  CredentialKey ->
-  EncryptedCredential ->
-  Either CryptoError ByteString
+{- |
+Decrypt an API credential using AES-256-GCM.
+
+Verifies the authentication tag and returns plaintext on success.
+Returns DecryptionFailed if the tag doesn't match (tampering detected).
+
+Example usage:
+@
+pepper <- loadAdminPepper
+let key = deriveCredentialKey pepper (Provider "eodhd")
+case decryptCredential key encrypted of
+  Left err -> handleError err
+  Right plaintext -> useApiKey plaintext
+@
+-}
+decryptCredential
+  :: CredentialKey
+  -> EncryptedCredential
+  -> Either CryptoError ByteString
 decryptCredential (CredentialKey keyBytes) (EncryptedCredential ciphertextWithTag (Nonce nonceBytes))
   | BS.length keyBytes /= 32 = Left $ InvalidKeyLength (BS.length keyBytes)
   | BS.length nonceBytes /= 12 = Left $ InvalidNonceLength (BS.length nonceBytes)

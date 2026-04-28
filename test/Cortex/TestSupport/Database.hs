@@ -1,11 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.TestSupport.Database
-  ( TestDB,
-    createTestDB,
-    runTx,
-    runSession,
-    insertTestUser,
+  ( TestDB
+  , createTestDB
+  , runTx
+  , runSession
+  , insertTestUser
   )
 where
 
@@ -19,11 +19,12 @@ import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
 import Hasql.Transaction (Transaction)
 import Hasql.Transaction.Sessions (IsolationLevel (..), Mode (..), transaction)
-import Platform.Database (ConnectionConfig (..), initConnectionPool)
-import Platform.Database.Encode qualified as Enc
 import System.Environment (getEnv, lookupEnv)
 import Test.HUnit.Lang (assertFailure)
 import Text.Read (readMaybe)
+
+import Platform.Database (ConnectionConfig (..), initConnectionPool)
+import Platform.Database.Encode qualified as Enc
 
 type TestDB = Pool
 
@@ -64,13 +65,13 @@ createTestDB = do
   dbPassword <- maybe "" T.pack <$> lookupEnv "PGPASSWORD"
   let config =
         ConnectionConfig
-          { dbHost = dbHost,
-            dbPort = dbPort,
-            dbUser = dbUser,
-            dbPassword = dbPassword,
-            dbDatabase = dbDatabase,
-            dbPoolSize = 8,
-            dbPoolTimeout = 60
+          { dbHost = dbHost
+          , dbPort = dbPort
+          , dbUser = dbUser
+          , dbPassword = dbPassword
+          , dbDatabase = dbDatabase
+          , dbPoolSize = 8
+          , dbPoolTimeout = 60
           }
   poolResult <- initConnectionPool config
   case poolResult of

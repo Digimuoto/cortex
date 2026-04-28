@@ -3,48 +3,31 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Cortex.Pulse.Rewrite
-  ( GraphRewrite (..),
-    ExpansionMode (..),
-    SubgraphSpec (..),
-    RewriteBudget (..),
-    RewriteCost (..),
-    BudgetDimension (..),
-    ExceededDimension (..),
-    RewriteBudgetError (..),
-    exceededDimensions,
-    RewritePlanningError (..),
-    RewriteAnchorDisposition (..),
-    PlannedRewriteDelta (..),
-    AdmittedRewriteDelta,
-    admitRewriteDelta,
-    admittedDelta,
-    admittedRemainingBudget,
-    planGraphRewrite,
-    consumeRewriteBudget,
-    BudgetContext (..),
-    budgetFraction,
-    lookupDimension,
-    RewriteRejectionContext (..),
+  ( GraphRewrite (..)
+  , ExpansionMode (..)
+  , SubgraphSpec (..)
+  , RewriteBudget (..)
+  , RewriteCost (..)
+  , BudgetDimension (..)
+  , ExceededDimension (..)
+  , RewriteBudgetError (..)
+  , exceededDimensions
+  , RewritePlanningError (..)
+  , RewriteAnchorDisposition (..)
+  , PlannedRewriteDelta (..)
+  , AdmittedRewriteDelta
+  , admitRewriteDelta
+  , admittedDelta
+  , admittedRemainingBudget
+  , planGraphRewrite
+  , consumeRewriteBudget
+  , BudgetContext (..)
+  , budgetFraction
+  , lookupDimension
+  , RewriteRejectionContext (..)
   )
 where
 
-import Cortex.Algebra.Graph
-  ( Relation (..),
-    ValidationError (..),
-    addEdge,
-    foldTopSort,
-    mapRelation,
-    predecessors,
-    reachableFrom,
-    relVertices,
-    relationDiff,
-    removeEdge,
-    removeVertex,
-    successors,
-    transposeRelation,
-    validateDAG,
-  )
-import Cortex.Pulse.Node (NodeId (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Bifunctor (first)
 import Data.Map.Strict (Map)
@@ -56,13 +39,32 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
 
--- | A rewrite fragment. Entry and exit lists are the serialized form of proof-side sets;
--- validation rejects duplicates before planning.
+import Cortex.Algebra.Graph
+  ( Relation (..)
+  , ValidationError (..)
+  , addEdge
+  , foldTopSort
+  , mapRelation
+  , predecessors
+  , reachableFrom
+  , relVertices
+  , relationDiff
+  , removeEdge
+  , removeVertex
+  , successors
+  , transposeRelation
+  , validateDAG
+  )
+import Cortex.Pulse.Node (NodeId (..))
+
+{- | A rewrite fragment. Entry and exit lists are the serialized form of proof-side sets;
+validation rejects duplicates before planning.
+-}
 data SubgraphSpec a def = SubgraphSpec
-  { sgsTopology :: Relation a,
-    sgsDefinitions :: Map a def,
-    sgsEntryNodes :: [a],
-    sgsExitNodes :: [a]
+  { sgsTopology :: Relation a
+  , sgsDefinitions :: Map a def
+  , sgsEntryNodes :: [a]
+  , sgsExitNodes :: [a]
   }
   deriving stock (Eq, Show, Generic, Functor)
   deriving anyclass (FromJSON, ToJSON)
@@ -79,26 +81,28 @@ data GraphRewrite a def
   deriving stock (Eq, Show, Generic, Functor)
   deriving anyclass (FromJSON, ToJSON)
 
--- | Remaining structural rewrite budget. Dimensions are natural quantities, matching the
--- proof-side `RewriteBudget`.
+{- | Remaining structural rewrite budget. Dimensions are natural quantities, matching the
+proof-side `RewriteBudget`.
+-}
 data RewriteBudget = RewriteBudget
-  { rbAddedNodesMax :: !Natural,
-    rbAddedEdgesMax :: !Natural,
-    rbAddedDepthMax :: !Natural,
-    rbFrontierDeltaMax :: !Natural,
-    rbRewriteOpsMax :: !Natural
+  { rbAddedNodesMax :: !Natural
+  , rbAddedEdgesMax :: !Natural
+  , rbAddedDepthMax :: !Natural
+  , rbFrontierDeltaMax :: !Natural
+  , rbRewriteOpsMax :: !Natural
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
--- | Structural rewrite cost. A cost is a proof-side natural vector, so negative costs are rejected
--- at JSON decoding and cannot reach budget admission.
+{- | Structural rewrite cost. A cost is a proof-side natural vector, so negative costs are rejected
+at JSON decoding and cannot reach budget admission.
+-}
 data RewriteCost = RewriteCost
-  { rcAddedNodes :: !Natural,
-    rcAddedEdges :: !Natural,
-    rcAddedDepth :: !Natural,
-    rcFrontierDelta :: !Natural,
-    rcRewriteOps :: !Natural
+  { rcAddedNodes :: !Natural
+  , rcAddedEdges :: !Natural
+  , rcAddedDepth :: !Natural
+  , rcFrontierDelta :: !Natural
+  , rcRewriteOps :: !Natural
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
@@ -115,17 +119,17 @@ data BudgetDimension
 
 -- | A single exceeded dimension with the requested and remaining values.
 data ExceededDimension = ExceededDimension
-  { edDimension :: !BudgetDimension,
-    edRequested :: !Natural,
-    edRemaining :: !Natural
+  { edDimension :: !BudgetDimension
+  , edRequested :: !Natural
+  , edRemaining :: !Natural
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
 -- | Budget context provided to every node at execution time.
 data BudgetContext = BudgetContext
-  { bcInitialBudget :: !RewriteBudget,
-    bcRemainingBudget :: !RewriteBudget
+  { bcInitialBudget :: !RewriteBudget
+  , bcRemainingBudget :: !RewriteBudget
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -147,12 +151,12 @@ lookupDimension DimRewriteOps = rbRewriteOpsMax
 
 -- | Rejection context passed back to a node when its rewrite was rejected.
 data RewriteRejectionContext = RewriteRejectionContext
-  { rrcRejectionType :: !Text,
-    rrcMessage :: !Text,
-    rrcExceededDimensions :: ![ExceededDimension],
-    rrcBudgetContext :: !BudgetContext,
-    rrcAttemptedCost :: !(Maybe RewriteCost),
-    rrcAttemptNumber :: !Int
+  { rrcRejectionType :: !Text
+  , rrcMessage :: !Text
+  , rrcExceededDimensions :: ![ExceededDimension]
+  , rrcBudgetContext :: !BudgetContext
+  , rrcAttemptedCost :: !(Maybe RewriteCost)
+  , rrcAttemptNumber :: !Int
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -167,13 +171,13 @@ exceededDimensions :: RewriteBudgetError -> [ExceededDimension]
 exceededDimensions (RewriteBudgetExceeded budget cost) =
   [ ExceededDimension dim req rem'
   | (dim, req, rem') <-
-      [ (DimAddedNodes, rcAddedNodes cost, rbAddedNodesMax budget),
-        (DimAddedEdges, rcAddedEdges cost, rbAddedEdgesMax budget),
-        (DimAddedDepth, rcAddedDepth cost, rbAddedDepthMax budget),
-        (DimFrontierDelta, rcFrontierDelta cost, rbFrontierDeltaMax budget),
-        (DimRewriteOps, rcRewriteOps cost, rbRewriteOpsMax budget)
-      ],
-    req > rem'
+      [ (DimAddedNodes, rcAddedNodes cost, rbAddedNodesMax budget)
+      , (DimAddedEdges, rcAddedEdges cost, rbAddedEdgesMax budget)
+      , (DimAddedDepth, rcAddedDepth cost, rbAddedDepthMax budget)
+      , (DimFrontierDelta, rcFrontierDelta cost, rbFrontierDeltaMax budget)
+      , (DimRewriteOps, rcRewriteOps cost, rbRewriteOpsMax budget)
+      ]
+  , req > rem'
   ]
 
 data RewritePlanningError a
@@ -203,33 +207,36 @@ data RewriteAnchorDisposition
   deriving anyclass (FromJSON, ToJSON)
 
 data PlannedRewriteDelta def = PlannedRewriteDelta
-  { prdTopology :: !(Relation NodeId),
-    prdDefinitions :: !(Map NodeId def),
-    prdNewNodes :: !(Set NodeId),
-    prdRemovedNodes :: !(Set NodeId),
-    prdAddedEdges :: !(Set (NodeId, NodeId)),
-    prdEntryNodes :: ![NodeId],
-    prdExitNodes :: ![NodeId],
-    prdAnchorNode :: !NodeId,
-    prdAnchorDisposition :: !RewriteAnchorDisposition,
-    prdCost :: !RewriteCost
+  { prdTopology :: !(Relation NodeId)
+  , prdDefinitions :: !(Map NodeId def)
+  , prdNewNodes :: !(Set NodeId)
+  , prdRemovedNodes :: !(Set NodeId)
+  , prdAddedEdges :: !(Set (NodeId, NodeId))
+  , prdEntryNodes :: ![NodeId]
+  , prdExitNodes :: ![NodeId]
+  , prdAnchorNode :: !NodeId
+  , prdAnchorDisposition :: !RewriteAnchorDisposition
+  , prdCost :: !RewriteCost
   }
   deriving stock (Eq, Show, Generic, Functor)
   deriving anyclass (FromJSON, ToJSON)
 
--- | Witness that a rewrite delta has been admitted against a budget.
--- The constructor is not exported — the only way to obtain an
--- 'AdmittedRewriteDelta' is through 'admitRewriteDelta'.
+{- | Witness that a rewrite delta has been admitted against a budget.
+The constructor is not exported — the only way to obtain an
+'AdmittedRewriteDelta' is through 'admitRewriteDelta'.
+-}
 data AdmittedRewriteDelta def = AdmittedRewriteDelta
-  { ardDelta :: PlannedRewriteDelta def,
-    ardRemainingBudget :: RewriteBudget
+  { ardDelta :: PlannedRewriteDelta def
+  , ardRemainingBudget :: RewriteBudget
   }
   deriving stock (Eq, Show, Generic)
 
--- | Validate that a planned rewrite delta fits within the remaining budget.
--- On success, returns an 'AdmittedRewriteDelta' witness bundling the delta
--- with the decremented budget.
-admitRewriteDelta :: RewriteBudget -> PlannedRewriteDelta def -> Either RewriteBudgetError (AdmittedRewriteDelta def)
+{- | Validate that a planned rewrite delta fits within the remaining budget.
+On success, returns an 'AdmittedRewriteDelta' witness bundling the delta
+with the decremented budget.
+-}
+admitRewriteDelta
+  :: RewriteBudget -> PlannedRewriteDelta def -> Either RewriteBudgetError (AdmittedRewriteDelta def)
 admitRewriteDelta budget delta = do
   remaining <- consumeRewriteBudget budget delta.prdCost
   pure AdmittedRewriteDelta {ardDelta = delta, ardRemainingBudget = remaining}
@@ -250,18 +257,18 @@ consumeRewriteBudget budget cost
   | otherwise =
       Right
         RewriteBudget
-          { rbAddedNodesMax = rbAddedNodesMax budget - rcAddedNodes cost,
-            rbAddedEdgesMax = rbAddedEdgesMax budget - rcAddedEdges cost,
-            rbAddedDepthMax = rbAddedDepthMax budget - rcAddedDepth cost,
-            rbFrontierDeltaMax = rbFrontierDeltaMax budget - rcFrontierDelta cost,
-            rbRewriteOpsMax = rbRewriteOpsMax budget - rcRewriteOps cost
+          { rbAddedNodesMax = rbAddedNodesMax budget - rcAddedNodes cost
+          , rbAddedEdgesMax = rbAddedEdgesMax budget - rcAddedEdges cost
+          , rbAddedDepthMax = rbAddedDepthMax budget - rcAddedDepth cost
+          , rbFrontierDeltaMax = rbFrontierDeltaMax budget - rcFrontierDelta cost
+          , rbRewriteOpsMax = rbRewriteOpsMax budget - rcRewriteOps cost
           }
 
-planGraphRewrite ::
-  GraphRewrite NodeId def ->
-  Relation NodeId ->
-  Map NodeId def ->
-  Either [RewritePlanningError NodeId] (PlannedRewriteDelta def)
+planGraphRewrite
+  :: GraphRewrite NodeId def
+  -> Relation NodeId
+  -> Map NodeId def
+  -> Either [RewritePlanningError NodeId] (PlannedRewriteDelta def)
 planGraphRewrite rewrite topology defs = case rewrite of
   ExpandNode nid mode spec -> do
     validateRewriteAnchor topology defs nid
@@ -298,23 +305,23 @@ planGraphRewrite rewrite topology defs = case rewrite of
             RewriteAnchorRetained -> insertedDepthNodes
           cost =
             RewriteCost
-              { rcAddedNodes = fromIntegral (Set.size newNodes),
-                rcAddedEdges = fromIntegral (Set.size addedEdges),
-                rcAddedDepth = fromIntegral addedDepth,
-                rcFrontierDelta = fromIntegral (max 0 (length spec'.sgsEntryNodes - 1)),
-                rcRewriteOps = 1
+              { rcAddedNodes = fromIntegral (Set.size newNodes)
+              , rcAddedEdges = fromIntegral (Set.size addedEdges)
+              , rcAddedDepth = fromIntegral addedDepth
+              , rcFrontierDelta = fromIntegral (max 0 (length spec'.sgsEntryNodes - 1))
+              , rcRewriteOps = 1
               }
        in PlannedRewriteDelta
-            { prdTopology = topoFinal,
-              prdDefinitions = defs',
-              prdNewNodes = newNodes,
-              prdRemovedNodes = removedNodes,
-              prdAddedEdges = addedEdges,
-              prdEntryNodes = spec'.sgsEntryNodes,
-              prdExitNodes = spec'.sgsExitNodes,
-              prdAnchorNode = rewriteAnchor rewrite',
-              prdAnchorDisposition = anchorDisposition,
-              prdCost = cost
+            { prdTopology = topoFinal
+            , prdDefinitions = defs'
+            , prdNewNodes = newNodes
+            , prdRemovedNodes = removedNodes
+            , prdAddedEdges = addedEdges
+            , prdEntryNodes = spec'.sgsEntryNodes
+            , prdExitNodes = spec'.sgsExitNodes
+            , prdAnchorNode = rewriteAnchor rewrite'
+            , prdAnchorDisposition = anchorDisposition
+            , prdCost = cost
             }
 
 rewriteAnchor :: GraphRewrite NodeId def -> NodeId
@@ -381,17 +388,17 @@ namespaceNodeId (NodeId parent) (NodeId local) = NodeId (parent <> ":" <> local)
 namespaceSubgraph :: NodeId -> SubgraphSpec NodeId def -> SubgraphSpec NodeId def
 namespaceSubgraph parent spec =
   SubgraphSpec
-    { sgsTopology = mapRelation (namespaceNodeId parent) spec.sgsTopology,
-      sgsDefinitions = Map.mapKeys (namespaceNodeId parent) spec.sgsDefinitions,
-      sgsEntryNodes = fmap (namespaceNodeId parent) spec.sgsEntryNodes,
-      sgsExitNodes = fmap (namespaceNodeId parent) spec.sgsExitNodes
+    { sgsTopology = mapRelation (namespaceNodeId parent) spec.sgsTopology
+    , sgsDefinitions = Map.mapKeys (namespaceNodeId parent) spec.sgsDefinitions
+    , sgsEntryNodes = fmap (namespaceNodeId parent) spec.sgsEntryNodes
+    , sgsExitNodes = fmap (namespaceNodeId parent) spec.sgsExitNodes
     }
 
-validateNamespaceDiscipline ::
-  Relation NodeId ->
-  NodeId ->
-  SubgraphSpec NodeId def ->
-  Either [RewritePlanningError NodeId] ()
+validateNamespaceDiscipline
+  :: Relation NodeId
+  -> NodeId
+  -> SubgraphSpec NodeId def
+  -> Either [RewritePlanningError NodeId] ()
 validateNamespaceDiscipline topology anchor spec =
   let localNodes = relVertices spec.sgsTopology
       badLocalNodes = Set.toList (Set.filter nodeIdInvalidLocalSegment localNodes)
@@ -406,11 +413,11 @@ nodeIdInvalidLocalSegment :: NodeId -> Bool
 nodeIdInvalidLocalSegment (NodeId nodeId) =
   T.null nodeId || T.singleton ':' `T.isInfixOf` nodeId
 
-validateRewriteAnchor ::
-  Relation NodeId ->
-  Map NodeId def ->
-  NodeId ->
-  Either [RewritePlanningError NodeId] ()
+validateRewriteAnchor
+  :: Relation NodeId
+  -> Map NodeId def
+  -> NodeId
+  -> Either [RewritePlanningError NodeId] ()
 validateRewriteAnchor topology defs nid =
   let topologyNodes = relVertices topology
       definitionNodes = Map.keysSet defs
@@ -423,9 +430,9 @@ validateRewriteAnchor topology defs nid =
           <> [RewriteAnchorMissingDefinition nid | not (Map.member nid defs)]
    in if null errors then Right () else Left errors
 
-validateSubgraphSpec ::
-  SubgraphSpec NodeId def ->
-  Either [RewritePlanningError NodeId] ()
+validateSubgraphSpec
+  :: SubgraphSpec NodeId def
+  -> Either [RewritePlanningError NodeId] ()
 validateSubgraphSpec spec =
   let insertedNodes = spec.sgsTopology.relVertices
       definitionNodes = Map.keysSet spec.sgsDefinitions
@@ -446,23 +453,23 @@ validateSubgraphSpec spec =
           (Set.difference insertedNodes (Set.intersection reachableFromEntries reachesExit))
       errors =
         concat
-          [ [RewriteTopologyEmpty | Set.null insertedNodes],
-            [RewriteDefinitionsMissing missingDefinitions | not (null missingDefinitions)],
-            [RewriteDefinitionsOutsideTopology extraDefinitions | not (null extraDefinitions)],
-            [RewriteEntryNodesMissing | null spec.sgsEntryNodes],
-            [RewriteExitNodesMissing | null spec.sgsExitNodes],
-            [RewriteDuplicateEntryNodes duplicateEntries | not (null duplicateEntries)],
-            [RewriteDuplicateExitNodes duplicateExits | not (null duplicateExits)],
-            [RewriteEntryNodesOutsideTopology badEntries | not (null badEntries)],
-            [RewriteExitNodesOutsideTopology badExits | not (null badExits)],
-            [RewriteOrphanNodes orphanNodes | not (null orphanNodes)]
+          [ [RewriteTopologyEmpty | Set.null insertedNodes]
+          , [RewriteDefinitionsMissing missingDefinitions | not (null missingDefinitions)]
+          , [RewriteDefinitionsOutsideTopology extraDefinitions | not (null extraDefinitions)]
+          , [RewriteEntryNodesMissing | null spec.sgsEntryNodes]
+          , [RewriteExitNodesMissing | null spec.sgsExitNodes]
+          , [RewriteDuplicateEntryNodes duplicateEntries | not (null duplicateEntries)]
+          , [RewriteDuplicateExitNodes duplicateExits | not (null duplicateExits)]
+          , [RewriteEntryNodesOutsideTopology badEntries | not (null badEntries)]
+          , [RewriteExitNodesOutsideTopology badExits | not (null badExits)]
+          , [RewriteOrphanNodes orphanNodes | not (null orphanNodes)]
           ]
    in case validateDAG spec.sgsTopology of
         Left err -> Left (RewriteInvalidTopology err : errors)
         Right () ->
           if null errors then Right () else Left errors
 
-duplicateValues :: (Ord a) => [a] -> [a]
+duplicateValues :: Ord a => [a] -> [a]
 duplicateValues = reverse . go Set.empty Set.empty []
   where
     go _seen _emitted acc [] = acc
@@ -473,12 +480,13 @@ duplicateValues = reverse . go Set.empty Set.empty []
       | otherwise =
           go (Set.insert value seen) emitted acc values
 
--- | Longest path node count from any entry to any exit in the subgraph.
---
--- Folds the transposed relation so that predecessor values in the fold
--- correspond to successor values in the original graph, giving longest
--- path from each node to any sink.  Exit-reachability is precomputed
--- via a single reverse traversal from all exits.  O(|V| + |E|).
+{- | Longest path node count from any entry to any exit in the subgraph.
+
+Folds the transposed relation so that predecessor values in the fold
+correspond to successor values in the original graph, giving longest
+path from each node to any sink.  Exit-reachability is precomputed
+via a single reverse traversal from all exits.  O(|V| + |E|).
+-}
 longestInsertedPathNodeCount :: Relation NodeId -> [NodeId] -> [NodeId] -> Int
 longestInsertedPathNodeCount rel entryNodes exitNodes =
   case (entryNodes, exitNodes) of
@@ -489,7 +497,8 @@ longestInsertedPathNodeCount rel entryNodes exitNodes =
         Nothing -> 0
         Just (_, dpMap) ->
           let canReachExit = reachableFrom (transposeRelation rel) exitNodes
-           in maximum (0 : [Map.findWithDefault 0 entry dpMap | entry <- entryNodes, Set.member entry canReachExit])
+           in maximum
+                (0 : [Map.findWithDefault 0 entry dpMap | entry <- entryNodes, Set.member entry canReachExit])
   where
     step _ predVals
       | Map.null predVals = 1

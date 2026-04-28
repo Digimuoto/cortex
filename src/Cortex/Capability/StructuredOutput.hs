@@ -1,18 +1,14 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Cortex.Capability.StructuredOutput
-  ( decodeStructuredChoice,
-    decodeStructuredErrorMessage,
-    shouldRetryWithJsonObjectFallback,
-    structuredOutputSchemaRejected,
+  ( decodeStructuredChoice
+  , decodeStructuredErrorMessage
+  , shouldRetryWithJsonObjectFallback
+  , structuredOutputSchemaRejected
   )
 where
 
 import Control.Monad (join)
-import Cortex.Capability.Model.Types
-  ( CortexChoice (..),
-    CortexResponseFormat (..),
-  )
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser, parseMaybe)
 import Data.Bifunctor (first)
@@ -20,7 +16,12 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 
-decodeStructuredChoice :: (Aeson.FromJSON a) => CortexChoice -> Either Text a
+import Cortex.Capability.Model.Types
+  ( CortexChoice (..)
+  , CortexResponseFormat (..)
+  )
+
+decodeStructuredChoice :: Aeson.FromJSON a => CortexChoice -> Either Text a
 decodeStructuredChoice choice
   | T.null stripped = Left "Structured output was empty."
   | otherwise =
@@ -48,11 +49,11 @@ structuredOutputSchemaRejected errText =
   let normalizedErr = T.toLower errText
    in any
         (`T.isInfixOf` normalizedErr)
-        [ "structured-output schema",
-          "structured output schema",
-          "output_config.format.schema",
-          "json_schema",
-          "maxitems"
+        [ "structured-output schema"
+        , "structured output schema"
+        , "output_config.format.schema"
+        , "json_schema"
+        , "maxitems"
         ]
 
 shouldRetryWithJsonObjectFallback :: CortexResponseFormat -> Text -> Bool

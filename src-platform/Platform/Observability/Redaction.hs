@@ -3,14 +3,14 @@
 
 module Platform.Observability.Redaction
   ( -- * Public API (re-exported by Platform.Observability)
-    redactText,
-    redactValue,
+    redactText
+  , redactValue
 
     -- * Internal (used by sibling modules)
-    sanitizeStoredValue,
-    sanitizePreview,
-    sanitizeExtraValue,
-    truncatePreviewValue,
+  , sanitizeStoredValue
+  , sanitizePreview
+  , sanitizeExtraValue
+  , truncatePreviewValue
   )
 where
 
@@ -21,6 +21,7 @@ import Data.Bifunctor (second)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Vector qualified as V
+
 import Platform.Observability.Types
 
 redactText :: ObservabilityRuntime -> Text -> Text
@@ -34,7 +35,8 @@ redactValue runtime = \case
   Object obj ->
     Object $
       KeyMap.mapWithKey
-        (\key value -> if isSensitiveKey (Key.toText key) then String "[REDACTED]" else redactValue runtime value)
+        ( \key value -> if isSensitiveKey (Key.toText key) then String "[REDACTED]" else redactValue runtime value
+        )
         obj
   Array arr -> Array (fmap (redactValue runtime) arr)
   String txt -> String (redactText runtime txt)
@@ -110,16 +112,16 @@ isSensitiveKey :: Text -> Bool
 isSensitiveKey keyName =
   let lowered = T.toLower keyName
    in or
-        [ lowered == "authorization",
-          lowered == "x-admin-key",
-          lowered == "cookie",
-          lowered == "set-cookie",
-          lowered == "api_token",
-          lowered == "apikey",
-          lowered == "api-key",
-          lowered == "token",
-          lowered == "key",
-          lowered == "secret",
-          lowered == "password",
-          lowered == "jwt"
+        [ lowered == "authorization"
+        , lowered == "x-admin-key"
+        , lowered == "cookie"
+        , lowered == "set-cookie"
+        , lowered == "api_token"
+        , lowered == "apikey"
+        , lowered == "api-key"
+        , lowered == "token"
+        , lowered == "key"
+        , lowered == "secret"
+        , lowered == "password"
+        , lowered == "jwt"
         ]

@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Logos
-  ( logosDefinition,
+  ( logosDefinition
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Logos),
-    NousArchetypeDefinition,
-    nousArchetypeDefinition,
+  ( NousArchetype (Logos)
+  , NousArchetypeDefinition
+  , nousArchetypeDefinition
   )
 
 logosDefinition :: NousArchetypeDefinition

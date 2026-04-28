@@ -1,31 +1,17 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Pure tests for 'Cortex.Pulse.Memory' (DIG-529).
---
--- Three groups:
---
---   * 'walkCandidates' — ancestor / descendant / scope / hop-count.
---   * 'composeScore' / 'tokenJaccard' / 'clamp01' — the scoring axes.
---   * 'pureQueryMemory' — end-to-end against a fixed snapshot, plus
---     the determinism property (same inputs ⇒ same outputs).
+{- | Pure tests for 'Cortex.Pulse.Memory' (DIG-529).
+
+Three groups:
+
+ * 'walkCandidates' — ancestor / descendant / scope / hop-count.
+ * 'composeScore' / 'tokenJaccard' / 'clamp01' — the scoring axes.
+ * 'pureQueryMemory' — end-to-end against a fixed snapshot, plus
+   the determinism property (same inputs ⇒ same outputs).
+-}
 module Cortex.Pulse.MemorySpec (spec) where
 
-import Cortex.Algebra.Graph
-  ( Relation,
-    edges,
-    toRelation,
-    vertices,
-  )
-import Cortex.Pulse.Memory
-import Cortex.Pulse.Memory.Score
-  ( clamp01,
-    composeScore,
-    temporalDistanceScore,
-    tokenJaccard,
-  )
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Runtime (NodeStatus (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict (Map)
@@ -33,6 +19,22 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian, secondsToDiffTime)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( Relation
+  , edges
+  , toRelation
+  , vertices
+  )
+import Cortex.Pulse.Memory
+import Cortex.Pulse.Memory.Score
+  ( clamp01
+  , composeScore
+  , temporalDistanceScore
+  , tokenJaccard
+  )
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Runtime (NodeStatus (..))
 
 -- ============================================================================
 -- Fixtures
@@ -47,18 +49,19 @@ tAt secs = addUTCTime (fromIntegral secs) t0
 nid :: Text -> NodeId
 nid = NodeId
 
--- | Planner → {Analyst-A, Analyst-B, Analyst-C} → Reviewer.  The
--- canonical DIG-507-shaped fan-out used across several specs.
+{- | Planner → {Analyst-A, Analyst-B, Analyst-C} → Reviewer.  The
+canonical DIG-507-shaped fan-out used across several specs.
+-}
 fanoutTopology :: Relation NodeId
 fanoutTopology =
   toRelation
     ( edges
-        [ (nid "planner", nid "analyst-a"),
-          (nid "planner", nid "analyst-b"),
-          (nid "planner", nid "analyst-c"),
-          (nid "analyst-a", nid "reviewer"),
-          (nid "analyst-b", nid "reviewer"),
-          (nid "analyst-c", nid "reviewer")
+        [ (nid "planner", nid "analyst-a")
+        , (nid "planner", nid "analyst-b")
+        , (nid "planner", nid "analyst-c")
+        , (nid "analyst-a", nid "reviewer")
+        , (nid "analyst-b", nid "reviewer")
+        , (nid "analyst-c", nid "reviewer")
         ]
     )
 
@@ -69,143 +72,159 @@ singleNodeTopology = toRelation (vertices [nid "only"])
 fanoutStatuses :: Map NodeId NodeStatus
 fanoutStatuses =
   Map.fromList
-    [ (nid "planner", NodeCompleted),
-      (nid "analyst-a", NodeCompleted),
-      (nid "analyst-b", NodeCompleted),
-      (nid "analyst-c", NodeCompleted),
-      (nid "reviewer", NodePending)
+    [ (nid "planner", NodeCompleted)
+    , (nid "analyst-a", NodeCompleted)
+    , (nid "analyst-b", NodeCompleted)
+    , (nid "analyst-c", NodeCompleted)
+    , (nid "reviewer", NodePending)
     ]
 
 fanoutOutputs :: Map NodeId Aeson.Value
 fanoutOutputs =
   Map.fromList
-    [ (nid "planner", Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan details" :: Text)]),
-      (nid "analyst-a", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("alpha revenue grew 12 percent" :: Text)]),
-      (nid "analyst-b", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("beta revenue grew 5 percent" :: Text)]),
-      (nid "analyst-c", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("gamma revenue declined 3 percent" :: Text)])
+    [
+      ( nid "planner"
+      , Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan details" :: Text)]
+      )
+    ,
+      ( nid "analyst-a"
+      , Aeson.object
+          ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("alpha revenue grew 12 percent" :: Text)]
+      )
+    ,
+      ( nid "analyst-b"
+      , Aeson.object
+          ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("beta revenue grew 5 percent" :: Text)]
+      )
+    ,
+      ( nid "analyst-c"
+      , Aeson.object
+          ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("gamma revenue declined 3 percent" :: Text)]
+      )
     ]
 
 fanoutCompletedAt :: Map NodeId UTCTime
 fanoutCompletedAt =
   Map.fromList
-    [ (nid "planner", tAt 0),
-      (nid "analyst-a", tAt 10),
-      (nid "analyst-b", tAt 20),
-      (nid "analyst-c", tAt 30)
+    [ (nid "planner", tAt 0)
+    , (nid "analyst-a", tAt 10)
+    , (nid "analyst-b", tAt 20)
+    , (nid "analyst-c", tAt 30)
     ]
 
 fanoutSnapshot :: MemorySnapshot
 fanoutSnapshot =
   MemorySnapshot
-    { msTopology = fanoutTopology,
-      msNodeStatuses = fanoutStatuses,
-      msNodeOutputs = fanoutOutputs,
-      msNodeCompletedAt = fanoutCompletedAt,
-      msCapturedAt = tAt 60
+    { msTopology = fanoutTopology
+    , msNodeStatuses = fanoutStatuses
+    , msNodeOutputs = fanoutOutputs
+    , msNodeCompletedAt = fanoutCompletedAt
+    , msCapturedAt = tAt 60
     }
 
--- | Merge-vs-chain shape: from @origin@, @merge@ is reached via two
--- disjoint paths (@origin → p1 → merge@ and @origin → p2 → merge@)
--- while @chain@ is reached via a single linear path
--- (@origin → link → chain@).  Both @merge@ and @chain@ sit at hop
--- distance 2, so 'graphDistanceScore' would tie them under the old
--- hop-count axis.  Random-walk influence rewards the merge for the
--- aggregate mass flowing through its two parents.
+{- | Merge-vs-chain shape: from @origin@, @merge@ is reached via two
+disjoint paths (@origin → p1 → merge@ and @origin → p2 → merge@)
+while @chain@ is reached via a single linear path
+(@origin → link → chain@).  Both @merge@ and @chain@ sit at hop
+distance 2, so 'graphDistanceScore' would tie them under the old
+hop-count axis.  Random-walk influence rewards the merge for the
+aggregate mass flowing through its two parents.
+-}
 mergeVsChainTopology :: Relation NodeId
 mergeVsChainTopology =
   toRelation
     ( edges
-        [ (nid "origin", nid "p1"),
-          (nid "origin", nid "p2"),
-          (nid "p1", nid "merge"),
-          (nid "p2", nid "merge"),
-          (nid "origin", nid "link"),
-          (nid "link", nid "chain")
+        [ (nid "origin", nid "p1")
+        , (nid "origin", nid "p2")
+        , (nid "p1", nid "merge")
+        , (nid "p2", nid "merge")
+        , (nid "origin", nid "link")
+        , (nid "link", nid "chain")
         ]
     )
 
 mergeVsChainStatuses :: Map NodeId NodeStatus
 mergeVsChainStatuses =
   Map.fromList
-    [ (nid "origin", NodeCompleted),
-      (nid "p1", NodeCompleted),
-      (nid "p2", NodeCompleted),
-      (nid "merge", NodeCompleted),
-      (nid "link", NodeCompleted),
-      (nid "chain", NodeCompleted)
+    [ (nid "origin", NodeCompleted)
+    , (nid "p1", NodeCompleted)
+    , (nid "p2", NodeCompleted)
+    , (nid "merge", NodeCompleted)
+    , (nid "link", NodeCompleted)
+    , (nid "chain", NodeCompleted)
     ]
 
 mergeVsChainOutputs :: Map NodeId Aeson.Value
 mergeVsChainOutputs =
   Map.fromList
-    [ (nid "p1", Aeson.object ["text" Aeson..= ("p1 body" :: Text)]),
-      (nid "p2", Aeson.object ["text" Aeson..= ("p2 body" :: Text)]),
-      (nid "merge", Aeson.object ["text" Aeson..= ("merge body" :: Text)]),
-      (nid "link", Aeson.object ["text" Aeson..= ("link body" :: Text)]),
-      (nid "chain", Aeson.object ["text" Aeson..= ("chain body" :: Text)])
+    [ (nid "p1", Aeson.object ["text" Aeson..= ("p1 body" :: Text)])
+    , (nid "p2", Aeson.object ["text" Aeson..= ("p2 body" :: Text)])
+    , (nid "merge", Aeson.object ["text" Aeson..= ("merge body" :: Text)])
+    , (nid "link", Aeson.object ["text" Aeson..= ("link body" :: Text)])
+    , (nid "chain", Aeson.object ["text" Aeson..= ("chain body" :: Text)])
     ]
 
 mergeVsChainCompletedAt :: Map NodeId UTCTime
 mergeVsChainCompletedAt =
   Map.fromList
-    [ (nid "origin", tAt 0),
-      (nid "p1", tAt 10),
-      (nid "p2", tAt 10),
-      (nid "merge", tAt 20),
-      (nid "link", tAt 10),
-      (nid "chain", tAt 20)
+    [ (nid "origin", tAt 0)
+    , (nid "p1", tAt 10)
+    , (nid "p2", tAt 10)
+    , (nid "merge", tAt 20)
+    , (nid "link", tAt 10)
+    , (nid "chain", tAt 20)
     ]
 
 mergeVsChainSnapshot :: MemorySnapshot
 mergeVsChainSnapshot =
   MemorySnapshot
-    { msTopology = mergeVsChainTopology,
-      msNodeStatuses = mergeVsChainStatuses,
-      msNodeOutputs = mergeVsChainOutputs,
-      msNodeCompletedAt = mergeVsChainCompletedAt,
-      msCapturedAt = tAt 60
+    { msTopology = mergeVsChainTopology
+    , msNodeStatuses = mergeVsChainStatuses
+    , msNodeOutputs = mergeVsChainOutputs
+    , msNodeCompletedAt = mergeVsChainCompletedAt
+    , msCapturedAt = tAt 60
     }
 
 bidirectionalBridgeTopology :: Relation NodeId
 bidirectionalBridgeTopology =
   toRelation
     ( edges
-        [ (nid "a", nid "b"),
-          (nid "c", nid "b")
+        [ (nid "a", nid "b")
+        , (nid "c", nid "b")
         ]
     )
 
 bidirectionalBridgeStatuses :: Map NodeId NodeStatus
 bidirectionalBridgeStatuses =
   Map.fromList
-    [ (nid "a", NodeCompleted),
-      (nid "b", NodeCompleted),
-      (nid "c", NodeCompleted)
+    [ (nid "a", NodeCompleted)
+    , (nid "b", NodeCompleted)
+    , (nid "c", NodeCompleted)
     ]
 
 bidirectionalBridgeOutputs :: Map NodeId Aeson.Value
 bidirectionalBridgeOutputs =
   Map.fromList
-    [ (nid "b", Aeson.object ["text" Aeson..= ("shared descendant" :: Text)]),
-      (nid "c", Aeson.object ["text" Aeson..= ("side ancestor" :: Text)])
+    [ (nid "b", Aeson.object ["text" Aeson..= ("shared descendant" :: Text)])
+    , (nid "c", Aeson.object ["text" Aeson..= ("side ancestor" :: Text)])
     ]
 
 bidirectionalBridgeCompletedAt :: Map NodeId UTCTime
 bidirectionalBridgeCompletedAt =
   Map.fromList
-    [ (nid "a", tAt 0),
-      (nid "b", tAt 10),
-      (nid "c", tAt 20)
+    [ (nid "a", tAt 0)
+    , (nid "b", tAt 10)
+    , (nid "c", tAt 20)
     ]
 
 bidirectionalBridgeSnapshot :: MemorySnapshot
 bidirectionalBridgeSnapshot =
   MemorySnapshot
-    { msTopology = bidirectionalBridgeTopology,
-      msNodeStatuses = bidirectionalBridgeStatuses,
-      msNodeOutputs = bidirectionalBridgeOutputs,
-      msNodeCompletedAt = bidirectionalBridgeCompletedAt,
-      msCapturedAt = tAt 60
+    { msTopology = bidirectionalBridgeTopology
+    , msNodeStatuses = bidirectionalBridgeStatuses
+    , msNodeOutputs = bidirectionalBridgeOutputs
+    , msNodeCompletedAt = bidirectionalBridgeCompletedAt
+    , msCapturedAt = tAt 60
     }
 
 -- | Extractor: pick the @"text"@ field from analyst-shaped JSONB.
@@ -218,9 +237,9 @@ textExtractor (Aeson.Object obj) =
             _ -> Nothing
        in Just
             ExtractedFields
-              { efRoutingKey = slot,
-                efBodyText = bodyText,
-                efEvidence = []
+              { efRoutingKey = slot
+              , efBodyText = bodyText
+              , efEvidence = []
               }
     _ -> Nothing
 textExtractor _ = Nothing
@@ -235,15 +254,15 @@ spec = do
     it "ancestors from reviewer reach every analyst and the planner" $ do
       let walkSpec =
             WalkSpec
-              { wsDirection = Ancestors,
-                wsScope = SettledOnly,
-                wsWeights = defaultScoreWeights,
-                wsLimit = Nothing
+              { wsDirection = Ancestors
+              , wsScope = SettledOnly
+              , wsWeights = defaultScoreWeights
+              , wsLimit = Nothing
               }
           query =
             emptyQuery
-              { qExtractor = textExtractor,
-                qSemanticScorer = nullSemanticScorer
+              { qExtractor = textExtractor
+              , qSemanticScorer = nullSemanticScorer
               }
           matches = pureQueryMemory (nid "reviewer") fanoutSnapshot walkSpec query
       fmap moNodeId matches
@@ -269,8 +288,8 @@ spec = do
     it "DebugAllStatuses scope still drops candidates with no output payload" $ do
       let walkSpec =
             defaultWalkSpec
-              { wsDirection = Descendants,
-                wsScope = DebugAllStatuses
+              { wsDirection = Descendants
+              , wsScope = DebugAllStatuses
               }
           query = emptyQuery {qExtractor = textExtractor}
           matches = pureQueryMemory (nid "planner") fanoutSnapshot walkSpec query
@@ -286,8 +305,8 @@ spec = do
     it "max-graph-distance cutoff limits hop reach" $ do
       let walkSpec =
             defaultWalkSpec
-              { wsDirection = Ancestors,
-                wsWeights = defaultScoreWeights {swMaxGraphDistance = Just 1}
+              { wsDirection = Ancestors
+              , wsWeights = defaultScoreWeights {swMaxGraphDistance = Just 1}
               }
           query = emptyQuery {qExtractor = textExtractor}
           matches = pureQueryMemory (nid "reviewer") fanoutSnapshot walkSpec query
@@ -311,10 +330,10 @@ spec = do
       -- the correct semantics.
       let walkSpec =
             WalkSpec
-              { wsDirection = Bidirectional,
-                wsScope = SettledOnly,
-                wsWeights = defaultScoreWeights,
-                wsLimit = Nothing
+              { wsDirection = Bidirectional
+              , wsScope = SettledOnly
+              , wsWeights = defaultScoreWeights
+              , wsLimit = Nothing
               }
           matches =
             pureQueryMemory (nid "a") bidirectionalBridgeSnapshot walkSpec emptyQuery
@@ -328,13 +347,13 @@ spec = do
       -- more mass because two of origin's out-edges flow into it.
       let walkSpec =
             defaultWalkSpec
-              { wsDirection = Descendants,
-                wsWeights =
+              { wsDirection = Descendants
+              , wsWeights =
                   ScoreWeights
-                    { swGraphDistance = 1,
-                      swTemporalDistance = 0,
-                      swSemantic = 0,
-                      swMaxGraphDistance = Nothing
+                    { swGraphDistance = 1
+                    , swTemporalDistance = 0
+                    , swSemantic = 0
+                    , swMaxGraphDistance = Nothing
                     }
               }
           query = emptyQuery {qExtractor = textExtractor}
@@ -369,10 +388,10 @@ spec = do
     it "composeScore passes through the graph-axis influence value" $ do
       let weights =
             ScoreWeights
-              { swGraphDistance = 1,
-                swTemporalDistance = 0,
-                swSemantic = 0,
-                swMaxGraphDistance = Nothing
+              { swGraphDistance = 1
+              , swTemporalDistance = 0
+              , swSemantic = 0
+              , swMaxGraphDistance = Nothing
               }
           score =
             composeScore
@@ -403,10 +422,10 @@ spec = do
     it "composeScore weights each axis multiplicatively" $ do
       let weights =
             ScoreWeights
-              { swGraphDistance = 0,
-                swTemporalDistance = 0,
-                swSemantic = 1,
-                swMaxGraphDistance = Nothing
+              { swGraphDistance = 0
+              , swTemporalDistance = 0
+              , swSemantic = 1
+              , swMaxGraphDistance = Nothing
               }
           score =
             composeScore
@@ -432,8 +451,8 @@ spec = do
       let walkSpec = defaultWalkSpec
           query =
             emptyQuery
-              { qExtractor = textExtractor,
-                qRoutingKey = Just "analyst"
+              { qExtractor = textExtractor
+              , qRoutingKey = Just "analyst"
               }
           matches = pureQueryMemory (nid "reviewer") fanoutSnapshot walkSpec query
       fmap moNodeId matches
@@ -444,10 +463,10 @@ spec = do
             defaultWalkSpec
               { wsWeights =
                   ScoreWeights
-                    { swGraphDistance = 1,
-                      swTemporalDistance = 0,
-                      swSemantic = 0,
-                      swMaxGraphDistance = Nothing
+                    { swGraphDistance = 1
+                    , swTemporalDistance = 0
+                    , swSemantic = 0
+                    , swMaxGraphDistance = Nothing
                     }
               }
           query = emptyQuery {qExtractor = textExtractor}
@@ -477,8 +496,8 @@ spec = do
       let walkSpec = defaultWalkSpec
           query =
             emptyQuery
-              { qExtractor = textExtractor,
-                qRoutingKey = Just "nonexistent-slot"
+              { qExtractor = textExtractor
+              , qRoutingKey = Just "nonexistent-slot"
               }
           matches = pureQueryMemory (nid "reviewer") fanoutSnapshot walkSpec query
       matches `shouldBe` []
@@ -488,9 +507,9 @@ spec = do
           query = emptyQuery {qExtractor = textExtractor, qRoutingKey = Just "analyst"}
           matches = pureQueryMemory (nid "reviewer") fanoutSnapshot walkSpec query
       [efBodyText ef | m <- matches, Just ef <- [moExtracted m]]
-        `shouldMatchList` [ "alpha revenue grew 12 percent",
-                            "beta revenue grew 5 percent",
-                            "gamma revenue declined 3 percent"
+        `shouldMatchList` [ "alpha revenue grew 12 percent"
+                          , "beta revenue grew 5 percent"
+                          , "gamma revenue declined 3 percent"
                           ]
 
   describe "MemoryHandle" $ do

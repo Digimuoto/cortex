@@ -1,12 +1,12 @@
 module Cortex.Nous.Archetypes.Logos.Activation
-  ( logosCapabilityBundle,
+  ( logosCapabilityBundle
   )
 where
 
 import Cortex.Nous.Types
-  ( NousArchetype (Logos),
-    NousCapabilityBundle,
-    nousCapabilityBundle,
+  ( NousArchetype (Logos)
+  , NousCapabilityBundle
+  , nousCapabilityBundle
   )
 
 logosCapabilityBundle :: NousCapabilityBundle

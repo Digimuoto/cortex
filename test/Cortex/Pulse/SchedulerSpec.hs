@@ -9,27 +9,6 @@ import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, readMVar)
 import Control.Concurrent.STM (atomically, newTVarIO, writeTVar)
 import Control.Exception (SomeException, displayException, try)
 import Control.Monad (join)
-import Cortex.Pulse.Executor
-  ( ReplayPolicy (..),
-    StableStageId (..),
-    StageDefinition (..),
-    StageReplaySafety (..),
-    TaskContext (..),
-    TaskHandler (..),
-    executeStagePlan,
-    liftChainAction,
-    mkLinearStagePlan,
-    resumeStagePlan,
-    stageActionId,
-    stageTemplateId,
-  )
-import Cortex.Pulse.Health (initialHealthState)
-import Cortex.Pulse.Memory (defaultMemoryStrategy)
-import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Scheduler (RunMetadata (..), computeExcludedTypes, finalizeTaskSchedule, recoverExpiredRuns, runSchedulerLoop, withLeaseRenewal)
-import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget)
-import Cortex.TestSupport.Database (createTestDB, insertTestUser, runSession, runTx)
 import Data.Aeson qualified as Aeson
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
 import Data.Int (Int32)
@@ -37,7 +16,14 @@ import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
 import Data.Text (Text)
-import Data.Time (UTCTime (..), addUTCTime, diffUTCTime, fromGregorian, getCurrentTime, secondsToDiffTime)
+import Data.Time
+  ( UTCTime (..)
+  , addUTCTime
+  , diffUTCTime
+  , fromGregorian
+  , getCurrentTime
+  , secondsToDiffTime
+  )
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
 import Hasql.Decoders qualified as D
@@ -45,11 +31,41 @@ import Hasql.Encoders qualified as E
 import Hasql.Pool (Pool)
 import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
-import Platform.Database.Encode qualified as Enc
-import Platform.DurableTask.Types (RunOutcome (..), RunStatus (..), TriggerSource (..))
 import Rel8 (Result)
 import System.Environment (lookupEnv)
 import Test.Hspec
+
+import Cortex.Pulse.Executor
+  ( ReplayPolicy (..)
+  , StableStageId (..)
+  , StageDefinition (..)
+  , StageReplaySafety (..)
+  , TaskContext (..)
+  , TaskHandler (..)
+  , executeStagePlan
+  , liftChainAction
+  , mkLinearStagePlan
+  , resumeStagePlan
+  , stageActionId
+  , stageTemplateId
+  )
+import Cortex.Pulse.Health (initialHealthState)
+import Cortex.Pulse.Memory (defaultMemoryStrategy)
+import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Scheduler
+  ( RunMetadata (..)
+  , computeExcludedTypes
+  , finalizeTaskSchedule
+  , recoverExpiredRuns
+  , runSchedulerLoop
+  , withLeaseRenewal
+  )
+import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
+import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget)
+import Cortex.TestSupport.Database (createTestDB, insertTestUser, runSession, runTx)
+
+import Platform.Database.Encode qualified as Enc
+import Platform.DurableTask.Types (RunOutcome (..), RunStatus (..), TriggerSource (..))
 
 data TestStage
   = TestStageAlpha
@@ -85,7 +101,9 @@ insertTestTaskDef pool taskType taskName = do
 createTestRunWithLease :: Pool -> UUID -> Int -> IO UUID
 createTestRunWithLease pool taskId leaseDurationSeconds = do
   now <- getCurrentTime
-  result <- runTx pool $ Q.claimAndCreateRun taskId "test-owner" TriggerManual now (fromIntegral leaseDurationSeconds)
+  result <-
+    runTx pool $
+      Q.claimAndCreateRun taskId "test-owner" TriggerManual now (fromIntegral leaseDurationSeconds)
   case result of
     Just runId -> pure runId
     Nothing -> fail "Failed to create test run (task already claimed?)"
@@ -116,28 +134,28 @@ readRunUserId pool runId = do
 mkRunMeta :: Text -> RunMetadata
 mkRunMeta taskType =
   RunMetadata
-    { rmTask = dummyTaskDef,
-      rmTriggerSource = Nothing
+    { rmTask = dummyTaskDef
+    , rmTriggerSource = Nothing
     }
   where
     dummyTaskDef :: PulseTaskDefinitionRow Result
     dummyTaskDef =
       PulseTaskDefinitionRow
-        { taskId = nilUUID,
-          taskType = taskType,
-          taskName = "dummy",
-          config = Aeson.Null,
-          cronExpression = "",
-          enabled = True,
-          schedulerClaimed = False,
-          nextRunAt = Nothing,
-          lastRunAt = Nothing,
-          lastRunStatus = Nothing,
-          timeoutSeconds = 3600,
-          priority = 0,
-          minIntervalSeconds = Nothing,
-          createdAt = testTime,
-          updatedAt = testTime
+        { taskId = nilUUID
+        , taskType = taskType
+        , taskName = "dummy"
+        , config = Aeson.Null
+        , cronExpression = ""
+        , enabled = True
+        , schedulerClaimed = False
+        , nextRunAt = Nothing
+        , lastRunAt = Nothing
+        , lastRunStatus = Nothing
+        , timeoutSeconds = 3600
+        , priority = 0
+        , minIntervalSeconds = Nothing
+        , createdAt = testTime
+        , updatedAt = testTime
         }
     nilUUID = read "00000000-0000-0000-0000-000000000000" :: UUID
 
@@ -168,9 +186,9 @@ spec = do
       let limits = Map.fromList [("response_eval_run", 1), ("paper_portfolio_cycle", 2)]
           meta =
             Map.fromList
-              [ (read "00000000-0000-0000-0000-000000000001", mkRunMeta "response_eval_run"),
-                (read "00000000-0000-0000-0000-000000000002", mkRunMeta "paper_portfolio_cycle"),
-                (read "00000000-0000-0000-0000-000000000003", mkRunMeta "paper_portfolio_cycle")
+              [ (read "00000000-0000-0000-0000-000000000001", mkRunMeta "response_eval_run")
+              , (read "00000000-0000-0000-0000-000000000002", mkRunMeta "paper_portfolio_cycle")
+              , (read "00000000-0000-0000-0000-000000000003", mkRunMeta "paper_portfolio_cycle")
               ]
       sort (computeExcludedTypes limits meta) `shouldBe` ["paper_portfolio_cycle", "response_eval_run"]
 
@@ -240,9 +258,13 @@ dbSpec = beforeAll setupTestDb $ do
       firstTaskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-pending-claim-first"
       secondTaskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-pending-claim-second"
       firstCreatedAt <- getCurrentTime
-      firstRunId <- expectCreatedRun "create first pending run" =<< runTx pool (Q.createPendingRun firstTaskId TriggerManual Nothing Nothing firstCreatedAt)
+      firstRunId <-
+        expectCreatedRun "create first pending run"
+          =<< runTx pool (Q.createPendingRun firstTaskId TriggerManual Nothing Nothing firstCreatedAt)
       let secondCreatedAt = addUTCTime 1 firstCreatedAt
-      secondRunId <- expectCreatedRun "create second pending run" =<< runTx pool (Q.createPendingRun secondTaskId TriggerRetry Nothing Nothing secondCreatedAt)
+      secondRunId <-
+        expectCreatedRun "create second pending run"
+          =<< runTx pool (Q.createPendingRun secondTaskId TriggerRetry Nothing Nothing secondCreatedAt)
       claimTime <- getCurrentTime
       claimed <- runTx pool $ Q.claimNextPendingRun "scheduler-owner" claimTime 60 [] []
       case claimed of
@@ -264,7 +286,8 @@ dbSpec = beforeAll setupTestDb $ do
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-open-run-uniqueness"
       createdAt <- getCurrentTime
       firstRunId <- runTx pool $ Q.createPendingRun taskId TriggerManual Nothing Nothing createdAt
-      secondRunId <- runTx pool $ Q.createPendingRun taskId TriggerRetry Nothing Nothing (addUTCTime 1 createdAt)
+      secondRunId <-
+        runTx pool $ Q.createPendingRun taskId TriggerRetry Nothing Nothing (addUTCTime 1 createdAt)
       firstRunId `shouldSatisfy` isJust
       secondRunId `shouldBe` Nothing
 
@@ -273,8 +296,20 @@ dbSpec = beforeAll setupTestDb $ do
       -- Priority 999 ensures this run is claimed before any stale pending
       -- runs left behind by other tests (claimNextPendingRun orders by
       -- priority DESC).
-      taskId <- insertTaskDefWithEnabled pool "paper_portfolio_cycle" "test-pending-claim-disabled-task" "" Nothing now 999 Nothing False
-      pendingRunId <- expectCreatedRun "create workflow-style pending run" =<< runTx pool (Q.createPendingRun taskId TriggerManual Nothing Nothing now)
+      taskId <-
+        insertTaskDefWithEnabled
+          pool
+          "paper_portfolio_cycle"
+          "test-pending-claim-disabled-task"
+          ""
+          Nothing
+          now
+          999
+          Nothing
+          False
+      pendingRunId <-
+        expectCreatedRun "create workflow-style pending run"
+          =<< runTx pool (Q.createPendingRun taskId TriggerManual Nothing Nothing now)
       claimTime <- getCurrentTime
       claimed <- runTx pool $ Q.claimNextPendingRun "scheduler-owner" claimTime 60 [] []
       case claimed of
@@ -291,7 +326,9 @@ dbSpec = beforeAll setupTestDb $ do
     it "does not clear a due schedule when the task already has an open run" $ \mPool -> withDb mPool $ \pool -> do
       now <- getCurrentTime
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-scheduled-claim-open-run"
-      pendingRunId <- expectCreatedRun "create blocking pending run" =<< runTx pool (Q.createPendingRun taskId TriggerManual Nothing Nothing now)
+      pendingRunId <-
+        expectCreatedRun "create blocking pending run"
+          =<< runTx pool (Q.createPendingRun taskId TriggerManual Nothing Nothing now)
       claimResult <- runTx pool $ Q.claimAndCreateRun taskId "test-owner" TriggerSchedule now 60
       claimResult `shouldBe` Nothing
       task <- loadTaskDef pool taskId
@@ -304,9 +341,9 @@ dbSpec = beforeAll setupTestDb $ do
       workflowUserId <- insertTestUser pool "scheduler-stamp-test" "scheduler-stamp@test.com" "hashed"
       let config =
             Aeson.object
-              [ "cortexTaskType" Aeson..= ("deep_report_workflow" :: Text),
-                "cortexTaskVersion" Aeson..= (1 :: Int),
-                "cortexTaskConfig"
+              [ "cortexTaskType" Aeson..= ("deep_report_workflow" :: Text)
+              , "cortexTaskVersion" Aeson..= (1 :: Int)
+              , "cortexTaskConfig"
                   Aeson..= Aeson.object
                     [ "drwUserId" Aeson..= workflowUserId
                     ]
@@ -315,19 +352,21 @@ dbSpec = beforeAll setupTestDb $ do
         runTx pool $
           Q.createTaskDefinition
             Q.PulseTaskDefinitionInsert
-              { ptdiTaskType = "deep_report_workflow",
-                ptdiTaskName = "test-scheduled-run-user-stamp",
-                ptdiConfig = config,
-                ptdiCronExpression = "",
-                ptdiEnabled = True,
-                ptdiNextRunAt = Just now,
-                ptdiTimeoutSeconds = 300,
-                ptdiPriority = 0,
-                ptdiMinIntervalSeconds = Nothing,
-                ptdiCreatedAt = now
+              { ptdiTaskType = "deep_report_workflow"
+              , ptdiTaskName = "test-scheduled-run-user-stamp"
+              , ptdiConfig = config
+              , ptdiCronExpression = ""
+              , ptdiEnabled = True
+              , ptdiNextRunAt = Just now
+              , ptdiTimeoutSeconds = 300
+              , ptdiPriority = 0
+              , ptdiMinIntervalSeconds = Nothing
+              , ptdiCreatedAt = now
               }
       taskId <- maybe (fail "Failed to create scheduled workflow task") pure maybeTaskId
-      runId <- expectCreatedRun "create scheduled run with owner" =<< runTx pool (Q.claimAndCreateRun taskId "test-owner" TriggerSchedule now 60)
+      runId <-
+        expectCreatedRun "create scheduled run with owner"
+          =<< runTx pool (Q.claimAndCreateRun taskId "test-owner" TriggerSchedule now 60)
       readRunUserId pool runId `shouldReturn` Just workflowUserId
 
   describe "runSchedulerLoop" $ do
@@ -339,19 +378,37 @@ dbSpec = beforeAll setupTestDb $ do
       let taskType = "cap_test"
           taskContext =
             TaskContext
-              { tcPool = pool,
-                tcConfig =
+              { tcPool = pool
+              , tcConfig =
                   testPulseConfig
-                    { pulseLeaseOwner = "scheduler-cap-test",
-                      pulsePollIntervalSeconds = 1,
-                      pulseMaxConcurrentTasks = 2,
-                      pulseTaskTypeLimits = Map.fromList [(taskType, 1)]
-                    },
-                tcShutdownFlag = shutdownFlag
+                    { pulseLeaseOwner = "scheduler-cap-test"
+                    , pulsePollIntervalSeconds = 1
+                    , pulseMaxConcurrentTasks = 2
+                    , pulseTaskTypeLimits = Map.fromList [(taskType, 1)]
+                    }
+              , tcShutdownFlag = shutdownFlag
               }
           registry = Map.fromList [(taskType, mkBlockingHandler release)]
-      firstTaskId <- insertTaskDefWithSettings pool taskType "test-cap-first" "" (Just (addUTCTime (-20) now)) now 0 Nothing
-      secondTaskId <- insertTaskDefWithSettings pool taskType "test-cap-second" "" (Just (addUTCTime (-10) now)) now 0 Nothing
+      firstTaskId <-
+        insertTaskDefWithSettings
+          pool
+          taskType
+          "test-cap-first"
+          ""
+          (Just (addUTCTime (-20) now))
+          now
+          0
+          Nothing
+      secondTaskId <-
+        insertTaskDefWithSettings
+          pool
+          taskType
+          "test-cap-second"
+          ""
+          (Just (addUTCTime (-10) now))
+          now
+          0
+          Nothing
       withAsync (runSchedulerLoop registry taskContext healthState) $ \schedulerAsync -> do
         waitUntil "first capped task to be claimed" $ schedulerClaimed <$> loadTaskDef pool firstTaskId
         threadDelay 200000
@@ -373,14 +430,14 @@ dbSpec = beforeAll setupTestDb $ do
       let taskType = "cooldown_test"
           taskContext =
             TaskContext
-              { tcPool = pool,
-                tcConfig =
+              { tcPool = pool
+              , tcConfig =
                   testPulseConfig
-                    { pulseLeaseOwner = "scheduler-cooldown-test",
-                      pulsePollIntervalSeconds = 1,
-                      pulseMaxConcurrentTasks = 1
-                    },
-                tcShutdownFlag = shutdownFlag
+                    { pulseLeaseOwner = "scheduler-cooldown-test"
+                    , pulsePollIntervalSeconds = 1
+                    , pulseMaxConcurrentTasks = 1
+                    }
+              , tcShutdownFlag = shutdownFlag
               }
           registry = Map.fromList [(taskType, mkBlockingHandler release)]
           cooledDownRunAt = addUTCTime (-60) now
@@ -406,7 +463,8 @@ dbSpec = beforeAll setupTestDb $ do
           Nothing
       setTaskLastRunAt pool cooledDownTaskId cooledDownRunAt
       withAsync (runSchedulerLoop registry taskContext healthState) $ \schedulerAsync -> do
-        waitUntil "runnable task behind cooldown barrier to be claimed" $ schedulerClaimed <$> loadTaskDef pool runnableTaskId
+        waitUntil "runnable task behind cooldown barrier to be claimed" $
+          schedulerClaimed <$> loadTaskDef pool runnableTaskId
         threadDelay 200000
         cooledDownTask <- loadTaskDef pool cooledDownTaskId
         runnableTask <- loadTaskDef pool runnableTaskId
@@ -491,8 +549,11 @@ dbSpec = beforeAll setupTestDb $ do
       let claimTime = testTime
           recoveryTime = testTimePlus60
           expectedNextRunAt = addUTCTime 300 recoveryTime
-      taskId <- insertTaskDefAt pool "paper_portfolio_cycle" "test-recover-one-off" "" (Just claimTime) claimTime
-      runId <- expectCreatedRun "create scheduled run" =<< runTx pool (Q.claimAndCreateRun taskId "expired-owner" TriggerSchedule claimTime 60)
+      taskId <-
+        insertTaskDefAt pool "paper_portfolio_cycle" "test-recover-one-off" "" (Just claimTime) claimTime
+      runId <-
+        expectCreatedRun "create scheduled run"
+          =<< runTx pool (Q.claimAndCreateRun taskId "expired-owner" TriggerSchedule claimTime 60)
       setRunLeaseExpiry pool runId (addUTCTime (-1) recoveryTime)
       recoverExpiredRuns pool "recovery-owner" recoveryTime `shouldReturn` Right 1
       task <- loadTaskDef pool taskId
@@ -508,8 +569,17 @@ dbSpec = beforeAll setupTestDb $ do
       let claimTime = testTime
           recoveryTime = testTimePlus60
           expectedNextRunAt = testTimePlus300
-      taskId <- insertTaskDefAt pool "paper_portfolio_cycle" "test-recover-recurring" "*/5 * * * *" (Just claimTime) claimTime
-      runId <- expectCreatedRun "create scheduled recurring run" =<< runTx pool (Q.claimAndCreateRun taskId "expired-owner" TriggerSchedule claimTime 60)
+      taskId <-
+        insertTaskDefAt
+          pool
+          "paper_portfolio_cycle"
+          "test-recover-recurring"
+          "*/5 * * * *"
+          (Just claimTime)
+          claimTime
+      runId <-
+        expectCreatedRun "create scheduled recurring run"
+          =<< runTx pool (Q.claimAndCreateRun taskId "expired-owner" TriggerSchedule claimTime 60)
       setRunLeaseExpiry pool runId (addUTCTime (-1) recoveryTime)
       recoverExpiredRuns pool "recovery-owner" recoveryTime `shouldReturn` Right 1
       task <- loadTaskDef pool taskId
@@ -523,8 +593,17 @@ dbSpec = beforeAll setupTestDb $ do
           createdAt = testTime
           claimTime = testTimePlus60
           recoveryTime = testTimePlus120
-      taskId <- insertTaskDefAt pool "paper_portfolio_cycle" "test-recover-manual-recurring" "0 * * * *" (Just initialNextRunAt) createdAt
-      pendingRunId <- expectCreatedRun "create pending manual run" =<< runTx pool (Q.createPendingRun taskId TriggerManual Nothing Nothing createdAt)
+      taskId <-
+        insertTaskDefAt
+          pool
+          "paper_portfolio_cycle"
+          "test-recover-manual-recurring"
+          "0 * * * *"
+          (Just initialNextRunAt)
+          createdAt
+      pendingRunId <-
+        expectCreatedRun "create pending manual run"
+          =<< runTx pool (Q.createPendingRun taskId TriggerManual Nothing Nothing createdAt)
       claimedRun <- runTx pool $ Q.claimNextPendingRun "expired-owner" claimTime 60 [] []
       fmap Q.pprcRunId claimedRun `shouldBe` Just pendingRunId
       setRunLeaseExpiry pool pendingRunId (addUTCTime (-1) recoveryTime)
@@ -545,16 +624,16 @@ dbSpec = beforeAll setupTestDb $ do
       betaRuns <- newIORef (0 :: Int)
       let taskContext =
             TaskContext
-              { tcPool = pool,
-                tcConfig = testPulseConfig {pulseLeaseOwner = leaseOwner},
-                tcShutdownFlag = shutdownFlag
+              { tcPool = pool
+              , tcConfig = testPulseConfig {pulseLeaseOwner = leaseOwner}
+              , tcShutdownFlag = shutdownFlag
               }
           stagePlan =
             case mkLinearStagePlan
               [ simpleStage TestStageAlpha $ \_runId state -> do
                   atomically $ writeTVar shutdownFlag True
-                  pure state,
-                simpleStage TestStageBeta $ \_runId state -> do
+                  pure state
+              , simpleStage TestStageBeta $ \_runId state -> do
                   atomicModifyIORef' betaRuns (\n -> (n + 1, ()))
                   pure state
               ]
@@ -564,8 +643,17 @@ dbSpec = beforeAll setupTestDb $ do
               defaultRewriteBudget of
               Left err -> error ("mkLinearStagePlan: " <> show err)
               Right plan -> plan
-      taskId <- insertTaskDefAt pool "paper_portfolio_cycle" "test-shutdown-reclaim-resume" "*/5 * * * *" (Just claimTime) claimTime
-      runId <- expectCreatedRun "create scheduled run" =<< runTx pool (Q.claimAndCreateRun taskId leaseOwner TriggerSchedule claimTime 300)
+      taskId <-
+        insertTaskDefAt
+          pool
+          "paper_portfolio_cycle"
+          "test-shutdown-reclaim-resume"
+          "*/5 * * * *"
+          (Just claimTime)
+          claimTime
+      runId <-
+        expectCreatedRun "create scheduled run"
+          =<< runTx pool (Q.claimAndCreateRun taskId leaseOwner TriggerSchedule claimTime 300)
       task <- loadTaskDef pool taskId
       firstOutcome <- withLeaseRenewal pool runId 300 (executeStagePlan taskContext runId task stagePlan)
       firstOutcome `shouldBe` OutcomeShutdown
@@ -595,26 +683,37 @@ insertTaskDefAt :: Pool -> Text -> Text -> Text -> Maybe UTCTime -> UTCTime -> I
 insertTaskDefAt pool taskType taskName cronExpression nextRunAt createdAt = do
   insertTaskDefWithSettings pool taskType taskName cronExpression nextRunAt createdAt 0 Nothing
 
-insertTaskDefWithSettings :: Pool -> Text -> Text -> Text -> Maybe UTCTime -> UTCTime -> Int32 -> Maybe Int32 -> IO UUID
+insertTaskDefWithSettings
+  :: Pool -> Text -> Text -> Text -> Maybe UTCTime -> UTCTime -> Int32 -> Maybe Int32 -> IO UUID
 insertTaskDefWithSettings pool taskType taskName cronExpression nextRunAt createdAt priority minIntervalSeconds = do
-  insertTaskDefWithEnabled pool taskType taskName cronExpression nextRunAt createdAt priority minIntervalSeconds True
+  insertTaskDefWithEnabled
+    pool
+    taskType
+    taskName
+    cronExpression
+    nextRunAt
+    createdAt
+    priority
+    minIntervalSeconds
+    True
 
-insertTaskDefWithEnabled :: Pool -> Text -> Text -> Text -> Maybe UTCTime -> UTCTime -> Int32 -> Maybe Int32 -> Bool -> IO UUID
+insertTaskDefWithEnabled
+  :: Pool -> Text -> Text -> Text -> Maybe UTCTime -> UTCTime -> Int32 -> Maybe Int32 -> Bool -> IO UUID
 insertTaskDefWithEnabled pool taskType taskName cronExpression nextRunAt createdAt priority minIntervalSeconds isEnabled = do
   maybeTaskId <-
     runTx pool $
       Q.createTaskDefinition
         Q.PulseTaskDefinitionInsert
-          { ptdiTaskType = taskType,
-            ptdiTaskName = taskName,
-            ptdiConfig = Aeson.object [],
-            ptdiCronExpression = cronExpression,
-            ptdiEnabled = isEnabled,
-            ptdiNextRunAt = nextRunAt,
-            ptdiTimeoutSeconds = 300,
-            ptdiPriority = priority,
-            ptdiMinIntervalSeconds = minIntervalSeconds,
-            ptdiCreatedAt = createdAt
+          { ptdiTaskType = taskType
+          , ptdiTaskName = taskName
+          , ptdiConfig = Aeson.object []
+          , ptdiCronExpression = cronExpression
+          , ptdiEnabled = isEnabled
+          , ptdiNextRunAt = nextRunAt
+          , ptdiTimeoutSeconds = 300
+          , ptdiPriority = priority
+          , ptdiMinIntervalSeconds = minIntervalSeconds
+          , ptdiCreatedAt = createdAt
           }
   case maybeTaskId of
     Just taskId -> pure taskId
@@ -644,7 +743,8 @@ cleanupTestTasks pool =
     deleteStmt sql = Statement sql (E.param (E.nonNullable E.uuid)) D.noResult False
     cleanupOne taskId = do
       runSession pool $ Session.statement taskId (deleteStmt "DELETE FROM pulse.runs WHERE task_id = $1")
-      runSession pool $ Session.statement taskId (deleteStmt "DELETE FROM pulse.task_definitions WHERE task_id = $1")
+      runSession pool $
+        Session.statement taskId (deleteStmt "DELETE FROM pulse.task_definitions WHERE task_id = $1")
 
 setTaskLastRunAt :: Pool -> UUID -> UTCTime -> IO ()
 setTaskLastRunAt pool taskId lastRunAt' =
@@ -669,8 +769,8 @@ countRunningRunsForType pool taskType =
 mkBlockingHandler :: MVar () -> TaskHandler
 mkBlockingHandler release =
   TaskHandler
-    { executeFresh = completeAfterRelease,
-      resumeExisting = completeAfterRelease
+    { executeFresh = completeAfterRelease
+    , resumeExisting = completeAfterRelease
     }
   where
     completeAfterRelease taskContext runId _task = do
@@ -698,15 +798,15 @@ waitUntil label predicate = do
 simpleStage :: TestStage -> (UUID -> Aeson.Value -> IO Aeson.Value) -> StageDefinition TestStage
 simpleStage stageId action =
   StageDefinition
-    { sdStageId = stageId,
-      sdTemplateId = stageTemplateId stageId,
-      sdActionId = stageActionId stageId,
-      sdReplaySafety = SafeToReplay,
-      sdReplayPolicyOverride = Nothing,
-      sdTimeoutSeconds = Nothing,
-      sdRetryPolicy = Nothing,
-      sdAction = liftChainAction action,
-      sdMemoryStrategy = defaultMemoryStrategy
+    { sdStageId = stageId
+    , sdTemplateId = stageTemplateId stageId
+    , sdActionId = stageActionId stageId
+    , sdReplaySafety = SafeToReplay
+    , sdReplayPolicyOverride = Nothing
+    , sdTimeoutSeconds = Nothing
+    , sdRetryPolicy = Nothing
+    , sdAction = liftChainAction action
+    , sdMemoryStrategy = defaultMemoryStrategy
     }
 
 expectMaybeTimeNear :: Maybe UTCTime -> Maybe UTCTime -> Expectation
@@ -724,26 +824,26 @@ expectCreatedRun label =
 testPulseConfig :: PulseConfig
 testPulseConfig =
   PulseConfig
-    { pulseDbHost = "localhost",
-      pulseDbPort = 5432,
-      pulseDbUser = "portman",
-      pulseDbPassword = "",
-      pulseDbName = "portman",
-      pulseDbPoolSize = 1,
-      pulseApiUrl = "http://127.0.0.1:8080",
-      pulseJwtSecret = "test-secret-key-for-unit-testing-only-32chars",
-      pulseJwtExpirationSeconds = 86400,
-      pulseJwtIssuer = "portman",
-      pulseJwtAudience = "portman-api",
-      pulseAdminApiKey = Just "test-admin-api-key",
-      pulseServiceCredential = Just "test-pulse-credential",
-      pulseHealthPort = 9090,
-      pulseLeaseOwner = "test-owner",
-      pulseLeaseDurationSeconds = 300,
-      pulsePollIntervalSeconds = 5,
-      pulseMaxConcurrentTasks = 4,
-      pulseMaxFrontierConcurrency = 1,
-      pulseTaskTypeLimits = mempty
+    { pulseDbHost = "localhost"
+    , pulseDbPort = 5432
+    , pulseDbUser = "portman"
+    , pulseDbPassword = ""
+    , pulseDbName = "portman"
+    , pulseDbPoolSize = 1
+    , pulseApiUrl = "http://127.0.0.1:8080"
+    , pulseJwtSecret = "test-secret-key-for-unit-testing-only-32chars"
+    , pulseJwtExpirationSeconds = 86400
+    , pulseJwtIssuer = "portman"
+    , pulseJwtAudience = "portman-api"
+    , pulseAdminApiKey = Just "test-admin-api-key"
+    , pulseServiceCredential = Just "test-pulse-credential"
+    , pulseHealthPort = 9090
+    , pulseLeaseOwner = "test-owner"
+    , pulseLeaseDurationSeconds = 300
+    , pulsePollIntervalSeconds = 5
+    , pulseMaxConcurrentTasks = 4
+    , pulseMaxFrontierConcurrency = 1
+    , pulseTaskTypeLimits = mempty
     }
 
 testTime :: UTCTime

@@ -1,64 +1,65 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- |
--- Module      : Platform.Error
--- Description : Unified application error handling with safe client messages
--- Copyright   : (c) 2026
--- License     : MIT
--- Maintainer  : julius@koskela.email
---
--- Unified error type for the Portman application. This module provides:
---
--- - Single source of truth for application errors
--- - Safe client-facing messages that never leak internal details
--- - Internal messages for logging with full context
--- - Log level classification for proper observability
--- - HTTP status code mapping for API responses
---
--- Design principles:
--- - NEVER expose database errors, stack traces, or internal state to clients
--- - Log all server errors with full context for debugging
--- - Client errors (4xx) get informative but safe messages
--- - Server errors (5xx) get generic "something went wrong" messages
+{- |
+Module      : Platform.Error
+Description : Unified application error handling with safe client messages
+Copyright   : (c) 2026
+License     : MIT
+Maintainer  : julius@koskela.email
+
+Unified error type for the Portman application. This module provides:
+
+- Single source of truth for application errors
+- Safe client-facing messages that never leak internal details
+- Internal messages for logging with full context
+- Log level classification for proper observability
+- HTTP status code mapping for API responses
+
+Design principles:
+- NEVER expose database errors, stack traces, or internal state to clients
+- Log all server errors with full context for debugging
+- Client errors (4xx) get informative but safe messages
+- Server errors (5xx) get generic "something went wrong" messages
+-}
 module Platform.Error
   ( -- * Core Types
-    AppError (..),
-    ErrorContext (..),
-    LogLevel (..),
+    AppError (..)
+  , ErrorContext (..)
+  , LogLevel (..)
 
     -- * Error Construction
-    dbError,
-    validationError,
-    validationErrorWithField,
-    notFoundError,
-    notFoundWithId,
-    authError,
-    authzError,
-    rateLimitError,
-    externalError,
-    internalError,
-    configError,
+  , dbError
+  , validationError
+  , validationErrorWithField
+  , notFoundError
+  , notFoundWithId
+  , authError
+  , authzError
+  , rateLimitError
+  , externalError
+  , internalError
+  , configError
 
     -- * Error Context
-    withContext,
-    addContext,
+  , withContext
+  , addContext
 
     -- * HTTP Conversion
-    toServantError,
-    toStatusCode,
+  , toServantError
+  , toStatusCode
 
     -- * Messages
-    clientMessage,
-    internalMessage,
+  , clientMessage
+  , internalMessage
 
     -- * Classification
-    logLevel,
-    isRetryable,
-    shouldLog,
+  , logLevel
+  , isRetryable
+  , shouldLog
 
     -- * Handler Utilities
-    throwAppError,
-    logError,
+  , throwAppError
+  , logError
   )
 where
 
@@ -73,26 +74,27 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
-import Platform.Observability
-  ( LogEventSpec (..),
-    ObservabilityLogLevel (..),
-    currentRuntime,
-    defaultLogEvent,
-    emitGlobalEvent,
-  )
 import Servant.Server
-  ( Handler,
-    ServerError (..),
-    err401,
-    err403,
-    err404,
-    err422,
-    err429,
-    err500,
-    err503,
-    errBody,
+  ( Handler
+  , ServerError (..)
+  , err401
+  , err403
+  , err404
+  , err422
+  , err429
+  , err500
+  , err503
+  , errBody
   )
 import System.IO (hPutStrLn, stderr)
+
+import Platform.Observability
+  ( LogEventSpec (..)
+  , ObservabilityLogLevel (..)
+  , currentRuntime
+  , defaultLogEvent
+  , emitGlobalEvent
+  )
 
 -- | Log levels for error classification
 data LogLevel
@@ -108,61 +110,72 @@ data LogLevel
 
 -- | Context information for error reporting (internal use only)
 data ErrorContext = ErrorContext
-  { -- | What operation was being performed
-    contextOperation :: !Text,
-    -- | Additional context details (may contain sensitive info)
-    contextDetails :: !(Maybe Text)
+  { contextOperation :: !Text
+  -- ^ What operation was being performed
+  , contextDetails :: !(Maybe Text)
+  -- ^ Additional context details (may contain sensitive info)
   }
   deriving stock (Eq, Show)
 
--- | Unified application error type
---
--- Each error variant contains internal details for logging.
--- Use 'clientMessage' to get the safe message for API responses.
---
--- The constructors use positional arguments to avoid partial record field warnings.
--- Use the smart constructors ('dbError', 'validationError', etc.) for convenience.
+{- | Unified application error type
+
+Each error variant contains internal details for logging.
+Use 'clientMessage' to get the safe message for API responses.
+
+The constructors use positional arguments to avoid partial record field warnings.
+Use the smart constructors ('dbError', 'validationError', etc.) for convenience.
+-}
 data AppError
-  = -- | Database operation failed (NEVER expose to client)
-    --    Args: message, context
+  = {- | Database operation failed (NEVER expose to client)
+     Args: message, context
+    -}
     DatabaseError !Text !(Maybe ErrorContext)
-  | -- | Input validation failed (safe to expose field info)
-    --    Args: message, field, context
+  | {- | Input validation failed (safe to expose field info)
+     Args: message, field, context
+    -}
     ValidationError !Text !(Maybe Text) !(Maybe ErrorContext)
-  | -- | Resource not found (safe to expose resource type)
-    --    Args: resource, identifier, context
+  | {- | Resource not found (safe to expose resource type)
+     Args: resource, identifier, context
+    -}
     NotFoundError !Text !(Maybe Text) !(Maybe ErrorContext)
-  | -- | Authentication failed (don't leak auth state)
-    --    Args: internal message, context
+  | {- | Authentication failed (don't leak auth state)
+     Args: internal message, context
+    -}
     AuthenticationError !Text !(Maybe ErrorContext)
-  | -- | Authorization failed (user authenticated but not permitted)
-    --    Args: internal message, context
+  | {- | Authorization failed (user authenticated but not permitted)
+     Args: internal message, context
+    -}
     AuthorizationError !Text !(Maybe ErrorContext)
-  | -- | Request rejected because caller exceeded an allowed rate
-    --    Args: internal message, context
+  | {- | Request rejected because caller exceeded an allowed rate
+     Args: internal message, context
+    -}
     RateLimitError !Text !(Maybe ErrorContext)
-  | -- | External service integration error (don't expose service details)
-    --    Args: service name, message, context
+  | {- | External service integration error (don't expose service details)
+     Args: service name, message, context
+    -}
     ExternalServiceError !Text !Text !(Maybe ErrorContext)
-  | -- | Configuration error
-    --    Args: message, context
+  | {- | Configuration error
+     Args: message, context
+    -}
     ConfigurationError !Text !(Maybe ErrorContext)
-  | -- | Internal server error (NEVER expose details to client)
-    --    Args: message, context
+  | {- | Internal server error (NEVER expose details to client)
+     Args: message, context
+    -}
     InternalError !Text !(Maybe ErrorContext)
   deriving stock (Eq, Show)
 
--- | JSON representation for structured logging (internal use)
--- This is NOT sent to clients - only used in log aggregation
+{- | JSON representation for structured logging (internal use)
+This is NOT sent to clients - only used in log aggregation
+-}
 instance ToJSON AppError where
   toJSON err =
     object
-      [ "error_type" .= errorTypeName err,
-        "internal_message" .= internalMessage err,
-        "client_message" .= clientMessage err,
-        "status_code" .= toStatusCode err,
-        "log_level" .= show (logLevel err),
-        "retryable" .= isRetryable err
+      [ "error_type" .= errorTypeName err
+      , "internal_message" .= internalMessage err
+      , "client_message" .= clientMessage err
+      , "status_code" .= toStatusCode err
+      , "log_level" .= show (logLevel err)
+      , "retryable" .= isRetryable err
       ]
 
 errorTypeName :: AppError -> Text
@@ -242,10 +255,11 @@ addContext ctx (InternalError msg _) = InternalError msg (Just ctx)
 
 -- * Client-Safe Messages
 
--- | Get a SAFE message to send to the client
---
--- This function ensures no internal details, database errors,
--- stack traces, or sensitive information leaks to the client.
+{- | Get a SAFE message to send to the client
+
+This function ensures no internal details, database errors,
+stack traces, or sensitive information leaks to the client.
+-}
 clientMessage :: AppError -> Text
 clientMessage (DatabaseError _ _) =
   -- NEVER expose database errors
@@ -292,19 +306,20 @@ isSafeOpenRouterClientMessage msg =
   where
     normalizedMsg = T.toLower msg
     safeFragments =
-      [ "phase timed out after ",
-        "phase failed because the provider rejected the structured-output schema.",
-        "phase failed after network retries.",
-        "phase failed with upstream http ",
-        "phase returned an unreadable completion response.",
-        "phase returned no completion choices.",
-        "phase failed because the provider rejected the request payload."
+      [ "phase timed out after "
+      , "phase failed because the provider rejected the structured-output schema."
+      , "phase failed after network retries."
+      , "phase failed with upstream http "
+      , "phase returned an unreadable completion response."
+      , "phase returned no completion choices."
+      , "phase failed because the provider rejected the request payload."
       ]
 
--- | Get the full internal message for logging
---
--- This contains all details and should ONLY be written to logs,
--- NEVER sent to clients.
+{- | Get the full internal message for logging
+
+This contains all details and should ONLY be written to logs,
+NEVER sent to clients.
+-}
 internalMessage :: AppError -> Text
 internalMessage (DatabaseError msg ctx) =
   formatWithContext "DatabaseError" msg ctx
@@ -335,9 +350,10 @@ formatWithContext errType msg (Just ctx) =
 
 -- * HTTP Conversion
 
--- | Convert AppError to Servant ServerError
---
--- Uses 'clientMessage' to ensure safe error bodies
+{- | Convert AppError to Servant ServerError
+
+Uses 'clientMessage' to ensure safe error bodies
+-}
 toServantError :: AppError -> ServerError
 toServantError err =
   let statusErr = case err of
@@ -394,17 +410,17 @@ shouldLog _ = True
 -- * Handler Utilities
 
 -- | Log an error with timestamp and level (for use outside handlers)
-logError :: (MonadIO m) => AppError -> m ()
+logError :: MonadIO m => AppError -> m ()
 logError err = liftIO $ do
   maybeRuntime <- currentRuntime
   case maybeRuntime of
     Just _runtime ->
       emitGlobalEvent $
         (defaultLogEvent (observabilityLevel (logLevel err)) "app_error" "app.error" (internalMessage err))
-          { eventOutcome = "error",
-            eventErrorType = Just (errorTypeName err),
-            eventRetryable = Just (isRetryable err),
-            eventHttpStatusCode = Just (toStatusCode err)
+          { eventOutcome = "error"
+          , eventErrorType = Just (errorTypeName err)
+          , eventRetryable = Just (isRetryable err)
+          , eventHttpStatusCode = Just (toStatusCode err)
           }
     Nothing -> do
       timestamp <- getCurrentTime
@@ -422,10 +438,11 @@ logError err = liftIO $ do
           <> " "
           <> T.unpack msg
 
--- | Throw an AppError as a Servant Handler error
---
--- - Logs server errors with full internal details
--- - Sends ONLY the safe client message in the HTTP response
+{- | Throw an AppError as a Servant Handler error
+
+- Logs server errors with full internal details
+- Sends ONLY the safe client message in the HTTP response
+-}
 throwAppError :: AppError -> Handler a
 throwAppError err = do
   when (shouldLog err) $ logError err

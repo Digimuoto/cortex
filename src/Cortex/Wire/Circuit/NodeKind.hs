@@ -1,21 +1,22 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
--- | Semantic classification of circuit nodes (DIG-481).
---
--- 'CircuitNodeKind' captures what a node /represents/ in a circuit — whether it
--- makes decisions, performs work, waits for external input, or emits
--- artifacts. This is purely semantic metadata; it does not affect execution
--- behaviour or confer structural authority (rewrite capability is a separate
--- contract at the 'StageDefinition' / executor level).
---
--- @Await@ and @Emit@ map to distinct IR constructors ('CircuitAwaitSignal',
--- 'CircuitArtifact') that are already structurally typed. 'CircuitNodeKind' is
--- most useful on 'CircuitTask' nodes where the semantic difference between
--- e.g. a planner ('Decide') and a gatherer ('Act') is otherwise lost after
--- lowering.
+{- | Semantic classification of circuit nodes (DIG-481).
+
+'CircuitNodeKind' captures what a node /represents/ in a circuit — whether it
+makes decisions, performs work, waits for external input, or emits
+artifacts. This is purely semantic metadata; it does not affect execution
+behaviour or confer structural authority (rewrite capability is a separate
+contract at the 'StageDefinition' / executor level).
+
+@Await@ and @Emit@ map to distinct IR constructors ('CircuitAwaitSignal',
+'CircuitArtifact') that are already structurally typed. 'CircuitNodeKind' is
+most useful on 'CircuitTask' nodes where the semantic difference between
+e.g. a planner ('Decide') and a gatherer ('Act') is otherwise lost after
+lowering.
+-}
 module Cortex.Wire.Circuit.NodeKind
-  ( CircuitNodeKind (..),
+  ( CircuitNodeKind (..)
   )
 where
 

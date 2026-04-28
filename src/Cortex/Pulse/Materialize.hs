@@ -1,5 +1,5 @@
 module Cortex.Pulse.Materialize
-  ( module Cortex.Pulse.Materialization,
+  ( module Cortex.Pulse.Materialization
   )
 where
 

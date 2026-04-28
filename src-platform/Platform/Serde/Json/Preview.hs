@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Platform.Serde.Json.Preview
-  ( toolCallPayloadPreview,
-    truncateJsonValue,
-    truncateText,
+  ( toolCallPayloadPreview
+  , truncateJsonValue
+  , truncateText
   )
 where
 
@@ -14,6 +14,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as V
+
 import Platform.Text (truncateText)
 
 toolCallPayloadPreview :: Int -> Int -> Int -> Text -> Maybe Aeson.Value

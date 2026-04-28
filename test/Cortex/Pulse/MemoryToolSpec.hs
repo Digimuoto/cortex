@@ -1,30 +1,22 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Pure tests for 'Cortex.Pulse.Memory.Tool' (DIG-530 follow-up).
---
--- Exercises:
---
---   * Schema decoding — the LLM-facing JSON -> 'CortexMemoryQueryArgs'
---     round-trips cleanly for valid inputs and rejects unknown
---     enums.
---   * 'executeCortexMemoryQuery' — given a bound 'MemoryHandle',
---     returns the expected matches with shape stable enough for the
---     audit trail.
---
--- The handle is built via 'newMemoryHandle' over a fixture snapshot
--- so no executor, DB, or HTTP needed.
+{- | Pure tests for 'Cortex.Pulse.Memory.Tool' (DIG-530 follow-up).
+
+Exercises:
+
+ * Schema decoding — the LLM-facing JSON -> 'CortexMemoryQueryArgs'
+   round-trips cleanly for valid inputs and rejects unknown
+   enums.
+ * 'executeCortexMemoryQuery' — given a bound 'MemoryHandle',
+   returns the expected matches with shape stable enough for the
+   audit trail.
+
+The handle is built via 'newMemoryHandle' over a fixture snapshot
+so no executor, DB, or HTTP needed.
+-}
 module Cortex.Pulse.MemoryToolSpec (spec) where
 
-import Cortex.Algebra.Graph
-  ( Relation,
-    edges,
-    toRelation,
-  )
-import Cortex.Pulse.Memory
-import Cortex.Pulse.Memory.Tool
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Runtime (NodeStatus (..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -34,6 +26,16 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian, secondsToDiffTime)
 import Test.Hspec
+
+import Cortex.Algebra.Graph
+  ( Relation
+  , edges
+  , toRelation
+  )
+import Cortex.Pulse.Memory
+import Cortex.Pulse.Memory.Tool
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Runtime (NodeStatus (..))
 
 -- ============================================================================
 -- Fixtures
@@ -52,46 +54,55 @@ fanoutTopology :: Relation NodeId
 fanoutTopology =
   toRelation
     ( edges
-        [ (nid "planner", nid "analyst-a"),
-          (nid "planner", nid "analyst-b"),
-          (nid "analyst-a", nid "reviewer"),
-          (nid "analyst-b", nid "reviewer")
+        [ (nid "planner", nid "analyst-a")
+        , (nid "planner", nid "analyst-b")
+        , (nid "analyst-a", nid "reviewer")
+        , (nid "analyst-b", nid "reviewer")
         ]
     )
 
 fanoutStatuses :: Map NodeId NodeStatus
 fanoutStatuses =
   Map.fromList
-    [ (nid "planner", NodeCompleted),
-      (nid "analyst-a", NodeCompleted),
-      (nid "analyst-b", NodeCompleted),
-      (nid "reviewer", NodePending)
+    [ (nid "planner", NodeCompleted)
+    , (nid "analyst-a", NodeCompleted)
+    , (nid "analyst-b", NodeCompleted)
+    , (nid "reviewer", NodePending)
     ]
 
 fanoutOutputs :: Map NodeId Aeson.Value
 fanoutOutputs =
   Map.fromList
-    [ (nid "planner", Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan text" :: Text)]),
-      (nid "analyst-a", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("alpha analysis" :: Text)]),
-      (nid "analyst-b", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("beta analysis" :: Text)])
+    [
+      ( nid "planner"
+      , Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan text" :: Text)]
+      )
+    ,
+      ( nid "analyst-a"
+      , Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("alpha analysis" :: Text)]
+      )
+    ,
+      ( nid "analyst-b"
+      , Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("beta analysis" :: Text)]
+      )
     ]
 
 fanoutCompletedAt :: Map NodeId UTCTime
 fanoutCompletedAt =
   Map.fromList
-    [ (nid "planner", tAt 0),
-      (nid "analyst-a", tAt 10),
-      (nid "analyst-b", tAt 20)
+    [ (nid "planner", tAt 0)
+    , (nid "analyst-a", tAt 10)
+    , (nid "analyst-b", tAt 20)
     ]
 
 fanoutSnapshot :: MemorySnapshot
 fanoutSnapshot =
   MemorySnapshot
-    { msTopology = fanoutTopology,
-      msNodeStatuses = fanoutStatuses,
-      msNodeOutputs = fanoutOutputs,
-      msNodeCompletedAt = fanoutCompletedAt,
-      msCapturedAt = tAt 60
+    { msTopology = fanoutTopology
+    , msNodeStatuses = fanoutStatuses
+    , msNodeOutputs = fanoutOutputs
+    , msNodeCompletedAt = fanoutCompletedAt
+    , msCapturedAt = tAt 60
     }
 
 fanoutHandle :: MemoryHandle
@@ -107,12 +118,12 @@ spec = describe "cortex_memory_query tool" $ do
     it "decodes a populated args object" $ do
       let raw =
             Aeson.object
-              [ "preset" Aeson..= ("reviewer" :: Text),
-                "direction" Aeson..= ("ancestors" :: Text),
-                "scope" Aeson..= ("settled_only" :: Text),
-                "routingKey" Aeson..= ("analyst" :: Text),
-                "limit" Aeson..= (16 :: Int),
-                "maxGraphDistance" Aeson..= (2 :: Int)
+              [ "preset" Aeson..= ("reviewer" :: Text)
+              , "direction" Aeson..= ("ancestors" :: Text)
+              , "scope" Aeson..= ("settled_only" :: Text)
+              , "routingKey" Aeson..= ("analyst" :: Text)
+              , "limit" Aeson..= (16 :: Int)
+              , "maxGraphDistance" Aeson..= (2 :: Int)
               ]
       case parseCortexMemoryQueryArgs raw of
         Left err -> expectationFailure ("unexpected parse failure: " <> show err)
@@ -162,13 +173,13 @@ spec = describe "cortex_memory_query tool" $ do
     it "returns every settled ancestor from the reviewer (no routing filter)" $ do
       let args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Nothing,
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Nothing
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Nothing
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Nothing
               }
       result <-
         executeCortexMemoryQuery fanoutHandle defaultMemoryStrategy (nid "reviewer") args
@@ -180,13 +191,13 @@ spec = describe "cortex_memory_query tool" $ do
     it "filters by routing key — analyst-only returns the two analysts" $ do
       let args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Just "analyst",
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Nothing
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Just "analyst"
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Nothing
               }
       result <-
         executeCortexMemoryQuery fanoutHandle defaultMemoryStrategy (nid "reviewer") args
@@ -198,13 +209,13 @@ spec = describe "cortex_memory_query tool" $ do
     it "honours the limit override" $ do
       let args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Nothing,
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Just 1
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Nothing
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Just 1
               }
       result <-
         executeCortexMemoryQuery fanoutHandle defaultMemoryStrategy (nid "reviewer") args
@@ -216,13 +227,13 @@ spec = describe "cortex_memory_query tool" $ do
     it "honours the max-graph-distance cutoff" $ do
       let args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Nothing,
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Just 1,
-                cmqLimit = Nothing
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Nothing
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Just 1
+              , cmqLimit = Nothing
               }
       result <-
         executeCortexMemoryQuery fanoutHandle defaultMemoryStrategy (nid "reviewer") args
@@ -240,35 +251,38 @@ spec = describe "cortex_memory_query tool" $ do
       let wireWrapped :: Text -> Text -> Aeson.Value
           wireWrapped slot body =
             Aeson.object
-              [ "contract" Aeson..= ("analyst.draft" :: Text),
-                "payloadKind" Aeson..= ("json" :: Text),
-                "mediaType" Aeson..= ("application/json" :: Text),
-                "producer" Aeson..= ("analyst-a" :: Text),
-                "value"
+              [ "contract" Aeson..= ("analyst.draft" :: Text)
+              , "payloadKind" Aeson..= ("json" :: Text)
+              , "mediaType" Aeson..= ("application/json" :: Text)
+              , "producer" Aeson..= ("analyst-a" :: Text)
+              , "value"
                   Aeson..= Aeson.object
-                    [ "slot" Aeson..= slot,
-                      "text" Aeson..= body
-                    ],
-                "provenance" Aeson..= Aeson.Null
+                    [ "slot" Aeson..= slot
+                    , "text" Aeson..= body
+                    ]
+              , "provenance" Aeson..= Aeson.Null
               ]
           wireOutputs =
             Map.fromList
-              [ (nid "planner", Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan text" :: Text)]),
-                (nid "analyst-a", wireWrapped "analyst" "alpha analysis"),
-                (nid "analyst-b", wireWrapped "analyst" "beta analysis")
+              [
+                ( nid "planner"
+                , Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan text" :: Text)]
+                )
+              , (nid "analyst-a", wireWrapped "analyst" "alpha analysis")
+              , (nid "analyst-b", wireWrapped "analyst" "beta analysis")
               ]
           wireSnap =
             fanoutSnapshot {msNodeOutputs = wireOutputs}
           wireHandle = newMemoryHandle wireSnap
           args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Just "analyst",
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Nothing
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Just "analyst"
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Nothing
               }
       result <-
         executeCortexMemoryQuery wireHandle defaultMemoryStrategy (nid "reviewer") args
@@ -288,16 +302,16 @@ spec = describe "cortex_memory_query tool" $ do
       let wireWrapped :: Text -> Text -> Aeson.Value
           wireWrapped slot body =
             Aeson.object
-              [ "contract" Aeson..= ("analyst.draft" :: Text),
-                "payloadKind" Aeson..= ("json" :: Text),
-                "mediaType" Aeson..= ("application/json" :: Text),
-                "producer" Aeson..= ("analyst-a" :: Text),
-                "value"
+              [ "contract" Aeson..= ("analyst.draft" :: Text)
+              , "payloadKind" Aeson..= ("json" :: Text)
+              , "mediaType" Aeson..= ("application/json" :: Text)
+              , "producer" Aeson..= ("analyst-a" :: Text)
+              , "value"
                   Aeson..= Aeson.object
-                    [ "slot" Aeson..= slot,
-                      "text" Aeson..= body
-                    ],
-                "provenance" Aeson..= Aeson.Null
+                    [ "slot" Aeson..= slot
+                    , "text" Aeson..= body
+                    ]
+              , "provenance" Aeson..= Aeson.Null
               ]
           wireValueSet :: Text -> Text -> Aeson.Value
           wireValueSet slot body =
@@ -306,21 +320,24 @@ spec = describe "cortex_memory_query tool" $ do
               ]
           wireOutputs =
             Map.fromList
-              [ (nid "planner", Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan text" :: Text)]),
-                (nid "analyst-a", wireValueSet "analyst" "alpha analysis"),
-                (nid "analyst-b", wireValueSet "analyst" "beta analysis")
+              [
+                ( nid "planner"
+                , Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan text" :: Text)]
+                )
+              , (nid "analyst-a", wireValueSet "analyst" "alpha analysis")
+              , (nid "analyst-b", wireValueSet "analyst" "beta analysis")
               ]
           wireSnap = fanoutSnapshot {msNodeOutputs = wireOutputs}
           wireHandle = newMemoryHandle wireSnap
           args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Just "analyst",
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Nothing
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Just "analyst"
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Nothing
               }
       result <-
         executeCortexMemoryQuery wireHandle defaultMemoryStrategy (nid "reviewer") args
@@ -341,21 +358,32 @@ spec = describe "cortex_memory_query tool" $ do
             fanoutSnapshot
               { msNodeOutputs =
                   Map.fromList
-                    [ (nid "planner", Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan details" :: Text)]),
-                      (nid "analyst-a", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("china revenue grew 12 percent" :: Text)]),
-                      (nid "analyst-b", Aeson.object ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("europe margin held steady" :: Text)])
+                    [
+                      ( nid "planner"
+                      , Aeson.object ["slot" Aeson..= ("planner" :: Text), "text" Aeson..= ("plan details" :: Text)]
+                      )
+                    ,
+                      ( nid "analyst-a"
+                      , Aeson.object
+                          ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("china revenue grew 12 percent" :: Text)]
+                      )
+                    ,
+                      ( nid "analyst-b"
+                      , Aeson.object
+                          ["slot" Aeson..= ("analyst" :: Text), "text" Aeson..= ("europe margin held steady" :: Text)]
+                      )
                     ]
               }
           handle = newMemoryHandle semanticWeightSnap
           args =
             CortexMemoryQueryArgs
-              { cmqPreset = Just PresetDefault,
-                cmqDirection = Just Ancestors,
-                cmqScope = Just SettledOnly,
-                cmqRoutingKey = Just "analyst",
-                cmqQueryText = Just "china revenue",
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Just 1
+              { cmqPreset = Just PresetDefault
+              , cmqDirection = Just Ancestors
+              , cmqScope = Just SettledOnly
+              , cmqRoutingKey = Just "analyst"
+              , cmqQueryText = Just "china revenue"
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Just 1
               }
       result <-
         executeCortexMemoryQuery handle defaultMemoryStrategy (nid "reviewer") args
@@ -376,20 +404,20 @@ spec = describe "cortex_memory_query tool" $ do
       -- bare args object.
       let callerCfg =
             TopologicalStrategyConfig
-              { tscPreset = PresetReviewer,
-                tscRoutingKey = Nothing,
-                tscLimit = Nothing
+              { tscPreset = PresetReviewer
+              , tscRoutingKey = Nothing
+              , tscLimit = Nothing
               }
           callerStrategy = MemoryTopological callerCfg
           bareArgs =
             CortexMemoryQueryArgs
-              { cmqPreset = Nothing,
-                cmqDirection = Nothing,
-                cmqScope = Nothing,
-                cmqRoutingKey = Nothing,
-                cmqQueryText = Nothing,
-                cmqMaxGraphDistance = Nothing,
-                cmqLimit = Nothing
+              { cmqPreset = Nothing
+              , cmqDirection = Nothing
+              , cmqScope = Nothing
+              , cmqRoutingKey = Nothing
+              , cmqQueryText = Nothing
+              , cmqMaxGraphDistance = Nothing
+              , cmqLimit = Nothing
               }
       inherited <-
         executeCortexMemoryQuery fanoutHandle callerStrategy (nid "reviewer") bareArgs

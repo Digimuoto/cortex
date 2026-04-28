@@ -3,16 +3,17 @@
 module Platform.DurableTask.ScheduleSpec (spec) where
 
 import Data.Time (Day (ModifiedJulianDay), UTCTime (..), fromGregorian, secondsToDiffTime)
-import Platform.DurableTask.Schedule
-  ( ExecutionOrigin (..),
-    ScheduleConfig (..),
-    ScheduleDecision (..),
-    ScheduleKind (..),
-    decideScheduleAction,
-  )
-import Platform.DurableTask.Types (RunOutcome (..))
 import Test.Hspec
 import Test.QuickCheck
+
+import Platform.DurableTask.Schedule
+  ( ExecutionOrigin (..)
+  , ScheduleConfig (..)
+  , ScheduleDecision (..)
+  , ScheduleKind (..)
+  , decideScheduleAction
+  )
+import Platform.DurableTask.Types (RunOutcome (..))
 
 spec :: Spec
 spec = do
@@ -46,7 +47,12 @@ spec = do
         `shouldBe` RestoreOneOffAt testTimePlus300
 
     it "backs recurring work off when the cron expression is invalid" $ do
-      decideScheduleAction testConfig ScheduledExecution (Recurring "not a cron") testTime OutcomeCompleted
+      decideScheduleAction
+        testConfig
+        ScheduledExecution
+        (Recurring "not a cron")
+        testTime
+        OutcomeCompleted
         `shouldBe` RestoreRecurringAfterCronErrorAt testTimePlus300
 
     it "advances scheduled recurring work even after failed outcomes" $ do
@@ -54,7 +60,12 @@ spec = do
         `shouldBe` AdvanceRecurringTo recurringNextRunAt
 
     it "advances scheduled recurring work even after timed out outcomes" $ do
-      decideScheduleAction testConfig ScheduledExecution (Recurring "*/5 * * * *") testTime OutcomeTimedOut
+      decideScheduleAction
+        testConfig
+        ScheduledExecution
+        (Recurring "*/5 * * * *")
+        testTime
+        OutcomeTimedOut
         `shouldBe` AdvanceRecurringTo recurringNextRunAt
 
   describe "decideScheduleAction properties" $ do
@@ -102,15 +113,15 @@ spec = do
 testConfig :: ScheduleConfig
 testConfig =
   ScheduleConfig
-    { scOneOffFailureBackoff = 300,
-      scCronParseBackoff = 300
+    { scOneOffFailureBackoff = 300
+    , scCronParseBackoff = 300
     }
 
 immediateRetryConfig :: ScheduleConfig
 immediateRetryConfig =
   ScheduleConfig
-    { scOneOffFailureBackoff = 0,
-      scCronParseBackoff = 300
+    { scOneOffFailureBackoff = 0
+    , scCronParseBackoff = 300
     }
 
 testTime :: UTCTime
@@ -137,11 +148,11 @@ genUTCTime = do
 genRunOutcome :: Gen RunOutcome
 genRunOutcome =
   elements
-    [ OutcomeCompleted,
-      OutcomeFailed,
-      OutcomeCancelled,
-      OutcomeTimedOut,
-      OutcomeShutdown
+    [ OutcomeCompleted
+    , OutcomeFailed
+    , OutcomeCancelled
+    , OutcomeTimedOut
+    , OutcomeShutdown
     ]
 
 genNonShutdownOutcome :: Gen RunOutcome
@@ -156,15 +167,15 @@ genScheduleConfig = do
 genScheduleKind :: Gen ScheduleKind
 genScheduleKind =
   elements
-    [ OneOff,
-      Recurring "* * * * *",
-      Recurring "0 9 * * 1-5",
-      Recurring "*/30 * * * *"
+    [ OneOff
+    , Recurring "* * * * *"
+    , Recurring "0 9 * * 1-5"
+    , Recurring "*/30 * * * *"
     ]
 
 validCronExprs :: [ScheduleKind]
 validCronExprs =
-  [ Recurring "* * * * *",
-    Recurring "0 9 * * *",
-    Recurring "*/5 * * * *"
+  [ Recurring "* * * * *"
+  , Recurring "0 9 * * *"
+  , Recurring "*/5 * * * *"
   ]

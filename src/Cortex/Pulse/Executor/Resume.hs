@@ -3,51 +3,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Cortex.Pulse.Executor.Resume
-  ( materializedTopologyForAdmin,
-    resumeFromPersistedState,
+  ( materializedTopologyForAdmin
+  , resumeFromPersistedState
   )
 where
 
 import Control.Concurrent.STM (TVar, newTVarIO)
 import Control.Monad (foldM, when)
-import Cortex.Algebra.Graph (Relation (..))
-import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
-import Cortex.Pulse.Executor.Frontier (resolveDeliveredSignals)
-import Cortex.Pulse.Executor.Persistence
-  ( failRun,
-    requireGraphStatePersist,
-  )
-import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
-import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
-import Cortex.Pulse.GraphRuntime
-  ( GraphState (..),
-    normalizeForResume,
-    readyNodes,
-  )
-import Cortex.Pulse.Materialization
-  ( NodeProvenance,
-    PersistedGraphState (..),
-    applyPlannedRewrite,
-    computeTopologyHash,
-    decodeOptionalJsonValue,
-    hydratePersistedRewriteRow,
-    hydratePersistedRewriteRowForAdmin,
-    initialProvenance,
-    materializeRewrite,
-    reconcileGraphState,
-    resolveRewriteDeltaAndCost,
-  )
-import Cortex.Pulse.Node (NodeId)
-import Cortex.Pulse.Plan
-import Cortex.Pulse.PlanHydration
-  ( RewriteError (..),
-    renderRewriteError,
-    rewriteErrorType,
-  )
-import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Rewrite (admitRewriteDelta, admittedDelta, admittedRemainingBudget)
-import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Types (PulseConfig)
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Int (Int32, Int64)
@@ -57,18 +19,58 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
+import Rel8 (Result)
+
+import Cortex.Algebra.Graph (Relation (..))
+import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
+import Cortex.Pulse.Executor.Frontier (resolveDeliveredSignals)
+import Cortex.Pulse.Executor.Persistence
+  ( failRun
+  , requireGraphStatePersist
+  )
+import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
+import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
+import Cortex.Pulse.GraphRuntime
+  ( GraphState (..)
+  , normalizeForResume
+  , readyNodes
+  )
+import Cortex.Pulse.Materialization
+  ( NodeProvenance
+  , PersistedGraphState (..)
+  , applyPlannedRewrite
+  , computeTopologyHash
+  , decodeOptionalJsonValue
+  , hydratePersistedRewriteRow
+  , hydratePersistedRewriteRowForAdmin
+  , initialProvenance
+  , materializeRewrite
+  , reconcileGraphState
+  , resolveRewriteDeltaAndCost
+  )
+import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Plan
+import Cortex.Pulse.PlanHydration
+  ( RewriteError (..)
+  , renderRewriteError
+  , rewriteErrorType
+  )
+import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Rewrite (admitRewriteDelta, admittedDelta, admittedRemainingBudget)
+import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
+import Cortex.Pulse.Types (PulseConfig)
+
 import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
 import Platform.Observability (emitObsEvent)
-import Rel8 (Result)
 
-materializedTopologyForAdmin ::
-  Maybe SomeStagePlan ->
-  DB.Pool ->
-  UUID ->
-  Maybe Int32 ->
-  Maybe Int64 ->
-  IO (Either Text (Maybe (Relation NodeId)))
+materializedTopologyForAdmin
+  :: Maybe SomeStagePlan
+  -> DB.Pool
+  -> UUID
+  -> Maybe Int32
+  -> Maybe Int64
+  -> IO (Either Text (Maybe (Relation NodeId)))
 materializedTopologyForAdmin maybeStagePlan pool runId mRuntimeVersion mAppliedRewriteId =
   case maybeStagePlan of
     Nothing -> pure (Right Nothing)
@@ -99,22 +101,25 @@ materializedTopologyForAdmin maybeStagePlan pool runId mRuntimeVersion mAppliedR
                           pure (applyPlannedRewrite delta plan)
                     (Just . spTopology) <$> foldM applyOne initialStagePlan rewriteRows
 
-resumeFromPersistedState ::
-  (StableStageId stageId) =>
-  DB.Pool ->
-  PulseConfig ->
-  TVar Bool ->
-  UUID ->
-  PulseTaskDefinitionRow Result ->
-  StagePlan stageId ->
-  Q.PulseGraphStateSnapshot ->
-  (StagePlan stageId -> PersistedGraphState -> [NodeId] -> IO RunOutcome) ->
-  IO RunOutcome
+resumeFromPersistedState
+  :: StableStageId stageId
+  => DB.Pool
+  -> PulseConfig
+  -> TVar Bool
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> Q.PulseGraphStateSnapshot
+  -> (StagePlan stageId -> PersistedGraphState -> [NodeId] -> IO RunOutcome)
+  -> IO RunOutcome
 resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePlan persistedSnapshot continueWithResumedState = do
   let expectedRuntimeVersion = initialStagePlan.spCheckpointRuntimeVersion
 
   rewritesResult <- DB.withConnection pool $ Q.readGraphRewrites runId
-  case (rewritesResult, Aeson.fromJSON persistedSnapshot.pgssNodeStatuses, Aeson.fromJSON persistedSnapshot.pgssNodeOutputs) of
+  case ( rewritesResult
+       , Aeson.fromJSON persistedSnapshot.pgssNodeStatuses
+       , Aeson.fromJSON persistedSnapshot.pgssNodeOutputs
+       ) of
     (Right rewriteRows, Aeson.Success statuses, Aeson.Success outputs) -> do
       let watermark = fromMaybe 0 persistedSnapshot.pgssAppliedRewriteId
           (materializedRows, pendingRows) = span (\(rewriteId, _, _, _, _) -> rewriteId <= watermark) rewriteRows
@@ -145,7 +150,9 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
               when (isNothing persistedSnapshot.pgssRuntimeVersion) $
                 emitObsEvent (EvtResumeGraphNoVersion runId)
               let decodedRemainingBudget =
-                    decodeOptionalJsonValue "persisted remaining rewrite budget" persistedSnapshot.pgssRemainingRewriteBudget
+                    decodeOptionalJsonValue
+                      "persisted remaining rewrite budget"
+                      persistedSnapshot.pgssRemainingRewriteBudget
               case decodedRemainingBudget of
                 Left errMsg -> failResume "graph_state_parse_failed" errMsg
                 Right mRemainingRewriteBudget -> do
@@ -161,11 +168,11 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                         pure (initialProvenance (spTopology materializedStagePlan))
                   let persistedState0 =
                         PersistedGraphState
-                          { pgsGraphState = gs0,
-                            pgsRemainingRewriteBudget = fromMaybe reconstructedRemainingBudget mRemainingRewriteBudget,
-                            pgsAppliedRewriteId = persistedSnapshot.pgssAppliedRewriteId,
-                            pgsNodeProvenance = restoredProvenance,
-                            pgsTopologyHash = persistedSnapshot.pgssTopologyHash
+                          { pgsGraphState = gs0
+                          , pgsRemainingRewriteBudget = fromMaybe reconstructedRemainingBudget mRemainingRewriteBudget
+                          , pgsAppliedRewriteId = persistedSnapshot.pgssAppliedRewriteId
+                          , pgsNodeProvenance = restoredProvenance
+                          , pgsTopologyHash = persistedSnapshot.pgssTopologyHash
                           }
                       topology0 = spTopology materializedStagePlan
                   case reconcileGraphState topology0 gs0 of
@@ -190,9 +197,9 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                           transientTopology <- newTVarIO (spTopology stagePlan)
                           let transientTVars =
                                 RunTVars
-                                  { rvGsVar = transientGs,
-                                    rvNodeCompletedAtVar = transientCompletedAt,
-                                    rvTopologyVar = transientTopology
+                                  { rvGsVar = transientGs
+                                  , rvNodeCompletedAtVar = transientCompletedAt
+                                  , rvTopologyVar = transientTopology
                                   }
                               env = mkStageEnv pool pulseConfig shutdownFlag runId task stagePlan transientTVars
                               expectedHash = computeTopologyHash (spTopology stagePlan)
@@ -218,7 +225,10 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                                 Nothing -> continueAfterReplay stagePlan persistedState frontier
                             else
                               continueAfterReplay stagePlan persistedState frontier
-    _ -> failResume "graph_state_parse_failed" "Failed to parse persisted graph state or rewrite lineage; cannot safely resume"
+    _ ->
+      failResume
+        "graph_state_parse_failed"
+        "Failed to parse persisted graph state or rewrite lineage; cannot safely resume"
   where
     failResume errType errMsg = do
       emitObsEvent $ EvtResumeGraphParseFailed runId errMsg

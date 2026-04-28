@@ -2,10 +2,11 @@
 
 module Cortex.Pulse.TypesSpec (spec) where
 
-import Cortex.Pulse.Types
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Test.Hspec
+
+import Cortex.Pulse.Types
 
 spec :: Spec
 spec = describe "Cortex.Pulse.Types" $ do
@@ -21,29 +22,29 @@ spec = describe "Cortex.Pulse.Types" $ do
     it "decodes a task envelope with an arbitrary task kind" $ do
       let rawEnvelope =
             Aeson.object
-              [ "cortexTaskType" .= ("strategy_distillation_cycle" :: String),
-                "cortexTaskVersion" .= (2 :: Int),
-                "cortexTaskConfig" .= Aeson.object []
+              [ "cortexTaskType" .= ("strategy_distillation_cycle" :: String)
+              , "cortexTaskVersion" .= (2 :: Int)
+              , "cortexTaskConfig" .= Aeson.object []
               ]
       Aeson.fromJSON rawEnvelope
         `shouldBe` Aeson.Success
           CortexTaskEnvelope
-            { cortexTaskType = TaskKind "strategy_distillation_cycle",
-              cortexTaskVersion = 2,
-              cortexTaskConfig = Aeson.object []
+            { cortexTaskType = TaskKind "strategy_distillation_cycle"
+            , cortexTaskVersion = 2
+            , cortexTaskConfig = Aeson.object []
             }
 
     it "decodes a legacy constructor-style task kind" $ do
       let rawEnvelope =
             Aeson.object
-              [ "cortexTaskType" .= ("StrategyDistillationCycle" :: String),
-                "cortexTaskVersion" .= (2 :: Int),
-                "cortexTaskConfig" .= Aeson.object []
+              [ "cortexTaskType" .= ("StrategyDistillationCycle" :: String)
+              , "cortexTaskVersion" .= (2 :: Int)
+              , "cortexTaskConfig" .= Aeson.object []
               ]
       Aeson.fromJSON rawEnvelope
         `shouldBe` Aeson.Success
           CortexTaskEnvelope
-            { cortexTaskType = TaskKind "StrategyDistillationCycle",
-              cortexTaskVersion = 2,
-              cortexTaskConfig = Aeson.object []
+            { cortexTaskType = TaskKind "StrategyDistillationCycle"
+            , cortexTaskVersion = 2
+            , cortexTaskConfig = Aeson.object []
             }

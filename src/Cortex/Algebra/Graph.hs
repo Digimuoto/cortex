@@ -1,14 +1,15 @@
--- | Stable facade for generic graph semantics.
---
--- Re-exports all submodules so downstream consumers import only
--- @Cortex.Algebra.Graph@.
+{- | Stable facade for generic graph semantics.
+
+Re-exports all submodules so downstream consumers import only
+@Cortex.Algebra.Graph@.
+-}
 module Cortex.Algebra.Graph
-  ( module Cortex.Algebra.Graph.Core,
-    module Cortex.Algebra.Graph.Modify,
-    module Cortex.Algebra.Graph.Search,
-    module Cortex.Algebra.Graph.Decompose,
-    module Cortex.Algebra.Graph.Validate,
-    module Cortex.Algebra.Graph.Influence,
+  ( module Cortex.Algebra.Graph.Core
+  , module Cortex.Algebra.Graph.Modify
+  , module Cortex.Algebra.Graph.Search
+  , module Cortex.Algebra.Graph.Decompose
+  , module Cortex.Algebra.Graph.Validate
+  , module Cortex.Algebra.Graph.Influence
   )
 where
 

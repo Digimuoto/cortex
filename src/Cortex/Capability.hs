@@ -1,10 +1,10 @@
 module Cortex.Capability
-  ( module Cortex.Capability.Executor,
-    module Cortex.Capability.Executor.Pure,
-    module Cortex.Capability.Model,
-    module Cortex.Capability.Provider,
-    module Cortex.Capability.StructuredOutput,
-    module Cortex.Capability.Tool,
+  ( module Cortex.Capability.Executor
+  , module Cortex.Capability.Executor.Pure
+  , module Cortex.Capability.Model
+  , module Cortex.Capability.Provider
+  , module Cortex.Capability.StructuredOutput
+  , module Cortex.Capability.Tool
   )
 where
 

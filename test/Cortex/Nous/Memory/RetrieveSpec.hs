@@ -4,31 +4,9 @@
 module Cortex.Nous.Memory.RetrieveSpec (spec) where
 
 import Control.Monad.State.Strict
-  ( State,
-    modify',
-    runState,
-  )
-import Cortex.Nous.Memory.Host
-  ( CortexMemoryHost (..),
-  )
-import Cortex.Nous.Memory.Query
-  ( CortexMemoryQuery (..),
-  )
-import Cortex.Nous.Memory.Rank
-  ( defaultCortexMemoryRankWeights,
-  )
-import Cortex.Nous.Memory.Retrieve
-  ( CortexMemoryRetrievalContext (..),
-    CortexMemoryRetrievalRequest (..),
-    CortexMemorySelectionProfile (..),
-    resolveMemoryContext,
-  )
-import Cortex.Nous.Memory.Types
-  ( CortexMemoryCandidate (..),
-    CortexMemoryPassage (..),
-    CortexMemoryRankedPassage (..),
-    CortexMemoryRetrievalSource (..),
-    defaultCortexMemoryEntityConfig,
+  ( State
+  , modify'
+  , runState
   )
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -37,6 +15,29 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Data.Word (Word32)
 import Test.Hspec
+
+import Cortex.Nous.Memory.Host
+  ( CortexMemoryHost (..)
+  )
+import Cortex.Nous.Memory.Query
+  ( CortexMemoryQuery (..)
+  )
+import Cortex.Nous.Memory.Rank
+  ( defaultCortexMemoryRankWeights
+  )
+import Cortex.Nous.Memory.Retrieve
+  ( CortexMemoryRetrievalContext (..)
+  , CortexMemoryRetrievalRequest (..)
+  , CortexMemorySelectionProfile (..)
+  , resolveMemoryContext
+  )
+import Cortex.Nous.Memory.Types
+  ( CortexMemoryCandidate (..)
+  , CortexMemoryPassage (..)
+  , CortexMemoryRankedPassage (..)
+  , CortexMemoryRetrievalSource (..)
+  , defaultCortexMemoryEntityConfig
+  )
 
 spec :: Spec
 spec = do
@@ -56,8 +57,8 @@ spec = do
                       "Prior checkpoint"
                       "AMD downside watch remains active."
                       fixedNow
-                  ],
-                hostLexicalCandidates =
+                  ]
+              , hostLexicalCandidates =
                   [ mkCandidate
                       CortexMemoryRetrievedFromLexical
                       ( mkPassage
@@ -70,8 +71,8 @@ spec = do
                           "AMD downside watch remains active."
                           fixedNow
                       )
-                      1.0,
-                    mkCandidate
+                      1.0
+                  , mkCandidate
                       CortexMemoryRetrievedFromLexical
                       ( mkPassage
                           (uuidFromWord 102)
@@ -84,10 +85,10 @@ spec = do
                           fixedNow
                       )
                       0.9
-                  ],
-                hostFuzzyCandidates = [],
-                hostSemanticCandidates = [],
-                hostItemPassages = []
+                  ]
+              , hostFuzzyCandidates = []
+              , hostSemanticCandidates = []
+              , hostItemPassages = []
               }
           request =
             (mkRequest "AMD downside watch")
@@ -122,8 +123,8 @@ spec = do
                       "checkpoint"
                       "Trimmed checkpoint"
                       "Older session context."
-                      olderTime,
-                    mkPassage
+                      olderTime
+                  , mkPassage
                       (uuidFromWord 111)
                       Nothing
                       (Just keptCheckpointId)
@@ -132,8 +133,8 @@ spec = do
                       "Kept checkpoint"
                       "Newest session context."
                       newerTime
-                  ],
-                hostLexicalCandidates =
+                  ]
+              , hostLexicalCandidates =
                   [ mkCandidate
                       CortexMemoryRetrievedFromLexical
                       ( mkPassage
@@ -147,18 +148,18 @@ spec = do
                           newerTime
                       )
                       0.9
-                  ],
-                hostFuzzyCandidates = [],
-                hostSemanticCandidates = [],
-                hostItemPassages = []
+                  ]
+              , hostFuzzyCandidates = []
+              , hostSemanticCandidates = []
+              , hostItemPassages = []
               }
           request =
             (mkRequest "AMD downside watch")
-              { cortexMemorySessionId = Just sessionId,
-                cortexMemorySelectionProfile =
+              { cortexMemorySessionId = Just sessionId
+              , cortexMemorySelectionProfile =
                   (mkProfile "AMD downside watch")
-                    { cortexMemorySessionMaxCount = 1,
-                      cortexMemorySessionTokenBudget = 32
+                    { cortexMemorySessionMaxCount = 1
+                    , cortexMemorySessionTokenBudget = 32
                     }
               }
           (retrievalContext, _trace) =
@@ -176,11 +177,11 @@ spec = do
           linkedItemId = uuidFromWord 41
           dataSet =
             HostData
-              { hostSessionPassages = [],
-                hostLexicalCandidates = [],
-                hostFuzzyCandidates = [],
-                hostSemanticCandidates = [],
-                hostItemPassages =
+              { hostSessionPassages = []
+              , hostLexicalCandidates = []
+              , hostFuzzyCandidates = []
+              , hostSemanticCandidates = []
+              , hostItemPassages =
                   [ mkPassage
                       (uuidFromWord 104)
                       (Just targetItemId)
@@ -189,8 +190,8 @@ spec = do
                       "saved_report"
                       "Target report"
                       "Prior target report context."
-                      fixedNow,
-                    mkPassage
+                      fixedNow
+                  , mkPassage
                       (uuidFromWord 105)
                       (Just linkedItemId)
                       Nothing
@@ -205,11 +206,11 @@ spec = do
             (mkRequest "   ")
               { cortexMemorySelectionProfile =
                   (mkProfile "   ")
-                    { cortexMemoryAnchoredItemIds = [targetItemId, linkedItemId],
-                      cortexMemoryTargetItemId = Just targetItemId
-                    },
-                cortexMemoryExplicitTargetItemId = Just targetItemId,
-                cortexMemoryLinkedItemIds = [targetItemId, linkedItemId, linkedItemId]
+                    { cortexMemoryAnchoredItemIds = [targetItemId, linkedItemId]
+                    , cortexMemoryTargetItemId = Just targetItemId
+                    }
+              , cortexMemoryExplicitTargetItemId = Just targetItemId
+              , cortexMemoryLinkedItemIds = [targetItemId, linkedItemId, linkedItemId]
               }
           (retrievalContext, trace) =
             runState
@@ -228,11 +229,11 @@ spec = do
           linkedItemId = uuidFromWord 43
           dataSet =
             HostData
-              { hostSessionPassages = [],
-                hostLexicalCandidates = [],
-                hostFuzzyCandidates = [],
-                hostSemanticCandidates = [],
-                hostItemPassages =
+              { hostSessionPassages = []
+              , hostLexicalCandidates = []
+              , hostFuzzyCandidates = []
+              , hostSemanticCandidates = []
+              , hostItemPassages =
                   [ mkPassage
                       (uuidFromWord 106)
                       (Just targetItemId)
@@ -241,8 +242,8 @@ spec = do
                       "saved_report"
                       "Target report"
                       "Detailed target report context that does not lexically match the prompt."
-                      fixedNow,
-                    mkPassage
+                      fixedNow
+                  , mkPassage
                       (uuidFromWord 107)
                       (Just linkedItemId)
                       Nothing
@@ -257,11 +258,11 @@ spec = do
             (mkRequest "continue this report")
               { cortexMemorySelectionProfile =
                   (mkProfile "continue this report")
-                    { cortexMemoryAnchoredItemIds = [targetItemId, linkedItemId],
-                      cortexMemoryTargetItemId = Just targetItemId
-                    },
-                cortexMemoryExplicitTargetItemId = Just targetItemId,
-                cortexMemoryLinkedItemIds = [linkedItemId]
+                    { cortexMemoryAnchoredItemIds = [targetItemId, linkedItemId]
+                    , cortexMemoryTargetItemId = Just targetItemId
+                    }
+              , cortexMemoryExplicitTargetItemId = Just targetItemId
+              , cortexMemoryLinkedItemIds = [linkedItemId]
               }
           (retrievalContext, _trace) =
             runState
@@ -271,82 +272,119 @@ spec = do
       fmap rankedSourceItemId retrievalContext.cortexMemoryReferencePassages
         `shouldBe` [Just targetItemId, Just linkedItemId]
 
-    it "exercises the full pipeline: candidates, ranking, conflict resolution, score threshold, and packing" $ do
-      let sessionId = uuidFromWord 50
-          itemId = uuidFromWord 60
-          olderTime = UTCTime (fromGregorian 2026 1 1) (secondsToDiffTime 0)
-          newerTime = UTCTime (fromGregorian 2026 3 15) (secondsToDiffTime 0)
-          dataSet =
-            HostData
-              { hostSessionPassages =
-                  [ mkPassage (uuidFromWord 200) Nothing (Just (uuidFromWord 70)) (Just sessionId) "checkpoint" "Session checkpoint" "Prior session context." newerTime
-                  ],
-                hostLexicalCandidates =
-                  [ mkCandidate
-                      CortexMemoryRetrievedFromLexical
-                      (mkPassage (uuidFromWord 201) (Just itemId) Nothing Nothing "saved_report" "AMD thesis" "AMD remains bullish." olderTime)
-                      0.8,
-                    mkCandidate
-                      CortexMemoryRetrievedFromLexical
-                      (mkPassage (uuidFromWord 202) (Just itemId) Nothing Nothing "saved_report" "AMD thesis" "AMD downside risk is rising." newerTime)
-                      0.7
-                  ],
-                hostFuzzyCandidates = [],
-                hostSemanticCandidates =
-                  [ mkCandidate
-                      CortexMemoryRetrievedFromSemantic
-                      (mkPassage (uuidFromWord 203) (Just (uuidFromWord 61)) Nothing Nothing "workspace_markdown" "Unrelated note" "Some unrelated content." olderTime)
-                      0.01
-                  ],
-                hostItemPassages = []
-              }
-          request =
-            (mkRequest "AMD downside")
-              { cortexMemorySessionId = Just sessionId,
-                cortexMemorySelectionProfile =
-                  (mkProfile "AMD downside")
-                    { cortexMemoryReferenceTokenBudget = 500,
-                      cortexMemoryReferenceMaxCount = 10
-                    }
-              }
-          (ctx, _trace) =
-            runState
-              (resolveMemoryContext (hostFromData dataSet) defaultCortexMemoryEntityConfig fixedNow request)
-              emptyTrace
+    it
+      "exercises the full pipeline: candidates, ranking, conflict resolution, score threshold, and packing"
+      $ do
+        let sessionId = uuidFromWord 50
+            itemId = uuidFromWord 60
+            olderTime = UTCTime (fromGregorian 2026 1 1) (secondsToDiffTime 0)
+            newerTime = UTCTime (fromGregorian 2026 3 15) (secondsToDiffTime 0)
+            dataSet =
+              HostData
+                { hostSessionPassages =
+                    [ mkPassage
+                        (uuidFromWord 200)
+                        Nothing
+                        (Just (uuidFromWord 70))
+                        (Just sessionId)
+                        "checkpoint"
+                        "Session checkpoint"
+                        "Prior session context."
+                        newerTime
+                    ]
+                , hostLexicalCandidates =
+                    [ mkCandidate
+                        CortexMemoryRetrievedFromLexical
+                        ( mkPassage
+                            (uuidFromWord 201)
+                            (Just itemId)
+                            Nothing
+                            Nothing
+                            "saved_report"
+                            "AMD thesis"
+                            "AMD remains bullish."
+                            olderTime
+                        )
+                        0.8
+                    , mkCandidate
+                        CortexMemoryRetrievedFromLexical
+                        ( mkPassage
+                            (uuidFromWord 202)
+                            (Just itemId)
+                            Nothing
+                            Nothing
+                            "saved_report"
+                            "AMD thesis"
+                            "AMD downside risk is rising."
+                            newerTime
+                        )
+                        0.7
+                    ]
+                , hostFuzzyCandidates = []
+                , hostSemanticCandidates =
+                    [ mkCandidate
+                        CortexMemoryRetrievedFromSemantic
+                        ( mkPassage
+                            (uuidFromWord 203)
+                            (Just (uuidFromWord 61))
+                            Nothing
+                            Nothing
+                            "workspace_markdown"
+                            "Unrelated note"
+                            "Some unrelated content."
+                            olderTime
+                        )
+                        0.01
+                    ]
+                , hostItemPassages = []
+                }
+            request =
+              (mkRequest "AMD downside")
+                { cortexMemorySessionId = Just sessionId
+                , cortexMemorySelectionProfile =
+                    (mkProfile "AMD downside")
+                      { cortexMemoryReferenceTokenBudget = 500
+                      , cortexMemoryReferenceMaxCount = 10
+                      }
+                }
+            (ctx, _trace) =
+              runState
+                (resolveMemoryContext (hostFromData dataSet) defaultCortexMemoryEntityConfig fixedNow request)
+                emptyTrace
 
-      -- Session checkpoint should be included
-      fmap passageTitle ctx.cortexMemorySessionPassages
-        `shouldBe` ["Session checkpoint"]
-      -- The low-scoring semantic candidate (0.01) should be filtered out by the 0.20 threshold
-      -- The conflicting bullish/bearish AMD passages from the same item should trigger conflict resolution
-      -- (the newer bearish one wins)
-      let refTitles = fmap rankedTitle ctx.cortexMemoryReferencePassages
-      refTitles `shouldSatisfy` notElem "Unrelated note"
+        -- Session checkpoint should be included
+        fmap passageTitle ctx.cortexMemorySessionPassages
+          `shouldBe` ["Session checkpoint"]
+        -- The low-scoring semantic candidate (0.01) should be filtered out by the 0.20 threshold
+        -- The conflicting bullish/bearish AMD passages from the same item should trigger conflict resolution
+        -- (the newer bearish one wins)
+        let refTitles = fmap rankedTitle ctx.cortexMemoryReferencePassages
+        refTitles `shouldSatisfy` notElem "Unrelated note"
 
 data HostData = HostData
-  { hostSessionPassages :: [CortexMemoryPassage],
-    hostLexicalCandidates :: [CortexMemoryCandidate],
-    hostFuzzyCandidates :: [CortexMemoryCandidate],
-    hostSemanticCandidates :: [CortexMemoryCandidate],
-    hostItemPassages :: [CortexMemoryPassage]
+  { hostSessionPassages :: [CortexMemoryPassage]
+  , hostLexicalCandidates :: [CortexMemoryCandidate]
+  , hostFuzzyCandidates :: [CortexMemoryCandidate]
+  , hostSemanticCandidates :: [CortexMemoryCandidate]
+  , hostItemPassages :: [CortexMemoryPassage]
   }
 
 data HostTrace = HostTrace
-  { traceSessionLoads :: [(UUID, Int)],
-    traceLexicalLoads :: [(Text, Int)],
-    traceFuzzyLoads :: [(Text, Int)],
-    traceSemanticLoads :: [(Text, Int)],
-    traceItemLoads :: [[UUID]]
+  { traceSessionLoads :: [(UUID, Int)]
+  , traceLexicalLoads :: [(Text, Int)]
+  , traceFuzzyLoads :: [(Text, Int)]
+  , traceSemanticLoads :: [(Text, Int)]
+  , traceItemLoads :: [[UUID]]
   }
 
 emptyTrace :: HostTrace
 emptyTrace =
   HostTrace
-    { traceSessionLoads = [],
-      traceLexicalLoads = [],
-      traceFuzzyLoads = [],
-      traceSemanticLoads = [],
-      traceItemLoads = []
+    { traceSessionLoads = []
+    , traceLexicalLoads = []
+    , traceFuzzyLoads = []
+    , traceSemanticLoads = []
+    , traceItemLoads = []
     }
 
 hostFromData :: HostData -> CortexMemoryHost (State HostTrace)
@@ -354,17 +392,30 @@ hostFromData dataSet =
   CortexMemoryHost
     { cortexMemoryLoadSessionPassages = \sessionId limitN -> do
         modify' (\trace -> trace {traceSessionLoads = trace.traceSessionLoads <> [(sessionId, limitN)]})
-        pure dataSet.hostSessionPassages,
-      cortexMemorySearchLexical = \query limitN -> do
-        modify' (\trace -> trace {traceLexicalLoads = trace.traceLexicalLoads <> [(query.cortexMemoryQueryWebsearchText, limitN)]})
-        pure dataSet.hostLexicalCandidates,
-      cortexMemorySearchFuzzy = \query limitN -> do
-        modify' (\trace -> trace {traceFuzzyLoads = trace.traceFuzzyLoads <> [(query.cortexMemoryQueryNormalizedText, limitN)]})
-        pure dataSet.hostFuzzyCandidates,
-      cortexMemorySearchSemantic = \query limitN -> do
-        modify' (\trace -> trace {traceSemanticLoads = trace.traceSemanticLoads <> [(query.cortexMemoryQuerySemanticText, limitN)]})
-        pure dataSet.hostSemanticCandidates,
-      cortexMemoryLoadItemPassages = \itemIds -> do
+        pure dataSet.hostSessionPassages
+    , cortexMemorySearchLexical = \query limitN -> do
+        modify'
+          ( \trace ->
+              trace
+                { traceLexicalLoads = trace.traceLexicalLoads <> [(query.cortexMemoryQueryWebsearchText, limitN)]
+                }
+          )
+        pure dataSet.hostLexicalCandidates
+    , cortexMemorySearchFuzzy = \query limitN -> do
+        modify'
+          ( \trace ->
+              trace {traceFuzzyLoads = trace.traceFuzzyLoads <> [(query.cortexMemoryQueryNormalizedText, limitN)]}
+          )
+        pure dataSet.hostFuzzyCandidates
+    , cortexMemorySearchSemantic = \query limitN -> do
+        modify'
+          ( \trace ->
+              trace
+                { traceSemanticLoads = trace.traceSemanticLoads <> [(query.cortexMemoryQuerySemanticText, limitN)]
+                }
+          )
+        pure dataSet.hostSemanticCandidates
+    , cortexMemoryLoadItemPassages = \itemIds -> do
         modify' (\trace -> trace {traceItemLoads = trace.traceItemLoads <> [itemIds]})
         pure dataSet.hostItemPassages
     }
@@ -375,73 +426,75 @@ fixedNow = UTCTime (fromGregorian 2026 3 20) (secondsToDiffTime 0)
 mkProfile :: Text -> CortexMemorySelectionProfile
 mkProfile rawQuery =
   CortexMemorySelectionProfile
-    { cortexMemoryRawQuery = rawQuery,
-      cortexMemoryAnchoredItemIds = [],
-      cortexMemoryTargetItemId = Nothing,
-      cortexMemorySessionTokenBudget = 500,
-      cortexMemorySessionMaxCount = 3,
-      cortexMemoryReferenceTokenBudget = 1400,
-      cortexMemoryReferenceMaxCount = 4,
-      cortexMemoryRankWeights = defaultCortexMemoryRankWeights,
-      cortexMemorySourcePriorWeights = Map.singleton "checkpoint" 0.20,
-      cortexMemorySourcePriorDefault = 0.30,
-      cortexMemoryMinScoreBySourceKind = Map.singleton "checkpoint" 0.05,
-      cortexMemoryMinScoreDefault = 0.20
+    { cortexMemoryRawQuery = rawQuery
+    , cortexMemoryAnchoredItemIds = []
+    , cortexMemoryTargetItemId = Nothing
+    , cortexMemorySessionTokenBudget = 500
+    , cortexMemorySessionMaxCount = 3
+    , cortexMemoryReferenceTokenBudget = 1400
+    , cortexMemoryReferenceMaxCount = 4
+    , cortexMemoryRankWeights = defaultCortexMemoryRankWeights
+    , cortexMemorySourcePriorWeights = Map.singleton "checkpoint" 0.20
+    , cortexMemorySourcePriorDefault = 0.30
+    , cortexMemoryMinScoreBySourceKind = Map.singleton "checkpoint" 0.05
+    , cortexMemoryMinScoreDefault = 0.20
     }
 
 mkRequest :: Text -> CortexMemoryRetrievalRequest
 mkRequest rawQuery =
   CortexMemoryRetrievalRequest
-    { cortexMemorySelectionProfile = mkProfile rawQuery,
-      cortexMemorySessionId = Nothing,
-      cortexMemorySearchQuery = rawQuery,
-      cortexMemoryExplicitTargetItemId = Nothing,
-      cortexMemoryLinkedItemIds = [],
-      cortexMemorySessionPassageLimit = 12,
-      cortexMemorySearchResultLimit = 60
+    { cortexMemorySelectionProfile = mkProfile rawQuery
+    , cortexMemorySessionId = Nothing
+    , cortexMemorySearchQuery = rawQuery
+    , cortexMemoryExplicitTargetItemId = Nothing
+    , cortexMemoryLinkedItemIds = []
+    , cortexMemorySessionPassageLimit = 12
+    , cortexMemorySearchResultLimit = 60
     }
 
-mkPassage ::
-  UUID ->
-  Maybe UUID ->
-  Maybe UUID ->
-  Maybe UUID ->
-  Text ->
-  Text ->
-  Text ->
-  UTCTime ->
-  CortexMemoryPassage
+mkPassage
+  :: UUID
+  -> Maybe UUID
+  -> Maybe UUID
+  -> Maybe UUID
+  -> Text
+  -> Text
+  -> Text
+  -> UTCTime
+  -> CortexMemoryPassage
 mkPassage passageId' itemId' checkpointId' sessionId' sourceKind' title' body' updatedAt' =
   CortexMemoryPassage
-    { cortexMemoryPassageId = passageId',
-      cortexMemorySourceKind = sourceKind',
-      cortexMemorySourceItemId = itemId',
-      cortexMemorySourceCheckpointId = checkpointId',
-      cortexMemorySourceVersionId = uuidFromWord 999,
-      cortexMemoryChatSessionId = sessionId',
-      cortexMemoryPassageOrder = 0,
-      cortexMemorySourceTitle = title',
-      cortexMemorySectionHeading = Nothing,
-      cortexMemoryPassageText = body',
-      cortexMemoryEntities = ["AMD"],
-      cortexMemoryReportType = Nothing,
-      cortexMemoryTimeRange = Nothing,
-      cortexMemoryPassageTokenCount = 8,
-      cortexMemorySourceCreatedAt = updatedAt',
-      cortexMemorySourceUpdatedAt = updatedAt'
+    { cortexMemoryPassageId = passageId'
+    , cortexMemorySourceKind = sourceKind'
+    , cortexMemorySourceItemId = itemId'
+    , cortexMemorySourceCheckpointId = checkpointId'
+    , cortexMemorySourceVersionId = uuidFromWord 999
+    , cortexMemoryChatSessionId = sessionId'
+    , cortexMemoryPassageOrder = 0
+    , cortexMemorySourceTitle = title'
+    , cortexMemorySectionHeading = Nothing
+    , cortexMemoryPassageText = body'
+    , cortexMemoryEntities = ["AMD"]
+    , cortexMemoryReportType = Nothing
+    , cortexMemoryTimeRange = Nothing
+    , cortexMemoryPassageTokenCount = 8
+    , cortexMemorySourceCreatedAt = updatedAt'
+    , cortexMemorySourceUpdatedAt = updatedAt'
     }
 
 mkCandidate :: CortexMemoryRetrievalSource -> CortexMemoryPassage -> Double -> CortexMemoryCandidate
 mkCandidate source passage score =
   CortexMemoryCandidate
-    { cortexCandidatePassage = passage,
-      cortexCandidateLexicalScore = if source == CortexMemoryRetrievedFromLexical then Just score else Nothing,
-      cortexCandidateFuzzyScore = if source == CortexMemoryRetrievedFromFuzzy then Just score else Nothing,
-      cortexCandidateSemanticScore = if source == CortexMemoryRetrievedFromSemantic then Just score else Nothing,
-      cortexCandidateMatchedTerms = ["amd", "downside"],
-      cortexCandidateMatchedFields = [],
-      cortexCandidateSources = [source],
-      cortexCandidateFusionScore = score
+    { cortexCandidatePassage = passage
+    , cortexCandidateLexicalScore =
+        if source == CortexMemoryRetrievedFromLexical then Just score else Nothing
+    , cortexCandidateFuzzyScore = if source == CortexMemoryRetrievedFromFuzzy then Just score else Nothing
+    , cortexCandidateSemanticScore =
+        if source == CortexMemoryRetrievedFromSemantic then Just score else Nothing
+    , cortexCandidateMatchedTerms = ["amd", "downside"]
+    , cortexCandidateMatchedFields = []
+    , cortexCandidateSources = [source]
+    , cortexCandidateFusionScore = score
     }
 
 uuidFromWord :: Word32 -> UUID

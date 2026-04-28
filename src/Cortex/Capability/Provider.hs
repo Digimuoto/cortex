@@ -1,5 +1,5 @@
 module Cortex.Capability.Provider
-  ( module Cortex.Capability.Provider.OpenRouter,
+  ( module Cortex.Capability.Provider.OpenRouter
   )
 where
 

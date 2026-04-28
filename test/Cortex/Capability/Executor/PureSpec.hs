@@ -4,52 +4,6 @@
 
 module Cortex.Capability.Executor.PureSpec (spec) where
 
-import Cortex.Capability.Executor (ExecutorSpec (..), executorProjectionRegistry)
-import Cortex.Capability.Executor.Pure
-  ( bindPureTaskNode,
-    pureExecutorSpec,
-  )
-import Cortex.Pulse.Memory (defaultMemoryStrategy, discardMemoryHandle)
-import Cortex.Pulse.Node (NodeId (..))
-import Cortex.Pulse.Plan
-  ( StageContext (..),
-    StageDefinition (..),
-    StageReplaySafety (..),
-    StageResult (..),
-  )
-import Cortex.Pulse.Rewrite (BudgetContext (..))
-import Cortex.Pulse.Types (defaultRewriteBudget)
-import Cortex.Wire
-  ( CorePureBinOp (..),
-    CorePureBinding (..),
-    CorePureExpr (..),
-    CorePureLiteral (..),
-    WirePayloadKind (..),
-    WireValue (..),
-    WireValueSet (..),
-    mkWireValue,
-  )
-import Cortex.Wire.Circuit.Artifact
-  ( CompiledCircuit (..),
-    CompiledCircuitNode (..),
-  )
-import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
-import Cortex.Wire.Compile (compileWireTextWithEnv)
-import Cortex.Wire.Contract
-  ( WireCompileEnv,
-    WireContractRegistry,
-    WireContractSpec (..),
-    portsMetadataValue,
-    strictWireCompileEnv,
-    wireContractRegistryFromList,
-  )
-import Cortex.Wire.Executor (WireExecutorEffect (..))
-import Cortex.Wire.Syntax
-  ( WireInputCardinality (..),
-    WireInputPort (..),
-    WireOutputPort (..),
-    WirePorts (..),
-  )
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
@@ -57,6 +11,53 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID qualified as UUID
 import Test.Hspec
+
+import Cortex.Capability.Executor (ExecutorSpec (..), executorProjectionRegistry)
+import Cortex.Capability.Executor.Pure
+  ( bindPureTaskNode
+  , pureExecutorSpec
+  )
+import Cortex.Pulse.Memory (defaultMemoryStrategy, discardMemoryHandle)
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+  ( StageContext (..)
+  , StageDefinition (..)
+  , StageReplaySafety (..)
+  , StageResult (..)
+  )
+import Cortex.Pulse.Rewrite (BudgetContext (..))
+import Cortex.Pulse.Types (defaultRewriteBudget)
+import Cortex.Wire
+  ( CorePureBinOp (..)
+  , CorePureBinding (..)
+  , CorePureExpr (..)
+  , CorePureLiteral (..)
+  , WirePayloadKind (..)
+  , WireValue (..)
+  , WireValueSet (..)
+  , mkWireValue
+  )
+import Cortex.Wire.Circuit.Artifact
+  ( CompiledCircuit (..)
+  , CompiledCircuitNode (..)
+  )
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
+import Cortex.Wire.Compile (compileWireTextWithEnv)
+import Cortex.Wire.Contract
+  ( WireCompileEnv
+  , WireContractRegistry
+  , WireContractSpec (..)
+  , portsMetadataValue
+  , strictWireCompileEnv
+  , wireContractRegistryFromList
+  )
+import Cortex.Wire.Executor (WireExecutorEffect (..))
+import Cortex.Wire.Syntax
+  ( WireInputCardinality (..)
+  , WireInputPort (..)
+  , WireOutputPort (..)
+  , WirePorts (..)
+  )
 
 spec :: Spec
 spec = describe "Cortex.Capability.Executor.Pure" $ do
@@ -131,14 +132,15 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
 weightedTaskNode :: CircuitTaskNode
 weightedTaskNode =
   CircuitTaskNode
-    { circuitTaskNodeRef = CircuitNodeRef "weighted_score",
-      circuitTaskNodeLabel = "weighted_score",
-      circuitTaskNodeKind = Nothing,
-      circuitTaskNodeMetadata =
+    { circuitTaskNodeRef = CircuitNodeRef "weighted_score"
+    , circuitTaskNodeLabel = "weighted_score"
+    , circuitTaskNodeKind = Nothing
+    , circuitTaskNodeMetadata =
         Aeson.object
-          [ "executor" Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)],
-            "ports" Aeson..= portsMetadataValue weightedPorts,
-            "config"
+          [ "executor"
+              Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)]
+          , "ports" Aeson..= portsMetadataValue weightedPorts
+          , "config"
               Aeson..= Aeson.object
                 [ "outputs" Aeson..= Map.singleton ("out" :: Text) weightedExpression
                 ]
@@ -150,12 +152,13 @@ localBindingTaskNode =
   weightedTaskNode
     { circuitTaskNodeMetadata =
         Aeson.object
-          [ "executor" Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)],
-            "ports" Aeson..= portsMetadataValue weightedPorts,
-            "config"
+          [ "executor"
+              Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)]
+          , "ports" Aeson..= portsMetadataValue weightedPorts
+          , "config"
               Aeson..= Aeson.object
-                [ "localBindings" Aeson..= [CorePureBinding "weighted" weightedExpression],
-                  "outputs" Aeson..= Map.singleton ("out" :: Text) (var "weighted")
+                [ "localBindings" Aeson..= [CorePureBinding "weighted" weightedExpression]
+                , "outputs" Aeson..= Map.singleton ("out" :: Text) (var "weighted")
                 ]
           ]
     }
@@ -165,9 +168,10 @@ noOutputTaskNode =
   weightedTaskNode
     { circuitTaskNodeMetadata =
         Aeson.object
-          [ "executor" Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)],
-            "ports" Aeson..= portsMetadataValue (weightedPorts {wirePortsOutputs = Map.empty}),
-            "config"
+          [ "executor"
+              Aeson..= Aeson.object ["kind" Aeson..= ("native" :: Text), "target" Aeson..= ("pure" :: Text)]
+          , "ports" Aeson..= portsMetadataValue (weightedPorts {wirePortsOutputs = Map.empty})
+          , "config"
               Aeson..= Aeson.object
                 [ "outputs" Aeson..= Map.singleton ("out" :: Text) weightedExpression
                 ]
@@ -178,7 +182,11 @@ weightedExpression :: CorePureExpr
 weightedExpression =
   bin
     CorePureAdd
-    (bin CorePureAdd (bin CorePureMultiply (num (scientific 5 (-1))) (var "evidence_score")) (bin CorePureMultiply (num (scientific 3 (-1))) (var "recency_score")))
+    ( bin
+        CorePureAdd
+        (bin CorePureMultiply (num (scientific 5 (-1))) (var "evidence_score"))
+        (bin CorePureMultiply (num (scientific 3 (-1))) (var "recency_score"))
+    )
     (bin CorePureMultiply (num (scientific 2 (-1))) (var "authority_score"))
 
 weightedPorts :: WirePorts
@@ -186,45 +194,45 @@ weightedPorts =
   WirePorts
     { wirePortsInputs =
         Map.fromList
-          [ labeledFloatInput "evidence_score",
-            labeledFloatInput "recency_score",
-            labeledFloatInput "authority_score"
-          ],
-      wirePortsOutputs =
+          [ labeledFloatInput "evidence_score"
+          , labeledFloatInput "recency_score"
+          , labeledFloatInput "authority_score"
+          ]
+    , wirePortsOutputs =
         Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
     }
 
 labeledFloatInput :: Text -> (Text, WireInputPort)
 labeledFloatInput portName =
-  ( portName,
-    WireInputPort
-      { wireInputPortAccepts = ["Float"],
-        wireInputPortCardinality = WireInputCardinalityOne,
-        wireInputPortRequired = False
+  ( portName
+  , WireInputPort
+      { wireInputPortAccepts = ["Float"]
+      , wireInputPortCardinality = WireInputCardinalityOne
+      , wireInputPortRequired = False
       }
   )
 
 weightedStageContext :: StageContext
 weightedStageContext =
   StageContext
-    { scRunId = UUID.nil,
-      scNodeId = NodeId "weighted_score",
-      scInputs =
+    { scRunId = UUID.nil
+    , scNodeId = NodeId "weighted_score"
+    , scInputs =
         Map.fromList
-          [ (NodeId "evidence", wireValue "evidence_score" (scientific 8 (-1))),
-            (NodeId "recency", wireValue "recency_score" (scientific 6 (-1))),
-            (NodeId "authority", wireValue "authority_score" (scientific 5 (-1)))
-          ],
-      scAttempt = 1,
-      scBudgetContext =
+          [ (NodeId "evidence", wireValue "evidence_score" (scientific 8 (-1)))
+          , (NodeId "recency", wireValue "recency_score" (scientific 6 (-1)))
+          , (NodeId "authority", wireValue "authority_score" (scientific 5 (-1)))
+          ]
+    , scAttempt = 1
+    , scBudgetContext =
         BudgetContext
-          { bcInitialBudget = defaultRewriteBudget,
-            bcRemainingBudget = defaultRewriteBudget
-          },
-      scRewriteRejection = Nothing,
-      scRetryFailure = Nothing,
-      scMemory = discardMemoryHandle,
-      scMemoryStrategy = defaultMemoryStrategy
+          { bcInitialBudget = defaultRewriteBudget
+          , bcRemainingBudget = defaultRewriteBudget
+          }
+    , scRewriteRejection = Nothing
+    , scRetryFailure = Nothing
+    , scMemory = discardMemoryHandle
+    , scMemoryStrategy = defaultMemoryStrategy
     }
   where
     wireValue portName number =
@@ -237,11 +245,11 @@ weightedStageContext =
 scoreStageContext :: StageContext
 scoreStageContext =
   weightedStageContext
-    { scNodeId = NodeId "score",
-      scInputs =
+    { scNodeId = NodeId "score"
+    , scInputs =
         Map.fromList
-          [ (NodeId "evidence", wireValue "evidence_score" (scientific 8 (-1))),
-            (NodeId "recency", wireValue "recency_score" (scientific 6 (-1)))
+          [ (NodeId "evidence", wireValue "evidence_score" (scientific 8 (-1)))
+          , (NodeId "recency", wireValue "recency_score" (scientific 6 (-1)))
           ]
     }
   where
@@ -261,12 +269,12 @@ pureCompileEnv =
 pureSourceText :: Text
 pureSourceText =
   T.unlines
-    [ "node score :",
-      "  <- evidence_score: Float",
-      "  <- recency_score: Float",
-      "  -> Float = pure (evidence_score + recency_score);",
-      "",
-      "score"
+    [ "node score :"
+    , "  <- evidence_score: Float"
+    , "  <- recency_score: Float"
+    , "  -> Float = pure (evidence_score + recency_score);"
+    , ""
+    , "score"
     ]
 
 floatContractRegistry :: WireContractRegistry
@@ -280,14 +288,14 @@ textFloatContractRegistry =
 contractSpec :: WirePayloadKind -> WireContractSpec
 contractSpec payloadKind =
   WireContractSpec
-    { wireContractSpecId = "Float",
-      wireContractSpecPayloadKind = payloadKind,
-      wireContractSpecDescription = "Float",
-      wireContractSpecSchema = Nothing,
-      wireContractSpecExamples = []
+    { wireContractSpecId = "Float"
+    , wireContractSpecPayloadKind = payloadKind
+    , wireContractSpecDescription = "Float"
+    , wireContractSpecSchema = Nothing
+    , wireContractSpecExamples = []
     }
 
-requireRight :: (Show err) => Either err a -> IO a
+requireRight :: Show err => Either err a -> IO a
 requireRight = \case
   Right value -> pure value
   Left err -> fail ("expected Right, got " <> show err)

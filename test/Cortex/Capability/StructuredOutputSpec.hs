@@ -2,21 +2,22 @@
 
 module Cortex.Capability.StructuredOutputSpec (spec) where
 
-import Cortex.Capability.Model.Types
-  ( CortexChoice (..),
-    CortexResponseFormat (..),
-  )
-import Cortex.Capability.StructuredOutput
-  ( decodeStructuredChoice,
-    decodeStructuredErrorMessage,
-    shouldRetryWithJsonObjectFallback,
-    structuredOutputSchemaRejected,
-  )
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Test.Hspec
+
+import Cortex.Capability.Model.Types
+  ( CortexChoice (..)
+  , CortexResponseFormat (..)
+  )
+import Cortex.Capability.StructuredOutput
+  ( decodeStructuredChoice
+  , decodeStructuredErrorMessage
+  , shouldRetryWithJsonObjectFallback
+  , structuredOutputSchemaRejected
+  )
 
 spec :: Spec
 spec = do
@@ -72,11 +73,11 @@ jsonChoice value =
 emptyChoice :: T.Text -> CortexChoice
 emptyChoice content =
   CortexChoice
-    { cortexChoiceContent = content,
-      cortexChoiceSourceLinks = [],
-      cortexChoiceToolCalls = [],
-      cortexChoiceFinishReason = Nothing,
-      cortexChoiceUsage = Nothing,
-      cortexChoiceReasoning = Nothing,
-      cortexChoiceReasoningDetails = Nothing
+    { cortexChoiceContent = content
+    , cortexChoiceSourceLinks = []
+    , cortexChoiceToolCalls = []
+    , cortexChoiceFinishReason = Nothing
+    , cortexChoiceUsage = Nothing
+    , cortexChoiceReasoning = Nothing
+    , cortexChoiceReasoningDetails = Nothing
     }

@@ -3,73 +3,75 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Cortex.Nous.Memory.Document
-  ( CortexMemoryDocument (..),
-    CortexMemoryPassageDraft (..),
-    MarkdownSection (..),
-    indexMarkdownDocument,
-    splitMarkdownSections,
+  ( CortexMemoryDocument (..)
+  , CortexMemoryPassageDraft (..)
+  , MarkdownSection (..)
+  , indexMarkdownDocument
+  , splitMarkdownSections
   )
 where
 
-import Cortex.Nous.Memory.Compact (estimateTextTokens)
-import Cortex.Nous.Memory.Types (CortexMemoryEntityConfig (..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 
+import Cortex.Nous.Memory.Compact (estimateTextTokens)
+import Cortex.Nous.Memory.Types (CortexMemoryEntityConfig (..))
+
 data CortexMemoryDocument = CortexMemoryDocument
-  { memoryDocumentSourceKind :: Text,
-    memoryDocumentTitle :: Text,
-    memoryDocumentBody :: Text,
-    memoryDocumentContextTexts :: [Text],
-    memoryDocumentReportType :: Maybe Text,
-    memoryDocumentTimeRange :: Maybe Text,
-    memoryDocumentCreatedAt :: UTCTime,
-    memoryDocumentUpdatedAt :: UTCTime
+  { memoryDocumentSourceKind :: Text
+  , memoryDocumentTitle :: Text
+  , memoryDocumentBody :: Text
+  , memoryDocumentContextTexts :: [Text]
+  , memoryDocumentReportType :: Maybe Text
+  , memoryDocumentTimeRange :: Maybe Text
+  , memoryDocumentCreatedAt :: UTCTime
+  , memoryDocumentUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
 data CortexMemoryPassageDraft = CortexMemoryPassageDraft
-  { memoryPassageSourceKind :: Text,
-    memoryPassageOrder :: Int,
-    memoryPassageSourceTitle :: Text,
-    memoryPassageSectionHeading :: Maybe Text,
-    memoryPassageText :: Text,
-    memoryPassageEntities :: Maybe Text,
-    memoryPassageReportType :: Maybe Text,
-    memoryPassageTimeRange :: Maybe Text,
-    memoryPassageTokenCount :: Int,
-    memoryPassageSourceCreatedAt :: UTCTime,
-    memoryPassageSourceUpdatedAt :: UTCTime
+  { memoryPassageSourceKind :: Text
+  , memoryPassageOrder :: Int
+  , memoryPassageSourceTitle :: Text
+  , memoryPassageSectionHeading :: Maybe Text
+  , memoryPassageText :: Text
+  , memoryPassageEntities :: Maybe Text
+  , memoryPassageReportType :: Maybe Text
+  , memoryPassageTimeRange :: Maybe Text
+  , memoryPassageTokenCount :: Int
+  , memoryPassageSourceCreatedAt :: UTCTime
+  , memoryPassageSourceUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
 data MarkdownSection = MarkdownSection
-  { markdownSectionOrder :: Int,
-    markdownSectionHeading :: Maybe Text,
-    markdownSectionText :: Text
+  { markdownSectionOrder :: Int
+  , markdownSectionHeading :: Maybe Text
+  , markdownSectionText :: Text
   }
   deriving stock (Eq, Show, Generic)
 
-indexMarkdownDocument :: CortexMemoryEntityConfig -> CortexMemoryDocument -> [CortexMemoryPassageDraft]
+indexMarkdownDocument
+  :: CortexMemoryEntityConfig -> CortexMemoryDocument -> [CortexMemoryPassageDraft]
 indexMarkdownDocument entityConfig document
   | T.null (T.strip document.memoryDocumentBody) = []
   | otherwise =
       fmap
         ( \section ->
             CortexMemoryPassageDraft
-              { memoryPassageSourceKind = document.memoryDocumentSourceKind,
-                memoryPassageOrder = section.markdownSectionOrder,
-                memoryPassageSourceTitle = document.memoryDocumentTitle,
-                memoryPassageSectionHeading = section.markdownSectionHeading,
-                memoryPassageText = section.markdownSectionText,
-                memoryPassageEntities = entitiesText,
-                memoryPassageReportType = document.memoryDocumentReportType,
-                memoryPassageTimeRange = document.memoryDocumentTimeRange,
-                memoryPassageTokenCount = fromIntegral (estimateTextTokens section.markdownSectionText),
-                memoryPassageSourceCreatedAt = document.memoryDocumentCreatedAt,
-                memoryPassageSourceUpdatedAt = document.memoryDocumentUpdatedAt
+              { memoryPassageSourceKind = document.memoryDocumentSourceKind
+              , memoryPassageOrder = section.markdownSectionOrder
+              , memoryPassageSourceTitle = document.memoryDocumentTitle
+              , memoryPassageSectionHeading = section.markdownSectionHeading
+              , memoryPassageText = section.markdownSectionText
+              , memoryPassageEntities = entitiesText
+              , memoryPassageReportType = document.memoryDocumentReportType
+              , memoryPassageTimeRange = document.memoryDocumentTimeRange
+              , memoryPassageTokenCount = fromIntegral (estimateTextTokens section.markdownSectionText)
+              , memoryPassageSourceCreatedAt = document.memoryDocumentCreatedAt
+              , memoryPassageSourceUpdatedAt = document.memoryDocumentUpdatedAt
               }
         )
         finalSections
@@ -108,9 +110,9 @@ splitMarkdownSections rawText =
     flushSection currentHeading currentLines nextOrder =
       let body = T.strip (T.unlines currentLines)
        in [ MarkdownSection
-              { markdownSectionOrder = nextOrder,
-                markdownSectionHeading = currentHeading,
-                markdownSectionText = body
+              { markdownSectionOrder = nextOrder
+              , markdownSectionHeading = currentHeading
+              , markdownSectionText = body
               }
           | not (T.null body)
           ]
@@ -138,7 +140,9 @@ parseHeadingLine line = do
   nonEmptyText (Just heading)
   where
     guardHeading txt
-      | "#" `T.isPrefixOf` txt && T.length (T.takeWhile (== '#') txt) <= 6 && T.isPrefixOf " " (T.dropWhile (== '#') txt) =
+      | "#" `T.isPrefixOf` txt
+          && T.length (T.takeWhile (== '#') txt) <= 6
+          && T.isPrefixOf " " (T.dropWhile (== '#') txt) =
           Just ()
       | otherwise = Nothing
 

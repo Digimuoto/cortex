@@ -1,12 +1,14 @@
 module Cortex.PublicPreludeSpec
-  ( spec,
+  ( spec
   )
 where
 
-import Cortex qualified
 import Data.Text qualified as T
-import Platform qualified
 import Test.Hspec
+
+import Cortex qualified
+
+import Platform qualified
 
 spec :: Spec
 spec =
@@ -28,7 +30,9 @@ spec =
         `shouldBe` Cortex.allNousArchetypes
       mapM_ assertNousDefinitionPath Cortex.allNousArchetypeDefinitions
       mapM_ assertNousCapabilityBundlePath Cortex.allNousArchetypes
-      fmap Cortex.nousCapabilityComponentKind (Cortex.nousCapabilityBundleComponents Cortex.logosCapabilityBundle)
+      fmap
+        Cortex.nousCapabilityComponentKind
+        (Cortex.nousCapabilityBundleComponents Cortex.logosCapabilityBundle)
         `shouldBe` [minBound .. maxBound]
 
     it "exposes representative Platform runtime helpers" $ do
@@ -40,15 +44,15 @@ spec =
 emptyChunk :: Cortex.ResearchChunk
 emptyChunk =
   Cortex.ResearchChunk
-    { Cortex.researchChunkSectionId = "section",
-      Cortex.researchChunkTitle = "Section",
-      Cortex.researchChunkSummary = Nothing,
-      Cortex.researchChunkParagraphs = [],
-      Cortex.researchChunkFindings = [],
-      Cortex.researchChunkTables = [],
-      Cortex.researchChunkEvidenceRefs = [],
-      Cortex.researchChunkExternalRefs = [],
-      Cortex.researchChunkOpenGaps = []
+    { Cortex.researchChunkSectionId = "section"
+    , Cortex.researchChunkTitle = "Section"
+    , Cortex.researchChunkSummary = Nothing
+    , Cortex.researchChunkParagraphs = []
+    , Cortex.researchChunkFindings = []
+    , Cortex.researchChunkTables = []
+    , Cortex.researchChunkEvidenceRefs = []
+    , Cortex.researchChunkExternalRefs = []
+    , Cortex.researchChunkOpenGaps = []
     }
 
 assertNousDefinitionPath :: Cortex.NousArchetypeDefinition -> Expectation

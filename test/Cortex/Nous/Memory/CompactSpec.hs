@@ -3,20 +3,21 @@
 
 module Cortex.Nous.Memory.CompactSpec (spec) where
 
-import Cortex.Nous.Memory.Compact
-  ( CheckpointSourceReference (..),
-    CheckpointSummary (..),
-    CompactionConfig (..),
-    MessageForCompaction (..),
-    buildCheckpointSummary,
-    defaultCompactionConfig,
-  )
 import Data.Int (Int64)
 import Data.List qualified as List
 import Data.Text qualified as T
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Test.Hspec
+
+import Cortex.Nous.Memory.Compact
+  ( CheckpointSourceReference (..)
+  , CheckpointSummary (..)
+  , CompactionConfig (..)
+  , MessageForCompaction (..)
+  , buildCheckpointSummary
+  , defaultCompactionConfig
+  )
 
 spec :: Spec
 spec = do
@@ -46,8 +47,8 @@ spec = do
     it "returns a deterministic validation error when there are too few messages to compact" $ do
       let config =
             defaultCompactionConfig
-              { keepRecentMessageCount = 12,
-                minMessagesToCompact = 8
+              { keepRecentMessageCount = 12
+              , minMessagesToCompact = 8
               }
           input = sampleMessages 16
       buildCheckpointSummary config input
@@ -60,18 +61,18 @@ sampleMessages count =
     mkMessage :: Int64 -> MessageForCompaction
     mkMessage sequenceNo =
       MessageForCompaction
-        { messageId = uuidFromSeq sequenceNo,
-          messageSequence = sequenceNo,
-          role = roleFor sequenceNo,
-          content =
+        { messageId = uuidFromSeq sequenceNo
+        , messageSequence = sequenceNo
+        , role = roleFor sequenceNo
+        , content =
             "Message "
               <> T.pack (show sequenceNo)
               <> ": "
               <> T.replicate
                 4
-                "This message carries detailed portfolio diagnostics, allocation notes, and follow-up actions for deterministic compaction testing. ",
-          toolName = toolNameFor sequenceNo,
-          toolCallId = Nothing
+                "This message carries detailed portfolio diagnostics, allocation notes, and follow-up actions for deterministic compaction testing. "
+        , toolName = toolNameFor sequenceNo
+        , toolCallId = Nothing
         }
 
 roleFor :: Int64 -> T.Text
