@@ -201,27 +201,16 @@ Mechanized results now include:
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
-Remaining obligations:
+The remaining Track 3 obligations are now tracked in
+`docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next proof slices are:
 
-- prove that the executable Haskell CorePure evaluator and compiler lowering
-  (`evaluatePureTaskOutputs`, `loweredPureNodeFromBody`, `validateWhereClause`, and
-  `staticWhereFieldNames`) produce the Lean `Cortex.Wire.Pure` witnesses, including duplicate-name
-  rejection, output-port equality, static `where` fields, and ADR 0010/0023's authority exclusion by
-  syntax; the static `where` correspondence must also produce the `bindings_noShadow` and
-  `where_letSafe` admission witnesses when field discovery ignores local CorePure `let` binders, and
-  show that opened `where` fields hide same-named static record facts;
-- connect ADR 0023's duplicate-name discipline to executable parser/elaborator witnesses, especially
-  duplicate record fields and nested-path conflicts, so record evaluation never relies on silent
-  overwrite inside admitted CorePure literals;
-- prove that the executable Haskell planner and budget admission path (`planGraphRewrite`,
-  `consumeRewriteBudget`, and `admitRewriteDelta`) produce the `RuntimeConstructionInputs` and
-  `AdmittedRewriteDelta` witnesses used by constructed Lean chains, including the source context
-  validity invariant, namespace discipline, current anchor membership, raw-subgraph validity, final
-  acyclicity, inserted-depth computation, and pointwise remaining-budget equation;
-- prove staged-executor registry-boundary preservation for constructed deltas, so the headline
-  registry-boundary chain theorem can discharge its per-step `contractPreserved` witness from the
-  compiler and registry model rather than from a caller-supplied hypothesis;
-- connect constructed planner chains to durable materialization order and lineage.
+- CorePure value/contract soundness, closed builtin authority, duplicate record-path rejection, and
+  Haskell static-context correspondence;
+- constructed-delta registry-boundary preservation;
+- Haskell planner and budget-admission correspondence for `RuntimeConstructionInputs` and
+  `AdmittedRewriteDelta`;
+- `SelectActualize` proof certificates for selected-arm lowering, unselected-arm
+  non-materialization, selected-cost budgeting, and later recovery determinism.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
 but chain-level preservation requires them to stay inside the registry boundary documented in

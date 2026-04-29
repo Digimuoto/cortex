@@ -48,6 +48,13 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0029](0029-corepure-structured-serialization.md)               | CorePure Structured Serialization                                   | proposed |
 | [0030](0030-wire-node-implementation-forms.md)                  | Wire Node Implementation Forms                                      | proposed |
 | [0031](0031-wire-binding-forms-and-where-clauses.md)            | Wire Binding Forms and Node Where Clauses                           | proposed |
+| [0032](0032-wire-boundary-contract-resources.md)                | Wire Boundary Contracts as Planning Resources                       | proposed |
+| [0033](0033-wire-select-guarded-affine-collapse.md)             | Wire Select as Guarded Affine Collapse                              | proposed |
+| [0034](0034-wire-pure-select-actualization-authority.md)        | Pure Selectors and Restricted Actualization Authority               | proposed |
+| [0035](0035-wire-rewrite-algebra-forms.md)                      | Wire Rewrite Algebra Forms                                          | proposed |
+| [0036](0036-wire-latent-branch-budget-recovery.md)              | Latent Branch Budget and Recovery Policy                            | proposed |
+| [0037](0037-wire-latent-structural-control.md)                  | Wire Latent Structural Control Operators                            | proposed |
+| [0038](0038-wire-proof-track-theorem-ledger.md)                 | Wire Proof-Track Theorem Ledger                                     | proposed |
 
 ## Writing a new ADR
 
