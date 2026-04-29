@@ -21,6 +21,7 @@ related:
   - docs/ADRs/0024-wire-node-clause-grammar.md
   - docs/ADRs/0025-corepure-expression-surface.md
   - docs/ADRs/0026-typed-executor-node-interface.md
+  - docs/ADRs/0030-wire-topology-composition-and-boundary-labels.md
 ---
 
 # ADR 0023 - Wire Source Elaborates to Circuits
@@ -109,13 +110,12 @@ model, but it introduces inference questions that should be deferred. Initially,
 whether runtime residue is handled by the internal pure evaluator or by a registered external
 executor.
 
-### Open Questions
+### Follow-On Composition Decision
 
-Two consequences are intentionally left open:
-
-- file-level expression port labels, such as whether `let greeting = "Hello"` exports an anonymous
-  default output or an output named `greeting`;
-- the final topology composition surface, such as `>>>` or a named composition primitive.
+ADR 0030 resolves the file-level expression port-label and topology composition questions deferred
+by this ADR. File-level helpers such as `let greeting = "Hello"` remain CorePure value bindings, not
+circuits with anonymous or binding-named output ports. Topology composition uses the circuit
+operators defined there.
 
 ## Alternatives considered
 
@@ -160,8 +160,8 @@ The immediate implementation slice is:
 4. Route runtime `pure (...)` executor vertices through the existing pure executor path.
 5. Add the closed stdlib needed by the first pure examples.
 
-Topology composition primitives are deliberately later work. They should be added once a real
-multi-node composition use case exercises the shape.
+Topology composition primitives are specified separately by ADR 0030 and can be implemented after
+the node/elaborator slice when multi-node examples require them.
 
 ## Related
 
@@ -171,4 +171,5 @@ multi-node composition use case exercises the shape.
 - [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
 - [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
 - [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [ADR 0030 - Wire Topology Composition and Boundary Labels](./0030-wire-topology-composition-and-boundary-labels.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)

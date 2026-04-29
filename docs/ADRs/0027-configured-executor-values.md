@@ -2,7 +2,7 @@
 title: "ADR 0027 - Configured Executor Values"
 description:
   "Defines reusable configured executor values as inert Wire source values that can be applied only
-  inside explicit node RHSs."
+  in explicit node executor-call positions."
 sidebar:
   label: "0027. Configured executors"
   order: 27
@@ -18,6 +18,7 @@ related:
   - docs/ADRs/0021-executor-registration-and-binding.md
   - docs/ADRs/0024-wire-node-clause-grammar.md
   - docs/ADRs/0026-typed-executor-node-interface.md
+  - docs/ADRs/0032-wire-node-implementation-forms.md
 ---
 
 # ADR 0027 - Configured Executor Values
@@ -25,7 +26,8 @@ related:
 ## Status
 
 Proposed - fills the reusable-config gap left by ADR 0026 after configured executors stopped being
-graph vertices.
+graph vertices. ADR 0032 defines the node implementation positions where configured executor values
+may be applied.
 
 ## Context
 
@@ -54,7 +56,8 @@ let analyst = @llm.analyst {
 
 node analyze
   <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = analyst (evidence) ;
+  -> analysis: AnalysisRecord ;
+  = analyst (evidence) ;
 ```
 
 A configured executor value has an executor kind, not a CorePure value type and not a circuit type.
@@ -93,11 +96,26 @@ and is equivalent to:
 -> output: T = @<executor> {} (<input-expr>) ;
 ```
 
-Applying a configured executor value is valid only in an output RHS implementation position:
+Applying a configured executor value is valid only in the executor-call implementation positions
+defined by ADR 0032: a node-level executor body, or the single-output shorthand that desugars to
+that body.
 
 ```wire
--> output: T = analyst (input) ;
+node analyze
+  <- input: AnalysisInput ;
+  -> output: AnalysisRecord ;
+  = analyst (input) ;
 ```
+
+The single-output shorthand remains valid:
+
+```wire
+node analyze
+  <- input: AnalysisInput ;
+  -> output: AnalysisRecord = analyst (input) ;
+```
+
+This shorthand is an `executor_call`, not the reserved unmarked `<expr>` RHS from ADR 0024.
 
 It is not valid inside CorePure, so this output equation is rejected:
 
@@ -137,9 +155,9 @@ A configured executor value is applied to one input expression. If the registere
 input port, the expression must validate against that port's contract. If the projection has several
 input ports, the expression must be a record whose fields match the projected input port labels.
 
-The result boundary must match the output clause that uses it. In the first implementation slice,
-configured executor calls are single-output RHSs. Multi-output external executor calls should be
-added only after the node grammar has an explicit way to bind one RHS to several output clauses.
+The result boundary must match the node implementation form from ADR 0032. Single-output shorthand
+is valid only when exactly one output is declared. Multi-output and zero-output configured executor
+calls use node-level executor bodies.
 
 ## Alternatives considered
 
@@ -165,11 +183,12 @@ added only after the node grammar has an explicit way to bind one RHS to several
 
 - Wire needs kind checking for CorePure values, configured executor values, and circuit values.
 - The parser must distinguish configured executor application from CorePure function application.
-- Multi-output external executor application remains deferred.
+- Configured executor application depends on the node implementation-form checks from ADR 0032.
 
 ### Obligations
 
-- Add parser and kind-checker tests for configured executor bindings and applications.
+- Add parser and kind-checker tests for configured executor bindings, node-level body applications,
+  and single-output shorthand applications.
 - Reject configured executor calls inside `pure (...)`.
 - Reject input-dependent executor config.
 - Update executor reference docs to replace partial-node wording with configured executor values.
@@ -182,4 +201,5 @@ added only after the node grammar has an explicit way to bind one RHS to several
 - [ADR 0021 - Executor Registration and Binding](./0021-executor-registration-and-binding.md)
 - [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
 - [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [ADR 0032 - Wire Node Implementation Forms](./0032-wire-node-implementation-forms.md)
 - [Wire Executors and Alphabet Reference](../Reference/Wire/executors-and-alphabet.md)

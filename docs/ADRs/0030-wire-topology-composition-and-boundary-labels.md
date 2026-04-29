@@ -19,6 +19,7 @@ related:
   - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0024-wire-node-clause-grammar.md
   - docs/ADRs/0026-typed-executor-node-interface.md
+  - docs/ADRs/0027-configured-executor-values.md
 ---
 
 # ADR 0030 - Wire Topology Composition and Boundary Labels
@@ -180,5 +181,6 @@ ports rather than to source variable names.
 - [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
 - [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
 - [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [ADR 0027 - Configured Executor Values](./0027-configured-executor-values.md)
 - [Chapter 04 - Graph and Circuit](../Architecture/04-graph-and-circuit.md)
 - [Wire Contracts, Ports, and Matching Reference](../Reference/Wire/contracts-ports-and-matching.md)

@@ -22,6 +22,7 @@ related:
   - docs/ADRs/0024-wire-node-clause-grammar.md
   - docs/ADRs/0025-corepure-expression-surface.md
   - docs/ADRs/0026-typed-executor-node-interface.md
+  - docs/ADRs/0027-configured-executor-values.md
 ---
 
 # ADR 0028 - Wire Failure Taxonomy
@@ -148,4 +149,5 @@ semantic result.
 - [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
 - [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
 - [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [ADR 0027 - Configured Executor Values](./0027-configured-executor-values.md)
 - [Chapter 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md)

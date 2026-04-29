@@ -80,7 +80,10 @@ String interpolation remains scalar-only. Authors serialize structured values ex
 - no insignificant whitespace is emitted;
 - strings use JSON escaping;
 - booleans, null, arrays, and objects use standard JSON tokens;
-- numbers use the CorePure canonical number rendering;
+- numbers are finite decimal values rendered without leading plus signs, insignificant leading
+  zeroes, or insignificant fractional trailing zeroes;
+- exponent notation is not emitted in the first slice;
+- negative zero is rendered as `0`;
 - NaN and infinity are impossible CorePure numbers and are not representable.
 
 This is a serialization function, not a schema validator. It does not check that a value satisfies a
