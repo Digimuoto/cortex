@@ -43,7 +43,8 @@ lean_lib «Cortex» where
     `Cortex.Wire.Rewrite,
     `Cortex.Wire.Admission,
     `Cortex.Wire.Planner,
-    `Cortex.Wire.Planner.Construction
+    `Cortex.Wire.Planner.Construction,
+    `Cortex.Wire.Planner.Chain
   ]
 
 -- Smoke-test executable. Prints a build banner; useful for confirming

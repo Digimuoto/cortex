@@ -163,18 +163,30 @@ Mechanized results now include:
 - `constructedPlannedRewriteDelta_admissible_of_inputs`: the source-valid planner input bundle,
   constructed delta, and budget admission directly instantiate the abstract admissible-rewrite
   predicate.
+- `ConstructedPlanningStep` and `ConstructedPlanningChain`: runtime-shaped constructed planner steps
+  lift to finite chains over `PlanningContext`, carrying constructed topologies and definition
+  domains from one step to the next.
+- `ConstructedPlanningChain.toRewriteChain`, `.preserves_sourceValid`,
+  `.terminal_sourceValid_of_nonempty`, `.terminal_acyclic_of_nonempty`, `.steps_le_rewriteOps`,
+  `.finalBudget_le_initial`, `.preserves_contracts`, and
+  `constructedPlanningChain_preserves_registryBoundary`: constructed planner chains erase to the
+  abstract `RewriteChain` model while preserving source validity, budget bounds, generic contracts,
+  and registry-boundary invariants.
 - `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
 Remaining obligations:
 
-- prove that the executable Haskell planner produces the `RuntimeConstructionInputs` witnesses used
-  by the constructed Lean delta, including the source context validity invariant, namespace
-  discipline, current anchor membership, raw-subgraph validity, final acyclicity, and inserted-depth
-  computation;
-- connect registry-boundary witnesses to the Haskell compiler and registry;
-- connect the abstract chain model to durable materialization order and lineage.
+- prove that the executable Haskell planner and budget admission path (`planGraphRewrite`,
+  `consumeRewriteBudget`, and `admitRewriteDelta`) produce the `RuntimeConstructionInputs` and
+  `AdmittedRewriteDelta` witnesses used by constructed Lean chains, including the source context
+  validity invariant, namespace discipline, current anchor membership, raw-subgraph validity, final
+  acyclicity, inserted-depth computation, and pointwise remaining-budget equation;
+- prove staged-executor registry-boundary preservation for constructed deltas, so the headline
+  registry-boundary chain theorem can discharge its per-step `contractPreserved` witness from the
+  compiler and registry model rather than from a caller-supplied hypothesis;
+- connect constructed planner chains to durable materialization order and lineage.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
 but chain-level preservation requires them to stay inside the registry boundary documented in
