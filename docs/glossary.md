@@ -95,8 +95,7 @@ orientation.
 - **Epic** — long-running engineering initiative in `Roadmap/Epics/`.
 - **Plan** — implementation plan under `Roadmap/Plans/`.
 - **Research note** — dated synthesis/design memo under `Research-notes/{scope}/`.
-- **Experiment** — dated smoke test or dogfood under `Experiments/{scope}/`.
-- **Handoff** — dated transition note under `Handoffs/`.
+- **Experiment** — controlled run under `Experiments/{scope}/`, started from an active epic or plan.
 - **Manuscript** — paper under `Publications/paper-N-*/manuscript.md`.
 
 ## See also

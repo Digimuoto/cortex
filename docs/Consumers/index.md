@@ -1,8 +1,8 @@
 ---
 title: Cortex Consumers
 description:
-  Downstream bindings of Cortex. Consumer docs show how products attach domain semantics, policy,
-  tools, persistence, and operator surfaces to the substrate.
+  Downstream consumers of Cortex. Consumer docs show how products and libraries attach domain
+  semantics, policy, tools, persistence, or reasoning workflows to the substrate.
 sidebar:
   label: Consumers
   order: 5
@@ -10,11 +10,13 @@ sidebar:
 
 # Cortex Consumers
 
-Cortex is a generic AI substrate; consumers bind it into product-specific runtimes. These pages show
-binding patterns without making any consumer the frame for Cortex itself.
+Cortex is a generic AI substrate; consumers bind it into downstream libraries or product-specific
+runtimes. These pages show binding patterns without making any consumer the frame for Cortex itself.
 
 ## Documented consumers
 
+- **[Logos](Logos/)** - downstream reasoning library. Shows how reusable model-mediated workflows,
+  archetypes, memory, and patterns sit above Cortex without becoming substrate runtime authority.
 - **[Portman](Portman.md)** - private downstream example. Shows how one product binds Cortex to
   product policy, artifacts, persistence, and Pulse host actions.
 
@@ -23,7 +25,8 @@ binding patterns without making any consumer the frame for Cortex itself.
 Consumer-specific design docs that describe:
 
 - How the consumer binds Cortex's runtime seams.
-- Product-domain extensions, such as host-specific contracts, tools, and report shapes.
+- Library or product-domain extensions, such as host-specific contracts, tools, reusable reasoning
+  patterns, and report shapes.
 - Domain-specific decisions, such as how host policy attaches to Cortex actions.
 - Consumer-side workflow specs built on Cortex primitives.
 

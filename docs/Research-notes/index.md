@@ -29,7 +29,7 @@ publication work, or active research questions.
 
 ## What Does Not Belong Here
 
-- Stale PR handoffs.
+- Stale transition notes.
 - Superseded grammar snapshots.
 - Issue-specific migration notes whose surviving claims now live in canonical architecture,
   reference, or ADR docs.

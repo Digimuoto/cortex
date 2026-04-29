@@ -38,7 +38,7 @@ Classify both the document kind and its audience/stability class.
 - architecture or reference spec
 - ADR
 - research note
-- roadmap, plan, handoff, or experiment
+- roadmap, plan, or experiment
 - publication or public-facing paper
 - blog post, explainer, or guide
 
@@ -59,7 +59,6 @@ Treat these as `internal` by default:
 - `docs/Research-notes/**`
 - `docs/ADRs/**`
 - `docs/Roadmap/**`
-- `docs/Handoffs/**`
 - `docs/Experiments/**`
 
 Tune strictness to the class:

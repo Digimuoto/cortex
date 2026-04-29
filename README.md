@@ -51,7 +51,7 @@ plan => gather => write
 - [Stable canon](https://digimuoto.github.io/cortex/#stable-canon) - architecture, reference, ADRs,
   and canonical docs.
 - [Working artifacts](https://digimuoto.github.io/cortex/#working-artifacts) - roadmap, research
-  notes, experiments, handoffs, and templates.
+  notes, controlled experiments, and templates.
 - [Start here](https://digimuoto.github.io/cortex/#start-here) - the intended first reading path
   through the published docs.
 - [Consumer examples](https://digimuoto.github.io/cortex/#consumer-examples) - downstream binding

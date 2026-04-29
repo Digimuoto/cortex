@@ -10,7 +10,7 @@ status: proposed
 date: 2026-04-27
 superseded_by: null
 related:
-  - docs/Logos/reasoning-library.md
+  - docs/Consumers/Logos/reasoning-library.md
   - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - "GitHub #14"
   - "GitHub #31"
@@ -300,8 +300,8 @@ contracts, and workflow semantics.
 
 ## Related
 
-- [../Logos/reasoning-library.md](../Logos/reasoning-library.md) is the canonical architecture
-  chapter for the taxonomy.
+- [../Consumers/Logos/reasoning-library.md](../Consumers/Logos/reasoning-library.md) is the
+  canonical architecture chapter for the taxonomy.
 - [0016-cortex-roots-and-logos-pattern-extraction.md](./0016-cortex-roots-and-logos-pattern-extraction.md)
   defines the root namespace target and module migration table.
 - GitHub #14, #31, and #32 are the immediate role-typing, debate, and critique pressures that need a

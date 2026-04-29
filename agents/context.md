@@ -25,8 +25,9 @@ on Cortex; it depends on Cortex, not the other way round.
   editor integrations.
 - `theory/` - Lean 4 mechanization of substrate guarantees: Mokhov graph laws, Pulse frontier
   safety, Wire rewrite soundness. Builds through `just lean-build`.
-- `docs/` - canonical Cortex and Logos docs. Cortex architecture chapters describe the substrate;
-  Logos docs live under `docs/Logos/`. Keep product docs out.
+- `docs/` - canonical Cortex docs plus consumer examples. Cortex architecture chapters describe the
+  substrate; Logos docs live under `docs/Consumers/Logos/` as downstream consumer documentation.
+  Keep product docs out.
 - `test/` - hspec-discover driven Cortex-only suite.
 - `test-logos/` - hspec-discover driven Logos suite.
 - `agents/` - provider-neutral agent context, archetypes, skills, and setup scripts.
@@ -93,8 +94,8 @@ non-trivial work, prefer an existing GitHub issue or open one before implementat
 issues with `Closes #<number>` when the PR completes the scope.
 
 Do not use Linear, downstream issue IDs, or downstream product trackers as active Cortex planning
-state. Historical research notes and handoffs may retain those references for provenance, but new
-Cortex work is tracked in this repository.
+state. Historical research notes may retain those references for provenance, but new Cortex work is
+tracked in this repository.
 
 Do not introduce downstream issue IDs into Haskell module names, test module names, module Haddock
 headers, code comments, or canonical docs. Use stable Cortex concepts in code and docs; use GitHub
@@ -124,7 +125,7 @@ and human-signed.
 Cortex docs are the source of truth for substrate design. When editing docs:
 
 - Architecture chapters describe the substrate. Put downstream reasoning-layer material under
-  `docs/Logos/` or mark it explicitly as downstream.
+  `docs/Consumers/Logos/` or mark it explicitly as downstream.
 - ADRs are numbered and append-only. New decisions get new ADR files.
 - `docs/Consumers/<consumer>/` documents downstream consumer bindings and integration contracts, not
   the frame for Cortex itself.

@@ -10,8 +10,8 @@ sidebar:
 
 # Cortex Roadmap
 
-The roadmap keeps current work discoverable. It is not a permanent dump for issue snapshots, PR
-handoffs, or migration-era planning notes.
+The roadmap keeps current work discoverable. It is not a permanent dump for issue snapshots,
+transition notes, or migration-era planning notes.
 
 ## Tracks
 

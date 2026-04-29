@@ -22,7 +22,6 @@ frontmatter, section shape, and placement discipline.
 | Implementation plan | [implementation-plan.md](implementation-plan.md) | `Roadmap/Plans/*.md` |
 | Research memo | [research-memo.md](research-memo.md) | `Research-notes/{scope}/YYYY-MM-DD-*.md` |
 | Experiment | [experiment.md](experiment.md) | `Experiments/{scope}/YYYY-MM-DD-*.md` |
-| Handoff | [handoff.md](handoff.md) | `Handoffs/YYYY-MM-DD-*.md` |
 | Publication manuscript | [publication-manuscript.md](publication-manuscript.md) | `Publications/paper-N-*/manuscript.md` |
 | Section index | [section-index.md](section-index.md) | any directory's `index.md` |
 

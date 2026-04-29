@@ -12,7 +12,7 @@ superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Logos/reasoning-library.md
+  - docs/Consumers/Logos/reasoning-library.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0020-wire-pure-output-equations.md

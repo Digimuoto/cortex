@@ -194,12 +194,12 @@ tools, artifact semantics, DB loading, and authorization.
 
 ## Related
 
-- [ADR 0015 — Canonical Logos Archetypes](../ADRs/0015-canonical-logos-archetypes.md)
-- [ADR 0016 — Cortex Roots and Logos Pattern Extraction](../ADRs/0016-cortex-roots-and-logos-pattern-extraction.md)
-- [ADR 0017 — Wire Executor and Port Catalog Boundary](../ADRs/0017-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0018 — Canonical Haskell Module Tree](../ADRs/0018-canonical-haskell-module-tree.md)
-- [ADR 0020 — Wire Pure Output Equations](../ADRs/0020-wire-pure-output-equations.md)
-- [Chapter 02 — Ownership and boundaries](../Architecture/02-ownership-and-boundaries.md)
-- [Chapter 05 — Wire language](../Architecture/05-wire-language.md)
-- [Chapter 08 — Artifacts and provenance](../Architecture/08-artifacts-and-provenance.md)
+- [ADR 0015 — Canonical Logos Archetypes](../../ADRs/0015-canonical-logos-archetypes.md)
+- [ADR 0016 — Cortex Roots and Logos Pattern Extraction](../../ADRs/0016-cortex-roots-and-logos-pattern-extraction.md)
+- [ADR 0017 — Wire Executor and Port Catalog Boundary](../../ADRs/0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0018 — Canonical Haskell Module Tree](../../ADRs/0018-canonical-haskell-module-tree.md)
+- [ADR 0020 — Wire Pure Output Equations](../../ADRs/0020-wire-pure-output-equations.md)
+- [Chapter 02 — Ownership and boundaries](../../Architecture/02-ownership-and-boundaries.md)
+- [Chapter 05 — Wire language](../../Architecture/05-wire-language.md)
+- [Chapter 08 — Artifacts and provenance](../../Architecture/08-artifacts-and-provenance.md)
 - Initial role-contract, debate, and critique workflows that need this vocabulary.

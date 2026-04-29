@@ -12,7 +12,7 @@ superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Logos/reasoning-library.md
+  - docs/Consumers/Logos/reasoning-library.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/configured-executors-and-execution-boundary.md

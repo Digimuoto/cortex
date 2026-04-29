@@ -15,7 +15,7 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/08-artifacts-and-provenance.md
-  - docs/Logos/reasoning-library.md
+  - docs/Consumers/Logos/reasoning-library.md
   - docs/ADRs/0015-canonical-logos-archetypes.md
   - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
@@ -468,5 +468,5 @@ Rejected. `Document` currently mixes generic artifact substrate with report and 
 - [ADR 0017 — Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
 - [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
 - [ADR 0019 — Executor Registration and Binding](./0019-executor-registration-and-binding.md)
-- [Logos Reasoning Library](../Logos/reasoning-library.md)
+- [Logos Reasoning Library](../Consumers/Logos/reasoning-library.md)
 - GitHub #62

@@ -33,9 +33,25 @@
           repoUrl = "https://github.com/Digimuoto/cortex";
         };
 
-        # Drop the auto-generated "Overview" eyebrow; the root index,
-        # glossary, taxonomy, and map.md read better as a flush list.
-        navigation.rootSectionLabel = null;
+        navigation = {
+          # Drop the auto-generated "Overview" eyebrow; the root index,
+          # glossary, taxonomy, and map.md read better as a flush list.
+          rootSectionLabel = null;
+
+          # Keep top-level IA semantic instead of relying on alphabetical
+          # folder order. Nested sections mostly carry their own numbered or
+          # frontmatter order.
+          topLevelOrder = [
+            "Architecture"
+            "Reference"
+            "ADRs"
+            "Consumers"
+            "Publications"
+            "Roadmap"
+            "Research-notes"
+            "Experiments"
+          ];
+        };
 
         languages.wire = {
           grammarSrc = ../editors/tree-sitter-wire;

@@ -28,8 +28,7 @@ Publication manuscripts should let frontmatter drive the rendered page header.
 
 ## Internal Docs
 
-Research notes, ADRs, handoffs, experiments, and plans can be more explicit about implementation and
-history.
+Research notes, ADRs, experiments, and plans can be more explicit about implementation and history.
 
 - issue links and repo paths are allowed when they improve traceability
 - keep the distinction between decision, evidence, and speculation clear

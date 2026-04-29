@@ -121,28 +121,27 @@ flowchart LR
 ## Explore The Canon
 
 - **[Architecture/](Architecture/)** - conceptual chapters for the substrate.
-- **[Logos/](Logos/)** - downstream reasoning-library docs for LLM and model-mediated workflows.
 - **[Reference/](Reference/)** - normative specifications for Wire, Pulse, rewrites, terminology,
   and contributor workflow.
 - **[ADRs/](ADRs/)** - numbered architecture decisions.
-- **[Publications/](Publications/)** - formal paper drafts, figures, and publication roadmap.
 - **[Consumers/](Consumers/)** - downstream binding examples after the core model is clear.
+- **[Publications/](Publications/)** - formal paper drafts, figures, and publication roadmap.
 
 ## Working Artifacts
 
 - **[Roadmap/](Roadmap/)** - active research and implementation plans.
 - **[Research-notes/](Research-notes/)** - dated synthesis notes that are still useful as design
   archaeology.
-- **[Experiments/](Experiments/)** - dated smoke tests and dogfood runs.
-- **[Handoffs/](Handoffs/)** - contributor or work-phase handoffs when one is current enough to keep
-  in the tree.
+- **[Experiments/](Experiments/)** - controlled experiment records that start from active epics or
+  plans.
 - **[Templates/](Templates/)** - frontmatter and section shapes for new docs.
 
 ## Consumer Examples
 
-Consumer docs show how a downstream system can bind Cortex to product-specific policy, tools,
-artifacts, and operator surfaces. They are examples, not prerequisites for understanding Cortex.
-Generic rules belong in architecture, reference, or ADR docs.
+Consumer docs show how a downstream library or product can bind Cortex to reasoning workflows,
+product-specific policy, tools, artifacts, and operator surfaces. They are examples, not
+prerequisites for understanding Cortex. Generic rules belong in architecture, reference, or ADR
+docs.
 
 ## Source Of Truth
 

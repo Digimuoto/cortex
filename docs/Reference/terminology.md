@@ -136,7 +136,6 @@ and [../taxonomy.md](../taxonomy.md) for the organizing axes.
 | **Plan**              | `Roadmap/Plans/*.md`                     |
 | **Research note**     | `Research-notes/{scope}/YYYY-MM-DD-*.md` |
 | **Experiment**        | `Experiments/{scope}/YYYY-MM-DD-*.md`    |
-| **Handoff**           | `Handoffs/YYYY-MM-DD-*.md`               |
 | **Manuscript**        | `Publications/paper-N-*/manuscript.md`   |
 
 ## Related

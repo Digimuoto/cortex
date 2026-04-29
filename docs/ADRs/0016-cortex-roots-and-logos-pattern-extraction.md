@@ -14,7 +14,7 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/08-artifacts-and-provenance.md
-  - docs/Logos/reasoning-library.md
+  - docs/Consumers/Logos/reasoning-library.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0015-canonical-logos-archetypes.md
   - "GitHub #14"
@@ -449,8 +449,8 @@ reasoning-library root.
 
 - [0015-canonical-logos-archetypes.md](./0015-canonical-logos-archetypes.md) defines
   `Logos.Archetypes` and reserves `Logos.Thought`, `Logos.Memory`, and `Logos.Patterns`.
-- [../Logos/reasoning-library.md](../Logos/reasoning-library.md) describes the Logos/runtime
-  boundary.
+- [../Consumers/Logos/reasoning-library.md](../Consumers/Logos/reasoning-library.md) describes the
+  Logos/runtime boundary.
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md) describes Wire's
   closed-authority composition model.
 - [../Architecture/08-artifacts-and-provenance.md](../Architecture/08-artifacts-and-provenance.md)

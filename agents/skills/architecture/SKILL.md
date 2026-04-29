@@ -73,7 +73,7 @@ Core map:
 - `docs/Architecture/06-pulse-runtime.md` - runtime, frontier, and durable execution.
 - `docs/Architecture/07-rewrites-and-materialization.md` - rewrite admission and materialization.
 - `docs/Architecture/08-artifacts-and-provenance.md` - artifact and provenance contracts.
-- `docs/Logos/reasoning-library.md` - downstream reasoning-layer boundary.
+- `docs/Consumers/Logos/reasoning-library.md` - downstream reasoning-layer boundary.
 
 Wire map:
 

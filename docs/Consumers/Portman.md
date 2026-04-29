@@ -4,7 +4,7 @@ description:
   Compact example of how a private downstream product binds Cortex without defining Cortex itself.
 sidebar:
   label: Portman
-  order: 1
+  order: 2
 ---
 
 # Portman Consumer Example

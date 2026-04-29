@@ -47,5 +47,5 @@ needed.
 
 - [../Reference/](../Reference/) — normative specs.
 - [../ADRs/](../ADRs/) — decision records.
-- [../Logos/](../Logos/) — downstream reasoning-library docs built on Cortex.
+- [../Consumers/Logos/](../Consumers/Logos/) — downstream reasoning-library docs built on Cortex.
 - [../Roadmap/](../Roadmap/) — active engineering work.

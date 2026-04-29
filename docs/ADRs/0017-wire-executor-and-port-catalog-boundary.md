@@ -11,7 +11,7 @@ date: 2026-04-27
 superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
-  - docs/Logos/reasoning-library.md
+  - docs/Consumers/Logos/reasoning-library.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
@@ -339,6 +339,6 @@ The clean next sequence is:
 - [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
 - [ADR 0019 — Executor Registration and Binding](./0019-executor-registration-and-binding.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
-- [Logos Reasoning Library](../Logos/reasoning-library.md)
+- [Logos Reasoning Library](../Consumers/Logos/reasoning-library.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
 - GitHub #55
