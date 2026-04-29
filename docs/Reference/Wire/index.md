@@ -2,7 +2,7 @@
 title: Wire Language Reference
 description:
   Normative reference for the Wire source language. Grammar, module model, ports and matching,
-  partials and evaluation boundary.
+  configured executors and evaluation boundary.
 sidebar:
   label: Wire
   order: 1
@@ -22,14 +22,12 @@ pages that factor out specific rule areas for quick consultation.
 - **[contracts-ports-and-matching.md](contracts-ports-and-matching.md)** — contract namespace, port
   declarations, sum groups, labels, `=>` port-key matching. Corresponds to grammar §4, §6.2–§6.5,
   §7.1, §7.6.
-- **[partials-and-execution-boundary.md](partials-and-execution-boundary.md)** — partial nodes in
-  graph position, port-determined rule, evaluation-boundary check. Corresponds to grammar §5.4, §11.
-- **[executors-and-alphabet.md](executors-and-alphabet.md)** — executor registration,
-  `@`-application, config merge, ambient identifiers in config values. Corresponds to grammar §5.1,
-  §5.2, §5.3, §5.5.
+- **[configured-executors-and-execution-boundary.md](configured-executors-and-execution-boundary.md)**
+  — configured executor values, explicit node admission, and the execution boundary.
+- **[executors-and-alphabet.md](executors-and-alphabet.md)** — executor registration, `@` authority,
+  configured executor values, and ambient identifiers in config values.
 - **[pure-execution.md](pure-execution.md)** — Wire-authored CorePure output equations, native pure
-  evaluator lowering, input/output binding, builtins, and failure surface. Corresponds to grammar
-  §6.1.1, §14.5.
+  evaluator lowering, input/output binding, builtins, and failure surface.
 - **[conditionality.md](conditionality.md)** — exclusive-output reduction with `select(...)`, latent
   continuations, arm keys, and current implementation status. Corresponds to grammar §7.7.
 

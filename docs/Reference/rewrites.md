@@ -151,7 +151,8 @@ Admission is the runtime's gate. A proposal is admitted only when **every** chec
    alphabet.
 2. **Endpoint compatibility.** Every new edge connects ports whose contracts are compatible under
    the port-semantic rules of [chapter 05](../Architecture/05-wire-language.md). Singular and
-   list-valued inputs obey the same arity rules at the rewrite boundary as at compile time.
+   cardinality-one inputs obey the same arity rules at the rewrite boundary as at compile time;
+   aggregation must be expressed by explicit transformation nodes.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
    in the current topology and definition map, and the current definition domain exactly covers the
    current topology. Entry and exit sets are non-empty and duplicate-free where the rewrite form

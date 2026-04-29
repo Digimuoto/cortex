@@ -26,7 +26,7 @@ The short version is:
 - conditionality is **exclusive-output reduction**
 - the canonical surface is postfix `select(...)`
 - branches are **latent continuations** until one is selected
-- contract names are the default arm keys
+- output labels are the canonical arm keys, with unique contract names accepted as fallback keys
 - `()` is the identity continuation
 - productive arms share a common downstream boundary
 - the current Cortex runtime is a narrower binary subset of this model
@@ -99,7 +99,7 @@ under the normal readiness rules. That is wrong for Wire.
 In ordinary fan-out:
 
 ```wire
-a => (b, c)
+a => (b <> c)
 ```
 
 both `b` and `c` are part of the live graph and both are eligible to become actual work when their
@@ -124,10 +124,10 @@ The conditional model Wire needs is therefore:
 Wire already has one crucial ingredient: **sum-grouped output ports**.
 
 ```wire
-node gate :
-  <- EvidenceBundle
-  -> AnalysisFragment | ExecutorError
-= @llm.review {};
+node gate
+  <- evidence: EvidenceBundle ;
+  -> fragment: AnalysisFragment | error: ExecutorError ;
+  = @llm.review (evidence) ;
 ```
 
 The accepted grammar already says:
@@ -136,7 +136,7 @@ The accepted grammar already says:
 - at each evaluation, exactly one variant fires
 - the runtime carries and enforces that mutual-exclusion metadata
 
-See [§6.5 Sum-grouped output ports](grammar.md#65-sum-grouped-output-ports).
+See [§4 Contracts And Ports](grammar.md#4-contracts-and-ports).
 
 That means the language already knows how to say:
 
@@ -200,41 +200,42 @@ means:
 This does **not** mean the same thing as:
 
 ```wire
-x => (a, b) => continuation
+x => (a <> b) => continuation
 ```
 
 The boundary shape may be similar when all arms are productive, but the actuality story is
 different:
 
-- `x => (a, b)` makes both branches live
+- `x => (a <> b)` makes both branches live
 - `x select(...)` keeps both branches latent and actualizes one
 
 That semantic distinction must stay explicit.
 
-### 5.2 Contract names are the default arm keys
+### 5.2 Output labels are the canonical arm keys
 
 Branch keys resolve against **variant identity**.
 
-The default rule is:
+The current rule is:
 
-- use the variant's **contract name** as the arm key when it is unique
-- require an explicit variant label only when contract names are not enough to disambiguate
+- use the variant's **label** as the arm key;
+- accept the variant's **contract name** as a fallback only when it is unique;
+- report an ambiguity when a key resolves to more than one variant.
 
 So with:
 
 ```wire
-node validate_plan :
-  <- DraftPlan
-  -> ResearchPlan | PlanIssue
-= @llm.validate_plan {};
+node validate_plan
+  <- draft: DraftPlan ;
+  -> valid: ResearchPlan | issue: PlanIssue ;
+  = @llm.validate_plan (draft) ;
 ```
 
 this is the natural conditional:
 
 ```wire
 validate_plan select(
-  ResearchPlan: (),
-  PlanIssue: (gather_missing_constraints => repair_plan)
+  valid: (),
+  issue: (gather_missing_constraints => repair_plan)
 )
 ```
 
@@ -268,8 +269,8 @@ In:
 
 ```wire
 validate_plan select(
-  ResearchPlan: (),
-  PlanIssue: (gather_missing_constraints => repair_plan)
+  valid: (),
+  issue: (gather_missing_constraints => repair_plan)
 )
 ```
 
@@ -321,8 +322,8 @@ When you write:
 
 ```wire
 validate_plan select(
-  ResearchPlan: (),
-  PlanIssue: (gather_missing_constraints => repair_plan)
+  valid: (),
+  issue: (gather_missing_constraints => repair_plan)
 )
 ```
 
@@ -412,23 +413,21 @@ This is better:
 
 ```wire
 validate_plan select(
-  ResearchPlan: (),
-  PlanIssue: (gather_missing_constraints => repair_plan)
-) => (load_positions, load_option_chains, load_filings, load_macro_context)
+  valid: (),
+  issue: (gather_missing_constraints => repair_plan)
+) => (load_positions <> load_option_chains <> load_filings <> load_macro_context)
 ```
 
 than this:
 
 ```wire
 validate_plan select(
-  ResearchPlan: load_positions,
-  PlanIssue: (gather_missing_constraints => repair_plan => load_positions)
+  valid: load_positions,
+  issue: (gather_missing_constraints => repair_plan => load_positions)
 )
 ```
 
-(The tuple form `(a, b, c, d)` overlays its elements as parallel lanes — see
-[grammar.md §7.5](grammar.md#75-tuples-of-wires) — and avoids the `<>` / `=>` precedence pitfall:
-`=> a <> b` parses as `(prior => a) <> b`, not as "connect to the overlay of `a` and `b`".)
+Parenthesize the overlay because the grammar rejects unparenthesized mixed `<>` / `=>` expressions.
 
 because the shared continuation should not be duplicated inside the branch alternatives unless it
 genuinely differs by branch.
@@ -445,43 +444,43 @@ Keeping shared continuation outside `select(...)`:
 ### 9.1 Binary workflow example
 
 ```wire
-node validate_plan :
-  <- DraftPlan
-  -> ResearchPlan | PlanIssue
-= @llm.validate_plan {};
+node validate_plan
+  <- draft: DraftPlan ;
+  -> valid: ResearchPlan | issue: PlanIssue ;
+  = @llm.validate_plan (draft) ;
 
-node gather_missing_constraints :
-  <- PlanIssue
-  -> MissingConstraints
-= @artifact.gather_missing_constraints {};
+node gather_missing_constraints
+  <- issue: PlanIssue ;
+  -> missing: MissingConstraints ;
+  = @artifact.gather_missing_constraints (issue) ;
 
-node repair_plan :
-  <- MissingConstraints
-  -> ResearchPlan
-= @llm.repair_plan {};
+node repair_plan
+  <- missing: MissingConstraints ;
+  -> valid: ResearchPlan ;
+  = @llm.repair_plan (missing) ;
 
-node review_report :
-  <- DraftReport
-  -> ReviewedReport | ReviewIssue
-= @llm.review_report {};
+node review_report
+  <- draft: DraftReport ;
+  -> reviewed: ReviewedReport | issue: ReviewIssue ;
+  = @llm.review_report (draft) ;
 
-node revise_report :
-  <- ReviewIssue
-  -> ReviewedReport
-= @llm.revise_report {};
+node revise_report
+  <- issue: ReviewIssue ;
+  -> reviewed: ReviewedReport ;
+  = @llm.revise_report (issue) ;
 
 load_brief
   => draft_plan
   => validate_plan select(
-       ResearchPlan: (),
-       PlanIssue: (gather_missing_constraints => repair_plan)
+       valid: (),
+       issue: (gather_missing_constraints => repair_plan)
      )
-  => (load_positions, load_option_chains, load_filings, load_macro_context)
-  => (analyze_equities, analyze_options, analyze_risk)
+  => (load_positions <> load_option_chains <> load_filings <> load_macro_context)
+  => (analyze_equities <> analyze_options <> analyze_risk)
   => gather_report
   => review_report select(
-       ReviewedReport: (),
-       ReviewIssue: revise_report
+       reviewed: (),
+       issue: revise_report
      )
   => publish_report
 ```
@@ -509,7 +508,7 @@ classify_issue select(
 
 The same rules still apply:
 
-- contract names are the default arm keys
+- output labels are the canonical arm keys
 - every arm is a continuation graph
 - every arm is productive
 - every arm converges to the same downstream boundary
@@ -644,7 +643,7 @@ This chapter makes the following commitments unless later superseded:
 1. Wire conditionality is not ordinary fan-out.
 2. The right semantic model is reduction on an exclusive output boundary.
 3. The canonical surface is postfix `select(...)`.
-4. Contract names are the default arm keys when unique.
+4. Output labels are the canonical arm keys; unique contract names remain fallback keys.
 5. `()` is the identity continuation on the current boundary.
 6. Latent branches are sealed and only the selected continuation becomes live.
 7. Shared continuation should usually live outside `select(...)`.

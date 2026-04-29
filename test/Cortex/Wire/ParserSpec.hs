@@ -13,15 +13,15 @@ Tests may import the surface they exercise, but they do not define downstream pr
 module Cortex.Wire.ParserSpec (spec) where
 
 import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.List.NonEmpty qualified as NE
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.IO qualified as TIO
 import Test.Hspec
 
 import Cortex.Wire.Parser
 import Cortex.Wire.Syntax
 
--- | Parse or fail with a helpful message (for use inside @shouldSatisfy@).
 parseOrFail :: Text -> WireFile
 parseOrFail src = case parseWireFile "test" src of
   Left err -> error ("parse failed: " <> show (renderParseError err))
@@ -29,307 +29,256 @@ parseOrFail src = case parseWireFile "test" src of
 
 spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
-  describe "spec guardrails" $ do
-    it "rejects zero-port nodes" $
-      parseWireFile "test" "node n : = @llm.x {};"
+  describe "guardrails" $ do
+    it "rejects legacy colon node declarations" $
+      parseWireFile "test" "node n : -> out: T = @llm.x ({});"
         `shouldSatisfy` isParseFailure
 
-    it "rejects single-element tuples with a trailing comma" $
-      parseWireExpr "test" "(a,)"
+    it "rejects legacy list input aggregation syntax" $
+      parseWireFile "test" "node sink\n  <- errors: [ExecutorError] ;\n  = @artifact.log (errors) ;"
         `shouldSatisfy` isParseFailure
 
-    it "rejects raw newlines inside single-line strings" $
-      parseWireExpr "test" "\"a\nb\""
+    it "rejects brace-form pure output equations" $
+      parseWireFile "test" "node score\n  -> score: Score = pure { 1 ; } ;"
+        `shouldSatisfy` isParseFailure
+
+    it "rejects authored @pure executor calls" $
+      parseWireFile "test" "node score\n  -> score: Score = @pure ({}) ;"
+        `shouldSatisfy` isParseFailure
+
+    it "rejects unparenthesized mixed topology operators" $
+      parseWireExpr "test" "a => b <> c"
+        `shouldSatisfy` isParseFailure
+
+    it "rejects comma overlay tuple shorthand" $
+      parseWireExpr "test" "(a, b)"
+        `shouldSatisfy` isParseFailure
+
+    it "rejects node-local let blocks before node bodies" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "node classify"
+            , "  <- evidence: EvidenceSet ;"
+            , "  let"
+            , "    items = evidence.items ;"
+            , "  in"
+            , "  -> accepted: AcceptedSet = pure (items) ;"
+            ]
+        )
         `shouldSatisfy` isParseFailure
 
   describe "top-level forms" $ do
-    it "parses a contract assertion" $ do
-      let WireFile forms _ = parseOrFail "contract EvidenceBundle;"
-      forms `shouldBe` [TopContract (ContractId "EvidenceBundle")]
-
-    it "parses a let binding with a string literal" $ do
-      let WireFile forms _ = parseOrFail "let greeting = \"hello\";"
+    it "parses exported scalar bindings as ordinary module lets" $ do
+      let WireFile forms _ = parseOrFail "export let threshold = 0.7 ;"
       forms
-        `shouldBe` [ TopLet "greeting" (ExprLit (LitString "hello"))
+        `shouldBe` [ TopLet
+                       LetExported
+                       "threshold"
+                       (LetRhsWire (ExprLit (LitNumber 0.7)))
                    ]
 
-    it "parses a top-level CorePure helper binding" $ do
-      let WireFile forms _ = parseOrFail "let acceptedItem = x: x.score >= 0.7;"
-      forms
-        `shouldBe` [ TopPureLet
-                       CorePureBinding
-                         { corePureBindingName = "acceptedItem"
-                         , corePureBindingExpr =
-                             CorePureLambda
-                               ("x" :| [])
-                               ( CorePureBinary
-                                   CorePureGreaterThanOrEqual
-                                   (CorePureFieldAccess (CorePureIdent "x") "score")
-                                   (CorePureLit (CorePureNumber 0.7))
-                               )
-                         }
-                   ]
+    it "parses top-level lambdas as delayed CorePure helper bindings" $ do
+      let WireFile forms _ = parseOrFail "let acceptedItem = item: item.score >= 0.7 ;"
+      case forms of
+        [TopLet LetPrivate "acceptedItem" (LetRhsCorePure CorePureLambda {})] -> pure ()
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses a named import" $ do
+    it "parses configured executor bindings" $ do
       let WireFile forms _ =
-            parseOrFail "import shared from \"./lib.wire\";"
-      forms
-        `shouldBe` [TopImport (ImportNamed "shared" "./lib.wire")]
-
-    it "parses an explicit import list" $ do
-      let WireFile forms _ =
-            parseOrFail "import { gatherer, analyst } from \"./gatherers.wire\";"
-      forms
-        `shouldBe` [ TopImport
-                       ( ImportExplicit
-                           ["gatherer", "analyst"]
-                           "./gatherers.wire"
-                       )
-                   ]
+            parseOrFail "let analyst = @llm.analyst { temperature = 0.2 ; } ;"
+      case forms of
+        [ TopLet
+            LetPrivate
+            "analyst"
+            (LetRhsWire (ExprConfiguredExecutor (QName ("llm" :| ["analyst"])) (Record fields)))
+          ] ->
+            length fields `shouldBe` 1
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
   describe "node declarations" $ do
-    it "parses a minimal sink node" $ do
-      let WireFile forms _ =
-            parseOrFail
-              "node sink : <- [ExecutorError] = @artifact.log {};"
-      forms
-        `shouldBe` [ TopNode
-                       ( NodeDecl
-                           "sink"
-                           [ PortInputDecl
-                               NoLabel
-                               (ContractId "ExecutorError")
-                               PortList
-                           ]
-                           ( NodeBodyExecutor
-                               ( ExprApply
-                                   (QName ("artifact" :| ["log"]))
-                                   (Record [])
-                               )
-                           )
-                       )
-                   ]
-
-    it "parses a sum-typed output with ExecutorError variant" $ do
-      let WireFile forms _ =
-            parseOrFail
-              "node planner : -> PlannerOutput | ExecutorError = @llm.planner {};"
-      case forms of
-        [TopNode node] -> do
-          nodeDeclName node `shouldBe` "planner"
-          case nodeDeclPortSig node of
-            [PortOutputSumDecl variants] ->
-              let vlist = foldr (:) [] variants
-               in fmap svContract vlist
-                    `shouldBe` [ ContractId "PlannerOutput"
-                               , ContractId "ExecutorError"
-                               ]
-            other -> expectationFailure ("unexpected port sig: " <> show other)
-        other -> expectationFailure ("unexpected forms: " <> show other)
-
-    it "parses labeled ports with contract disambiguation" $ do
-      let WireFile forms _ =
-            parseOrFail
-              "node router : <- Report -> primary: Claim -> fallback: Claim = @llm.router {};"
-      case forms of
-        [TopNode node] ->
-          nodeDeclPortSig node
-            `shouldBe` [ PortInputDecl NoLabel (ContractId "Report") PortSingular
-                       , PortOutputDecl (Label "primary") (ContractId "Claim")
-                       , PortOutputDecl (Label "fallback") (ContractId "Claim")
-                       ]
-        other -> expectationFailure ("unexpected forms: " <> show other)
-
-    it "parses pure output equations with shared CorePure bindings" $ do
+    it "parses pure output equations with a where-clause" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "node classify :"
-                , "  <- evidence: EvidenceSet"
-                , "  let"
-                , "    items = evidence.items;"
-                , "    acceptedItem = x: x.score >= 0.7;"
+                [ "node classify"
+                , "  <- evidence: EvidenceSet ;"
+                , "  -> accepted: AcceptedSet = pure (accepted) ;"
+                , "  -> rejected: RejectedSet = pure (rejected) ;"
+                , "  where let"
+                , "    items = evidence.items ;"
+                , "    accepted = items |> filter (x: x.score >= 0.7) ;"
+                , "    rejected = items |> filter (x: x.score < 0.7) ;"
                 , "  in"
-                , "  -> accepted: AcceptedSet = pure (filter acceptedItem items)"
-                , "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);"
+                , "  { accepted = accepted ; rejected = rejected ; } ;"
                 ]
       case forms of
         [TopNode node] -> do
           nodeDeclPortSig node
-            `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet") PortSingular
+            `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet")
                        , PortOutputDecl (Label "accepted") (ContractId "AcceptedSet")
                        , PortOutputDecl (Label "rejected") (ContractId "RejectedSet")
                        ]
           case nodeDeclBody node of
             NodeBodyPure pureBody -> do
-              length (nodePureBodyBindings pureBody) `shouldBe` 2
+              nodePureBodyWhere pureBody `shouldSatisfy` isJust
               length (nodePureBodyOutputs pureBody) `shouldBe` 2
             other -> expectationFailure ("expected pure body, got: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses brace-form pure output equations" $ do
+    it "parses single-output external shorthand" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "node score :"
-                , "  <- evidence: EvidenceSet"
-                , "  -> score: ScoreSet = pure {"
-                , "    { total = evidence.total; };"
-                , "  };"
+                [ "node analyze"
+                , "  <- evidence: EvidenceSet ;"
+                , "  -> analysis: AnalysisRecord = @llm.analyze (evidence) ;"
                 ]
       case forms of
         [TopNode node] ->
           case nodeDeclBody node of
-            NodeBodyPure pureBody ->
-              length (nodePureBodyOutputs pureBody) `shouldBe` 1
-            other -> expectationFailure ("expected pure body, got: " <> show other)
+            NodeBodyExecutor
+              Nothing
+              (ExecutorCallInline (QName ("llm" :| ["analyze"])) (Record []) (CorePureIdent "evidence")) ->
+                nodeDeclPortSig node
+                  `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet")
+                             , PortOutputDecl (Label "analysis") (ContractId "AnalysisRecord")
+                             ]
+            other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
-  describe "expressions" $ do
-    it "parses a linear => chain" $ do
-      case parseWireExpr "test" "a => b => c" of
-        Right (ExprConnect (ExprConnect (ExprIdent _) (ExprIdent _)) (ExprIdent _)) ->
-          pure ()
-        other -> expectationFailure ("unexpected: " <> show other)
+    it "parses multi-output executor bodies" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node analyze"
+                , "  <- evidence: EvidenceSet ;"
+                , "  -> analysis: AnalysisRecord ;"
+                , "  -> usage: UsageMetadata ;"
+                , "  = @llm.analyzeWithUsage (evidence) ;"
+                ]
+      case forms of
+        [TopNode node] ->
+          case nodeDeclBody node of
+            NodeBodyExecutor Nothing (ExecutorCallInline (QName ("llm" :| ["analyzeWithUsage"])) _ _) ->
+              length (nodeDeclPortSig node) `shouldBe` 3
+            other -> expectationFailure ("unexpected body: " <> show other)
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses <> and => with correct precedence" $ do
-      case parseWireExpr "test" "a => b <> c => d" of
-        Right (ExprOverlay (ExprConnect _ _) (ExprConnect _ _)) -> pure ()
-        other ->
-          expectationFailure
-            ("expected (a=>b) <> (c=>d), got: " <> show other)
+    it "parses zero-output executor bodies" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node logEvent"
+                , "  <- event: Event ;"
+                , "  = @artifact.log (event) ;"
+                ]
+      case forms of
+        [TopNode node] ->
+          nodeDeclPortSig node
+            `shouldBe` [PortInputDecl (Label "event") (ContractId "Event")]
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses postfix select with named arms" $ do
-      case parseWireExpr "test" "validate_plan select(ResearchPlan: (), PlanIssue: repair_plan)" of
-        Right (ExprSelect (ExprIdent _) arms) -> do
-          fmap selectArmKey (foldr (:) [] arms)
-            `shouldBe` ["ResearchPlan", "PlanIssue"]
-        other -> expectationFailure ("unexpected: " <> show other)
+    it "parses configured executor applications" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "let analyst = @llm.analyst { temperature = 0.2 ; } ;"
+                , "node analyze"
+                , "  <- evidence: EvidenceSet ;"
+                , "  -> analysis: AnalysisRecord ;"
+                , "  = analyst (evidence) ;"
+                ]
+      case forms of
+        [_, TopNode node] ->
+          case nodeDeclBody node of
+            NodeBodyExecutor Nothing (ExecutorCallConfigured "analyst" (CorePureIdent "evidence")) -> pure ()
+            other -> expectationFailure ("unexpected body: " <> show other)
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses select tighter than =>" $ do
-      case parseWireExpr
-        "test"
-        "plan => validate_plan select(ResearchPlan: (), PlanIssue: repair_plan) => publish_report" of
-        Right
-          ( ExprConnect
-              (ExprConnect (ExprIdent _) (ExprSelect (ExprIdent _) _))
-              (ExprIdent _)
-            ) -> pure ()
-        other ->
-          expectationFailure
-            ("expected (plan => (validate_plan select(...))) => publish_report, got: " <> show other)
+    it "parses where-clauses on executor bodies" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node analyze"
+                , "  <- evidence: EvidenceSet ;"
+                , "  -> analysis: AnalysisRecord ;"
+                , "  = @llm.analyze (payload) ;"
+                , "  where { payload = { items = evidence.items ; } ; } ;"
+                ]
+      case forms of
+        [TopNode node] ->
+          case nodeDeclBody node of
+            NodeBodyExecutor (Just (CorePureRecord _)) _ -> pure ()
+            other -> expectationFailure ("unexpected body: " <> show other)
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses tuples inside select arms when parenthesized" $ do
-      case parseWireExpr
-        "test"
-        "router select(Left: (a, b), Right: c)" of
-        Right (ExprSelect _ arms) ->
-          case foldr (:) [] arms of
-            [SelectArm "Left" (ExprTuple items), SelectArm "Right" (ExprIdent _)] ->
-              length items `shouldBe` 2
-            other -> expectationFailure ("unexpected arms: " <> show other)
-        other -> expectationFailure ("unexpected: " <> show other)
+  describe "CorePure expressions" $ do
+    it "desugars pipes into function application" $
+      parseCorePureNodeOutput "xs |> filter pred |> map f"
+        `shouldBe` CorePureCall
+          (CorePureCall (CorePureIdent "map") [CorePureIdent "f"])
+          [ CorePureCall
+              (CorePureCall (CorePureIdent "filter") [CorePureIdent "pred"])
+              [CorePureIdent "xs"]
+          ]
 
-    it "parses // and ++ at the same precedence level" $ do
-      case parseWireExpr "test" "base // { k = \"v\"; } // { j = \"w\"; }" of
-        Right (ExprMerge (ExprMerge _ _) _) -> pure ()
-        other -> expectationFailure ("unexpected: " <> show other)
+    it "parses CorePure record merge" $
+      parseCorePureNodeOutput "{ a = 1 ; } // { b = 2 ; }"
+        `shouldBe` CorePureBinary
+          CorePureMerge
+          (CorePureRecord [CorePureField ("a" :| []) (CorePureLit (CorePureNumber 1))])
+          (CorePureRecord [CorePureField ("b" :| []) (CorePureLit (CorePureNumber 2))])
 
-    it "parses ''multiline'' strings verbatim" $ do
-      case parseWireExpr "test" "''hello\nworld''" of
-        Right (ExprLit (LitMultilineString s)) -> s `shouldBe` "hello\nworld"
-        other -> expectationFailure ("unexpected: " <> show other)
+    it "parses if-then-else" $
+      parseCorePureNodeOutput "if accepted then \"yes\" else \"no\""
+        `shouldBe` CorePureIf
+          (CorePureIdent "accepted")
+          (CorePureLit (CorePureString "yes"))
+          (CorePureLit (CorePureString "no"))
 
-    it "parses list concatenation" $ do
-      case parseWireExpr "test" "[a, b] ++ [c]" of
-        Right (ExprConcat (ExprList _) (ExprList _)) -> pure ()
-        other -> expectationFailure ("unexpected: " <> show other)
-
-    it "parses a tuple at graph position" $ do
-      case parseWireExpr "test" "(a, b, c)" of
-        Right (ExprTuple items) -> length items `shouldBe` 3
-        other -> expectationFailure ("unexpected: " <> show other)
-
-    it "parses @executor { field = val; }" $ do
-      case parseWireExpr
-        "test"
-        "@llm.analyst { maxOutputTokens = 16384; memory = topological { preset = \"analyst\"; }; }" of
-        Right (ExprApply (QName ("llm" :| ["analyst"])) (Record fields)) ->
-          length fields `shouldBe` 2
-        other -> expectationFailure ("unexpected: " <> show other)
-
-    it "rejects comma-separated executor config fields" $
-      parseWireExpr
-        "test"
-        "@llm.analyst { prompt = \"Find current evidence.\", tools = [webSearch], }"
-        `shouldSatisfy` isParseFailure
-
-    it "rejects unterminated executor config fields" $
-      parseWireExpr
-        "test"
-        "@llm.analyst {\n  prompt = \"Find current evidence.\"\n  ; tools = [webSearch]\n}"
-        `shouldSatisfy` isParseFailure
-
-    it "parses a bare @llm executor reference as a single-segment qname" $ do
-      case parseWireExpr "test" "@llm {}" of
-        Right (ExprApply (QName ("llm" :| [])) (Record [])) ->
-          pure ()
-        other -> expectationFailure ("unexpected: " <> show other)
+    it "desugars interpolation to concat and toString" $
+      parseCorePureNodeOutput "\"Score: ${score}\""
+        `shouldBe` CorePureCall
+          (CorePureIdent "concat")
+          [ CorePureList
+              [ CorePureLit (CorePureString "Score: ")
+              , CorePureCall (CorePureIdent "toString") [CorePureIdent "score"]
+              ]
+          ]
 
   describe "file-return expressions" $ do
-    it "parses a file with a trailing expression and no ;" $ do
-      let src =
-            "node a : -> T = @llm.x {};\n\
-            \node b : <- T -> U = @llm.y {};\n\
-            \a => b"
-      let WireFile forms ret = parseOrFail src
+    it "parses a file with a parenthesized mixed topology expression" $ do
+      let WireFile forms ret =
+            parseOrFail $
+              T.unlines
+                [ "node a"
+                , "  -> out: T = @llm.x ({}) ;"
+                , "node b"
+                , "  <- input: T ;"
+                , "  -> out: U = @llm.y (input) ;"
+                , "(a) => b"
+                ]
       length forms `shouldBe` 2
       case ret of
         Just (ExprConnect _ _) -> pure ()
-        other ->
-          expectationFailure
-            ("expected a => b file-return, got: " <> show other)
+        other -> expectationFailure ("unexpected return: " <> show other)
 
-    it "parses a declaration-only file (no return)" $ do
-      let src =
-            "contract X;\n\
-            \let shared = \"prompt\";\n"
-      let WireFile forms ret = parseOrFail src
-      length forms `shouldBe` 2
-      ret `shouldBe` Nothing
-
-  describe "grammar §12 flagship example" $ do
-    it "parses the full thesis-parallel-claim-branches program" $ do
-      src <-
-        TIO.readFile
-          "test/fixtures/wire/thesis-parallel-claim-branches.wire"
-      let WireFile forms ret = parseOrFail src
-      -- 7 lets + 11 nodes = 18 top forms.
-      length forms `shouldBe` 18
-      -- The file-return is the complete wire → @cortex.deep_report tail.
-      case ret of
-        Just (ExprConnect _ (ExprApply (QName ("cortex" :| ["deep_report"])) _)) ->
-          pure ()
-        other ->
-          expectationFailure
-            ("expected final => @cortex.deep_report, got: " <> show other)
-
-    it "parses the pure-output-equations fixture" $ do
-      src <-
-        TIO.readFile
-          "test/fixtures/wire/pure-output-equations.wire"
-      let WireFile forms ret = parseOrFail src
-      length forms `shouldBe` 5
-      case forms of
-        [TopContract _, TopContract _, TopContract _, TopPureLet _, TopNode node] ->
-          case nodeDeclBody node of
-            NodeBodyPure pureBody -> do
-              length (nodePureBodyBindings pureBody) `shouldBe` 2
-              length (nodePureBodyOutputs pureBody) `shouldBe` 2
-            other -> expectationFailure ("expected pure body, got: " <> show other)
-        other ->
-          expectationFailure ("unexpected forms: " <> show other)
-      ret `shouldBe` Just (ExprIdent (QName ("classify" :| [])))
+parseCorePureNodeOutput :: Text -> CorePureExpr
+parseCorePureNodeOutput source =
+  case parseWireFile "test" program of
+    Right (WireFile [TopNode node] _) ->
+      case nodeDeclBody node of
+        NodeBodyPure pureBody ->
+          pureOutputEquationExpr (NE.head pureBody.nodePureBodyOutputs)
+        other -> error ("unexpected node body: " <> show other)
+    other -> error ("unexpected parse result: " <> show other)
+  where
+    program =
+      T.unlines
+        [ "node value"
+        , "  -> out: T = pure (" <> source <> ") ;"
+        ]
 
 isParseFailure :: Either ParseError a -> Bool
 isParseFailure result = case result of

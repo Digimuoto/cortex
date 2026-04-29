@@ -22,10 +22,10 @@ module Cortex.Wire.Parser
 where
 
 import Control.Monad (when)
-import Data.Char (isAlpha, isAlphaNum)
+import Data.Char (isAlpha, isAlphaNum, isSpace)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Scientific (Scientific)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -44,7 +44,6 @@ import Text.Megaparsec
   , satisfy
   , sepEndBy
   , some
-  , (<?>)
   , (<|>)
   )
 import Text.Megaparsec qualified as MP
@@ -109,7 +108,23 @@ keyword w = lexeme . try $ do
 
 reservedWords :: [Text]
 reservedWords =
-  ["contract", "node", "let", "in", "import", "from", "select", "pure", "true", "false", "null"]
+  [ "contract"
+  , "else"
+  , "export"
+  , "false"
+  , "from"
+  , "if"
+  , "import"
+  , "in"
+  , "let"
+  , "node"
+  , "null"
+  , "pure"
+  , "select"
+  , "then"
+  , "true"
+  , "where"
+  ]
 
 -- | Identifier-continuation predicate.
 identCont :: Char -> Bool
@@ -217,6 +232,7 @@ stringLiteralForm = multiLine <|> singleLine
         else (c :) <$> multiLineBody
 
 data StringForm = FormSingle | FormMulti
+  deriving stock (Eq)
 
 numberLiteral :: Parser Scientific
 numberLiteral = lexeme . try $ do
@@ -238,25 +254,35 @@ boolLiteral = (True <$ keyword "true") <|> (False <$ keyword "false")
 -- Expressions
 ------------------------------------------------------------------------
 
--- | Top-level expression = overlay level (lowest precedence).
-expr :: Parser Expr
-expr = exprOverlayLevel
+data TopologyOperator = TopologyOverlay | TopologyConnect
+  deriving stock (Eq)
 
-{- | @<>@ binds the loosest: @a => b <> c@ parses as @a => (b <> c)@ …
-wait, <> is infixl 2 (lowest), so the overlay layer sits OUTSIDE =>.
-Correct reading: @a => b <> c => d@ parses as @(a => b) <> (c => d)@.
+{- | Top-level expression. Overlay and connect are both topology
+operators; the first implementation requires parentheses when they
+are mixed.
 -}
-exprOverlayLevel :: Parser Expr
-exprOverlayLevel = do
-  first <- exprConnectLevel
-  rest <- many (symbol "<>" *> exprConnectLevel)
-  pure (foldl ExprOverlay first rest)
-
-exprConnectLevel :: Parser Expr
-exprConnectLevel = do
+expr :: Parser Expr
+expr = do
   first <- exprSelectLevel
-  rest <- many (symbol "=>" *> exprSelectLevel)
-  pure (foldl ExprConnect first rest)
+  rest <- many topologyStep
+  case rest of
+    [] -> pure first
+    (firstOp, _) : _ -> do
+      when (any ((/= firstOp) . fst) rest) $
+        fail "mixing <> and => requires parentheses"
+      pure (foldl' applyTopology first rest)
+  where
+    topologyStep = do
+      op <-
+        (TopologyOverlay <$ symbol "<>")
+          <|> (TopologyConnect <$ symbol "=>")
+      rhs <- exprSelectLevel
+      pure (op, rhs)
+
+    applyTopology acc (op, rhs) =
+      case op of
+        TopologyOverlay -> ExprOverlay acc rhs
+        TopologyConnect -> ExprConnect acc rhs
 
 exprSelectLevel :: Parser Expr
 exprSelectLevel = do
@@ -307,19 +333,19 @@ stringLitExpr = do
     FormMulti -> LitMultilineString text
 
 {- | Atomic expression: application, constructor, record, list, literal,
-identifier, or parenthesized group / tuple.
+identifier, or parenthesized group.
 -}
 exprAtom :: Parser Expr
 exprAtom =
   choice
-    [ ExprApply <$> executorRef <*> recordExpr
+    [ ExprConfiguredExecutor <$> executorRef <*> recordExpr
     , try constructorExpr
     , ExprRecord <$> recordExpr
     , listExpr
     , stringLitExpr
     , ExprLit . LitBool <$> boolLiteral
     , ExprLit . LitNumber <$> numberLiteral
-    , parenOrTuple
+    , parenOrUnit
     , ExprIdent <$> qualifiedIdent
     ]
 
@@ -356,9 +382,9 @@ listExpr = do
   _ <- symbol "]"
   pure (ExprList items)
 
--- | Parenthesized expression or tuple (grammar §14.4).
-parenOrTuple :: Parser Expr
-parenOrTuple = do
+-- | Parenthesized expression or empty wire.
+parenOrUnit :: Parser Expr
+parenOrUnit = do
   _ <- symbol "("
   maybeFirst <- optional expr
   case maybeFirst of
@@ -366,17 +392,8 @@ parenOrTuple = do
       _ <- symbol ")"
       pure (ExprLit LitUnit)
     Just first -> do
-      rest <- many (symbol "," *> expr)
-      hadTrailingComma <- isJust <$> optional (symbol ",")
       _ <- symbol ")"
-      case rest of
-        []
-          | hadTrailingComma ->
-              fail "single-element tuples are not admitted"
-          | otherwise ->
-              pure first
-        _ ->
-          pure (ExprTuple (first : rest))
+      pure first
 
 ------------------------------------------------------------------------
 -- CorePure expressions
@@ -386,9 +403,19 @@ corePureExpr :: Parser CorePureExpr
 corePureExpr =
   choice
     [ try corePureLet
+    , try corePureIf
     , try corePureLambda
-    , corePureOrLevel
+    , corePurePipeLevel
     ]
+
+corePureIf :: Parser CorePureExpr
+corePureIf = do
+  keyword "if"
+  condition <- corePureExpr
+  keyword "then"
+  thenExpr <- corePureExpr
+  keyword "else"
+  CorePureIf condition thenExpr <$> corePureExpr
 
 corePureLet :: Parser CorePureExpr
 corePureLet = do
@@ -413,6 +440,16 @@ corePureLambda = do
     pure param
   params <- requireNonEmpty "CorePure lambda requires at least one parameter" paramList
   CorePureLambda params <$> corePureExpr
+
+corePurePipeLevel :: Parser CorePureExpr
+corePurePipeLevel = do
+  first <- corePureMergeLevel
+  rest <- many (symbol "|>" *> corePureMergeLevel)
+  pure (foldl' (\acc functionExpr -> CorePureCall functionExpr [acc]) first rest)
+
+corePureMergeLevel :: Parser CorePureExpr
+corePureMergeLevel =
+  chainLeft corePureOrLevel (CorePureBinary CorePureMerge <$ symbol "//")
 
 corePureOrLevel :: Parser CorePureExpr
 corePureOrLevel =
@@ -514,8 +551,147 @@ betweenCorePureParens = do
 
 corePureString :: Parser CorePureExpr
 corePureString = do
-  (_form, text) <- stringLiteralForm
-  pure (CorePureLit (CorePureString text))
+  corePureSingleLineString <|> corePureIndentedString
+
+corePureSingleLineString :: Parser CorePureExpr
+corePureSingleLineString = lexeme $ do
+  _ <- char '"'
+  raw <- T.pack <$> manyTill singleRawChar (char '"')
+  either fail pure (desugarStringSegments FormSingle raw)
+  where
+    singleRawChar = do
+      c <- anySingle
+      case c of
+        '\n' -> fail "single-line strings may not contain raw newlines"
+        '\r' -> fail "single-line strings may not contain raw carriage returns"
+        _ -> pure c
+
+corePureIndentedString :: Parser CorePureExpr
+corePureIndentedString = lexeme . try $ do
+  _ <- string "''"
+  raw <- T.pack <$> manyTill anySingle (try (string "''"))
+  either fail pure (desugarStringSegments FormMulti (stripIndentedString raw))
+
+data StringSegment = StringText !Text | StringInterpolation !CorePureExpr
+
+desugarStringSegments :: StringForm -> Text -> Either String CorePureExpr
+desugarStringSegments form raw =
+  buildStringExpr <$> go raw []
+  where
+    go input acc
+      | T.null input = Right (reverse acc)
+      | "${" `T.isPrefixOf` input = do
+          (exprValue, rest) <- parseInterpolation (T.drop 2 input)
+          go rest (StringInterpolation exprValue : acc)
+      | form == FormSingle && "\\${" `T.isPrefixOf` input =
+          go (T.drop 3 input) (StringText "${" : acc)
+      | form == FormSingle && "\\" `T.isPrefixOf` input = do
+          (escaped, rest) <- singleEscaped input
+          go rest (StringText escaped : acc)
+      | form == FormMulti && "''${" `T.isPrefixOf` input =
+          go (T.drop 4 input) (StringText "${" : acc)
+      | form == FormMulti && "''' " `T.isPrefixOf` input =
+          go (T.drop 3 input) (StringText "'' " : acc)
+      | form == FormMulti && "''\\n" `T.isPrefixOf` input =
+          go (T.drop 4 input) (StringText "\n" : acc)
+      | form == FormMulti && "''\\t" `T.isPrefixOf` input =
+          go (T.drop 4 input) (StringText "\t" : acc)
+      | form == FormMulti && "''\\r" `T.isPrefixOf` input =
+          go (T.drop 4 input) (StringText "\r" : acc)
+      | otherwise =
+          let (prefix, rest) = breakOnNextSpecial form input
+           in go rest (StringText prefix : acc)
+
+    singleEscaped input =
+      case T.unpack (T.take 2 input) of
+        ['\\', 'n'] -> Right ("\n", T.drop 2 input)
+        ['\\', 't'] -> Right ("\t", T.drop 2 input)
+        ['\\', 'r'] -> Right ("\r", T.drop 2 input)
+        ['\\', '"'] -> Right ("\"", T.drop 2 input)
+        ['\\', '\\'] -> Right ("\\", T.drop 2 input)
+        ['\\', c] -> Left ("unknown escape: \\" <> [c])
+        _ -> Left "unterminated escape"
+
+parseInterpolation :: Text -> Either String (CorePureExpr, Text)
+parseInterpolation input =
+  case parse interpolationParser "string interpolation" input of
+    Left bundle -> Left (errorBundlePretty bundle)
+    Right value -> Right value
+  where
+    interpolationParser = do
+      value <- spaceConsumer *> corePureExpr <* spaceConsumer
+      _ <- char '}'
+      rest <- MP.getInput
+      pure (value, rest)
+
+breakOnNextSpecial :: StringForm -> Text -> (Text, Text)
+breakOnNextSpecial form input =
+  let specialPrefixes =
+        case form of
+          FormSingle -> ["${", "\\"]
+          FormMulti -> ["${", "''${", "''\\n", "''\\t", "''\\r"]
+      indexOf prefix =
+        case T.breakOn prefix input of
+          (before, after)
+            | T.null after -> Nothing
+            | otherwise -> Just (T.length before)
+      firstIndex = minimumMaybe (mapMaybe indexOf specialPrefixes)
+   in case firstIndex of
+        Nothing -> (input, "")
+        Just idx -> T.splitAt idx input
+
+minimumMaybe :: Ord a => [a] -> Maybe a
+minimumMaybe values =
+  case values of
+    [] -> Nothing
+    first : rest -> Just (foldl' min first rest)
+
+buildStringExpr :: [StringSegment] -> CorePureExpr
+buildStringExpr rawSegments =
+  case mergeTextSegments rawSegments of
+    [] -> CorePureLit (CorePureString "")
+    [StringText text] -> CorePureLit (CorePureString text)
+    segments ->
+      CorePureCall
+        (CorePureIdent "concat")
+        [ CorePureList
+            [ case segment of
+                StringText text -> CorePureLit (CorePureString text)
+                StringInterpolation exprValue ->
+                  CorePureCall (CorePureIdent "toString") [exprValue]
+            | segment <- segments
+            ]
+        ]
+
+mergeTextSegments :: [StringSegment] -> [StringSegment]
+mergeTextSegments =
+  foldr mergeStep []
+  where
+    mergeStep (StringText "") acc = acc
+    mergeStep (StringText left) (StringText right : rest) = StringText (left <> right) : rest
+    mergeStep segment acc = segment : acc
+
+stripIndentedString :: Text -> Text
+stripIndentedString raw =
+  let withoutOpeningBlank =
+        case T.breakOn "\n" raw of
+          (firstLine, rest)
+            | T.all isSpace firstLine && not (T.null rest) -> T.drop 1 rest
+          _ -> raw
+      linesWithBlanks = T.splitOn "\n" withoutOpeningBlank
+      nonBlankLines = filter (not . T.all isSpace) linesWithBlanks
+      commonIndent =
+        minimumMaybe
+          [ T.length (T.takeWhile (\c -> c == ' ' || c == '\t') line)
+          | line <- nonBlankLines
+          ]
+      stripLine line =
+        case commonIndent of
+          Nothing -> line
+          Just indent
+            | T.all isSpace line -> ""
+            | otherwise -> T.drop indent line
+   in T.intercalate "\n" (fmap stripLine linesWithBlanks)
 
 corePureList :: Parser CorePureExpr
 corePureList = do
@@ -560,41 +736,11 @@ requireNonEmpty message values =
 -- Port signatures
 ------------------------------------------------------------------------
 
-{- | Zero or more port declarations. Terminates at the first non-port
-token (@=@ introducing the body).
--}
-portSignature :: Parser [PortDecl]
-portSignature = many (try portDecl)
-
-portDecl :: Parser PortDecl
-portDecl = inputPort <|> outputPort
-
 inputPort :: Parser PortDecl
 inputPort = do
   _ <- symbol "<-"
-  (lbl, typ) <- portBodyInput
-  pure (uncurry (PortInputDecl lbl) typ)
-
-portBodyInput :: Parser (PortLabel, (ContractId, PortArity))
-portBodyInput = do
-  lbl <- optionalLabel
-  typ <- inputType
-  pure (lbl, typ)
-
--- | Single-contract or bracketed list contract.
-inputType :: Parser (ContractId, PortArity)
-inputType =
-  (listed <|> single) <?> "input contract"
-  where
-    single = do
-      c <- identifier
-      pure (ContractId c, PortSingular)
-
-    listed = do
-      _ <- symbol "["
-      c <- identifier
-      _ <- symbol "]"
-      pure (ContractId c, PortList)
+  lbl <- requiredLabel
+  PortInputDecl lbl . ContractId <$> identifier
 
 outputPort :: Parser PortDecl
 outputPort = do
@@ -612,19 +758,14 @@ outputPort = do
 
 outputVariant :: Parser SumVariant
 outputVariant = do
-  lbl <- optionalLabel
+  lbl <- requiredLabel
   SumVariant lbl . ContractId <$> identifier
 
-{- | Optional @label:@ prefix. Distinguished from a bare
-contract-name-then-separator by lookahead for the colon.
--}
-optionalLabel :: Parser PortLabel
-optionalLabel = do
-  ml <- optional . try $ do
-    name <- identifier
-    _ <- symbol ":"
-    pure name
-  pure (maybe NoLabel Label ml)
+requiredLabel :: Parser PortLabel
+requiredLabel = do
+  name <- identifier
+  _ <- symbol ":"
+  pure (Label name)
 
 ------------------------------------------------------------------------
 -- Top-level forms
@@ -641,17 +782,13 @@ wireFile = do
   pure (WireFile forms ret)
 
 fileReturnExpr :: Parser Expr
-fileReturnExpr = do
-  first <- expr
-  rest <- many (symbol "," *> expr)
-  pure (foldl ExprOverlay first rest)
+fileReturnExpr = expr
 
 topForm :: Parser TopForm
 topForm =
   choice
     [ contractDecl
     , nodeDecl
-    , try pureLetBinding
     , letBinding
     , importStmt
     ]
@@ -664,78 +801,104 @@ contractDecl = do
   pure (TopContract (ContractId n))
 
 nodeDecl :: Parser TopForm
-nodeDecl = try pureNodeDecl <|> executorNodeDecl
-
-executorNodeDecl :: Parser TopForm
-executorNodeDecl = do
+nodeDecl = do
   keyword "node"
   name <- identifier
-  _ <- symbol ":"
-  sig <- portSignature
-  when (null sig) $
-    fail "Wire requires every node to declare at least one port"
-  _ <- symbol "="
-  body <- expr
-  _ <- symbol ";"
-  pure (TopNode (NodeDecl name sig (NodeBodyExecutor body)))
+  inputs <- many (try (inputPort <* symbol ";"))
+  (outputs, mkBody) <- nodeImplementationBody
+  whereExpr <- optional (try whereClause)
+  pure (TopNode (NodeDecl name (inputs <> outputs) (mkBody whereExpr)))
 
-pureNodeDecl :: Parser TopForm
-pureNodeDecl = do
-  keyword "node"
-  name <- identifier
-  _ <- symbol ":"
-  inputs <- many (try inputPort)
-  localBindings <- optional (try pureNodeLocalBindings)
+nodeImplementationBody :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+nodeImplementationBody =
+  choice
+    [ try pureImplementation
+    , try singleOutputExecutorShorthand
+    , executorImplementation
+    ]
+
+pureImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+pureImplementation = do
   outputEquations <-
     requireNonEmpty "pure node requires at least one output equation" =<< some (try pureOutputEquation)
-  _ <- symbol ";"
-  let sig = inputs <> fmap pureOutputEquationPortDecl (NE.toList outputEquations)
-  when (null sig) $
-    fail "Wire requires every node to declare at least one port"
+  let outputs = fmap pureOutputEquationPortDecl (NE.toList outputEquations)
   pure
-    ( TopNode
-        ( NodeDecl
-            name
-            sig
-            ( NodeBodyPure
-                NodePureBody
-                  { nodePureBodyBindings = fromMaybe [] localBindings
-                  , nodePureBodyOutputs = outputEquations
-                  }
-            )
-        )
+    ( outputs
+    , \whereExpr ->
+        NodeBodyPure
+          NodePureBody
+            { nodePureBodyWhere = whereExpr
+            , nodePureBodyOutputs = outputEquations
+            }
     )
 
-pureNodeLocalBindings :: Parser [CorePureBinding]
-pureNodeLocalBindings = do
-  keyword "let"
-  bindings <- some corePureBinding
-  keyword "in"
-  pure bindings
+singleOutputExecutorShorthand :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+singleOutputExecutorShorthand = do
+  _ <- symbol "->"
+  SumVariant label contractId <- outputVariant
+  _ <- symbol "="
+  call <- executorCall
+  _ <- symbol ";"
+  pure
+    ( [PortOutputDecl label contractId]
+    , (`NodeBodyExecutor` call)
+    )
+
+executorImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+executorImplementation = do
+  outputs <- many (try (outputPort <* symbol ";"))
+  _ <- symbol "="
+  call <- executorCall
+  _ <- symbol ";"
+  pure (outputs, (`NodeBodyExecutor` call))
+
+whereClause :: Parser CorePureExpr
+whereClause = do
+  keyword "where"
+  exprValue <- corePureExpr
+  _ <- symbol ";"
+  pure exprValue
 
 pureOutputEquation :: Parser PureOutputEquation
 pureOutputEquation = do
   _ <- symbol "->"
   SumVariant label contractId <- outputVariant
   _ <- symbol "="
-  PureOutputEquation label contractId <$> pureOutputExpression
+  PureOutputEquation label contractId
+    <$> pureOutputExpression
+    <* symbol ";"
 
 pureOutputExpression :: Parser CorePureExpr
 pureOutputExpression = do
   keyword "pure"
-  choice
-    [ do
-        _ <- symbol "("
-        value <- corePureExpr
-        _ <- symbol ")"
-        pure value
-    , do
-        _ <- symbol "{"
-        value <- corePureExpr
-        _ <- optional (symbol ";")
-        _ <- symbol "}"
-        pure value
-    ]
+  _ <- symbol "("
+  value <- corePureExpr
+  _ <- symbol ")"
+  pure value
+
+executorCall :: Parser ExecutorCall
+executorCall =
+  try inlineExecutorCall <|> configuredExecutorCall
+  where
+    inlineExecutorCall = do
+      executor <- executorRef
+      when (renderQName executor == "pure") $
+        fail "pure nodes must be authored with pure (...) output equations"
+      config <- fromMaybe (Record []) <$> optional (try recordExpr)
+      inputArg <- betweenCallParens corePureExpr
+      pure (ExecutorCallInline executor config inputArg)
+
+    configuredExecutorCall = do
+      name <- identifier
+      inputArg <- betweenCallParens corePureExpr
+      pure (ExecutorCallConfigured name inputArg)
+
+betweenCallParens :: Parser a -> Parser a
+betweenCallParens inner = do
+  _ <- symbol "("
+  value <- inner
+  _ <- symbol ")"
+  pure value
 
 pureOutputEquationPortDecl :: PureOutputEquation -> PortDecl
 pureOutputEquationPortDecl outputEquation =
@@ -745,21 +908,16 @@ pureOutputEquationPortDecl outputEquation =
 
 letBinding :: Parser TopForm
 letBinding = do
+  visibility <- (LetExported <$ keyword "export") <|> pure LetPrivate
   keyword "let"
   name <- identifier
   _ <- symbol "="
-  value <- expr
-  _ <- symbol ";"
-  pure (TopLet name value)
+  TopLet visibility name <$> letRhs
 
-pureLetBinding :: Parser TopForm
-pureLetBinding = do
-  keyword "let"
-  name <- identifier
-  _ <- symbol "="
-  value <- try corePureLambda <|> corePureLet
-  _ <- symbol ";"
-  pure (TopPureLet CorePureBinding {corePureBindingName = name, corePureBindingExpr = value})
+letRhs :: Parser LetRhs
+letRhs =
+  try (LetRhsWire <$> expr <* symbol ";")
+    <|> (LetRhsCorePure <$> corePureExpr <* symbol ";")
 
 importStmt :: Parser TopForm
 importStmt = do

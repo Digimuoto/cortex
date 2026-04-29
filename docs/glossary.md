@@ -50,12 +50,11 @@ orientation.
 - **Port** — a slot on a node, typed by a contract. Input (`<-`) or output (`->`). May be labeled.
 - **Port key** — `(direction, contract, label)`, the identity tuple `=>` matches on.
 - **Label** — part of a port's routing identity, not a cosmetic name.
-- **Node** — an executor application pinned to a port signature.
+- **Node** — an explicit graph vertex with typed ports and an implementation body.
 - **Executor** — a registered recipe that turns inputs into outputs.
-- **Partial node** — a configured executor value with no ports pinned yet.
+- **Configured executor value** — executor authority plus inert config, reusable in node bodies.
 - **Sum group** — output-port form `-> A | B` where exactly one variant fires.
-- **Wire value** — a node, a composed graph expression, or a port-determined partial node in graph
-  position.
+- **Wire value** — a node, a composed graph expression, or the empty wire `()`.
 - **Port-boundary** — a wire's currently unconnected input and output ports.
 - **File-return expression** — the last expression in a `.wire` file, which becomes the file's
   value.
@@ -66,10 +65,10 @@ orientation.
 
 - **`<>` overlay** — set union of nodes and edges.
 - **`=>` connect** — port-key-matched edge addition over boundaries.
-- **`//` merge** — right-biased shallow record merge; also applies to partial-node configs.
+- **`//` merge** — right-biased shallow record merge.
 - **`++` concat** — string and list concatenation.
 - **`|` sum** — output-port mutual-exclusion constructor.
-- **`@` application** — executor application to config: `@qualified.name { ... }`.
+- **`@` application** — stages registered executor authority with config: `@qualified.name { ... }`.
 
 ## Runtime
 

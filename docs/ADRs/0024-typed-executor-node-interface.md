@@ -15,7 +15,7 @@ related:
   - docs/Architecture/09-nous-reasoning-library.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/grammar.md
-  - docs/Reference/Wire/partials-and-execution-boundary.md
+  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
@@ -106,10 +106,10 @@ surrounding arrows, infer "context" from graph position, or become runnable mere
 composition expression.
 
 This overturns the earlier reference-doc model in
-[`partials-and-execution-boundary.md`](../Reference/Wire/partials-and-execution-boundary.md), where
-partial executor values could later become graph nodes by receiving ports from surrounding syntax.
-Under this ADR, reusable configuration may still exist, but it is not a node and it is not admitted
-into graph position on its own.
+[`configured-executors-and-execution-boundary.md`](../Reference/Wire/configured-executors-and-execution-boundary.md),
+where partial executor values could later become graph nodes by receiving ports from surrounding
+syntax. Under this ADR, reusable configuration may still exist, but it is not a node and it is not
+admitted into graph position on its own.
 
 A graph vertex exists only after an explicit node declaration produces a concrete typed port
 boundary. A registered fixed executor projection may supply the admission-time backing for an
@@ -320,4 +320,4 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 - [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
 - [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
 - [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
-- [Wire Partials and Execution Boundary Reference](../Reference/Wire/partials-and-execution-boundary.md)
+- [Wire Configured Executors and Execution Boundary Reference](../Reference/Wire/configured-executors-and-execution-boundary.md)

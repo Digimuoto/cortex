@@ -268,16 +268,16 @@ produced) or `MemoryTopological cfg` (the stage runs a `queryMemory` walk at ent
 routing-key filter, and top-N limit from `cfg`). Wire grammar:
 
 ```wire
-node reviewer :
-  <- AnalystDraft
-  -> ReviewerDraft | ExecutorError
-= @llm.reviewer {
-  memory = topological {
-    preset = "reviewer";
-    routingKey = "analyst";
-    limit = 16;
-  };
-};
+node reviewer
+  <- draft: AnalystDraft ;
+  -> reviewed: ReviewerDraft | error: ExecutorError ;
+  = @llm.reviewer {
+    memory = topological {
+      preset = "reviewer" ;
+      routingKey = "analyst" ;
+      limit = 16 ;
+    } ;
+  } (draft) ;
 ```
 
 Short form `memory = classic;` is equivalent to omitting the field. Changing strategy does not

@@ -186,6 +186,7 @@ data LoweredWireFile = LoweredWireFile
 data LoweringState = LoweringState
   { lsBindings :: !(Map Text EvalValue)
   , lsPureBindings :: ![CorePureBinding]
+  , lsGraphBindings :: !(Map Text GraphFragment)
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
@@ -196,6 +197,7 @@ emptyLoweringState =
   LoweringState
     { lsBindings = Map.empty
     , lsPureBindings = []
+    , lsGraphBindings = Map.empty
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
@@ -209,12 +211,12 @@ data EvalValue
   | EvalQName !QName
   | EvalRecord !(Map (NonEmpty Text) EvalValue)
   | EvalConstructor !QName !(Map (NonEmpty Text) EvalValue)
-  | EvalPartial !PartialNode
+  | EvalConfiguredExecutor !ConfiguredExecutor
   deriving stock (Eq, Show)
 
-data PartialNode = PartialNode
-  { pnExecutor :: !(Maybe QName)
-  , pnFields :: !(Map (NonEmpty Text) EvalValue)
+data ConfiguredExecutor = ConfiguredExecutor
+  { ceExecutor :: !QName
+  , ceFields :: !(Map (NonEmpty Text) EvalValue)
   }
   deriving stock (Eq, Show)
 
@@ -226,6 +228,12 @@ data LoweredPort = LoweredPort
   , lpLabel :: !PortLabel
   , lpCardinality :: !(Maybe WireCore.WireInputCardinality)
   , lpExclusiveGroup :: !(Maybe Int)
+  }
+  deriving stock (Eq, Show)
+
+data LoweredNodePorts = LoweredNodePorts
+  { lnpInputs :: ![LoweredPort]
+  , lnpOutputs :: ![LoweredPort]
   }
   deriving stock (Eq, Show)
 
@@ -329,20 +337,27 @@ lowerTopForm compileEnv st = \case
     Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
   TopImport _ ->
     Left (WireCore.WireParseError "Wire imports are not compiled yet.")
-  TopLet name expr -> do
-    value <- evalValue st expr
+  TopLet _visibility name rhs -> do
     if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
-      else Right st {lsBindings = Map.insert name value st.lsBindings}
-  TopPureLet binding -> do
-    let name = binding.corePureBindingName
-    if topLevelBindingNameTaken st name
-      then Left (WireCore.WireDuplicateLetBinding name)
-      else Right st {lsPureBindings = st.lsPureBindings <> [binding]}
+      else case rhs of
+        LetRhsCorePure expr ->
+          Right
+            st
+              { lsPureBindings =
+                  st.lsPureBindings
+                    <> [ CorePureBinding
+                           { corePureBindingName = name
+                           , corePureBindingExpr = expr
+                           }
+                       ]
+              }
+        LetRhsWire expr ->
+          lowerWireLetBinding st name expr
   TopNode nodeDecl -> do
     loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
-    if Map.member nodeName st.lsNamedNodes
+    if topLevelBindingNameTaken st nodeName
       then Left (WireCore.WireDuplicateNodeRef loweredNode.lnRef)
       else
         Right
@@ -352,7 +367,64 @@ lowerTopForm compileEnv st = \case
   where
     topLevelBindingNameTaken state name =
       Map.member name state.lsBindings
+        || Map.member name state.lsGraphBindings
+        || Map.member name state.lsNamedNodes
         || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
+
+lowerWireLetBinding
+  :: LoweringState
+  -> Text
+  -> Expr
+  -> Either WireCore.WireError LoweringState
+lowerWireLetBinding st name expr
+  | isGraphLetExpr st expr = do
+      graphValue <- lowerGraphExpr st expr
+      Right st {lsGraphBindings = Map.insert name graphValue st.lsGraphBindings}
+  | otherwise = do
+      value <- evalValue st expr
+      let st' = st {lsBindings = Map.insert name value st.lsBindings}
+      Right (appendPureBindingIfCapturable name value st')
+
+isGraphLetExpr :: LoweringState -> Expr -> Bool
+isGraphLetExpr st = \case
+  ExprOverlay {} -> True
+  ExprConnect {} -> True
+  ExprSelect {} -> True
+  ExprLit LitUnit -> True
+  ExprIdent (QName (name :| [])) ->
+    Map.member name st.lsNamedNodes || Map.member name st.lsGraphBindings
+  _ -> False
+
+appendPureBindingIfCapturable :: Text -> EvalValue -> LoweringState -> LoweringState
+appendPureBindingIfCapturable name value st =
+  case evalValueToCorePureExpr value of
+    Nothing -> st
+    Just expr ->
+      st
+        { lsPureBindings =
+            st.lsPureBindings
+              <> [ CorePureBinding
+                     { corePureBindingName = name
+                     , corePureBindingExpr = expr
+                     }
+                 ]
+        }
+
+evalValueToCorePureExpr :: EvalValue -> Maybe CorePureExpr
+evalValueToCorePureExpr = \case
+  EvalString text -> Just (CorePureLit (CorePureString text))
+  EvalNumber numberValue -> Just (CorePureLit (CorePureNumber numberValue))
+  EvalBool boolValue -> Just (CorePureLit (CorePureBool boolValue))
+  EvalList items ->
+    CorePureList <$> traverse evalValueToCorePureExpr items
+  EvalRecord fields ->
+    CorePureRecord <$> traverse fieldToCorePure (Map.toList fields)
+  EvalQName {} -> Nothing
+  EvalConstructor {} -> Nothing
+  EvalConfiguredExecutor {} -> Nothing
+  where
+    fieldToCorePure (path, value) =
+      CorePureField path <$> evalValueToCorePureExpr value
 
 lowerNamedNode
   :: WireCompileEnv -> LoweringState -> NodeDecl -> Either WireCore.WireError LoweredNode
@@ -360,148 +432,20 @@ lowerNamedNode compileEnv st nodeDecl = do
   let nodeRef = CircuitNodeRef nodeDecl.nodeDeclName
   ports <- lowerPortSignature nodeRef nodeDecl.nodeDeclPortSig
   case nodeDecl.nodeDeclBody of
-    NodeBodyExecutor bodyExpr -> do
-      partial <- evalPartial st bodyExpr
-      loweredNodeFromPartial compileEnv nodeRef ports partial
-    NodeBodyPure pureBody ->
+    NodeBodyExecutor whereExpr executorCallValue -> do
+      validateWhereClause st nodeRef ports.lnpInputs whereExpr
+      loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue
+    NodeBodyPure pureBody -> do
+      validateWhereClause st nodeRef ports.lnpInputs pureBody.nodePureBodyWhere
       loweredPureNodeFromBody compileEnv nodeRef ports st.lsPureBindings pureBody
 
 lowerFileReturn
   :: LoweringState
   -> Expr
   -> Either WireCore.WireError (GraphFragment, Maybe Aeson.Value, LoweringState)
-lowerFileReturn st expr =
-  case expr of
-    ExprConnect lhs rhs | isRuntimeWrapperApply rhs -> do
-      wrapperPartial <- evalPartial st rhs
-      lhsFragment <- lowerGraphExpr st lhs
-      (wrapperNode, wrapperMetadata, st') <- lowerRuntimeWrapper st lhsFragment wrapperPartial
-      let wrapperEntries = fmap boundaryFromPort wrapperNode.lnInputs
-          wrapperExits = fmap boundaryFromPort wrapperNode.lnOutputs
-          matchedPairs = matchedBoundaryPairs lhsFragment.gfExits wrapperEntries
-          matchedLeft = Set.fromList (fmap fst matchedPairs)
-          matchedRight = Set.fromList (fmap snd matchedPairs)
-          wrapperConnections =
-            fmap
-              ( \(leftBoundary, rightBoundary) ->
-                  WireCore.connect
-                    (boundaryEndpoint leftBoundary)
-                    (boundaryEndpoint rightBoundary)
-              )
-              matchedPairs
-          finalFragment =
-            GraphFragment
-              { gfNodes = Map.insert wrapperNode.lnRef wrapperNode lhsFragment.gfNodes
-              , gfEntries =
-                  dedupeBoundaries (lhsFragment.gfEntries <> filter (`Set.notMember` matchedRight) wrapperEntries)
-              , gfExits =
-                  dedupeBoundaries (filter (`Set.notMember` matchedLeft) lhsFragment.gfExits <> wrapperExits)
-              , gfConnections = lhsFragment.gfConnections <> wrapperConnections
-              }
-      Right (finalFragment, wrapperMetadata, st')
-    _ -> do
-      fragment <- lowerGraphExpr st expr
-      Right (fragment, Nothing, st)
-
-{- | Cheap syntactic check: does this expression apply the runtime
-wrapper executor (@cortex.deep_report)? Used by 'lowerFileReturn' to
-decide whether the file-return tail is a wrapper before paying for a
-full eval — avoids masking real eval errors as "not a wrapper".
--}
-isRuntimeWrapperApply :: Expr -> Bool
-isRuntimeWrapperApply = \case
-  ExprApply executorQName _ -> renderQName executorQName == "cortex.deep_report"
-  _ -> False
-
-lowerRuntimeWrapper
-  :: LoweringState
-  -> GraphFragment
-  -> PartialNode
-  -> Either WireCore.WireError (LoweredNode, Maybe Aeson.Value, LoweringState)
-lowerRuntimeWrapper st upstream partial = do
-  executorQName <-
-    maybe
-      (Left (WireCore.WireParseError "Runtime wrapper partial is missing an executor."))
-      Right
-      partial.pnExecutor
-  if renderQName executorQName /= "cortex.deep_report"
-    then
-      Left (WireCore.WireParseError ("Unsupported runtime wrapper " <> renderQName executorQName <> "."))
-    else do
-      let groupedInputs = groupBoundaryKeys upstream.gfExits
-          wrapperRef = generatedNodeRef "__runtime_wrapper" st.lsAnonCounter
-          inputPorts =
-            zipWith
-              ( \idx ((contractName, portLabel), boundaries) ->
-                  LoweredPort
-                    { lpNodeRef = wrapperRef
-                    , lpDirection = PortInput
-                    , lpInternalName = allocatedPortName True idx portLabel contractName (Map.size groupedInputs)
-                    , lpContract = contractName
-                    , lpLabel = portLabel
-                    , lpCardinality =
-                        Just
-                          ( if length boundaries > 1
-                              then WireCore.WireInputCardinalityMany
-                              else WireCore.WireInputCardinalityOne
-                          )
-                    , lpExclusiveGroup = Nothing
-                    }
-              )
-              [1 ..]
-              (Map.toAscList groupedInputs)
-          outputPort =
-            LoweredPort
-              { lpNodeRef = wrapperRef
-              , lpDirection = PortOutput
-              , lpInternalName = WireCore.defaultOutputPortName
-              , lpContract = "ReportArtifactRef"
-              , lpLabel = NoLabel
-              , lpCardinality = Nothing
-              , lpExclusiveGroup = Nothing
-              }
-          ports =
-            WireCore.WirePorts
-              { wirePortsInputs =
-                  Map.fromList
-                    [ ( port.lpInternalName
-                      , WireCore.WireInputPort
-                          { wireInputPortAccepts = [port.lpContract]
-                          , wireInputPortCardinality = fromMaybe WireCore.WireInputCardinalityMany port.lpCardinality
-                          , wireInputPortRequired = False
-                          }
-                      )
-                    | port <- inputPorts
-                    ]
-              , wirePortsOutputs =
-                  Map.singleton
-                    outputPort.lpInternalName
-                    WireCore.WireOutputPort
-                      { wireOutputPortContract = outputPort.lpContract
-                      }
-              }
-          metadata = wrapperMetadataObject partial.pnFields
-          loweredNode =
-            LoweredNode
-              { lnRef = wrapperRef
-              , lnCompiledNode =
-                  CompiledCircuitArtifact
-                    CircuitArtifactBoundary
-                      { circuitArtifactBoundaryRef = wrapperRef
-                      , circuitArtifactKind = "report"
-                      , circuitArtifactLabel = defaultNodeLabel wrapperRef (lookupMaybeTextField "title" partial.pnFields)
-                      , circuitArtifactMetadata =
-                          emitMetadata
-                            "report"
-                            (qnameToQualifiedRef (QName ("workspace" :| ["reports", "latest"])))
-                            ports
-                            Nothing
-                      }
-              , lnPorts = ports
-              , lnInputs = inputPorts
-              , lnOutputs = [outputPort]
-              }
-      Right (loweredNode, metadata, st {lsAnonCounter = st.lsAnonCounter + 1})
+lowerFileReturn st expr = do
+  fragment <- lowerGraphExpr st expr
+  Right (fragment, Nothing, st)
 
 lowerGraphExpr :: LoweringState -> Expr -> Either WireCore.WireError GraphFragment
 lowerGraphExpr st expr =
@@ -580,25 +524,14 @@ lowerGraphBase :: LoweringState -> Expr -> Either WireCore.WireError GraphFragme
 lowerGraphBase st = \case
   ExprLit LitUnit ->
     Right emptyFragment
-  ExprTuple items ->
-    foldlM
-      (\acc item -> overlayFragments acc <$> lowerGraphExpr st item)
-      emptyFragment
-      items
   ExprOverlay lhs rhs ->
     overlayFragments <$> lowerGraphExpr st lhs <*> lowerGraphExpr st rhs
   ExprIdent (QName (name :| [])) ->
-    case Map.lookup name st.lsNamedNodes of
-      Just loweredNode ->
-        Right
-          GraphFragment
-            { gfNodes = Map.singleton loweredNode.lnRef loweredNode
-            , gfEntries = fmap boundaryFromPort loweredNode.lnInputs
-            , gfExits = fmap boundaryFromPort loweredNode.lnOutputs
-            , gfConnections = []
-            }
+    case Map.lookup name st.lsGraphBindings of
+      Just fragment ->
+        Right fragment
       Nothing ->
-        Left (WireCore.WireUnknownNodeRef (CircuitNodeRef name))
+        lowerNamedGraphRef name
   ExprSelect baseExpr arms -> do
     baseFragment <- lowerGraphBase st baseExpr
     lowerSelectStep st baseFragment arms Nothing
@@ -611,6 +544,19 @@ lowerGraphBase st = \case
               <> T.pack (show other)
           )
       )
+  where
+    lowerNamedGraphRef name =
+      case Map.lookup name st.lsNamedNodes of
+        Just loweredNode ->
+          Right
+            GraphFragment
+              { gfNodes = Map.singleton loweredNode.lnRef loweredNode
+              , gfEntries = fmap boundaryFromPort loweredNode.lnInputs
+              , gfExits = fmap boundaryFromPort loweredNode.lnOutputs
+              , gfConnections = []
+              }
+        Nothing ->
+          Left (WireCore.WireUnknownNodeRef (CircuitNodeRef name))
 
 overlayFragments :: GraphFragment -> GraphFragment -> GraphFragment
 overlayFragments lhs rhs =
@@ -618,7 +564,7 @@ overlayFragments lhs rhs =
     { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
     , gfEntries = dedupeBoundaries (lhs.gfEntries <> rhs.gfEntries)
     , gfExits = dedupeBoundaries (lhs.gfExits <> rhs.gfExits)
-    , gfConnections = lhs.gfConnections <> rhs.gfConnections
+    , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections)
     }
 
 connectFragments :: GraphFragment -> GraphFragment -> GraphFragment
@@ -638,7 +584,7 @@ connectFragments lhs rhs =
         { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
         , gfEntries = dedupeBoundaries (lhs.gfEntries <> filter (`Set.notMember` matchedRight) rhs.gfEntries)
         , gfExits = dedupeBoundaries (filter (`Set.notMember` matchedLeft) lhs.gfExits <> rhs.gfExits)
-        , gfConnections = lhs.gfConnections <> rhs.gfConnections <> bridgeConnections
+        , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections <> bridgeConnections)
         }
 
 lowerSelectStep
@@ -1193,6 +1139,10 @@ dedupeBoundaries :: [BoundaryPort] -> [BoundaryPort]
 dedupeBoundaries =
   nub
 
+dedupeConnections :: [WireCore.Connection] -> [WireCore.Connection]
+dedupeConnections =
+  nub
+
 boundaryFromPort :: LoweredPort -> BoundaryPort
 boundaryFromPort port =
   BoundaryPort
@@ -1210,40 +1160,21 @@ boundaryEndpoint boundary =
     , endpointPortName = Just boundary.bpPortName
     }
 
-loweredNodeFromPartial
+loweredNodeFromExecutorCall
   :: WireCompileEnv
+  -> LoweringState
   -> CircuitNodeRef
-  -> ([LoweredPort], [LoweredPort])
-  -> PartialNode
+  -> LoweredNodePorts
+  -> Maybe CorePureExpr
+  -> ExecutorCall
   -> Either WireCore.WireError LoweredNode
-loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
-  let exactFields = partial.pnFields
+loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue = do
+  (configuredExecutor, inputExpr) <- resolveExecutorCall st executorCallValue
+  let exactFields = configuredExecutor.ceFields
       label = lookupMaybeTextField "label" exactFields
       genericFields = genericConfigFields exactFields knownSimpleFields
-      runtimePorts =
-        WireCore.WirePorts
-          { wirePortsInputs =
-              Map.fromList
-                [ ( port.lpInternalName
-                  , WireCore.WireInputPort
-                      { wireInputPortAccepts = [port.lpContract]
-                      , wireInputPortCardinality = fromMaybe WireCore.WireInputCardinalityMany port.lpCardinality
-                      , wireInputPortRequired = False
-                      }
-                  )
-                | port <- inputPorts
-                ]
-          , wirePortsOutputs =
-              Map.fromList
-                [ ( port.lpInternalName
-                  , WireCore.WireOutputPort
-                      { wireOutputPortContract = port.lpContract
-                      }
-                  )
-                | port <- outputPorts
-                ]
-          }
-      executorQName = partial.pnExecutor
+      runtimePorts = taskWirePortsFromLowered ports
+      executorQName = configuredExecutor.ceExecutor
       maybeSignal = lookupMaybeTextField "on" exactFields
       maybeKind = lookupMaybeTextField "kind" exactFields
       maybeTarget = lookupMaybeQNameField "to" exactFields
@@ -1277,11 +1208,7 @@ loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
                       (lookupMaybeInt32Field "timeout" exactFields)
                 }
       | otherwise -> do
-          executor <-
-            maybe
-              (Left (WireCore.WireMissingRequiredField nodeRef "executor"))
-              (Right . qnameToExecutor)
-              executorQName
+          let executor = qnameToExecutor executorQName
           when (executor == WireCore.WireExecutorNative "pure") $
             Left
               ( WireCore.WireParseError
@@ -1291,7 +1218,7 @@ loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
           tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
           memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
           let promptText = lookupMaybeTextField "prompt" exactFields
-              configValue = configValueFromFields genericFields
+              configValue = executorConfigValue genericFields whereExpr inputExpr
           Right $
             CompiledCircuitTask
               CircuitTaskNode
@@ -1320,8 +1247,8 @@ loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
       { lnRef = nodeRef
       , lnCompiledNode = compiledNode
       , lnPorts = runtimePorts
-      , lnInputs = inputPorts
-      , lnOutputs = outputPorts
+      , lnInputs = ports.lnpInputs
+      , lnOutputs = ports.lnpOutputs
       }
   where
     knownSimpleFields =
@@ -1340,24 +1267,70 @@ loweredNodeFromPartial compileEnv nodeRef (inputPorts, outputPorts) partial = do
       , "to"
       ]
 
+resolveExecutorCall
+  :: LoweringState -> ExecutorCall -> Either WireCore.WireError (ConfiguredExecutor, CorePureExpr)
+resolveExecutorCall st = \case
+  ExecutorCallInline executorQName recordExpr inputExpr ->
+    do
+      fields <- evalRecordFields st recordExpr
+      Right (ConfiguredExecutor executorQName fields, inputExpr)
+  ExecutorCallConfigured name inputExpr ->
+    case Map.lookup name st.lsBindings of
+      Just (EvalConfiguredExecutor configuredExecutor) -> Right (configuredExecutor, inputExpr)
+      Just other ->
+        Left (WireCore.WireFieldTypeMismatch name "configured executor" (valueKind other))
+      Nothing ->
+        Left (WireCore.WireUnknownLetBinding name)
+
+executorConfigValue
+  :: Map (NonEmpty Text) EvalValue
+  -> Maybe CorePureExpr
+  -> CorePureExpr
+  -> Maybe Aeson.Value
+executorConfigValue fields whereExpr inputExpr =
+  Just (Aeson.Object (insertMaybeJson "where" whereExpr baseObject))
+  where
+    inputValue = Aeson.toJSON inputExpr
+    baseObject =
+      case configValueFromFields fields of
+        Just (Aeson.Object obj) ->
+          KeyMap.insert (Key.fromText "input") inputValue obj
+        Just value ->
+          KeyMap.fromList
+            [ (Key.fromText "config", value)
+            , (Key.fromText "input", inputValue)
+            ]
+        Nothing ->
+          KeyMap.singleton (Key.fromText "input") inputValue
+
+insertMaybeJson
+  :: Aeson.ToJSON a => Text -> Maybe a -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value
+insertMaybeJson fieldName maybeValue object =
+  case maybeValue of
+    Nothing -> object
+    Just value -> KeyMap.insert (Key.fromText fieldName) (Aeson.toJSON value) object
+
 loweredPureNodeFromBody
   :: WireCompileEnv
   -> CircuitNodeRef
-  -> ([LoweredPort], [LoweredPort])
+  -> LoweredNodePorts
   -> [CorePureBinding]
   -> NodePureBody
   -> Either WireCore.WireError LoweredNode
-loweredPureNodeFromBody compileEnv nodeRef (inputPorts, outputPorts) topLevelBindings pureBody = do
-  validatePureBindingNames nodeRef pureBody.nodePureBodyBindings
-  outputConfig <- pureOutputConfigMap nodeRef outputPorts pureBody.nodePureBodyOutputs
-  let runtimePorts = taskWirePortsFromLowered inputPorts outputPorts
+loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
+  outputConfig <- pureOutputConfigMap nodeRef ports.lnpOutputs pureBody.nodePureBodyOutputs
+  let runtimePorts = taskWirePortsFromLowered ports
       executor = WireCore.WireExecutorNative "pure"
       configValue =
-        Aeson.object
-          [ "bindings" Aeson..= topLevelBindings
-          , "localBindings" Aeson..= pureBody.nodePureBodyBindings
-          , "outputs" Aeson..= outputConfig
-          ]
+        Aeson.Object $
+          insertMaybeJson
+            "where"
+            pureBody.nodePureBodyWhere
+            ( KeyMap.fromList
+                [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+                , (Key.fromText "outputs", Aeson.toJSON outputConfig)
+                ]
+            )
   validateExecutorProjection compileEnv nodeRef executor runtimePorts
   pure
     LoweredNode
@@ -1386,26 +1359,68 @@ loweredPureNodeFromBody compileEnv nodeRef (inputPorts, outputPorts) topLevelBin
                     Nothing
               }
       , lnPorts = runtimePorts
-      , lnInputs = inputPorts
-      , lnOutputs = outputPorts
+      , lnInputs = ports.lnpInputs
+      , lnOutputs = ports.lnpOutputs
       }
 
-validatePureBindingNames :: CircuitNodeRef -> [CorePureBinding] -> Either WireCore.WireError ()
-validatePureBindingNames nodeRef bindings =
-  case duplicateNames of
-    name : _ -> Left (WireCore.WireInvalidPorts nodeRef ("duplicate CorePure binding " <> name))
-    [] -> Right ()
-  where
-    duplicateNames =
-      [ name
-      | (name, count) <-
-          Map.toAscList
-            ( Map.fromListWith
-                (+)
-                [(binding.corePureBindingName, 1 :: Int) | binding <- bindings]
+validateWhereClause
+  :: LoweringState
+  -> CircuitNodeRef
+  -> [LoweredPort]
+  -> Maybe CorePureExpr
+  -> Either WireCore.WireError ()
+validateWhereClause st nodeRef inputPorts whereExpr =
+  case whereExpr of
+    Nothing -> Right ()
+    Just exprValue -> do
+      fieldNames <- staticWhereFieldNames st nodeRef Set.empty exprValue
+      let inputNames = Set.fromList (fmap (.lpInternalName) inputPorts)
+          collisions = Set.toAscList (Set.intersection fieldNames inputNames)
+      case collisions of
+        collision : _ ->
+          Left
+            ( WireCore.WireInvalidPorts
+                nodeRef
+                ("where field collides with input port " <> collision)
             )
-      , count > 1
-      ]
+        [] -> Right ()
+
+staticWhereFieldNames
+  :: LoweringState
+  -> CircuitNodeRef
+  -> Set.Set Text
+  -> CorePureExpr
+  -> Either WireCore.WireError (Set.Set Text)
+staticWhereFieldNames st nodeRef visited = \case
+  CorePureRecord fields ->
+    Right (Set.fromList [NE.head field.corePureFieldPath | field <- fields])
+  -- Only the final expression exposes fields; local bindings are intentionally not expanded here.
+  CorePureLet _ bodyExpr ->
+    staticWhereFieldNames st nodeRef visited bodyExpr
+  CorePureIdent name
+    | Set.member name visited ->
+        Left (whereStaticFieldError nodeRef)
+    | otherwise ->
+        case lookupTopLevelPureBinding name of
+          Just bindingExpr ->
+            staticWhereFieldNames st nodeRef (Set.insert name visited) bindingExpr
+          Nothing ->
+            Left (whereStaticFieldError nodeRef)
+  CorePureBinary CorePureMerge lhs rhs ->
+    Set.union
+      <$> staticWhereFieldNames st nodeRef visited lhs
+      <*> staticWhereFieldNames st nodeRef visited rhs
+  _ ->
+    Left (whereStaticFieldError nodeRef)
+  where
+    lookupTopLevelPureBinding name =
+      case [binding.corePureBindingExpr | binding <- st.lsPureBindings, binding.corePureBindingName == name] of
+        bindingExpr : _ -> Just bindingExpr
+        [] -> Nothing
+
+whereStaticFieldError :: CircuitNodeRef -> WireCore.WireError
+whereStaticFieldError nodeRef =
+  WireCore.WireInvalidPorts nodeRef "where-clause field set is not statically determinable"
 
 pureOutputConfigMap
   :: CircuitNodeRef
@@ -1425,8 +1440,8 @@ pureOutputConfigMap nodeRef outputPorts outputEquations = do
           (WireCore.WireInvalidPorts nodeRef "pure output equation does not match its lowered output port")
       Right (port.lpInternalName, outputEquation.pureOutputEquationExpr)
 
-taskWirePortsFromLowered :: [LoweredPort] -> [LoweredPort] -> WireCore.WirePorts
-taskWirePortsFromLowered inputPorts outputPorts =
+taskWirePortsFromLowered :: LoweredNodePorts -> WireCore.WirePorts
+taskWirePortsFromLowered ports =
   WireCore.WirePorts
     { wirePortsInputs =
         Map.fromList
@@ -1437,7 +1452,7 @@ taskWirePortsFromLowered inputPorts outputPorts =
                 , wireInputPortRequired = False
                 }
             )
-          | port <- inputPorts
+          | port <- ports.lnpInputs
           ]
     , wirePortsOutputs =
         Map.fromList
@@ -1446,7 +1461,7 @@ taskWirePortsFromLowered inputPorts outputPorts =
                 { wireOutputPortContract = port.lpContract
                 }
             )
-          | port <- outputPorts
+          | port <- ports.lnpOutputs
           ]
     }
 
@@ -1473,15 +1488,11 @@ evalMemoryStrategy = \case
 lowerPortSignature
   :: CircuitNodeRef
   -> [PortDecl]
-  -> Either WireCore.WireError ([LoweredPort], [LoweredPort])
+  -> Either WireCore.WireError LoweredNodePorts
 lowerPortSignature nodeRef portSig = do
   let inputs =
-        [ (label, contractName, cardinality)
-        | PortInputDecl label (ContractId contractName) portArity <- portSig
-        , let cardinality =
-                case portArity of
-                  PortSingular -> WireCore.WireInputCardinalityOne
-                  PortList -> WireCore.WireInputCardinalityMany
+        [ (label, contractName, WireCore.WireInputCardinalityOne)
+        | PortInputDecl label (ContractId contractName) <- portSig
         ]
       outputs =
         flattenOutputs portSig
@@ -1521,7 +1532,11 @@ lowerPortSignature nodeRef portSig = do
     duplicatedPort : _ ->
       Left (WireCore.WireInvalidPorts nodeRef ("duplicate lowered port name " <> duplicatedPort))
     [] ->
-      Right (loweredInputs, loweredOutputs)
+      Right
+        LoweredNodePorts
+          { lnpInputs = loweredInputs
+          , lnpOutputs = loweredOutputs
+          }
   where
     flattenOutputs decls =
       snd $
@@ -1561,24 +1576,10 @@ duplicatePortNames portNames =
   , length (filter (== portName) portNames) > 1
   ]
 
-evalPartial :: LoweringState -> Expr -> Either WireCore.WireError PartialNode
-evalPartial st expr = do
-  value <- evalValue st expr
-  case value of
-    EvalPartial partial -> Right partial
-    EvalRecord fields ->
-      Right
-        PartialNode
-          { pnExecutor = Nothing
-          , pnFields = fields
-          }
-    other ->
-      Left (WireCore.WireFieldTypeMismatch "node body" "partial node" (valueKind other))
-
 evalValue :: LoweringState -> Expr -> Either WireCore.WireError EvalValue
 evalValue st = \case
-  ExprApply executorQName recordExpr ->
-    EvalPartial . PartialNode (Just executorQName) <$> evalRecordFields st recordExpr
+  ExprConfiguredExecutor executorQName recordExpr ->
+    EvalConfiguredExecutor . ConfiguredExecutor executorQName <$> evalRecordFields st recordExpr
   ExprConstructor constructorQName recordExpr ->
     EvalConstructor constructorQName <$> evalRecordFields st recordExpr
   ExprRecord recordExpr ->
@@ -1619,8 +1620,6 @@ evalValue st = \case
     Left (WireCore.WireParseError "Graph connect cannot appear in an ordinary-value position.")
   ExprSelect {} ->
     Left (WireCore.WireParseError "select(...) is only supported in graph position.")
-  ExprTuple {} ->
-    Left (WireCore.WireParseError "Tuples are only supported in graph position.")
 
 evalRecordFields
   :: LoweringState
@@ -1640,47 +1639,16 @@ mergeValues leftValue rightValue =
   case (leftValue, rightValue) of
     (EvalRecord leftFields, EvalRecord rightFields) ->
       Right (EvalRecord (Map.union rightFields leftFields))
-    (EvalPartial leftPartial, EvalPartial rightPartial) ->
-      Right (EvalPartial (mergePartial leftPartial rightPartial))
-    (EvalPartial leftPartial, EvalRecord rightFields) ->
-      Right
-        ( EvalPartial
-            ( mergePartial
-                leftPartial
-                PartialNode
-                  { pnExecutor = Nothing
-                  , pnFields = rightFields
-                  }
-            )
-        )
-    (EvalRecord leftFields, EvalPartial rightPartial) ->
-      Right
-        ( EvalPartial
-            ( mergePartial
-                PartialNode
-                  { pnExecutor = Nothing
-                  , pnFields = leftFields
-                  }
-                rightPartial
-            )
-        )
     _ ->
       Left
         ( WireCore.WireParseError
-            ( "`//` expects record or partial-node operands; got "
+            ( "`//` expects record operands; got "
                 <> valueKind leftValue
                 <> " and "
                 <> valueKind rightValue
                 <> "."
             )
         )
-
-mergePartial :: PartialNode -> PartialNode -> PartialNode
-mergePartial leftPartial rightPartial =
-  PartialNode
-    { pnExecutor = rightPartial.pnExecutor <|> leftPartial.pnExecutor
-    , pnFields = Map.union rightPartial.pnFields leftPartial.pnFields
-    }
 
 lookupMaybeTextField :: Text -> Map (NonEmpty Text) EvalValue -> Maybe Text
 lookupMaybeTextField fieldName fields =
@@ -1738,7 +1706,7 @@ valueKind = \case
   EvalQName _ -> "qualified identifier"
   EvalRecord _ -> "record"
   EvalConstructor _ _ -> "constructor"
-  EvalPartial _ -> "partial node"
+  EvalConfiguredExecutor _ -> "configured executor"
 
 numberToInt32 :: EvalValue -> Maybe Int32
 numberToInt32 = \case
@@ -1804,34 +1772,11 @@ evalValueToAeson = \case
             Aeson.Object obj -> obj
             _ -> KeyMap.empty
         )
-  EvalPartial partial ->
-    fieldsObject partial.pnFields
+  EvalConfiguredExecutor configuredExecutor ->
+    fieldsObject configuredExecutor.ceFields
 
 fromListAeson :: [Aeson.Value] -> Vector.Vector Aeson.Value
 fromListAeson = Vector.fromList
-
-wrapperMetadataObject :: Map (NonEmpty Text) EvalValue -> Maybe Aeson.Value
-wrapperMetadataObject fields =
-  case fieldsObject fields of
-    Aeson.Object obj ->
-      Just
-        ( Aeson.Object
-            ( renameTopLevelKey "title" "defaultReportTitle"
-                . renameTopLevelKey "description" "displayDescription"
-                . renameTopLevelKey "match" "matchPolicy"
-                . renameTopLevelKey "render" "renderPolicy"
-                . renameTopLevelKey "workspace" "workspacePolicy"
-                $ obj
-            )
-        )
-    other -> Just other
-
-renameTopLevelKey :: Text -> Text -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value
-renameTopLevelKey fromKey toKey obj =
-  case KeyMap.lookup (Key.fromText fromKey) obj of
-    Nothing -> obj
-    Just value ->
-      KeyMap.insert (Key.fromText toKey) value (KeyMap.delete (Key.fromText fromKey) obj)
 
 compatibilityWitness :: WireFile -> CircuitCompatibilityWitness
 compatibilityWitness wireFile =
@@ -2159,16 +2104,6 @@ slugify =
   T.map (\c -> if c == ' ' then '_' else c)
     . T.toLower
     . T.filter (\c -> c == ' ' || c == '_' || c == '-' || Char.isAlphaNum c)
-
-groupBoundaryKeys :: [BoundaryPort] -> Map (Text, PortLabel) [BoundaryPort]
-groupBoundaryKeys =
-  foldl'
-    (\acc boundary -> Map.insertWith (<>) (boundary.bpContract, boundary.bpLabel) [boundary] acc)
-    Map.empty
-
-generatedNodeRef :: Text -> Int -> CircuitNodeRef
-generatedNodeRef prefix counter =
-  CircuitNodeRef (prefix <> ":" <> T.pack (show counter))
 
 qnameToQualifiedRef :: QName -> WireCore.QualifiedRef
 qnameToQualifiedRef (QName segments) =

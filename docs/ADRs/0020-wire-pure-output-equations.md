@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0019-executor-registration-and-binding.md
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
 ---
 
 # ADR 0020 - Wire Pure Output Equations
@@ -29,6 +30,10 @@ Wire expression a circuit, to infer executors implicitly, or to generalize all e
 Forward note: ADR 0021 proposes the broader Wire-to-circuit elaboration model that this ADR
 deferred. ADR 0022 proposes the clause grammar used by the next implementation. This ADR's positive
 decision on pure output equations remains in force.
+
+Forward note: ADR 0031 supersedes this ADR's node-local `let ... in` block and `localBindings`
+lowering detail. Pure output equations remain the accepted decision; node-local shared work now uses
+the trailing `where <record-expr> ;` clause and lowers through the `where` config field.
 
 ## Context
 
@@ -89,9 +94,9 @@ A pure node may carry one node-local `let ... in` block between its inputs and o
 The block is for shared input-dependent work. It should lower into one CorePure program for the
 node, not into repeated per-output evaluation.
 
-Top-level CorePure helper bindings, such as `let acceptedItem = x: x.score >= 0.7;`, are visible to
-later pure nodes. They are still CorePure expressions, not executor definitions, and do not
-introduce new authority.
+Top-level delayed helper bindings, such as `let acceptedItem = x: x.score >= 0.7;`, are visible to
+later pure nodes. Authority-free ordinary data lets may also be captured as constants. Neither form
+is an executor definition or introduces new authority.
 
 ### Lowering
 
@@ -100,7 +105,7 @@ output. The lowered config carries a CorePure program whose result is keyed by o
 
 ```json
 {
-  "bindings": ["<top-level CorePure helper binding>"],
+  "bindings": ["<top-level delayed binding or captured constant>"],
   "localBindings": ["<node-local CorePure binding>"],
   "outputs": {
     "accepted": "<CorePure accepted expression>",
@@ -110,8 +115,8 @@ output. The lowered config carries a CorePure program whose result is keyed by o
 ```
 
 The exact serialized form may be an AST rather than strings. The semantic requirements are that the
-program's outputs are keyed by declared Wire output port names, and that top-level helper bindings
-and node-local bindings remain distinct scopes.
+program's outputs are keyed by declared Wire output port names, and that top-level delayed bindings,
+captured constants, and node-local bindings remain distinct scopes.
 
 Binding must check:
 

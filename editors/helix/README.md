@@ -27,8 +27,8 @@ highlights/folds/indents.
    ```
 
 4. Restart Helix. Open a checked-in fixture such as
-   `test/fixtures/wire-v1/thesis-parallel-claim-branches.wire`, or any local `.wire` file;
-   highlighting should render immediately.
+   `test/fixtures/wire/thesis-parallel-claim-branches.wire`, or any local `.wire` file; highlighting
+   should render immediately.
 
 ## Query locations Helix reads
 

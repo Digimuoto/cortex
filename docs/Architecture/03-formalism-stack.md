@@ -37,8 +37,8 @@ Circuit object and applies admitted rewrites at runtime. The algebraic stack its
 
 The load-bearing property across these layers is **composition closure**. A wire value composed with
 another wire value under `<>` or `=>` is itself a wire value. The class is closed under its own
-operators. This is what makes partial authorship, template reuse, and rewriting tractable: authors
-and rewrites manipulate the same kind of object the compiler consumes.
+operators. This is what makes source authoring, configured executor reuse, and rewriting tractable:
+authors and rewrites manipulate the same kind of object the compiler consumes.
 
 ## Detailed structure
 
@@ -84,9 +84,9 @@ of port key and the composition algebra.
 The pure Graph layer is acyclic-agnostic. Mokhov's algebra constructs arbitrary directed graphs, not
 DAGs. Cortex does not collapse this distinction: acyclicity is a **Circuit-layer invariant**, not a
 Graph-layer one. The Graph algebra stays maximally permissive so that intermediate fragments,
-rewrite templates, and partial authorship can use the full algebraic surface. Cycles are rejected
-when a graph is promoted to a Circuit — the point at which the topology becomes an executable
-artifact.
+rewrite templates, and source-authored fragments can use the full algebraic surface. Cycles are
+rejected when a graph is promoted to a Circuit — the point at which the topology becomes an
+executable artifact.
 
 This placement matters because rewrite fragments may be algebraically simpler than their insertion
 target; forcing them to be acyclic in isolation would over-constrain the algebra. The Circuit
@@ -116,8 +116,8 @@ algebraic operations over the same object class, not a separate mutation layer.
 
 What this stack enforces:
 
-- **Composition closure.** Wire values are closed under `<>` and `=>`. Partial authorship and
-  rewriting share the same object class as finished circuits.
+- **Composition closure.** Wire graph values are closed under `<>` and `=>`. Authored topology and
+  rewrites share the same object class as finished circuits.
 - **Law preservation through refinement.** `<>` inherits Mokhov overlay laws. `=>` preserves those
   laws on the port-key-matched projection.
 - **Layered invariants.** Acyclicity and port-contract compatibility attach at the Circuit boundary,
@@ -131,8 +131,8 @@ provenance — all delegated to Circuit, Pulse, or the contract registry.
 ## Extensibility
 
 The Mokhov alphabet is fixed at four constructors. Cortex does not extend it. New authoring
-convenience enters Wire as derived value operators (`//`, `++`, `let`, partial-node merge) that
-reduce to existing graph operators when the expression reaches the Graph layer. New semantic
+convenience enters Wire as derived value operators (`//`, `++`, `let`, configured executor values)
+that reduce to explicit graph vertices before the expression reaches the Graph layer. New semantic
 categories — payload kinds, structural-authority classes, parameterized latent branches explored in
 the foundation synthesis note — attach as registry metadata on the Circuit layer, not as new graph
 primitives. The algebra stays small on purpose; the ecosystem grows by registering authority into a

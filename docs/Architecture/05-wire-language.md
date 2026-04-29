@@ -28,8 +28,8 @@ The normative rules live in the reference:
   semantics
 - [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md) — contract
   namespace, port declarations, `=>` matching
-- [Partials and execution boundary](../Reference/Wire/partials-and-execution-boundary.md) —
-  configured executor values, typed node boundaries, runnable-wire boundary
+- [Configured executors and execution boundary](../Reference/Wire/configured-executors-and-execution-boundary.md)
+  — configured executor values, typed node boundaries, runnable-wire boundary
 - [Rewrites](../Reference/rewrites.md) — bounded dynamic rewrite algebra, budget, admission,
   materialization, provenance
 - [Modules, imports, and file returns](../Reference/Wire/modules-imports-and-file-returns.md) — file
@@ -107,10 +107,10 @@ This is why Wire can stay structurally simple while still carrying meaningful ty
 reasons about compatibility at the boundary. Rich payload meaning lives outside the composition
 algebra.
 
-One practical design rule follows from this split: use ports for stable structural roles, not for
-encoding graph-discovered collections. When a node aggregates a variable number of homogeneous
-fragments, the structural shape should usually be "many fragments of one contract" rather than "one
-separately named port per expected fragment."
+One practical design rule follows from this split: edges carry typed values, not implicit context.
+When a node aggregates several upstream values, author that shape explicitly as typed input ports
+and pass a record or list to the executor body. Wire does not infer list aggregation from many
+incoming arrows.
 
 ## Configured executor values and reuse
 
@@ -154,6 +154,45 @@ point is that reuse is compositional rather than template-like.
 Workflow-level config may also provide defaults for executor config, for example default models or
 per-executor model policy on a runtime wrapper. Those defaults only fill gaps; an explicit field
 authored on a node remains authoritative.
+
+## Pure computation and local binding
+
+Wire has one deterministic expression layer, CorePure. It handles value transformations that should
+stay inside the theorem-facing substrate: projection, filtering, scoring, record construction, and
+prompt-text assembly. It does not name executor authority and it has no IO, tools, memory access,
+time, randomness, or host callbacks.
+
+Pure node bodies bind output labels directly:
+
+```wire
+node classify
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = pure (accepted) ;
+  -> rejected: RejectedSet = pure (rejected) ;
+  where let
+    items = evidence.items ;
+    accepted = items |> filter (x: x.score >= 0.7) ;
+    rejected = items |> filter (x: x.score < 0.7) ;
+  in
+  { accepted = accepted ; rejected = rejected ; } ;
+```
+
+The binding story is deliberately split by surface:
+
+- expression-local names use `let ... in` inside CorePure or Wire value expressions;
+- module-level names use `let name = value ;` and are classified by the value they bind;
+- node-local shared values use a trailing `where <record-expr> ;` clause whose fields are opened
+  into the node body.
+
+That split keeps `let ... in` expression-shaped. Node-local sharing is attached to the node as a
+record of local names, not as a structural decoration between ports and body.
+
+Module-level `let` is phase-neutral syntax. Graph-valued lets are elaborated at compile time, for
+example `let pipeline = planner => analyst ;`. Configured executor values and ordinary scalar,
+record, list, or string values are also compile-time module values. Delayed CorePure evaluation may
+capture module lets only when their values are authority-free pure data, or when the binding is a
+CorePure helper function such as `let pred = item: item.score >= 0.7 ;`. It may not capture graph
+values or configured executor authority.
 
 ## Rewrites and runtime handoff
 

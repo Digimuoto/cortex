@@ -22,6 +22,7 @@ related:
   - docs/ADRs/0025-configured-executor-values.md
   - docs/ADRs/0026-wire-failure-taxonomy.md
   - docs/ADRs/0027-typed-llm-output-binding.md
+  - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
 ---
 
 # ADR 0030 - Wire Node Implementation Forms
@@ -68,12 +69,10 @@ The target grammar is:
 ```ebnf
 node_decl       ::= node <name>
                     (input_clause ;)*
-                    (let_block)?
                     (pure_equations | executor_body | single_output_executor_shorthand)
+                    (where_clause)?           -- per ADR 0031
 
 input_clause    ::= <- <name> : <Type>
-let_block       ::= let <bindings> in
-bindings        ::= <name> = <expr> (; <name> = <expr>)*
 
 pure_equations  ::= (pure_output_clause ;)+
 pure_output_clause
@@ -90,6 +89,10 @@ executor_call   ::= @<executor> (<expr>)
                   | <configured_executor_name> (<expr>)
 ```
 
+The earlier `let_block` production - `let <bindings> in` between input clauses and the body - is
+removed. Node-local CorePure intermediates are introduced via the trailing `where <record-expr> ;`
+clause defined in [ADR 0031](./0031-wire-binding-forms-and-where-clauses.md).
+
 In this form, output declarations state the node's typed output boundary, while the executor body
 states the implementation behind that entire boundary.
 
@@ -100,12 +103,13 @@ Pure computations remain per-output equations:
 ```wire
 node classify
   <- evidence: EvidenceSet ;
-  let
-    accepted = evidence.items |> filter (x: x.score >= 0.7) ;
-    rejected = evidence.items |> filter (x: x.score < 0.7)
-  in
   -> accepted: AcceptedSet = pure (accepted) ;
   -> rejected: RejectedSet = pure (rejected) ;
+  where let
+    accepted = evidence.items |> filter (x: x.score >= 0.7) ;
+    rejected = evidence.items |> filter (x: x.score < 0.7) ;
+  in
+  { accepted = accepted ; rejected = rejected ; } ;
 ```
 
 The declared output label, contract, and expression stay visibly tied together. A pure node with no

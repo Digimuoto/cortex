@@ -47,6 +47,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0028](0028-wire-topology-composition-and-boundary-labels.md)   | Wire Topology Composition and Boundary Labels                       | proposed |
 | [0029](0029-corepure-structured-serialization.md)               | CorePure Structured Serialization                                   | proposed |
 | [0030](0030-wire-node-implementation-forms.md)                  | Wire Node Implementation Forms                                      | proposed |
+| [0031](0031-wire-binding-forms-and-where-clauses.md)            | Wire Binding Forms and Node Where Clauses                           | proposed |
 
 ## Writing a new ADR
 

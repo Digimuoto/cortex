@@ -1,38 +1,39 @@
 /**
  * Tree-sitter grammar for the Wire language.
  *
- * Source of truth: docs/Reference/Wire/grammar.md (accepted
- * 2026-04-23). Mirrors the Haskell parser at src/Cortex/Wire/Parser.hs.
+ * Source of truth: docs/Reference/Wire/grammar.md. Mirrors the Haskell parser
+ * at src/Cortex/Wire/Parser.hs.
  *
- * Top-level forms:          contract; node; let; CorePure helper let;
- *                           import; and optional file-return expression.
- * Executors:                @qualified.name { config }
- * Pure nodes:               -> output: Contract = pure (<CorePure expr>)
- * Graph operators:          <> (overlay, infixl 2), => (connect, infixl 3)
- * Value operators:          // (record/partial merge, infixl 5),
- *                           ++ (string/list concat, infixl 5)
- * Port signatures:          <- [label:] Contract | <- [label:] [Contract]
- *                           -> [label:] Contract | -> variant (| variant)+
- * Literals:                 "..." single-line (escapes), ''...'' multi-line
- *                           verbatim, decimal numbers, true/false, ()
- * Line comments:            #
- * Block comments:           slash-star ... star-slash (non-nesting)
+ * Top-level forms: contract, node, let/export let, import, and optional
+ * file-return expression.
+ * Executor values: @qualified.name { config }
+ * Executor calls:  @qualified.name { config } (input) | configured (input)
+ * Pure outputs:    -> label: Contract = pure (<CorePure expr>) ;
+ * Graph operators: <> (overlay), => (connect), explicit parentheses required
+ *                  when both appear in one expression.
+ * Value operators: // (record merge), ++ (string/list concat)
+ * Port clauses:    <- label: Contract ; | -> label: Contract ;
+ * Literals:        "..." single-line, ''...'' indented multi-line,
+ *                  decimal numbers, true/false/null, ()
+ * Line comments:   #
+ * Block comments:  slash-star ... star-slash (non-nesting)
  */
 
 const PREC = {
-  overlay: 2, // infixl 2 — <>
-  connect: 3, // infixl 3 — =>
-  select:  4, // postfix 4 — select(...)
-  merge:   5, // infixl 5 — // and ++ share a level
+  topology: 1,
+  select: 4,
+  merge: 5,
   core_lambda: 1,
-  core_or: 2,
-  core_and: 3,
-  core_compare: 4,
-  core_add: 5,
-  core_mul: 6,
-  core_unary: 7,
-  core_call: 8,
-  core_postfix: 9,
+  core_pipe: 2,
+  core_merge: 3,
+  core_or: 4,
+  core_and: 5,
+  core_compare: 6,
+  core_add: 7,
+  core_mul: 8,
+  core_unary: 9,
+  core_call: 10,
+  core_postfix: 11,
 };
 
 module.exports = grammar({
@@ -47,20 +48,13 @@ module.exports = grammar({
   word: $ => $.identifier,
 
   conflicts: $ => [
-    // Port-label-with-colon vs bare contract: `<- label: Contract` vs
-    // `<- Contract`. Both start with an identifier; the `:` is the
-    // discriminator. Tree-sitter lookahead resolves this.
-    [$.labeled_port_prefix, $._identifier_ref],
-    [$.pure_node_decl, $.port_signature],
-    [$.pure_output_port, $.output_body],
+    [$.core_pure_record, $.record],
+    [$.core_pure_list, $.list],
+    [$._core_pure_atom, $._expr_atom],
+    [$._core_pure_atom, $.qualified_ident],
   ],
 
   rules: {
-    // ─── Top level ──────────────────────────────────────────────────────
-    //
-    // A .wire file is zero or more top-level forms, optionally terminated
-    // by a single file-return expression with no trailing semicolon.
-
     source_file: $ => seq(
       repeat($._top_form),
       optional(field('file_return', $.expression)),
@@ -69,111 +63,36 @@ module.exports = grammar({
     _top_form: $ => choice(
       $.contract_decl,
       $.node_decl,
-      $.pure_let_binding,
       $.let_binding,
       $.import_stmt,
     ),
 
-    // contract Name;
     contract_decl: $ => seq(
       'contract',
       field('name', $.contract_name),
       ';',
     ),
 
-    node_decl: $ => choice(
-      $.executor_node_decl,
-      $.pure_node_decl,
-    ),
-
-    // node name : <port-sig> = <expr>;
-    executor_node_decl: $ => seq(
-      'node',
-      field('name', $.identifier),
-      ':',
-      field('ports', $.port_signature),
-      '=',
-      field('body', $.expression),
-      ';',
-    ),
-
-    // node name :
-    //   <- input: Contract
-    //   let shared = ...; in
-    //   -> output: Contract = pure (...);
-    pure_node_decl: $ => seq(
-      'node',
-      field('name', $.identifier),
-      ':',
-      field('inputs', repeat($.input_port)),
-      optional(field('bindings', $.pure_let_block)),
-      field('outputs', repeat1($.pure_output_equation)),
-      ';',
-    ),
-
-    pure_let_block: $ => seq(
-      'let',
-      repeat1($.core_pure_binding),
-      'in',
-    ),
-
-    pure_output_equation: $ => seq(
-      field('port', $.pure_output_port),
-      '=',
-      field('body', $.pure_output_expr),
-    ),
-
-    pure_output_port: $ => seq(
-      '->',
-      field('variant', $.output_variant),
-    ),
-
-    pure_output_expr: $ => seq(
-      'pure',
-      choice(
-        seq('(', field('expr', $.core_pure_expr), ')'),
-        seq('{', field('expr', $.core_pure_expr), optional(';'), '}'),
-      ),
-    ),
-
-    // let helper = x: ...;   |   let helper = let ... in ...;
-    pure_let_binding: $ => seq(
-      'let',
-      field('name', $.identifier),
-      '=',
-      field('value', $.core_pure_shared_expr),
-      ';',
-    ),
-
-    core_pure_shared_expr: $ => choice(
-      $.core_pure_lambda,
-      $.core_pure_let,
-    ),
-
-    // let name = <expr>;
     let_binding: $ => seq(
+      optional(field('visibility', 'export')),
       'let',
       field('name', $.identifier),
       '=',
-      field('value', $.expression),
+      field('value', choice($.core_pure_expr, $.expression)),
       ';',
     ),
 
-    // import name from "path";  |  import { a, b } from "path";
     import_stmt: $ => seq(
       'import',
       choice(
         field('binding', $.identifier),
         seq(
           '{',
-          field(
-            'bindings',
-            seq(
-              $.identifier,
-              repeat(seq(',', $.identifier)),
-              optional(','),
-            ),
-          ),
+          optional(seq(
+            $.identifier,
+            repeat(seq(',', $.identifier)),
+            optional(','),
+          )),
           '}',
         ),
       ),
@@ -182,29 +101,65 @@ module.exports = grammar({
       ';',
     ),
 
-    // ─── Port signatures ────────────────────────────────────────────────
+    node_decl: $ => seq(
+      'node',
+      field('name', $.identifier),
+      field('inputs', repeat($.input_clause)),
+      field('body', choice(
+        $.pure_body,
+        $.executor_single_output_body,
+        $.executor_body,
+      )),
+      optional(field('where', $.where_clause)),
+    ),
 
-    port_signature: $ => repeat1(choice($.input_port, $.output_port)),
-
-    input_port: $ => seq(
+    input_clause: $ => seq(
       '<-',
-      field('label', optional($.labeled_port_prefix)),
-      field('contract', choice($.input_singular, $.input_list)),
+      field('label', $.identifier),
+      ':',
+      field('contract', $.contract_name),
+      ';',
     ),
 
-    input_singular: $ => $.contract_name,
+    pure_body: $ => repeat1($.pure_output_equation),
 
-    input_list: $ => seq('[', $.contract_name, ']'),
-
-    output_port: $ => seq(
+    pure_output_equation: $ => seq(
       '->',
-      field('body', $.output_body),
+      field('output', $.output_variant),
+      '=',
+      field('body', $.pure_output_expr),
+      ';',
     ),
 
-    // A bare variant, or a sum-group of two or more variants.
+    pure_output_expr: $ => seq(
+      'pure',
+      '(',
+      field('expr', $.core_pure_expr),
+      ')',
+    ),
+
+    executor_single_output_body: $ => seq(
+      '->',
+      field('output', $.output_variant),
+      '=',
+      field('call', $.executor_call),
+      ';',
+    ),
+
+    executor_body: $ => seq(
+      field('outputs', repeat($.executor_output_clause)),
+      '=',
+      field('call', $.executor_call),
+      ';',
+    ),
+
+    executor_output_clause: $ => seq(
+      '->',
+      field('output', $.output_body),
+      ';',
+    ),
+
     output_body: $ => choice(
-      // Sum group must have at least two variants; parser lookahead
-      // handles the single-variant fallback.
       prec(1, seq(
         $.output_variant,
         repeat1(seq('|', $.output_variant)),
@@ -213,48 +168,57 @@ module.exports = grammar({
     ),
 
     output_variant: $ => seq(
-      field('label', optional($.labeled_port_prefix)),
+      field('label', $.identifier),
+      ':',
       field('contract', $.contract_name),
     ),
 
-    // Just the `label:` prefix (consumed by the port rules above).
-    labeled_port_prefix: $ => seq($.identifier, ':'),
+    executor_call: $ => choice(
+      $.inline_executor_call,
+      $.configured_executor_call,
+    ),
+
+    inline_executor_call: $ => seq(
+      '@',
+      field('name', $.qualified_ident),
+      optional(field('config', $.record)),
+      '(',
+      field('input', $.core_pure_expr),
+      ')',
+    ),
+
+    configured_executor_call: $ => seq(
+      field('name', $.identifier),
+      '(',
+      field('input', $.core_pure_expr),
+      ')',
+    ),
+
+    where_clause: $ => seq(
+      'where',
+      field('expr', $.core_pure_expr),
+      ';',
+    ),
 
     contract_name: $ => alias($.identifier, $.contract),
 
-    // ─── Expressions ────────────────────────────────────────────────────
-    //
-    // Stratified by precedence: overlay (lowest) → connect → postfix
-    // select → merge/concat (highest) → atom. Binary operators are
-    // left-associative; select chains as a left-folded postfix suffix.
-
-    expression: $ => $._expr_overlay,
-
-    _expr_overlay: $ => choice(
-      prec.left(PREC.overlay, seq(
-        field('left', $._expr_overlay),
-        field('op', '<>'),
-        field('right', $._expr_connect),
-      )),
-      $._expr_connect,
+    expression: $ => choice(
+      $.topology_expression,
+      $.select_expression,
+      $.merge_expression,
+      $._expr_atom,
     ),
 
-    _expr_connect: $ => choice(
-      prec.left(PREC.connect, seq(
-        field('left', $._expr_connect),
-        field('op', '=>'),
-        field('right', $._expr_select),
-      )),
-      $._expr_select,
-    ),
+    topology_expression: $ => prec.left(PREC.topology, seq(
+      field('left', choice($.topology_expression, $.select_expression, $.merge_expression, $._expr_atom)),
+      field('op', choice('<>', '=>')),
+      field('right', choice($.select_expression, $.merge_expression, $._expr_atom)),
+    )),
 
-    _expr_select: $ => choice(
-      prec.left(PREC.select, seq(
-        field('selector', $._expr_select),
-        field('suffix', $.select_suffix),
-      )),
-      $._expr_merge,
-    ),
+    select_expression: $ => prec.left(PREC.select, seq(
+      field('selector', choice($.select_expression, $.merge_expression, $._expr_atom)),
+      field('suffix', $.select_suffix),
+    )),
 
     select_suffix: $ => seq(
       'select',
@@ -271,17 +235,14 @@ module.exports = grammar({
       field('body', $.expression),
     ),
 
-    _expr_merge: $ => choice(
-      prec.left(PREC.merge, seq(
-        field('left', $._expr_merge),
-        field('op', choice('//', '++')),
-        field('right', $._expr_atom),
-      )),
-      $._expr_atom,
-    ),
+    merge_expression: $ => prec.left(PREC.merge, seq(
+      field('left', choice($.merge_expression, $._expr_atom)),
+      field('op', choice('//', '++')),
+      field('right', $._expr_atom),
+    )),
 
     _expr_atom: $ => choice(
-      $.executor_apply,
+      $.configured_executor_value,
       $.constructor_expr,
       $.record,
       $.list,
@@ -290,21 +251,16 @@ module.exports = grammar({
       $.number,
       $.boolean,
       $.unit,
-      $.paren_or_tuple,
+      $.paren_expression,
       alias($.qualified_ident, $.ident_ref),
     ),
 
-    // @qualified.name { field = ...; ... }
-    executor_apply: $ => seq(
+    configured_executor_value: $ => seq(
       '@',
       field('name', $.qualified_ident),
       field('config', $.record),
     ),
 
-    // qualified.name { ... }  — tagged-record config constructor (no @).
-    // Must be distinguished from a bare qualified_ident followed by a
-    // separate record (there is no such thing at the expression atom
-    // level, so we bind this form eagerly).
     constructor_expr: $ => prec(1, seq(
       field('name', $.qualified_ident),
       field('body', $.record),
@@ -313,7 +269,6 @@ module.exports = grammar({
     record: $ => seq(
       '{',
       repeat(seq($.field, ';')),
-      optional($.field),
       '}',
     ),
 
@@ -338,7 +293,11 @@ module.exports = grammar({
       ']',
     ),
 
-    // ─── CorePure expressions ──────────────────────────────────────────
+    paren_expression: $ => seq(
+      '(',
+      $.expression,
+      ')',
+    ),
 
     core_pure_binding: $ => seq(
       field('name', $.identifier),
@@ -349,8 +308,10 @@ module.exports = grammar({
 
     core_pure_expr: $ => choice(
       $.core_pure_let,
+      $.core_pure_if,
       $.core_pure_lambda,
-      $._core_pure_or,
+      $.core_pure_pipe,
+      $._core_pure_merge,
     ),
 
     core_pure_let: $ => seq(
@@ -360,11 +321,34 @@ module.exports = grammar({
       field('body', $.core_pure_expr),
     ),
 
+    core_pure_if: $ => seq(
+      'if',
+      field('condition', $.core_pure_expr),
+      'then',
+      field('then', $.core_pure_expr),
+      'else',
+      field('else', $.core_pure_expr),
+    ),
+
     core_pure_lambda: $ => prec.right(PREC.core_lambda, seq(
-      field('param', $.identifier),
-      ':',
+      repeat1(seq(field('param', $.identifier), ':')),
       field('body', $.core_pure_expr),
     )),
+
+    core_pure_pipe: $ => prec.left(PREC.core_pipe, seq(
+      field('left', choice($.core_pure_pipe, $._core_pure_merge)),
+      '|>',
+      field('right', $._core_pure_merge),
+    )),
+
+    _core_pure_merge: $ => choice(
+      prec.left(PREC.core_merge, seq(
+        field('left', $._core_pure_merge),
+        field('op', '//'),
+        field('right', $._core_pure_or),
+      )),
+      $._core_pure_or,
+    ),
 
     _core_pure_or: $ => choice(
       prec.left(PREC.core_or, seq(
@@ -476,84 +460,40 @@ module.exports = grammar({
       ']',
     ),
 
-    // ( a )             — parenthesization
-    // ( a, b, c )       — tuple
-    // ()                — empty wire / unit (handled by $.unit)
-    //
-    // the grammar rejects singleton trailing-comma tuples `(a,)`.
-    paren_or_tuple: $ => seq(
-      '(',
-      choice(
-        $.expression,
-        seq(
-          $.expression,
-          ',',
-          $.expression,
-          repeat(seq(',', $.expression)),
-          optional(','),
-        ),
-      ),
-      ')',
-    ),
-
-    // ─── Identifiers ────────────────────────────────────────────────────
-
     qualified_ident: $ => seq(
       $.identifier,
       repeat(seq('.', $.identifier)),
     ),
 
-    // Internal helper for the conflict declaration above; points at the
-    // bare-identifier-ref form.
-    _identifier_ref: $ => $.qualified_ident,
-
-    // ─── Literals ───────────────────────────────────────────────────────
-
     string: $ => seq(
       '"',
       repeat(choice(
         $.escape_sequence,
+        /\$\{[^}]*\}/,
         /[^"\\\n\r]/,
       )),
       '"',
     ),
 
-    escape_sequence: $ => token.immediate(seq(
-      '\\',
-      /[nt"\\]/,
-    )),
-
-    // ''...'' — verbatim, no escape processing, may span lines.
-    // Closing delimiter is the next literal '' sequence.
-    indented_string: $ => token(seq(
+    indented_string: $ => seq(
       "''",
       repeat(choice(
+        /\$\{[^}]*\}/,
         /[^']/,
         /'[^']/,
       )),
       "''",
-    )),
+    ),
 
-    number: $ => /-?[0-9]+(\.[0-9]+)?/,
+    escape_sequence: _ => token(seq('\\', /[ntr"\\$]/)),
+    number: _ => token(/-?[0-9]+(\.[0-9]+)?/),
+    boolean: _ => choice('true', 'false'),
+    null: _ => 'null',
+    unit: _ => seq('(', ')'),
 
-    boolean: $ => choice('true', 'false'),
+    identifier: _ => token(/[A-Za-z_][A-Za-z0-9_]*/),
 
-    null: $ => 'null',
-
-    // The empty wire () lives in the grammar alongside paren_or_tuple;
-    // authors can equivalently write `()` to denote the empty wire.
-    unit: $ => prec(-1, seq('(', ')')),
-
-    identifier: $ => /[A-Za-z_][A-Za-z0-9_]*/,
-
-    // ─── Comments ───────────────────────────────────────────────────────
-
-    line_comment: $ => token(seq('#', /[^\n]*/)),
-
-    block_comment: $ => token(seq(
-      '/*',
-      /[^*]*\*+([^/*][^*]*\*+)*/,
-      '/',
-    )),
+    line_comment: _ => token(seq('#', /.*/)),
+    block_comment: _ => token(seq('/*', /([^*]|\*[^/])*/, '*/')),
   },
 });

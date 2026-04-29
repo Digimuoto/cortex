@@ -13,6 +13,7 @@ Tests may import the surface they exercise, but they do not define downstream pr
 module Cortex.Capability.Executor.PureSpec (spec) where
 
 import Data.Aeson qualified as Aeson
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
 import Data.Text (Text)
@@ -37,8 +38,8 @@ import Cortex.Pulse.Rewrite (BudgetContext (..))
 import Cortex.Pulse.Types (defaultRewriteBudget)
 import Cortex.Wire
   ( CorePureBinOp (..)
-  , CorePureBinding (..)
   , CorePureExpr (..)
+  , CorePureField (..)
   , CorePureLiteral (..)
   , WirePayloadKind (..)
   , WireValue (..)
@@ -90,8 +91,8 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
       other ->
         expectationFailure ("expected StageComplete, got " <> showStageResult other)
 
-  it "decodes node-local pure bindings from task metadata" $ do
-    stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) localBindingTaskNode)
+  it "decodes node-local where records from task metadata" $ do
+    stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) whereTaskNode)
     result <- stageDef.sdAction weightedStageContext
     case result of
       StageComplete value -> do
@@ -155,8 +156,8 @@ weightedTaskNode =
           ]
     }
 
-localBindingTaskNode :: CircuitTaskNode
-localBindingTaskNode =
+whereTaskNode :: CircuitTaskNode
+whereTaskNode =
   weightedTaskNode
     { circuitTaskNodeMetadata =
         Aeson.object
@@ -165,7 +166,7 @@ localBindingTaskNode =
           , "ports" Aeson..= portsMetadataValue weightedPorts
           , "config"
               Aeson..= Aeson.object
-                [ "localBindings" Aeson..= [CorePureBinding "weighted" weightedExpression]
+                [ "where" Aeson..= CorePureRecord [CorePureField ("weighted" :| []) weightedExpression]
                 , "outputs" Aeson..= Map.singleton ("out" :: Text) (var "weighted")
                 ]
           ]
@@ -277,11 +278,10 @@ pureCompileEnv =
 pureSourceText :: Text
 pureSourceText =
   T.unlines
-    [ "node score :"
-    , "  <- evidence_score: Float"
-    , "  <- recency_score: Float"
-    , "  -> Float = pure (evidence_score + recency_score);"
-    , ""
+    [ "node score"
+    , "  <- evidence_score: Float ;"
+    , "  <- recency_score: Float ;"
+    , "  -> out: Float = pure (evidence_score + recency_score) ;"
     , "score"
     ]
 

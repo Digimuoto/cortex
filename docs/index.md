@@ -56,15 +56,21 @@ contract Outline;
 contract Draft;
 contract ReportArtifactRef;
 
-node plan : <- Topic -> Outline = @llm.planner {
-  prompt = ''Build a concise research outline.'';
-};
+node plan
+  <- topic: Topic ;
+  -> outline: Outline = @llm.planner {
+    prompt = ''Build a concise research outline.'' ;
+  } (topic) ;
 
-node write : <- Outline -> Draft = @llm.writer {
-  memory = topological { preset = "writer"; };
-};
+node write
+  <- outline: Outline ;
+  -> draft: Draft = @llm.writer {
+    memory = topological { preset = "writer" ; } ;
+  } (outline) ;
 
-node publish : <- Draft -> ReportArtifactRef = @artifact.report {};
+node publish
+  <- draft: Draft ;
+  -> artifact: ReportArtifactRef = @artifact.report (draft) ;
 
 plan => write => publish
 ```

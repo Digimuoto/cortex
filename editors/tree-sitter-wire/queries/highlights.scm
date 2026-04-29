@@ -5,11 +5,16 @@
 
 "contract" @keyword
 "node"     @keyword
+"export"   @keyword
 "let"      @keyword
 "in"       @keyword
 "import"   @keyword
 "from"     @keyword
 "pure"     @keyword
+"if"       @keyword
+"then"     @keyword
+"else"     @keyword
+"where"    @keyword
 
 (boolean) @constant.builtin
 (null)    @constant.builtin
@@ -18,8 +23,9 @@
 
 "=>"   @operator  ; connect
 "<>"   @operator  ; overlay
-"//"   @operator  ; right-biased merge (records, partial nodes)
+"//"   @operator  ; right-biased record merge
 "++"   @operator  ; concatenation (strings, lists)
+"|>"   @operator  ; CorePure pipe
 "<-"   @operator  ; input-port marker
 "->"   @operator  ; output-port marker
 "|"    @operator  ; sum-group separator
@@ -55,13 +61,11 @@
 
 ; ── Declarations ────────────────────────────────────────────────────────
 
-; node <name> : <sig> = <body>;
-(executor_node_decl name: (identifier) @function)
-(pure_node_decl name: (identifier) @function)
+; node <name>
+(node_decl name: (identifier) @function)
 
-; let <name> = <expr>;
+; [export] let <name> = <expr>;
 (let_binding name: (identifier) @constant)
-(pure_let_binding name: (identifier) @constant)
 
 ; contract <Name>;
 (contract_decl
@@ -77,8 +81,10 @@
 
 ; ── Executor application ───────────────────────────────────────────────
 
-; @qualified.name { ... }
-(executor_apply name: (qualified_ident) @function.builtin)
+; @qualified.name { ... } and @qualified.name { ... } (input)
+(configured_executor_value name: (qualified_ident) @function.builtin)
+(inline_executor_call name: (qualified_ident) @function.builtin)
+(configured_executor_call name: (identifier) @function.builtin)
 
 ; qualified.name { ... }  — tagged-record config constructor (no @)
 (constructor_expr name: (qualified_ident) @constructor)
@@ -91,7 +97,8 @@
 
 ; ── Port labels ────────────────────────────────────────────────────────
 
-(labeled_port_prefix (identifier) @tag)
+(input_clause label: (identifier) @tag)
+(output_variant label: (identifier) @tag)
 
 ; ── Identifier references ──────────────────────────────────────────────
 

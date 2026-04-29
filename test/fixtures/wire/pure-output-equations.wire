@@ -1,16 +1,25 @@
 contract EvidenceSet;
 contract AcceptedSet;
 contract RejectedSet;
+contract Report;
 
-let acceptedItem = item: item.score >= 0.7;
+let scoreThreshold = 0.7 ;
 
-node classify :
-  <- evidence: EvidenceSet
-  let
-    items = evidence.items;
-    acceptedItems = filter acceptedItem items;
+node classify
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = pure (accepted) ;
+  -> rejected: RejectedSet = pure (rejected) ;
+  -> summary: Report = pure (''
+    Classification complete.
+    Accepted: ${length accepted} items
+    Rejected: ${length rejected} items
+    Threshold: ${scoreThreshold}
+  '') ;
+  where let
+    items = evidence.items ;
+    accepted = items |> filter (item: item.score >= scoreThreshold) ;
+    rejected = items |> filter (item: item.score < scoreThreshold) ;
   in
-  -> accepted: AcceptedSet = pure (acceptedItems)
-  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
+  { items = items ; accepted = accepted ; rejected = rejected ; } ;
 
 classify

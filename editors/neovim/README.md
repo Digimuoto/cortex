@@ -94,8 +94,8 @@ cp editors/tree-sitter-wire/queries/*.scm ~/.config/nvim/queries/wire/
 
 ## Verification (all paths)
 
-Open a checked-in fixture such as `test/fixtures/wire-v1/thesis-parallel-claim-branches.wire`, or
-any local `.wire` file:
+Open a checked-in fixture such as `test/fixtures/wire/thesis-parallel-claim-branches.wire`, or any
+local `.wire` file:
 
 - Keywords highlight (`contract`, `node`, `let`, `import`, `from`, `select`)
 - Contract types (capitalized identifiers after `<-` / `->`) highlight distinctly

@@ -7,7 +7,7 @@ sidebar:
   label: Modules and imports
   order: 2
 status: draft
-date: 2026-04-24
+date: 2026-04-29
 related:
   - docs/Reference/Wire/grammar.md
   - docs/Architecture/05-wire-language.md
@@ -15,33 +15,53 @@ related:
 
 # Wire Reference — Modules, Imports, and File Returns
 
-> **Stub.** This page is a scoped entry point into the module-model rules in
-> [grammar.md](grammar.md). Until it is fleshed out, jump directly to the grammar sections below.
+The normative grammar lives in [grammar.md](grammar.md). This page summarizes the module-facing
+rules.
 
-## Where the rules live
+## File Shape
 
-- **[§9 Top-level forms](grammar.md#9-top-level-forms)** — the whole module model: `contract`,
-  `node`, `let`, `import`, file-return expression, wire files vs declaration-only files, closed
-  composition with open vocabulary.
-- **[§9.4 `import`](grammar.md#94-import)** — import forms, what enters local scope, `let`-aliasing
-  pattern for node exports, ambient contract side effects.
-- **[§9.5 File-return expression](grammar.md#95-file-return-expression)** — last-expression
-  semantics, what makes a file a wire file.
-- **[§9.6 Wire files and declaration-only files](grammar.md#96-wire-files-and-declaration-only-files)**
-  — what declaration-only files contribute.
-- **[§9.7 Closed composition, open vocabulary](grammar.md#97-closed-composition-open-vocabulary)** —
-  the compilation-unit definition: program = root file + transitive imports.
+A `.wire` file is a sequence of top-level forms:
 
-## Summary of the rules
+```wire
+contract EvidenceSet ;
+export let acceptedItem = item: item.score >= 0.7 ;
 
-- A `.wire` file is a sequence of top-level forms (`contract`, `node`, `let`, `import`), optionally
-  terminated by a file-return expression without trailing `;`.
-- `import name from "path";` brings the file's return value into scope as `name`.
-- `import { x, y } from "path";` brings explicit `let` bindings into scope.
-- Only `let` bindings are importable. `node` declarations are exposed across files by
-  `let`-aliasing.
-- Contract declarations are ambient — loading a file registers its `contract X;` assertions
-  globally.
-- The program is the root file plus the transitive closure of its imports.
+node classify
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;
 
-See the grammar for the full definitions.
+classify
+```
+
+The last expression without a trailing semicolon is the file-return value. If there is no
+file-return expression, the file is declaration-only.
+
+## Imports
+
+```wire
+import pipeline from "./pipeline.wire" ;
+import { acceptedItem, analyst } from "./helpers.wire" ;
+```
+
+The named import form imports another file's file-return value. The explicit import form imports
+named `let` bindings. `export let` marks the intended importable surface; until import visibility is
+fully enforced, it is documentation plus a forward-compatible commitment.
+
+Contracts are ambient once a file is loaded. Node declarations are not directly importable; expose a
+node by binding it:
+
+```wire
+node planner
+  -> plan: PlannerOutput = @llm.planner ({}) ;
+
+export let exported_planner = planner ;
+```
+
+## Declaration-Only Files
+
+Declaration-only files contribute:
+
+- ambient `contract` assertions;
+- importable `let` bindings.
+
+They do not leak node names or ordinary local names into importing files.

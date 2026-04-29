@@ -48,7 +48,7 @@ constant circuits.
 
 ## Decision
 
-Wire should add two topology composition operators over circuit values:
+Wire should add two topology composition operators over graph values:
 
 - `<>` for overlay, which places circuits side by side without adding edges;
 - `=>` for connect, which overlays two circuits and connects compatible exposed outputs from the
@@ -117,9 +117,10 @@ encoding a precedence rule before examples prove which grouping authors expect.
 
 File-level `let` has kinded RHSs:
 
-- CorePure helper value;
+- ordinary pure-data value;
+- delayed CorePure helper expression;
 - configured executor value from ADR 0025;
-- circuit value produced by a node or composition expression.
+- graph value produced by a node or composition expression.
 
 The binding name is never automatically an output port label.
 
@@ -127,8 +128,8 @@ The binding name is never automatically an output port label.
 let greeting = "Hello" ;
 ```
 
-binds a CorePure value helper. It does not create a circuit, an anonymous output, or an output named
-`greeting`.
+binds an ordinary pure-data value. It does not create a circuit, an anonymous output, or an output
+named `greeting`.
 
 To create a constant circuit, authors use an explicit node with an explicit output port:
 
@@ -158,12 +159,13 @@ ports rather than to source variable names.
 - Multi-entry, multi-exit, branch, merge, and review graphs become ordinary topology expressions.
 - Composition lowers to existing graph/circuit operations before runtime.
 - Port labels remain explicit boundary facts.
-- File-level helper bindings stay value-level unless their RHS is explicitly a circuit expression.
+- File-level ordinary value bindings stay value-level unless their RHS is explicitly a graph
+  expression.
 
 ### Negative
 
-- The parser and kind checker must distinguish CorePure, configured executor, and circuit expression
-  positions.
+- The parser and kind checker must distinguish ordinary pure-data, delayed CorePure helper,
+  configured executor, and graph expression positions.
 - Mixed composition expressions require parentheses in the first slice.
 - Authors must write explicit constant nodes instead of relying on implicit literal circuits.
 

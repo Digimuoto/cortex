@@ -28,7 +28,6 @@ module Cortex.Wire.Syntax
 
     -- * Port signatures
   , PortDirection (..)
-  , PortArity (..)
   , PortDecl (..)
   , SumVariant (..)
 
@@ -44,6 +43,9 @@ module Cortex.Wire.Syntax
   , CorePureField (..)
   , CorePureBinding (..)
   , CorePureExpr (..)
+  , ExecutorCall (..)
+  , LetVisibility (..)
+  , LetRhs (..)
 
     -- * Top-level forms
   , ImportSpec (..)
@@ -96,18 +98,6 @@ data PortDirection = PortInput | PortOutput
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON)
 
-{- | Input-port arity (grammar §6.3).
-
-- 'PortSingular' accepts at most one incoming edge.
-- 'PortList' accepts zero or more, aggregated into a list at
-  evaluation time.
-
-Output ports are always singular and carry no 'PortArity' in the AST.
--}
-data PortArity = PortSingular | PortList
-  deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (ToJSON)
-
 -- | One variant inside a sum-grouped output (grammar §6.5).
 data SumVariant = SumVariant
   { svLabel :: !PortLabel
@@ -122,7 +112,7 @@ Sum-grouped output ports are distinct from single-variant outputs; the
 grouping carries runtime-visible mutual-exclusion metadata.
 -}
 data PortDecl
-  = PortInputDecl !PortLabel !ContractId !PortArity
+  = PortInputDecl !PortLabel !ContractId
   | PortOutputDecl !PortLabel !ContractId
   | {- | Sum-grouped output. Invariant: the NonEmpty list carries **two or
     more** variants; a one-variant sum is a syntax error at parse time.
@@ -184,9 +174,7 @@ data Expr
     ExprOverlay !Expr !Expr
   | -- | @a => b@ — port-key-matched connect (infixl 3).
     ExprConnect !Expr !Expr
-  | {- | @a // b@ — right-biased shallow merge on records or partial
-    nodes (infixl 5).
-    -}
+  | -- | @a // b@ — right-biased shallow merge on records (infixl 5).
     ExprMerge !Expr !Expr
   | -- | @a ++ b@ — string or list concatenation (infixl 5).
     ExprConcat !Expr !Expr
@@ -194,8 +182,8 @@ data Expr
     exclusive output boundary (postfix 4).
     -}
     ExprSelect !Expr !(NonEmpty SelectArm)
-  | -- | @\@qual.name { config }@ — partial-node producer.
-    ExprApply !QName !Record
+  | -- | @\@qual.name { config }@ — inert configured executor value.
+    ExprConfiguredExecutor !QName !Record
   | {- | @qual.name { field = ... }@ — tagged-record config constructor;
     no leading @\@@. Value-position only.
     -}
@@ -208,15 +196,6 @@ data Expr
     config constructor); context decides.
     -}
     ExprIdent !QName
-  | {- | @(a, b, c)@ — tuple. In graph position overlays its elements;
-    value position is invalid (grammar §7.5 / §14.4).
-
-    A single-element tuple @(a)@ is indistinguishable from
-    parenthesization; the parser normalizes it to just the inner
-    expression, so 'ExprTuple' always holds zero or two-or-more
-    elements.
-    -}
-    ExprTuple ![Expr]
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
@@ -242,6 +221,7 @@ data CorePureBinOp
   | CorePureSubtract
   | CorePureMultiply
   | CorePureDivide
+  | CorePureMerge
   | CorePureEqual
   | CorePureNotEqual
   | CorePureLessThan
@@ -279,8 +259,25 @@ data CorePureExpr
   | CorePureUnary !CorePureUnaryOp !CorePureExpr
   | CorePureBinary !CorePureBinOp !CorePureExpr !CorePureExpr
   | CorePureLet !(NonEmpty CorePureBinding) !CorePureExpr
+  | CorePureIf !CorePureExpr !CorePureExpr !CorePureExpr
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
+
+data ExecutorCall
+  = ExecutorCallInline !QName !Record !CorePureExpr
+  | ExecutorCallConfigured !Text !CorePureExpr
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
+data LetVisibility = LetPrivate | LetExported
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON)
+
+data LetRhs
+  = LetRhsWire !Expr
+  | LetRhsCorePure !CorePureExpr
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
 
 -- | Import-statement variants (grammar §9.4).
 data ImportSpec
@@ -304,21 +301,21 @@ data PureOutputEquation = PureOutputEquation
   deriving anyclass (ToJSON)
 
 data NodePureBody = NodePureBody
-  { nodePureBodyBindings :: ![CorePureBinding]
+  { nodePureBodyWhere :: !(Maybe CorePureExpr)
   , nodePureBodyOutputs :: !(NonEmpty PureOutputEquation)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
 data NodeBody
-  = NodeBodyExecutor !Expr
+  = NodeBodyExecutor !(Maybe CorePureExpr) !ExecutorCall
   | NodeBodyPure !NodePureBody
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
 {- | A node declaration binds a name to a specific node value. The body
-expression either evaluates to a partial node at pin time or contains
-pure output equations that lower to the native pure evaluator.
+contains an executor call or pure output equations that lower to the
+native pure evaluator.
 -}
 data NodeDecl = NodeDecl
   { nodeDeclName :: !Text
@@ -333,12 +330,8 @@ data TopForm
   = -- | @contract Name;@ — idempotent ambient assertion.
     TopContract !ContractId
   | TopNode !NodeDecl
-  | -- | @let name = expr;@ — module-level binding.
-    TopLet !Text !Expr
-  | {- | @let name = param: expr;@ — module-level CorePure helper
-    visible to pure output equations.
-    -}
-    TopPureLet !CorePureBinding
+  | -- | @let name = rhs;@ or @export let name = rhs;@.
+    TopLet !LetVisibility !Text !LetRhs
   | TopImport !ImportSpec
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)

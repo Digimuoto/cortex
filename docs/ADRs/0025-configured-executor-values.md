@@ -12,7 +12,7 @@ superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/executors-and-alphabet.md
-  - docs/Reference/Wire/partials-and-execution-boundary.md
+  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0019-executor-registration-and-binding.md
@@ -136,13 +136,13 @@ Exporting a configured executor value exports inert source data only. It does no
 An importing host still needs a registered projection and Capability binding for the referenced
 executor id.
 
-Node-local `let ... in` blocks remain CorePure-only. They may depend on input values and are subject
-to the pure evaluator's determinism and authority-freedom rules. Allowing executor values there
-would mix input-dependent pure computation with authority selection.
+Node-local `where <record-expr> ;` clauses remain CorePure-only. They may depend on input values and
+are subject to the pure evaluator's determinism and authority-freedom rules. Allowing executor
+values there would mix input-dependent pure computation with authority selection.
 
 ### Config Evaluation
 
-Executor config must be statically elaborable. It may use file-level static CorePure helpers, but it
+Executor config must be statically elaborable. It may use file-level static pure-data values, but it
 may not depend on node input ports, runtime values, memory, time, IO, imports with authority, or
 host callbacks.
 
@@ -181,7 +181,8 @@ calls use node-level executor bodies.
 
 ### Negative
 
-- Wire needs kind checking for CorePure values, configured executor values, and circuit values.
+- Wire needs kind checking for ordinary pure-data values, configured executor values, and graph
+  values.
 - The parser must distinguish configured executor application from CorePure function application.
 - Configured executor application depends on the node implementation-form checks from ADR 0030.
 

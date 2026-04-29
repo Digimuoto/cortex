@@ -21,10 +21,10 @@ front-to-back.
     model, import semantics, file-return rules.
   - **[contracts-ports-and-matching.md](Wire/contracts-ports-and-matching.md)** — contract
     namespace, port declarations, `=>` port-key matching.
-  - **[partials-and-execution-boundary.md](Wire/partials-and-execution-boundary.md)** — partial
-    nodes in graph position, port-determined rule, evaluation-boundary check.
-  - **[executors-and-alphabet.md](Wire/executors-and-alphabet.md)** — executor registration,
-    `@`-application, config merge, ambient identifiers in config values.
+  - **[configured-executors-and-execution-boundary.md](Wire/configured-executors-and-execution-boundary.md)**
+    — configured executor values, explicit node admission, evaluation-boundary check.
+  - **[executors-and-alphabet.md](Wire/executors-and-alphabet.md)** — executor registration, `@`
+    authority, configured executor values, ambient identifiers in config values.
 - **[rewrites.md](rewrites.md)** — bounded dynamic rewrite algebra, budget, admission,
   materialization, hydration, provenance.
 - **[development.md](development.md)** — build, test, formatting, docs, theory, and local validation

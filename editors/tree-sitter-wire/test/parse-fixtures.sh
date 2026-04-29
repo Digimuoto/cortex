@@ -6,7 +6,7 @@ set -eu
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-FIXTURES_DIR="$REPO/test/fixtures/wire-v1"
+FIXTURES_DIR="$REPO/test/fixtures/wire"
 
 cd "$HERE"
 

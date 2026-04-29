@@ -48,7 +48,7 @@ spec = describe "Cortex.Wire.Pure" $ do
       scorePorts
       scoreInputs
       scoreBindings
-      []
+      Nothing
       (Map.singleton "score" scoreOutputExpr)
       `shouldBe` Right
         ( Map.singleton
@@ -93,7 +93,7 @@ spec = describe "Cortex.Wire.Pure" $ do
       ports
       inputBundle
       []
-      []
+      Nothing
       (Map.singleton "out" (bin CorePureDivide (field (var "in") "value") (num 2)))
       `shouldBe` Right (Map.singleton "out" (Aeson.Number 2))
 
@@ -104,7 +104,7 @@ spec = describe "Cortex.Wire.Pure" $ do
       `shouldBe` Right ()
 
   it "rejects missing variables" $
-    evaluatePureTaskOutputs scorePorts scoreInputs [] [] (Map.singleton "score" (var "unknown"))
+    evaluatePureTaskOutputs scorePorts scoreInputs [] Nothing (Map.singleton "score" (var "unknown"))
       `shouldBe` Left (PureMissingVariable "unknown")
 
   it "rejects divide by zero" $
@@ -112,7 +112,7 @@ spec = describe "Cortex.Wire.Pure" $ do
       scorePorts
       scoreInputs
       []
-      []
+      Nothing
       (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
       `shouldBe` Left PureDivisionByZero
 
@@ -121,7 +121,7 @@ spec = describe "Cortex.Wire.Pure" $ do
       scorePorts
       scoreInputs
       [binding "dup" (num 1), binding "dup" (num 2)]
-      []
+      Nothing
       (Map.singleton "score" (var "dup"))
       `shouldBe` Left (PureDuplicateBinding "dup")
 
@@ -130,18 +130,67 @@ spec = describe "Cortex.Wire.Pure" $ do
       scorePorts
       scoreInputs
       []
-      []
+      Nothing
       (Map.singleton "score" (CorePureCall (CorePureLambda ("x" :| ["x"]) (var "x")) [num 1, num 2]))
       `shouldBe` Left (PureDuplicateLambdaParam "x")
 
-  it "allows node-local bindings to shadow top-level helpers" $
+  it "zips arrays into fst/snd pair records in argument order" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      ( Map.singleton
+          "score"
+          ( call
+              (var "zip")
+              [ CorePureList [num 1, num 2]
+              , CorePureList [num 10, num 20]
+              ]
+          )
+      )
+      `shouldBe` Right
+        ( Map.singleton
+            "score"
+            ( Aeson.toJSON
+                [ Aeson.object ["fst" Aeson..= Aeson.Number 1, "snd" Aeson..= Aeson.Number 10]
+                , Aeson.object ["fst" Aeson..= Aeson.Number 2, "snd" Aeson..= Aeson.Number 20]
+                ]
+            )
+        )
+
+  it "allows where fields to shadow top-level delayed bindings" $
     evaluatePureTaskOutputs
       scorePorts
       scoreInputs
       [binding "shared" (num 1)]
-      [binding "shared" (num 2)]
+      (Just (CorePureRecord [CorePureField ("shared" :| []) (num 2)]))
       (Map.singleton "score" (var "shared"))
       `shouldBe` Right (Map.singleton "score" (Aeson.Number 2))
+
+  it "opens merged where records into output scope" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      ( Just
+          ( bin
+              CorePureMerge
+              (CorePureRecord [CorePureField ("left" :| []) (num 1)])
+              (CorePureRecord [CorePureField ("right" :| []) (num 2)])
+          )
+      )
+      (Map.singleton "score" (bin CorePureAdd (var "left") (var "right")))
+      `shouldBe` Right (Map.singleton "score" (Aeson.Number 3))
+
+  it "rejects where expressions that do not evaluate to records" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      (Just (num 1))
+      (Map.singleton "score" (num 1))
+      `shouldBe` Left (PureWhereExpectedRecord "number")
 
   it "rejects non-JSON WireValue inputs" $ do
     let inputBundle =

@@ -417,21 +417,21 @@ wireSmokeAppendHole =
 wireSmokeProposalSource :: Text
 wireSmokeProposalSource =
   T.unlines
-    [ "node stress_alpha :"
-    , "  <- AnalysisFragment"
-    , "  -> AnalysisFragment"
+    [ "node stress_alpha"
+    , "  <- in: AnalysisFragment ;"
+    , "  -> out: AnalysisFragment ;"
     , "= @stress_dimension {"
     , "  prompt = \"Stress-test alpha fragility.\";"
-    , "};"
+    , "} (in) ;"
     , ""
-    , "node stress_beta :"
-    , "  <- AnalysisFragment"
-    , "  -> AnalysisFragment"
+    , "node stress_beta"
+    , "  <- in: AnalysisFragment ;"
+    , "  -> out: AnalysisFragment ;"
     , "= @stress_dimension {"
     , "  prompt = \"Stress-test beta fragility.\";"
-    , "};"
+    , "} (in) ;"
     , ""
-    , "stress_alpha, stress_beta"
+    , "(stress_alpha) <> (stress_beta)"
     ]
 
 wireSmokePulseConfig :: CircuitPulseConfig
@@ -4739,7 +4739,9 @@ spec = beforeAll setupTestDb $ do
             Aeson.object
               [ "format" Aeson..= ("cortex.workflow.wire.proposal/v1" :: Text)
               , "source"
-                  Aeson..= ("node bad : <- AnalysisFragment -> AnalysisFragment = @stress_dimension {};" :: Text)
+                  Aeson..= ( "node bad\n  <- in: AnalysisFragment ;\n  -> out: AnalysisFragment = @stress_dimension (in) ;"
+                               :: Text
+                           )
               ]
           stagePlan =
             StagePlan

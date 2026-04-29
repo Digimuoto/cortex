@@ -1,7 +1,7 @@
 # tree-sitter-wire
 
 Tree-sitter grammar for the Cortex **Wire** DSL. Checked-in examples and regression fixtures use
-`.wire` files under `test/fixtures/wire-v1/`.
+`.wire` files under `test/fixtures/wire/`.
 
 Source of truth for the syntax: `docs/Reference/Wire/grammar.md`. The production parser is
 `src/Cortex/Wire/Parser.hs`.
@@ -20,7 +20,7 @@ queries/
   indents.scm             auto-indent rules
 src/                      generated parser (checked in)
 test/
-  corpus/*.txt            tree-sitter test corpus (25 cases)
+  corpus/*.txt            tree-sitter test corpus
   parse-fixtures.sh       validates checked-in .wire fixtures
 ```
 
@@ -29,19 +29,21 @@ test/
 **Top-level constructs**
 
 - contract assertions: `contract EvidenceBundle;`
-- executor node declarations: `node name : <- Contract -> Contract = @executor { ... };`
-- pure node declarations: `node name : <- input: Contract -> out: Contract = pure (...);`
-- let bindings: `let shared_prompt = "..." ++ "...";`
-- CorePure helper bindings: `let acceptedItem = x: x.score >= 0.7;`
+- executor node declarations with typed clauses:
+  `node name <- input: Contract ; -> output: Contract ; = @executor (input) ;`
+- pure node output equations:
+  `node name <- input: Contract ; -> output: Contract = pure (input.score) ;`
+- configured executor values: `let analyst = @llm.analyst { temperature = 0.2 ; } ;`
+- CorePure helper bindings: `export let acceptedItem = x: x.score >= 0.7 ;`
 - imports: `import { a, b } from "path";`
 - optional file-return expression with no trailing semicolon
 
-**Graph expressions** (precedence: parens > connect `=>` > overlay `,`/`<>`)
+**Graph expressions**
 
-- connect (right-associative): `a => b => c`
-- overlay (left-associative): `a, b` or `a <> b`
-- grouping: `(a, b) => (c, d)`
-- endpoints: `node` or `node.port`
+- connect: `a => b => c`
+- overlay: `a <> b`
+- grouping is required when connect and overlay are mixed: `(a <> b) => c`
+- endpoints: node and composed graph expressions
 
 **Values**
 
@@ -49,11 +51,14 @@ test/
 - attribute sets `{ k = v; ... }` (nested)
 - lists `[item1, item2]`
 - qualified refs `a.b.c` and bare identifiers
-- executors: `@qualified.name { config = value; }`
+- configured executor values: `@qualified.name { config = value; }`
+- executor calls in node bodies: `@qualified.name { config = value; } (input)` or `analyst (input)`
 - config constructors: `topological { preset = "analyst"; }`
 - operators: record merge `//` and string/list concat `++`
-- CorePure expressions inside pure output equations: field access, lambdas, application,
-  arithmetic/comparison/boolean operators, records, lists, and builtins such as `map` and `zipWith`
+- CorePure expressions inside pure output equations and executor input arguments: field access,
+  indexing, lambdas, application, `if ... then ... else ...`, pipes `|>`,
+  arithmetic/comparison/boolean operators, records, lists, string interpolation, and builtins such
+  as `map`, `filter`, `zipWith`, `joinWith`, and `toJson`
 
 **Comments**
 
@@ -89,19 +94,17 @@ See the sibling directories:
 - `../helix/` — `languages.toml` fragment + query copies
 - `../vscode/` — VS Code extension
 
-## Known Divergences From The V1 Parser
+## Known Divergences From The Production Parser
 
-This grammar is deliberately a _parseable superset_ of what the Megaparsec parser accepts, except
-where editor recovery benefits from accepting incomplete buffers:
+This grammar is deliberately syntax-focused. Semantic checks are still owned by the Megaparsec
+parser and compiler:
 
-- **Identifiers do not accept `:`.** The grammar uses `[A-Za-z_][A-Za-z0-9_\-]*` so port labels like
-  `<- input: Contract` disambiguate cleanly. Values like `"SPY:US"` remain string literals.
 - **Semantic checks are out of scope.** Tree-sitter accepts syntactically valid records, lists,
-  executor applications, and graph expressions even when the compiler would reject unknown
-  contracts, unknown executors, bad port contracts, or invalid runtime config.
+  configured executors, executor calls, and graph expressions even when the compiler would reject
+  unknown contracts, unknown executors, bad port contracts, invalid runtime config, `@pure`, or
+  unparenthesized mixed topology operators.
 
-Outside these points, every production form accepted by the V1 parser should parse here. Regression
-coverage lives in `test/corpus/v1.txt` and `test/parse-fixtures.sh`.
+Regression coverage lives in `test/corpus/v1.txt` and `test/parse-fixtures.sh`.
 
 ## License
 

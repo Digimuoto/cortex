@@ -31,11 +31,13 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Char qualified as Char
 import Data.Foldable (traverse_)
+import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, toBoundedInteger)
+import Data.Scientific qualified as Scientific
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -81,6 +83,7 @@ data PureEvalError
   | PureFunctionArity !Text !Int !Int
   | PureDuplicateBinding !Text
   | PureDuplicateLambdaParam !Text
+  | PureWhereExpectedRecord !Text
   deriving stock (Eq, Show, Generic)
 
 renderPureEvalError :: PureEvalError -> Text
@@ -143,6 +146,8 @@ renderPureEvalError = \case
     "Pure expression declares binding " <> bindingName <> " more than once in the same scope."
   PureDuplicateLambdaParam paramName ->
     "Pure expression declares lambda parameter " <> paramName <> " more than once."
+  PureWhereExpectedRecord actual ->
+    "Pure where-clause must evaluate to a record, but received " <> actual <> "."
   where
     renderList values =
       "[" <> T.intercalate ", " values <> "]"
@@ -249,15 +254,15 @@ evaluatePureTaskOutputs
   :: WirePorts
   -> WireInputBundle
   -> [CorePureBinding]
-  -> [CorePureBinding]
+  -> Maybe CorePureExpr
   -> Map Text CorePureExpr
   -> Either PureEvalError (Map Text Aeson.Value)
-evaluatePureTaskOutputs ports inputBundle bindings localBindings outputExprs = do
+evaluatePureTaskOutputs ports inputBundle bindings whereExpr outputExprs = do
   validatePurePorts ports outputExprs
   inputValues <- bindPureInputValues ports inputBundle
   let inputEnv = Map.map CorePureJson inputValues
   outerEnv <- bindCorePureBindings (corePureBuiltinEnv <> inputEnv) bindings
-  env <- bindCorePureBindings outerEnv localBindings
+  env <- bindCorePureWhere outerEnv whereExpr
   traverse (evaluateOutput env) outputExprs
   where
     evaluateOutput env outputExpr = do
@@ -266,10 +271,27 @@ evaluatePureTaskOutputs ports inputBundle bindings localBindings outputExprs = d
 
 type CorePureEnv = Map Text CorePureValue
 
+bindCorePureWhere :: CorePureEnv -> Maybe CorePureExpr -> Either PureEvalError CorePureEnv
+bindCorePureWhere env = \case
+  Nothing -> Right env
+  Just whereExpr -> do
+    whereValue <- evaluateCorePureExpr env whereExpr >>= corePureValueToJson
+    case whereValue of
+      Aeson.Object object ->
+        Right $
+          foldl
+            ( \acc (key, value) ->
+                Map.insert (Key.toText key) (CorePureJson value) acc
+            )
+            env
+            (KeyMap.toList object)
+      other ->
+        Left (PureWhereExpectedRecord (jsonValueKind other))
+
 data CorePureValue
   = CorePureJson !Aeson.Value
   | CorePureClosure !(NonEmpty Text) !CorePureExpr !CorePureEnv
-  | CorePureBuiltin !Text !Int !([CorePureValue] -> Either PureEvalError CorePureValue)
+  | CorePureBuiltin !Text !Int ![CorePureValue] !([CorePureValue] -> Either PureEvalError CorePureValue)
 
 evaluateCorePureExpr :: CorePureEnv -> CorePureExpr -> Either PureEvalError CorePureValue
 evaluateCorePureExpr env = \case
@@ -328,6 +350,9 @@ evaluateCorePureExpr env = \case
   CorePureLet bindings bodyExpr -> do
     localEnv <- bindCorePureBindings env (NE.toList bindings)
     evaluateCorePureExpr localEnv bodyExpr
+  CorePureIf conditionExpr thenExpr elseExpr -> do
+    condition <- evaluateCorePureExpr env conditionExpr >>= corePureBool
+    evaluateCorePureExpr env (if condition then thenExpr else elseExpr)
 
 bindCorePureBindings
   :: CorePureEnv
@@ -417,6 +442,10 @@ evaluateCorePureBinary binaryOp lhs rhs =
       if rhsNumber == 0
         then Left PureDivisionByZero
         else Right (CorePureJson (Aeson.Number (lhsNumber / rhsNumber)))
+    CorePureMerge -> do
+      lhsObject <- corePureObject lhs
+      rhsObject <- corePureObject rhs
+      Right (CorePureJson (Aeson.Object (mergeObjects lhsObject rhsObject)))
     CorePureEqual ->
       jsonCompare (==) lhs rhs
     CorePureNotEqual ->
@@ -473,13 +502,22 @@ applyCorePureValue functionValue argumentValues =
       | NE.length params == length argumentValues ->
           validateCorePureParamNames params
             *> evaluateCorePureExpr (Map.fromList (zip (NE.toList params) argumentValues) <> closureEnv) body
+      | length argumentValues < NE.length params -> do
+          validateCorePureParamNames params
+          (appliedParams, remainingParams) <-
+            partialClosureParams params (length argumentValues)
+          let closureEnv' = Map.fromList (zip appliedParams argumentValues) <> closureEnv
+          Right (CorePureClosure remainingParams body closureEnv')
       | otherwise ->
           Left (PureFunctionArity "<lambda>" (NE.length params) (length argumentValues))
-    CorePureBuiltin name arity implementation
-      | arity == length argumentValues ->
-          implementation argumentValues
-      | otherwise ->
-          Left (PureFunctionArity name arity (length argumentValues))
+    CorePureBuiltin name arity appliedValues implementation ->
+      let allValues = appliedValues <> argumentValues
+       in if length allValues == arity
+            then implementation allValues
+            else
+              if length allValues < arity
+                then Right (CorePureBuiltin name arity allValues implementation)
+                else Left (PureFunctionArity name arity (length allValues))
     other ->
       Left (PureFunctionExpected (corePureValueKind other))
 
@@ -499,10 +537,23 @@ corePureBuiltinEnv =
     , builtin "max" 2 (numericBuiltin2 max)
     , builtin "abs" 1 corePureAbs
     , builtin "clamp" 3 corePureClamp
+    , builtin "concat" 1 corePureConcat
+    , builtin "toString" 1 corePureToString
+    , builtin "joinWith" 2 corePureJoinWith
+    , builtin "toJson" 1 corePureToJson
     ]
   where
     builtin name arity implementation =
-      (name, CorePureBuiltin name arity implementation)
+      (name, CorePureBuiltin name arity [] implementation)
+
+partialClosureParams
+  :: NonEmpty Text -> Int -> Either PureEvalError ([Text], NonEmpty Text)
+partialClosureParams params appliedCount =
+  case splitAt appliedCount (NE.toList params) of
+    (appliedParams, remainingParam : remainingParams) ->
+      Right (appliedParams, remainingParam NE.:| remainingParams)
+    _ ->
+      Left (PureFunctionArity "<lambda>" (NE.length params) appliedCount)
 
 corePureMap :: [CorePureValue] -> Either PureEvalError CorePureValue
 corePureMap [functionValue, listValue] = do
@@ -529,7 +580,7 @@ corePureZip [lhsValue, rhsValue] = do
   lhs <- Vector.toList <$> corePureArray lhsValue
   rhs <- Vector.toList <$> corePureArray rhsValue
   let pairs =
-        [ Aeson.Array (Vector.fromList [lhsItem, rhsItem])
+        [ Aeson.object ["fst" Aeson..= lhsItem, "snd" Aeson..= rhsItem]
         | (lhsItem, rhsItem) <- zip lhs rhs
         ]
   Right (CorePureJson (Aeson.Array (Vector.fromList pairs)))
@@ -603,6 +654,33 @@ corePureClamp [minValue, maxValue, value] = do
   Right (CorePureJson (Aeson.Number (max minNumber (min maxNumber number))))
 corePureClamp args = impossibleBuiltinArity "clamp" 3 args
 
+corePureConcat :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureConcat [listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  strings <- traverse corePureJsonString values
+  Right (CorePureJson (Aeson.String (T.concat strings)))
+corePureConcat args = impossibleBuiltinArity "concat" 1 args
+
+corePureToString :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureToString [value] = do
+  text <- corePureScalarText value
+  Right (CorePureJson (Aeson.String text))
+corePureToString args = impossibleBuiltinArity "toString" 1 args
+
+corePureJoinWith :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureJoinWith [separatorValue, listValue] = do
+  separator <- corePureStringValue separatorValue
+  values <- Vector.toList <$> corePureArray listValue
+  strings <- traverse corePureJsonString values
+  Right (CorePureJson (Aeson.String (T.intercalate separator strings)))
+corePureJoinWith args = impossibleBuiltinArity "joinWith" 2 args
+
+corePureToJson :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureToJson [value] = do
+  jsonValue <- corePureValueToJson value
+  Right (CorePureJson (Aeson.String (canonicalJson jsonValue)))
+corePureToJson args = impossibleBuiltinArity "toJson" 1 args
+
 applyJsonFunction :: CorePureValue -> Aeson.Value -> Either PureEvalError CorePureValue
 applyJsonFunction functionValue value =
   applyCorePureValue functionValue [CorePureJson value]
@@ -628,6 +706,25 @@ corePureValueToJson = \case
   CorePureClosure {} -> Left (PureTypeMismatch "JSON value" "function")
   CorePureBuiltin {} -> Left (PureTypeMismatch "JSON value" "function")
 
+corePureStringValue :: CorePureValue -> Either PureEvalError Text
+corePureStringValue value =
+  case value of
+    CorePureJson (Aeson.String text) -> Right text
+    other -> Left (PureTypeMismatch "string" (corePureValueKind other))
+
+corePureJsonString :: Aeson.Value -> Either PureEvalError Text
+corePureJsonString = \case
+  Aeson.String text -> Right text
+  other -> Left (PureTypeMismatch "string" (jsonValueKind other))
+
+corePureScalarText :: CorePureValue -> Either PureEvalError Text
+corePureScalarText = \case
+  CorePureJson (Aeson.String text) -> Right text
+  CorePureJson (Aeson.Number number) -> Right (canonicalNumber number)
+  CorePureJson (Aeson.Bool True) -> Right "true"
+  CorePureJson (Aeson.Bool False) -> Right "false"
+  other -> Left (PureTypeMismatch "scalar" (corePureValueKind other))
+
 corePureNumber :: CorePureValue -> Either PureEvalError Scientific
 corePureNumber value =
   case value of
@@ -646,11 +743,78 @@ corePureArray value =
     CorePureJson (Aeson.Array values) -> Right values
     other -> Left (PureTypeMismatch "array" (corePureValueKind other))
 
+corePureObject :: CorePureValue -> Either PureEvalError (KeyMap.KeyMap Aeson.Value)
+corePureObject value =
+  case value of
+    CorePureJson (Aeson.Object object) -> Right object
+    other -> Left (PureTypeMismatch "object" (corePureValueKind other))
+
 corePureValueKind :: CorePureValue -> Text
 corePureValueKind = \case
   CorePureJson value -> jsonValueKind value
   CorePureClosure {} -> "function"
   CorePureBuiltin {} -> "function"
+
+canonicalJson :: Aeson.Value -> Text
+canonicalJson = \case
+  Aeson.Null -> "null"
+  Aeson.Bool True -> "true"
+  Aeson.Bool False -> "false"
+  Aeson.Number number -> canonicalNumber number
+  Aeson.String text -> jsonString text
+  Aeson.Array values ->
+    "[" <> T.intercalate "," (fmap canonicalJson (Vector.toList values)) <> "]"
+  Aeson.Object object ->
+    let fields =
+          [ jsonString (Key.toText key) <> ":" <> canonicalJson value
+          | (key, value) <- List.sortOn fst (KeyMap.toList object)
+          ]
+     in "{" <> T.intercalate "," fields <> "}"
+
+canonicalNumber :: Scientific -> Text
+canonicalNumber number
+  | number == 0 = "0"
+  | otherwise =
+      let rendered = T.pack (Scientific.formatScientific Scientific.Fixed Nothing number)
+       in trimNumber rendered
+
+trimNumber :: Text -> Text
+trimNumber rendered =
+  case T.breakOn "." rendered of
+    (_, fraction)
+      | T.null fraction -> rendered
+    (whole, fraction) ->
+      let trimmedFraction = T.dropWhileEnd (== '0') (T.drop 1 fraction)
+       in if T.null trimmedFraction
+            then whole
+            else whole <> "." <> trimmedFraction
+
+jsonString :: Text -> Text
+jsonString text =
+  "\"" <> T.concatMap escapeJsonChar text <> "\""
+  where
+    escapeJsonChar = \case
+      '"' -> "\\\""
+      '\\' -> "\\\\"
+      '\n' -> "\\n"
+      '\r' -> "\\r"
+      '\t' -> "\\t"
+      '\b' -> "\\b"
+      '\f' -> "\\f"
+      c
+        | Char.ord c < 0x20 ->
+            "\\u" <> T.justifyRight 4 '0' (T.pack (showHex4 (Char.ord c)))
+        | otherwise -> T.singleton c
+
+    showHex4 value =
+      let digits = "0123456789abcdef" :: String
+          go 0 acc = acc
+          go n acc =
+            let (q, r) = n `quotRem` 16
+             in go q ((digits !! r) : acc)
+       in case go value [] of
+            [] -> "0"
+            xs -> xs
 
 jsonValueKind :: Aeson.Value -> Text
 jsonValueKind = \case
@@ -712,12 +876,12 @@ pureExecutorConfigSchema =
           [ "bindings"
               Aeson..= Aeson.object
                 [ "type" Aeson..= ("array" :: Text)
-                , "description" Aeson..= ("Top-level CorePure helper bindings shared by all pure outputs." :: Text)
+                , "description"
+                    Aeson..= ("Top-level delayed bindings and captured constants shared by all pure outputs." :: Text)
                 ]
-          , "localBindings"
+          , "where"
               Aeson..= Aeson.object
-                [ "type" Aeson..= ("array" :: Text)
-                , "description" Aeson..= ("Node-local CorePure bindings evaluated after top-level helpers." :: Text)
+                [ "description" Aeson..= ("Optional CorePure record expression opened into node-local scope." :: Text)
                 ]
           , "outputs"
               Aeson..= Aeson.object

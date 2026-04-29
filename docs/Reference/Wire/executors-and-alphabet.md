@@ -1,229 +1,154 @@
 ---
 title: "Wire Reference — Executors and the Alphabet"
 description:
-  Scoped reference for executor registration, the closed alphabet, `@`-application, partial nodes,
-  and ambient identifiers in config values.
+  Scoped reference for executor registration, configured executor values, `@` authority, and ambient
+  identifiers in config values.
 sidebar:
   label: Executors
   order: 5
 status: draft
-date: 2026-04-24
+date: 2026-04-29
 related:
   - docs/Reference/Wire/grammar.md
+  - docs/Reference/Wire/pure-execution.md
+  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
   - docs/Architecture/05-wire-language.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0025-configured-executor-values.md
 ---
 
 # Wire Reference — Executors and the Alphabet
 
-This page defines the semantic boundary behind Wire's executor application form:
+`@` is Wire's executor-authority marker. It references a registered executor from the closed
+alphabet and pairs it with inert config data:
 
 ```wire
-@qualified.name { config }
+let analyst = @llm.analyst {
+  model = "gpt-5.4" ;
+  temperature = 0.2 ;
+  memory = topological { preset = "analyst" ; } ;
+} ;
 ```
 
-The short version: `@` is **pure staging of registered executor authority**. The config record is
-ordinary Wire data. The executor is a registered capability that may later perform effects, call
-external systems, or fail. Applying `@` does not run the executor; it constructs a partial node that
-can be checked, merged, pinned to ports, compiled into a graph, persisted, and eventually evaluated
-by Pulse.
-
-Executor _kinds_ (model-mediated generation vs registered external call) and their backend
-sub-taxonomy are decided in [ADR 0014](../../ADRs/0014-executor-taxonomy-model-vs-external-call.md).
-This page covers the grammar-level and registry-boundary surface above that taxonomy.
-
-## Rule Sources
-
-- **[§5.1 Executor registration](grammar.md#51-executor-registration)** — what an executor is, what
-  each executor declares (config schema, vocabulary, structural constraints, purity class), and how
-  the alphabet is global.
-- **[§5.2 Executor application](grammar.md#52-executor-application)** — `@executor { config }`
-  produces a partial node; schema-checking timing.
-- **[§5.3 Config merge on partial nodes](grammar.md#53-config-merge-on-partial-nodes)** — how
-  `partial // record` produces new partials for "base + delta" reuse.
-- **[§5.5 Ambient identifiers in config values](grammar.md#55-ambient-identifiers-in-config-values)**
-  — tool references and tagged-record config constructors.
+This does not run the executor and does not create a graph vertex. It creates a configured executor
+value that can be reused in explicit node implementation bodies.
 
 ## Three Layers
 
-`@` sits at a deliberately narrow boundary between three layers:
+| Layer              | Owned by                                          | Contains                                                                                  |
+| ------------------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Pure config data   | Wire source language                              | Records, strings, lists, numbers, booleans, tool names, tagged config constructors        |
+| Registry authority | Executor/Capability registries plus host bindings | Executor identity, config schema, port projections, contract vocabulary, effect class     |
+| Runtime evaluation | Pulse plus host interpreters                      | Durable scheduling, input snapshots, executor invocation, output validation, failure data |
 
-| Layer              | Owned by                                              | What it contains                                                                                                        | What it does not do                                                                       |
-| ------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Pure config data   | Wire source language                                  | Records, strings, numbers, booleans, lists, tagged config values, tool-name references                                  | No executor call, host mutation, provider request, persistence side effect, or scheduling |
-| Registry authority | Executor/Capability registries plus consumer bindings | Executor identity, config schema, port/profile declarations, contract vocabulary, purity/effect class, host permissions | No run-state transition; it only admits or rejects staged authority                       |
-| Runtime evaluation | Pulse plus host interpreters                          | Durable node scheduling, input snapshots, executor invocation, output validation, retry/cancellation/failure recording  | No new executor authority beyond what the compiled graph already materialized             |
+Wire stages authority. Pulse evaluates only after the compiler has materialized a node with a
+concrete typed port boundary.
 
-This separation is the reason Wire can treat executor applications as values. The author can bind
-and transform a configured executor without performing the operation:
-
-```wire
-let analyst_base = @llm.analyst {
-  model = "gpt-5.2";
-  temperature = 0.2;
-  memory = topological { preset = "analyst" };
-};
-
-node analyst : <- EvidenceBundle -> AnalysisFragment | ExecutorError =
-  analyst_base // { tools = [webSearch, readArtifact]; };
-```
-
-The `topological { ... }` value is a config constructor, not an executor. The leading `@` is what
-marks a reference to the executor alphabet.
-
-## Executor Applications
-
-Executors are a closed alphabet registered outside Wire. User code cannot define new executors; it
-composes them.
+## Configured Executor Values
 
 The application form is:
 
 ```wire
-@qualified.name { field = value; }
+@qualified.name { field = value ; }
 ```
 
-It resolves `qualified.name` against the executor registry and pairs it with a pure config record.
-The result is a **partial node**:
+The result has:
 
-- it has an executor identity;
-- it has config data;
-- it has no authored node identity yet;
-- it may or may not have enough registry-declared port information to stand in graph position;
-- it is `let`-bindable;
-- it can be shallowly, right-biased merged with `//`;
-- it becomes an ordinary node only after a `node` declaration or an admissible port-determined graph
-  use pins its boundary.
+- an executor identity;
+- config data;
+- no node identity;
+- no graph position;
+- no ability to communicate with other nodes.
 
-`@qualified.name { config }` therefore means "stage this registered executor with this pure config",
-not "run this executor now".
+It becomes executable only through a node body:
+
+```wire
+node analyze
+  <- evidence: EvidenceSet ;
+  -> analysis: AnalysisRecord ;
+  = analyst (evidence) ;
+```
+
+Inline calls are equivalent when no reuse is needed:
+
+```wire
+node analyze
+  <- evidence: EvidenceSet ;
+  -> analysis: AnalysisRecord ;
+  = @llm.analyst { temperature = 0.2 ; } (evidence) ;
+```
 
 ## Registry Admission
 
-Before a partial node may become a graph node, the registry boundary must establish the following
-facts:
+Before an executor call becomes a materialized node, the registry and binding layer establish:
 
-| Obligation                             | Meaning                                                                                                                                                       |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Executor exists                        | The qualified name is present in the loaded executor alphabet.                                                                                                |
-| Config validates                       | The config record conforms to the executor's schema, including any ambient tool or tagged-constructor references.                                             |
-| Port boundary is declared or derivable | The executor either declares fixed ports, accepts the author's `node` signature, or supplies enough structural constraints for direct graph-position use.     |
-| Contracts are known                    | Every input/output contract is in the executor vocabulary, declared by the loaded Wire program, or admitted by an open-vocabulary executor rule.              |
-| Purity/effect class is known           | The registry classifies the executor as pure, impure, host-effecting, model-mediated, or another accepted effect category.                                    |
-| Output validation is known             | The runtime knows which contract schema or payload-kind check applies to each produced output.                                                                |
-| Host authority is explicit             | Any external tool, model provider, artifact sink, durable mutation, or host API permission comes from the registry/binding layer, not from Wire syntax alone. |
+| Obligation              | Meaning                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| Executor exists         | The qualified name is present in the loaded executor alphabet.                                   |
+| Config validates        | The config record conforms to the executor schema.                                               |
+| Ports are concrete      | The authored node boundary is checked against the executor projection or structural constraints. |
+| Contracts are known     | Every input/output contract is declared by the program or registry.                              |
+| Effect class is known   | The binding classifies the executor as model-mediated, host-effecting, pure, etc.                |
+| Output validation known | The runtime knows how to validate every declared output contract.                                |
+| Authority is explicit   | Tools, model providers, memory policies, artifact writes, and host APIs come from the registry.  |
 
-These obligations are admission facts about a staged node. They do not prove that the executor will
-terminate, succeed, or produce useful content. Runtime execution remains fallible.
+Configured executor values are reusable configuration, not a second graph-authoring path. There is
+no port-determined shortcut and no context inference from graph position.
 
 ## Config Purity
 
-Config expressions are pure. They can describe prompts, memory policies, provider choices, numeric
-parameters, tool lists, and nested tagged records, but they cannot execute an executor.
-
-This matters for reuse:
+Config expressions are inert. They can name prompts, memory policies, provider choices, numeric
+parameters, tools, and nested tagged records, but they cannot run executors.
 
 ```wire
-let gatherer_base = @llm.gatherer {
-  memory = topological { preset = "evidence" };
-  tools = [webSearch];
-};
-
-node gatherer_news : <- PlannerOutput -> EvidenceBundle | ExecutorError =
-  gatherer_base // { tools = [webSearch, getAssetNews]; };
+let reviewer = @llm.review {
+  tools = [webSearch, readArtifact] ;
+  memory = topological { preset = "reviewer" ; } ;
+} ;
 ```
 
-The merge creates a new configured partial node. It does not mutate `gatherer_base`, call
-`@llm.gatherer`, or contact any tool. Tool identifiers in config are ordinary names whose meaning is
-checked by the executor schema and host binding.
+`topological { ... }` is a config constructor. It may grant the executor a memory/retrieval policy
+through the binding layer, but it is not hidden node-to-node communication and it is not part of
+Wire's proven core.
 
 ## Native Pure Evaluator
 
-Wire provides a theorem-side CorePure node form for deterministic calculations over Wire values:
+CorePure is authored without `@`:
 
 ```wire
-node score :
-  <- evidence: EvidenceSet
-  <- weights: WeightSet
+node score
+  <- evidence: EvidenceSet ;
+  <- weights: WeightSet ;
   let
-    scores = map (item: item.score) evidence.items;
-    weighted = zipWith (score: weight: score * weight) scores weights.values;
+    weighted = zipWith (score: weight: score * weight) weights.values evidence.scores
   in
-  -> score: ScoreSet = pure ({
-    total = sum weighted;
-    count = length weighted;
-  });
+  -> total: Score = pure (sum weighted) ;
 ```
 
-`pure (...)` is not an `@` executor application. Authored `@pure { ... }` is rejected. The `@`
-marker remains the boundary to registered external executor authority; CorePure is inside Wire's
-deterministic expression layer. The compiler lowers pure output equations to one native pure task
-whose config carries CorePure ASTs keyed by declared output port names.
-
-Each input label becomes a CorePure variable; a single unlabeled input is available as `in`.
-Repeated same-contract inputs must therefore be labeled explicitly. Inputs must arrive as JSON
-`WireValue`s, and outputs are wrapped through the declared Wire output ports and contracts.
-
-Hosts register this executor through the normal Capability boundary. `pureExecutorSpec` exposes the
-inert Wire projection, and host code can build a strict compile registry with
-`executorProjectionRegistry [pureExecutorSpec]`. Binding then decodes the compiled task metadata and
-rechecks admission before producing a Pulse stage: every input must be a single-contract,
-cardinality-one port, generated repeated same-contract ports such as `Float_1` must be replaced with
-explicit labels, and the output-expression keys must match the declared output ports exactly.
-
-The implemented expression subset is intentionally small but useful: JSON literals, records, lists,
-field access, indexing, lambdas, application, arithmetic, comparisons, booleans, `let ... in`, and
-builtins such as `map`, `filter`, `zipWith`, `length`, and `sum`. It has no loops, recursion, host
-callbacks, time, random state, IO, model calls, or tool authority.
-
-For the full authoring, lowering, builtin, and error reference, see
-[Pure execution](pure-execution.md).
+`pure (...)` is inside Wire's deterministic expression layer. Authored `@pure` is rejected. The
+compiler lowers pure output equations to the native pure evaluator internally after parsing.
 
 ## Runtime Evaluation
 
-Pulse evaluates materialized nodes after Wire has compiled and validated the graph. At that point
-the node carries:
+At runtime a materialized node carries:
 
-- a stable materialized identity;
+- a stable node identity;
 - an executor reference;
 - validated config;
-- a port boundary;
-- contract metadata for inputs and outputs;
-- effect/purity metadata needed by the runtime and host interpreter.
+- concrete typed input and output ports;
+- contract metadata;
+- effect/purity metadata for the host interpreter.
 
-The executor may still be unsafe or impure in the ordinary sense: it can call a model, use a tool,
-write an artifact, fail, time out, or return invalid output. The Cortex boundary is that this
-authority is explicit and staged before runtime. Pulse owns durable scheduling and lifecycle state;
-the registry and host binding own what the executor is allowed to do.
-
-## Rewrites And Materialization
-
-Runtime rewrites may transform topology, but they cannot invent executor authority. Any rewrite that
-introduces or changes an `@` application must still pass the same registry admission boundary:
-
-- the executor must already be registered;
-- the config must validate;
-- the new ports/contracts must be compatible with the surrounding graph;
-- the effect class and host permissions must remain explicit;
-- output validation must remain known.
-
-The Cortex theory enforces this as a rewrite-admissibility obligation alongside graph acyclicity: an
-admitted rewrite must preserve the registry boundary for every materialized executor node.
+The executor may still fail, time out, call a provider, write an artifact, or return invalid output.
+Cortex's guarantee is that this authority was explicit and admitted before runtime.
 
 ## Summary
 
-- `@qualified.name { config }` is pure staging of registered executor authority.
-- Config data is inert until Pulse evaluates a materialized node.
-- `@` produces a partial node, not a running computation.
-- Registry admission is what turns a staged executor into graph-authorable authority.
-- Rewrites can change topology only inside the same registry boundary; they cannot create new
-  authority by syntax alone.
-
-## Related
-
-- [Partials and execution boundary](./partials-and-execution-boundary.md) — when a partial node may
-  appear directly in graph position.
-- [Contracts, ports, and matching](./contracts-ports-and-matching.md) — the port-key rule that
-  executor-declared port signatures participate in.
-- [../../Architecture/05-wire-language.md](../../Architecture/05-wire-language.md) — substrate
-  architecture.
+- `@qualified.name { ... }` creates a configured executor value.
+- Configured executors are not graph vertices.
+- Executors run only through explicit typed node bodies.
+- Every executor node has the same external shape: typed inputs, typed outputs, and deterministic
+  failure on contract/config/output violations.
+- `pure (...)` is not an executor-authority boundary and is never spelled `@pure`.

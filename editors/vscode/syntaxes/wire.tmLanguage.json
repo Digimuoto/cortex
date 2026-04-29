@@ -32,23 +32,19 @@
       "patterns": [
         {
           "name": "keyword.control.wire",
-          "match": "\\b(if|else|between)\\b"
+          "match": "\\b(if|then|else|select)\\b"
         },
         {
           "name": "keyword.declaration.wire",
-          "match": "\\b(node|circuit|meta|use)\\b"
+          "match": "\\b(contract|node|let|export|import|from|pure|where)\\b"
         },
         {
           "name": "keyword.other.wire",
-          "match": "\\b(connect|path|fanout|fanin|clique|signal)\\b"
-        },
-        {
-          "name": "storage.modifier.wire",
-          "match": "\\b(act|await|emit)\\b"
+          "match": "\\b(in)\\b"
         },
         {
           "name": "entity.other.attribute-name.wire",
-          "match": "\\b(role|label|executor|prompt|config|tools|ports|timeout|retry|stepBudget|maxOutputTokens|on|kind|to)\\s*(?==)"
+          "match": "\\b(prompt|config|tools|ports|timeout|retry|stepBudget|maxOutputTokens|model|memory|preset|routingKey|limit|temperature)\\s*(?==)"
         }
       ]
     },
@@ -56,7 +52,11 @@
       "patterns": [
         {
           "name": "keyword.operator.graph.wire",
-          "match": "=>|<>|<-|->"
+          "match": "=>|<>|<-|->|\\|>"
+        },
+        {
+          "name": "keyword.operator.value.wire",
+          "match": "//|\\+\\+|==|!=|<=|>=|&&|\\|\\||[+\\-*/!<>|]"
         },
         {
           "name": "keyword.operator.assignment.wire",
@@ -72,18 +72,11 @@
       "patterns": [
         {
           "name": "meta.executor.wire",
-          "begin": "\\b(native|llm)\\b",
-          "end": "(?=[;,)\\]])",
+          "begin": "@[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*",
+          "end": "(?=[\\s{(])",
           "beginCaptures": {
-            "1": { "name": "support.function.executor.wire" }
-          },
-          "patterns": [
-            {
-              "name": "string.quoted.double.executor-target.wire",
-              "match": "\"[^\"]*\""
-            },
-            { "include": "#strings" }
-          ]
+            "0": { "name": "support.function.executor.wire" }
+          }
         }
       ]
     },
@@ -100,7 +93,7 @@
     },
     "numbers": {
       "name": "constant.numeric.wire",
-      "match": "\\b-?[0-9]+\\b"
+      "match": "\\b-?[0-9]+(\\.[0-9]+)?\\b"
     },
     "constants": {
       "patterns": [
@@ -117,9 +110,9 @@
     "contracts": {
       "patterns": [
         {
-          "comment": "Contract names appear after <-/-> arrows or inside bracketed alternatives. Capitalized identifier heuristic.",
+          "comment": "Contract names appear after labeled <-/-> port clauses. Capitalized identifier heuristic.",
           "name": "entity.name.type.contract.wire",
-          "match": "(?<=<-|->)\\s*\\b([A-Z][A-Za-z0-9_]*)\\b"
+          "match": "(?<=:)\\s*\\b([A-Z][A-Za-z0-9_]*)\\b"
         },
         {
           "name": "entity.name.type.contract.wire",

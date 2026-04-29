@@ -220,11 +220,6 @@ let scoreThreshold = 0.7 ;
 
 node classify
   <- evidence: EvidenceSet ;
-  let
-    items = evidence.items ;
-    accepted = items |> filter (x: x.score >= scoreThreshold) ;
-    rejected = items |> filter (x: x.score < scoreThreshold)
-  in
   -> accepted: AcceptedSet = pure (accepted) ;
   -> rejected: RejectedSet = pure (rejected) ;
   -> summary: Report = pure (''
@@ -233,6 +228,12 @@ node classify
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
   '') ;
+  where let
+    items = evidence.items ;
+    accepted = items |> filter (x: x.score >= scoreThreshold) ;
+    rejected = items |> filter (x: x.score < scoreThreshold) ;
+  in
+  { accepted = accepted ; rejected = rejected ; } ;
 ```
 
 The `summary` output is the primary reason interpolation belongs in the first slice: typed values

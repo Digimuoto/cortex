@@ -109,8 +109,8 @@ Admission is the runtime's gate. A proposal is admitted only when every check pa
 1. **Vocabulary bounds.** Every node instance references a registered executor; every port contract
    is a registered `ContractId`. No executors or contracts outside the closed alphabet.
 2. **Endpoint compatibility.** Every new edge connects ports whose contracts are compatible under
-   the port-semantic rules of [Chapter 05](./05-wire-language.md). Singular and list-valued inputs
-   obey the same arity rules at the rewrite boundary as at compile time.
+   the port-semantic rules of [Chapter 05](./05-wire-language.md). Authored inputs are
+   cardinality-one; any aggregation must be represented by explicit transformation nodes.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
    in the current topology and definition map, and the current definition domain exactly covers the
    current topology. Entry/exit sets are non-empty and duplicate-free where the rewrite form
@@ -200,7 +200,7 @@ This layer enforces:
 
 It delegates graph algebra to [Chapter 04](./04-graph-and-circuit.md), scheduling and checkpointing
 to [Chapter 06](./06-pulse-runtime.md), value-envelope provenance to
-[Chapter 08](./08-artifacts-and-provenance.md), and Wire grammar and partial-node rules to
+[Chapter 08](./08-artifacts-and-provenance.md), and Wire grammar and configured-executor rules to
 [Chapter 05](./05-wire-language.md).
 
 ## Extensibility

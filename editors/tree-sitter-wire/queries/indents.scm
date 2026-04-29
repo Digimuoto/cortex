@@ -2,4 +2,4 @@
 
 (record         "{" @indent "}" @indent_end)
 (list           "[" @indent "]" @indent_end)
-(paren_or_tuple "(" @indent ")" @indent_end)
+(paren_expression "(" @indent ")" @indent_end)

@@ -1,8 +1,9 @@
 ---
 title: "ADR 0022 - Wire Node Clause Grammar"
 description:
-  "Defines the next Wire node surface: clause-terminated inputs, a single node-local let block, and
-  per-output RHS forms."
+  "Defines the next Wire node surface: clause-terminated inputs and per-output RHS forms. Node-local
+  intermediates were originally specified here as a `let ... in` block; that surface is superseded
+  by the where-clause introduced in ADR 0031."
 sidebar:
   label: "0022. Node clause grammar"
   order: 22
@@ -21,6 +22,7 @@ related:
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
+  - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
 ---
 
 # ADR 0022 - Wire Node Clause Grammar
@@ -34,6 +36,10 @@ equations remains in force.
 Forward note: ADR 0030 extends this grammar with node-level executor bodies for zero-output and
 multi-output external executors. This ADR's per-output equation grammar remains the pure-node
 surface.
+
+Forward note: ADR 0031 supersedes the node-local `let ... in` block originally defined here. The
+`let_block` production and its scope rules are removed; node-local intermediates are now expressed
+via the `where <record-expr> ;` clause defined in 0031.
 
 ## Context
 
@@ -60,15 +66,17 @@ top_decl    ::= let_binding | export let_binding | node_decl
 let_binding ::= let <name> = <expr>
 node_decl   ::= node <name>
                   (input_clause ;)*
-                  (let_block)?
                   (output_clause ;)+
+                  (where_clause)?           -- per ADR 0031
 
 input_clause  ::= <- <name> : <Type>
-let_block     ::= let <bindings> in
-bindings      ::= <name> = <expr> (; <name> = <expr>)*
 output_clause ::= -> <name> : <Type> = <rhs>
 rhs           ::= pure (<expr>) | @<executor> (<expr>) | <expr>
 ```
+
+The `where_clause` production and its scope rules are defined in
+[ADR 0031](./0031-wire-binding-forms-and-where-clauses.md). The earlier `let_block` production -
+`let <bindings> in` between input clauses and output clauses - is removed.
 
 The first implementation slice must accept explicit `pure (<expr>)` and `@executor (<expr>)` output
 RHS forms. The unmarked `<expr>` form is reserved for the elaborator model from ADR 0021 and should
@@ -77,21 +85,16 @@ remain rejected until inference and diagnostics are specified.
 ### Node Clauses
 
 Node declarations do not use a colon after `node <name>`. Legal continuations already begin with
-`<-`, `let`, or `->`, so the colon adds no disambiguation.
+`<-`, `->`, `=`, or trailing `where`, so the colon adds no disambiguation.
 
 Each input and output clause is terminated by `;`. This keeps clauses symmetric and avoids a body
 delimiter.
 
-A node may contain at most one `let ... in` block. The block appears after all inputs and before all
-outputs:
-
-- input ports are in scope for the local `let` RHSs;
-- node-local bindings are in scope for all output RHSs;
-- duplicate names within one scope are rejected;
-- inner scopes may shadow outer scopes.
-
-Multiple node-local `let` blocks are rejected. They make scope and evaluation order harder to read
-without adding useful expressive power.
+A node may carry at most one trailing `where <record-expr> ;` clause for node-local intermediates.
+Scope rules, the static-field-set invariant, the input-port collision rule, and the supported
+where-expression shapes are specified in [ADR 0031](./0031-wire-binding-forms-and-where-clauses.md).
+The original node-local `let ... in` block defined here has been superseded; this section is
+retained only to record that supersession.
 
 ### File-Level Bindings
 
@@ -110,10 +113,14 @@ export let scoreThreshold = 0.7 ;
 Until imports land, `export` has no runtime effect. It is accepted to give the grammar the correct
 migration path.
 
-`let x = node ...` and `node x ...` denote the same topology binding. Style guidance is:
+Earlier sketches said `let x = node ...` and `node x ...` would denote the same topology binding.
+ADR 0031 narrows the first implementation slice: top-level `let` remains for value expressions, and
+named node definitions use `node x ...`. A future ADR may reintroduce anonymous node values if a
+composition use case needs them. Current style guidance is:
 
 - use `node x ...` for named node definitions;
-- reserve `let x = ...` for composition expressions once topology composition syntax lands.
+- reserve `let x = ...` for ordinary pure-data values, configured executor values, delayed CorePure
+  helpers, and composition expressions once topology composition syntax lands.
 
 ### Output RHS Forms
 
@@ -153,19 +160,20 @@ let scoreThreshold = 0.7 ;
 
 node classify
   <- evidence: EvidenceSet ;
-  let
-    items = evidence.items ;
-    accepted = items |> filter (x: x.score >= scoreThreshold) ;
-    rejected = items |> filter (x: x.score < scoreThreshold)
-  in
   -> accepted: AcceptedSet = pure (accepted) ;
   -> rejected: RejectedSet = pure (rejected) ;
-  -> summary: Report = pure (''
+  -> summary:  Report      = pure (''
     Classification complete.
     Accepted: ${length accepted} items
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
   '') ;
+  where let
+    items    = evidence.items ;
+    accepted = items |> filter (x: x.score >= scoreThreshold) ;
+    rejected = items |> filter (x: x.score <  scoreThreshold) ;
+  in
+  { accepted = accepted ; rejected = rejected ; } ;
 ```
 
 ## Alternatives considered
@@ -173,7 +181,9 @@ node classify
 - **Keep `node name :`.** Rejected because clause starts are already unambiguous and the colon is
   legacy syntax.
 - **Allow several node-local `let` blocks.** Rejected because it creates avoidable scope and order
-  questions. One block provides shared input-dependent work without that footgun.
+  questions. One block provides shared input-dependent work without that footgun. ADR 0031 later
+  removes the node-local `let ... in` block entirely in favor of a single trailing `where` clause;
+  the multi-block question is moot under that decision.
 - **Use `return port = ...`.** Rejected because it duplicates the routing label. The output clause
   already names the port and contract.
 - **Spell pure runtime evaluation as `@pure`.** Rejected for the source surface because `@` means a
@@ -183,7 +193,8 @@ node classify
 
 ### Positive
 
-- Node authoring becomes regular: input clauses, one optional let block, output clauses.
+- Node authoring becomes regular: input clauses, output clauses, an optional trailing `where` clause
+  (per ADR 0031).
 - Output labels, contracts, and expressions stay visibly tied together.
 - The parser can reject legacy pure syntax instead of carrying compatibility branches.
 - The `@` authority boundary remains meaningful.

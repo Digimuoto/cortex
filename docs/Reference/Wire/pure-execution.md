@@ -13,6 +13,7 @@ related:
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
 ---
 
 # Wire Reference — Pure Execution
@@ -28,12 +29,13 @@ let acceptedItem = item: item.score >= 0.7 ;
 
 node classify
   <- evidence: EvidenceSet ;
-  let
-    items = evidence.items ;
-    acceptedItems = filter acceptedItem items
-  in
   -> accepted: AcceptedSet = pure (acceptedItems) ;
   -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items) ;
+  where let
+    items = evidence.items ;
+    acceptedItems = filter acceptedItem items ;
+  in
+  { items = items ; acceptedItems = acceptedItems ; } ;
 ```
 
 `pure (...)` is not an `@` executor application. Authored `@pure { ... }` is rejected. The compiler
@@ -42,14 +44,15 @@ tasks, but that lowering is not source-level authority.
 
 ## Rule Sources
 
-- **[§6.1.1 Pure Output Equations](grammar.md#611-pure-output-equations)** - authored pure node
-  syntax, local bindings, output equation rules, and CorePure surface.
-- **[§14.5 CorePure Expressions](grammar.md#145-corepure-expressions)** - compact expression
-  grammar.
+- **[§5.1 Pure Output Equations](grammar.md#51-pure-output-equations)** - authored pure node syntax,
+  local bindings, output equation rules, and CorePure surface.
+- **[§8 CorePure Expressions](grammar.md#8-corepure-expressions)** - compact expression grammar.
 - **[Executors and the Alphabet](executors-and-alphabet.md#native-pure-evaluator)** - relationship
   between CorePure and the internal native pure evaluator.
 - **[ADR 0020](../../ADRs/0020-wire-pure-output-equations.md)** - design decision and proof
   obligations.
+- **[ADR 0031](../../ADRs/0031-wire-binding-forms-and-where-clauses.md)** - node-local
+  `where <record-expr> ;` binding surface.
 
 ## Syntax
 
@@ -58,8 +61,8 @@ A pure node uses the clause form from the Wire grammar:
 ```wire
 node <name>
   (<- <input-name> : <Contract> ;)*
-  (let <corepure-bindings> in)?
   (-> <output-name> : <Contract> = pure (<corepure-expr>) ;)+
+  (where <corepure-record-expr> ;)?
 ```
 
 A pure output equation declares one output port and its value:
@@ -73,23 +76,30 @@ and there is no separate map from result names to ports in source.
 
 Rules:
 
-- Only input ports may appear before the optional node-local `let ... in` block.
-- The node-local block, when present, is shared by all output equations.
+- Only input ports may appear before pure output equations.
+- The optional trailing `where <record-expr> ;` clause opens its record fields into all output
+  equations.
+- The `where` field set must be statically determinable: record literals, `let ... in { ... }`,
+  references to let-bound records, and `//` merges of those shapes are admitted. Dynamic record
+  shapes are rejected at admission.
 - Each pure output equation declares exactly one output port.
 - Sum-grouped outputs are not pure equation syntax.
 - A pure node must declare at least one output equation.
 - The equation set must match the declared output ports exactly.
 - `pure (...)` is the only accepted source form.
 
-Top-level CorePure helpers are written as `let` bindings whose right-hand side is a CorePure lambda
-or CorePure `let` expression:
+Top-level delayed helpers are written as ordinary module `let` bindings whose right-hand side is a
+CorePure helper expression:
 
 ```wire
 let acceptedItem = item: item.score >= 0.7 ;
+let scoreThreshold = 0.7 ;
 ```
 
-These helpers are visible to later pure nodes. Ordinary top-level `let` bindings keep ordinary Wire
-value semantics and are not executor authority.
+Module `let` is phase-neutral syntax. `acceptedItem` is a delayed CorePure helper function.
+`scoreThreshold` is an ordinary compile-time scalar, but because it is authority-free pure data, the
+compiler captures it into later delayed CorePure evaluation as a constant. Configured executor
+values and graph values are not capturable into CorePure.
 
 ## Lowering
 
@@ -100,8 +110,8 @@ The internal task config has this shape:
 
 ```json
 {
-  "bindings": ["<top-level CorePure helper binding AST>"],
-  "localBindings": ["<node-local CorePure binding AST>"],
+  "bindings": ["<top-level delayed binding or captured constant AST>"],
+  "where": "<optional node-local CorePure record expression AST>",
   "outputs": {
     "accepted": "<CorePure accepted expression AST>",
     "rejected": "<CorePure rejected expression AST>"
@@ -109,19 +119,22 @@ The internal task config has this shape:
 }
 ```
 
-`bindings` and `localBindings` are distinct scopes:
+Top-level `bindings` and the node-local `where` record are distinct scopes:
 
-- top-level helpers are evaluated after builtins and input variables are installed;
-- node-local bindings are evaluated after top-level helpers;
-- node-local bindings may shadow top-level helpers;
+- top-level delayed helpers and captured pure-data constants are evaluated after builtins and input
+  variables are installed;
+- the `where` record is evaluated after top-level delayed bindings and captured constants;
+- fields from the `where` record are opened into the output-evaluation environment;
+- where fields may shadow top-level delayed bindings and captured constants;
+- where fields may not collide with input port names;
 - duplicate binding names are rejected within one scope;
 - lambda parameter names must be unique within one lambda.
 
 The internal task metadata records the native pure evaluator, but Wire source never names it with
 `@`.
 
-The implemented config schema admits only `bindings`, `localBindings`, and `outputs`. There is no
-source-authored CorePure budget field.
+The implemented config schema admits only `bindings`, `where`, and `outputs`. There is no
+source-authored CorePure budget field. `where` is omitted when the source node has no where-clause.
 
 ## Input Binding
 
@@ -130,7 +143,7 @@ CorePure evaluates over JSON `WireValue` payloads.
 Input binding rules:
 
 - Every pure input must accept exactly one contract.
-- Every pure input must be cardinality-one; list-valued input ports are rejected.
+- Every pure input is cardinality-one; list-input aggregation is not part of the authored syntax.
 - Repeated same-contract inputs must be explicitly labeled.
 - A single unlabeled input is available as the variable `in`.
 - Labeled inputs become variables with the same label.
@@ -178,11 +191,15 @@ Implemented expression forms:
 - array/object indexing: `items[0]`, `record["field"]`;
 - lambdas: `item: item.score`, `score: weight: score * weight`;
 - function application: `map f xs`, `zipWith f xs ys`;
+- partial application and pipes: `items |> filter acceptedItem |> map scoreOf`;
 - unary `!` and `-`;
 - arithmetic `+`, `-`, `*`, `/`;
 - comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`;
 - boolean `&&`, `||`;
-- non-recursive `let ... in`.
+- right-biased record merge `//`;
+- non-recursive `let ... in`;
+- `if ... then ... else ...`;
+- string interpolation: `"Score: ${item.score}"`.
 
 Disallowed:
 
@@ -196,23 +213,28 @@ Disallowed:
 
 The implemented builtin environment is closed:
 
-| Builtin   | Arity | Meaning                                                              |
-| --------- | ----- | -------------------------------------------------------------------- |
-| `map`     | 2     | Applies a function to every item in an array.                        |
-| `fmap`    | 2     | Alias for `map`.                                                     |
-| `filter`  | 2     | Keeps array items for which the predicate returns `true`.            |
-| `zip`     | 2     | Pairs two arrays, truncating to the shorter length.                  |
-| `zipWith` | 3     | Applies a binary function to paired items from two arrays.           |
-| `length`  | 1     | Returns the size of an array or object.                              |
-| `sum`     | 1     | Sums an array of numbers.                                            |
-| `all`     | 2     | Returns whether a predicate is true for every array item.            |
-| `any`     | 2     | Returns whether a predicate is true for at least one array item.     |
-| `min`     | 2     | Numeric minimum.                                                     |
-| `max`     | 2     | Numeric maximum.                                                     |
-| `abs`     | 1     | Numeric absolute value.                                              |
-| `clamp`   | 3     | `clamp min max value`, returning `value` bounded by `min` and `max`. |
+| Builtin    | Arity | Meaning                                                              |
+| ---------- | ----- | -------------------------------------------------------------------- |
+| `map`      | 2     | Applies a function to every item in an array.                        |
+| `fmap`     | 2     | Alias for `map`.                                                     |
+| `filter`   | 2     | Keeps array items for which the predicate returns `true`.            |
+| `zip`      | 2     | Pairs two arrays, truncating to the shorter length.                  |
+| `zipWith`  | 3     | Applies a binary function to paired items from two arrays.           |
+| `length`   | 1     | Returns the size of an array or object.                              |
+| `sum`      | 1     | Sums an array of numbers.                                            |
+| `all`      | 2     | Returns whether a predicate is true for every array item.            |
+| `any`      | 2     | Returns whether a predicate is true for at least one array item.     |
+| `min`      | 2     | Numeric minimum.                                                     |
+| `max`      | 2     | Numeric maximum.                                                     |
+| `abs`      | 1     | Numeric absolute value.                                              |
+| `clamp`    | 3     | `clamp min max value`, returning `value` bounded by `min` and `max`. |
+| `concat`   | 1     | Concatenates an array of strings.                                    |
+| `toString` | 1     | Converts strings, numbers, and booleans to strings.                  |
+| `joinWith` | 2     | Joins an array of strings with a separator; separator first.         |
+| `toJson`   | 1     | Canonical compact JSON serialization for structured values.          |
 
 Every builtin is ordinary CorePure function application. Builtins do not receive host authority.
+Functions intended for pipe use are data-last.
 
 ## Failure Surface
 
@@ -232,10 +254,12 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 - function arity mismatches;
 - duplicate binding names within one scope;
 - duplicate lambda parameters.
+- `where` expressions that do not evaluate to records.
 
 These failures are runtime pure-task failures after the graph has been admitted. Source and binding
 checks catch malformed pure tasks where possible, such as authored `@pure`, duplicate top-level
-names, duplicate node-local pure bindings, unsupported pure ports, and output port mismatch.
+names, unsupported pure ports, output port mismatch, `where` field/input-port collisions, and
+where-expressions whose field set is not statically determinable.
 
 ## Boundary With Proofs
 
@@ -246,7 +270,8 @@ The proof-facing obligation is the lowering step:
 
 - a source pure node lowers deterministically to one native pure task;
 - the lowered output keys are exactly the declared Wire output ports;
-- top-level and node-local bindings remain distinct scopes;
+- top-level delayed bindings, captured constants, and node-local `where` fields remain distinct
+  scopes;
 - evaluation depends only on input JSON values, closed builtins, and the CorePure AST;
 - the result is wrapped through the declared Wire output contracts.
 

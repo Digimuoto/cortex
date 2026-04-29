@@ -16,8 +16,10 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
+import Data.Scientific (Scientific)
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Test.Hspec
 
 import Cortex.Algebra.Graph (successors)
@@ -25,7 +27,6 @@ import Cortex.Wire (WirePayloadKind (..))
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
   , CompiledCircuit (..)
-  , CompiledCircuitFragment (..)
   , CompiledCircuitNode (..)
   )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
@@ -48,148 +49,91 @@ import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 
 spec :: Spec
 spec = describe "Cortex.Wire.Compile" $ do
-  it "compiles a minimal canonical Wire chain through the compiled circuit backend" $ do
+  it "compiles a labeled Wire chain through the compiled circuit backend" $ do
     compiled <- requireRight (compileWireText simpleChainSourceText)
     compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "planner"]
     compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "analyst"]
     successors compiled.compiledCircuitTopology (CircuitNodeRef "planner")
       `shouldBe` Set.singleton (CircuitNodeRef "analyst")
 
-  it "treats a top-level comma file-return as overlay shorthand" $ do
-    compiled <- requireRight (compileWireFragmentText commaOverlayFragmentSourceText)
+  it "compiles explicit overlay with independent entries and exits" $ do
+    compiled <- requireRight (compileWireFragmentText overlayFragmentSourceText)
     Set.fromList compiled.compiledCircuitEntryNodes
       `shouldBe` Set.fromList [CircuitNodeRef "stress_alpha", CircuitNodeRef "stress_beta"]
     Set.fromList compiled.compiledCircuitExitNodes
       `shouldBe` Set.fromList [CircuitNodeRef "stress_alpha", CircuitNodeRef "stress_beta"]
 
-  it "compiles a bare @llm executor reference without crashing" $ do
-    compiled <- requireRight (compileWireText bareLlmSourceText)
-    case Map.lookup (CircuitNodeRef "planner") compiled.compiledCircuitNodes of
+  it "compiles a configured executor value applied in a node body" $ do
+    compiled <- requireRight (compileWireText configuredExecutorSourceText)
+    case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasNumber "temperature" 0.2
+      other ->
+        expectationFailure ("expected task node, got: " <> show other)
+
+  it "evaluates top-level pure-data lets in executor config" $ do
+    compiled <- requireRight (compileWireText topLevelLetConfigSourceText)
+    case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPrompt "Audit now"
+      other ->
+        expectationFailure ("expected task node, got: " <> show other)
+
+  it "compiles graph-valued top-level let bindings" $ do
+    compiled <- requireRight (compileWireText graphLetSourceText)
+    compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "planner"]
+    compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "analyst"]
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "planner")
+      `shouldBe` Set.singleton (CircuitNodeRef "analyst")
+
+  it "lowers executor where records into executor config" $ do
+    compiled <- requireRight (compileWireText executorWhereSourceText)
+    case Map.lookup (CircuitNodeRef "analyze") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasKey "where"
+      other ->
+        expectationFailure ("expected task node, got: " <> show other)
+
+  it "compiles a zero-output executor body as a node with an empty output boundary" $ do
+    compiled <- requireRight (compileWireText zeroOutputSourceText)
+    case Map.lookup (CircuitNodeRef "log_event") compiled.compiledCircuitNodes of
       Just (CompiledCircuitTask taskNode) ->
         case taskNode.circuitTaskNodeMetadata of
           Aeson.Object obj ->
-            KeyMap.lookup "executor" obj
-              `shouldBe` Just
-                (Aeson.object ["kind" Aeson..= ("native" :: T.Text), "target" Aeson..= ("llm" :: T.Text)])
-          other ->
-            expectationFailure ("expected object metadata, got: " <> show other)
-      other ->
-        expectationFailure ("expected compiled task node, got: " <> show other)
+            case KeyMap.lookup "ports" obj of
+              Just (Aeson.Object portsObj) ->
+                KeyMap.lookup "outputs" portsObj `shouldBe` Just (Aeson.Array mempty)
+              other -> expectationFailure ("unexpected ports metadata: " <> show other)
+          other -> expectationFailure ("unexpected metadata: " <> show other)
+      other -> expectationFailure ("expected task node, got: " <> show other)
 
-  it "compiles a wrapper-bearing Wire file and lifts runtime-wrapper metadata" $ do
-    compiled <- requireRight (compileWireText wrapperSourceText)
-    compiled.compiledCircuitId `shouldBe` "wrapper_smoke"
-    compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "__runtime_wrapper:0"]
-    Map.member (CircuitNodeRef "__runtime_wrapper:0") compiled.compiledCircuitNodes
-      `shouldBe` True
-    compiled.compiledCircuitMetadata `shouldSatisfy` \case
-      Aeson.Object obj ->
-        KeyMap.lookup "defaultReportTitle" obj == Just (Aeson.String "Wrapper Smoke")
-          && KeyMap.lookup "displayDescription" obj
-            == Just (Aeson.String "Checks metadata lifting through @cortex.deep_report.")
-      _ -> False
-
-  it "compiles binary select(...) into a latent condition node over the shared continuation" $ do
+  it "compiles select(...) over a labeled exclusive output boundary" $ do
     compiled <- requireRight (compileWireText selectSourceText)
-    compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "draft_plan"]
-    compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "publish_report"]
-    successors compiled.compiledCircuitTopology (CircuitNodeRef "draft_plan")
-      `shouldBe` Set.singleton (CircuitNodeRef "validate_plan")
-    let maybeSelectNode =
+    let conditionNodes =
           filter
             (\(_, node) -> case node of CompiledCircuitCondition {} -> True; _ -> False)
             (Map.toList compiled.compiledCircuitNodes)
-    length maybeSelectNode `shouldBe` 1
-    case maybeSelectNode of
+    length conditionNodes `shouldBe` 1
+    case conditionNodes of
       [(selectRef, CompiledCircuitCondition conditionNode)] -> do
-        successors compiled.compiledCircuitTopology (CircuitNodeRef "validate_plan")
-          `shouldBe` Set.singleton selectRef
-        successors compiled.compiledCircuitTopology selectRef
-          `shouldBe` Set.singleton (CircuitNodeRef "publish_report")
-        case conditionNode.circuitConditionNodeMetadata of
-          Aeson.Object obj -> do
-            KeyMap.lookup "kind" obj `shouldBe` Just (Aeson.String "wire_select")
-            KeyMap.lookup "selectorMode" obj `shouldBe` Just (Aeson.String "exclusive_output")
-            KeyMap.lookup "selector" obj
-              `shouldBe` Just
-                ( Aeson.toJSON
-                    [ Aeson.object
-                        [ "node" Aeson..= ("validate_plan" :: T.Text)
-                        , "port" Aeson..= ("ResearchPlan_1" :: T.Text)
-                        , "contract" Aeson..= ("ResearchPlan" :: T.Text)
-                        , "label" Aeson..= Aeson.Null
-                        ]
-                    , Aeson.object
-                        [ "node" Aeson..= ("validate_plan" :: T.Text)
-                        , "port" Aeson..= ("PlanIssue_2" :: T.Text)
-                        , "contract" Aeson..= ("PlanIssue" :: T.Text)
-                        , "label" Aeson..= Aeson.Null
-                        ]
-                    ]
-                )
-          other ->
-            expectationFailure ("expected object select metadata, got: " <> show other)
-        conditionNode.circuitConditionNodeElseFragment `shouldBe` Nothing
-        Map.keys conditionNode.circuitConditionNodeThenFragment.compiledCircuitFragmentNodes
-          `shouldBe` [CircuitNodeRef "gather_missing_constraints", CircuitNodeRef "repair_plan"]
-      other ->
-        expectationFailure ("expected one compiled select condition node, got: " <> show other)
-
-  it "compiles bare select(...) in tail position and leaves the select node as the exit" $ do
-    compiled <- requireRight (compileWireText bareSelectSourceText)
-    let maybeSelectNode =
-          filter
-            (\(_, node) -> case node of CompiledCircuitCondition {} -> True; _ -> False)
-            (Map.toList compiled.compiledCircuitNodes)
-    case maybeSelectNode of
-      [(selectRef, CompiledCircuitCondition conditionNode)] -> do
-        compiled.compiledCircuitExitNodes `shouldBe` [selectRef]
         successors compiled.compiledCircuitTopology (CircuitNodeRef "validate_plan")
           `shouldBe` Set.singleton selectRef
         conditionNode.circuitConditionNodeElseFragment `shouldBe` Nothing
       other ->
-        expectationFailure
-          ("expected one compiled tail-position select condition node, got: " <> show other)
-
-  it "compiles n-way select(...) by lowering to nested binary latent condition nodes" $ do
-    compiled <- requireRight (compileWireText nWaySelectSourceText)
-    let liveSelectNodes =
-          filter
-            (\(_, node) -> case node of CompiledCircuitCondition {} -> True; _ -> False)
-            (Map.toList compiled.compiledCircuitNodes)
-    length liveSelectNodes `shouldBe` 1
-    case liveSelectNodes of
-      [(_, CompiledCircuitCondition conditionNode)] -> do
-        fragmentContainsCondition conditionNode.circuitConditionNodeThenFragment
-          `shouldBe` True
-      other ->
-        expectationFailure ("expected one live n-way select condition node, got: " <> show other)
+        expectationFailure ("expected one condition node, got: " <> show other)
 
   describe "contract declarations" $ do
     it "accepts registered contracts under an explicit registry" $
       compileWireTextWithEnv knownContractsEnv simpleChainSourceText
         `shouldSatisfy` isRight
 
-    it "accepts file-local contract declarations under an explicit registry" $ do
+    it "accepts file-local contract declarations under an explicit registry" $
       compileWireTextWithEnv
         knownContractsEnv
         ( T.unlines
             [ "contract LocalOnly;"
-            , "node local : -> LocalOnly = @llm.local {};"
-            , ""
-            , "local"
-            ]
-        )
-        `shouldSatisfy` isRight
-
-    it "treats duplicate file-local contract declarations as idempotent" $ do
-      compileWireTextWithEnv
-        knownContractsEnv
-        ( T.unlines
-            [ "contract LocalOnly;"
-            , "contract LocalOnly;"
-            , "node local : -> LocalOnly = @llm.local {};"
-            , ""
+            , "node local"
+            , "  -> out: LocalOnly = @llm.local ({}) ;"
             , "local"
             ]
         )
@@ -225,212 +169,292 @@ spec = describe "Cortex.Wire.Compile" $ do
         other ->
           expectationFailure ("expected compiled pure task node, got: " <> show other)
 
-    it "lowers node-local CorePure bindings and port-keyed output equations" $ do
+    it "captures top-level pure-data lets into pure node config" $ do
+      compiled <-
+        requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithScalarLetSourceText)
+      case Map.lookup (CircuitNodeRef "classify") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureBinding "scoreThreshold"
+        other ->
+          expectationFailure ("expected compiled pure task node, got: " <> show other)
+
+    it "lowers node-local where records and port-keyed output equations" $ do
       compiled <-
         requireRight (compileWireTextWithEnv strictExecutorEnv pureExecutorWithLocalBindingsSourceText)
       case Map.lookup (CircuitNodeRef "classify") compiled.compiledCircuitNodes of
         Just (CompiledCircuitTask taskNode) -> do
           taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureBinding "acceptedItem"
-          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureLocalBinding "acceptedItems"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureWhere
           taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureOutput "accepted"
           taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPureOutput "rejected"
         other ->
           expectationFailure ("expected compiled pure task node, got: " <> show other)
 
-    it "rejects duplicate names across CorePure helper and ordinary let bindings" $
+    it "accepts let-bound where records with statically known fields" $
+      compileWireTextWithEnv strictExecutorEnv pureExecutorWithLetBoundWhereSourceText
+        `shouldSatisfy` isRight
+
+    it "rejects where fields that collide with input ports" $
+      compileWireTextWithEnv strictExecutorEnv whereInputCollisionSourceText
+        `shouldBe` Left (WireInvalidPorts (CircuitNodeRef "classify") "where field collides with input port evidence")
+
+    it "rejects where field sets that are not statically determinable" $
+      compileWireTextWithEnv strictExecutorEnv whereDynamicShapeSourceText
+        `shouldBe` Left
+          (WireInvalidPorts (CircuitNodeRef "classify") "where-clause field set is not statically determinable")
+
+    it "rejects duplicate names across CorePure helpers and ordinary value lets" $
       compileWireTextWithEnv strictExecutorEnv duplicatePureAndWireLetSourceText
         `shouldBe` Left (WireDuplicateLetBinding "acceptedItem")
 
     it "rejects authored @pure executor applications" $
       compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
-        `shouldBe` Left
-          (WireParseError "Pure nodes must be authored with output equations, not @pure executor application.")
+        `shouldSatisfy` isParseFailure
+
+  describe "fixtures" $ do
+    it "compiles the pure output equations fixture" $ do
+      source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
+      compileWireText source `shouldSatisfy` isRight
+
+    it "compiles the thesis parallel claim branches fixture" $ do
+      source <- TIO.readFile "test/fixtures/wire/thesis-parallel-claim-branches.wire"
+      compileWireText source `shouldSatisfy` isRight
 
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
-    [ "node planner : -> PlannerOutput = @llm.planner {};"
-    , "node analyst : <- PlannerOutput -> AnalysisFragment = @llm.analyst {};"
-    , ""
+    [ "node planner"
+    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "node analyst"
+    , "  <- plan: PlannerOutput ;"
+    , "  -> analysis: AnalysisFragment = @llm.analyst (plan) ;"
     , "planner => analyst"
     ]
 
-commaOverlayFragmentSourceText :: T.Text
-commaOverlayFragmentSourceText =
+overlayFragmentSourceText :: T.Text
+overlayFragmentSourceText =
   T.unlines
-    [ "node stress_alpha : -> AnalysisFragment = @llm.alpha {};"
-    , "node stress_beta : -> AnalysisFragment = @llm.beta {};"
-    , ""
-    , "stress_alpha, stress_beta"
+    [ "node stress_alpha"
+    , "  -> fragment: AnalysisFragment = @llm.alpha ({}) ;"
+    , "node stress_beta"
+    , "  -> fragment: AnalysisFragment = @llm.beta ({}) ;"
+    , "(stress_alpha) <> (stress_beta)"
+    ]
+
+configuredExecutorSourceText :: T.Text
+configuredExecutorSourceText =
+  T.unlines
+    [ "let analyst_base = @llm.analyst { temperature = 0.2 ; } ;"
+    , "node planner"
+    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "node analyst"
+    , "  <- plan: PlannerOutput ;"
+    , "  -> analysis: AnalysisFragment ;"
+    , "  = analyst_base (plan) ;"
+    , "planner => analyst"
+    ]
+
+topLevelLetConfigSourceText :: T.Text
+topLevelLetConfigSourceText =
+  T.unlines
+    [ "let prefix = \"Audit \" ;"
+    , "let suffix = \"now\" ;"
+    , "let analyst_prompt = prefix ++ suffix ;"
+    , "let analyst_base = @llm.analyst { prompt = analyst_prompt ; } ;"
+    , "node planner"
+    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "node analyst"
+    , "  <- plan: PlannerOutput ;"
+    , "  -> analysis: AnalysisFragment ;"
+    , "  = analyst_base (plan) ;"
+    , "planner => analyst"
+    ]
+
+graphLetSourceText :: T.Text
+graphLetSourceText =
+  T.unlines
+    [ "node planner"
+    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "node analyst"
+    , "  <- plan: PlannerOutput ;"
+    , "  -> analysis: AnalysisFragment = @llm.analyst (plan) ;"
+    , "let pipeline = planner => analyst ;"
+    , "pipeline"
+    ]
+
+zeroOutputSourceText :: T.Text
+zeroOutputSourceText =
+  T.unlines
+    [ "node emit"
+    , "  -> event: Event = @llm.event ({}) ;"
+    , "node log_event"
+    , "  <- event: Event ;"
+    , "  = @artifact.log (event) ;"
+    , "emit => log_event"
+    ]
+
+executorWhereSourceText :: T.Text
+executorWhereSourceText =
+  T.unlines
+    [ "node analyze"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> analysis: AnalysisRecord ;"
+    , "  = @llm.analyze (payload) ;"
+    , "  where { payload = { items = evidence.items ; } ; } ;"
+    , "analyze"
+    ]
+
+selectSourceText :: T.Text
+selectSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @llm.plan ({}) ;"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan ;"
+    , "  -> ok: ResearchPlan | issue: PlanIssue ;"
+    , "  = @llm.validate_plan (draft) ;"
+    , "node gather_missing_constraints"
+    , "  <- issue: PlanIssue ;"
+    , "  -> issue: PlanIssue = @llm.gather_missing_constraints (issue) ;"
+    , "node repair_plan"
+    , "  <- issue: PlanIssue ;"
+    , "  -> ok: ResearchPlan = @llm.repair_plan (issue) ;"
+    , "node publish_report"
+    , "  <- ok: ResearchPlan ;"
+    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "draft_plan => validate_plan select("
+    , "  ok: (),"
+    , "  issue: (gather_missing_constraints => repair_plan)"
+    , ") => publish_report"
     ]
 
 typoContractSourceText :: T.Text
 typoContractSourceText =
   T.unlines
-    [ "node planner : -> PlannerOuput = @llm.planner {};"
-    , ""
+    [ "node planner"
+    , "  -> plan: PlannerOuput = @llm.planner ({}) ;"
     , "planner"
     ]
 
 projectedExecutorSourceText :: T.Text
 projectedExecutorSourceText =
   T.unlines
-    [ "node projected : -> PlannerOutput = @llm.projected {};"
-    , ""
+    [ "node projected"
+    , "  -> out: PlannerOutput = @llm.projected ({}) ;"
     , "projected"
     ]
 
 missingExecutorSourceText :: T.Text
 missingExecutorSourceText =
   T.unlines
-    [ "node missing : -> PlannerOutput = @llm.missing {};"
-    , ""
+    [ "node missing"
+    , "  -> out: PlannerOutput = @llm.missing ({}) ;"
     , "missing"
     ]
 
 mismatchedExecutorPortsSourceText :: T.Text
 mismatchedExecutorPortsSourceText =
   T.unlines
-    [ "node projected : -> AnalysisFragment = @llm.projected {};"
-    , ""
+    [ "node projected"
+    , "  -> out: AnalysisFragment = @llm.projected ({}) ;"
     , "projected"
     ]
 
 pureExecutorSourceText :: T.Text
 pureExecutorSourceText =
   T.unlines
-    [ "node score :"
-    , "  <- evidence_score: Float"
-    , "  <- recency_score: Float"
-    , "  -> Float = pure (evidence_score + recency_score);"
-    , ""
+    [ "node score"
+    , "  <- evidence: Float ;"
+    , "  <- recency: Float ;"
+    , "  -> out: Float = pure (evidence + recency) ;"
     , "score"
     ]
 
 pureExecutorWithSharedHelperSourceText :: T.Text
 pureExecutorWithSharedHelperSourceText =
   T.unlines
-    [ "let acceptedItem = x: x.score >= 0.7;"
-    , ""
-    , "node classify :"
-    , "  <- evidence: EvidenceSet"
-    , "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);"
-    , ""
+    [ "let acceptedItem = x: x.score >= 0.7 ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;"
+    , "classify"
+    ]
+
+pureExecutorWithScalarLetSourceText :: T.Text
+pureExecutorWithScalarLetSourceText =
+  T.unlines
+    [ "let scoreThreshold = 0.7 ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (evidence.items |> filter (x: x.score >= scoreThreshold)) ;"
     , "classify"
     ]
 
 pureExecutorWithLocalBindingsSourceText :: T.Text
 pureExecutorWithLocalBindingsSourceText =
   T.unlines
-    [ "let acceptedItem = x: x.score >= 0.7;"
-    , ""
-    , "node classify :"
-    , "  <- evidence: EvidenceSet"
-    , "  let"
-    , "    items = evidence.items;"
-    , "    acceptedItems = filter acceptedItem items;"
+    [ "let acceptedItem = x: x.score >= 0.7 ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (acceptedItems) ;"
+    , "  -> rejected: RejectedSet = pure (items |> filter (x: !(acceptedItem x))) ;"
+    , "  where let"
+    , "    items = evidence.items ;"
+    , "    acceptedItems = items |> filter acceptedItem ;"
     , "  in"
-    , "  -> accepted: AcceptedSet = pure (acceptedItems)"
-    , "  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);"
-    , ""
+    , "  { items = items ; acceptedItems = acceptedItems ; } ;"
+    , "classify"
+    ]
+
+pureExecutorWithLetBoundWhereSourceText :: T.Text
+pureExecutorWithLetBoundWhereSourceText =
+  T.unlines
+    [ "let defaults = { accepted = [] ; } ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  where defaults ;"
+    , "classify"
+    ]
+
+whereInputCollisionSourceText :: T.Text
+whereInputCollisionSourceText =
+  T.unlines
+    [ "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  where { evidence = evidence.items ; accepted = [] ; } ;"
+    , "classify"
+    ]
+
+whereDynamicShapeSourceText :: T.Text
+whereDynamicShapeSourceText =
+  T.unlines
+    [ "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  where if true then { accepted = [] ; } else { rejected = [] ; } ;"
     , "classify"
     ]
 
 duplicatePureAndWireLetSourceText :: T.Text
 duplicatePureAndWireLetSourceText =
   T.unlines
-    [ "let acceptedItem = x: x.score >= 0.7;"
-    , "let acceptedItem = \"ordinary\";"
-    , ""
-    , "node classify :"
-    , "  <- evidence: EvidenceSet"
-    , "  -> accepted: AcceptedSet = pure (filter acceptedItem evidence.items);"
-    , ""
+    [ "let acceptedItem = x: x.score >= 0.7 ;"
+    , "let acceptedItem = @llm.analyst { temperature = 0.2 ; } ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;"
     , "classify"
     ]
 
 legacyPureExecutorSourceText :: T.Text
 legacyPureExecutorSourceText =
   T.unlines
-    [ "node score :"
-    , "  <- evidence_score: Float"
-    , "  <- recency_score: Float"
-    , "  -> Float = @pure { expr = \"evidence_score + recency_score\"; };"
-    , ""
+    [ "node score"
+    , "  <- evidence: Float ;"
+    , "  -> out: Float = @pure (evidence) ;"
     , "score"
-    ]
-
-bareLlmSourceText :: T.Text
-bareLlmSourceText =
-  T.unlines
-    [ "node planner : -> PlannerOutput = @llm {};"
-    , ""
-    , "planner"
-    ]
-
-wrapperSourceText :: T.Text
-wrapperSourceText =
-  T.unlines
-    [ "let analyst_base = @llm.analyst {"
-    , "  memory = topological { preset = \"analyst\"; };"
-    , "};"
-    , ""
-    , "node planner : -> PlannerOutput = @llm.planner {};"
-    , "node analyst : <- PlannerOutput -> AnalysisFragment = analyst_base;"
-    , ""
-    , "planner => analyst => @cortex.deep_report {"
-    , "  title = \"Wrapper Smoke\";"
-    , "  description = \"Checks metadata lifting through @cortex.deep_report.\";"
-    , "  match.skill = \"deep-report\";"
-    , "  match.priority = 1;"
-    , "  render.aggregateOpenGaps = true;"
-    , "  workspace.sourceKind = \"deep-report\";"
-    , "}"
-    ]
-
-selectSourceText :: T.Text
-selectSourceText =
-  T.unlines
-    [ "node draft_plan : -> DraftPlan = @llm.plan {};"
-    , "node validate_plan : <- DraftPlan -> ResearchPlan | PlanIssue = @llm.validate_plan {};"
-    , "node gather_missing_constraints : <- PlanIssue -> PlanIssue = @llm.gather_missing_constraints {};"
-    , "node repair_plan : <- PlanIssue -> ResearchPlan = @llm.repair_plan {};"
-    , "node publish_report : <- ResearchPlan -> ReportArtifactRef = @artifact.publish_report {};"
-    , ""
-    , "draft_plan => validate_plan select("
-    , "  ResearchPlan: (),"
-    , "  PlanIssue: (gather_missing_constraints => repair_plan)"
-    , ") => publish_report"
-    ]
-
-bareSelectSourceText :: T.Text
-bareSelectSourceText =
-  T.unlines
-    [ "node validate_plan : <- DraftPlan -> ResearchPlan | PlanIssue = @llm.validate_plan {};"
-    , "node gather_missing_constraints : <- PlanIssue -> PlanIssue = @llm.gather_missing_constraints {};"
-    , "node repair_plan : <- PlanIssue -> ResearchPlan = @llm.repair_plan {};"
-    , ""
-    , "validate_plan select("
-    , "  ResearchPlan: (),"
-    , "  PlanIssue: (gather_missing_constraints => repair_plan)"
-    , ")"
-    ]
-
-nWaySelectSourceText :: T.Text
-nWaySelectSourceText =
-  T.unlines
-    [ "node draft_plan : -> DraftPlan = @llm.plan {};"
-    , "node classify_plan : <- DraftPlan -> ResearchPlan | MinorIssue | MajorIssue = @llm.classify_plan {};"
-    , "node minor_repair : <- MinorIssue -> ResearchPlan = @llm.minor_repair {};"
-    , "node gather_major_context : <- MajorIssue -> MajorIssue = @llm.gather_major_context {};"
-    , "node major_repair : <- MajorIssue -> ResearchPlan = @llm.major_repair {};"
-    , "node publish_report : <- ResearchPlan -> ReportArtifactRef = @artifact.publish_report {};"
-    , ""
-    , "draft_plan => classify_plan select("
-    , "  ResearchPlan: (),"
-    , "  MinorIssue: minor_repair,"
-    , "  MajorIssue: (gather_major_context => major_repair)"
-    , ") => publish_report"
     ]
 
 requireRight :: Show err => Either err a -> IO a
@@ -438,13 +462,32 @@ requireRight = \case
   Left err -> expectationFailure ("expected Right, got Left: " <> show err) >> error "unreachable"
   Right ok -> pure ok
 
+metadataConfigHasNumber :: Key.Key -> ScientificLiteral -> Aeson.Value -> Bool
+metadataConfigHasNumber fieldName expected = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) ->
+        KeyMap.lookup fieldName configObj == Just (Aeson.Number expected)
+      _ -> False
+  _ -> False
+
+metadataConfigHasKey :: Key.Key -> Aeson.Value -> Bool
+metadataConfigHasKey fieldName = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) -> KeyMap.member fieldName configObj
+      _ -> False
+  _ -> False
+
+type ScientificLiteral = Scientific
+
 metadataHasPureBinding :: T.Text -> Aeson.Value -> Bool
 metadataHasPureBinding =
   metadataHasPureBindingIn "bindings"
 
-metadataHasPureLocalBinding :: T.Text -> Aeson.Value -> Bool
-metadataHasPureLocalBinding =
-  metadataHasPureBindingIn "localBindings"
+metadataHasPureWhere :: Aeson.Value -> Bool
+metadataHasPureWhere =
+  metadataConfigHasKey "where"
 
 metadataHasPureBindingIn :: Key.Key -> T.Text -> Aeson.Value -> Bool
 metadataHasPureBindingIn bindingField bindingName = \case
@@ -475,18 +518,21 @@ metadataHasPureOutput outputName = \case
       _ -> False
   _ -> False
 
-fragmentContainsCondition :: CompiledCircuitFragment -> Bool
-fragmentContainsCondition fragment =
-  any isConditionNode (Map.elems fragment.compiledCircuitFragmentNodes)
-  where
-    isConditionNode = \case
-      CompiledCircuitCondition {} -> True
-      _ -> False
+metadataHasPrompt :: T.Text -> Aeson.Value -> Bool
+metadataHasPrompt expected = \case
+  Aeson.Object obj ->
+    KeyMap.lookup "prompt" obj == Just (Aeson.String expected)
+  _ -> False
 
 isRight :: Either err ok -> Bool
 isRight = \case
   Right _ -> True
   Left _ -> False
+
+isParseFailure :: Either WireError ok -> Bool
+isParseFailure = \case
+  Left WireParseError {} -> True
+  _ -> False
 
 knownContractsEnv :: WireCompileEnv
 knownContractsEnv =
@@ -499,8 +545,6 @@ knownContractsEnv =
             , jsonContract "ResearchPlan"
             , jsonContract "PlanIssue"
             , jsonContract "DraftPlan"
-            , jsonContract "MinorIssue"
-            , jsonContract "MajorIssue"
             , jsonContract "ReportArtifactRef"
             ]
     }

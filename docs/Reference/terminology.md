@@ -38,17 +38,17 @@ Each layer owns a specific set of terms. This page groups them by layer.
 
 ### Core forms
 
-| Term              | Definition                                                                                                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Contract**      | A named typed interface that flows through a port. Ambient in a global namespace. Carries a payload kind.                                                           |
-| **Node**          | A pinned executor application with a port signature. Declared via `node name : <ports> = @executor { config };`. Has identity; reused references are the same node. |
-| **Port**          | A slot on a node, typed by a contract. Input (`<-`) or output (`->`). May be labeled.                                                                               |
-| **Port key**      | The identity tuple `(direction, contract, label)` that `=>` matches on. Absent-label is a distinct key, not a wildcard.                                             |
-| **Label**         | Part of a port's identity for routing, not a decoration. Labeled ports match only identically-labeled partners.                                                     |
-| **Sum group**     | Output port form `-> A \| B` with mutual-exclusion metadata: exactly one variant fires per evaluation.                                                              |
-| **Partial node**  | Staged value `@executor { config }` with no ports pinned yet. `let`-bindable, `//`-mergeable, pinnable via `node` declaration.                                      |
-| **Wire value**    | Any value of wire kind: node, composed graph expression, or (in graph position with port-determined executor) a partial node.                                       |
-| **Port-boundary** | A wire's unconnected input and output ports. The surface `=>` operates on.                                                                                          |
+| Term                          | Definition                                                                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Contract**                  | A named typed interface that flows through a port. Ambient in a global namespace. Carries a payload kind.                              |
+| **Node**                      | An explicit graph vertex with typed input/output ports and an implementation body. Has identity; reused references are the same node.  |
+| **Port**                      | A slot on a node, typed by a contract. Input (`<-`) or output (`->`). May be labeled.                                                  |
+| **Port key**                  | The identity tuple `(direction, contract, label)` that `=>` matches on. Absent-label is a distinct key, not a wildcard.                |
+| **Label**                     | Part of a port's identity for routing, not a decoration. Labeled ports match only identically-labeled partners.                        |
+| **Sum group**                 | Output port form `-> A \| B` with mutual-exclusion metadata: exactly one variant fires per evaluation.                                 |
+| **Configured executor value** | Staged value `@executor { config }` with no ports or graph identity. `let`-bindable and executable only through an explicit node body. |
+| **Wire value**                | Any graph-kind value: node, composed graph expression, or the empty wire `()`.                                                         |
+| **Port-boundary**             | A wire's unconnected input and output ports. The surface `=>` operates on.                                                             |
 
 ### Composition algebra
 
@@ -60,12 +60,12 @@ Each layer owns a specific set of terms. This page groups them by layer.
 
 ### Value operators
 
-| Term                     | Definition                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| **`//` merge**           | Right-biased shallow record merge. Applies to records and to partial-node configs.           |
-| **`++` concat**          | String and list concatenation.                                                               |
-| **`\|` sum constructor** | Output-port mutual-exclusion form; distinct grammar construct, not pure sugar.               |
-| **`@` application**      | Executor application to a config record: `@qualified.name { ... }`. Produces a partial node. |
+| Term                     | Definition                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| **`//` merge**           | Right-biased shallow record merge.                                                               |
+| **`++` concat**          | String and list concatenation.                                                                   |
+| **`\|` sum constructor** | Output-port mutual-exclusion form; distinct grammar construct, not pure sugar.                   |
+| **`@` application**      | Executor authority plus config: `@qualified.name { ... }`. Produces a configured executor value. |
 
 ### File-level forms
 
@@ -84,8 +84,8 @@ Each layer owns a specific set of terms. This page groups them by layer.
 | **Vocabulary** (of an executor)             | The set of contract names the executor can produce or consume.                                                                                                       |
 | **Structural constraints** (of an executor) | The rules a node's port signature must satisfy to apply the executor.                                                                                                |
 | **Purity class**                            | `pure` or `impure`. Informational; does not affect static type-checking.                                                                                             |
-| **Port-determined executor**                | An executor whose structural constraints uniquely pin its port signature from its config alone. Admissible in graph position without explicit `node` pinning.        |
-| **Port-polymorphic executor**               | An executor whose port signature has unresolved degrees of freedom after config. Must be pinned via `node` declaration before graph-position use.                    |
+| **Executor projection**                     | The registered typed port boundary or structural constraint checked against an authored node body.                                                                   |
+| **Port-polymorphic executor**               | An executor whose accepted port signature has degrees of freedom. The authored node boundary supplies the concrete shape.                                            |
 | **Tool registry**                           | A sibling ambient namespace to the executor alphabet. Holds named tool values (`getDate`, `searchAssets`, …) referenced inside config records.                       |
 | **Config constructor**                      | A tagged-record value form inside a config: `qualified.name { ... }` (no leading `@`). Semantics determined by the consuming executor's schema.                      |
 

@@ -367,63 +367,66 @@ wireProposalGrammarReference :: Text
 wireProposalGrammarReference =
   T.unlines
     [ "proposal ::= (node_decl | let_decl)* final_graph_expr"
-    , "node_decl ::= node IDENT : port_decl* = @executor { config_fields };"
+    , "node_decl ::= node IDENT input_clause* output_clause* = executor_call;"
+    , "input_clause ::= <- LABEL: CONTRACT ;"
+    , "output_clause ::= -> LABEL: CONTRACT ;"
+    , "executor_call ::= @executor { config_fields } (input_expr) | configured_executor (input_expr)"
     , "let_decl ::= let IDENT = expr;"
     , "final_graph_expr ::= graph_expr   # file-return syntax: no trailing ';' on the final expression"
-    , "graph_expr ::= node | (graph_expr) | () | graph_expr => graph_expr | graph_expr <> graph_expr | graph_expr, graph_expr"
+    , "graph_expr ::= node | (graph_expr) | () | graph_expr => graph_expr | graph_expr <> graph_expr"
     , "hard constraints: every referenced node must be declared locally in this proposal; graph must be a DAG; proposal entries must fit the anchor outputs; proposal exits must fit every original successor; outer workflow nodes are not in proposal scope."
     ]
 
 wireProposalSingleNodeExample :: Text
 wireProposalSingleNodeExample =
   T.unlines
-    [ "node audit_pass :"
-    , "  <- AnalysisFragment"
-    , "  -> AnalysisFragment"
+    [ "node audit_pass"
+    , "  <- in: AnalysisFragment ;"
+    , "  -> out: AnalysisFragment ;"
     , "= @auditor {"
     , "  prompt = \"Audit the current draft for stale dates and unsupported current-claims.\";"
-    , "};"
+    , "} (in) ;"
     , "audit_pass"
     ]
 
 wireProposalSingleNodeShorthandExample :: Text
 wireProposalSingleNodeShorthandExample =
-  "node audit_pass : <- AnalysisFragment -> AnalysisFragment = @auditor { prompt = \"Audit the current draft for stale dates and unsupported current-claims.\"; }; audit_pass"
+  "node audit_pass\n  <- in: AnalysisFragment ;\n  -> out: AnalysisFragment = @auditor { prompt = \"Audit the current draft for stale dates and unsupported current-claims.\"; } (in) ;\naudit_pass"
 
 wireProposalInvalidMissingGraphExample :: Text
 wireProposalInvalidMissingGraphExample =
   T.unlines
-    [ "node probe_a :"
-    , "  <- PlannerOutput"
-    , "  -> EvidenceBundle"
+    [ "node probe_a"
+    , "  <- in: PlannerOutput ;"
+    , "  -> out: EvidenceBundle ;"
     , "= @gatherer {"
     , "  prompt = \"Fetch the freshest company evidence needed to resolve the key open claim.\";"
-    , "};"
+    , "} (in) ;"
     , ""
-    , "node audit_pass :"
-    , "  <- EvidenceBundle"
-    , "  -> AnalysisFragment"
+    , "node audit_pass"
+    , "  <- in: EvidenceBundle ;"
+    , "  -> out: AnalysisFragment ;"
     , "= @auditor {"
     , "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
-    , "};"
+    , "} (in) ;"
     ]
 
 wireProposalInvalidOuterReferenceExample :: Text
 wireProposalInvalidOuterReferenceExample =
   T.unlines
-    [ "node probe_a :"
-    , "  <- PlannerOutput"
-    , "  -> EvidenceBundle"
+    [ "node probe_a"
+    , "  <- in: PlannerOutput ;"
+    , "  -> out: EvidenceBundle ;"
     , "= @gatherer {"
     , "  prompt = \"Fetch the freshest dated evidence needed to resolve the key open claim.\";"
-    , "};"
+    , "} (in) ;"
     , ""
-    , "node audit_pass :"
-    , "  <- EvidenceBundle"
-    , "  -> AnalysisFragment"
+    , "node audit_pass"
+    , "  <- in: EvidenceBundle ;"
+    , "  -> out: AnalysisFragment ;"
     , "= @auditor {"
     , "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
-    , "};"
+    , "} (in) ;"
     , "current_evidence => audit_pass"
     ]
 

@@ -68,7 +68,7 @@ import Cortex.Wire.Syntax (CorePureBinding, CorePureExpr, WirePorts)
 
 data PureTaskConfig = PureTaskConfig
   { pureTaskConfigBindings :: ![CorePureBinding]
-  , pureTaskConfigLocalBindings :: ![CorePureBinding]
+  , pureTaskConfigWhere :: !(Maybe CorePureExpr)
   , pureTaskConfigOutputs :: !(Map Text CorePureExpr)
   , pureTaskConfigPorts :: !WirePorts
   , pureTaskConfigTimeoutSeconds :: !(Maybe Int32)
@@ -121,7 +121,7 @@ bindPureTaskNode maybeRegistry taskNode = do
             config.pureTaskConfigPorts
             inputBundle
             config.pureTaskConfigBindings
-            config.pureTaskConfigLocalBindings
+            config.pureTaskConfigWhere
             config.pureTaskConfigOutputs of
             Left err -> fail (T.unpack (renderPureEvalError err))
             Right outputValues ->
@@ -145,12 +145,12 @@ parsePureTaskMetadata = Aeson.withObject "Pure task metadata" $ \obj -> do
       Right parsedPorts -> pure parsedPorts
       Left err -> fail (T.unpack err)
   configValue <- obj Aeson..: "config"
-  (bindings, localBindings, outputs) <- parsePureConfig configValue
+  (bindings, whereExpr, outputs) <- parsePureConfig configValue
   timeoutSeconds <- obj Aeson..:? "timeoutSeconds"
   pure
     PureTaskConfig
       { pureTaskConfigBindings = bindings
-      , pureTaskConfigLocalBindings = localBindings
+      , pureTaskConfigWhere = whereExpr
       , pureTaskConfigOutputs = outputs
       , pureTaskConfigPorts = ports
       , pureTaskConfigTimeoutSeconds = timeoutSeconds
@@ -165,18 +165,18 @@ parsePureExecutor = Aeson.withObject "Pure executor metadata" $ \obj -> do
     _ -> fail "task node does not reference the native pure executor"
 
 parsePureConfig
-  :: Aeson.Value -> AesonTypes.Parser ([CorePureBinding], [CorePureBinding], Map Text CorePureExpr)
+  :: Aeson.Value -> AesonTypes.Parser ([CorePureBinding], Maybe CorePureExpr, Map Text CorePureExpr)
 parsePureConfig = Aeson.withObject "Pure executor config" $ \obj -> do
   let extraKeys =
         [ keyText
         | key <- KeyMap.keys obj
         , let keyText = Key.toText key
-        , keyText /= "bindings" && keyText /= "localBindings" && keyText /= "outputs"
+        , keyText /= "bindings" && keyText /= "where" && keyText /= "outputs"
         ]
   case extraKeys of
     [] -> do
       bindings <- obj Aeson..:? "bindings" Aeson..!= []
-      localBindings <- obj Aeson..:? "localBindings" Aeson..!= []
+      whereExpr <- obj Aeson..:? "where"
       outputs <- obj Aeson..: "outputs"
-      pure (bindings, localBindings, outputs)
+      pure (bindings, whereExpr, outputs)
     _ -> fail ("unsupported pure executor config fields: " <> T.unpack (T.intercalate ", " extraKeys))

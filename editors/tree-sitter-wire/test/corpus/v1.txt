@@ -3,7 +3,9 @@ node with sum output and file return
 ==================
 
 contract EvidenceBundle;
-node planner : -> PlannerOutput | ExecutorError = @llm.planner {};
+node planner
+  -> plan: PlannerOutput | error: ExecutorError ;
+  = @llm.planner ({}) ;
 planner
 
 ---
@@ -13,23 +15,25 @@ planner
     name: (contract_name
       (contract)))
   (node_decl
-    (executor_node_decl
-      name: (identifier)
-      ports: (port_signature
-        (output_port
-          body: (output_body
-            (output_variant
-              contract: (contract_name
-                (contract)))
-            (output_variant
-              contract: (contract_name
-                (contract))))))
-      body: (expression
-        (executor_apply
+    name: (identifier)
+    body: (executor_body
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_name
+              (contract)))
+          (output_variant
+            label: (identifier)
+            contract: (contract_name
+              (contract)))))
+      call: (executor_call
+        (inline_executor_call
           name: (qualified_ident
             (identifier)
             (identifier))
-          config: (record)))))
+          input: (core_pure_expr
+            (core_pure_record))))))
   file_return: (expression
     (ident_ref
       (identifier))))
@@ -44,14 +48,15 @@ contract RejectedSet;
 
 let acceptedItem = item: item.score >= 0.7;
 
-node classify :
-  <- evidence: EvidenceSet
-  let
-    items = evidence.items;
-    acceptedItems = filter acceptedItem items;
-  in
-  -> accepted: AcceptedSet = pure (acceptedItems)
+node classify
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = pure (acceptedItems) ;
   -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
+  where let
+    items = evidence.items ;
+    acceptedItems = items |> filter acceptedItem ;
+  in
+  { items = items ; acceptedItems = acceptedItems ; } ;
 
 classify
 
@@ -67,9 +72,9 @@ classify
   (contract_decl
     name: (contract_name
       (contract)))
-  (pure_let_binding
+  (let_binding
     name: (identifier)
-    value: (core_pure_shared_expr
+    value: (core_pure_expr
       (core_pure_lambda
         param: (identifier)
         body: (core_pure_expr
@@ -77,43 +82,25 @@ classify
           field: (identifier)
           right: (number)))))
   (node_decl
-    (pure_node_decl
-      name: (identifier)
-      inputs: (input_port
-        label: (labeled_port_prefix
-          (identifier))
-        contract: (input_singular
-          (contract_name
-            (contract))))
-      bindings: (pure_let_block
-        (core_pure_binding
-          name: (identifier)
-          value: (core_pure_expr
-            target: (core_pure_ident)
-            field: (identifier)))
-        (core_pure_binding
-          name: (identifier)
-          value: (core_pure_expr
-            function: (core_pure_ident)
-            argument: (core_pure_ident)
-            argument: (core_pure_ident))))
-      outputs: (pure_output_equation
-        port: (pure_output_port
-          variant: (output_variant
-            label: (labeled_port_prefix
-              (identifier))
-            contract: (contract_name
-              (contract))))
+    name: (identifier)
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_name
+        (contract)))
+    body: (pure_body
+      (pure_output_equation
+        output: (output_variant
+          label: (identifier)
+          contract: (contract_name
+            (contract)))
         body: (pure_output_expr
           expr: (core_pure_expr
             (core_pure_ident))))
-      outputs: (pure_output_equation
-        port: (pure_output_port
-          variant: (output_variant
-            label: (labeled_port_prefix
-              (identifier))
-            contract: (contract_name
-              (contract))))
+      (pure_output_equation
+        output: (output_variant
+          label: (identifier)
+          contract: (contract_name
+            (contract)))
         body: (pure_output_expr
           expr: (core_pure_expr
             function: (core_pure_ident)
@@ -124,7 +111,34 @@ classify
                   expr: (core_pure_expr
                     function: (core_pure_ident)
                     argument: (core_pure_ident)))))
-            argument: (core_pure_ident))))))
+            argument: (core_pure_ident)))))
+    where: (where_clause
+      expr: (core_pure_expr
+        (core_pure_let
+          (core_pure_binding
+            name: (identifier)
+            value: (core_pure_expr
+              target: (core_pure_ident)
+              field: (identifier)))
+          (core_pure_binding
+            name: (identifier)
+            value: (core_pure_expr
+              (core_pure_pipe
+                left: (core_pure_ident)
+                function: (core_pure_ident)
+                argument: (core_pure_ident))))
+          body: (core_pure_expr
+            (core_pure_record
+              (core_pure_field
+                path: (field_path
+                  (identifier))
+                value: (core_pure_expr
+                  (core_pure_ident)))
+              (core_pure_field
+                path: (field_path
+                  (identifier))
+                value: (core_pure_expr
+                  (core_pure_ident)))))))))
   file_return: (expression
     (ident_ref
       (identifier))))

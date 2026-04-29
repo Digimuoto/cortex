@@ -11,7 +11,7 @@ date: 2026-04-23
 superseded_by: null
 related:
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Reference/Wire/partials-and-execution-boundary.md
+  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
 ---
 
 # ADR 0012 — Topological Memory as Deterministic Graph Query
@@ -77,4 +77,4 @@ a node needs broader settled context.
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)
-- [../Reference/Wire/partials-and-execution-boundary.md](../Reference/Wire/partials-and-execution-boundary.md)
+- [../Reference/Wire/configured-executors-and-execution-boundary.md](../Reference/Wire/configured-executors-and-execution-boundary.md)
