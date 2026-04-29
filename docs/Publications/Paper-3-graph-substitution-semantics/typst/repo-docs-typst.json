@@ -1,0 +1,11 @@
+{
+  "entry": "manuscript.typ",
+  "output": "manuscript.pdf",
+  "route": "Publications/Paper-3-graph-substitution-semantics/typeset-manuscript",
+  "title": "Paper 3 - Graph Substitution Semantics",
+  "description": "First-pass Typst PDF rendering of the graph substitution semantics manuscript.",
+  "sidebar": {
+    "label": "Typeset PDF",
+    "order": 2
+  }
+}

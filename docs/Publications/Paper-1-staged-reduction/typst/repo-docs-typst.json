@@ -1,0 +1,11 @@
+{
+  "entry": "manuscript.typ",
+  "output": "manuscript.pdf",
+  "route": "Publications/Paper-1-staged-reduction/typeset-manuscript",
+  "title": "Paper 1 - Staged Reduction",
+  "description": "First-pass Typst PDF rendering of the staged reduction manuscript.",
+  "sidebar": {
+    "label": "Typeset PDF",
+    "order": 2
+  }
+}

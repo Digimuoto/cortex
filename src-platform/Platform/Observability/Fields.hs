@@ -64,7 +64,7 @@ instance Monoid ObsFields where
 {- | Construct a single observation field.
 
 @
-field "run_id" runId    -- instead of ("run_id", Aeson.toJSON runId)
+field "run_id" runId
 @
 -}
 field :: ToJSON a => Text -> a -> ObsFields

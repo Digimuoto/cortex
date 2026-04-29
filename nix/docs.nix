@@ -58,6 +58,21 @@
         };
 
         lean4.theoryDir = "theory";
+
+        haskell.packages.cortex = {
+          packageDir = ".";
+          packageName = "cortex";
+          modulePrefixes = ["Cortex"];
+          title = "Cortex Haskell API";
+          description = "Generated Haddock documentation for the Cortex Haskell package.";
+        };
+
+        typst.manuscripts = {
+          paper1.dir = "Publications/Paper-1-staged-reduction/typst";
+          paper2.dir = "Publications/Paper-2-algebraic-foundations/typst";
+          paper3.dir = "Publications/Paper-3-graph-substitution-semantics/typst";
+          paper4.dir = "Publications/Paper-4-wire-language/typst";
+        };
       };
     };
 

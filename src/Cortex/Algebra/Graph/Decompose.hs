@@ -90,7 +90,6 @@ To fold in reverse (sinks first, seeing successor values), pass
 are successors in the original.
 
 @
--- Longest path from sources (sinks first, seeing successor values):
 foldTopSort (\\_ succVals -> 1 + maximum (0 : Map.elems succVals))
            (transposeRelation rel)
 @
@@ -142,7 +141,6 @@ At each vertex, the step function receives the vertex and a map from
 its predecessors to their already-computed values.
 
 @
--- Compute depth of each vertex (distance from sources):
 foldTopSort (\\_ predVals -> 1 + maximum (0 : Map.elems predVals)) rel
 @
 -}

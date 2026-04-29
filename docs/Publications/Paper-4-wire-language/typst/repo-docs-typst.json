@@ -1,0 +1,11 @@
+{
+  "entry": "manuscript.typ",
+  "output": "manuscript.pdf",
+  "route": "Publications/Paper-4-wire-language/typeset-manuscript",
+  "title": "Paper 4 - Wire Language",
+  "description": "First-pass Typst PDF rendering of the Wire language manuscript.",
+  "sidebar": {
+    "label": "Typeset PDF",
+    "order": 2
+  }
+}

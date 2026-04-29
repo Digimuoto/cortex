@@ -1,0 +1,11 @@
+{
+  "entry": "manuscript.typ",
+  "output": "manuscript.pdf",
+  "route": "Publications/Paper-2-algebraic-foundations/typeset-manuscript",
+  "title": "Paper 2 - Algebraic Foundations",
+  "description": "First-pass Typst PDF rendering of the algebraic foundations manuscript.",
+  "sidebar": {
+    "label": "Typeset PDF",
+    "order": 2
+  }
+}

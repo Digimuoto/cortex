@@ -41,7 +41,7 @@ mVal <- logDbFailure
  (\\err -> emitEvent ObsWarn "op.name" ("Failed: " <> T.pack err) [])
  (DB.withConnection pool $ Q.loadConfig ...)
 case mVal of
- Nothing -> ... -- logged, but continue
+ Nothing -> ...
  Just val -> ...
 @
 -}
