@@ -12,7 +12,7 @@ superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Architecture/09-nous-reasoning-library.md
+  - docs/Logos/reasoning-library.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/configured-executors-and-execution-boundary.md
@@ -67,9 +67,9 @@ Every executor node has the same external topology shape:
 - a registered executor implementation selected by the RHS;
 - typed failure on admission, decode, execution, or output-validation failure.
 
-The executor's internal mechanism may differ. `pure (...)` evaluates CorePure. `@llm.* (...)` calls
-a model. `@http.* (...)` may make a network request. The topology layer does not get a separate
-shape for those cases.
+The executor's internal mechanism may differ. `pure (...)` evaluates CorePure. `@review.* (...)`
+calls a model. `@http.* (...)` may make a network request. The topology layer does not get a
+separate shape for those cases.
 
 Edges carry typed values. They do not carry "context", prompt fragments, control flow, structural
 fan-out, or implicit argument order. Those are jobs for nodes and for executor configuration.
@@ -100,7 +100,7 @@ grant a node hidden context, implicit scheduling authority, or a distinguished w
 ### Configured Executors Are Not Vertices
 
 This is an intentional breaking change from the older partial-node model. A configured executor
-value, such as a reusable `@llm.analyst { ... }` value, is not itself a graph vertex. It may name
+value, such as a reusable `@review.analyst { ... }` value, is not itself a graph vertex. It may name
 registered authority and carry reusable configuration, but it may not absorb a port boundary from
 surrounding arrows, infer "context" from graph position, or become runnable merely by appearing in a
 composition expression.
@@ -119,7 +119,7 @@ skips the node declaration:
 ```wire
 node analyst
   <- input: AnalysisInput ;
-  -> analysis: AnalysisRecord = @llm.analyst (input) ;
+  -> analysis: AnalysisRecord = @review.analyst (input) ;
 ```
 
 The node declaration is the vertex. The executor RHS is the implementation body behind that typed
@@ -140,7 +140,7 @@ An LLM executor is structurally identical to any other executor:
 ```wire
 node analyze
   <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = @llm.analyze (evidence) ;
+  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
 ```
 
 The executor knows that it calls a model. The topology does not. From Wire's perspective, the node
@@ -161,8 +161,8 @@ failure. It is not a claim that LLM execution has pure-evaluator determinism.
 The typed-port rule does not forbid executor capabilities. Topological memory and on-demand
 retrieval are examples of native Cortex support that belongs to executor binding authority, not to
 the proven graph core. Pulse may provide a snapshot-bound query substrate over settled materialized
-outputs, and Nous or downstream bindings may expose that substrate as a model tool or prompt-shaping
-capability.
+outputs, and Logos or downstream bindings may expose that substrate as a model tool or
+prompt-shaping capability.
 
 That capability is not an extra Wire edge, not a variadic context input, and not node-to-node
 message passing. A memory-enabled executor still enters the graph as a node with concrete typed
@@ -185,7 +185,7 @@ fields as separate ports:
 ```wire
 node analyze
   <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = @llm.analyze (evidence) ;
+  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
 
 node distribute
   <- analysis: AnalysisRecord ;
@@ -218,11 +218,11 @@ node prepareReviews
 
 node valuationReview
   <- input: ReviewInput ;
-  -> review: ReviewResult = @llm.gpt54-reviewer (input) ;
+  -> review: ReviewResult = @review.gpt54-reviewer (input) ;
 
 node legalReview
   <- input: ReviewInput ;
-  -> review: ReviewResult = @llm.qwen3-reviewer (input) ;
+  -> review: ReviewResult = @review.qwen3-reviewer (input) ;
 ```
 
 No special model-selection syntax is needed at the Wire level. Model choice is executor
@@ -296,7 +296,7 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 
 ### Obligations
 
-- Update executor projection docs so `@llm.*` projections declare typed input and output ports.
+- Update executor projection docs so `@review.*` projections declare typed input and output ports.
 - Update partial-node and executor reference docs to state that configured executor values are not
   graph vertices in the next Wire surface.
 - Update grammar and matching docs so list-valued inputs are ordinary typed ports, not implicit edge

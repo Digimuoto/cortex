@@ -11,8 +11,9 @@ status: active
 
 # Chapter 02 — Ownership and Boundaries
 
-Cortex is a generic AI substrate. A host application embeds Cortex and supplies domain semantics,
-transport, and persistence. The boundary described here is meant to survive any particular host.
+Cortex is a generic durable runtime and Wire language substrate. A host application embeds Cortex
+and supplies domain semantics, transport, and persistence. The boundary described here is meant to
+survive any particular host.
 
 This chapter states which subsystems own which responsibilities, which direction dependencies run,
 and what may and may not cross each boundary.
@@ -21,11 +22,11 @@ and what may and may not cross each boundary.
 
 Three subsystems carry the bulk of the weight on either side of the boundary:
 
-| Subsystem            | Role                                                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Cortex substrate** | Reusable AI substrate: provider integrations, capability abstractions, the Graph / Circuit / Wire layers, and the Pulse runtime. |
-| **Product binding**  | Host-specific configuration of Cortex: prompts, grounding policy, tool registries, artifact assembly, and product policy.        |
-| **Server edge**      | Transport and persistence: HTTP, auth, streaming, request/response conversion, and persistence wiring.                           |
+| Subsystem            | Role                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Cortex substrate** | Reusable runtime and language substrate: capability abstractions, the Graph / Circuit / Wire layers, and the Pulse runtime.       |
+| **Product binding**  | Host-specific configuration of Cortex: executor config, grounding policy, tool registries, artifact assembly, and product policy. |
+| **Server edge**      | Transport and persistence: HTTP, auth, streaming, request/response conversion, and persistence wiring.                            |
 
 Two further subsystems are host-internal and do not interact with Cortex directly:
 
@@ -44,16 +45,16 @@ what the runtime does.
 ```mermaid
 flowchart LR
     S[Server edge<br/>HTTP + auth + persistence adapters] --> C[Product binding<br/>host-specific Cortex configuration]
-    C --> X[Cortex substrate<br/>generic AI substrate]
+    C --> X[Cortex substrate<br/>runtime + language]
 
     C --> F[Domain core<br/>product semantics]
     S --> D[Persistence<br/>schemas + storage]
 ```
 
-The placement rule: if a module would be reusable outside the host as generic AI infrastructure, it
-belongs in the Cortex substrate, even when the product binding is currently the only caller. If it
-knows about host domain semantics, product-specific artifacts, truth policy, or host tool authority,
-it stays downstream.
+The placement rule: if a module would be reusable outside the host as durable runtime, Wire
+language, capability, or artifact infrastructure, it belongs in the Cortex substrate, even when the
+product binding is currently the only caller. If it knows about host domain semantics,
+product-specific artifacts, truth policy, or host tool authority, it stays downstream.
 
 ## Public import boundary
 
@@ -65,14 +66,13 @@ import Platform
 ```
 
 Those modules are the supported public API boundary. They re-export the stable Cortex substrate
-surface, the public reasoning/workflow surface, and the generic Platform runtime utilities that
-downstream products are expected to use directly.
+surface and the generic Platform runtime utilities that downstream products are expected to use
+directly. Downstream reasoning libraries, including Logos, are imported as separate packages.
 
-Area modules such as `Cortex.Wire`, `Cortex.Pulse`, `Cortex.Nous.Memory`, or
-`Platform.Observability` remain available for advanced imports, examples, and focused tests.
-Implementation-era roots are not the downstream contract. A consumer that reaches past the umbrella
-modules should do so deliberately and expect that import to be reviewed when Cortex tightens its
-internal module layout.
+Area modules such as `Cortex.Wire`, `Cortex.Pulse`, or `Platform.Observability` remain available for
+advanced imports, examples, and focused tests. Implementation-era roots are not the downstream
+contract. A consumer that reaches past the umbrella modules should do so deliberately and expect
+that import to be reviewed when Cortex tightens its internal module layout.
 
 ## Ownership breakdown
 
@@ -85,9 +85,9 @@ layers:
   (`Empty | Vertex | Overlay | Connect`), DAG validation, the validated executable Circuit, and the
   Wire source language that authors circuits. Normative Wire grammar lives at
   [`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md).
-- **Runtime and agent layer.** The Pulse runtime — durable stage execution, checkpointing, rewrite
-  hydration, and frontier scheduling — ships as its own service. Run lifecycle and stage events sit
-  alongside it, with generic agent definitions and capability policies above.
+- **Runtime layer.** The Pulse runtime — durable stage execution, checkpointing, rewrite hydration,
+  and frontier scheduling — ships as its own service. Run lifecycle and stage events sit alongside
+  it.
 - **Provider and capability layer.** Provider-specific HTTP clients and wire decoding,
   provider-neutral request/response types and tool-call records, generic JSON and text helpers.
 
@@ -96,7 +96,7 @@ layers:
 The product binding is host-specific behavior. It configures Cortex for one product's use case and
 nothing more:
 
-- prompts and model-catalog policy
+- executor config and capability-catalog policy
 - domain-specific grounding and truth policy
 - artifact assembly and product-specific IR
 - product-specific tool registries
@@ -116,7 +116,7 @@ today; mechanical enforcement is a direction-of-travel goal.
 ### Cortex substrate
 
 Allowed: generic provider integrations; provider-neutral capability abstractions; Wire / Graph /
-Circuit / Pulse primitives; generic JSON, text, time, and runtime helpers; generic AI observability
+Circuit / Pulse primitives; generic JSON, text, time, and runtime helpers; generic observability
 hooks.
 
 Forbidden: any host-specific import; server transport types; host durable-task scheduling; database

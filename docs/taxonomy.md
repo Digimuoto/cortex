@@ -13,8 +13,8 @@ Glossary ([glossary.md](glossary.md)) defines terms one at a time. This page sho
 
 ## Layers
 
-Cortex separates six canonical roots. Arrows here show operational relationships, not import or
-dependency direction:
+Cortex separates five canonical substrate roots. Arrows here show operational relationships, not
+import or dependency direction:
 
 ```mermaid
 flowchart TD
@@ -23,19 +23,17 @@ flowchart TD
     P[Pulse<br/>durable runtime]
     C[Capability<br/>models, tools, providers]
     R[Artifact<br/>outputs and provenance]
-    N[Nous<br/>thought, memory, patterns]
 
     A -- "topology laws for" --> W
     W -- "compiled circuit runs on" --> P
-    C -- "grants authority to" --> N
-    P -- "settled state feeds" --> N
-    N -- "emits outputs as" --> R
+    C -- "grants registered authority to" --> P
+    P -- "emits durable outputs as" --> R
 ```
 
 Algebra is the pure substrate Wire authors over. Mechanized theory names the safety contracts that
 runtime implementation must enforce. Wire owns the compiled circuit form. Pulse executes compiled
 circuits durably. Capability exposes external authority. Artifact owns durable outputs and
-provenance. Nous owns model-mediated cognition.
+provenance.
 
 ## Roles a value can play
 
@@ -43,8 +41,8 @@ A single Wire value often wears multiple hats. The roles are:
 
 | Role                          | What it is                                                                                 | Examples                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| **Executor**                  | Registered recipe. Turns config + typed inputs into typed outputs. Referenced via `@name`. | `@llm.analyst`, `@artifact.log`, `@cortex.report_run`                                |
-| **Configured executor value** | Executor plus inert config, reusable in node bodies. Not a graph vertex.                   | `@llm.gatherer { memory = topological { preset = "analyst" ; } ; }`                  |
+| **Executor**                  | Registered recipe. Turns config + typed inputs into typed outputs. Referenced via `@name`. | `@review.analyst`, `@artifact.log`, `@cortex.report_run`                             |
+| **Configured executor value** | Executor plus inert config, reusable in node bodies. Not a graph vertex.                   | `@review.gatherer { memory = topological { preset = "analyst" ; } ; }`               |
 | **Node**                      | Explicit graph vertex with typed input/output ports and an implementation body.            | `node analyst <- evidence: EvidenceBundle ; -> analysis: AnalysisFragment ; = ... ;` |
 | **Composed wire**             | Result of applying a graph operator. Has a derived boundary.                               | `planner => gatherer => analyst`                                                     |
 | **Runtime wrapper**           | A node whose role is to host a whole wire and provide runtime services.                    | `@cortex.report_run { title = ... ; }`                                               |
@@ -62,7 +60,7 @@ Every contract declares a **payload kind** that selects validation and rendering
 | -------------- | ----------------------------- | ---------------------------------------- |
 | `json`         | Structured domain object      | `AssetRef`, `AssetSet`, `ReportFragment` |
 | `markdown`     | Lintable markdown text        | `FinalReport`, `MarkdownSection`         |
-| `text`         | Minimal-structure text        | `SearchQuery`, `PromptNote`              |
+| `text`         | Minimal-structure text        | `SearchQuery`, `OperatorNote`            |
 | `table`        | Row/column typed data         | `PriceSeries`, `CorrelationMatrix`       |
 | `artifact_ref` | Reference to a persisted blob | `WorkbookRef`, `ReportArtifactRef`       |
 
@@ -81,32 +79,32 @@ Beyond these four, every name is local: introduced by `let`, `node`, or `import`
 alphabet is authority-bearing; ordinary config constructors are not. The syntax distinction is the
 leading `@`.
 
-## Nous archetypes and patterns
+## Downstream Logos library
 
-`Cortex.Nous` adds reusable LLM-shaped catalogs above the substrate. `Cortex.Nous.Archetypes`
-classifies modes of cognition, `Cortex.Nous.Thought` names one bounded model-mediated node
-evaluation, `Cortex.Nous.Memory` owns cognitive context construction, and `Cortex.Nous.Patterns`
-names reusable reasoning programs. None of these grants executor authority or creates new runtime
-registries.
+`Logos` is a downstream reasoning library built on Cortex. It adds reusable LLM-shaped catalogs
+above the substrate. `Logos.Archetypes` classifies modes of cognition, `Logos.Thought` names one
+bounded model-mediated node evaluation, `Logos.Memory` owns cognitive context construction, and
+`Logos.Patterns` names reusable reasoning programs. None of these grants executor authority or
+creates new runtime registries.
 
-| Archetype                         | Role                                            |
-| --------------------------------- | ----------------------------------------------- |
-| `Cortex.Nous.Archetypes.Logos`    | Discursive reason, argument, symbolic reasoning |
-| `Cortex.Nous.Archetypes.Sophia`   | Wisdom, judgment, synthesis                     |
-| `Cortex.Nous.Archetypes.Techne`   | Craft, engineering, implementation              |
-| `Cortex.Nous.Archetypes.Episteme` | Knowledge, evidence, research                   |
-| `Cortex.Nous.Archetypes.Kritikos` | Criticism, adversarial review                   |
-| `Cortex.Nous.Archetypes.Themis`   | Audit, law, correctness, constraints            |
-| `Cortex.Nous.Archetypes.Poiesis`  | Creative generation, composition                |
+| Archetype                   | Role                                            |
+| --------------------------- | ----------------------------------------------- |
+| `Logos.Archetypes.Logos`    | Discursive reason, argument, symbolic reasoning |
+| `Logos.Archetypes.Sophia`   | Wisdom, judgment, synthesis                     |
+| `Logos.Archetypes.Techne`   | Craft, engineering, implementation              |
+| `Logos.Archetypes.Episteme` | Knowledge, evidence, research                   |
+| `Logos.Archetypes.Kritikos` | Criticism, adversarial review                   |
+| `Logos.Archetypes.Themis`   | Audit, law, correctness, constraints            |
+| `Logos.Archetypes.Poiesis`  | Creative generation, composition                |
 
 Each archetype may have an operational activation bundle at
-`Cortex.Nous.Archetypes.<Archetype>.Activation`. The archetype is the semantic definition; the
-activation bundle is the concrete set of prompt discipline, retrieval corpus, embedding spaces, tool
-surface, memory policy, evaluation criteria, and runtime contract. Thought frames compose one or
-more archetype activations.
+`Logos.Archetypes.<Archetype>.Activation`. The archetype is the semantic definition; the activation
+bundle is the concrete set of prompt discipline, retrieval corpus, embedding spaces, tool surface,
+memory policy, evaluation criteria, and runtime contract. Thought frames compose one or more
+archetype activations.
 
-`Cortex.Nous.Patterns.DeepReport` is the planned extraction target for reusable deep-report
-reasoning contracts, ports, templates, prompts, memory presets, and evaluation policy.
+`Logos.Patterns.DeepReport` is the planned extraction target for reusable deep-report reasoning
+contracts, ports, templates, prompts, memory presets, and evaluation policy.
 
 ## Doc-kind taxonomy
 

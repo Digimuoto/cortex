@@ -55,7 +55,7 @@ node merge
   <- timing: AnalysisFragment ;
   <- beneficiaries: AnalysisFragment ;
   -> merged: AnalysisFragment ;
-  = @llm.report_merge ({
+  = @review.report_merge ({
     fragments = [mechanism, timing, beneficiaries] ;
   }) ;
 ```

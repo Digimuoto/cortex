@@ -8,7 +8,7 @@ Stability   : experimental
 
 Exercises:
 
-* Schema decoding — the LLM-facing JSON -> 'CortexMemoryQueryArgs'
+* Schema decoding — the model-facing JSON -> 'CortexMemoryQueryArgs'
 round-trips cleanly for valid inputs and rejects unknown
 enums.
 * 'executeCortexMemoryQuery' — given a bound 'MemoryHandle',
@@ -357,7 +357,7 @@ spec = describe "cortex_memory_query tool" $ do
       -- Setting a queryText that only overlaps with one of the
       -- analysts' body text must shift the top match to that
       -- analyst — proves the scorer is wired up and the "use
-      -- `queryText` to narrow recall" nudge in the reviewer prompt
+      -- `queryText` to narrow recall" nudge in the reviewer instructions
       -- is not just advisory.
       let semanticWeightSnap =
             fanoutSnapshot

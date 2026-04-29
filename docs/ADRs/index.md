@@ -31,8 +31,8 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0012](0012-topological-memory-as-deterministic-graph-query.md) | Topological Memory as Deterministic Graph Query                     | accepted |
 | [0013](0013-report-provenance-artifact-contract.md)             | Artifact Provenance Contract                                        | accepted |
 | [0014](0014-executor-taxonomy-model-vs-external-call.md)        | Model vs External Call                                              | proposed |
-| [0015](0015-canonical-cortex-epistemological-archetypes.md)     | Canonical Cortex Nous Archetypes                                    | proposed |
-| [0016](0016-cortex-roots-and-nous-pattern-extraction.md)        | Cortex Roots and Nous Pattern Extraction                            | proposed |
+| [0015](0015-canonical-logos-archetypes.md)                      | Canonical Logos Archetypes                                          | proposed |
+| [0016](0016-cortex-roots-and-logos-pattern-extraction.md)       | Cortex Roots and Logos Pattern Extraction                           | proposed |
 | [0017](0017-wire-executor-and-port-catalog-boundary.md)         | Wire Executor and Port Catalog Boundary                             | proposed |
 | [0018](0018-canonical-haskell-module-tree.md)                   | Canonical Haskell Module Tree                                       | proposed |
 | [0019](0019-executor-registration-and-binding.md)               | Executor Registration and Binding                                   | proposed |

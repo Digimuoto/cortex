@@ -168,9 +168,9 @@ Memory is a per-node property declared on the wire, not a global run setting.
 
 - `MemoryClassic` — the executor hands the stage exactly what its declared upstream produced
   (`scInputs`). Local causality by construction.
-- `MemoryTopological cfg` — the stage runs a topological-memory query at entry, using the preset,
-  routing-key filter, and top-N limit from `cfg`. See the topological-memory section of
-  [chapter 06](../../Architecture/06-pulse-runtime.md#topological-memory) for the substrate
+- `MemoryTopological cfg` — the stage runs a settled-state query at entry, using the preset,
+  routing-key filter, and top-N limit from `cfg`. See the settled-state query section of
+  [chapter 06](../../Architecture/06-pulse-runtime.md#settled-state-queries) for the substrate
   semantics.
 
 The compiler emits the declared strategy under `circuitTaskNodeMetadata.memory`. The executor copies

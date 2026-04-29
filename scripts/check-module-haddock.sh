@@ -8,7 +8,7 @@ import pathlib
 import re
 import sys
 
-ROOTS = ("src", "src-platform", "app", "test")
+ROOTS = ("src", "src-platform", "src-logos", "app", "test", "test-logos")
 PRAGMA_RE = re.compile(r"^\{-#\s*(LANGUAGE|OPTIONS_GHC)\b.*#-\}\s*$")
 MODULE_RE = re.compile(r"^module\s+([A-Z][A-Za-z0-9_'.]*(?:\.[A-Z][A-Za-z0-9_']*)*)")
 FIELD_RE = re.compile(r"^(Module|Description|Copyright|License|Maintainer|Stability)\s*:\s*(.*)$")

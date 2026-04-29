@@ -22,7 +22,7 @@ related:
 Configured executor values are reusable authority/config values:
 
 ```wire
-let analyst = @llm.analyst {
+let analyst = @review.analyst {
   temperature = 0.2 ;
 } ;
 ```

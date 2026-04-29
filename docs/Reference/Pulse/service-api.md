@@ -88,18 +88,18 @@ read Pulse tables.
 Error categories used across run and stage failures. Consumer-specific error categories live in the
 consumer's own page.
 
-| Category                  | Retryable        | Description                                   |
-| ------------------------- | ---------------- | --------------------------------------------- |
-| `model_timeout`           | yes              | LLM call exceeded deadline.                   |
-| `model_refusal`           | no               | LLM refused the request.                      |
-| `model_rate_limit`        | yes (backoff)    | Provider rate limit hit.                      |
-| `tool_failure`            | depends          | Tool call failed.                             |
-| `stale_data`              | yes (refresh)    | Upstream data too old.                        |
-| `config_decode_error`     | no               | Operator must fix config.                     |
-| `checkpoint_corruption`   | no               | Manual intervention required.                 |
-| `checkpoint_incompatible` | no               | Envelope version does not match current code. |
-| `stage_timeout`           | per retry policy | Per-stage timeout fired.                      |
-| `host_action_failure`     | depends          | Downstream host-action call failed.           |
+| Category                  | Retryable        | Description                                     |
+| ------------------------- | ---------------- | ----------------------------------------------- |
+| `model_timeout`           | yes              | Model-backed capability call exceeded deadline. |
+| `model_refusal`           | no               | Model-backed capability refused the request.    |
+| `model_rate_limit`        | yes (backoff)    | Provider rate limit hit.                        |
+| `tool_failure`            | depends          | Tool call failed.                               |
+| `stale_data`              | yes (refresh)    | Upstream data too old.                          |
+| `config_decode_error`     | no               | Operator must fix config.                       |
+| `checkpoint_corruption`   | no               | Manual intervention required.                   |
+| `checkpoint_incompatible` | no               | Envelope version does not match current code.   |
+| `stage_timeout`           | per retry policy | Per-stage timeout fired.                        |
+| `host_action_failure`     | depends          | Downstream host-action call failed.             |
 
 The error category and retryable flag are persisted in the stage log and emitted in observability
 events.

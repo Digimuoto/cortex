@@ -69,7 +69,7 @@ import GHC.Generics (Generic)
 import Cortex.Wire.AST
 
 {- | Qualified identifier. One or more dot-joined segments, e.g.
-@llm.analyst@, @cortex.deep_report@. A bare (single-segment) name is
+@review.analyst@, @cortex.deep_report@. A bare (single-segment) name is
 still a 'QName'.
 -}
 newtype QName = QName (NonEmpty Text)

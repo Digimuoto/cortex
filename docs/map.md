@@ -18,6 +18,7 @@ here.
 | Canonical architecture chapter | [Architecture/](Architecture/)             | Long-term canon                      | No     |
 | Normative specification        | [Reference/](Reference/)                   | Long-term canon                      | No     |
 | Code style guide               | [Style.md](Style.md)                       | Long-term canon                      | No     |
+| Logos reasoning library        | [Logos/](Logos/)                           | Long-term downstream library canon   | No     |
 | Architecture decision record   | [ADRs/](ADRs/)                             | Permanent                            | No     |
 | Downstream consumer binding    | [Consumers/{consumer}.md](Consumers/)      | Long-term per consumer               | No     |
 | Active roadmap plan            | [Roadmap/Plans/](Roadmap/Plans/)           | Active until completed or superseded | No     |
@@ -40,6 +41,9 @@ live in reference docs, not research notes.
 
 **Where do I document runtime architecture?** Use `Architecture/06-pulse-runtime.md` for the stable
 model and `Architecture/07-rewrites-and-materialization.md` for topology evolution.
+
+**Where do I document LLM or model-mediated reasoning workflows?** Use `Logos/`. Cortex architecture
+should describe the substrate those workflows run on, not the reasoning library itself.
 
 **Where does downstream-specific design belong?** Start with `Consumers/{consumer}.md`. Consumer
 docs may contain concrete product bindings; Cortex architecture should stay consumer-independent.

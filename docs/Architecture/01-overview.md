@@ -1,8 +1,8 @@
 ---
 title: "Chapter 01 — Overview"
 description:
-  "Overview of Cortex as a three-layer AI substrate. Sets the Graph/Circuit/Wire model, the
-  downstream integration boundary, and where detailed subsystem docs live."
+  "Overview of Cortex as a durable runtime and Wire language substrate. Sets the Graph/Circuit/Wire
+  model, the downstream integration boundary, and where detailed subsystem docs live."
 sidebar:
   label: "01. Overview"
   order: 1
@@ -11,10 +11,10 @@ status: active
 
 # Chapter 01 — Overview
 
-Cortex is a standalone AI substrate. This chapter sets the core architectural frame: Graph, Circuit,
-and Wire are separate layers; Cortex owns reusable substrate concerns; downstream products own
-domain semantics and the operator edge. Use this page to orient yourself. Use the later chapters for
-subsystem detail and the ADRs for settled decisions.
+Cortex is a standalone durable runtime and Wire language substrate. This chapter sets the core
+architectural frame: Graph, Circuit, and Wire are separate layers; Cortex owns reusable runtime and
+language concerns; downstream products own domain semantics and the operator edge. Use this page to
+orient yourself. Use the later chapters for subsystem detail and the ADRs for settled decisions.
 
 ## Three Layers
 
@@ -27,9 +27,9 @@ Cortex separates three concerns that typed-dataflow programs depend on:
 | **Wire**    | Source language and rewrite language that authors circuit topology.              | `.wire` source   |
 
 The design rule: **Wire composes registered authority; implementations own what that authority
-means.** Wire source references registered nodes, contract IDs, prompts, and wiring. It does not
-invent executors, tools, payload types, or domain authority; those are defined outside the source
-language and referenced by name.
+means.** Wire source references registered nodes, contract IDs, executor config values, and wiring.
+It does not invent executors, tools, payload types, or domain authority; those are defined outside
+the source language and referenced by name.
 
 For Wire-specific detail:
 
@@ -59,7 +59,7 @@ still follow the boundary above.
 
 ```mermaid
 flowchart LR
-    T[Downstream transport edge<br/>HTTP, auth, persistence, operator APIs] --> B[Downstream product binding<br/>domain prompts, tools, policy]
+    T[Downstream transport edge<br/>HTTP, auth, persistence, operator APIs] --> B[Downstream product binding<br/>domain config, tools, policy]
     B --> X[Cortex substrate<br/>Graph, Circuit, Wire, Pulse, capabilities]
 
     B --> D[Downstream domain logic<br/>product-specific semantics]
@@ -68,8 +68,8 @@ flowchart LR
 
 Ownership rules:
 
-- if a concern should be reusable across host applications as generic AI infrastructure, it belongs
-  in Cortex
+- if a concern should be reusable across host applications as durable runtime or language
+  infrastructure, it belongs in Cortex
 - if a concern encodes domain policy, artifact meaning, approval rules, or product-specific tools,
   it stays downstream
 - if a concern owns transport, auth, delivery, storage, or API translation, it stays at the host
@@ -90,8 +90,8 @@ Cortex is not a thin provider wrapper. It owns the reusable substrate end to end
   [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md).
 - **Capability substrate** — provider-neutral capability surfaces, provider adapters, and reusable
   policy hooks.
-- **Artifact and memory primitives** — reusable provenance, document, memory, and artifact-building
-  surfaces that are not product-specific.
+- **Artifact and settled-state query primitives** — reusable provenance, artifact, and durable
+  context-query surfaces that are not product-specific.
 
 ## What Stays Downstream
 
@@ -99,7 +99,7 @@ Downstream products configure Cortex for their own domain.
 
 Downstream ownership includes:
 
-- domain prompts, tool registries, and policy
+- domain executor config, tool registries, and policy
 - grounding and truth rules specific to a domain
 - product-specific artifact assembly, report flows, and work-product schemas
 - approval behavior and operator choices tied to a specific product UX

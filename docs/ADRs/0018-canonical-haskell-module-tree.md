@@ -1,8 +1,8 @@
 ---
 title: "ADR 0018 — Canonical Haskell Module Tree"
 description:
-  "Cortex's Haskell source tree is organized by canonical substrate and Nous layers, not
-  implementation-era roots such as Agent, Task, Run, Provider, Json, or Document."
+  "Cortex and Logos Haskell source trees are organized by canonical substrate and downstream library
+  layers, not implementation-era roots such as Agent, Task, Run, Provider, Json, or Document."
 sidebar:
   label: "0018. Haskell tree"
   order: 18
@@ -15,9 +15,9 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/08-artifacts-and-provenance.md
-  - docs/Architecture/09-nous-reasoning-library.md
-  - docs/ADRs/0015-canonical-cortex-epistemological-archetypes.md
-  - docs/ADRs/0016-cortex-roots-and-nous-pattern-extraction.md
+  - docs/Logos/reasoning-library.md
+  - docs/ADRs/0015-canonical-logos-archetypes.md
+  - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0019-executor-registration-and-binding.md
@@ -51,22 +51,26 @@ The current `src/Cortex` tree still exposes several implementation-era roots:
 
 Some of these names describe mechanisms at the wrong architectural layer. `Agent`, `Task`, `Run`,
 and `Research` mostly describe model-mediated reasoning behavior, which belongs above the substrate
-in `Cortex.Nous`. `Provider` is external authority, which belongs under `Cortex.Capability`.
-`Document` mixes generic artifact substrate with report/research semantics. `Memory` mixes cognitive
-context construction with durable Pulse state. `Json` and `Text` are generic support utilities
-rather than Cortex concepts. `Graph` is the law-bearing algebra, and `Circuit` is Wire's compiled
-form.
+in `Logos`. `Provider` is external authority, which belongs under `Cortex.Capability`. `Document`
+mixes generic artifact substrate with report/research semantics. `Memory` mixes cognitive context
+construction with durable Pulse state. `Json` and `Text` are generic support utilities rather than
+Cortex concepts. `Graph` is the law-bearing algebra, and `Circuit` is Wire's compiled form.
 
 ADR 0016 already decides the canonical public root taxonomy:
 
 ```text
-Cortex
+src/Cortex
 |-- Algebra
 |-- Wire
 |-- Pulse
 |-- Capability
-|-- Artifact
-`-- Nous
+`-- Artifact
+
+src-logos/Logos
+|-- Archetypes
+|-- Thought
+|-- Memory
+`-- Patterns
 ```
 
 The remaining decision is how strict to make the Haskell tree and how to migrate current consumers
@@ -74,7 +78,7 @@ without preserving the old roots as first-class vocabulary.
 
 ## Decision
 
-The canonical Haskell tree under `src/Cortex` is organized by layer:
+The canonical Cortex Haskell tree under `src/Cortex` is organized by substrate layer:
 
 ```text
 Cortex
@@ -82,14 +86,24 @@ Cortex
 |-- Wire           -- source language, contracts, ports, compiled circuit form
 |-- Pulse          -- durable execution runtime, run state, events, persistence
 |-- Capability     -- external authority: model clients, tools, providers
-|-- Artifact       -- generic durable outputs, metadata, provenance, host boundary
-`-- Nous           -- structured reasoning library above the substrate
+`-- Artifact       -- generic durable outputs, metadata, provenance, host boundary
 ```
 
-Only these roots should be treated as canonical public Cortex roots. A root module such as
-`Cortex.Wire` or `Cortex.Nous` may be an umbrella module for its layer. Other root-level modules are
-either temporary compatibility shims, test fixtures, or private implementation details that should
-move under the nearest canonical root.
+The canonical Logos Haskell tree under `src-logos/Logos` is organized by reasoning-library layer:
+
+```text
+Logos
+|-- Archetypes     -- epistemological modes and activation bundles
+|-- Thought        -- one model-mediated node evaluation
+|-- Memory         -- cognitive context construction
+`-- Patterns       -- reusable reasoning programs
+```
+
+Only the Cortex roots should be treated as canonical public Cortex roots. `Logos` is public through
+the separate `cortex:logos` sub-library. A root module such as `Cortex.Wire` or `Logos` may be an
+umbrella module for its own component. Other root-level modules are either temporary compatibility
+shims, test fixtures, or private implementation details that should move under the nearest canonical
+root.
 
 Compatibility shims may remain only when there is a concrete migration need. A shim must be shallow:
 it re-exports the canonical module, contains no independent logic, and is documented in the
@@ -169,7 +183,7 @@ Target examples:
 
 `Cortex.Event`, `Cortex.Events`, and the durable parts of `Cortex.Run.Types` move or shim into
 Pulse. Thought lifecycle events do not belong in Pulse unless they are generic execution events;
-model-mediated thought events belong in Nous.
+model-mediated thought events belong in Logos.
 
 `Cortex.Pulse.Executor` is the durable execution engine, not the canonical home for Wire executor
 identity or host executor registration. It runs already-bound `StageAction` values, persists state,
@@ -200,7 +214,7 @@ modules are the canonical target; root provider modules should either move there
 shims while consumers migrate.
 
 Capability does not own prompts, reasoning memory, archetype activations, or pattern-level
-evaluation. Those are Nous concerns that consume capabilities.
+evaluation. Those are Logos concerns that consume capabilities.
 
 ### `Cortex.Artifact`
 
@@ -210,7 +224,7 @@ evaluation. Those are Nous concerns that consume capabilities.
 - artifact metadata
 - provenance and source references
 - host/rendering boundary for generic artifacts
-- artifact references usable by Wire, Pulse, and Nous without report-specific semantics
+- artifact references usable by Wire, Pulse, and Logos without report-specific semantics
 
 Target examples:
 
@@ -222,11 +236,11 @@ Target examples:
 Root `Cortex.Document.IR`, `Cortex.Document.Metadata`, and `Cortex.Document.Host` move or shim here.
 `Cortex.Document.Report`, `Cortex.Document.Section`, and research-report semantics do not belong in
 Artifact unless they are reduced to generic artifact structure; LLM-shaped report semantics belong
-in `Cortex.Nous.Patterns.DeepReport.*`.
+in `Logos.Patterns.DeepReport.*`.
 
-### `Cortex.Nous`
+### `Logos`
 
-`Cortex.Nous` owns the structured reasoning library above the substrate:
+`Logos` owns the structured reasoning library above the substrate:
 
 - canonical archetype taxonomy and activation slots
 - one bounded model-mediated cognitive evaluation, named a thought
@@ -238,30 +252,31 @@ in `Cortex.Nous.Patterns.DeepReport.*`.
 
 Target examples:
 
-- `Cortex.Nous.Archetypes.*`
-- `Cortex.Nous.Thought.Frame`
-- `Cortex.Nous.Thought.Policy`
-- `Cortex.Nous.Thought.Host`
-- `Cortex.Nous.Thought.ToolHost`
-- `Cortex.Nous.Thought.ToolLoop`
-- `Cortex.Nous.Thought.Runtime`
-- `Cortex.Nous.Thought.StructuredOutput`
-- `Cortex.Nous.Thought.Event`
-- `Cortex.Nous.Memory.*`
-- `Cortex.Nous.Patterns.DeepReport.*`
-- `Cortex.Nous.Patterns.DeepReport.Executors` for inert profiles or adapters, if a later
+- `Logos.Archetypes.*`
+- `Logos.Thought.Frame`
+- `Logos.Thought.Policy`
+- `Logos.Thought.Host`
+- `Logos.Thought.ToolHost`
+- `Logos.Thought.ToolLoop`
+- `Logos.Thought.Runtime`
+- `Logos.Thought.StructuredOutput`
+- `Logos.Thought.Event`
+- `Logos.Memory.*`
+- `Logos.Patterns.DeepReport.*`
+- `Logos.Patterns.DeepReport.Executors` for inert profiles or adapters, if a later
   executor-definition ADR introduces them
-- `Cortex.Nous.Patterns.PlanReview`
+- `Logos.Patterns.PlanReview`
 
-`Agent` is not a canonical Cortex word. A graph node performs one bounded model-mediated thought;
-durable personas and product agents remain downstream. `Task` is likewise not a root. It either
-becomes thought runtime machinery or a named Nous pattern. `Research` and report-generation code
-become DeepReport or other Nous patterns when they are LLM-shaped reasoning semantics.
+`Agent` is not a canonical Cortex word. Pulse evaluates graph nodes as bounded stage actions;
+durable personas and product agents remain downstream. Logos may interpret selected stages as
+model-mediated thoughts. `Task` is likewise not a root. It either becomes thought runtime machinery
+or a named Logos pattern. `Research` and report-generation code become DeepReport or other Logos
+patterns when they are LLM-shaped reasoning semantics.
 
 ## Executor Boundary
 
-`Executor` is a boundary term used at several layers. It is not a seventh canonical root beside
-`Algebra`, `Wire`, `Pulse`, `Capability`, `Artifact`, and `Nous`.
+`Executor` is a boundary term used at several layers. It is not another canonical root beside the
+Cortex substrate roots or the downstream Logos component.
 
 The layers own different parts of executor meaning:
 
@@ -270,12 +285,12 @@ The layers own different parts of executor meaning:
 | `Cortex.Wire.Executor`       | Source-level executor references such as `@native.deep_report`, lowered native evaluator ids such as `pure`, compile-time projections, port constraints, contract obligations, and inert purity/effect metadata needed by Wire. | Host authority, Haskell application codecs, provider keys, DB access, prompts, or Pulse scheduling.   |
 | `Cortex.Capability.Executor` | Authority-bearing registration records: config decoders, admitted tools, model/provider requirements, application codecs, host interpreters, and runnable binding into substrate actions.                                       | Reasoning-pattern semantics or durable scheduling.                                                    |
 | `Cortex.Pulse.Executor`      | Durable execution of already-bound stage actions: scheduling, persistence, replay, resume, retry, cancellation, and execution events.                                                                                           | Wire executor registry, source-level executor ids, application semantics, or provider/tool admission. |
-| `Cortex.Nous.*`              | Reasoning-shaped executor profiles, adapters, prompts, pattern templates, and reusable catalog values that consumers may opt into.                                                                                              | Host authority, provider credentials, product tools, DB loading, or artifact destinations.            |
+| `Logos.*`                    | Reasoning-shaped executor profiles, adapters, prompts, pattern templates, and reusable catalog values that consumers may opt into.                                                                                              | Host authority, provider credentials, product tools, DB loading, or artifact destinations.            |
 
 This makes `@native.deep_report` a Wire executor reference admitted by a host binding. The reusable
-DeepReport pieces may live under `Cortex.Nous.Patterns.DeepReport.*`, but the binding that grants
-runnable authority belongs to the consumer or to a Capability-level registration surface. Pulse only
-sees the resulting bound `StageAction` and its generic replay/runtime metadata.
+DeepReport pieces may live under `Logos.Patterns.DeepReport.*`, but the binding that grants runnable
+authority belongs to the consumer or to a Capability-level registration surface. Pulse only sees the
+resulting bound `StageAction` and its generic replay/runtime metadata.
 
 CorePure follows the same split. Authors write pure output equations without `@`; the compiler
 lowers them to a host-registered native evaluator id whose config is checked through Wire-level
@@ -304,52 +319,52 @@ output equations lower to the native evaluator rather than introducing a third n
 The migration proceeds by adding canonical modules first, then converting imports, then retiring old
 exposed roots once no internal or known external consumer still requires them.
 
-| Current surface                          | Canonical target                                                                     | Policy                                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `Cortex.Graph`, `Cortex.Graph.*`         | `Cortex.Algebra.Graph.*`                                                             | Move implementation under Algebra; keep shallow root shims during migration.       |
-| `Cortex.Circuit`, `Cortex.Circuit.*`     | `Cortex.Wire.Circuit.*`                                                              | Move compiled-form modules under Wire; keep shallow root shims during migration.   |
-| `Cortex.Event`, `Cortex.Events`          | `Cortex.Pulse.Event` or `Cortex.Nous.Thought.Event`                                  | Split execution events from thought lifecycle events.                              |
-| `Cortex.Provider.OpenRouter.*`           | `Cortex.Capability.Provider.OpenRouter.*`                                            | Capability path is canonical; root provider path becomes a shim or is removed.     |
-| `Cortex.Agent.Config`                    | `Cortex.Nous.Thought.Frame`                                                          | Model/budget/prompt appendix are thought-frame concerns.                           |
-| `Cortex.Agent.Policy`                    | `Cortex.Nous.Thought.Policy`                                                         | Tool scope and approval policy belong to thought orchestration.                    |
-| `Cortex.Agent.Definition`                | `Cortex.Nous.Thought.Frame` or removed                                               | Avoid durable persona semantics in Cortex.                                         |
-| `Cortex.Task.Host`                       | `Cortex.Nous.Thought.Host`                                                           | Host for one model-mediated thought.                                               |
-| `Cortex.Task.ToolHost`                   | `Cortex.Nous.Thought.ToolHost`                                                       | Host-side tool execution for a thought.                                            |
-| `Cortex.Task.ToolLoop`                   | `Cortex.Nous.Thought.ToolLoop`                                                       | Model/tool loop is thought orchestration over capabilities.                        |
-| `Cortex.Task.Runtime`                    | `Cortex.Nous.Thought.Runtime`                                                        | Thin thought runner and lifecycle helpers.                                         |
-| `Cortex.Task.StructuredOutput`           | `Cortex.Nous.Thought.StructuredOutput` or `Cortex.Capability.StructuredOutput`       | Decode mechanics belong to Capability; fallback/prompt policy belongs to Nous.     |
-| `Cortex.Task.Plan`                       | `Cortex.Nous.Patterns.PlanReview`                                                    | Planner/reviewer shape is a reusable reasoning pattern.                            |
-| `Cortex.Task.Gather`                     | `Cortex.Nous.Patterns.DeepReport.Gather`                                             | Evidence gathering is DeepReport pattern semantics.                                |
-| `Cortex.Task.Report`                     | `Cortex.Nous.Patterns.DeepReport.LegacyReportTask` initially                         | Decompose after contracts and ports stabilize.                                     |
-| `Cortex.Research.Section`                | `Cortex.Nous.Patterns.DeepReport.Section`                                            | Section schema is report-pattern semantics.                                        |
-| `Cortex.Research.Runtime`                | `Cortex.Nous.Patterns.DeepReport.Section.Runtime`                                    | Section-output parsing belongs with the pattern.                                   |
-| `Cortex.Run.Types`                       | `Cortex.Pulse.Run` and `Cortex.Nous.Thought.Stage`                                   | Durable run ids are Pulse; thought stage descriptors are Nous.                     |
-| `Cortex.Run.Engine`                      | `Cortex.Nous.Thought.Event` or `Cortex.Nous.Thought.Runtime`                         | Current event emission is thought lifecycle machinery.                             |
-| `Cortex.Document.IR`, `Metadata`, `Host` | `Cortex.Artifact.*`                                                                  | Generic artifact substrate.                                                        |
-| `Cortex.Document.Report`, `Section`      | `Cortex.Nous.Patterns.DeepReport.*`                                                  | Report/research semantics are Nous pattern semantics.                              |
-| `Cortex.Memory.*`                        | `Cortex.Nous.Memory.*`, `Cortex.Pulse.*`, `Cortex.Capability.*`, or internal helpers | Classify per module; cognitive context moves to Nous, persistence stays substrate. |
-| `Cortex.MemoryCompaction`                | `Cortex.Nous.Memory.Compact`                                                         | Keep root shim only if concrete consumers require it.                              |
-| `Cortex.Pulse.Memory.*`                  | `Cortex.Pulse.Memory.*` or `Cortex.Nous.Memory.Topological.*`                        | Durable execution state stays Pulse; context construction moves to Nous.           |
-| `Cortex.Json.*`                          | `Platform.Serde.Json.*` or layer-internal helpers                                    | Generic serde helpers are not Cortex roots.                                        |
-| `Cortex.Text`                            | `Platform.Text` or layer-internal helpers                                            | Generic text helpers are not Cortex roots.                                         |
-| `Cortex.Nous.<Archetype>`                | `Cortex.Nous.Archetypes.<Archetype>`                                                 | Archetypes live under the `Archetypes` catalog.                                    |
-| `Cortex.Nous.<Archetype>.Capability`     | `Cortex.Nous.Archetypes.<Archetype>.Activation`                                      | Avoid collision with external-authority `Capability`.                              |
-| `Cortex.Logoi.*`                         | `Cortex.Nous.*`                                                                      | `Logoi` is superseded staging vocabulary and should not remain public.             |
+| Current surface                          | Canonical target                                                               | Policy                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `Cortex.Graph`, `Cortex.Graph.*`         | `Cortex.Algebra.Graph.*`                                                       | Move implementation under Algebra; keep shallow root shims during migration.        |
+| `Cortex.Circuit`, `Cortex.Circuit.*`     | `Cortex.Wire.Circuit.*`                                                        | Move compiled-form modules under Wire; keep shallow root shims during migration.    |
+| `Cortex.Event`, `Cortex.Events`          | `Cortex.Pulse.Event` or `Logos.Thought.Event`                                  | Split execution events from thought lifecycle events.                               |
+| `Cortex.Provider.OpenRouter.*`           | `Cortex.Capability.Provider.OpenRouter.*`                                      | Capability path is canonical; root provider path becomes a shim or is removed.      |
+| `Cortex.Agent.Config`                    | `Logos.Thought.Frame`                                                          | Model/budget/prompt appendix are thought-frame concerns.                            |
+| `Cortex.Agent.Policy`                    | `Logos.Thought.Policy`                                                         | Tool scope and approval policy belong to thought orchestration.                     |
+| `Cortex.Agent.Definition`                | `Logos.Thought.Frame` or removed                                               | Avoid durable persona semantics in Cortex.                                          |
+| `Cortex.Task.Host`                       | `Logos.Thought.Host`                                                           | Host for one model-mediated thought.                                                |
+| `Cortex.Task.ToolHost`                   | `Logos.Thought.ToolHost`                                                       | Host-side tool execution for a thought.                                             |
+| `Cortex.Task.ToolLoop`                   | `Logos.Thought.ToolLoop`                                                       | Model/tool loop is thought orchestration over capabilities.                         |
+| `Cortex.Task.Runtime`                    | `Logos.Thought.Runtime`                                                        | Thin thought runner and lifecycle helpers.                                          |
+| `Cortex.Task.StructuredOutput`           | `Logos.Thought.StructuredOutput` or `Cortex.Capability.StructuredOutput`       | Decode mechanics belong to Capability; fallback/prompt policy belongs to Logos.     |
+| `Cortex.Task.Plan`                       | `Logos.Patterns.PlanReview`                                                    | Planner/reviewer shape is a reusable reasoning pattern.                             |
+| `Cortex.Task.Gather`                     | `Logos.Patterns.DeepReport.Gather`                                             | Evidence gathering is DeepReport pattern semantics.                                 |
+| `Cortex.Task.Report`                     | `Logos.Patterns.DeepReport.LegacyReportTask` initially                         | Decompose after contracts and ports stabilize.                                      |
+| `Cortex.Research.Section`                | `Logos.Patterns.DeepReport.Section`                                            | Section schema is report-pattern semantics.                                         |
+| `Cortex.Research.Runtime`                | `Logos.Patterns.DeepReport.Section.Runtime`                                    | Section-output parsing belongs with the pattern.                                    |
+| `Cortex.Run.Types`                       | `Cortex.Pulse.Run` and `Logos.Thought.Stage`                                   | Durable run ids are Pulse; thought stage descriptors are Logos.                     |
+| `Cortex.Run.Engine`                      | `Logos.Thought.Event` or `Logos.Thought.Runtime`                               | Current event emission is thought lifecycle machinery.                              |
+| `Cortex.Document.IR`, `Metadata`, `Host` | `Cortex.Artifact.*`                                                            | Generic artifact substrate.                                                         |
+| `Cortex.Document.Report`, `Section`      | `Logos.Patterns.DeepReport.*`                                                  | Report/research semantics are Logos pattern semantics.                              |
+| `Cortex.Memory.*`                        | `Logos.Memory.*`, `Cortex.Pulse.*`, `Cortex.Capability.*`, or internal helpers | Classify per module; cognitive context moves to Logos, persistence stays substrate. |
+| `Cortex.MemoryCompaction`                | `Logos.Memory.Compact`                                                         | Keep root shim only if concrete consumers require it.                               |
+| `Cortex.Pulse.Memory.*`                  | `Cortex.Pulse.Memory.*` or `Logos.Memory.Topological.*`                        | Durable execution state stays Pulse; context construction moves to Logos.           |
+| `Cortex.Json.*`                          | `Platform.Serde.Json.*` or layer-internal helpers                              | Generic serde helpers are not Cortex roots.                                         |
+| `Cortex.Text`                            | `Platform.Text` or layer-internal helpers                                      | Generic text helpers are not Cortex roots.                                          |
+| `Logos.<Archetype>`                      | `Logos.Archetypes.<Archetype>`                                                 | Archetypes live under the `Archetypes` catalog.                                     |
+| `Logos.<Archetype>.Capability`           | `Logos.Archetypes.<Archetype>.Activation`                                      | Avoid collision with external-authority `Capability`.                               |
+| `Cortex.Logos.*`                         | `Logos.*`                                                                      | `Cortex.Logos` is superseded staging vocabulary and should not remain public.       |
 
 ## Import Direction
 
 The source tree enforces the vertical split:
 
-- `Cortex.Nous` may import substrate modules.
-- Substrate modules must not import `Cortex.Nous`.
-- `Cortex.Algebra` must not import Wire, Pulse, Capability, Artifact, or Nous.
-- `Cortex.Wire` may import Algebra, but not Pulse or Nous.
+- `Logos` may import substrate modules.
+- Substrate modules must not import `Logos`.
+- `Cortex.Algebra` must not import Wire, Pulse, Capability, Artifact, or Logos.
+- `Cortex.Wire` may import Algebra, but not Pulse or Logos.
 - `Cortex.Pulse` may import Algebra, Wire, Capability, and Artifact where runtime execution requires
-  those substrate surfaces, but not Nous.
+  those substrate surfaces, but not Logos.
 - `Cortex.Capability` may import platform support and shared substrate value types when necessary,
   but it must not encode reasoning-pattern semantics.
-- `Cortex.Artifact` may define generic output/provenance types usable by Wire, Pulse, and Nous, but
-  it must not depend on Nous patterns.
+- `Cortex.Artifact` may define generic output/provenance types usable by Wire, Pulse, and Logos, but
+  it must not depend on Logos patterns.
 - `Platform.*` must not import `Cortex.*`.
 
 When a cycle appears, the type belongs in the lowest layer that can own the concept without
@@ -357,9 +372,10 @@ importing its consumers. Do not solve cycles by adding a new public root.
 
 ## Cabal Exposure Policy
 
-`cortex.cabal` should expose canonical modules and temporary compatibility shims only. A
-compatibility shim should be removed from `exposed-modules` when Cortex and known consumers have
-migrated.
+`cortex.cabal` should expose canonical modules and temporary compatibility shims only. The main
+`cortex` library exposes substrate modules. The public `logos` sub-library exposes `Logos.*`
+modules. A compatibility shim should be removed from `exposed-modules` when Cortex, Logos, and known
+consumers have migrated.
 
 New public modules must be added under a canonical root. New internal helpers should prefer
 `other-modules` or a `.Internal` subtree under the owning root.
@@ -374,9 +390,9 @@ The refactor should land in small buildable slices:
 4. Move graph algebra to `Cortex.Algebra.Graph.*`.
 5. Move compiled circuit modules to `Cortex.Wire.Circuit.*`.
 6. Add `Cortex.Artifact.*` and move generic document substrate there.
-7. Move thought runtime surfaces from `Agent`, `Task`, and `Run` into `Cortex.Nous.Thought.*`.
-8. Move report/research surfaces into `Cortex.Nous.Patterns.DeepReport.*`.
-9. Classify memory modules and move cognitive-context modules to `Cortex.Nous.Memory.*`.
+7. Move thought runtime surfaces from `Agent`, `Task`, and `Run` into `Logos.Thought.*`.
+8. Move report/research surfaces into `Logos.Patterns.DeepReport.*`.
+9. Classify memory modules and move cognitive-context modules to `Logos.Memory.*`.
 10. Move generic JSON/text helpers to `Platform.*` or internal helpers.
 11. Remove obsolete exposed roots once compatibility windows close.
 
@@ -432,15 +448,14 @@ activations, and reasoning patterns consume authority but do not grant it.
 ### Keep Document as a canonical root
 
 Rejected. `Document` currently mixes generic artifact substrate with report and research semantics.
-`Artifact` is the substrate concept; report/research shape is Nous pattern semantics.
+`Artifact` is the substrate concept; report/research shape is Logos pattern semantics.
 
 ## Open Questions
 
 - Which old root modules still have concrete external consumers that require temporary exposed
   shims?
 - Should `Cortex.Task.StructuredOutput` split between `Cortex.Capability.StructuredOutput` and
-  `Cortex.Nous.Thought.StructuredOutput`, or should one canonical module own the whole current
-  surface?
+  `Logos.Thought.StructuredOutput`, or should one canonical module own the whole current surface?
 - Which `Cortex.Memory.*` modules are purely cognitive context construction, and which are generic
   enough to remain substrate/internal support?
 - Does `Cortex.Artifact` need a generic contract catalog for artifact references, or should artifact
@@ -448,9 +463,10 @@ Rejected. `Document` currently mixes generic artifact substrate with report and 
 
 ## Related
 
-- [ADR 0015 — Canonical Cortex Nous Archetypes](./0015-canonical-cortex-epistemological-archetypes.md)
-- [ADR 0016 — Cortex Roots and Nous Pattern Extraction](./0016-cortex-roots-and-nous-pattern-extraction.md)
+- [ADR 0015 — Canonical Logos Archetypes](./0015-canonical-logos-archetypes.md)
+- [ADR 0016 — Cortex Roots and Logos Pattern Extraction](./0016-cortex-roots-and-logos-pattern-extraction.md)
 - [ADR 0017 — Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
 - [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
-- [Chapter 09 — Nous Reasoning Library](../Architecture/09-nous-reasoning-library.md)
+- [ADR 0019 — Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [Logos Reasoning Library](../Logos/reasoning-library.md)
 - GitHub #62

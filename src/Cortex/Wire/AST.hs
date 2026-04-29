@@ -137,8 +137,7 @@ defaultOutputPortName :: Text
 defaultOutputPortName = "out"
 
 data WireExecutor
-  = WireExecutorLLM !Text
-  | WireExecutorNative !Text
+  = WireExecutorNative !Text
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 

@@ -16,7 +16,7 @@ orientation.
 
 ## Core substrate
 
-- **Cortex** — the standalone AI substrate described in these docs.
+- **Cortex** — the standalone durable runtime substrate described in these docs.
 - **Algebra** — the pure topology and relation layer: vertices, edges, overlay, connect, and
   law-bearing graph operations.
 - **Wire** — the source language for authoring executable topology. Its compiled circuit form is the
@@ -24,23 +24,25 @@ orientation.
 - **Pulse** — the durable runtime that executes Circuits. See
   [Architecture/06-pulse-runtime.md](Architecture/06-pulse-runtime.md).
 - **Capability** — external authority surfaces available to execution: models, tools, providers, and
-  their neutral request/record types. Not the same as a Nous activation bundle, formerly called a
-  Nous capability bundle.
+  their neutral request/record types.
 - **Artifact** — generic durable outputs, provenance, metadata, rendering, and artifact host
   boundaries.
-- **Cortex.Nous** — the structured reasoning library above the runtime substrate. It owns reusable
+
+## Downstream Logos
+
+- **Logos library** — the downstream structured reasoning library above Cortex. It owns reusable
   LLM-shaped catalogs, not runtime authority.
-- **Cortex.Nous.Archetypes** — the canonical epistemological archetype catalog: Logos, Sophia,
-  Techne, Episteme, Kritikos, Themis, and Poiesis.
-- **Cortex.Nous.Thought** — one bounded model-mediated cognitive evaluation bound to a graph node;
-  not a durable persona.
-- **Cortex.Nous.Memory** — cognitive memory: retrieval, ranking, packing, compaction, source
-  selection, topological context, and memory tools.
-- **Cortex.Nous.Patterns** — planned reusable reasoning-program catalogs such as the DeepReport
-  extraction target.
-- **Logos** — the `Cortex.Nous.Archetypes.Logos` archetype for discursive reason, argument, and
+- **Logos.Archetypes** — the canonical epistemological archetype catalog: Logos, Sophia, Techne,
+  Episteme, Kritikos, Themis, and Poiesis.
+- **Logos.Thought** — one bounded model-mediated cognitive evaluation bound to a graph node; not a
+  durable persona.
+- **Logos.Memory** — cognitive memory: retrieval, ranking, packing, compaction, source selection,
+  topological context, and memory tools.
+- **Logos.Patterns** — planned reusable reasoning-program catalogs such as the DeepReport extraction
+  target.
+- **Logos archetype** — the `Logos.Archetypes.Logos` archetype for discursive reason, argument, and
   symbolic reasoning.
-- **Nous activation bundle** — the operational implementation of an archetype: prompt discipline,
+- **Logos activation bundle** — the operational implementation of an archetype: prompt discipline,
   retrieval corpus, embedding spaces, tools, memory policy, evaluation criteria, and runtime
   contract.
 
@@ -82,7 +84,8 @@ orientation.
 - **Rewrite** — a bounded topology edit admitted during runtime. See
   [Architecture/07-rewrites-and-materialization.md](Architecture/07-rewrites-and-materialization.md).
 - **Gas** — structural-change budget consumed by rewrites.
-- **Topological memory** — `Cortex.Nous.Memory` context built from settled upstream Pulse state.
+- **Topological memory** — downstream `Logos.Memory` context built from settled upstream Pulse
+  state.
 
 ## Doc kinds
 

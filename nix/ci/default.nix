@@ -22,7 +22,7 @@
       ];
       text = ''
         set -euo pipefail
-        fd -e hs . src src-platform app test -0 \
+        fd -e hs . src src-platform src-logos app test test-logos -0 \
           | xargs -0 fourmolu --mode check
       '';
     };
@@ -32,7 +32,7 @@
       runtimeInputs = [pkgs.haskellPackages.hlint];
       text = ''
         set -euo pipefail
-        exec hlint src src-platform app test
+        exec hlint src src-platform src-logos app test test-logos
       '';
     };
 
@@ -54,6 +54,18 @@
       text = ''
         set -euo pipefail
         exec scripts/check-module-haddock.sh "$@"
+      '';
+    };
+
+    check-logos-boundary = pkgs.writeShellApplication {
+      name = "check-logos-boundary";
+      runtimeInputs = [
+        pkgs.findutils
+        pkgs.perl
+      ];
+      text = ''
+        set -euo pipefail
+        exec scripts/check-logos-boundary.sh "$@"
       '';
     };
 
@@ -88,6 +100,7 @@
       name = "ci-check";
       runtimeInputs = [
         check-format
+        check-logos-boundary
         docs-lint
         lean-lint
         lint-haskell
@@ -117,19 +130,23 @@
         check-module-haddock
         echo
 
-        echo "Step 6: Lean lint"
+        echo "Step 6: Logos import boundary"
+        check-logos-boundary
+        echo
+
+        echo "Step 7: Lean lint"
         lean-lint
         echo
 
-        echo "Step 7: docs lint"
+        echo "Step 8: docs lint"
         docs-lint
         echo
 
-        echo "Step 8: Lean theory"
+        echo "Step 9: Lean theory"
         check-theory
         echo
 
-        echo "Step 9: flake checks"
+        echo "Step 10: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -139,6 +156,7 @@
       _check-theory = check-theory;
       _ci-check = ci-check;
       check-haskell-format = check-haskell-format;
+      check-logos-boundary = check-logos-boundary;
       check-language-pragmas = check-language-pragmas;
       check-module-haddock = check-module-haddock;
       docs-lint = docs-lint;
@@ -175,6 +193,12 @@
         type = "app";
         program = "${check-module-haddock}/bin/check-module-haddock";
         meta.description = "Require combined module Haddock frontmatter";
+      };
+
+      check-logos-boundary = {
+        type = "app";
+        program = "${check-logos-boundary}/bin/check-logos-boundary";
+        meta.description = "Reject Cortex or Platform imports of Logos";
       };
 
       _ci-check = {

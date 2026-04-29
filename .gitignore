@@ -14,10 +14,14 @@
 !src/**
 !src-platform/
 !src-platform/**
+!src-logos/
+!src-logos/**
 !app/
 !app/**
 !test/
 !test/**
+!test-logos/
+!test-logos/**
 
 # agents/ — slash-command skills for AI coding agents
 !agents/

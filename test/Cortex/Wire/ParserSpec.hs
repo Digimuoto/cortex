@@ -31,7 +31,7 @@ spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $
-      parseWireFile "test" "node n : -> out: T = @llm.x ({});"
+      parseWireFile "test" "node n : -> out: T = @review.x ({});"
         `shouldSatisfy` isParseFailure
 
     it "rejects legacy list input aggregation syntax" $
@@ -86,12 +86,12 @@ spec = describe "Cortex.Wire.Parser" $ do
 
     it "parses configured executor bindings" $ do
       let WireFile forms _ =
-            parseOrFail "let analyst = @llm.analyst { temperature = 0.2 ; } ;"
+            parseOrFail "let analyst = @review.analyst { temperature = 0.2 ; } ;"
       case forms of
         [ TopLet
             LetPrivate
             "analyst"
-            (LetRhsWire (ExprConfiguredExecutor (QName ("llm" :| ["analyst"])) (Record fields)))
+            (LetRhsWire (ExprConfiguredExecutor (QName ("review" :| ["analyst"])) (Record fields)))
           ] ->
             length fields `shouldBe` 1
         other -> expectationFailure ("unexpected forms: " <> show other)
@@ -132,14 +132,14 @@ spec = describe "Cortex.Wire.Parser" $ do
               T.unlines
                 [ "node analyze"
                 , "  <- evidence: EvidenceSet ;"
-                , "  -> analysis: AnalysisRecord = @llm.analyze (evidence) ;"
+                , "  -> analysis: AnalysisRecord = @review.analyze (evidence) ;"
                 ]
       case forms of
         [TopNode node] ->
           case nodeDeclBody node of
             NodeBodyExecutor
               Nothing
-              (ExecutorCallInline (QName ("llm" :| ["analyze"])) (Record []) (CorePureIdent "evidence")) ->
+              (ExecutorCallInline (QName ("review" :| ["analyze"])) (Record []) (CorePureIdent "evidence")) ->
                 nodeDeclPortSig node
                   `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet")
                              , PortOutputDecl (Label "analysis") (ContractId "AnalysisRecord")
@@ -155,12 +155,12 @@ spec = describe "Cortex.Wire.Parser" $ do
                 , "  <- evidence: EvidenceSet ;"
                 , "  -> analysis: AnalysisRecord ;"
                 , "  -> usage: UsageMetadata ;"
-                , "  = @llm.analyzeWithUsage (evidence) ;"
+                , "  = @review.analyzeWithUsage (evidence) ;"
                 ]
       case forms of
         [TopNode node] ->
           case nodeDeclBody node of
-            NodeBodyExecutor Nothing (ExecutorCallInline (QName ("llm" :| ["analyzeWithUsage"])) _ _) ->
+            NodeBodyExecutor Nothing (ExecutorCallInline (QName ("review" :| ["analyzeWithUsage"])) _ _) ->
               length (nodeDeclPortSig node) `shouldBe` 3
             other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
@@ -183,7 +183,7 @@ spec = describe "Cortex.Wire.Parser" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "let analyst = @llm.analyst { temperature = 0.2 ; } ;"
+                [ "let analyst = @review.analyst { temperature = 0.2 ; } ;"
                 , "node analyze"
                 , "  <- evidence: EvidenceSet ;"
                 , "  -> analysis: AnalysisRecord ;"
@@ -203,7 +203,7 @@ spec = describe "Cortex.Wire.Parser" $ do
                 [ "node analyze"
                 , "  <- evidence: EvidenceSet ;"
                 , "  -> analysis: AnalysisRecord ;"
-                , "  = @llm.analyze (payload) ;"
+                , "  = @review.analyze (payload) ;"
                 , "  where { payload = { items = evidence.items ; } ; } ;"
                 ]
       case forms of
@@ -253,10 +253,10 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "node a"
-                , "  -> out: T = @llm.x ({}) ;"
+                , "  -> out: T = @review.x ({}) ;"
                 , "node b"
                 , "  <- input: T ;"
-                , "  -> out: U = @llm.y (input) ;"
+                , "  -> out: U = @review.y (input) ;"
                 , "(a) => b"
                 ]
       length forms `shouldBe` 2

@@ -12,9 +12,8 @@ The point of having a Lean track at all is to turn the substrate guarantees from
   discharge.
 - Pulse determinism modulo external sparks is the audit-trail property that makes runs replayable.
 
-Together these put the substrate's correctness story under machine-checked assurance, leaving the
-LLM-driven layers above as the "untrusted user" of a "trusted system". The agent layer remains
-stochastic; the substrate it runs on does not.
+Together these put the substrate's correctness story under machine-checked assurance. Downstream
+model-backed libraries such as Logos may remain stochastic; the substrate they run on does not.
 
 ## Tracks
 
@@ -196,7 +195,7 @@ but chain-level preservation requires them to stay inside the registry boundary 
 
 A formal model of `Cortex.Capability.Model.Client` and its `spark`-shaped contract: an external call
 returns `Either CallError Result`. Discharging this lets us state determinism modulo sparks without
-hand-waving over LLM nondeterminism.
+hand-waving over external model nondeterminism.
 
 ### Track 5 — Substrate / consumer boundary (TODO)
 

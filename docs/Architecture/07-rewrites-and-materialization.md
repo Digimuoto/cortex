@@ -98,8 +98,8 @@ data RewriteBudget = RewriteBudget
 
 Each admitted rewrite consumes a natural-valued `RewriteCost` computed statically from its
 `SubgraphSpec`; admission draws only against remaining budget. Negative serialized values are
-invalid before admission. Runaway planner elaboration becomes a runtime impossibility rather than a
-prompt-discipline problem. Gas is visible in run history: operators can inspect remaining budget,
+invalid before admission. Runaway rewrite elaboration becomes a runtime impossibility rather than an
+executor-discipline problem. Gas is visible in run history: operators can inspect remaining budget,
 each rewrite's cost, and the rewrite that exhausted a dimension.
 
 ## Admission policy

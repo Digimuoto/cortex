@@ -112,7 +112,7 @@ opts =
   info
     (pulseArgsParser <**> helper)
     ( fullDesc
-        <> progDesc "Cortex Pulse — durable agent execution runtime"
+        <> progDesc "Cortex Pulse - durable graph execution runtime"
         <> header "cortex-pulse"
     )
 

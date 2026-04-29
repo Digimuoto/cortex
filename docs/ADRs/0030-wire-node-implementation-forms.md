@@ -124,7 +124,7 @@ External executors use a node-level body:
 node analyze
   <- evidence: EvidenceSet ;
   -> analysis: AnalysisRecord ;
-  = @llm.analyze (evidence) ;
+  = @review.analyze (evidence) ;
 ```
 
 The executor projection must match the declared input and output boundary. On success, the executor
@@ -134,7 +134,7 @@ does not match those labels and contracts, the failure is classified by ADR 0026
 Configured executor values from ADR 0025 apply in the same body position:
 
 ```wire
-let analyst = @llm.analyst { temperature = 0.2 } ;
+let analyst = @review.analyst { temperature = 0.2 } ;
 
 node analyze
   <- evidence: EvidenceSet ;
@@ -165,7 +165,7 @@ node analyze
   <- evidence: EvidenceSet ;
   -> analysis: AnalysisRecord ;
   -> usage: UsageMetadata ;
-  = @llm.analyzeWithUsage (evidence) ;
+  = @review.analyzeWithUsage (evidence) ;
 ```
 
 The executor must produce both declared outputs or fail with a typed executor/output-validation
@@ -184,7 +184,7 @@ node compare
   <- baseline: Report ;
   <- candidate: Report ;
   -> result: Comparison ;
-  = @llm.compare ({ baseline = baseline ; candidate = candidate }) ;
+  = @review.compare ({ baseline = baseline ; candidate = candidate }) ;
 
 node seed
   -> request: Request ;
@@ -200,7 +200,7 @@ The per-output external RHS from ADR 0022 remains a single-output shorthand:
 ```wire
 node analyze
   <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = @llm.analyze (evidence) ;
+  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
 ```
 
 It desugars to the node-level body:
@@ -209,7 +209,7 @@ It desugars to the node-level body:
 node analyze
   <- evidence: EvidenceSet ;
   -> analysis: AnalysisRecord ;
-  = @llm.analyze (evidence) ;
+  = @review.analyze (evidence) ;
 ```
 
 The shorthand is valid only when the node has exactly one output clause and that RHS is an external

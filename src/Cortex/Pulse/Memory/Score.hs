@@ -22,8 +22,8 @@ data, no semantic query) contribute zero rather than skewing the
 score.
 
 The shipped semantic default is a token-jaccard similarity suitable
-for short LLM-generated bodies.  pgvector / reranker implementations
-slot in via 'SemanticScorer' in the query.
+for short model-generated or operator-authored bodies.  pgvector /
+reranker implementations slot in via 'SemanticScorer' in the query.
 
 Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}

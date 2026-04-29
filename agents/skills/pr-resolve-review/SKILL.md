@@ -156,7 +156,7 @@ Formulate the answer, post the reply. Link the authoritative source when one exi
 architecture chapters, or other docs:
 
 ```bash
-reply_body=$'Short answer: <n>.\n\nSee [ADR 0016](docs/ADRs/0016-canonical-cortex-epistemological-archetypes.md) for the full reasoning.'
+reply_body=$'Short answer: <n>.\n\nSee [ADR 0016](docs/ADRs/0016-canonical-logos-archetypes.md) for the full reasoning.'
 jq -n --arg body "$reply_body" '{body: $body}' \
   | gh api "repos/Digimuoto/cortex/pulls/$PR/comments/<comment-id>/replies" \
       --method POST --input -

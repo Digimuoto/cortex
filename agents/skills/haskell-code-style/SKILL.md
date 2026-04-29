@@ -317,7 +317,7 @@ outcomeLogLevel = \case
 
 ### 7. Respect the Cortex layer boundary
 
-Per ADR 0015, Cortex is a runtime substrate with a structured-reasoning library (`Cortex.Nous`,
-future) on top. The runtime **never** imports the reasoning layer, and neither the runtime nor the
-reasoning layer ever imports a consumer-specific module, product binding, or host-edge module. A
-cross-layer import is a **[P1]** finding.
+Per ADR 0015 and the Logos split, Cortex is a runtime substrate with a downstream
+structured-reasoning library (`Logos`) on top. The runtime **never** imports the reasoning layer,
+and neither the runtime nor the reasoning layer ever imports a consumer-specific module, product
+binding, or host-edge module. A cross-layer import is a **[P1]** finding.

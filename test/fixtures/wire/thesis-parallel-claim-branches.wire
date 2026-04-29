@@ -1,11 +1,11 @@
 # Grammar flagship example — parallel claim branches with explicit typed
 # executor boundaries and explicit pure fan-in/fan-out.
 
-# ---- shared prompt blocks ----
+# ---- shared instruction blocks ----
 
 let topo_awareness = ''
   You have access to the full upstream substrate via topological memory.
-  Claim discipline is enforced by this prompt, not by information availability.
+  Claim discipline is enforced by executor config, not by information availability.
 '' ;
 
 let weak_evidence_rule = ''
@@ -19,44 +19,44 @@ let analyst_suffix = topo_awareness ++ weak_evidence_rule ++ citation_rule ;
 
 # ---- configured executor values ----
 
-let gatherer_mechanism_exec = @llm.gatherer {
+let gatherer_mechanism_exec = @review.gatherer {
   memory = topological { preset = "analyst" ; } ;
   tools = [getDate, searchAssets, getAssetFundamentals, webSearch] ;
 } ;
 
-let gatherer_timing_exec = @llm.gatherer {
+let gatherer_timing_exec = @review.gatherer {
   memory = topological { preset = "analyst" ; } ;
   tools = [getDate, searchAssets, getAssetNews, webSearch] ;
 } ;
 
-let gatherer_beneficiaries_exec = @llm.gatherer {
+let gatherer_beneficiaries_exec = @review.gatherer {
   memory = topological { preset = "analyst" ; } ;
   tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch] ;
 } ;
 
-let analyst_mechanism_exec = @llm.analyst {
+let analyst_mechanism_exec = @review.analyst {
   maxOutputTokens = 16384 ;
   memory = topological { preset = "analyst" ; } ;
-  prompt = ''Attack the mechanism leg.'' ++ analyst_suffix ;
+  instructions = ''Attack the mechanism leg.'' ++ analyst_suffix ;
 } ;
 
-let analyst_timing_exec = @llm.analyst {
+let analyst_timing_exec = @review.analyst {
   maxOutputTokens = 16384 ;
   memory = topological { preset = "analyst" ; } ;
-  prompt = ''Attack the timing leg.'' ++ analyst_suffix ;
+  instructions = ''Attack the timing leg.'' ++ analyst_suffix ;
 } ;
 
-let analyst_beneficiaries_exec = @llm.analyst {
+let analyst_beneficiaries_exec = @review.analyst {
   maxOutputTokens = 16384 ;
   memory = topological { preset = "analyst" ; } ;
-  prompt = ''Attack the beneficiary leg.'' ++ analyst_suffix ;
+  instructions = ''Attack the beneficiary leg.'' ++ analyst_suffix ;
 } ;
 
 # ---- nodes ----
 
 node planner
   -> plan: PlannerOutput | planner_error: ExecutorError ;
-  = @llm.planner ({}) ;
+  = @review.planner ({}) ;
 
 node gatherer_mechanism
   <- plan: PlannerOutput ;
@@ -93,20 +93,20 @@ node merge
   <- timing_fragment: AnalysisFragment ;
   <- beneficiaries_fragment: AnalysisFragment ;
   -> merged: AnalysisFragment ;
-  = @llm.report_merge ({
+  = @review.report_merge ({
     fragments = [mechanism_fragment, timing_fragment, beneficiaries_fragment] ;
   }) ;
 
 node review
   <- merged: AnalysisFragment ;
   -> concerns: ReviewConcerns | review_error: ExecutorError ;
-  = @llm.review (merged) ;
+  = @review.review (merged) ;
 
 node rewriter
   <- merged: AnalysisFragment ;
   <- concerns: ReviewConcerns ;
   -> bundle: ReviewBundle | rewriter_error: ExecutorError ;
-  = @llm.rewriter ({
+  = @review.rewriter ({
     analysis = merged ;
     concerns = concerns ;
   }) ;

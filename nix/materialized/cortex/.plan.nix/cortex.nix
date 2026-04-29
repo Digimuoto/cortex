@@ -18,8 +18,8 @@
       author = "Julius Koskela";
       homepage = "";
       url = "";
-      synopsis = "Durable AI runtime + structured reasoning substrate";
-      description = "Cortex is a durable runtime substrate for typed-dataflow programs:\nGraph algebra, Circuit validation, Wire source language, Pulse\nexecutor, memory substrate, and capability abstractions. A structured\nreasoning library (Cortex.Nous) sits on top of the substrate and\ndepends on it, not the other way round (ADR 0015).";
+      synopsis = "Durable runtime substrate for typed dataflow programs";
+      description = "Cortex is a durable runtime substrate for typed-dataflow programs:\nGraph algebra, Circuit validation, Wire source language, Pulse\nexecutor, memory substrate, and capability abstractions.";
       buildType = "Simple";
       isLocal = true;
       detailLevel = "FullDetails";
@@ -98,7 +98,6 @@
         buildable = true;
         modules = [
           "Paths_cortex"
-          "Cortex/Nous/Types"
           "Cortex/Wire/AST"
           "Cortex/Wire/Contracts"
           "Cortex/Wire/Proposal"
@@ -135,52 +134,6 @@
           "Cortex/Capability/Tool"
           "Cortex/Capability/Tool/Definition"
           "Cortex/Capability/Tool/Record"
-          "Cortex/Nous"
-          "Cortex/Nous/Archetypes"
-          "Cortex/Nous/Archetypes/Episteme"
-          "Cortex/Nous/Archetypes/Episteme/Activation"
-          "Cortex/Nous/Archetypes/Kritikos"
-          "Cortex/Nous/Archetypes/Kritikos/Activation"
-          "Cortex/Nous/Archetypes/Logos"
-          "Cortex/Nous/Archetypes/Logos/Activation"
-          "Cortex/Nous/Archetypes/Poiesis"
-          "Cortex/Nous/Archetypes/Poiesis/Activation"
-          "Cortex/Nous/Archetypes/Sophia"
-          "Cortex/Nous/Archetypes/Sophia/Activation"
-          "Cortex/Nous/Archetypes/Techne"
-          "Cortex/Nous/Archetypes/Techne/Activation"
-          "Cortex/Nous/Archetypes/Themis"
-          "Cortex/Nous/Archetypes/Themis/Activation"
-          "Cortex/Nous/Memory"
-          "Cortex/Nous/Memory/Candidate"
-          "Cortex/Nous/Memory/Candidates"
-          "Cortex/Nous/Memory/Compact"
-          "Cortex/Nous/Memory/Conflict"
-          "Cortex/Nous/Memory/Document"
-          "Cortex/Nous/Memory/Host"
-          "Cortex/Nous/Memory/Pack"
-          "Cortex/Nous/Memory/Query"
-          "Cortex/Nous/Memory/Rank"
-          "Cortex/Nous/Memory/Retrieve"
-          "Cortex/Nous/Memory/Source"
-          "Cortex/Nous/Memory/Types"
-          "Cortex/Nous/Patterns/DeepReport"
-          "Cortex/Nous/Patterns/DeepReport/Contracts"
-          "Cortex/Nous/Patterns/DeepReport/Gather"
-          "Cortex/Nous/Patterns/DeepReport/LegacyReportTask"
-          "Cortex/Nous/Patterns/DeepReport/Section"
-          "Cortex/Nous/Patterns/DeepReport/Section/Runtime"
-          "Cortex/Nous/Patterns/PlanReview"
-          "Cortex/Nous/Thought"
-          "Cortex/Nous/Thought/Event"
-          "Cortex/Nous/Thought/Frame"
-          "Cortex/Nous/Thought/Host"
-          "Cortex/Nous/Thought/Policy"
-          "Cortex/Nous/Thought/Runtime"
-          "Cortex/Nous/Thought/Stage"
-          "Cortex/Nous/Thought/StructuredOutput"
-          "Cortex/Nous/Thought/ToolHost"
-          "Cortex/Nous/Thought/ToolLoop"
           "Cortex/Pulse"
           "Cortex/Pulse/Attempt"
           "Cortex/Pulse/Event"
@@ -342,6 +295,123 @@
           ];
           hsSourceDirs = [ "src-platform" ];
         };
+        "logos" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."deepseq" or (errorHandler.buildDepError "deepseq"))
+            (hsPkgs."base16-bytestring" or (errorHandler.buildDepError "base16-bytestring"))
+            (hsPkgs."base64-bytestring" or (errorHandler.buildDepError "base64-bytestring"))
+            (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
+            (hsPkgs."uuid-types" or (errorHandler.buildDepError "uuid-types"))
+            (hsPkgs."time" or (errorHandler.buildDepError "time"))
+            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
+            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."vector" or (errorHandler.buildDepError "vector"))
+            (hsPkgs."insert-ordered-containers" or (errorHandler.buildDepError "insert-ordered-containers"))
+            (hsPkgs."unordered-containers" or (errorHandler.buildDepError "unordered-containers"))
+            (hsPkgs."mtl" or (errorHandler.buildDepError "mtl"))
+            (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
+            (hsPkgs."exceptions" or (errorHandler.buildDepError "exceptions"))
+            (hsPkgs."async" or (errorHandler.buildDepError "async"))
+            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
+            (hsPkgs."random" or (errorHandler.buildDepError "random"))
+            (hsPkgs."unix" or (errorHandler.buildDepError "unix"))
+            (hsPkgs."retry" or (errorHandler.buildDepError "retry"))
+            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
+            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+            (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
+            (hsPkgs."process" or (errorHandler.buildDepError "process"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
+            (hsPkgs."yaml" or (errorHandler.buildDepError "yaml"))
+            (hsPkgs."rel8" or (errorHandler.buildDepError "rel8"))
+            (hsPkgs."hasql" or (errorHandler.buildDepError "hasql"))
+            (hsPkgs."hasql-pool" or (errorHandler.buildDepError "hasql-pool"))
+            (hsPkgs."hasql-transaction" or (errorHandler.buildDepError "hasql-transaction"))
+            (hsPkgs."resource-pool" or (errorHandler.buildDepError "resource-pool"))
+            (hsPkgs."servant-server" or (errorHandler.buildDepError "servant-server"))
+            (hsPkgs."servant-client-core" or (errorHandler.buildDepError "servant-client-core"))
+            (hsPkgs."openapi3" or (errorHandler.buildDepError "openapi3"))
+            (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
+            (hsPkgs."http-client-tls" or (errorHandler.buildDepError "http-client-tls"))
+            (hsPkgs."http-api-data" or (errorHandler.buildDepError "http-api-data"))
+            (hsPkgs."http-types" or (errorHandler.buildDepError "http-types"))
+            (hsPkgs."case-insensitive" or (errorHandler.buildDepError "case-insensitive"))
+            (hsPkgs."wai" or (errorHandler.buildDepError "wai"))
+            (hsPkgs."warp" or (errorHandler.buildDepError "warp"))
+            (hsPkgs."crypton" or (errorHandler.buildDepError "crypton"))
+            (hsPkgs."memory" or (errorHandler.buildDepError "memory"))
+            (hsPkgs."safe-money" or (errorHandler.buildDepError "safe-money"))
+            (hsPkgs."safe-money-aeson" or (errorHandler.buildDepError "safe-money-aeson"))
+            (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
+            (hsPkgs."ansi-terminal" or (errorHandler.buildDepError "ansi-terminal"))
+            (hsPkgs."prettyprinter" or (errorHandler.buildDepError "prettyprinter"))
+            (hsPkgs."template-haskell" or (errorHandler.buildDepError "template-haskell"))
+            (hsPkgs."lens" or (errorHandler.buildDepError "lens"))
+            (hsPkgs."microlens" or (errorHandler.buildDepError "microlens"))
+            (hsPkgs."microlens-th" or (errorHandler.buildDepError "microlens-th"))
+            (hsPkgs."fast-logger" or (errorHandler.buildDepError "fast-logger"))
+            (hsPkgs."monad-logger" or (errorHandler.buildDepError "monad-logger"))
+            (hsPkgs."configurator" or (errorHandler.buildDepError "configurator"))
+            (hsPkgs."cmark-gfm" or (errorHandler.buildDepError "cmark-gfm"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
+          ];
+          buildable = true;
+          modules = [
+            "Paths_cortex"
+            "Logos"
+            "Logos/Archetypes"
+            "Logos/Archetypes/Episteme"
+            "Logos/Archetypes/Episteme/Activation"
+            "Logos/Archetypes/Kritikos"
+            "Logos/Archetypes/Kritikos/Activation"
+            "Logos/Archetypes/Logos"
+            "Logos/Archetypes/Logos/Activation"
+            "Logos/Archetypes/Poiesis"
+            "Logos/Archetypes/Poiesis/Activation"
+            "Logos/Archetypes/Sophia"
+            "Logos/Archetypes/Sophia/Activation"
+            "Logos/Archetypes/Techne"
+            "Logos/Archetypes/Techne/Activation"
+            "Logos/Archetypes/Themis"
+            "Logos/Archetypes/Themis/Activation"
+            "Logos/Memory"
+            "Logos/Memory/Candidate"
+            "Logos/Memory/Candidates"
+            "Logos/Memory/Compact"
+            "Logos/Memory/Conflict"
+            "Logos/Memory/Document"
+            "Logos/Memory/Host"
+            "Logos/Memory/Pack"
+            "Logos/Memory/Query"
+            "Logos/Memory/Rank"
+            "Logos/Memory/Retrieve"
+            "Logos/Memory/Source"
+            "Logos/Memory/Types"
+            "Logos/Patterns/DeepReport"
+            "Logos/Patterns/DeepReport/Contracts"
+            "Logos/Patterns/DeepReport/Gather"
+            "Logos/Patterns/DeepReport/LegacyReportTask"
+            "Logos/Patterns/DeepReport/Section"
+            "Logos/Patterns/DeepReport/Section/Runtime"
+            "Logos/Patterns/PlanReview"
+            "Logos/Thought"
+            "Logos/Thought/Event"
+            "Logos/Thought/Frame"
+            "Logos/Thought/Host"
+            "Logos/Thought/Policy"
+            "Logos/Thought/Runtime"
+            "Logos/Thought/Stage"
+            "Logos/Thought/StructuredOutput"
+            "Logos/Thought/ToolHost"
+            "Logos/Thought/ToolLoop"
+            "Logos/Types"
+          ];
+          hsSourceDirs = [ "src-logos" ];
+        };
       };
       exes = {
         "cortex-pulse" = {
@@ -403,23 +473,6 @@
             "Cortex/Capability/Executor/PureSpec"
             "Cortex/Capability/Provider/OpenRouterSpec"
             "Cortex/Capability/StructuredOutputSpec"
-            "Cortex/Nous/Memory/CandidatesSpec"
-            "Cortex/Nous/Memory/CompactSpec"
-            "Cortex/Nous/Memory/ConflictSpec"
-            "Cortex/Nous/Memory/DocumentSpec"
-            "Cortex/Nous/Memory/PackSpec"
-            "Cortex/Nous/Memory/QuerySpec"
-            "Cortex/Nous/Memory/RankSpec"
-            "Cortex/Nous/Memory/RetrieveSpec"
-            "Cortex/Nous/Memory/SourceSpec"
-            "Cortex/Nous/Patterns/DeepReport/ContractsSpec"
-            "Cortex/Nous/Patterns/DeepReport/GatherSpec"
-            "Cortex/Nous/Patterns/DeepReport/LegacyReportTaskSpec"
-            "Cortex/Nous/Patterns/DeepReport/Section/RuntimeSpec"
-            "Cortex/Nous/Patterns/DeepReport/SectionSpec"
-            "Cortex/Nous/Patterns/PlanReviewSpec"
-            "Cortex/Nous/Thought/FrameSpec"
-            "Cortex/Nous/Thought/ToolLoopSpec"
             "Cortex/PublicPreludeSpec"
             "Cortex/Pulse/RewriteAnchorValidationSpec"
             "Cortex/Pulse/RewriteRetryHydrationSpec"
@@ -447,6 +500,61 @@
             "Platform/DurableTask/TypesSpec"
           ];
           hsSourceDirs = [ "test" ];
+          mainPath = [ "Spec.hs" ];
+        };
+        "logos-test" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."cortex".components.sublibs.logos or (errorHandler.buildDepError "cortex:logos"))
+            (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
+            (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
+            (hsPkgs."hspec-discover" or (errorHandler.buildDepError "hspec-discover"))
+            (hsPkgs."HUnit" or (errorHandler.buildDepError "HUnit"))
+            (hsPkgs."QuickCheck" or (errorHandler.buildDepError "QuickCheck"))
+            (hsPkgs."hedgehog" or (errorHandler.buildDepError "hedgehog"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."aeson-qq" or (errorHandler.buildDepError "aeson-qq"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."time" or (errorHandler.buildDepError "time"))
+            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
+            (hsPkgs."uuid-types" or (errorHandler.buildDepError "uuid-types"))
+            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
+            (hsPkgs."raw-strings-qq" or (errorHandler.buildDepError "raw-strings-qq"))
+            (hsPkgs."mtl" or (errorHandler.buildDepError "mtl"))
+            (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
+            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
+            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
+            (hsPkgs."async" or (errorHandler.buildDepError "async"))
+          ];
+          build-tools = [
+            (hsPkgs.pkgsBuildBuild.hspec-discover.components.exes.hspec-discover or (pkgs.pkgsBuildBuild.hspec-discover or (errorHandler.buildToolDepError "hspec-discover:hspec-discover")))
+          ];
+          buildable = true;
+          modules = [
+            "Logos/Memory/CandidatesSpec"
+            "Logos/Memory/CompactSpec"
+            "Logos/Memory/ConflictSpec"
+            "Logos/Memory/DocumentSpec"
+            "Logos/Memory/PackSpec"
+            "Logos/Memory/QuerySpec"
+            "Logos/Memory/RankSpec"
+            "Logos/Memory/RetrieveSpec"
+            "Logos/Memory/SourceSpec"
+            "Logos/Patterns/DeepReport/ContractsSpec"
+            "Logos/Patterns/DeepReport/GatherSpec"
+            "Logos/Patterns/DeepReport/LegacyReportTaskSpec"
+            "Logos/Patterns/DeepReport/Section/RuntimeSpec"
+            "Logos/Patterns/DeepReport/SectionSpec"
+            "Logos/Patterns/PlanReviewSpec"
+            "Logos/PublicPreludeSpec"
+            "Logos/Thought/FrameSpec"
+            "Logos/Thought/ToolLoopSpec"
+          ];
+          hsSourceDirs = [ "test-logos" ];
           mainPath = [ "Spec.hs" ];
         };
       };

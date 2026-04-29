@@ -12,7 +12,7 @@ superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Architecture/09-nous-reasoning-library.md
+  - docs/Logos/reasoning-library.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0020-wire-pure-output-equations.md
@@ -83,9 +83,9 @@ does not embed a Pulse `StageAction`.
 persists, retries, resumes, records events, and materializes rewrites. It does not own executor
 registration, provider policy, product codecs, or application authority.
 
-### Nous patterns
+### Logos patterns
 
-`Cortex.Nous.*` may publish reusable reasoning profiles and adapters, such as DeepReport executor
+`Logos.*` may publish reusable reasoning profiles and adapters, such as DeepReport executor
 profiles, but those values do not grant host authority. A downstream host must register and bind
 them through Capability before they can run.
 

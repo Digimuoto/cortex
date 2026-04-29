@@ -199,17 +199,11 @@ persists enough anchor state to resume correctly after admission. The full contr
 gas, admission policy, materialization, and structural provenance — belongs to
 [Chapter 07](./07-rewrites-and-materialization.md).
 
-## Topological memory
+## Settled-State Queries
 
-Topological memory currently lives near Pulse because it queries Pulse event state. Under the
-proposed ADR 0016 target, the public API moves to `Cortex.Nous.Memory.Topological`: Pulse remains
-the durable event/checkpoint substrate, while Nous owns the API that shapes settled graph state into
-model context.
-
-The split is **Pulse stores, Nous shapes**. Pulse persists the event substrate, frontier,
-checkpoints, materialized outputs, and snapshots that make the query deterministic. Nous owns the
-context-construction API that walks those settled outputs, scores them, packs them, and exposes them
-to a model-mediated thought.
+Pulse owns the durable event/checkpoint substrate that makes settled-state queries deterministic.
+Logos and downstream libraries may shape that state into model or domain context, but Pulse itself
+remains the store of run events, frontier state, checkpoints, materialized outputs, and snapshots.
 
 Memory is a query, not a store. A stage's view of upstream context is derived from the Pulse event
 substrate, scored by a composite of graph influence, wall-clock distance, and a pluggable semantic
@@ -221,7 +215,7 @@ completion time, and by output schema, and it is already append-only.
 A running Circuit at any moment contains three graphs:
 
 - **Past** — settled nodes (`NodeCompleted`, `NodeSkipped`, `NodeRewritten`) with materialized
-  outputs. This is the Pulse-owned source state that Nous memory may surface for domain queries.
+  outputs. This is the Pulse-owned source state that downstream query APIs may surface.
 - **Present** — the current frontier. Running and waiting nodes are deliberately excluded from
   memory: there is no observable artifact yet, and including them would leak sibling context into a
   stage that is supposed to run blind of its peers.
@@ -229,8 +223,8 @@ A running Circuit at any moment contains three graphs:
   construction.
 
 The `WalkScope` type reflects this split: `SettledOnly` for domain code; `DebugAllStatuses` for
-operator inspection surfaces. Even when widened, the Nous scoring stage drops nodes without
-materialized payloads, so widening never surfaces live-only statuses as memory matches.
+operator inspection surfaces. Even when widened, scoring drops nodes without materialized payloads,
+so widening never surfaces live-only statuses as memory matches.
 
 ### Stage-entry snapshot binding
 
@@ -271,7 +265,7 @@ routing-key filter, and top-N limit from `cfg`). Wire grammar:
 node reviewer
   <- draft: AnalystDraft ;
   -> reviewed: ReviewerDraft | error: ExecutorError ;
-  = @llm.reviewer {
+  = @review.reviewer {
     memory = topological {
       preset = "reviewer" ;
       routingKey = "analyst" ;
@@ -284,13 +278,12 @@ Short form `memory = classic;` is equivalent to omitting the field. Changing str
 subsume classic — it remains a legitimate choice, and its local-causality guarantee is the reason
 many stages should keep it.
 
-### Reviewer retrieval
+### Settled-state retrieval
 
-The current reviewer contract is pull-based. Under `MemoryClassic`, the reviewer sees only its
-direct inputs and runs as a normal single-shot stage. Under `MemoryTopological`, the prompt is still
-prefilled only with the direct-predecessor Markov boundary and the stage gets `cortex_memory_query`
-as an on-demand retrieval tool. This keeps the default prompt bounded while preserving access to
-sibling analysts and distant ancestors when the model explicitly asks for them.
+Under `MemoryClassic`, the stage action sees only its direct inputs and runs as a normal single-shot
+stage. Under `MemoryTopological`, the action receives the direct-predecessor Markov boundary plus an
+on-demand settled-state query handle. This keeps the default stage input bounded while preserving
+access to sibling branches and distant ancestors for executors that explicitly request them.
 
 The full `MemoryStrategy` type, the scoring pipeline, and the determinism contract are in
 [`../Reference/Pulse/types.md`](../Reference/Pulse/types.md#6-memory-strategy).

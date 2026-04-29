@@ -3,28 +3,32 @@
 This is the provider-neutral agent handbook for Cortex. Provider files such as `CLAUDE.md` and
 `AGENTS.md` are generated symlinks; edit this file instead.
 
-Cortex is a standalone substrate: a durable runtime plus a structured-reasoning library above it
-(see ADR 0015). The runtime is the canonical public surface. `Cortex.Nous` is a library on top of
-the substrate and depends on it, not the other way round.
+Cortex is a standalone durable runtime substrate. `Logos` is the downstream reasoning library built
+on Cortex; it depends on Cortex, not the other way round.
 
 ## Repository Shape
 
-- `src/Cortex/` - main Haskell library. Canonical public roots are `Cortex.Algebra`, `Cortex.Wire`,
-  `Cortex.Pulse`, `Cortex.Capability`, `Cortex.Artifact`, and `Cortex.Nous`. Implementation-era
+- `src/Cortex/` - main Cortex Haskell library. Canonical public roots are `Cortex.Algebra`,
+  `Cortex.Wire`, `Cortex.Pulse`, `Cortex.Capability`, and `Cortex.Artifact`. Implementation-era
   roots such as `Cortex.Agent`, `Cortex.Task`, `Cortex.Provider`, `Cortex.Research`, `Cortex.Run`,
   `Cortex.Graph`, `Cortex.Circuit`, `Cortex.Memory`, `Cortex.Document`, and `Cortex.Event` have been
   removed from the public tree.
 - `src-platform/Platform/` - runtime substrate library Cortex depends on: `Platform.Observability`,
   `Platform.DurableTask`, `Platform.Database`, `Platform.HTTP.Retry`, `Platform.Text`, etc. Exposed
   as a public Cabal sub-library (`cortex:platform-runtime`).
+- `src-logos/Logos/` - downstream reasoning library. Owns LLM workflows, thought orchestration,
+  cognitive memory, archetypes, and reusable reasoning patterns. Exposed as public Cabal sub-library
+  `cortex:logos`.
 - `app/cortex-pulse/` - substrate shell executable. Ships with an empty task registry; consumers
   link their own registry when binding.
 - `editors/tree-sitter-wire/` - Wire DSL grammar. Consumed by the docs site for `wire` blocks and by
   editor integrations.
 - `theory/` - Lean 4 mechanization of substrate guarantees: Mokhov graph laws, Pulse frontier
   safety, Wire rewrite soundness. Builds through `just lean-build`.
-- `docs/` - canonical Cortex docs. Flat layout, no `/cortex/` prefix. Keep product docs out.
+- `docs/` - canonical Cortex and Logos docs. Cortex architecture chapters describe the substrate;
+  Logos docs live under `docs/Logos/`. Keep product docs out.
 - `test/` - hspec-discover driven Cortex-only suite.
+- `test-logos/` - hspec-discover driven Logos suite.
 - `agents/` - provider-neutral agent context, archetypes, skills, and setup scripts.
   Provider-specific files are generated from here.
 
@@ -35,7 +39,9 @@ All builds go through Nix. Do not invoke `cabal` or `ghc` directly.
 ```bash
 just build          # nix build .#cortex
 just build-pulse    # nix build .#cortex-pulse
+just build-logos    # nix build .#logos
 just test           # run the cortex-test suite
+just test-logos     # run the logos-test suite
 just fmt            # apply repo formatters
 just fmt-check      # fail on formatter drift
 just lint           # HLint over the full repo
@@ -117,8 +123,8 @@ and human-signed.
 
 Cortex docs are the source of truth for substrate design. When editing docs:
 
-- Architecture chapters describe the substrate. Keep reasoning-layer content explicitly attributed
-  to `Cortex.Nous`.
+- Architecture chapters describe the substrate. Put downstream reasoning-layer material under
+  `docs/Logos/` or mark it explicitly as downstream.
 - ADRs are numbered and append-only. New decisions get new ADR files.
 - `docs/Consumers/<consumer>/` documents downstream consumer bindings and integration contracts, not
   the frame for Cortex itself.

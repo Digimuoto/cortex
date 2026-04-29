@@ -35,8 +35,8 @@ through the architecture viewpoint. Steps:
 2. Read each through the archetype baseline. Flag: drift between ADRs and Architecture chapters,
    conflicts between ADRs, ambiguous or stale `proposed` ADRs, undocumented invariants, missing
    canon, and prose conventions that should be typed boundaries.
-3. Group findings by Cortex layer (Graph/Circuit, Wire, Pulse, Capability, Artifact, Platform, Nous,
-   docs/process).
+3. Group findings by Cortex layer (Graph/Circuit, Wire, Pulse, Capability, Artifact, Platform,
+   Logos, docs/process).
 4. Apply the decision lattice per finding: inline patch, needs new ADR, amend/supersede an existing
    ADR, or scope-too-big.
 5. Return a prioritized punch list with canonical anchors and the smallest next question to settle.
@@ -73,7 +73,7 @@ Core map:
 - `docs/Architecture/06-pulse-runtime.md` - runtime, frontier, and durable execution.
 - `docs/Architecture/07-rewrites-and-materialization.md` - rewrite admission and materialization.
 - `docs/Architecture/08-artifacts-and-provenance.md` - artifact and provenance contracts.
-- `docs/Architecture/09-nous-reasoning-library.md` - reasoning-layer boundary.
+- `docs/Logos/reasoning-library.md` - downstream reasoning-layer boundary.
 
 Wire map:
 
@@ -212,7 +212,7 @@ implementation.
 ## Analysis workflow
 
 1. Restate the candidate decision in one sentence.
-2. Identify the Cortex layer: Graph/Circuit, Wire, Pulse, Capability, Artifact, Platform, Nous, or
+2. Identify the Cortex layer: Graph/Circuit, Wire, Pulse, Capability, Artifact, Platform, Logos, or
    docs/process.
 3. Gather local evidence from the required source map.
 4. Run the archetype baseline.

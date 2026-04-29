@@ -16,8 +16,6 @@ module Cortex
   , module Cortex.Capability
   , DocumentValidationError
   , GraphValidationError
-  , module Cortex.Nous.Memory
-  , module Cortex.Nous
   , module Cortex.Pulse
   , module Cortex.Wire
   , module Cortex.Wire.Circuit
@@ -29,8 +27,6 @@ import Cortex.Algebra.Graph qualified as Graph
 import Cortex.Artifact hiding (ValidationError)
 import Cortex.Artifact qualified as Artifact
 import Cortex.Capability
-import Cortex.Nous
-import Cortex.Nous.Memory
 import Cortex.Pulse
 import Cortex.Wire
 import Cortex.Wire.Circuit

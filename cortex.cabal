@@ -1,20 +1,18 @@
 cabal-version:      3.0
 name:               cortex
 version:            0.1.0.0
-synopsis:           Durable AI runtime + structured reasoning substrate
+synopsis:           Durable runtime substrate for typed dataflow programs
 description:
     Cortex is a durable runtime substrate for typed-dataflow programs:
     Graph algebra, Circuit validation, Wire source language, Pulse
-    executor, memory substrate, and capability abstractions. A structured
-    reasoning library (Cortex.Nous) sits on top of the substrate and
-    depends on it, not the other way round (ADR 0015).
+    executor, memory substrate, and capability abstractions.
 
 license:            Apache-2.0
 license-file:       LICENSE
 author:             Julius Koskela
 maintainer:         julius.koskela@digimuoto.com
 copyright:          2026 Digimuoto Oy
-category:           AI, Runtime
+category:           Runtime
 build-type:         Simple
 extra-source-files:
     README.md
@@ -183,7 +181,6 @@ library
         megaparsec >=9.2
     other-modules:
         Paths_cortex
-        Cortex.Nous.Types
         Cortex.Wire.AST
         Cortex.Wire.Contracts
         Cortex.Wire.Proposal
@@ -221,52 +218,6 @@ library
         Cortex.Capability.Tool
         Cortex.Capability.Tool.Definition
         Cortex.Capability.Tool.Record
-        Cortex.Nous
-        Cortex.Nous.Archetypes
-        Cortex.Nous.Archetypes.Episteme
-        Cortex.Nous.Archetypes.Episteme.Activation
-        Cortex.Nous.Archetypes.Kritikos
-        Cortex.Nous.Archetypes.Kritikos.Activation
-        Cortex.Nous.Archetypes.Logos
-        Cortex.Nous.Archetypes.Logos.Activation
-        Cortex.Nous.Archetypes.Poiesis
-        Cortex.Nous.Archetypes.Poiesis.Activation
-        Cortex.Nous.Archetypes.Sophia
-        Cortex.Nous.Archetypes.Sophia.Activation
-        Cortex.Nous.Archetypes.Techne
-        Cortex.Nous.Archetypes.Techne.Activation
-        Cortex.Nous.Archetypes.Themis
-        Cortex.Nous.Archetypes.Themis.Activation
-        Cortex.Nous.Memory
-        Cortex.Nous.Memory.Candidate
-        Cortex.Nous.Memory.Candidates
-        Cortex.Nous.Memory.Compact
-        Cortex.Nous.Memory.Conflict
-        Cortex.Nous.Memory.Document
-        Cortex.Nous.Memory.Host
-        Cortex.Nous.Memory.Pack
-        Cortex.Nous.Memory.Query
-        Cortex.Nous.Memory.Rank
-        Cortex.Nous.Memory.Retrieve
-        Cortex.Nous.Memory.Source
-        Cortex.Nous.Memory.Types
-        Cortex.Nous.Patterns.DeepReport
-        Cortex.Nous.Patterns.DeepReport.Contracts
-        Cortex.Nous.Patterns.DeepReport.Gather
-        Cortex.Nous.Patterns.DeepReport.LegacyReportTask
-        Cortex.Nous.Patterns.DeepReport.Section
-        Cortex.Nous.Patterns.DeepReport.Section.Runtime
-        Cortex.Nous.Patterns.PlanReview
-        Cortex.Nous.Thought
-        Cortex.Nous.Thought.Event
-        Cortex.Nous.Thought.Frame
-        Cortex.Nous.Thought.Host
-        Cortex.Nous.Thought.Policy
-        Cortex.Nous.Thought.Runtime
-        Cortex.Nous.Thought.Stage
-        Cortex.Nous.Thought.StructuredOutput
-        Cortex.Nous.Thought.ToolHost
-        Cortex.Nous.Thought.ToolLoop
         Cortex.Pulse
         Cortex.Pulse.Attempt
         Cortex.Pulse.Event
@@ -324,6 +275,67 @@ library
         Cortex.Pulse.Scheduler
         Cortex.Pulse.Types
 
+-- Downstream reasoning library: Logos.
+-- Logos imports Cortex; Cortex must not import Logos.
+library logos
+    import:           shared-properties, runtime-library-deps
+    visibility:       public
+    hs-source-dirs:   src-logos
+    autogen-modules:  Paths_cortex
+    build-depends:
+        cortex,
+        cortex:platform-runtime
+    other-modules:
+        Paths_cortex
+    exposed-modules:
+        Logos
+        Logos.Archetypes
+        Logos.Archetypes.Episteme
+        Logos.Archetypes.Episteme.Activation
+        Logos.Archetypes.Kritikos
+        Logos.Archetypes.Kritikos.Activation
+        Logos.Archetypes.Logos
+        Logos.Archetypes.Logos.Activation
+        Logos.Archetypes.Poiesis
+        Logos.Archetypes.Poiesis.Activation
+        Logos.Archetypes.Sophia
+        Logos.Archetypes.Sophia.Activation
+        Logos.Archetypes.Techne
+        Logos.Archetypes.Techne.Activation
+        Logos.Archetypes.Themis
+        Logos.Archetypes.Themis.Activation
+        Logos.Memory
+        Logos.Memory.Candidate
+        Logos.Memory.Candidates
+        Logos.Memory.Compact
+        Logos.Memory.Conflict
+        Logos.Memory.Document
+        Logos.Memory.Host
+        Logos.Memory.Pack
+        Logos.Memory.Query
+        Logos.Memory.Rank
+        Logos.Memory.Retrieve
+        Logos.Memory.Source
+        Logos.Memory.Types
+        Logos.Patterns.DeepReport
+        Logos.Patterns.DeepReport.Contracts
+        Logos.Patterns.DeepReport.Gather
+        Logos.Patterns.DeepReport.LegacyReportTask
+        Logos.Patterns.DeepReport.Section
+        Logos.Patterns.DeepReport.Section.Runtime
+        Logos.Patterns.PlanReview
+        Logos.Thought
+        Logos.Thought.Event
+        Logos.Thought.Frame
+        Logos.Thought.Host
+        Logos.Thought.Policy
+        Logos.Thought.Runtime
+        Logos.Thought.Stage
+        Logos.Thought.StructuredOutput
+        Logos.Thought.ToolHost
+        Logos.Thought.ToolLoop
+        Logos.Types
+
 -- Pulse executor binary: substrate shell.
 -- Ships with an empty task registry; downstream consumers link their own.
 executable cortex-pulse
@@ -356,23 +368,6 @@ test-suite cortex-test
         Cortex.Capability.Executor.PureSpec
         Cortex.Capability.Provider.OpenRouterSpec
         Cortex.Capability.StructuredOutputSpec
-        Cortex.Nous.Memory.CandidatesSpec
-        Cortex.Nous.Memory.CompactSpec
-        Cortex.Nous.Memory.ConflictSpec
-        Cortex.Nous.Memory.DocumentSpec
-        Cortex.Nous.Memory.PackSpec
-        Cortex.Nous.Memory.QuerySpec
-        Cortex.Nous.Memory.RankSpec
-        Cortex.Nous.Memory.RetrieveSpec
-        Cortex.Nous.Memory.SourceSpec
-        Cortex.Nous.Patterns.DeepReport.ContractsSpec
-        Cortex.Nous.Patterns.DeepReport.GatherSpec
-        Cortex.Nous.Patterns.DeepReport.LegacyReportTaskSpec
-        Cortex.Nous.Patterns.DeepReport.Section.RuntimeSpec
-        Cortex.Nous.Patterns.DeepReport.SectionSpec
-        Cortex.Nous.Patterns.PlanReviewSpec
-        Cortex.Nous.Thought.FrameSpec
-        Cortex.Nous.Thought.ToolLoopSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.RewriteAnchorValidationSpec
         Cortex.Pulse.RewriteRetryHydrationSpec
@@ -419,6 +414,68 @@ test-suite cortex-test
         hasql-transaction >=1.0,
         rel8 >=1.4,
         postgresql-simple >=0.7,
+
+        -- Text and data
+        text >=2.0,
+        bytestring >=0.11,
+        time >=1.12,
+        containers >=0.6,
+        uuid >=1.3,
+        uuid-types >=1.0,
+        scientific >=0.3,
+        raw-strings-qq >=1.1,
+
+        -- Utilities
+        mtl >=2.3,
+        transformers >=0.6,
+        filepath >=1.4,
+        directory >=1.3,
+        stm >=2.5,
+        async >=2.2
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+-- Logos reasoning-library test suite (hspec-discover).
+test-suite logos-test
+    import:           shared-properties
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test-logos
+    main-is:          Spec.hs
+    build-tool-depends:
+        hspec-discover:hspec-discover >=2.10
+    other-modules:
+        Logos.Memory.CandidatesSpec
+        Logos.Memory.CompactSpec
+        Logos.Memory.ConflictSpec
+        Logos.Memory.DocumentSpec
+        Logos.Memory.PackSpec
+        Logos.Memory.QuerySpec
+        Logos.Memory.RankSpec
+        Logos.Memory.RetrieveSpec
+        Logos.Memory.SourceSpec
+        Logos.Patterns.DeepReport.ContractsSpec
+        Logos.Patterns.DeepReport.GatherSpec
+        Logos.Patterns.DeepReport.LegacyReportTaskSpec
+        Logos.Patterns.DeepReport.Section.RuntimeSpec
+        Logos.Patterns.DeepReport.SectionSpec
+        Logos.Patterns.PlanReviewSpec
+        Logos.PublicPreludeSpec
+        Logos.Thought.FrameSpec
+        Logos.Thought.ToolLoopSpec
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        cortex:logos,
+        cortex:platform-runtime,
+        -- Test frameworks
+        hspec >=2.10,
+        hspec-discover >=2.10,
+        HUnit >=1.6,
+        QuickCheck >=2.14,
+        hedgehog >=1.2,
+
+        -- JSON
+        aeson >=2.1,
+        aeson-qq >=0.8,
 
         -- Text and data
         text >=2.0,

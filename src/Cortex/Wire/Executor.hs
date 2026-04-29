@@ -54,7 +54,6 @@ wireExecutorIdToText = unWireExecutorId
 
 wireExecutorIdFromWireExecutor :: WireExecutor -> WireExecutorId
 wireExecutorIdFromWireExecutor = \case
-  WireExecutorLLM modelId -> WireExecutorId modelId
   WireExecutorNative targetId -> WireExecutorId targetId
 
 data WireExecutorEffect

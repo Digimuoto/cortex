@@ -1217,7 +1217,9 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
           validateExecutorProjection compileEnv nodeRef executor runtimePorts
           tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
           memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
-          let promptText = lookupMaybeTextField "prompt" exactFields
+          let instructionsText =
+                lookupMaybeTextField "instructions" exactFields
+                  <|> lookupMaybeTextField "prompt" exactFields
               configValue = executorConfigValue genericFields whereExpr inputExpr
           Right $
             CompiledCircuitTask
@@ -1230,7 +1232,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                       nodeRef
                       executor
                       label
-                      promptText
+                      instructionsText
                       configValue
                       tools
                       runtimePorts
@@ -1253,6 +1255,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
   where
     knownSimpleFields =
       [ "label"
+      , "instructions"
       , "prompt"
       , "tools"
       , "memory"
@@ -1809,13 +1812,13 @@ actMetadata
   -> Maybe Bool
   -> Maybe MemoryStrategy
   -> Aeson.Value
-actMetadata nodeRef executor _label promptText configValue tools ports timeoutSeconds retryCount stepBudget toolLoopMinSteps maxOutputTokens reasoningEnabled memoryStrategy =
+actMetadata nodeRef executor _label instructionsText configValue tools ports timeoutSeconds retryCount stepBudget toolLoopMinSteps maxOutputTokens reasoningEnabled memoryStrategy =
   Aeson.object $
     [ "slot" Aeson..= nodeRef.unCircuitNodeRef
     , "executor" Aeson..= renderExecutor executor
     , "ports" Aeson..= portsMetadataValue ports
     ]
-      <> foldMap (\prompt -> ["prompt" Aeson..= prompt]) promptText
+      <> foldMap (\instructions -> ["instructions" Aeson..= instructions]) instructionsText
       <> foldMap (\config -> ["config" Aeson..= config]) configValue
       <> [ "tools" Aeson..= fmap WireCore.renderQualifiedRef tools
          | not (null tools)
@@ -1846,11 +1849,6 @@ emitMetadata kind target ports timeoutSeconds =
 
 renderExecutor :: WireCore.WireExecutor -> Aeson.Value
 renderExecutor = \case
-  WireCore.WireExecutorLLM modelId ->
-    Aeson.object
-      [ "kind" Aeson..= ("llm" :: Text)
-      , "target" Aeson..= modelId
-      ]
   WireCore.WireExecutorNative targetId ->
     Aeson.object
       [ "kind" Aeson..= ("native" :: Text)
@@ -2112,13 +2110,8 @@ qnameToQualifiedRef (QName segments) =
     }
 
 qnameToExecutor :: QName -> WireCore.WireExecutor
--- `@llm.planner` targets the registered native executor id `planner`.
 qnameToExecutor (QName segments) =
-  case segments of
-    "llm" :| modelSeg : moreSegs ->
-      WireCore.WireExecutorNative (NE.last (modelSeg :| moreSegs))
-    _ ->
-      WireCore.WireExecutorNative (renderQName (QName segments))
+  WireCore.WireExecutorNative (renderQName (QName segments))
 
 validateExecutorProjection
   :: WireCompileEnv

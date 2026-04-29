@@ -1,8 +1,8 @@
 ---
 title: Cortex Documentation
 description:
-  "Cortex as an upstream AI substrate: algebraic topology, Wire authoring, Pulse execution,
-  controlled rewrites, artifacts, provenance, Nous cognition, and downstream bindings."
+  "Cortex as an upstream durable runtime substrate: algebraic topology, Wire authoring, Pulse
+  execution, controlled rewrites, artifacts, provenance, and downstream bindings."
 sidebar:
   label: Cortex
   order: 2
@@ -10,7 +10,7 @@ sidebar:
 
 # Cortex Documentation
 
-Cortex is a standalone Haskell substrate for graph-shaped AI systems. It gives you algebraic
+Cortex is a standalone Haskell substrate for graph-shaped durable workflows. It gives you algebraic
 topology, a small language for authoring workflows, a durable runtime for executing them, and
 artifact/provenance surfaces for explaining what happened.
 
@@ -19,16 +19,14 @@ semantics, policy, tools, operators, transport, and persistence.
 
 ## What Cortex Does
 
-| Capability                     | What it gives you                                                                                          |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| **Wire authoring**             | A real `.wire` language for composing registered executors into typed dataflow graphs.                     |
-| **Algebra and Wire semantics** | Pure graph algebra plus validated executable topology before a run starts.                                 |
-| **Pulse execution**            | Durable graph execution with checkpoints, signals, run events, cancellation, retry, and inspection.        |
-| **Controlled rewrites**        | Runtime topology changes are proposals admitted through explicit rewrite rules and budgets.                |
-| **Nous memory**                | Thoughts can query and pack settled upstream graph state without turning memory into hidden mutable state. |
-| **Artifacts and provenance**   | Structured outputs carry stable artifact-local provenance instead of relying on generated prose.           |
-| **Cortex.Nous**                | A structured reasoning library above the substrate with canonical archetypes and reusable patterns.        |
-| **Host-action boundary**       | Product-specific side effects stay behind authenticated, idempotent host APIs.                             |
+| Capability                     | What it gives you                                                                                   |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| **Wire authoring**             | A real `.wire` language for composing registered executors into typed dataflow graphs.              |
+| **Algebra and Wire semantics** | Pure graph algebra plus validated executable topology before a run starts.                          |
+| **Pulse execution**            | Durable graph execution with checkpoints, signals, run events, cancellation, retry, and inspection. |
+| **Controlled rewrites**        | Runtime topology changes are proposals admitted through explicit rewrite rules and budgets.         |
+| **Artifacts and provenance**   | Structured outputs carry stable artifact-local provenance instead of relying on generated prose.    |
+| **Host-action boundary**       | Product-specific side effects stay behind authenticated, idempotent host APIs.                      |
 
 ## System Layers
 
@@ -39,11 +37,10 @@ semantics, policy, tools, operators, transport, and persistence.
 | **Pulse**      | Durable execution of compiled circuits.                                   | Run state and events                |
 | **Capability** | External authority surfaces: models, tools, providers.                    | Registered authority                |
 | **Artifact**   | Durable outputs, provenance, rendering, host boundary.                    | Artifact IR and metadata            |
-| **Nous**       | Model-mediated cognition, memory, and reusable reasoning patterns.        | Thoughts and patterns               |
 
 The core rule: **Wire composes registered authority; implementations own what that authority
-means.** Wire references registered executors, contracts, tools, prompts, memory strategies, and
-wiring. It does not invent host authority.
+means.** Wire references registered executors, contracts, tools, config constructors, and wiring. It
+does not invent host authority.
 
 ## Wire Is The Front Door
 
@@ -53,26 +50,26 @@ closed executor alphabet.
 ```wire
 contract Topic;
 contract Outline;
-contract Draft;
-contract ReportArtifactRef;
+contract Result;
+contract ArtifactRef;
 
 node plan
   <- topic: Topic ;
-  -> outline: Outline = @llm.planner {
-    prompt = ''Build a concise research outline.'' ;
+  -> outline: Outline = @workflow.plan {
+    mode = "concise" ;
   } (topic) ;
 
-node write
+node run
   <- outline: Outline ;
-  -> draft: Draft = @llm.writer {
-    memory = topological { preset = "writer" ; } ;
+  -> result: Result = @workflow.execute {
+    retry = { max_attempts = 2 } ;
   } (outline) ;
 
 node publish
-  <- draft: Draft ;
-  -> artifact: ReportArtifactRef = @artifact.report (draft) ;
+  <- result: Result ;
+  -> artifact: ArtifactRef = @artifact.store (result) ;
 
-plan => write => publish
+plan => run => publish
 ```
 
 The same source is compiled into a graph-shaped executable artifact. Pulse then executes the
@@ -84,8 +81,8 @@ flowchart LR
     C --> Plan
 
     subgraph Topology[Example topology]
-        Plan[plan] --> Write[write]
-        Write --> Publish[publish]
+        Plan[plan] --> Run[run]
+        Run --> Publish[publish]
     end
 
     Publish --> P[Pulse run]
@@ -120,12 +117,11 @@ flowchart LR
    topology evolution.
 7. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** - structured outputs
    and explanation.
-8. **[Nous reasoning library](Architecture/09-nous-reasoning-library.md)** - archetypes and reusable
-   reasoning patterns above the substrate.
 
 ## Explore The Canon
 
 - **[Architecture/](Architecture/)** - conceptual chapters for the substrate.
+- **[Logos/](Logos/)** - downstream reasoning-library docs for LLM and model-mediated workflows.
 - **[Reference/](Reference/)** - normative specifications for Wire, Pulse, rewrites, terminology,
   and contributor workflow.
 - **[ADRs/](ADRs/)** - numbered architecture decisions.

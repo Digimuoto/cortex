@@ -38,7 +38,7 @@ derive a port boundary from surrounding topology.
 That leaves a useful authoring question: what does this mean?
 
 ```wire
-let analyst = @llm.analyst { temperature = 0.2 } ;
+let analyst = @review.analyst { temperature = 0.2 } ;
 ```
 
 Without a source-level answer, authors must either repeat executor config at every call site or fall
@@ -49,7 +49,7 @@ back to the old partial-node intuition that ADR 0024 rejects.
 Wire should support configured executor values as inert source values.
 
 ```wire
-let analyst = @llm.analyst {
+let analyst = @review.analyst {
   temperature = 0.2 ;
   model = "gpt-5.4" ;
 } ;
@@ -129,7 +129,7 @@ File-level `let` may bind configured executor values. The binding is private unl
 `export let`.
 
 ```wire
-export let analyst = @llm.analyst { temperature = 0.2 } ;
+export let analyst = @review.analyst { temperature = 0.2 } ;
 ```
 
 Exporting a configured executor value exports inert source data only. It does not grant authority.

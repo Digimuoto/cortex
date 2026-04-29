@@ -91,23 +91,24 @@ Each layer owns a specific set of terms. This page groups them by layer.
 
 ## Runtime vocabulary
 
-| Term                          | Definition                                                                                                                                                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Envelope**                  | The JSON-carrier shape every Wire value travels in at runtime: `{ contract, mediaType, producer, value, provenance }`.                                                                                         |
-| **Payload kind**              | A contract's runtime category: `json`, `markdown`, `text`, `table`, `artifact_ref`. Selects validation and rendering.                                                                                          |
-| **Contract registry**         | The Haskell-owned authoritative definitions of contracts: schema, codec, payload kind, examples, lint rules.                                                                                                   |
-| **Evaluation-boundary check** | The runnable-wire gate: every singular input connected to exactly one edge. Runs at evaluation-preparation, not type-checking.                                                                                 |
-| **Rewire**                    | A bounded runtime topology modification over a live Circuit. Subject to vocabulary, endpoint-compatibility, topology, and resource (gas) bounds. Modules: `Cortex.Pulse.Rewrite` plus the Wire compiler.       |
-| **Realized circuit**          | The concrete Circuit topology that existed after admitted rewires during a run. A runtime artifact, not a grammar construct.                                                                                   |
-| **Gas**                       | The structural-change budget consumed by rewires: nodes added, edges added, depth, frontier breadth, rewrite operations.                                                                                       |
-| **Proof contract**            | A mechanized safety surface whose terms lead runtime implementation. Haskell admission code must either construct values satisfying the proof contract or reject the input before it reaches that boundary.    |
-| **Topological memory**        | A node-addressable accumulated context from upstream evaluations. Declared on the node, consumed at evaluation time. Canonical home: `Cortex.Nous.Memory.Topological`; Pulse supplies the settled event state. |
-| **Frontier**                  | The set of graph nodes ready to execute at a given point. Pulse schedules over the frontier.                                                                                                                   |
+| Term                          | Definition                                                                                                                                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Envelope**                  | The JSON-carrier shape every Wire value travels in at runtime: `{ contract, mediaType, producer, value, provenance }`.                                                                                      |
+| **Payload kind**              | A contract's runtime category: `json`, `markdown`, `text`, `table`, `artifact_ref`. Selects validation and rendering.                                                                                       |
+| **Contract registry**         | The Haskell-owned authoritative definitions of contracts: schema, codec, payload kind, examples, lint rules.                                                                                                |
+| **Evaluation-boundary check** | The runnable-wire gate: every singular input connected to exactly one edge. Runs at evaluation-preparation, not type-checking.                                                                              |
+| **Rewire**                    | A bounded runtime topology modification over a live Circuit. Subject to vocabulary, endpoint-compatibility, topology, and resource (gas) bounds. Modules: `Cortex.Pulse.Rewrite` plus the Wire compiler.    |
+| **Realized circuit**          | The concrete Circuit topology that existed after admitted rewires during a run. A runtime artifact, not a grammar construct.                                                                                |
+| **Gas**                       | The structural-change budget consumed by rewires: nodes added, edges added, depth, frontier breadth, rewrite operations.                                                                                    |
+| **Proof contract**            | A mechanized safety surface whose terms lead runtime implementation. Haskell admission code must either construct values satisfying the proof contract or reject the input before it reaches that boundary. |
+| **Topological memory**        | A node-addressable accumulated context from upstream evaluations. Declared on the node, consumed at evaluation time. Downstream home: `Logos.Memory.Topological`; Pulse supplies the settled event state.   |
+| **Frontier**                  | The set of graph nodes ready to execute at a given point. Pulse schedules over the frontier.                                                                                                                |
 
 ## Ownership boundary
 
 - **Wire composes registered authority.** Wire source references registered nodes, contract IDs,
-  prompts, and wiring. It does not invent executors, tools, payload types, or domain authority.
+  executor config, and wiring. It does not invent executors, tools, payload types, or domain
+  authority.
 - **Theory names safety obligations.** Where a mechanized proof contract exists, the proof-side
   vocabulary is normative. Runtime code enforces that shape at admission and persistence boundaries;
   it does not weaken the contract to fit convenient implementation types.

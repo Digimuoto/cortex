@@ -11,17 +11,18 @@
 
 # Cortex
 
-Cortex is a standalone AI substrate: a typed topology layer, a source language for composing that
-topology, and a durable runtime for executing it.
+Cortex is a standalone durable runtime substrate: a typed topology layer, a source language for
+composing that topology, and a runtime for executing it.
 
 The core layers are:
 
-| Layer       | Role                                                          |
-| ----------- | ------------------------------------------------------------- |
-| **Graph**   | Pure topology: vertices, overlay, connect, and graph laws.    |
-| **Circuit** | Validated executable topology with typed port compatibility.  |
-| **Wire**    | Source language and rewrite notation for authoring circuits.  |
-| **Pulse**   | Durable execution, checkpoints, events, memory, and rewrites. |
+| Layer          | Role                                                                |
+| -------------- | ------------------------------------------------------------------- |
+| **Algebra**    | Pure topology: vertices, overlay, connect, and graph laws.          |
+| **Wire**       | Source language, contracts, compiled circuit form, and rewrites.    |
+| **Pulse**      | Durable execution, checkpoints, events, signals, and persistence.   |
+| **Capability** | Registered authority surfaces such as models, tools, and providers. |
+| **Artifact**   | Durable outputs, metadata, provenance, and rendering boundaries.    |
 
 Downstream products bind Cortex to their own domain semantics, tools, product policy, operators,
 transport, and persistence. Cortex owns the reusable substrate.
@@ -36,9 +37,9 @@ contract Plan;
 contract Evidence;
 contract Report;
 
-node plan   : -> Plan             = @llm.planner {};
-node gather : <- Plan -> Evidence = @tool.search {};
-node write  : <- Evidence -> Report = @llm.writer {};
+node plan   : -> Plan               = @workflow.plan {};
+node gather : <- Plan -> Evidence   = @tool.search {};
+node write  : <- Evidence -> Report = @artifact.report {};
 
 plan => gather => write
 ```
@@ -59,12 +60,14 @@ plan => gather => write
 ## Repository
 
 ```text
-src/Cortex/               Graph, Circuit, Wire, Pulse, memory, capabilities
+src/Cortex/               Cortex substrate library
 src-platform/Platform/    Runtime substrate helpers
+src-logos/Logos/          Downstream Logos reasoning library
 app/cortex-pulse/         Pulse executor binary
 editors/tree-sitter-wire/ Wire tree-sitter grammar
 theory/                   Lean mechanization scaffold
 docs/                     Published Cortex documentation
+test-logos/               Logos test suite
 agents/                   Provider-neutral agent context and skills
 ```
 

@@ -70,8 +70,8 @@ The implementation owns what that authority means.
 
 That yields three important consequences:
 
-- Wire may reference executors, contracts, prompts, tools, and config constructors by name, but it
-  does not define those authorities itself.
+- Wire may reference executors, contracts, tools, and config constructors by name, but it does not
+  define those authorities itself.
 - Composition meaning lives at endpoints, not on edges. Edges stay structurally simple; contracts
   and ports determine whether a connection is valid.
 - Domain semantics stay downstream. Cortex provides the language and substrate; host systems supply
@@ -159,7 +159,7 @@ authored on a node remains authoritative.
 
 Wire has one deterministic expression layer, CorePure. It handles value transformations that should
 stay inside the theorem-facing substrate: projection, filtering, scoring, record construction, and
-prompt-text assembly. It does not name executor authority and it has no IO, tools, memory access,
+text/config assembly. It does not name executor authority and it has no IO, tools, memory access,
 time, randomness, or host callbacks.
 
 Pure node bodies bind output labels directly:
@@ -225,7 +225,7 @@ product-specific.
 
 Downstream bindings own:
 
-- domain prompts, tools, and product policy
+- domain executor config, tools, and product policy
 - product-specific artifact contracts and workflow templates
 - registry entries that bind Cortex's generic composition model to one host
 

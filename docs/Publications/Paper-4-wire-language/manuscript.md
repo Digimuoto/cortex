@@ -160,17 +160,17 @@ For example, a simple typed path can remain visually close to the graph it denot
 ```wire
 node planner :
   -> ReportPlan
-= @llm.planner {};
+= @review.planner {};
 
 node analyst :
   <- ReportPlan
   -> AnalysisFragment
-= @llm.analyst {};
+= @review.analyst {};
 
 node report :
   <- AnalysisFragment
   -> ReportArtifact
-= @llm.report_writer {};
+= @review.report_writer {};
 
 let deep_report = planner => analyst => report;
 ```
@@ -187,12 +187,12 @@ node splitter :
   <- Report
   -> primary: Claim
   -> fallback: Claim
-= @llm.splitter {};
+= @review.splitter {};
 
 node consumer :
   <- primary: Claim
   -> Decision
-= @llm.consumer {};
+= @review.consumer {};
 
 let decide = splitter => consumer;
 ```
@@ -208,7 +208,7 @@ mechanism is the **partial node**: a configured executor value whose remaining s
 are pinned later.
 
 ```wire
-let analyst_base = @llm.analyst {
+let analyst_base = @review.analyst {
   memory = topological { preset = "analyst"; };
 };
 
@@ -216,7 +216,7 @@ node critic :
   <- AnalysisFragment
   -> ReviewFragment
 = analyst_base // {
-  prompt = "Critique the draft and call out weak claims.";
+  instructions = "Critique the draft and call out weak claims.";
 };
 ```
 
@@ -256,8 +256,8 @@ allowed to propose such change.
 A minimal append-style proposal can therefore look like:
 
 ```wire
-let c = @llm.fooToFizz { prompt = "Bridge foo to fizz."; };
-let d = @llm.fizzToBar { prompt = "Bridge fizz to bar."; };
+let c = @review.foo_to_fizz { instructions = "Bridge foo to fizz."; };
+let d = @review.fizz_to_bar { instructions = "Bridge fizz to bar."; };
 
 c => d
 ```

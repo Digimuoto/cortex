@@ -77,17 +77,21 @@
       cortex = projectFlake.packages."cortex:lib:cortex" or null;
       # Public sub-library exposing the Platform.* runtime substrate.
       platform-runtime = projectFlake.packages."cortex:lib:platform-runtime" or null;
+      # Public sub-library exposing the downstream Logos reasoning layer.
+      logos = projectFlake.packages."cortex:lib:logos" or null;
       # Pulse executor — substrate shell; consumers bind their own task registry.
       cortex-pulse = projectFlake.packages."cortex:exe:cortex-pulse" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).
       cortex-tests = projectFlake.packages."cortex:test:cortex-test" or null;
+      # Logos test suite (built, not run — `nix run .#logos-tests` to execute).
+      logos-tests = projectFlake.packages."cortex:test:logos-test" or null;
     };
 
     # Expose flake checks; test-suites excluded from `nix flake check`
     # to keep it deterministic without a DB (some Pulse specs need one).
     checks =
       lib.filterAttrs
-      (name: v: v != null && name != "cortex:test:cortex-test")
+      (name: v: v != null && name != "cortex:test:cortex-test" && name != "cortex:test:logos-test")
       (projectFlake.checks or {});
 
     # Regenerate materialized plans: `nix run .#update-materialized`.

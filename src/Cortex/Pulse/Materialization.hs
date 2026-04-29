@@ -169,7 +169,7 @@ hydratePersistedRewriteRow plan (rewriteId, sourceNodeIdText, sourceNodeOutput, 
 {- | Hydrate a rewrite for admin topology materialization only.
 
 The admin graph view only needs node ids and edges. It must be able to
-replay organic rewrites whose prompt-specific stage definitions were
+replay organic rewrites whose executor-specific stage definitions were
 persisted with local template ids that are not present in the initial
 executable template registry. These placeholder actions are never executed.
 -}

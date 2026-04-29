@@ -52,7 +52,7 @@ node by binding it:
 
 ```wire
 node planner
-  -> plan: PlannerOutput = @llm.planner ({}) ;
+  -> plan: PlannerOutput = @review.planner ({}) ;
 
 export let exported_planner = planner ;
 ```

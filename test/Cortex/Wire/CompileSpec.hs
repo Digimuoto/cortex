@@ -75,7 +75,7 @@ spec = describe "Cortex.Wire.Compile" $ do
     compiled <- requireRight (compileWireText topLevelLetConfigSourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
       Just (CompiledCircuitTask taskNode) ->
-        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasPrompt "Audit now"
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasInstructions "Audit now"
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
@@ -133,7 +133,7 @@ spec = describe "Cortex.Wire.Compile" $ do
         ( T.unlines
             [ "contract LocalOnly;"
             , "node local"
-            , "  -> out: LocalOnly = @llm.local ({}) ;"
+            , "  -> out: LocalOnly = @review.local ({}) ;"
             , "local"
             ]
         )
@@ -150,11 +150,11 @@ spec = describe "Cortex.Wire.Compile" $ do
 
     it "rejects a missing executor in strict projection mode" $
       compileWireTextWithEnv strictExecutorEnv missingExecutorSourceText
-        `shouldBe` Left (WireUnknownExecutor (CircuitNodeRef "missing") "missing")
+        `shouldBe` Left (WireUnknownExecutor (CircuitNodeRef "missing") "review.missing")
 
     it "rejects mismatched ports in strict projection mode" $
       compileWireTextWithEnv strictExecutorEnv mismatchedExecutorPortsSourceText
-        `shouldBe` Left (WireExecutorPortsMismatch (CircuitNodeRef "projected") "projected")
+        `shouldBe` Left (WireExecutorPortsMismatch (CircuitNodeRef "projected") "review.projected")
 
     it "allows author-declared ports for the pure executor in strict projection mode" $
       compileWireTextWithEnv strictExecutorEnv pureExecutorSourceText
@@ -224,10 +224,10 @@ simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
     [ "node planner"
-    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
     , "node analyst"
     , "  <- plan: PlannerOutput ;"
-    , "  -> analysis: AnalysisFragment = @llm.analyst (plan) ;"
+    , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
     , "planner => analyst"
     ]
 
@@ -235,18 +235,18 @@ overlayFragmentSourceText :: T.Text
 overlayFragmentSourceText =
   T.unlines
     [ "node stress_alpha"
-    , "  -> fragment: AnalysisFragment = @llm.alpha ({}) ;"
+    , "  -> fragment: AnalysisFragment = @review.alpha ({}) ;"
     , "node stress_beta"
-    , "  -> fragment: AnalysisFragment = @llm.beta ({}) ;"
+    , "  -> fragment: AnalysisFragment = @review.beta ({}) ;"
     , "(stress_alpha) <> (stress_beta)"
     ]
 
 configuredExecutorSourceText :: T.Text
 configuredExecutorSourceText =
   T.unlines
-    [ "let analyst_base = @llm.analyst { temperature = 0.2 ; } ;"
+    [ "let analyst_base = @review.analyst { temperature = 0.2 ; } ;"
     , "node planner"
-    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
     , "node analyst"
     , "  <- plan: PlannerOutput ;"
     , "  -> analysis: AnalysisFragment ;"
@@ -259,10 +259,10 @@ topLevelLetConfigSourceText =
   T.unlines
     [ "let prefix = \"Audit \" ;"
     , "let suffix = \"now\" ;"
-    , "let analyst_prompt = prefix ++ suffix ;"
-    , "let analyst_base = @llm.analyst { prompt = analyst_prompt ; } ;"
+    , "let analyst_instructions = prefix ++ suffix ;"
+    , "let analyst_base = @review.analyst { instructions = analyst_instructions ; } ;"
     , "node planner"
-    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
     , "node analyst"
     , "  <- plan: PlannerOutput ;"
     , "  -> analysis: AnalysisFragment ;"
@@ -274,10 +274,10 @@ graphLetSourceText :: T.Text
 graphLetSourceText =
   T.unlines
     [ "node planner"
-    , "  -> plan: PlannerOutput = @llm.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
     , "node analyst"
     , "  <- plan: PlannerOutput ;"
-    , "  -> analysis: AnalysisFragment = @llm.analyst (plan) ;"
+    , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
     , "let pipeline = planner => analyst ;"
     , "pipeline"
     ]
@@ -286,7 +286,7 @@ zeroOutputSourceText :: T.Text
 zeroOutputSourceText =
   T.unlines
     [ "node emit"
-    , "  -> event: Event = @llm.event ({}) ;"
+    , "  -> event: Event = @review.event ({}) ;"
     , "node log_event"
     , "  <- event: Event ;"
     , "  = @artifact.log (event) ;"
@@ -299,7 +299,7 @@ executorWhereSourceText =
     [ "node analyze"
     , "  <- evidence: EvidenceSet ;"
     , "  -> analysis: AnalysisRecord ;"
-    , "  = @llm.analyze (payload) ;"
+    , "  = @review.analyze (payload) ;"
     , "  where { payload = { items = evidence.items ; } ; } ;"
     , "analyze"
     ]
@@ -308,17 +308,17 @@ selectSourceText :: T.Text
 selectSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @llm.plan ({}) ;"
+    , "  -> draft: DraftPlan = @review.plan ({}) ;"
     , "node validate_plan"
     , "  <- draft: DraftPlan ;"
     , "  -> ok: ResearchPlan | issue: PlanIssue ;"
-    , "  = @llm.validate_plan (draft) ;"
+    , "  = @review.validate_plan (draft) ;"
     , "node gather_missing_constraints"
     , "  <- issue: PlanIssue ;"
-    , "  -> issue: PlanIssue = @llm.gather_missing_constraints (issue) ;"
+    , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
     , "node repair_plan"
     , "  <- issue: PlanIssue ;"
-    , "  -> ok: ResearchPlan = @llm.repair_plan (issue) ;"
+    , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
     , "node publish_report"
     , "  <- ok: ResearchPlan ;"
     , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
@@ -332,7 +332,7 @@ typoContractSourceText :: T.Text
 typoContractSourceText =
   T.unlines
     [ "node planner"
-    , "  -> plan: PlannerOuput = @llm.planner ({}) ;"
+    , "  -> plan: PlannerOuput = @review.planner ({}) ;"
     , "planner"
     ]
 
@@ -340,7 +340,7 @@ projectedExecutorSourceText :: T.Text
 projectedExecutorSourceText =
   T.unlines
     [ "node projected"
-    , "  -> out: PlannerOutput = @llm.projected ({}) ;"
+    , "  -> out: PlannerOutput = @review.projected ({}) ;"
     , "projected"
     ]
 
@@ -348,7 +348,7 @@ missingExecutorSourceText :: T.Text
 missingExecutorSourceText =
   T.unlines
     [ "node missing"
-    , "  -> out: PlannerOutput = @llm.missing ({}) ;"
+    , "  -> out: PlannerOutput = @review.missing ({}) ;"
     , "missing"
     ]
 
@@ -356,7 +356,7 @@ mismatchedExecutorPortsSourceText :: T.Text
 mismatchedExecutorPortsSourceText =
   T.unlines
     [ "node projected"
-    , "  -> out: AnalysisFragment = @llm.projected ({}) ;"
+    , "  -> out: AnalysisFragment = @review.projected ({}) ;"
     , "projected"
     ]
 
@@ -441,7 +441,7 @@ duplicatePureAndWireLetSourceText :: T.Text
 duplicatePureAndWireLetSourceText =
   T.unlines
     [ "let acceptedItem = x: x.score >= 0.7 ;"
-    , "let acceptedItem = @llm.analyst { temperature = 0.2 ; } ;"
+    , "let acceptedItem = @review.analyst { temperature = 0.2 ; } ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
     , "  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;"
@@ -518,10 +518,10 @@ metadataHasPureOutput outputName = \case
       _ -> False
   _ -> False
 
-metadataHasPrompt :: T.Text -> Aeson.Value -> Bool
-metadataHasPrompt expected = \case
+metadataHasInstructions :: T.Text -> Aeson.Value -> Bool
+metadataHasInstructions expected = \case
   Aeson.Object obj ->
-    KeyMap.lookup "prompt" obj == Just (Aeson.String expected)
+    KeyMap.lookup "instructions" obj == Just (Aeson.String expected)
   _ -> False
 
 isRight :: Either err ok -> Bool
@@ -555,7 +555,7 @@ strictExecutorEnv =
     { wireCompileEnvExecutorRegistry =
         wireExecutorRegistryFromList
           [ wireExecutorProjectionFromPorts
-              (WireExecutorId "projected")
+              (WireExecutorId "review.projected")
               projectedExecutorPorts
               WireExecutorModel
           , pureWireExecutorProjection

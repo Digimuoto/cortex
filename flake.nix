@@ -1,5 +1,5 @@
 {
-  description = "Cortex — durable runtime + structured reasoning substrate";
+  description = "Cortex — durable runtime and Wire language substrate";
 
   nixConfig = {
     extra-substituters = [

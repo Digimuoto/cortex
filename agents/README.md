@@ -8,7 +8,7 @@ not edit them directly.
 agents/
 ├── README.md
 ├── context.md                  # Root agent handbook
-├── archetypes/                 # Shared Nous-style reasoning profiles
+├── archetypes/                 # Shared Logos-style reasoning profiles
 ├── scripts/
 │   └── link-provider           # Builds Codex/Claude symlinks
 ├── src-platform/
@@ -103,8 +103,8 @@ branch reads as a semantic sequence of changes.
 
 ## Scope
 
-Cortex is a durable runtime substrate plus a structured reasoning library on top (per ADR 0015).
-Skills here assume that substrate scope:
+Cortex is a durable runtime substrate. Logos is the downstream reasoning library built on Cortex.
+Skills here assume that repo scope:
 
 - No downstream product or domain-specific knowledge.
 - No database migrations, web-UI, or deployment workflows.

@@ -66,8 +66,8 @@ Cortex is vertically split per ADR 0015. Name the layer explicitly in your plan:
   retry). Lives in `src-platform/`.
 
 If the work would introduce reasoning-layer concerns (role taxonomies, reasoning templates, memory
-presets), it probably belongs in a future `Cortex.Nous` module set — not in the runtime substrate.
-Flag this and stop to discuss before coding.
+presets), it probably belongs in `Logos` — not in the runtime substrate. Flag this and stop to
+discuss before coding.
 
 ### 3. Prerequisites
 

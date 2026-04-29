@@ -25,7 +25,7 @@ related:
 alphabet and pairs it with inert config data:
 
 ```wire
-let analyst = @llm.analyst {
+let analyst = @review.analyst {
   model = "gpt-5.4" ;
   temperature = 0.2 ;
   memory = topological { preset = "analyst" ; } ;
@@ -77,7 +77,7 @@ Inline calls are equivalent when no reuse is needed:
 node analyze
   <- evidence: EvidenceSet ;
   -> analysis: AnalysisRecord ;
-  = @llm.analyst { temperature = 0.2 ; } (evidence) ;
+  = @review.analyst { temperature = 0.2 ; } (evidence) ;
 ```
 
 ## Registry Admission
@@ -99,11 +99,11 @@ no port-determined shortcut and no context inference from graph position.
 
 ## Config Purity
 
-Config expressions are inert. They can name prompts, memory policies, provider choices, numeric
+Config expressions are inert. They can name instructions, memory policies, provider choices, numeric
 parameters, tools, and nested tagged records, but they cannot run executors.
 
 ```wire
-let reviewer = @llm.review {
+let reviewer = @review.review {
   tools = [webSearch, readArtifact] ;
   memory = topological { preset = "reviewer" ; } ;
 } ;

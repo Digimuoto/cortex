@@ -129,7 +129,7 @@ Output equations bind routing labels directly:
 ```wire
 -> accepted: AcceptedSet = pure (accepted) ;
 -> rejected: RejectedSet = pure (rejected) ;
--> report: Report = @llm.summarize (prompt) ;
+-> report: Report = @review.summarize (prompt) ;
 ```
 
 The declared output port name is the routing key. There is no `return accepted = ...` syntax and no

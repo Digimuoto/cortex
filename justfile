@@ -1,4 +1,4 @@
-# Cortex — durable runtime + structured reasoning substrate
+# Cortex — durable runtime substrate
 # ============================================================
 #
 # Type `just` or `just --list` to see all commands.
@@ -28,15 +28,30 @@ build-platform:
     @echo "🔨 Building platform-runtime..."
     nix build .#platform-runtime
 
+# Build the Logos reasoning library
+build-logos:
+    @echo "🔨 Building logos library..."
+    nix build .#logos
+
 # Run the cortex-test suite (hspec-discover)
 test:
     @echo "🧪 Running cortex tests..."
     nix run .#cortex-tests
 
+# Run the logos-test suite (hspec-discover)
+test-logos:
+    @echo "🧪 Running logos tests..."
+    nix run .#logos-tests
+
 # Run tests matching a pattern
 test-match PATTERN:
     @echo "🧪 Running tests matching '{{ PATTERN }}'..."
     nix develop -c cabal test cortex-test --test-option='-m' --test-option='{{ PATTERN }}'
+
+# Run Logos tests matching a pattern
+test-logos-match PATTERN:
+    @echo "🧪 Running Logos tests matching '{{ PATTERN }}'..."
+    nix develop -c cabal test logos-test --test-option='-m' --test-option='{{ PATTERN }}'
 
 # Run flake checks (format + build + test)
 check:

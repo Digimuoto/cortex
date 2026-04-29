@@ -127,7 +127,7 @@ Wire already has one crucial ingredient: **sum-grouped output ports**.
 node gate
   <- evidence: EvidenceBundle ;
   -> fragment: AnalysisFragment | error: ExecutorError ;
-  = @llm.review (evidence) ;
+  = @review.review (evidence) ;
 ```
 
 The accepted grammar already says:
@@ -227,7 +227,7 @@ So with:
 node validate_plan
   <- draft: DraftPlan ;
   -> valid: ResearchPlan | issue: PlanIssue ;
-  = @llm.validate_plan (draft) ;
+  = @review.validate_plan (draft) ;
 ```
 
 this is the natural conditional:
@@ -447,7 +447,7 @@ Keeping shared continuation outside `select(...)`:
 node validate_plan
   <- draft: DraftPlan ;
   -> valid: ResearchPlan | issue: PlanIssue ;
-  = @llm.validate_plan (draft) ;
+  = @review.validate_plan (draft) ;
 
 node gather_missing_constraints
   <- issue: PlanIssue ;
@@ -457,17 +457,17 @@ node gather_missing_constraints
 node repair_plan
   <- missing: MissingConstraints ;
   -> valid: ResearchPlan ;
-  = @llm.repair_plan (missing) ;
+  = @review.repair_plan (missing) ;
 
 node review_report
   <- draft: DraftReport ;
   -> reviewed: ReviewedReport | issue: ReviewIssue ;
-  = @llm.review_report (draft) ;
+  = @review.review_report (draft) ;
 
 node revise_report
   <- issue: ReviewIssue ;
   -> reviewed: ReviewedReport ;
-  = @llm.revise_report (issue) ;
+  = @review.revise_report (issue) ;
 
 load_brief
   => draft_plan

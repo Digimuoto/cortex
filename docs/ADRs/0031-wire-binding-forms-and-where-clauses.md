@@ -35,7 +35,7 @@ Wire currently uses `let ... in` in three places that look like one construct bu
 things:
 
 1. As a CorePure expression form, exactly as in ADR 0023's expression surface.
-2. As a module-level binding, written without `in` (`let analyst = @llm.analyst { ... } ;`).
+2. As a module-level binding, written without `in` (`let analyst = @review.analyst { ... } ;`).
 3. As a node-local block placed between input clauses and pure output equations, scoping
    intermediate CorePure bindings across every output equation in that node.
 
@@ -218,7 +218,7 @@ The same `where <record-expr>` form attaches to executor nodes:
 node analyze
   <- evidence: EvidenceSet ;
   -> analysis: AnalysisRecord ;
-  = @llm.analyze (payload) ;
+  = @review.analyze (payload) ;
   where { payload = { items = evidence.items |> filter (x: x.score >= 0.5) ; } ; } ;
 ```
 

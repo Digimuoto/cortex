@@ -384,14 +384,14 @@ wireProposalSingleNodeExample =
     , "  <- in: AnalysisFragment ;"
     , "  -> out: AnalysisFragment ;"
     , "= @auditor {"
-    , "  prompt = \"Audit the current draft for stale dates and unsupported current-claims.\";"
+    , "  instructions = \"Audit the current draft for stale dates and unsupported current-claims.\";"
     , "} (in) ;"
     , "audit_pass"
     ]
 
 wireProposalSingleNodeShorthandExample :: Text
 wireProposalSingleNodeShorthandExample =
-  "node audit_pass\n  <- in: AnalysisFragment ;\n  -> out: AnalysisFragment = @auditor { prompt = \"Audit the current draft for stale dates and unsupported current-claims.\"; } (in) ;\naudit_pass"
+  "node audit_pass\n  <- in: AnalysisFragment ;\n  -> out: AnalysisFragment = @auditor { instructions = \"Audit the current draft for stale dates and unsupported current-claims.\"; } (in) ;\naudit_pass"
 
 wireProposalInvalidMissingGraphExample :: Text
 wireProposalInvalidMissingGraphExample =
@@ -400,14 +400,14 @@ wireProposalInvalidMissingGraphExample =
     , "  <- in: PlannerOutput ;"
     , "  -> out: EvidenceBundle ;"
     , "= @gatherer {"
-    , "  prompt = \"Fetch the freshest company evidence needed to resolve the key open claim.\";"
+    , "  instructions = \"Fetch the freshest company evidence needed to resolve the key open claim.\";"
     , "} (in) ;"
     , ""
     , "node audit_pass"
     , "  <- in: EvidenceBundle ;"
     , "  -> out: AnalysisFragment ;"
     , "= @auditor {"
-    , "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
+    , "  instructions = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
     , "} (in) ;"
     ]
 
@@ -418,14 +418,14 @@ wireProposalInvalidOuterReferenceExample =
     , "  <- in: PlannerOutput ;"
     , "  -> out: EvidenceBundle ;"
     , "= @gatherer {"
-    , "  prompt = \"Fetch the freshest dated evidence needed to resolve the key open claim.\";"
+    , "  instructions = \"Fetch the freshest dated evidence needed to resolve the key open claim.\";"
     , "} (in) ;"
     , ""
     , "node audit_pass"
     , "  <- in: EvidenceBundle ;"
     , "  -> out: AnalysisFragment ;"
     , "= @auditor {"
-    , "  prompt = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
+    , "  instructions = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
     , "} (in) ;"
     , "current_evidence => audit_pass"
     ]

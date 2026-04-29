@@ -94,15 +94,16 @@ page.
 
 ## 6. What does not route through host actions
 
-Model calls and tool invocations stay inside Cortex and do not go through the host:
+Capability calls do not use the Pulse host-action protocol unless a host explicitly registers an
+executor that calls back into its own service:
 
-| Action      | Owner  | Protocol                        |
-| ----------- | ------ | ------------------------------- |
-| `callModel` | Cortex | Provider-neutral LLM interface. |
-| `callTool`  | Cortex | Gatherer tool dispatch.         |
+| Action class               | Owner                      | Protocol                                   |
+| -------------------------- | -------------------------- | ------------------------------------------ |
+| Model-backed capability    | Capability binding / Logos | Provider-neutral model capability surface. |
+| Tool or adapter capability | Capability binding / host  | Registered tool or adapter surface.        |
 
-A host must not proxy these. Model and tool usage is tracked in Pulse's own records and surfaced
-through Pulse's API.
+Pulse records usage and lifecycle events for these calls through the normal stage log and event
+stream. Host-action endpoints remain for host-owned domain work.
 
 ## Related
 

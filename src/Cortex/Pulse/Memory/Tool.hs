@@ -1,6 +1,6 @@
 {- |
 Module      : Cortex.Pulse.Memory.Tool
-Description : @cortex_memory_query@ tool for agent-driven ad-hoc recall.
+Description : @cortex_memory_query@ tool for ad-hoc settled-state recall.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
@@ -9,9 +9,9 @@ Stability   : experimental
 This is the tool-surface complement to the declarative
 @meta.memory = …@ per-node knob.  Where the wire meta bakes a
 memory read into the stage's prefix (cheap, deterministic, no
-agent latency), the tool lets an LLM-driven stage issue arbitrary
-walks mid-reasoning when the authored walk didn't return enough
-context.
+extra capability latency), the tool lets a model-backed or host
+executor issue arbitrary walks mid-evaluation when the authored
+walk did not return enough context.
 
 The tool schema and the pure execution path live here so both the
 Pulse-native dispatch (in-process stage actions calling
@@ -70,7 +70,7 @@ import Cortex.Pulse.Node (NodeId (..))
 -- Tool identity
 -- ============================================================================
 
-{- | Canonical tool name.  Matches the identifier the LLM emits in
+{- | Canonical tool name.  Matches the identifier the caller emits in
 'CortexToolCall.cortexToolCallName'.
 -}
 cortexMemoryQueryToolName :: Text
@@ -236,7 +236,7 @@ instance Aeson.FromJSON CortexMemoryQueryArgs where
         "debug_all_statuses" -> pure DebugAllStatuses
         other -> AesonT.parseFail ("unknown walk scope: " <> T.unpack other)
 
-{- | Decode the raw JSON args the LLM supplied.  Returns a human
+{- | Decode the raw JSON args the caller supplied.  Returns a human
 readable error string for invalid input so the tool dispatcher
 can surface it back to the model.
 -}
@@ -314,7 +314,7 @@ inheritedPreset = \case
   MemoryClassic -> PresetDefault
   MemoryTopological cfg -> cfg.tscPreset
 
-{- | Serialise the result list into the LLM-visible JSON shape.  The
+{- | Serialise the result list into the model-facing JSON shape.  The
 top-level object carries a summary plus each match's public
 fields.  Raw 'Double' scores are emitted — callers that want a
 stable string form should round on their side.
@@ -340,7 +340,7 @@ renderCortexMemoryQueryResult snap matches =
         , "temporalDelta" .= m.moTemporalDelta
         , -- Flatten 'Maybe (Maybe Text)' (no-extractor vs
           -- extractor-found-nothing) into a single nullable Text —
-          -- the LLM-visible JSON only cares whether there is a
+          -- the model-facing JSON only cares whether there is a
           -- routing key, not why there isn't.
           "routingKey" .= (m.moExtracted >>= efRoutingKey)
         , "bodyText" .= fmap efBodyText m.moExtracted

@@ -212,7 +212,7 @@ node analyze
   <- evidence: EvidenceSet ;
   -> analysis: AnalysisRecord ;
   -> usage: UsageMetadata ;
-  = @llm.analyzeWithUsage {
+  = @review.analyzeWithUsage {
     model = "gpt-5.4" ;
   } (evidence) ;
 ```
@@ -222,7 +222,7 @@ Single-output executor nodes may use the shorthand:
 ```wire
 node analyze
   <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = @llm.analyze (evidence) ;
+  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
 ```
 
 Zero-output executor nodes use an executor body with no output clauses:
@@ -236,7 +236,7 @@ node log_event
 Configured executors are applied by name:
 
 ```wire
-let analyst = @llm.analyst {
+let analyst = @review.analyst {
   temperature = 0.2 ;
 } ;
 
@@ -264,7 +264,7 @@ node merge
   <- timing: AnalysisFragment ;
   <- beneficiaries: AnalysisFragment ;
   -> merged: AnalysisFragment ;
-  = @llm.report_merge ({
+  = @review.report_merge ({
     fragments = [mechanism, timing, beneficiaries] ;
   }) ;
 ```
@@ -349,7 +349,7 @@ Interpolation desugars to `concat [...]` with `toString` on each interpolated ex
 usually `toJson`.
 
 `toJson` emits canonical compact JSON with lexicographic object keys. It is deterministic and
-intended for prompt/config construction, not host authority.
+intended for text/config construction, not host authority.
 
 ## 9. Imports And File Returns
 
@@ -365,7 +365,7 @@ value:
 
 ```wire
 node planner
-  -> plan: PlannerOutput = @llm.planner ({}) ;
+  -> plan: PlannerOutput = @review.planner ({}) ;
 
 export let exported_planner = planner ;
 ```
@@ -394,13 +394,13 @@ every required input boundary must be supplied before Pulse can run it.
 ```wire
 let threshold = 0.7 ;
 
-let analyst = @llm.analyst {
+let analyst = @review.analyst {
   model = "gpt-5.4" ;
   temperature = 0.2 ;
 } ;
 
 node gather
-  -> evidence: EvidenceSet = @llm.gather ({}) ;
+  -> evidence: EvidenceSet = @review.gather ({}) ;
 
 node classify
   <- evidence: EvidenceSet ;
@@ -424,7 +424,7 @@ node analyze
   -> analysis: AnalysisRecord ;
   = analyst ({
     accepted = accepted ;
-    prompt = "Analyze ${length accepted.items} accepted items." ;
+    instructions = "Analyze ${length accepted.items} accepted items." ;
   }) ;
 
 gather => classify => analyze

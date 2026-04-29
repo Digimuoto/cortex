@@ -11,11 +11,11 @@ date: 2026-04-27
 superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
-  - docs/Architecture/09-nous-reasoning-library.md
+  - docs/Logos/reasoning-library.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0016-cortex-roots-and-nous-pattern-extraction.md
+  - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0019-executor-registration-and-binding.md
   - "GitHub #55"
@@ -33,8 +33,8 @@ more DeepReport structure from Portman.
 ## Context
 
 PR #54 moved the generic DeepReport contract catalog from Portman into
-`Cortex.Nous.Patterns.DeepReport.Contracts`. That removed duplicated contract meaning, but it also
-exposed the next conflation. Portman still declares generic DeepReport port maps in
+`Logos.Patterns.DeepReport.Contracts`. That removed duplicated contract meaning, but it also exposed
+the next conflation. Portman still declares generic DeepReport port maps in
 `Portman.Workflow.WireEnv`, binds executor ids to runnable Haskell actions in
 `Portman.Task.DeepReportWorkflow`, and owns concrete payload records, codecs, prompts, persistence,
 and product semantics.
@@ -47,7 +47,7 @@ different things:
 - host/runtime code that marshals Haskell values and grants executor authority
 
 Those are different architecture artifacts. Folding them together makes it hard to extract reusable
-Nous pattern structure without accidentally moving product authority into `Cortex.Nous`.
+Logos pattern structure without accidentally moving product authority into `Logos`.
 
 The current Haskell staging surface also blurs the seam. `WireCompileEnv` carries at least three
 distinct projections in one record:
@@ -144,8 +144,8 @@ structurally. Port profiles carry no runnable authority.
 
 Labels are not the reason to extract DeepReport ports. The current DeepReport shape can be expressed
 with contract-only routing: each node input has a distinct contract, so no node needs two
-same-contract slots. Extracting `Cortex.Nous.Patterns.DeepReport.Ports` is therefore a
-module-boundary cleanup, not a new expressiveness requirement.
+same-contract slots. Extracting `Logos.Patterns.DeepReport.Ports` is therefore a module-boundary
+cleanup, not a new expressiveness requirement.
 
 Labels become mandatory when a node needs distinct roles for the same contract, for example a
 comparative rewriter with `previous: ReportSection` and `reference: ReportSection`, an analysis diff
@@ -246,7 +246,7 @@ actually require labels for expressiveness.
 
 ## DeepReport Migration Implications
 
-For DeepReport, `Cortex.Nous.Patterns.DeepReport.Ports` should publish named port profiles such as
+For DeepReport, `Logos.Patterns.DeepReport.Ports` should publish named port profiles such as
 planner, gatherer, required-evidence gate, analyst, section compiler, reviewer, rewriter, publish
 gate, workflow audit, and artifact emitter profiles. Portman may import those profiles, override or
 extend them for product-specific executors, and keep the runtime binder and payload records
@@ -271,7 +271,7 @@ Portman should keep ownership of:
 
 The clean next sequence is:
 
-1. Add `Cortex.Nous.Patterns.DeepReport.Ports` with generic port profiles.
+1. Add `Logos.Patterns.DeepReport.Ports` with generic port profiles.
 2. Update Portman to compose those port profiles with product-specific additions.
 3. Introduce explicit executor-definition types after the port profile shape is stable enough to
    avoid encoding Portman assumptions into Cortex.
@@ -288,9 +288,9 @@ The clean next sequence is:
   analysts, reviewers, emitters, and future patterns.
 - **Let downstream code plug Pulse framing codecs.** Rejected because durable replay requires a
   closed, deterministic, kind-indexed framing table.
-- **Move Portman's runtime binder into Cortex.Nous.** Rejected because the binder grants tool,
-  provider, artifact, DB, and product authority. Nous patterns may publish inert catalogs and
-  templates, not host authority.
+- **Move Portman's runtime binder into Logos.** Rejected because the binder grants tool, provider,
+  artifact, DB, and product authority. Logos patterns may publish inert catalogs and templates, not
+  host authority.
 - **Delay port extraction until a full `ExecutorSpec` exists.** Rejected because the current
   duplicate `WirePorts` maps are already extractable as inert catalog values. A full
   executor-definition API can follow once the profile boundary is proven.
@@ -317,8 +317,8 @@ The clean next sequence is:
 
 ### Obligations
 
-- Add tests when extracting `Cortex.Nous.Patterns.DeepReport.Ports` to prove the profile names,
-  accepted contracts, output contracts, labels, and cardinalities.
+- Add tests when extracting `Logos.Patterns.DeepReport.Ports` to prove the profile names, accepted
+  contracts, output contracts, labels, and cardinalities.
 - Keep generated or materialized build metadata with source changes that expose new Haskell modules.
 - Document downstream override rules when Portman composes generic profiles with product-specific
   executors.
@@ -327,18 +327,18 @@ The clean next sequence is:
   before relying on schemas as enforced contracts.
 - Keep application `WireCodec` instances out of contract catalogs unless a future ADR deliberately
   introduces a language-specific binding package.
-- Do not let a Nous pattern module import Portman or grant product authority.
+- Do not let a Logos pattern module import Portman or grant product authority.
 - Replace `Maybe WireContractRegistry` with an explicit strict/permissive mode before claiming
-  closed authority for imported Nous templates.
+  closed authority for imported Logos templates.
 
 ## Related
 
 - [ADR 0010 — Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)
 - [ADR 0014 — Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
-- [ADR 0016 — Cortex Roots and Nous Pattern Extraction](./0016-cortex-roots-and-nous-pattern-extraction.md)
+- [ADR 0016 — Cortex Roots and Logos Pattern Extraction](./0016-cortex-roots-and-logos-pattern-extraction.md)
 - [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
 - [ADR 0019 — Executor Registration and Binding](./0019-executor-registration-and-binding.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
-- [Chapter 09 — Nous Reasoning Library](../Architecture/09-nous-reasoning-library.md)
+- [Logos Reasoning Library](../Logos/reasoning-library.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
 - GitHub #55
