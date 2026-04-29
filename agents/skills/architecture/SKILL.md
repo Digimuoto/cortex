@@ -19,6 +19,35 @@ discussion before writing code or docs.
 Do not use this skill for ordinary implementation debugging, style review, or CI repair unless the
 question has become an architecture decision.
 
+## Invocation modes
+
+Dispatch on whether the user supplied a topic.
+
+### Sweep mode (no args)
+
+When the skill is invoked with no args, treat the request as: audit the full architecture corpus
+through the architecture viewpoint. Steps:
+
+1. Inventory every file in the required source map: every ADR under `docs/ADRs/` (status field
+   matters — `proposed`, `accepted`, `superseded`), every Architecture chapter under
+   `docs/Architecture/`, every Wire reference doc under `docs/Reference/Wire/`, and any other doc
+   the source map calls out.
+2. Read each through the archetype baseline. Flag: drift between ADRs and Architecture chapters,
+   conflicts between ADRs, ambiguous or stale `proposed` ADRs, undocumented invariants, missing
+   canon, and prose conventions that should be typed boundaries.
+3. Group findings by Cortex layer (Graph/Circuit, Wire, Pulse, Capability, Artifact, Platform, Nous,
+   docs/process).
+4. Apply the decision lattice per finding: inline patch, needs new ADR, amend/supersede an existing
+   ADR, or scope-too-big.
+5. Return a prioritized punch list with canonical anchors and the smallest next question to settle.
+
+Do not silently edit during a sweep. Surface findings and let the user pick which to act on.
+
+### Targeted mode (args supplied)
+
+When the user supplies a question, topic, file path, or ADR number, scope the analysis workflow
+below to that target. Sweep adjacent canon only when the targeted question demands it.
+
 ## Operating posture
 
 - Cortex-first. Keep downstream consumers as examples or migration pressure, not as the frame.
