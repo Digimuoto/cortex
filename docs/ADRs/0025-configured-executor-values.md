@@ -1,11 +1,11 @@
 ---
-title: "ADR 0027 - Configured Executor Values"
+title: "ADR 0025 - Configured Executor Values"
 description:
   "Defines reusable configured executor values as inert Wire source values that can be applied only
   in explicit node executor-call positions."
 sidebar:
-  label: "0027. Configured executors"
-  order: 27
+  label: "0025. Configured executors"
+  order: 25
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -14,24 +14,24 @@ related:
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/partials-and-execution-boundary.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0032-wire-node-implementation-forms.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0030-wire-node-implementation-forms.md
 ---
 
-# ADR 0027 - Configured Executor Values
+# ADR 0025 - Configured Executor Values
 
 ## Status
 
-Proposed - fills the reusable-config gap left by ADR 0026 after configured executors stopped being
-graph vertices. ADR 0032 defines the node implementation positions where configured executor values
+Proposed - fills the reusable-config gap left by ADR 0024 after configured executors stopped being
+graph vertices. ADR 0030 defines the node implementation positions where configured executor values
 may be applied.
 
 ## Context
 
-ADR 0026 intentionally rejects the older partial-node model. A configured executor value may name
+ADR 0024 intentionally rejects the older partial-node model. A configured executor value may name
 registered authority and carry reusable configuration, but it is not a graph vertex and cannot
 derive a port boundary from surrounding topology.
 
@@ -42,7 +42,7 @@ let analyst = @llm.analyst { temperature = 0.2 } ;
 ```
 
 Without a source-level answer, authors must either repeat executor config at every call site or fall
-back to the old partial-node intuition that ADR 0026 rejects.
+back to the old partial-node intuition that ADR 0024 rejects.
 
 ## Decision
 
@@ -97,7 +97,7 @@ and is equivalent to:
 ```
 
 Applying a configured executor value is valid only in the executor-call implementation positions
-defined by ADR 0032: a node-level executor body, or the single-output shorthand that desugars to
+defined by ADR 0030: a node-level executor body, or the single-output shorthand that desugars to
 that body.
 
 ```wire
@@ -115,7 +115,7 @@ node analyze
   -> output: AnalysisRecord = analyst (input) ;
 ```
 
-This shorthand is an `executor_call`, not the reserved unmarked `<expr>` RHS from ADR 0024.
+This shorthand is an `executor_call`, not the reserved unmarked `<expr>` RHS from ADR 0022.
 
 It is not valid inside CorePure, so this output equation is rejected:
 
@@ -155,13 +155,13 @@ A configured executor value is applied to one input expression. If the registere
 input port, the expression must validate against that port's contract. If the projection has several
 input ports, the expression must be a record whose fields match the projected input port labels.
 
-The result boundary must match the node implementation form from ADR 0032. Single-output shorthand
+The result boundary must match the node implementation form from ADR 0030. Single-output shorthand
 is valid only when exactly one output is declared. Multi-output and zero-output configured executor
 calls use node-level executor bodies.
 
 ## Alternatives considered
 
-- **Keep configured executors as partial graph nodes.** Rejected because ADR 0026 requires every
+- **Keep configured executors as partial graph nodes.** Rejected because ADR 0024 requires every
   admitted vertex to have an explicit typed boundary from a node declaration.
 - **Make executor config host-only.** Rejected because repeated inline config is poor authoring and
   hides useful reusable policy from Wire review.
@@ -174,7 +174,7 @@ calls use node-level executor bodies.
 
 ### Positive
 
-- ADR 0026's reusable-config story gets a concrete syntax.
+- ADR 0024's reusable-config story gets a concrete syntax.
 - Reusable executor policy can be reviewed, exported, and reused without becoming topology.
 - Host authority remains in Capability binding rather than in Wire source.
 - Node declarations remain the only authored graph vertices.
@@ -183,7 +183,7 @@ calls use node-level executor bodies.
 
 - Wire needs kind checking for CorePure values, configured executor values, and circuit values.
 - The parser must distinguish configured executor application from CorePure function application.
-- Configured executor application depends on the node implementation-form checks from ADR 0032.
+- Configured executor application depends on the node implementation-form checks from ADR 0030.
 
 ### Obligations
 
@@ -197,9 +197,9 @@ calls use node-level executor bodies.
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0021 - Executor Registration and Binding](./0021-executor-registration-and-binding.md)
-- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0032 - Wire Node Implementation Forms](./0032-wire-node-implementation-forms.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0019 - Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0030 - Wire Node Implementation Forms](./0030-wire-node-implementation-forms.md)
 - [Wire Executors and Alphabet Reference](../Reference/Wire/executors-and-alphabet.md)

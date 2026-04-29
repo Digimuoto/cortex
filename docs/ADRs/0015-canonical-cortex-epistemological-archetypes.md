@@ -1,30 +1,28 @@
 ---
-title: "ADR 0016 — Canonical Cortex Nous Archetypes"
+title: "ADR 0015 — Canonical Cortex Nous Archetypes"
 description:
   "Cortex.Nous.Archetypes defines the canonical epistemological taxonomy for Cortex reasoning modes:
   Logos, Sophia, Techne, Episteme, Kritikos, Themis, and Poiesis."
 sidebar:
-  label: "0016. Nous archetypes"
-  order: 16
+  label: "0015. Nous archetypes"
+  order: 15
 status: proposed
 date: 2026-04-27
 superseded_by: null
 related:
   - docs/Architecture/09-nous-reasoning-library.md
-  - docs/ADRs/0015-cortex-logoi-reasoning-layer.md
-  - docs/ADRs/0017-cortex-roots-and-nous-pattern-extraction.md
+  - docs/ADRs/0016-cortex-roots-and-nous-pattern-extraction.md
   - "GitHub #14"
   - "GitHub #31"
   - "GitHub #32"
 ---
 
-# ADR 0016 — Canonical Cortex Nous Archetypes
+# ADR 0015 — Canonical Cortex Nous Archetypes
 
 ## Status
 
-Proposed - supersedes ADR 0015's `Cortex.Logoi` naming with `Cortex.Nous`, establishes
-`Cortex.Nous.Archetypes` as the canonical epistemological taxonomy, and reserves
-`Cortex.Nous.Thought`, `Cortex.Nous.Memory`, and `Cortex.Nous.Patterns` for model-mediated
+Proposed - establishes `Cortex.Nous.Archetypes` as the canonical epistemological taxonomy and
+reserves `Cortex.Nous.Thought`, `Cortex.Nous.Memory`, and `Cortex.Nous.Patterns` for model-mediated
 cognition. Concrete prompts, corpora, embedding indexes, tool surfaces, memory policies, evaluation
 suites, runtime contracts, workflow templates, and role-contract refinements remain follow-up
 implementation work.
@@ -32,7 +30,7 @@ implementation work.
 > **Implementation staging.** Haskell modules currently exist at staging paths such as
 > `Cortex.Nous.Logos` and `Cortex.Nous.Logos.Capability`. Canonical paths such as
 > `Cortex.Nous.Archetypes.Logos` and `Cortex.Nous.Archetypes.Logos.Activation` land in the migration
-> tracked by ADR 0017.
+> tracked by ADR 0016.
 
 ## Context
 
@@ -63,9 +61,8 @@ programs, contract catalogs, prompt families, memory presets, and evaluation pol
 through the existing substrate. Pattern modules are planned surfaces until their corresponding
 implementation slices land.
 
-This ADR also supersedes ADR 0015's `Cortex.Logoi` namespace. The vertical split from ADR 0015
-remains: runtime substrate below, structured reasoning library above. The canonical reasoning
-library root is now `Cortex.Nous`.
+The reasoning library root is `Cortex.Nous`. It sits above the runtime substrate and does not add a
+new runtime registry or authority plane.
 
 These archetypes are not decorative names. They define semantic expectations.
 
@@ -101,7 +98,7 @@ The canonical public roots are:
 | `Cortex.Nous.Patterns`   | Reusable LLM-shaped reasoning programs assembled from archetypes, contracts, prompts, memory presets, and Wire templates. |
 
 The default target for LLM-shaped reasoning modules is `Cortex.Nous`, but exact homes are resolved
-per module by ADR 0017's migration table. This ADR decides the conceptual taxonomy; it does not
+per module by ADR 0016's migration table. This ADR decides the conceptual taxonomy; it does not
 claim that every current `Cortex.Agent`, `Cortex.Task`, `Cortex.Research`, `Cortex.Run`, or
 `Cortex.Memory` module has already been audited and moved.
 
@@ -263,9 +260,9 @@ exploration, creative synthesis, or generative expansion of the possibility spac
 - **Downstream-specific roles only.** Rejected because evidence, reasoning, judgment,
   implementation, critique, audit, and generation are reusable modes of cognition. A downstream
   product may specialize them, but the generic taxonomy belongs in Nous.
-- **Archetypes as a runtime registry.** Rejected because ADR 0015 keeps runtime authority in the
-  existing executor and contract registries. Archetypes are semantic expectations and catalog
-  entries, not a third registry.
+- **Archetypes as a runtime registry.** Rejected because runtime authority stays in the existing
+  executor and contract registries. Archetypes are semantic expectations and catalog entries, not a
+  third registry.
 - **Archetypes as nominal tags only.** Rejected because tag-only roles do not change retrieval,
   tools, evaluation, memory, or runtime obligations. The taxonomy therefore reserves
   activation-bundle slots, while this PR clearly marks those slots as non-operational stubs.
@@ -310,12 +307,9 @@ semantics.
 
 ## Related
 
-- [0015-cortex-logoi-reasoning-layer.md](./0015-cortex-logoi-reasoning-layer.md) is superseded by
-  this ADR. It established the vertical split; this ADR keeps the split and renames the structured
-  reasoning namespace to `Cortex.Nous`.
 - [../Architecture/09-nous-reasoning-library.md](../Architecture/09-nous-reasoning-library.md) is
   the canonical architecture chapter for the taxonomy.
-- [0017-cortex-roots-and-nous-pattern-extraction.md](./0017-cortex-roots-and-nous-pattern-extraction.md)
+- [0016-cortex-roots-and-nous-pattern-extraction.md](./0016-cortex-roots-and-nous-pattern-extraction.md)
   defines the root namespace target and module migration table.
 - GitHub #14, #31, and #32 are the immediate role-typing, debate, and critique pressures that need a
   stable vocabulary.

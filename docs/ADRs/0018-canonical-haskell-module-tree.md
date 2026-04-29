@@ -1,11 +1,11 @@
 ---
-title: "ADR 0020 — Canonical Haskell Module Tree"
+title: "ADR 0018 — Canonical Haskell Module Tree"
 description:
   "Cortex's Haskell source tree is organized by canonical substrate and Nous layers, not
   implementation-era roots such as Agent, Task, Run, Provider, Json, or Document."
 sidebar:
-  label: "0020. Haskell tree"
-  order: 20
+  label: "0018. Haskell tree"
+  order: 18
 status: proposed
 date: 2026-04-28
 superseded_by: null
@@ -16,20 +16,20 @@ related:
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/08-artifacts-and-provenance.md
   - docs/Architecture/09-nous-reasoning-library.md
-  - docs/ADRs/0016-canonical-cortex-epistemological-archetypes.md
-  - docs/ADRs/0017-cortex-roots-and-nous-pattern-extraction.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0019-wire-pure-nodes.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
+  - docs/ADRs/0015-canonical-cortex-epistemological-archetypes.md
+  - docs/ADRs/0016-cortex-roots-and-nous-pattern-extraction.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
   - "GitHub #62"
 ---
 
-# ADR 0020 — Canonical Haskell Module Tree
+# ADR 0018 — Canonical Haskell Module Tree
 
 ## Status
 
 Proposed - records the concrete Haskell module tree and migration policy for the final `src/Cortex`
-root refactor. ADR 0017 defines the conceptual root taxonomy; this ADR decides how that taxonomy is
+root refactor. ADR 0016 defines the conceptual root taxonomy; this ADR decides how that taxonomy is
 enforced in source modules, Cabal exposure, compatibility shims, and import direction.
 
 ## Context
@@ -57,7 +57,7 @@ context construction with durable Pulse state. `Json` and `Text` are generic sup
 rather than Cortex concepts. `Graph` is the law-bearing algebra, and `Circuit` is Wire's compiled
 form.
 
-ADR 0017 already decides the canonical public root taxonomy:
+ADR 0016 already decides the canonical public root taxonomy:
 
 ```text
 Cortex
@@ -295,9 +295,9 @@ introduces any of the following public semantics:
 - executor purity/effect/replay metadata with runtime consequences
 - standard upstream executor packs such as DeepReport executor profiles or structural primitives
 
-ADR 0018 and ADR 0019 already set constraints for those future decisions: Wire gets compile-time
+ADR 0017 and ADR 0020 already set constraints for those future decisions: Wire gets compile-time
 projections, host binding grants authority, Pulse persists closed `WireValue` framing, and pure
-nodes are deterministic external-call executors rather than a third node executor kind.
+output equations lower to the native evaluator rather than introducing a third node executor kind.
 
 ## Migration Map
 
@@ -387,7 +387,7 @@ Generated or Cabal materialization changes must stay with the source change that
 
 Positive consequences:
 
-- The Haskell tree matches the architecture docs and ADR 0017.
+- The Haskell tree matches the architecture docs and ADR 0016.
 - LLM-shaped and reasoning-layer code becomes visibly separate from the runtime substrate.
 - Provider authority, tool authority, artifact substrate, and reasoning patterns get distinct homes.
 - New code has a clear import target and fewer ambiguous root names.
@@ -448,9 +448,9 @@ Rejected. `Document` currently mixes generic artifact substrate with report and 
 
 ## Related
 
-- [ADR 0016 — Canonical Cortex Nous Archetypes](./0016-canonical-cortex-epistemological-archetypes.md)
-- [ADR 0017 — Cortex Roots and Nous Pattern Extraction](./0017-cortex-roots-and-nous-pattern-extraction.md)
-- [ADR 0018 — Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0019 — Wire Pure Nodes](./0019-wire-pure-nodes.md)
+- [ADR 0015 — Canonical Cortex Nous Archetypes](./0015-canonical-cortex-epistemological-archetypes.md)
+- [ADR 0016 — Cortex Roots and Nous Pattern Extraction](./0016-cortex-roots-and-nous-pattern-extraction.md)
+- [ADR 0017 — Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
 - [Chapter 09 — Nous Reasoning Library](../Architecture/09-nous-reasoning-library.md)
 - GitHub #62

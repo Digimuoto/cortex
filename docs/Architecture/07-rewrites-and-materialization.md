@@ -14,25 +14,25 @@ status: active
 A static Circuit is enough only when the work is known at compile time. Planners discover a missing
 dimension; reviewers expand a node into validation branches; gatherers choose a retrieval strategy
 after seeing intermediate output. This chapter specifies how Cortex admits topology change without
-dissolving into arbitrary mutation. The answer is a **rewire**: a bounded runtime topology
+dissolving into arbitrary mutation. The answer is a **rewrite**: a bounded runtime topology
 modification over an existing Circuit, drawn from a closed algebra, metered in gas, admitted by the
-runtime, and materialized into durable state with an explicit audit trail. Rewires obey the same
+runtime, and materialized into durable state with an explicit audit trail. Rewrites obey the same
 vocabulary, endpoint-compatibility, and validity rules a compiled Wire source must satisfy, plus a
 structural resource budget the runtime enforces at admission time.
 
 ## Core model
 
-A rewire is a structured proposal, not a mutation. A stage produces its ordinary output **and** a
+A rewrite is a structured proposal, not a mutation. A stage produces its ordinary output **and** a
 rewrite value from a closed algebra; the runtime validates, checks against the remaining budget, and
 admits or rejects with a structured reason. No stage writes to the graph directly.
 
 | Concept            | Role                                                         |
 | ------------------ | ------------------------------------------------------------ |
 | Plan graph         | Initial Circuit compiled from Wire source.                   |
-| Materialized graph | Plan graph plus all admitted rewires.                        |
+| Materialized graph | Plan graph plus all admitted rewrites.                       |
 | Rewrite log        | Append-only provenance of proposals and admission decisions. |
 | Gas                | Five-dimensional structural-change budget.                   |
-| Watermark          | Monotone id up to which rewires have been materialized.      |
+| Watermark          | Monotone id up to which rewrites have been materialized.     |
 
 Authorship is split: stages and planners **propose**; the runtime **admits**. Only the runtime
 mutates durable graph state, and only through the narrow algebra below.
@@ -76,7 +76,7 @@ data StageResult
 ```
 
 `StageRewrite` carries both the node's durable output and the proposed edit; retained or appended
-subgraphs insert entry nodes that depend on that output, so a rewire is "output and rewrite," not
+subgraphs insert entry nodes that depend on that output, so a rewrite is "output and rewrite," not
 "output or rewrite." See
 [Paper 3](../Publications/Paper-3-graph-substitution-semantics/manuscript.md) for the formal
 substitution treatment.
@@ -96,11 +96,11 @@ data RewriteBudget = RewriteBudget
   }
 ```
 
-Each admitted rewire consumes a natural-valued `RewriteCost` computed statically from its
+Each admitted rewrite consumes a natural-valued `RewriteCost` computed statically from its
 `SubgraphSpec`; admission draws only against remaining budget. Negative serialized values are
 invalid before admission. Runaway planner elaboration becomes a runtime impossibility rather than a
 prompt-discipline problem. Gas is visible in run history: operators can inspect remaining budget,
-each rewrite's cost, and the rewire that exhausted a dimension.
+each rewrite's cost, and the rewrite that exhausted a dimension.
 
 ## Admission policy
 
@@ -110,7 +110,7 @@ Admission is the runtime's gate. A proposal is admitted only when every check pa
    is a registered `ContractId`. No executors or contracts outside the closed alphabet.
 2. **Endpoint compatibility.** Every new edge connects ports whose contracts are compatible under
    the port-semantic rules of [Chapter 05](./05-wire-language.md). Singular and list-valued inputs
-   obey the same arity rules at the rewire boundary as at compile time.
+   obey the same arity rules at the rewrite boundary as at compile time.
 3. **Topology validity.** The post-application materialized graph remains a DAG. The anchor exists
    in the current topology and definition map, and the current definition domain exactly covers the
    current topology. Entry/exit sets are non-empty and duplicate-free where the rewrite form

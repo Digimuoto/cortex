@@ -1,11 +1,11 @@
 ---
-title: "ADR 0024 - Wire Node Clause Grammar"
+title: "ADR 0022 - Wire Node Clause Grammar"
 description:
   "Defines the next Wire node surface: clause-terminated inputs, a single node-local let block, and
   per-output RHS forms."
 sidebar:
-  label: "0024. Node clause grammar"
-  order: 24
+  label: "0022. Node clause grammar"
+  order: 22
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -14,32 +14,30 @@ related:
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/pure-execution.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
-  - docs/ADRs/0022-wire-pure-output-equations.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0025-corepure-expression-surface.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0032-wire-node-implementation-forms.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0023-corepure-expression-surface.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0030-wire-node-implementation-forms.md
 ---
 
-# ADR 0024 - Wire Node Clause Grammar
+# ADR 0022 - Wire Node Clause Grammar
 
 ## Status
 
 Proposed - this ADR replaces the historical colon-led node body and string-config pure examples with
-the clause grammar for the next Wire implementation phase.
+the clause grammar for the next Wire implementation phase. ADR 0020's decision on pure output
+equations remains in force.
 
-This ADR rewrites the worked-example surface syntax in ADR 0022, including `node classify :` and
-newline-terminated clauses. ADR 0022's decision on pure output equations remains in force.
-
-Forward note: ADR 0032 extends this grammar with node-level executor bodies for zero-output and
+Forward note: ADR 0030 extends this grammar with node-level executor bodies for zero-output and
 multi-output external executors. This ADR's per-output equation grammar remains the pure-node
 surface.
 
 ## Context
 
-ADR 0022 accepted pure output equations, but the first implementation kept some transitional syntax
+ADR 0020 accepted pure output equations, but the first implementation kept some transitional syntax
 around the existing parser. The next phase can remove that legacy shape instead of preserving
 compatibility:
 
@@ -48,7 +46,7 @@ compatibility:
 - port labels should be declared exactly where routing happens;
 - node-local shared work should have one obvious scope.
 
-The syntax also needs to preserve the authority boundary from ADR 0010 and ADR 0018. `pure (...)` is
+The syntax also needs to preserve the authority boundary from ADR 0010 and ADR 0017. `pure (...)` is
 internal deterministic Wire evaluation. `@executor (...)` is the boundary to registered external
 authority.
 
@@ -73,7 +71,7 @@ rhs           ::= pure (<expr>) | @<executor> (<expr>) | <expr>
 ```
 
 The first implementation slice must accept explicit `pure (<expr>)` and `@executor (<expr>)` output
-RHS forms. The unmarked `<expr>` form is reserved for the elaborator model from ADR 0023 and should
+RHS forms. The unmarked `<expr>` form is reserved for the elaborator model from ADR 0021 and should
 remain rejected until inference and diagnostics are specified.
 
 ### Node Clauses
@@ -142,7 +140,7 @@ Binding must enforce a bijection between declared output ports and output equati
 
 `pure (...)` does not use `@`. In Wire syntax, `@` marks the boundary to registered external
 authority whose behavior is not defined by the Wire theorem layer. The pure evaluator is internal,
-deterministic, closed, and subject to the CorePure semantics from ADR 0025.
+deterministic, closed, and subject to the CorePure semantics from ADR 0023.
 
 Lowering may still represent `pure (...)` as an internal executor task in the compiled circuit. That
 is an implementation detail of the runtime substrate, not an authoring claim that pure evaluation is
@@ -206,11 +204,11 @@ node classify
 
 ## Related
 
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0021 - Executor Registration and Binding](./0021-executor-registration-and-binding.md)
-- [ADR 0022 - Wire Pure Output Equations](./0022-wire-pure-output-equations.md)
-- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
-- [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0032 - Wire Node Implementation Forms](./0032-wire-node-implementation-forms.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0019 - Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [ADR 0020 - Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
+- [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0030 - Wire Node Implementation Forms](./0030-wire-node-implementation-forms.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)

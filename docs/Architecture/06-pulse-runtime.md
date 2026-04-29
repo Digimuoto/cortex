@@ -201,9 +201,10 @@ gas, admission policy, materialization, and structural provenance — belongs to
 
 ## Topological memory
 
-Topological memory currently lives near Pulse because it queries Pulse event state. ADR 0017 makes
-the canonical target `Cortex.Nous.Memory.Topological`: Pulse remains the durable event/checkpoint
-substrate, while Nous owns the API that shapes settled graph state into model context.
+Topological memory currently lives near Pulse because it queries Pulse event state. Under the
+proposed ADR 0016 target, the public API moves to `Cortex.Nous.Memory.Topological`: Pulse remains
+the durable event/checkpoint substrate, while Nous owns the API that shapes settled graph state into
+model context.
 
 The split is **Pulse stores, Nous shapes**. Pulse persists the event substrate, frontier,
 checkpoints, materialized outputs, and snapshots that make the query deterministic. Nous owns the

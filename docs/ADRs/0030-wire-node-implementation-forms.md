@@ -1,11 +1,11 @@
 ---
-title: "ADR 0032 - Wire Node Implementation Forms"
+title: "ADR 0030 - Wire Node Implementation Forms"
 description:
   "Adds node-level executor bodies for zero-output and multi-output external executors while keeping
   pure computations as per-output equations."
 sidebar:
-  label: "0032. Node implementation forms"
-  order: 32
+  label: "0030. Node implementation forms"
+  order: 30
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -15,25 +15,25 @@ related:
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0027-configured-executor-values.md
-  - docs/ADRs/0028-wire-failure-taxonomy.md
-  - docs/ADRs/0029-typed-llm-output-binding.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0025-configured-executor-values.md
+  - docs/ADRs/0026-wire-failure-taxonomy.md
+  - docs/ADRs/0027-typed-llm-output-binding.md
 ---
 
-# ADR 0032 - Wire Node Implementation Forms
+# ADR 0030 - Wire Node Implementation Forms
 
 ## Status
 
-Proposed - extends ADR 0024's clause grammar so ADR 0026's empty output-boundary rule has an
+Proposed - extends ADR 0022's clause grammar so ADR 0024's empty output-boundary rule has an
 authoring surface and external executors are not forced into per-output equations.
 
 ## Context
 
-ADR 0024 defines the next node clause grammar around per-output RHS equations:
+ADR 0022 defines the next node clause grammar around per-output RHS equations:
 
 ```wire
 node classify
@@ -51,7 +51,7 @@ the whole node boundary. It may have:
 - one output, such as an ordinary LLM classifier;
 - several outputs, such as a provider call that returns a typed result plus metadata.
 
-ADR 0026 already says empty output boundaries are valid arity, not source/sink roles. But ADR 0024's
+ADR 0024 already says empty output boundaries are valid arity, not source/sink roles. But ADR 0022's
 grammar still requires at least one output equation, and executor invocation currently appears only
 on an output RHS. That leaves no syntax for zero-output executors and gives multi-output external
 executors no single place to attach their implementation.
@@ -125,9 +125,9 @@ node analyze
 
 The executor projection must match the declared input and output boundary. On success, the executor
 emits a `WireValueSet` keyed by the declared output port labels. If the projection or runtime result
-does not match those labels and contracts, the failure is classified by ADR 0028.
+does not match those labels and contracts, the failure is classified by ADR 0026.
 
-Configured executor values from ADR 0027 apply in the same body position:
+Configured executor values from ADR 0025 apply in the same body position:
 
 ```wire
 let analyst = @llm.analyst { temperature = 0.2 } ;
@@ -191,7 +191,7 @@ This keeps executor calls first-order and avoids inventing unit syntax in this s
 
 ### Single-Output Shorthand
 
-The per-output external RHS from ADR 0024 remains a single-output shorthand:
+The per-output external RHS from ADR 0022 remains a single-output shorthand:
 
 ```wire
 node analyze
@@ -213,7 +213,7 @@ executor call. Zero-output and multi-output external executors must use the node
 
 ## Alternatives considered
 
-- **Defer zero-output authoring syntax.** Rejected because ADR 0026 makes empty output boundaries a
+- **Defer zero-output authoring syntax.** Rejected because ADR 0024 makes empty output boundaries a
   valid topology shape, and implementation will otherwise reintroduce fake outputs or special sink
   roles.
 - **Use per-output executor RHSs for every external executor.** Rejected because it has no place for
@@ -229,7 +229,7 @@ executor call. Zero-output and multi-output external executors must use the node
 
 ### Positive
 
-- ADR 0026's empty-boundary rule has an authoring surface.
+- ADR 0024's empty-boundary rule has an authoring surface.
 - External executor authority attaches to the node implementation body, matching the topology model.
 - Multi-output external executors have one implementation site and one validation boundary.
 - Pure output equations keep their port-local readability.
@@ -242,7 +242,7 @@ executor call. Zero-output and multi-output external executors must use the node
 
 ### Obligations
 
-- Amend ADR 0024 and Wire grammar docs to include node-level executor bodies.
+- Amend ADR 0022 and Wire grammar docs to include node-level executor bodies.
 - Add parser tests for zero-output, single-output shorthand, and multi-output executor bodies.
 - Add admission tests that executor projections match the declared full node boundary.
 - Add runtime tests that zero-output success materializes an empty output set.
@@ -253,11 +253,11 @@ executor call. Zero-output and multi-output external executors must use the node
 ## Related
 
 - [ADR 0014 - Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0021 - Executor Registration and Binding](./0021-executor-registration-and-binding.md)
-- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0027 - Configured Executor Values](./0027-configured-executor-values.md)
-- [ADR 0028 - Wire Failure Taxonomy](./0028-wire-failure-taxonomy.md)
-- [ADR 0029 - Typed LLM Output Binding](./0029-typed-llm-output-binding.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0019 - Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0025 - Configured Executor Values](./0025-configured-executor-values.md)
+- [ADR 0026 - Wire Failure Taxonomy](./0026-wire-failure-taxonomy.md)
+- [ADR 0027 - Typed LLM Output Binding](./0027-typed-llm-output-binding.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)

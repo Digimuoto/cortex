@@ -1,11 +1,11 @@
 ---
-title: "ADR 0021 — Executor Registration and Binding"
+title: "ADR 0019 — Executor Registration and Binding"
 description:
   "Wire compiles against executor projections, Capability owns host authority, and Pulse executes
   already-bound stage actions."
 sidebar:
-  label: "0021. Executor binding"
-  order: 21
+  label: "0019. Executor binding"
+  order: 19
 status: proposed
 date: 2026-04-28
 superseded_by: null
@@ -14,18 +14,18 @@ related:
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/09-nous-reasoning-library.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0019-wire-pure-nodes.md
-  - docs/ADRs/0020-canonical-haskell-module-tree.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0018-canonical-haskell-module-tree.md
   - "GitHub #65"
 ---
 
-# ADR 0021 — Executor Registration and Binding
+# ADR 0019 — Executor Registration and Binding
 
 ## Status
 
 Proposed - defines the concrete executor-registration boundary after the canonical Haskell module
-tree landed. ADR 0018 split contracts, ports, projections, codecs, and host authority; this ADR
+tree landed. ADR 0017 split contracts, ports, projections, codecs, and host authority; this ADR
 assigns those executor pieces to Haskell modules.
 
 ## Context
@@ -102,7 +102,7 @@ programs and tests.
 ## Deferred Work
 
 This ADR does not implement structural utility executors, Node algebra, gas, content-addressed
-execution, or a new Pulse result channel. ADR 0022 defines the Wire-authored CorePure surface:
+execution, or a new Pulse result channel. ADR 0020 defines the Wire-authored CorePure surface:
 authors write pure output equations, and the compiler lowers them to the native pure evaluator
 registered through the same Capability-to-Wire projection path.
 
@@ -124,7 +124,7 @@ Costs and risks:
 
 ## Related
 
-- [ADR 0018 — Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0019 — Wire Pure Nodes](./0019-wire-pure-nodes.md)
-- [ADR 0020 — Canonical Haskell Module Tree](./0020-canonical-haskell-module-tree.md)
+- [ADR 0017 — Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0018 — Canonical Haskell Module Tree](./0018-canonical-haskell-module-tree.md)
 - GitHub #65

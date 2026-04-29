@@ -1,11 +1,11 @@
 ---
-title: "ADR 0017 — Cortex Roots and Nous Pattern Extraction"
+title: "ADR 0016 — Cortex Roots and Nous Pattern Extraction"
 description:
   "Cortex uses a small root taxonomy while Cortex.Nous extracts reusable LLM-shaped reasoning
   programs with shared port contracts."
 sidebar:
-  label: "0017. Cortex roots"
-  order: 17
+  label: "0016. Cortex roots"
+  order: 16
 status: proposed
 date: 2026-04-27
 superseded_by: null
@@ -16,14 +16,14 @@ related:
   - docs/Architecture/08-artifacts-and-provenance.md
   - docs/Architecture/09-nous-reasoning-library.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0016-canonical-cortex-epistemological-archetypes.md
+  - docs/ADRs/0015-canonical-cortex-epistemological-archetypes.md
   - "GitHub #14"
   - "GitHub #31"
   - "GitHub #32"
   - "GitHub #50"
 ---
 
-# ADR 0017 — Cortex Roots and Nous Pattern Extraction
+# ADR 0016 — Cortex Roots and Nous Pattern Extraction
 
 ## Status
 
@@ -63,7 +63,7 @@ abstraction level. `Graph` is the law-bearing algebra, `Circuit` is the compiled
 events are Pulse execution records, document-like outputs are artifacts, memory is cognitive context
 construction, and agent/task/research/run modules are mostly model-mediated reasoning machinery.
 
-ADR 0016 establishes `Cortex.Nous.Archetypes` and reserves `Cortex.Nous.Thought`,
+ADR 0015 establishes `Cortex.Nous.Archetypes` and reserves `Cortex.Nous.Thought`,
 `Cortex.Nous.Memory`, and `Cortex.Nous.Patterns`. This ADR defines the root taxonomy target, the
 pending DeepReport extraction, and the contract/executor model needed to make that extraction
 disciplined.
@@ -397,7 +397,7 @@ Compatibility modules may remain temporarily, but the canonical public root list
 - **Let executors own contract definitions.** Rejected because the same contract must be shared by
   multiple executors and patterns. Executors should reference contract ids, not define their
   meaning.
-- **Create a new Nous runtime registry.** Rejected because ADR 0016 preserves the existing authority
+- **Create a new Nous runtime registry.** Rejected because ADR 0015 preserves the existing authority
   boundaries. Nous publishes catalogs interpreted by Wire, Pulse, capability, memory, and artifact
   substrate APIs.
 - **Ship `.wire` inline contract declarations as the sharing mechanism now.** Deferred because the
@@ -439,7 +439,7 @@ Compatibility modules may remain temporarily, but the canonical public root list
 
 ## Related
 
-- [0016-canonical-cortex-epistemological-archetypes.md](./0016-canonical-cortex-epistemological-archetypes.md)
+- [0015-canonical-cortex-epistemological-archetypes.md](./0015-canonical-cortex-epistemological-archetypes.md)
   defines `Cortex.Nous.Archetypes` and reserves `Cortex.Nous.Thought`, `Cortex.Nous.Memory`, and
   `Cortex.Nous.Patterns`.
 - [../Architecture/09-nous-reasoning-library.md](../Architecture/09-nous-reasoning-library.md)

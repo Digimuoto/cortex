@@ -1,11 +1,11 @@
 ---
-title: "ADR 0018 — Wire Executor and Port Catalog Boundary"
+title: "ADR 0017 — Wire Executor and Port Catalog Boundary"
 description:
   "Wire separates value-level contracts, id-referencing port profiles, compile-time projections,
   runtime payload validation, Pulse framing, and host codecs."
 sidebar:
-  label: "0018. Executor and ports"
-  order: 18
+  label: "0017. Executor and ports"
+  order: 17
 status: proposed
 date: 2026-04-27
 superseded_by: null
@@ -15,13 +15,13 @@ related:
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0017-cortex-roots-and-nous-pattern-extraction.md
-  - docs/ADRs/0019-wire-pure-nodes.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
+  - docs/ADRs/0016-cortex-roots-and-nous-pattern-extraction.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
   - "GitHub #55"
 ---
 
-# ADR 0018 — Wire Executor and Port Catalog Boundary
+# ADR 0017 — Wire Executor and Port Catalog Boundary
 
 ## Status
 
@@ -150,8 +150,8 @@ module-boundary cleanup, not a new expressiveness requirement.
 Labels become mandatory when a node needs distinct roles for the same contract, for example a
 comparative rewriter with `previous: ReportSection` and `reference: ReportSection`, an analysis diff
 with `baseline: Analysis` and `candidate: Analysis`, or a pure scoring node with several `Float`
-inputs. Those cases motivate pure nodes and structural primitives, not the first DeepReport port
-extraction. ADR 0019 owns that sequencing.
+inputs. Those cases motivate pure output equations and structural primitives, not the first
+DeepReport port extraction. ADR 0020 owns that sequencing.
 
 ### Executors grant authority through bindings
 
@@ -335,9 +335,9 @@ The clean next sequence is:
 
 - [ADR 0010 — Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)
 - [ADR 0014 — Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
-- [ADR 0017 — Cortex Roots and Nous Pattern Extraction](./0017-cortex-roots-and-nous-pattern-extraction.md)
-- [ADR 0019 — Wire Pure Nodes](./0019-wire-pure-nodes.md)
-- [ADR 0021 — Executor Registration and Binding](./0021-executor-registration-and-binding.md)
+- [ADR 0016 — Cortex Roots and Nous Pattern Extraction](./0016-cortex-roots-and-nous-pattern-extraction.md)
+- [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0019 — Executor Registration and Binding](./0019-executor-registration-and-binding.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
 - [Chapter 09 — Nous Reasoning Library](../Architecture/09-nous-reasoning-library.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)

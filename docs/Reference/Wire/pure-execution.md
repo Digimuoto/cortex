@@ -12,7 +12,7 @@ related:
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
-  - docs/ADRs/0022-wire-pure-output-equations.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
 ---
 
 # Wire Reference — Pure Execution
@@ -24,16 +24,16 @@ state, artifact writes, or host callbacks.
 The source form is:
 
 ```wire
-let acceptedItem = item: item.score >= 0.7;
+let acceptedItem = item: item.score >= 0.7 ;
 
-node classify :
-  <- evidence: EvidenceSet
+node classify
+  <- evidence: EvidenceSet ;
   let
-    items = evidence.items;
-    acceptedItems = filter acceptedItem items;
+    items = evidence.items ;
+    acceptedItems = filter acceptedItem items
   in
-  -> accepted: AcceptedSet = pure (acceptedItems)
-  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
+  -> accepted: AcceptedSet = pure (acceptedItems) ;
+  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items) ;
 ```
 
 `pure (...)` is not an `@` executor application. Authored `@pure { ... }` is rejected. The compiler
@@ -48,25 +48,24 @@ tasks, but that lowering is not source-level authority.
   grammar.
 - **[Executors and the Alphabet](executors-and-alphabet.md#native-pure-evaluator)** - relationship
   between CorePure and the internal native pure evaluator.
-- **[ADR 0022](../../ADRs/0022-wire-pure-output-equations.md)** - design decision and proof
+- **[ADR 0020](../../ADRs/0020-wire-pure-output-equations.md)** - design decision and proof
   obligations.
 
 ## Syntax
 
-A pure node uses a separate node-body form:
+A pure node uses the clause form from the Wire grammar:
 
 ```wire
-node name :
-  <input_port>*
-  [ let <corepure_binding>+ in ]
-  <pure_output_equation>+;
+node <name>
+  (<- <input-name> : <Contract> ;)*
+  (let <corepure-bindings> in)?
+  (-> <output-name> : <Contract> = pure (<corepure-expr>) ;)+
 ```
 
 A pure output equation declares one output port and its value:
 
 ```wire
--> label: Contract = pure (<corepure_expr>)
--> label: Contract = pure { <corepure_expr>; }
+-> label: Contract = pure (<corepure_expr>) ;
 ```
 
 The output label is the Wire routing label. The expression result is implicit; there is no `return`,
@@ -80,13 +79,13 @@ Rules:
 - Sum-grouped outputs are not pure equation syntax.
 - A pure node must declare at least one output equation.
 - The equation set must match the declared output ports exactly.
-- `pure (...)` and `pure { ... }` are equivalent except for delimiters.
+- `pure (...)` is the only accepted source form.
 
 Top-level CorePure helpers are written as `let` bindings whose right-hand side is a CorePure lambda
 or CorePure `let` expression:
 
 ```wire
-let acceptedItem = item: item.score >= 0.7;
+let acceptedItem = item: item.score >= 0.7 ;
 ```
 
 These helpers are visible to later pure nodes. Ordinary top-level `let` bindings keep ordinary Wire
@@ -140,12 +139,12 @@ Input binding rules:
 For example:
 
 ```wire
-node score :
-  <- evidence: EvidenceSet
-  <- weights: WeightSet
+node score
+  <- evidence: EvidenceSet ;
+  <- weights: WeightSet ;
   -> score: ScoreSet = pure ({
-    total = sum (zipWith (s: w: s * w) evidence.scores weights.values);
-  });
+    total = sum (zipWith (s: w: s * w) evidence.scores weights.values) ;
+  }) ;
 ```
 
 Here `evidence` and `weights` are CorePure variables containing the JSON payload values from the
@@ -156,8 +155,7 @@ matching input ports.
 Each output equation key in the lowered config is the declared output port name:
 
 - `-> accepted: AcceptedSet = pure (...)` writes the `accepted` output.
-- `-> ScoreSet = pure (...)` writes the default unlabeled output port, keyed as `out` in the lowered
-  config.
+- every output equation writes the declared output label with the same name in the lowered config.
 
 CorePure produces JSON values. Runtime wrapping then validates and wraps each value through the
 declared Wire output contract. In practice, pure outputs should target contracts whose payload kind

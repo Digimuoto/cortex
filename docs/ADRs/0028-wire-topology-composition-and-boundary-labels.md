@@ -1,11 +1,11 @@
 ---
-title: "ADR 0030 - Wire Topology Composition and Boundary Labels"
+title: "ADR 0028 - Wire Topology Composition and Boundary Labels"
 description:
   "Defines overlay and connect composition for Wire circuits and resolves file-level expression
   port-label behavior."
 sidebar:
-  label: "0030. Topology composition"
-  order: 30
+  label: "0028. Topology composition"
+  order: 28
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -16,22 +16,22 @@ related:
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0009-rewrite-provenance-and-topology-integrity.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0027-configured-executor-values.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0025-configured-executor-values.md
 ---
 
-# ADR 0030 - Wire Topology Composition and Boundary Labels
+# ADR 0028 - Wire Topology Composition and Boundary Labels
 
 ## Status
 
-Proposed - resolves the composition and file-level boundary-label questions deferred by ADR 0023.
+Proposed - resolves the composition and file-level boundary-label questions deferred by ADR 0021.
 
 ## Context
 
-ADR 0023 makes post-elaboration circuits the executable target for Wire source, but deliberately
-defers topology composition primitives. ADR 0024 reserves `let x = ...` for future composition
+ADR 0021 makes post-elaboration circuits the executable target for Wire source, but deliberately
+defers topology composition primitives. ADR 0022 reserves `let x = ...` for future composition
 expressions.
 
 The next non-trivial multi-node example needs a way to compose named node circuits without hiding
@@ -118,7 +118,7 @@ encoding a precedence rule before examples prove which grouping authors expect.
 File-level `let` has kinded RHSs:
 
 - CorePure helper value;
-- configured executor value from ADR 0027;
+- configured executor value from ADR 0025;
 - circuit value produced by a node or composition expression.
 
 The binding name is never automatically an output port label.
@@ -178,9 +178,9 @@ ports rather than to source variable names.
 ## Related
 
 - [ADR 0009 - Rewrite Provenance and Topology Integrity](./0009-rewrite-provenance-and-topology-integrity.md)
-- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
-- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0027 - Configured Executor Values](./0027-configured-executor-values.md)
+- [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
+- [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0025 - Configured Executor Values](./0025-configured-executor-values.md)
 - [Chapter 04 - Graph and Circuit](../Architecture/04-graph-and-circuit.md)
 - [Wire Contracts, Ports, and Matching Reference](../Reference/Wire/contracts-ports-and-matching.md)

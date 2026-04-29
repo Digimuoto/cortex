@@ -1,11 +1,11 @@
 ---
-title: "ADR 0029 - Typed LLM Output Binding"
+title: "ADR 0027 - Typed LLM Output Binding"
 description:
   "Defines the Capability-layer contract for model executors that produce typed Wire outputs through
   schema-constrained generation and validation."
 sidebar:
-  label: "0029. Typed LLM output"
-  order: 29
+  label: "0027. Typed LLM output"
+  order: 27
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -15,22 +15,22 @@ related:
   - docs/Architecture/09-nous-reasoning-library.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0028-wire-failure-taxonomy.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0026-wire-failure-taxonomy.md
 ---
 
-# ADR 0029 - Typed LLM Output Binding
+# ADR 0027 - Typed LLM Output Binding
 
 ## Status
 
-Proposed - specifies the binding-layer contract behind ADR 0026's claim that LLM executors emit
+Proposed - specifies the binding-layer contract behind ADR 0024's claim that LLM executors emit
 typed values or typed failures.
 
 ## Context
 
-ADR 0026 requires LLM-backed executors to have the same external shape as other executor nodes:
+ADR 0024 requires LLM-backed executors to have the same external shape as other executor nodes:
 typed input ports, typed output ports, and typed failures on contract violation. It correctly leaves
 provider mechanics outside Wire semantics, but the binding-layer contract still needs to be stated.
 
@@ -55,7 +55,7 @@ ports. Wire does not know provider APIs, prompt formats, credentials, model name
 
 ### Schema Source
 
-The primary schema source is the contract registry from ADR 0018. A `WireContractSpec` may carry a
+The primary schema source is the contract registry from ADR 0017. A `WireContractSpec` may carry a
 schema for JSON-shaped payloads. The LLM binding compiles that schema into the provider's structured
 output request when the provider supports one.
 
@@ -126,8 +126,8 @@ validation facts must remain visible to the substrate.
 
 ### Positive
 
-- LLM executors satisfy ADR 0026 without making Wire provider-aware.
-- Contract schemas from ADR 0018 become the canonical source for structured model output.
+- LLM executors satisfy ADR 0024 without making Wire provider-aware.
+- Contract schemas from ADR 0017 become the canonical source for structured model output.
 - Retryable provider failures and deterministic validation failures are separated.
 - Pulse records enough provenance to audit typed model output.
 
@@ -148,8 +148,8 @@ validation facts must remain visible to the substrate.
 ## Related
 
 - [ADR 0014 - Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0021 - Executor Registration and Binding](./0021-executor-registration-and-binding.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0028 - Wire Failure Taxonomy](./0028-wire-failure-taxonomy.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0019 - Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0026 - Wire Failure Taxonomy](./0026-wire-failure-taxonomy.md)
 - [Wire Contracts, Ports, and Matching Reference](../Reference/Wire/contracts-ports-and-matching.md)

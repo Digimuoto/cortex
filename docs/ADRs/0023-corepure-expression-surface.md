@@ -1,11 +1,11 @@
 ---
-title: "ADR 0025 - CorePure Expression Surface"
+title: "ADR 0023 - CorePure Expression Surface"
 description:
   "Defines the closed Nix-like CorePure expression language, pipe sugar, string interpolation, and
   data-last stdlib rules."
 sidebar:
-  label: "0025. CorePure surface"
-  order: 25
+  label: "0023. CorePure surface"
+  order: 23
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -13,14 +13,13 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/pure-execution.md
-  - docs/ADRs/0019-wire-pure-nodes.md
-  - docs/ADRs/0022-wire-pure-output-equations.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
 ---
 
-# ADR 0025 - CorePure Expression Surface
+# ADR 0023 - CorePure Expression Surface
 
 ## Status
 
@@ -41,7 +40,7 @@ not Nix. It is a closed expression language with a typed evaluator and determini
 ## Decision
 
 CorePure should use a closed Nix-like expression surface. The same AST and evaluator are used by the
-elaborator from ADR 0023 and by runtime `pure (...)` output equations from ADR 0024.
+elaborator from ADR 0021 and by runtime `pure (...)` output equations from ADR 0022.
 
 The initial language includes:
 
@@ -277,9 +276,8 @@ can build text outputs without unreadable manual `concat` and `toString` calls.
 
 ## Related
 
-- [ADR 0019 - Wire Pure Nodes](./0019-wire-pure-nodes.md)
-- [ADR 0022 - Wire Pure Output Equations](./0022-wire-pure-output-equations.md)
-- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
-- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [ADR 0020 - Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
+- [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
 - [Wire Pure Execution Reference](../Reference/Wire/pure-execution.md)

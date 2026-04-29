@@ -1,11 +1,11 @@
 ---
-title: "ADR 0022 - Wire Pure Output Equations"
+title: "ADR 0020 - Wire Pure Output Equations"
 description:
   "Defines the pure-node authoring surface: output-port equations with a Nix-like CorePure
   expression language, lowered to the native pure evaluator."
 sidebar:
-  label: "0022. Pure output equations"
-  order: 22
+  label: "0020. Pure output equations"
+  order: 20
 status: accepted
 date: 2026-04-28
 superseded_by: null
@@ -13,29 +13,27 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/executors-and-alphabet.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0019-wire-pure-nodes.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
 ---
 
-# ADR 0022 - Wire Pure Output Equations
+# ADR 0020 - Wire Pure Output Equations
 
 ## Status
 
 Accepted. This ADR defines the CorePure output-equation surface. It is not a decision to make every
 Wire expression a circuit, to infer executors implicitly, or to generalize all executor syntax.
 
-Forward note: ADR 0023 proposes the broader Wire-to-circuit elaboration model that this ADR
-deferred. ADR 0024 proposes the next clause grammar and supersedes this ADR's worked-example surface
-syntax, including `node classify :` and newline-terminated clauses. This ADR's positive decision on
-pure output equations remains in force.
+Forward note: ADR 0021 proposes the broader Wire-to-circuit elaboration model that this ADR
+deferred. ADR 0022 proposes the clause grammar used by the next implementation. This ADR's positive
+decision on pure output equations remains in force.
 
 ## Context
 
-ADR 0019 introduced pure nodes as deterministic Wire-authored computations interpreted by a
-registered pure evaluator. Its first sketch used the existing executor surface:
+Early pure-node sketches treated deterministic Wire-authored computation as a registered pure
+evaluator and used the existing executor surface:
 
 ```wire
 node score :
@@ -62,16 +60,16 @@ Wire should add **pure output equations** as the next pure-node authoring surfac
 equation attaches a CorePure expression directly to an output port declaration:
 
 ```wire
-let acceptedItem = x: x.score >= 0.7;
+let acceptedItem = x: x.score >= 0.7 ;
 
-node classify :
-  <- evidence: EvidenceSet
+node classify
+  <- evidence: EvidenceSet ;
   let
-    items = evidence.items;
-    acceptedItems = filter acceptedItem items;
+    items = evidence.items ;
+    acceptedItems = filter acceptedItem items
   in
-  -> accepted: AcceptedSet = pure (acceptedItems)
-  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items);
+  -> accepted: AcceptedSet = pure (acceptedItems) ;
+  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items) ;
 ```
 
 The output port label is the routing label. There is no separate `return accepted = ...` syntax:

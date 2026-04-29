@@ -18,10 +18,10 @@ programs under `Cortex.Nous.Patterns`. It does not extend the runtime alphabet. 
 Pulse, Capability, and Artifact mechanics remain the substrate. Nous composes those mechanics into
 reusable reasoning programs.
 
-> **Implementation staging.** Current Haskell modules still use staging paths such as
-> `Cortex.Nous.Logos` and `Cortex.Nous.Logos.Capability`. Canonical paths such as
-> `Cortex.Nous.Archetypes.Logos` and planned pattern modules such as
-> `Cortex.Nous.Patterns.DeepReport` land through ADR 0017 migration slices.
+> **Implementation staging.** This chapter names the target design. Current Haskell modules may
+> still use staging paths such as `Cortex.Nous.Logos` and `Cortex.Nous.Logos.Capability` until the
+> ADR 0016 migration slices land the canonical `Cortex.Nous.Archetypes.*` and
+> `Cortex.Nous.Patterns.*` paths.
 
 ## Core model
 
@@ -199,11 +199,10 @@ tools, artifact semantics, DB loading, and authorization.
 
 ## Related
 
-- [ADR 0015 — Structured Reasoning Above the Cortex Substrate](../ADRs/0015-cortex-logoi-reasoning-layer.md)
-- [ADR 0016 — Canonical Cortex Nous Archetypes](../ADRs/0016-canonical-cortex-epistemological-archetypes.md)
-- [ADR 0017 — Cortex Roots and Nous Pattern Extraction](../ADRs/0017-cortex-roots-and-nous-pattern-extraction.md)
-- [ADR 0018 — Wire Executor and Port Catalog Boundary](../ADRs/0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md)
+- [ADR 0015 — Canonical Cortex Nous Archetypes](../ADRs/0015-canonical-cortex-epistemological-archetypes.md)
+- [ADR 0016 — Cortex Roots and Nous Pattern Extraction](../ADRs/0016-cortex-roots-and-nous-pattern-extraction.md)
+- [ADR 0017 — Wire Executor and Port Catalog Boundary](../ADRs/0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0020 — Wire Pure Output Equations](../ADRs/0020-wire-pure-output-equations.md)
 - [Chapter 02 — Ownership and boundaries](02-ownership-and-boundaries.md)
 - [Chapter 05 — Wire language](05-wire-language.md)
 - [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md)

@@ -28,8 +28,8 @@ The normative rules live in the reference:
   semantics
 - [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md) — contract
   namespace, port declarations, `=>` matching
-- [Partials and execution boundary](../Reference/Wire/partials-and-execution-boundary.md) — partial
-  nodes, port-determined rule, runnable-wire boundary
+- [Partials and execution boundary](../Reference/Wire/partials-and-execution-boundary.md) —
+  configured executor values, typed node boundaries, runnable-wire boundary
 - [Rewrites](../Reference/rewrites.md) — bounded dynamic rewrite algebra, budget, admission,
   materialization, provenance
 - [Modules, imports, and file returns](../Reference/Wire/modules-imports-and-file-returns.md) — file
@@ -43,7 +43,7 @@ Wire adds four things above the Graph and Circuit layers:
 
 - an authoring surface for naming nodes, declarations, and reusable values
 - endpoint-typed composition over registered contracts and ports
-- partial-node reuse and configuration layering
+- configured executor reuse and configuration values
 - a rewrite surface that lets topology changes be proposed in the same composition model used for
   initial authoring
 
@@ -112,47 +112,44 @@ encoding graph-discovered collections. When a node aggregates a variable number 
 fragments, the structural shape should usually be "many fragments of one contract" rather than "one
 separately named port per expected fragment."
 
-## Partial nodes and reuse
+## Configured executor values and reuse
 
-Wire's reuse surface is the partial node: a configured executor value whose remaining structural
-choices are pinned later.
+Wire's reuse surface is the configured executor value: inert source data that names registered
+executor authority and static config. It is not a graph vertex by itself. A configured executor
+enters topology only when an explicit `node` declaration gives it a typed input/output boundary.
 
 The canonical authored unit is:
 
 ```text
-node = ports + executor(config)
+node = typed ports + executor body
 ```
 
-Ports stay first-class because the graph type-checker reasons about them. Everything behavioral
-belongs in executor config: prompt, tools, memory, model choice, timeouts, budgets, and
-domain-specific fields.
+Ports stay first-class because the graph type-checker reasons about them. Executor config carries
+policy such as tools, memory authority, model choice, timeouts, budgets, and domain-specific fields.
 
 ```wire
-let section_writer_base = @native.report_section_writer {
-  memory = topological { preset = "analyst"; };
-};
+let sectionWriter = @native.report_section_writer {
+  memory = topological { preset = "analyst" } ;
+  model = "gpt-5.4" ;
+} ;
 
-node valuation_writer :
-  <- SectionBrief
-  -> ReportFragment | ExecutorError
-= section_writer_base // {
-  prompt = "Write the valuation stress dimension.";
-  sectionId = "valuation";
-  title = "Valuation Stress";
-};
+node valuation_writer
+  <- brief: SectionBrief ;
+  -> fragment: ReportFragment ;
+  = sectionWriter (brief) ;
 ```
 
-Rewrite producers use the same explicit `node ... = @executor { ... };` form as authored workflows.
-There is no separate template-use syntax in the Wire surface.
+Per-node variation should appear as typed input data or as a separately named configured executor
+value. Wire does not use configured executor values as hidden partial vertices whose port boundary
+is discovered later.
 
 Architecturally, this matters for two reasons:
 
-- it keeps reuse inside the same value algebra as the rest of the language
-- it lets rewrites instantiate new nodes by authoring bounded executor configs against
-  already-registered authority
+- it keeps reusable executor policy visible in source review
+- it keeps graph vertices tied to declared typed ports rather than to implicit context
 
-The precise typing rules for partial nodes belong in the reference. The architectural point is that
-reuse is compositional rather than template-like.
+The precise typing rules for configured executor values belong in the reference. The architectural
+point is that reuse is compositional rather than template-like.
 
 Workflow-level config may also provide defaults for executor config, for example default models or
 per-executor model policy on a runtime wrapper. Those defaults only fill gaps; an explicit field
@@ -204,10 +201,10 @@ Cortex still owns the source language, composition rules, and substrate runtime.
   admission and realized topology
 - [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md) — payload, artifact, and
   provenance surfaces
-- [ADR 0018 — Wire Executor and Port Catalog Boundary](../ADRs/0018-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0017 — Wire Executor and Port Catalog Boundary](../ADRs/0017-wire-executor-and-port-catalog-boundary.md)
   — contract, port, executor, and binding separation
-- [ADR 0019 — Wire Pure Nodes](../ADRs/0019-wire-pure-nodes.md) — deterministic expression nodes and
-  same-contract labels
+- [ADR 0020 — Wire Pure Output Equations](../ADRs/0020-wire-pure-output-equations.md) —
+  deterministic CorePure output equations
 - [Wire Grammar](../Reference/Wire/grammar.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
 - [Consumer examples](../Consumers/) — downstream binding examples

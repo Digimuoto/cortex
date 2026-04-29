@@ -1,11 +1,11 @@
 ---
-title: "ADR 0023 - Wire Source Elaborates to Circuits"
+title: "ADR 0021 - Wire Source Elaborates to Circuits"
 description:
   "Makes circuits the single semantic target for Wire source and relocates CorePure into the
   elaboration phase."
 sidebar:
-  label: "0023. Source elaboration"
-  order: 23
+  label: "0021. Source elaboration"
+  order: 21
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -16,24 +16,24 @@ related:
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0022-wire-pure-output-equations.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0025-corepure-expression-surface.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0030-wire-topology-composition-and-boundary-labels.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0023-corepure-expression-surface.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
 ---
 
-# ADR 0023 - Wire Source Elaborates to Circuits
+# ADR 0021 - Wire Source Elaborates to Circuits
 
 ## Status
 
 Proposed - this ADR scopes the next Wire phase after pure output equations. If accepted, it
-supersedes ADR 0022's decision to defer full Wire-to-circuit unification.
+supersedes ADR 0020's decision to defer full Wire-to-circuit unification.
 
 ## Context
 
-ADR 0022 made pure output equations legible, but it still treats CorePure mostly as the language
+ADR 0020 made pure output equations legible, but it still treats CorePure mostly as the language
 inside `pure (...)`. That keeps the first implementation narrow, but Wire still has two nearby
 authoring concepts:
 
@@ -112,7 +112,7 @@ executor.
 
 ### Follow-On Composition Decision
 
-ADR 0030 resolves the file-level expression port-label and topology composition questions deferred
+ADR 0028 resolves the file-level expression port-label and topology composition questions deferred
 by this ADR. File-level helpers such as `let greeting = "Hello"` remain CorePure value bindings, not
 circuits with anonymous or binding-named output ports. Topology composition uses the circuit
 operators defined there.
@@ -154,22 +154,22 @@ operators defined there.
 
 The immediate implementation slice is:
 
-1. Parse the node and output grammar from ADR 0024.
-2. Implement the CorePure expression surface from ADR 0025.
+1. Parse the node and output grammar from ADR 0022.
+2. Implement the CorePure expression surface from ADR 0023.
 3. Elaborate Wire AST into a post-elaboration circuit, including maximal static reduction.
 4. Route runtime `pure (...)` executor vertices through the existing pure executor path.
 5. Add the closed stdlib needed by the first pure examples.
 
-Topology composition primitives are specified separately by ADR 0030 and can be implemented after
+Topology composition primitives are specified separately by ADR 0028 and can be implemented after
 the node/elaborator slice when multi-node examples require them.
 
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0022 - Wire Pure Output Equations](./0022-wire-pure-output-equations.md)
-- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
-- [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0030 - Wire Topology Composition and Boundary Labels](./0030-wire-topology-composition-and-boundary-labels.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0020 - Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
+- [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0028 - Wire Topology Composition and Boundary Labels](./0028-wire-topology-composition-and-boundary-labels.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)

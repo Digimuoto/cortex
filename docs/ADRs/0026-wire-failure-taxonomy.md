@@ -1,11 +1,11 @@
 ---
-title: "ADR 0028 - Wire Failure Taxonomy"
+title: "ADR 0026 - Wire Failure Taxonomy"
 description:
   "Classifies Wire parse, admission, elaboration, runtime, executor, validation, provider, and Pulse
   infrastructure failures by owning layer and replay semantics."
 sidebar:
-  label: "0028. Wire failures"
-  order: 28
+  label: "0026. Wire failures"
+  order: 26
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -17,15 +17,15 @@ related:
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0005-budgeted-rewrite-admission-and-materialization.md
   - docs/ADRs/0009-rewrite-provenance-and-topology-integrity.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0025-corepure-expression-surface.md
-  - docs/ADRs/0026-typed-executor-node-interface.md
-  - docs/ADRs/0027-configured-executor-values.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0023-corepure-expression-surface.md
+  - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0025-configured-executor-values.md
 ---
 
-# ADR 0028 - Wire Failure Taxonomy
+# ADR 0026 - Wire Failure Taxonomy
 
 ## Status
 
@@ -80,7 +80,7 @@ Parser, name, projection, config, topology, and elaboration-pure failures occur 
 admission completes. They should be reported by the compiler or CLI with source spans whenever
 possible.
 
-Elaboration-time CorePure failures are compile-time failures because ADR 0023 requires maximal
+Elaboration-time CorePure failures are compile-time failures because ADR 0021 requires maximal
 static reduction. A statically known divide-by-zero, bad index, missing field, type mismatch, or
 budget exhaustion must not be deferred to runtime.
 
@@ -145,9 +145,9 @@ semantic result.
 
 - [ADR 0005 - Budgeted Rewrite Admission and Materialization](./0005-budgeted-rewrite-admission-and-materialization.md)
 - [ADR 0009 - Rewrite Provenance and Topology Integrity](./0009-rewrite-provenance-and-topology-integrity.md)
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
-- [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
-- [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
-- [ADR 0027 - Configured Executor Values](./0027-configured-executor-values.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
+- [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
+- [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
+- [ADR 0025 - Configured Executor Values](./0025-configured-executor-values.md)
 - [Chapter 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md)

@@ -1,31 +1,31 @@
 ---
-title: "ADR 0031 - CorePure Structured Serialization"
+title: "ADR 0029 - CorePure Structured Serialization"
 description:
   "Adds explicit canonical JSON serialization for CorePure structured values while keeping string
   interpolation scalar-only."
 sidebar:
-  label: "0031. CorePure serialization"
-  order: 31
+  label: "0029. CorePure serialization"
+  order: 29
 status: proposed
 date: 2026-04-29
 superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/pure-execution.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0025-corepure-expression-surface.md
-  - docs/ADRs/0028-wire-failure-taxonomy.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0023-corepure-expression-surface.md
+  - docs/ADRs/0026-wire-failure-taxonomy.md
 ---
 
-# ADR 0031 - CorePure Structured Serialization
+# ADR 0029 - CorePure Structured Serialization
 
 ## Status
 
-Proposed - fills the structured-stringification gap left open by ADR 0025.
+Proposed - fills the structured-stringification gap left open by ADR 0023.
 
 ## Context
 
-ADR 0025 intentionally keeps string interpolation scalar-only. This is the right default:
+ADR 0023 intentionally keeps string interpolation scalar-only. This is the right default:
 
 ```wire
 "Score: ${score}"
@@ -92,7 +92,7 @@ Wire contract. Contract validation remains a Wire/runtime boundary concern.
 ### Budget And Failures
 
 Serialization is budgeted. Cost must account for traversal and emitted output size. Budget
-exhaustion is a typed CorePure failure under ADR 0028.
+exhaustion is a typed CorePure failure under ADR 0026.
 
 Serializing a non-serializable value is a typed CorePure failure. Because `toJson` is ordinary
 CorePure, the failure occurs during elaboration when the argument is statically known and during
@@ -139,7 +139,7 @@ renderers can be proposed later as explicit closed stdlib additions.
 
 ## Related
 
-- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
-- [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
-- [ADR 0028 - Wire Failure Taxonomy](./0028-wire-failure-taxonomy.md)
+- [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
+- [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
+- [ADR 0026 - Wire Failure Taxonomy](./0026-wire-failure-taxonomy.md)
 - [Wire Pure Execution Reference](../Reference/Wire/pure-execution.md)

@@ -1,11 +1,11 @@
 ---
-title: "ADR 0026 - Typed Executor Node Interface"
+title: "ADR 0024 - Typed Executor Node Interface"
 description:
   "Requires every executor node, including LLM-backed executors, to expose typed input and output
   ports instead of treating incoming edges as untyped context."
 sidebar:
-  label: "0026. Typed executors"
-  order: 26
+  label: "0024. Typed executors"
+  order: 24
 status: proposed
 date: 2026-04-29
 superseded_by: null
@@ -19,14 +19,14 @@ related:
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
-  - docs/ADRs/0018-wire-executor-and-port-catalog-boundary.md
-  - docs/ADRs/0021-executor-registration-and-binding.md
-  - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
-  - docs/ADRs/0024-wire-node-clause-grammar.md
-  - docs/ADRs/0025-corepure-expression-surface.md
+  - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
+  - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
+  - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0023-corepure-expression-surface.md
 ---
 
-# ADR 0026 - Typed Executor Node Interface
+# ADR 0024 - Typed Executor Node Interface
 
 ## Status
 
@@ -54,7 +54,7 @@ context, the topology layer says one thing for pure nodes and another for model 
 the same design smell as using `Directive` payloads to encode control structure: topology is being
 hidden inside data because the node boundary is too loose.
 
-ADR 0018 already separates contracts, ports, executor projections, host codecs, and authority. ADR
+ADR 0017 already separates contracts, ports, executor projections, host codecs, and authority. ADR
 0021 already says Wire compiles against executor projections. This ADR makes the executor projection
 discipline explicit for model-mediated executors.
 
@@ -147,7 +147,7 @@ The executor knows that it calls a model. The topology does not. From Wire's per
 takes an `EvidenceSet` value and produces an `AnalysisRecord` value or a typed executor failure.
 
 Prompt construction belongs inside the executor binding or executor config. It may use a template
-over typed input values, and CorePure string interpolation from ADR 0025 gives that template surface
+over typed input values, and CorePure string interpolation from ADR 0023 gives that template surface
 a natural expression language. The model response must be decoded and validated against the declared
 output contract, for example through strict JSON schema mode or an equivalent binding-layer
 validator. A response that does not validate is an executor failure, not an untyped downstream blob.
@@ -201,7 +201,7 @@ This keeps the topology auditable:
 - changing the prompt does not change graph structure;
 - changing graph structure does not require prompt-string surgery.
 
-Under ADR 0023, statically reducible pure projection can be folded during elaboration. Input-bound
+Under ADR 0021, statically reducible pure projection can be folded during elaboration. Input-bound
 projection remains an explicit pure executor invocation, still visible as structure rather than
 buried in a model prompt.
 
@@ -315,9 +315,9 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)
 - [ADR 0014 - Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
-- [ADR 0018 - Wire Executor and Port Catalog Boundary](./0018-wire-executor-and-port-catalog-boundary.md)
-- [ADR 0021 - Executor Registration and Binding](./0021-executor-registration-and-binding.md)
-- [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
-- [ADR 0024 - Wire Node Clause Grammar](./0024-wire-node-clause-grammar.md)
-- [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
+- [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
+- [ADR 0019 - Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
+- [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
+- [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
 - [Wire Partials and Execution Boundary Reference](../Reference/Wire/partials-and-execution-boundary.md)
