@@ -20,6 +20,7 @@ related:
   - docs/ADRs/0023-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0025-corepure-expression-surface.md
   - docs/ADRs/0026-typed-executor-node-interface.md
+  - docs/ADRs/0032-wire-node-implementation-forms.md
 ---
 
 # ADR 0024 - Wire Node Clause Grammar
@@ -31,6 +32,10 @@ the clause grammar for the next Wire implementation phase.
 
 This ADR rewrites the worked-example surface syntax in ADR 0022, including `node classify :` and
 newline-terminated clauses. ADR 0022's decision on pure output equations remains in force.
+
+Forward note: ADR 0032 extends this grammar with node-level executor bodies for zero-output and
+multi-output external executors. This ADR's per-output equation grammar remains the pure-node
+surface.
 
 ## Context
 
@@ -207,4 +212,5 @@ node classify
 - [ADR 0023 - Wire Source Elaborates to Circuits](./0023-wire-source-elaborates-to-circuits.md)
 - [ADR 0025 - CorePure Expression Surface](./0025-corepure-expression-surface.md)
 - [ADR 0026 - Typed Executor Node Interface](./0026-typed-executor-node-interface.md)
+- [ADR 0032 - Wire Node Implementation Forms](./0032-wire-node-implementation-forms.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)

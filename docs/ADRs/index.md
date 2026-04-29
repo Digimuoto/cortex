@@ -48,6 +48,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0029](0029-typed-llm-output-binding.md)                        | Typed LLM Output Binding                                            | proposed   |
 | [0030](0030-wire-topology-composition-and-boundary-labels.md)   | Wire Topology Composition and Boundary Labels                       | proposed   |
 | [0031](0031-corepure-structured-serialization.md)               | CorePure Structured Serialization                                   | proposed   |
+| [0032](0032-wire-node-implementation-forms.md)                  | Wire Node Implementation Forms                                      | proposed   |
 
 ## Writing a new ADR
 
