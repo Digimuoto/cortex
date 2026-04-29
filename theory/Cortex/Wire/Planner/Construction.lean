@@ -279,6 +279,262 @@ theorem anchor_not_mem_successorsOf_of_noSelfLoop
   rw [hEdge.2] at hEdge
   exact hNoSelfLoop hEdge.1
 
+/-- Direct predecessors of a denoted graph node are vertices of the denoted graph. -/
+theorem predecessorsOf_mem_vertices
+    {context : Graph node}
+    {target predecessor : node}
+    (hPredecessor : predecessor ∈ predecessorsOf (denote context) target) :
+    predecessor ∈ (denote context).vertices := by
+  simp only [predecessorsOf, Finset.mem_image, Finset.mem_filter] at hPredecessor
+  rcases hPredecessor with ⟨edge, hEdge, hSource⟩
+  rcases edge with ⟨source, target⟩
+  simp only at hSource
+  subst source
+  exact (denote_edgeEndpointsInVertices context (predecessor, target) hEdge.1).1
+
+/-- Direct successors of a denoted graph node are vertices of the denoted graph. -/
+theorem successorsOf_mem_vertices
+    {context : Graph node}
+    {target successor : node}
+    (hSuccessor : successor ∈ successorsOf (denote context) target) :
+    successor ∈ (denote context).vertices := by
+  simp only [successorsOf, Finset.mem_image, Finset.mem_filter] at hSuccessor
+  rcases hSuccessor with ⟨edge, hEdge, hTarget⟩
+  rcases edge with ⟨source, target⟩
+  simp only at hTarget
+  subst target
+  exact (denote_edgeEndpointsInVertices context (source, successor) hEdge.1).2
+
+/-- Replacement rewrites have exactly old-minus-anchor plus inserted final vertices. -/
+theorem plannedFinalRelation_vertices_replace
+    {context : Graph node}
+    {anchor : node}
+    {spec : SubgraphSpec node}
+    (hNoSelfLoop : (anchor, anchor) ∉ (denote context).edges)
+    (hEntryInside : NodesInside spec.entryNodes spec.topology)
+    (hExitInside : NodesInside spec.exitNodes spec.topology) :
+    (plannedFinalRelation context
+      (GraphRewrite.expandNode anchor ExpansionMode.replaceNode spec)).vertices =
+        (denote context).vertices.erase anchor ∪ (denote spec.topology).vertices := by
+  apply Finset.ext
+  intro node
+  constructor
+  · intro hFinal
+    simp only
+      [ plannedFinalRelation
+      , GraphRewrite.anchor
+      , GraphRewrite.spec
+      , GraphRewrite.anchorDisposition
+      , removeVertexFromRelation
+      , addEdgesToRelation
+      , Relation.overlay
+      , Finset.mem_union
+      , Finset.mem_erase
+      , Finset.mem_image
+      , Finset.mem_product
+      ] at hFinal ⊢
+    rcases hFinal with (((hBaseOrInserted | hEntrySource) | hEntryTarget) | hExitSource) |
+      hExitTarget
+    · rcases hBaseOrInserted with hBase | hInserted
+      · exact Or.inl hBase
+      · exact Or.inr hInserted
+    · rcases hEntrySource with ⟨edge, hEdge, hSource⟩
+      rcases edge with ⟨source, _entry⟩
+      simp only at hSource
+      have hPredecessor : node ∈ predecessorsOf (denote context) anchor := by
+        simpa only [hSource] using hEdge.1
+      have hNodeNeAnchor : node ≠ anchor := by
+        intro hNodeEq
+        rw [hNodeEq] at hPredecessor
+        exact anchor_not_mem_predecessorsOf_of_noSelfLoop hNoSelfLoop hPredecessor
+      exact Or.inl ⟨hNodeNeAnchor, predecessorsOf_mem_vertices hPredecessor⟩
+    · rcases hEntryTarget with ⟨edge, hEdge, hEntry⟩
+      rcases edge with ⟨_source, entry⟩
+      simp only at hEntry
+      rw [← hEntry]
+      exact Or.inr (hEntryInside entry hEdge.2)
+    · rcases hExitSource with ⟨edge, hEdge, hExit⟩
+      rcases edge with ⟨exit, _successor⟩
+      simp only at hExit
+      rw [← hExit]
+      exact Or.inr (hExitInside exit hEdge.1)
+    · rcases hExitTarget with ⟨edge, hEdge, hSuccessor⟩
+      rcases edge with ⟨_exit, successor⟩
+      simp only at hSuccessor
+      have hSuccessorMem : node ∈ successorsOf (denote context) anchor := by
+        simpa only [hSuccessor] using hEdge.2
+      have hNodeNeAnchor : node ≠ anchor := by
+        intro hNodeEq
+        rw [hNodeEq] at hSuccessorMem
+        exact anchor_not_mem_successorsOf_of_noSelfLoop hNoSelfLoop hSuccessorMem
+      exact Or.inl ⟨hNodeNeAnchor, successorsOf_mem_vertices hSuccessorMem⟩
+  · intro hUnion
+    simp only
+      [ plannedFinalRelation
+      , GraphRewrite.anchor
+      , GraphRewrite.spec
+      , GraphRewrite.anchorDisposition
+      , removeVertexFromRelation
+      , addEdgesToRelation
+      , Relation.overlay
+      , Finset.mem_union
+      , Finset.mem_erase
+      , Finset.mem_image
+      , Finset.mem_product
+      ] at hUnion ⊢
+    rcases hUnion with hBase | hInserted
+    · exact Or.inl (Or.inl (Or.inl (Or.inl (Or.inl hBase))))
+    · exact Or.inl (Or.inl (Or.inl (Or.inl (Or.inr hInserted))))
+
+/-- Retained-envelope rewrites have old plus inserted final vertices. -/
+theorem plannedFinalRelation_vertices_retain
+    {context : Graph node}
+    {anchor : node}
+    {spec : SubgraphSpec node}
+    (hAnchorInTopology : anchor ∈ (denote context).vertices)
+    (hEntryInside : NodesInside spec.entryNodes spec.topology)
+    (hExitInside : NodesInside spec.exitNodes spec.topology) :
+    (plannedFinalRelation context
+      (GraphRewrite.expandNode anchor ExpansionMode.retainNodeAsEnvelope spec)).vertices =
+        (denote context).vertices ∪ (denote spec.topology).vertices := by
+  apply Finset.ext
+  intro node
+  constructor
+  · intro hFinal
+    simp only
+      [ plannedFinalRelation
+      , GraphRewrite.anchor
+      , GraphRewrite.spec
+      , GraphRewrite.anchorDisposition
+      , removeOutgoingFromRelation
+      , addEdgesToRelation
+      , Relation.overlay
+      , Finset.mem_union
+      , Finset.mem_singleton
+      , Finset.mem_image
+      , Finset.mem_product
+      ] at hFinal ⊢
+    rcases hFinal with (((hBaseOrInserted | hEntrySource) | hEntryTarget) | hExitSource) |
+      hExitTarget
+    · rcases hBaseOrInserted with hBase | hInserted
+      · exact Or.inl hBase
+      · exact Or.inr hInserted
+    · rcases hEntrySource with ⟨edge, hEdge, hSource⟩
+      rcases edge with ⟨source, _entry⟩
+      simp only at hSource
+      have hSourceAnchor : source = anchor := by
+        simpa only [Finset.mem_singleton] using hEdge.1
+      rw [← hSource]
+      rw [hSourceAnchor]
+      exact Or.inl hAnchorInTopology
+    · rcases hEntryTarget with ⟨edge, hEdge, hEntry⟩
+      rcases edge with ⟨_source, entry⟩
+      simp only at hEntry
+      rw [← hEntry]
+      exact Or.inr (hEntryInside entry hEdge.2)
+    · rcases hExitSource with ⟨edge, hEdge, hExit⟩
+      rcases edge with ⟨exit, _successor⟩
+      simp only at hExit
+      rw [← hExit]
+      exact Or.inr (hExitInside exit hEdge.1)
+    · rcases hExitTarget with ⟨edge, hEdge, hSuccessor⟩
+      rcases edge with ⟨_exit, successor⟩
+      simp only at hSuccessor
+      have hSuccessorMem : node ∈ successorsOf (denote context) anchor := by
+        simpa only [hSuccessor] using hEdge.2
+      exact Or.inl (successorsOf_mem_vertices hSuccessorMem)
+  · intro hUnion
+    simp only
+      [ plannedFinalRelation
+      , GraphRewrite.anchor
+      , GraphRewrite.spec
+      , GraphRewrite.anchorDisposition
+      , removeOutgoingFromRelation
+      , addEdgesToRelation
+      , Relation.overlay
+      , Finset.mem_union
+      , Finset.mem_singleton
+      , Finset.mem_image
+      , Finset.mem_product
+      ] at hUnion ⊢
+    rcases hUnion with hBase | hInserted
+    · exact Or.inl (Or.inl (Or.inl (Or.inl (Or.inl hBase))))
+    · exact Or.inl (Or.inl (Or.inl (Or.inl (Or.inr hInserted))))
+
+/-- Append-after rewrites have old plus inserted final vertices. -/
+theorem plannedFinalRelation_vertices_append
+    {context : Graph node}
+    {anchor : node}
+    {spec : SubgraphSpec node}
+    (hAnchorInTopology : anchor ∈ (denote context).vertices)
+    (hEntryInside : NodesInside spec.entryNodes spec.topology)
+    (hExitInside : NodesInside spec.exitNodes spec.topology) :
+    (plannedFinalRelation context (GraphRewrite.appendAfter anchor spec)).vertices =
+        (denote context).vertices ∪ (denote spec.topology).vertices := by
+  apply Finset.ext
+  intro node
+  constructor
+  · intro hFinal
+    simp only
+      [ plannedFinalRelation
+      , GraphRewrite.anchor
+      , GraphRewrite.spec
+      , GraphRewrite.anchorDisposition
+      , removeOutgoingFromRelation
+      , addEdgesToRelation
+      , Relation.overlay
+      , Finset.mem_union
+      , Finset.mem_singleton
+      , Finset.mem_image
+      , Finset.mem_product
+      ] at hFinal ⊢
+    rcases hFinal with (((hBaseOrInserted | hEntrySource) | hEntryTarget) | hExitSource) |
+      hExitTarget
+    · rcases hBaseOrInserted with hBase | hInserted
+      · exact Or.inl hBase
+      · exact Or.inr hInserted
+    · rcases hEntrySource with ⟨edge, hEdge, hSource⟩
+      rcases edge with ⟨source, _entry⟩
+      simp only at hSource
+      have hSourceAnchor : source = anchor := by
+        simpa only [Finset.mem_singleton] using hEdge.1
+      rw [← hSource]
+      rw [hSourceAnchor]
+      exact Or.inl hAnchorInTopology
+    · rcases hEntryTarget with ⟨edge, hEdge, hEntry⟩
+      rcases edge with ⟨_source, entry⟩
+      simp only at hEntry
+      rw [← hEntry]
+      exact Or.inr (hEntryInside entry hEdge.2)
+    · rcases hExitSource with ⟨edge, hEdge, hExit⟩
+      rcases edge with ⟨exit, _successor⟩
+      simp only at hExit
+      rw [← hExit]
+      exact Or.inr (hExitInside exit hEdge.1)
+    · rcases hExitTarget with ⟨edge, hEdge, hSuccessor⟩
+      rcases edge with ⟨_exit, successor⟩
+      simp only at hSuccessor
+      have hSuccessorMem : node ∈ successorsOf (denote context) anchor := by
+        simpa only [hSuccessor] using hEdge.2
+      exact Or.inl (successorsOf_mem_vertices hSuccessorMem)
+  · intro hUnion
+    simp only
+      [ plannedFinalRelation
+      , GraphRewrite.anchor
+      , GraphRewrite.spec
+      , GraphRewrite.anchorDisposition
+      , removeOutgoingFromRelation
+      , addEdgesToRelation
+      , Relation.overlay
+      , Finset.mem_union
+      , Finset.mem_singleton
+      , Finset.mem_image
+      , Finset.mem_product
+      ] at hUnion ⊢
+    rcases hUnion with hBase | hInserted
+    · exact Or.inl (Or.inl (Or.inl (Or.inl (Or.inl hBase))))
+    · exact Or.inl (Or.inl (Or.inl (Or.inl (Or.inr hInserted))))
+
 /-- A replacement rewrite removes the anchor when the old topology has no anchor self-loop. -/
 theorem anchor_not_mem_plannedFinalRelation_replace
     {context : Graph node}
@@ -524,6 +780,168 @@ theorem constructedPlannedRewriteDelta_anchorMatches
     | appendAfter anchor spec =>
         exact anchor_mem_plannedFinalRelation_append hAnchorInTopology
 
+/-- `SourcePlanningContextValid` is the invariant carried by materialized planner inputs. -/
+structure SourcePlanningContextValid (context : PlanningContext node) : Prop where
+  /-- The current materialized topology is already a DAG. -/
+  sourceAcyclic : Acyclic context.topology
+  /-- Current stage definitions exactly cover the materialized topology. -/
+  definitionsCover : DefinitionCoverage context.topology context.definitions
+
+/-- Source context validity turns anchor membership into anchor-definition membership. -/
+theorem SourcePlanningContextValid.anchorHasDefinition
+    {context : PlanningContext node}
+    {anchor : node}
+    (hSource : SourcePlanningContextValid context)
+    (hAnchorInTopology : anchor ∈ (denote context.topology).vertices) :
+    anchor ∈ context.definitions := by
+  rw [hSource.definitionsCover]
+  exact hAnchorInTopology
+
+/-- Concrete construction derives final definition coverage from source and subgraph coverage. -/
+theorem constructedPlannedRewriteDelta_finalDefinitionsCover
+    {policy : RuntimeNamespacePolicy node}
+    {context : PlanningContext node}
+    {rawRewrite : GraphRewrite node}
+    {insertedDepth : Nat}
+    (hSource : SourcePlanningContextValid context)
+    (hAnchorInTopology : rawRewrite.anchor ∈ (denote context.topology).vertices)
+    (hRawSubgraphValid : rawRewrite.spec.Valid) :
+    DefinitionCoverage
+      (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).topology
+      (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).definitions := by
+  have hAnchorNoSelfLoop :
+      (rawRewrite.anchor, rawRewrite.anchor) ∉ (denote context.topology).edges :=
+    anchor_noSelfLoop_of_acyclic hSource.sourceAcyclic
+  have hNamespacedValid : (runtimePlannerRewrite policy rawRewrite).spec.Valid := by
+    simp only [runtimePlannerRewrite, namespaceGraphRewrite_spec]
+    exact
+      namespaceSubgraphSpec_preserves_valid
+        (policy.namespaceNode_injective rawRewrite.anchor)
+        hRawSubgraphValid
+  unfold DefinitionCoverage
+  simp only [constructedPlannedRewriteDelta]
+  rw [denote_constructedFinalTopology]
+  cases rawRewrite with
+  | expandNode anchor mode spec =>
+      cases mode with
+      | replaceNode =>
+          have hNamespacedDefinitions :
+              DefinitionCoverage
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).definitions := by
+            simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+              hNamespacedValid.definitionsCover
+          have hNamespacedEntries :
+              NodesInside
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).entryNodes
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology := by
+            simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+              hNamespacedValid.entryNodesInside
+          have hNamespacedExits :
+              NodesInside
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).exitNodes
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology := by
+            simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+              hNamespacedValid.exitNodesInside
+          have hNoSelfLoop :
+              (anchor, anchor) ∉ (denote context.topology).edges := by
+            simpa only [GraphRewrite.anchor] using hAnchorNoSelfLoop
+          simp only
+            [ constructedFinalRelation
+            , runtimePlannerRewrite
+            , namespaceGraphRewrite
+            , GraphRewrite.anchor
+            , GraphRewrite.spec
+            , GraphRewrite.anchorDisposition
+            , plannedFinalDefinitions
+            ]
+          rw
+            [ plannedFinalRelation_vertices_replace
+                hNoSelfLoop
+                hNamespacedEntries
+                hNamespacedExits
+            , hSource.definitionsCover
+            , hNamespacedDefinitions
+            ]
+      | retainNodeAsEnvelope =>
+          have hNamespacedDefinitions :
+              DefinitionCoverage
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).definitions := by
+            simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+              hNamespacedValid.definitionsCover
+          have hNamespacedEntries :
+              NodesInside
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).entryNodes
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology := by
+            simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+              hNamespacedValid.entryNodesInside
+          have hNamespacedExits :
+              NodesInside
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).exitNodes
+                (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology := by
+            simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+              hNamespacedValid.exitNodesInside
+          have hAnchorIn :
+              anchor ∈ (denote context.topology).vertices := by
+            simpa only [GraphRewrite.anchor] using hAnchorInTopology
+          simp only
+            [ constructedFinalRelation
+            , runtimePlannerRewrite
+            , namespaceGraphRewrite
+            , GraphRewrite.anchor
+            , GraphRewrite.spec
+            , GraphRewrite.anchorDisposition
+            , plannedFinalDefinitions
+            ]
+          rw
+            [ plannedFinalRelation_vertices_retain
+                hAnchorIn
+                hNamespacedEntries
+                hNamespacedExits
+            , hSource.definitionsCover
+            , hNamespacedDefinitions
+            ]
+  | appendAfter anchor spec =>
+      have hNamespacedDefinitions :
+          DefinitionCoverage
+            (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology
+            (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).definitions := by
+        simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+          hNamespacedValid.definitionsCover
+      have hNamespacedEntries :
+          NodesInside
+            (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).entryNodes
+            (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology := by
+        simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+          hNamespacedValid.entryNodesInside
+      have hNamespacedExits :
+          NodesInside
+            (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).exitNodes
+            (namespaceSubgraphSpec (policy.namespaceNode anchor) spec).topology := by
+        simpa only [runtimePlannerRewrite, namespaceGraphRewrite, GraphRewrite.spec] using
+          hNamespacedValid.exitNodesInside
+      have hAnchorIn :
+          anchor ∈ (denote context.topology).vertices := by
+        simpa only [GraphRewrite.anchor] using hAnchorInTopology
+      simp only
+        [ constructedFinalRelation
+        , runtimePlannerRewrite
+        , namespaceGraphRewrite
+        , GraphRewrite.anchor
+        , GraphRewrite.spec
+        , GraphRewrite.anchorDisposition
+        , plannedFinalDefinitions
+        ]
+      rw
+        [ plannedFinalRelation_vertices_append
+            hAnchorIn
+            hNamespacedEntries
+            hNamespacedExits
+        , hSource.definitionsCover
+        , hNamespacedDefinitions
+        ]
+
 /-- Runtime validation inputs not computed by the pure construction equations. -/
 structure RuntimeConstructionValidation
     (policy : RuntimeNamespacePolicy node)
@@ -559,6 +977,82 @@ structure RuntimeConstructionValidation
   /-- The runtime validated the final topology as acyclic. -/
   finalAcyclic :
     Acyclic (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).topology
+
+/-- Runtime-shaped inputs from which construction validation is derived.
+
+The remaining explicit fields correspond to executable checks: namespace
+validation, source anchor membership, raw subgraph validation, longest-path
+cost computation, and final DAG validation. Source definition coverage derives
+anchor definition membership and final definition coverage. -/
+structure RuntimeConstructionInputs
+    (policy : RuntimeNamespacePolicy node)
+    (context : PlanningContext node)
+    (rawRewrite : GraphRewrite node)
+    (insertedDepth : Nat) :
+    Prop where
+  /-- The current materialized topology and definition domain are valid. -/
+  sourceValid : SourcePlanningContextValid context
+  /-- The runtime namespace validator accepted local syntax and freshness. -/
+  namespaceDiscipline :
+    NamespaceDiscipline
+      policy.localAllowed
+      (policy.namespaceNode rawRewrite.anchor)
+      context
+      rawRewrite.spec
+  /-- The raw anchor exists in the current topology. -/
+  anchorInTopology : rawRewrite.anchor ∈ (denote context.topology).vertices
+  /-- The raw inserted subgraph passed runtime subgraph validation. -/
+  rawSubgraphValid : rawRewrite.spec.Valid
+  /-- Runtime longest-path computation agrees with the proof-side inserted-depth witness. -/
+  insertedDepthMatches :
+    LongestInsertedPathNodeCount
+      (runtimePlannerRewrite policy rawRewrite).spec
+      insertedDepth
+  /-- The runtime validated the final topology as acyclic. -/
+  finalAcyclic :
+    Acyclic (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).topology
+
+/-- Runtime-shaped inputs derive the older construction-validation bundle. -/
+theorem RuntimeConstructionInputs.toValidation
+    {policy : RuntimeNamespacePolicy node}
+    {context : PlanningContext node}
+    {rawRewrite : GraphRewrite node}
+    {insertedDepth : Nat}
+    (hInputs : RuntimeConstructionInputs policy context rawRewrite insertedDepth) :
+    RuntimeConstructionValidation policy context rawRewrite insertedDepth :=
+  { namespaceDiscipline := hInputs.namespaceDiscipline
+    anchorInTopology := hInputs.anchorInTopology
+    anchorHasDefinition :=
+      hInputs.sourceValid.anchorHasDefinition hInputs.anchorInTopology
+    sourceAcyclic := hInputs.sourceValid.sourceAcyclic
+    rawSubgraphValid := hInputs.rawSubgraphValid
+    insertedDepthMatches := hInputs.insertedDepthMatches
+    finalDefinitionsCover :=
+      constructedPlannedRewriteDelta_finalDefinitionsCover
+        hInputs.sourceValid
+        hInputs.anchorInTopology
+        hInputs.rawSubgraphValid
+    finalAcyclic := hInputs.finalAcyclic }
+
+/-- Runtime-shaped inputs carry the source-valid invariant to the next planner context. -/
+theorem RuntimeConstructionInputs.toNextSourceValid
+    {policy : RuntimeNamespacePolicy node}
+    {context : PlanningContext node}
+    {rawRewrite : GraphRewrite node}
+    {insertedDepth : Nat}
+    (hInputs : RuntimeConstructionInputs policy context rawRewrite insertedDepth) :
+    SourcePlanningContextValid
+      { topology :=
+          (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).topology
+        definitions :=
+          (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).definitions } :=
+  { sourceAcyclic := hInputs.finalAcyclic
+    definitionsCover :=
+      constructedPlannedRewriteDelta_finalDefinitionsCover
+        (insertedDepth := insertedDepth)
+        hInputs.sourceValid
+        hInputs.anchorInTopology
+        hInputs.rawSubgraphValid }
 
 /-- The concrete construction equations establish `RuntimePlannerConstruction`. -/
 theorem constructedPlannedRewriteDelta_runtimePlannerConstruction
@@ -676,6 +1170,46 @@ theorem constructedPlannedRewriteDelta_admissible
       budget :=
   runtimePlannerConstruction_admissible
     (constructedPlannedRewriteDelta_runtimePlannerConstruction hValidation)
+    hAdmitted
+    hContracts
+
+/-- Runtime-shaped construction inputs plus budget admission give an admissible rewrite. -/
+theorem constructedPlannedRewriteDelta_admissible_of_inputs
+    {policy : RuntimeNamespacePolicy node}
+    {context : PlanningContext node}
+    {rawRewrite : GraphRewrite node}
+    {insertedDepth : Nat}
+    {budget remaining : RewriteBudget}
+    {contractOk : Graph node → Prop}
+    (hInputs :
+      RuntimeConstructionInputs policy context rawRewrite insertedDepth)
+    (hAdmitted :
+      AdmittedRewriteDelta
+        budget
+        (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth)
+        remaining)
+    (hContracts :
+      ∀ g,
+        denote g = denote context.topology →
+          contractOk g →
+            contractOk
+              (constructedPlannedRewriteDelta
+                policy
+                context
+                rawRewrite
+                insertedDepth).topology) :
+    admissible
+      ((constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).toRewrite
+        context.topology
+        (plannedRewriteSafety_of_checks
+          (runtimePlannerConstruction_planGraphRewriteChecks
+            (constructedPlannedRewriteDelta_runtimePlannerConstruction
+              hInputs.toValidation))
+          hContracts))
+      context.topology
+      budget :=
+  constructedPlannedRewriteDelta_admissible
+    hInputs.toValidation
     hAdmitted
     hContracts
 

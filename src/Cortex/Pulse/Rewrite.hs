@@ -272,6 +272,15 @@ consumeRewriteBudget budget cost
           , rbRewriteOpsMax = rbRewriteOpsMax budget - rcRewriteOps cost
           }
 
+{- | Plan a bounded topology rewrite from the current materialized graph.
+
+Proof contract note: the Lean planner bridge treats the input relation and
+definition map as a source-valid planning context. The current topology is
+expected to have been admitted as a DAG before planning starts, while
+'validateRewriteAnchor' checks that definitions exactly cover the current
+topology and that the anchor is present in both. This function still validates
+the final topology with 'validateDAG' after constructing the planned relation.
+-}
 planGraphRewrite
   :: GraphRewrite NodeId def
   -> Relation NodeId

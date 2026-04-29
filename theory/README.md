@@ -146,21 +146,33 @@ Mechanized results now include:
   namespacing discipline with fixed-anchor injectivity and local-id syntax.
 - `plannedFinalRelation_edgeEndpointsInVertices`: the relation-level planner output is always
   endpoint-closed, so it has a graph representative.
+- `SourcePlanningContextValid` and `RuntimeConstructionInputs`: source topology acyclicity and
+  definition-domain coverage are named planner-input invariants, rather than repeated free fields.
+- `constructedPlannedRewriteDelta_finalDefinitionsCover`: final definition coverage is derived from
+  source definition coverage, raw subgraph validity, and the construction equations.
+- `RuntimeConstructionInputs.toValidation`: runtime-shaped planner inputs derive the older
+  `RuntimeConstructionValidation` bundle.
+- `RuntimeConstructionInputs.toNextSourceValid`: runtime-shaped planner inputs carry the
+  source-valid planning-context invariant to the next planned topology and definition domain.
 - `constructedPlannedRewriteDelta_runtimePlannerConstruction`: the proof-side planner construction
   computes the final topology, relation diffs, entry/exit sets, definition update, and structural
   costs needed by `RuntimePlannerConstruction`; anchor absence for replacement rewrites is derived
   from namespace freshness plus source-topology acyclicity.
 - `constructedPlannedRewriteDelta_admissible`: the constructed delta, runtime validation witnesses,
   and budget admission instantiate the abstract admissible-rewrite predicate.
+- `constructedPlannedRewriteDelta_admissible_of_inputs`: the source-valid planner input bundle,
+  constructed delta, and budget admission directly instantiate the abstract admissible-rewrite
+  predicate.
 - `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
 Remaining obligations:
 
-- prove that the executable Haskell planner produces the `RuntimeConstructionValidation` witnesses
-  used by the constructed Lean delta, including source-topology acyclicity, current anchor
-  membership, final definition coverage, final acyclicity, and the inserted-depth computation;
+- prove that the executable Haskell planner produces the `RuntimeConstructionInputs` witnesses used
+  by the constructed Lean delta, including the source context validity invariant, namespace
+  discipline, current anchor membership, raw-subgraph validity, final acyclicity, and inserted-depth
+  computation;
 - connect registry-boundary witnesses to the Haskell compiler and registry;
 - connect the abstract chain model to durable materialization order and lineage.
 
