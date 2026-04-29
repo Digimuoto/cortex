@@ -15,6 +15,7 @@ import Cortex.Pulse.Recovery
 import Cortex.Pulse.Classify
 
 -- Track 3 — Wire rewrite soundness
+import Cortex.Wire.Pure
 import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
 import Cortex.Wire.Admission
@@ -39,5 +40,5 @@ check that every proof track remains importable together.
 
 The imported tracks are the theorem split: `Cortex.Graph.*` for algebra,
 `Cortex.Pulse.*` for fixed-topology runtime safety, and
-`Cortex.Wire.*` for registry-boundary and rewrite admission.
+`Cortex.Wire.*` for pure-node, registry-boundary, and rewrite admission.
 -/

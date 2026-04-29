@@ -82,6 +82,9 @@ Haskell-side establishment of the persisted recovery preconditions.
 
 ### Track 3 — Rewrite soundness
 
+`Cortex.Wire.Pure` models the proof-facing CorePure subset for pure output equations: deterministic
+integer/boolean/record evaluation, static `where`-field discovery soundness, an expression ADT with
+no authority-bearing constructors, and one-source-node-to-one-native-pure-task lowering.
 `Cortex.Wire.Registry` models the `@` executor boundary as pure staging of registered authority:
 executor lookup, config validation, registry-wide contract vocabulary, endpoint compatibility,
 effect-class policy, output validation, and host authority. `Cortex.Wire.Rewrite` defines the
@@ -102,6 +105,29 @@ delta establishes the planner-construction bridge under the remaining runtime va
 
 Mechanized results now include:
 
+- `pureEvaluation_deterministic`: CorePure subset evaluation is deterministic because evaluation is
+  a pure function over an explicit environment.
+- `where_staticFields_record`, `where_staticFields_merge`, and `where_staticFields_let`: static
+  field discovery computes record-literal fields, merge unions, and ADR 0031-style local `let`
+  transparency explicitly.
+- `whereStaticFields_sound`, `evalBindingsNoDuplicate_preserves_static_context`, and
+  `evalBindings_preserves_static_context`: static `where` discovery is sound for runtime
+  environments that match the static context when local `let` binders do not shadow statically known
+  module-level records.
+- `pureOutput_keys_match_declaredPorts`, `where_noInputCollision`, `pureNode_whereFields_known`, and
+  `pureNode_lowers_to_one_nativeTask`: admitted source pure nodes lower to one native pure task
+  while preserving output equations and the statically checked `where` boundary.
+- `pureNode_bindings_noShadow`, `pureNode_where_letSafe`, `pureNode_where_hasOnlyFields`,
+  `pureNode_evalWhereEnv_record_hasOnlyFields`, `openRecordIntoEnv_preserves_hidden_static_context`,
+  and `pureNode_evalWhereEnv_localEnv_match`: admitted nodes carry the no-shadow obligations needed
+  to apply static `where` soundness through the actual `evalWhereEnv` call site, while opened
+  `where` fields hide any same-named static record facts.
+- `evalOutputEquationValues_preserves_names`, `evalOutputEquations_keys_subset`,
+  `evalOutputEquations_keys_present`, `pureNode_evalOutputs_keys_in_outputPorts`, and
+  `pureNode_evalOutputs_outputPorts_present`: successful proof-side pure-node evaluation exposes
+  exactly the declared output ports.
+- `pureNode_lowering_evalOutputs_eq`: lowered native pure-task configs evaluate to the same
+  proof-side output lookup function as their source pure nodes.
 - `plannedRewriteSafety_of_checks`: runtime planning checks supply the acyclicity and positive
   rewrite-operation parts of a proof-carrying rewrite.
 - `planGraphRewriteChecks_topology_matches`: planning checks expose the final-topology construction
@@ -177,6 +203,16 @@ Mechanized results now include:
 
 Remaining obligations:
 
+- prove that the executable Haskell CorePure evaluator and compiler lowering
+  (`evaluatePureTaskOutputs`, `loweredPureNodeFromBody`, `validateWhereClause`, and
+  `staticWhereFieldNames`) produce the Lean `Cortex.Wire.Pure` witnesses, including duplicate-name
+  rejection, output-port equality, static `where` fields, and ADR 0010/0023's authority exclusion by
+  syntax; the static `where` correspondence must also produce the `bindings_noShadow` and
+  `where_letSafe` admission witnesses when field discovery ignores local CorePure `let` binders, and
+  show that opened `where` fields hide same-named static record facts;
+- connect ADR 0023's duplicate-name discipline to executable parser/elaborator witnesses, especially
+  duplicate record fields and nested-path conflicts, so record evaluation never relies on silent
+  overwrite inside admitted CorePure literals;
 - prove that the executable Haskell planner and budget admission path (`planGraphRewrite`,
   `consumeRewriteBudget`, and `admitRewriteDelta`) produce the `RuntimeConstructionInputs` and
   `AdmittedRewriteDelta` witnesses used by constructed Lean chains, including the source context
@@ -233,15 +269,15 @@ The repo's pre-commit hook checks theory changes through the flake surface
 
 ## Status
 
-| Track                            | Statements                                                                              | Proved                                                                                                                                                                                                                                         | Axiomatized |
-| -------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                | relation-level laws                                                                                                                                                                                                                            | none        |
-| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                         | denotational law surface                                                                                                                                                                                                                       | none        |
-| 1c. Graph quotient laws          | lifted quotient equality laws                                                           | `AlgGraph` quotient carrier, lifted operations, quotient equality bridge, Mokhov laws as `=`                                                                                                                                                   | none        |
-| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface            | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness | none        |
-| 3. Rewrite soundness             | registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge | node/edge registry predicates, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget                                            | none        |
-| 4. Provider / sparks             | —                                                                                       | —                                                                                                                                                                                                                                              | not started |
-| 5. Substrate / consumer boundary | —                                                                                       | —                                                                                                                                                                                                                                              | not started |
+| Track                            | Statements                                                                                                      | Proved                                                                                                                                                                                                                                                                       | Axiomatized |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                                        | relation-level laws                                                                                                                                                                                                                                                          | none        |
+| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                                                 | denotational law surface                                                                                                                                                                                                                                                     | none        |
+| 1c. Graph quotient laws          | lifted quotient equality laws                                                                                   | `AlgGraph` quotient carrier, lifted operations, quotient equality bridge, Mokhov laws as `=`                                                                                                                                                                                 | none        |
+| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification surface                                    | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness                               | none        |
+| 3. Rewrite soundness             | CorePure proof subset + registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge | pure evaluator determinism/static-field soundness/lowering preservation, node/edge registry predicates, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget | none        |
+| 4. Provider / sparks             | —                                                                                                               | —                                                                                                                                                                                                                                                                            | not started |
+| 5. Substrate / consumer boundary | —                                                                                                               | —                                                                                                                                                                                                                                                                            | not started |
 
 Discharging the remaining obligations is the actual work. The scaffold's job is to make the
 obligation graph compile and run end-to-end so that proof debt is visible and each abstract

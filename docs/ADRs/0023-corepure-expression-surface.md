@@ -72,6 +72,52 @@ CorePure explicitly disallows:
 
 `fold` can be reconsidered only after budget accounting is solid enough to state its cost model.
 
+### Duplicate Names
+
+CorePure rejects duplicate names at parse/elaboration time across every authoring surface that
+introduces names. No such surface uses silent right-biased or left-biased override. The only place
+in CorePure where one record's keys may override another's is the explicit record merge operator
+`//`, which is unaffected by this rule.
+
+The duplicate-name rule applies to:
+
+- record literals;
+- `let` bindings within one scope;
+- lambda parameters within one lambda;
+- output equations within one node.
+
+Within a record literal, two field declarations conflict when their paths are equal or when one path
+is a strict prefix of the other. The following are parse errors:
+
+```wire
+{ a = 1 ; a = 2 ; }                        -- equal paths
+{ a.b = 1 ; a.b = 2 ; }                    -- equal paths
+{ a = 1 ; a.b = 2 ; }                      -- `a` is a strict prefix of `a.b`
+{ a.b = 1 ; a = { b = 2 ; } ; }            -- `a` is a strict prefix of `a.b`
+```
+
+The following is permitted because neither path is a prefix of the other; the distinct leaves
+combine into one nested record:
+
+```wire
+{ a.b = 1 ; a.c = 2 ; }                    -- equivalent to { a = { b = 1 ; c = 2 ; } ; }
+```
+
+The runtime evaluator never observes duplicate names within one scope, because the parser and
+elaborator reject them upstream. Shadowing across distinct nested scopes is unaffected: an inner
+`let` binding with the same name as an outer one shadows the outer per ADR 0023's non-recursive
+scoping rules.
+
+The decision follows Nix's attrset semantics. Nix rejects `{ a = 1; a = 2; }` and
+`let x = 1; x = 2; in x` at parse time regardless of recursive scope, and Nix's `//` operator
+performs explicit right-biased override on already-constructed attrsets. CorePure adopts the same
+split for the same reason: a silent in-literal override would let one of two visibly distinct
+authoring intents win without telling the reader, while explicit `//` makes the override visible at
+the call site.
+
+Authors who want override behavior write `defaults // { field = newValue ; }` rather than declaring
+`field` twice in one record literal.
+
 ### Pipe Sugar
 
 `|>` is the canonical function-composition operator inside CorePure expressions. It is
@@ -251,6 +297,11 @@ can build text outputs without unreadable manual `concat` and `toString` calls.
   core use case. Without interpolation, real examples become noisy immediately.
 - **Stringify every value.** Rejected because records and lists need explicit serialization rules.
   Accidental structural stringification would become observable semantics.
+- **Silently right-merge or left-merge duplicate field declarations in record literals.** Rejected
+  because it lets one of two visibly distinct authoring intents win without informing the reader,
+  diverges from Nix's attrset semantics, and diverges from CorePure's existing duplicate-name
+  discipline for `let` bindings, lambda parameters, and output equations. Override remains available
+  through the explicit `//` operator.
 
 ## Consequences
 
@@ -274,6 +325,10 @@ can build text outputs without unreadable manual `concat` and `toString` calls.
 - Add budget tests for list operations and string concatenation.
 - Add parser tests for double-quoted strings, indented strings, interpolation, and escapes.
 - Keep `toString` constrained to scalar values until explicit structured serialization is designed.
+- Reject duplicate field declarations in record literals at parse time, where two declarations
+  conflict when their paths are equal or when one path is a strict prefix of the other. This matches
+  the duplicate-name discipline already enforced for `let` bindings, lambda parameters, and output
+  equations.
 
 ## Related
 
