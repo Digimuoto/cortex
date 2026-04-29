@@ -62,8 +62,8 @@ Cortex is vertically split per ADR 0015. Name the layer explicitly in your plan:
 - `Cortex.Memory.*` — memory substrate
 - `Cortex.Capability.*` — model + tool abstractions
 - `Cortex.Document.*` — structured artifacts and reports
-- `Platform.*` — generic runtime substrate (observability, durable task, database, crypto, HTTP
-  retry). Lives in `src-platform/`.
+- `Platform.*` — generic runtime support imported from the private upstream
+  `Digimuoto/haskell-platform` repository.
 
 If the work would introduce reasoning-layer concerns (role taxonomies, reasoning templates, memory
 presets), it probably belongs in `Logos` — not in the runtime substrate. Flag this and stop to

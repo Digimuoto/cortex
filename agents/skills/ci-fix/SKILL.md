@@ -86,7 +86,6 @@ index-state).
 | Format           | `nix fmt -- --ci`                            |
 | Flake check      | `nix flake check --print-build-logs`         |
 | Library build    | `nix build .#cortex`                         |
-| Platform build   | `nix build .#platform-runtime`               |
 | Executable build | `nix build .#cortex-pulse`                   |
 | Docs site        | `nix build .#docs-site`                      |
 | Tests            | `just test` or `just test-match "<pattern>"` |

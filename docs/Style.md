@@ -59,8 +59,8 @@ Allowed file-local extensions are:
 
 ## Module Haddock Headers
 
-Every `.hs` file under `src/`, `src-platform/`, `app/`, and `test/` carries a combined Hackage-style
-module Haddock block. The block provides both the module synopsis/context and the license metadata:
+Every `.hs` file under `src/`, `app/`, and `test/` carries a combined Hackage-style module Haddock
+block. The block provides both the module synopsis/context and the license metadata:
 
 ```haskell
 {- |

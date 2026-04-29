@@ -61,15 +61,18 @@ plan => gather => write
 
 ```text
 src/Cortex/               Cortex substrate library
-src-platform/Platform/    Runtime substrate helpers
-src-logos/Logos/          Downstream Logos reasoning library
 app/cortex-pulse/         Pulse executor binary
 editors/tree-sitter-wire/ Wire tree-sitter grammar
 theory/                   Lean mechanization scaffold
 docs/                     Published Cortex documentation
-test-logos/               Logos test suite
 agents/                   Provider-neutral agent context and skills
 ```
+
+Cortex depends on the private upstream `Digimuoto/haskell-platform` repository through the flake.
+The downstream private `Digimuoto/logos` repository is locked as a flake input for migration
+visibility; Logos is not built from this repository. Because these inputs are private SSH Git
+sources, `nix build`, `nix develop`, and flake evaluation require GitHub SSH credentials with read
+access to both repositories until the passive Logos lock is removed.
 
 ## License
 

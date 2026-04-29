@@ -258,6 +258,22 @@
         "type": "github"
       }
     },
+    "haskell-platform-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1777503669,
+        "narHash": "sha256-nKxy3ECWKsNdfKygRU1t0koFyncQyDHwhI6rycdTR7U=",
+        "ref": "refs/heads/main",
+        "rev": "4e237a7ceacc4acb0c2ba85a23a3a581ecc94881",
+        "revCount": 3,
+        "type": "git",
+        "url": "ssh://git@github.com/Digimuoto/haskell-platform.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/Digimuoto/haskell-platform.git"
+      }
+    },
     "hls": {
       "flake": false,
       "locked": {
@@ -528,6 +544,22 @@
         "type": "github"
       }
     },
+    "logos-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1777486467,
+        "narHash": "sha256-NXhsA2NnE+eaR9kR0ZhFo+8JYPbZ45CSmqrIajcLEyo=",
+        "ref": "refs/heads/main",
+        "rev": "3dd3e26211c0bcd003cdaa3753f7f44fa36c4ed8",
+        "revCount": 1,
+        "type": "git",
+        "url": "ssh://git@github.com/Digimuoto/logos.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/Digimuoto/logos.git"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1776877367,
@@ -751,6 +783,8 @@
       "inputs": {
         "flake-parts": "flake-parts",
         "haskell-nix": "haskell-nix",
+        "haskell-platform-src": "haskell-platform-src",
+        "logos-src": "logos-src",
         "nixpkgs": "nixpkgs",
         "pre-commit-hooks": "pre-commit-hooks",
         "repo-docs": "repo-docs",

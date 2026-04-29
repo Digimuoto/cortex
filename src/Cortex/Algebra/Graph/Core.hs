@@ -14,7 +14,7 @@ Layer placement:
 
 * 'Cortex.Algebra.Graph' owns pure graph semantics and algorithms.
 * 'Cortex.Pulse.*' owns durable execution, scheduling, and persistence.
-* Portman domain workflows compile into these generic graph semantics,
+* Consumer domain workflows compile into these generic graph semantics,
 but finance-specific meaning does not live here.
 
 Key semantics from the paper:

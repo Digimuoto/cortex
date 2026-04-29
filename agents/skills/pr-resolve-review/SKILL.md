@@ -103,7 +103,7 @@ gh api "repos/Digimuoto/cortex/pulls/$PR/commits" --jq '[.[].commit.committer.da
 
    > Wildcard match on PulseOutcome — ADR 0014 requires exhaustive patterns.
 
-2. `src-platform/Platform/Observability/Emit.hs:88` — @reviewer
+2. `src/Cortex/Pulse/Executor/Events.hs:88` — @reviewer
    > Missing redaction on the JWT token field.
 
 ### Questions

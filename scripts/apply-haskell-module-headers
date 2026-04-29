@@ -8,7 +8,7 @@ import re
 import sys
 import textwrap
 
-ROOTS = ("src", "src-platform", "src-logos", "app", "test", "test-logos")
+ROOTS = ("src", "app", "test")
 
 METADATA_RE = re.compile(
     r"^(Module|Description|Copyright|License|Maintainer|Stability)\s*:"
@@ -210,7 +210,7 @@ def describe_module(path: pathlib.Path, module_name: str, old_doc: list[str]) ->
 def default_description(path: pathlib.Path, module_name: str) -> str:
     if module_name == "Main":
         return "Command-line entry point for the Cortex Pulse substrate shell."
-    if path.parts and path.parts[0] in {"test", "test-logos"}:
+    if path.parts and path.parts[0] == "test":
         return f"Tests for {module_name.replace('Spec', '') or 'Cortex'}."
     last = module_name.split(".")[-1]
     words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", last).lower()
@@ -228,7 +228,7 @@ def default_description(path: pathlib.Path, module_name: str) -> str:
 
 
 def default_context(path: pathlib.Path, module_name: str) -> str:
-    if path.parts and path.parts[0] in {"test", "test-logos"}:
+    if path.parts and path.parts[0] == "test":
         return "The spec exercises public behavior through the same Nix-backed test surface used by CI."
     if module_name.startswith("Logos"):
         return "The module belongs to Logos' downstream reasoning-library surface."
@@ -241,7 +241,7 @@ def default_context(path: pathlib.Path, module_name: str) -> str:
 
 
 def boundary_context(module_name: str, path: pathlib.Path) -> str:
-    if path.parts and path.parts[0] in {"test", "test-logos"}:
+    if path.parts and path.parts[0] == "test":
         return "Tests may import the surface they exercise, but they do not define downstream product behavior."
     if module_name.startswith("Platform."):
         return "Platform modules provide generic runtime substrate utilities and do not import Cortex or consumers."

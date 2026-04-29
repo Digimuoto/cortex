@@ -401,7 +401,7 @@ parseOpenRouterRequest apiKey payload = do
   let headers =
         [ ("Accept", "application/json")
         , ("Content-Type", "application/json")
-        , ("User-Agent", "Portman/1.0")
+        , ("User-Agent", "Cortex/0.1")
         , ("Authorization", TE.encodeUtf8 ("Bearer " <> apiKey))
         ]
   pure

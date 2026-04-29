@@ -28,6 +28,10 @@ spec =
       entries <- listDirectory "src/Cortex"
       filter (`elem` entries) removedRootEntries `shouldBe` []
 
+    it "does not keep split upstream source trees in the Cortex repo" $ do
+      existing <- filterM doesDirectoryExist splitUpstreamDirectories
+      existing `shouldBe` []
+
     it "does not expose removed public module roots" $ do
       cabal <- readFile "cortex.cabal"
       filter (`isInfixOf` cabal) removedExposedModulePrefixes `shouldBe` []
@@ -58,6 +62,13 @@ removedRootEntries =
   , "Run"
   , "Task"
   , "Text.hs"
+  ]
+
+splitUpstreamDirectories :: [FilePath]
+splitUpstreamDirectories =
+  [ "src-platform"
+  , "src-logos"
+  , "test-logos"
   ]
 
 removedExposedModulePrefixes :: [String]

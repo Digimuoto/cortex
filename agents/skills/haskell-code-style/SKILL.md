@@ -23,8 +23,7 @@ Operates on the branch diff (like a PR review) by default, not the entire codeba
 - No arguments — diffs current branch vs `main`, reviews changed `.hs` files
 - `--base <branch>` — use a different base branch
 - File paths — review specific files (e.g. `src/Cortex/Pulse/Executor.hs`)
-- Directory paths — review all `.hs` files under the directory (e.g.
-  `src-platform/Platform/DurableTask/`)
+- Directory paths — review all `.hs` files under the directory (e.g. `src/Cortex/Pulse/`)
 
 **Examples:**
 
@@ -32,7 +31,7 @@ Operates on the branch diff (like a PR review) by default, not the entire codeba
 /haskell-code-style                                         # branch diff vs main
 /haskell-code-style --base develop                          # branch diff vs develop
 /haskell-code-style src/Cortex/Pulse/Executor.hs            # one file
-/haskell-code-style src-platform/Platform/DurableTask/      # whole directory
+/haskell-code-style src/Cortex/Pulse/                       # whole directory
 /haskell-code-style Executor.hs Scheduler.hs                # multiple files
 ```
 
@@ -93,8 +92,8 @@ Before reviewing, read the references that are in scope for the change:
   golden tests, roundtrip tests, algebraic laws).
 
 Cortex's Haskell style is repo-local production-Haskell guidance. The references should read as
-Cortex and Platform guidance; examples should use `src/Cortex/...` or `src-platform/Platform/...`
-shapes unless they are explicitly downstream consumer examples.
+Cortex guidance; examples should use `src/Cortex/...` shapes unless they are explicitly downstream
+consumer examples.
 
 ### 4. Read the code
 

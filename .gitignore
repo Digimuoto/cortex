@@ -12,16 +12,10 @@
 # Haskell library source
 !src/
 !src/**
-!src-platform/
-!src-platform/**
-!src-logos/
-!src-logos/**
 !app/
 !app/**
 !test/
 !test/**
-!test-logos/
-!test-logos/**
 
 # agents/ — slash-command skills for AI coding agents
 !agents/
@@ -43,10 +37,6 @@ theory/.lake/
 # nix/ — includes materialized/ for reproducible builds
 !nix/
 !nix/**
-
-# config/ — substrate-side runtime config (memory ranking weights, etc.)
-!config/
-!config/**
 
 # editors/ — tree-sitter-wire grammar + editor integrations
 !editors/

@@ -34,7 +34,7 @@
             entry = "${pkgs.haskellPackages.fourmolu}/bin/fourmolu --mode inplace";
             language = "system";
             pass_filenames = true;
-            files = "^(src|src-platform|src-logos|app|test|test-logos)/.*\\.hs$";
+            files = "^(src|app|test)/.*\\.hs$";
           };
 
           hlint = {
@@ -54,7 +54,7 @@
             entry = "${config.packages.check-language-pragmas}/bin/check-language-pragmas";
             language = "system";
             pass_filenames = true;
-            files = "^(src|src-platform|src-logos|app|test|test-logos)/.*\\.hs$|^cortex\\.cabal$|^scripts/check-language-pragma-allowlist\\.sh$";
+            files = "^(src|app|test)/.*\\.hs$|^cortex\\.cabal$|^scripts/check-language-pragma-allowlist\\.sh$";
           };
 
           module-haddock = {
@@ -64,17 +64,17 @@
             entry = "${config.packages.check-module-haddock}/bin/check-module-haddock";
             language = "system";
             pass_filenames = true;
-            files = "^(src|src-platform|src-logos|app|test|test-logos)/.*\\.hs$|^scripts/check-module-haddock\\.sh$|^\\.license-header\\.txt$";
+            files = "^(src|app|test)/.*\\.hs$|^scripts/check-module-haddock\\.sh$|^\\.license-header\\.txt$";
           };
 
           logos-boundary = {
             enable = true;
             name = "logos-boundary";
-            description = "Reject Cortex or Platform imports of Logos";
+            description = "Reject Cortex imports of Logos";
             entry = "${config.packages.check-logos-boundary}/bin/check-logos-boundary";
             language = "system";
             pass_filenames = true;
-            files = "^(src|src-platform|app|test)/.*\\.hs$|^scripts/check-logos-boundary\\.sh$";
+            files = "^(src|app|test)/.*\\.hs$|^scripts/check-logos-boundary\\.sh$";
           };
 
           lean-lint = {

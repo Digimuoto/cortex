@@ -7,8 +7,8 @@
       enable = true;
 
       # The Cortex research wiki: architecture, ADRs, reference specs,
-      # publications, research notes. This is the sole site in this repo;
-      # it sits at routeBase "/" (not "/cortex" as in the Portman monorepo).
+      # publications, research notes. This is the sole site in this repo,
+      # so it sits at routeBase "/".
       sites.default = {
         contentDir = ../docs;
         theme = "cortex-light";

@@ -25,7 +25,7 @@
       detailLevel = "FullDetails";
       licenseFiles = [ "LICENSE" ];
       dataDir = ".";
-      dataFiles = [ "config/cortex/memory-ranking.yaml" ];
+      dataFiles = [];
       extraSrcFiles = [ "README.md" "NOTICE" ];
       extraTmpFiles = [];
       extraDocFiles = [];
@@ -92,7 +92,7 @@
           (hsPkgs."monad-logger" or (errorHandler.buildDepError "monad-logger"))
           (hsPkgs."configurator" or (errorHandler.buildDepError "configurator"))
           (hsPkgs."cmark-gfm" or (errorHandler.buildDepError "cmark-gfm"))
-          (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
+          (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
           (hsPkgs."megaparsec" or (errorHandler.buildDepError "megaparsec"))
         ];
         buildable = true;
@@ -193,232 +193,12 @@
         ];
         hsSourceDirs = [ "src" ];
       };
-      sublibs = {
-        "platform-runtime" = {
-          depends = [
-            (hsPkgs."base" or (errorHandler.buildDepError "base"))
-            (hsPkgs."text" or (errorHandler.buildDepError "text"))
-            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
-            (hsPkgs."deepseq" or (errorHandler.buildDepError "deepseq"))
-            (hsPkgs."base16-bytestring" or (errorHandler.buildDepError "base16-bytestring"))
-            (hsPkgs."base64-bytestring" or (errorHandler.buildDepError "base64-bytestring"))
-            (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
-            (hsPkgs."uuid-types" or (errorHandler.buildDepError "uuid-types"))
-            (hsPkgs."time" or (errorHandler.buildDepError "time"))
-            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
-            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
-            (hsPkgs."vector" or (errorHandler.buildDepError "vector"))
-            (hsPkgs."insert-ordered-containers" or (errorHandler.buildDepError "insert-ordered-containers"))
-            (hsPkgs."unordered-containers" or (errorHandler.buildDepError "unordered-containers"))
-            (hsPkgs."mtl" or (errorHandler.buildDepError "mtl"))
-            (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
-            (hsPkgs."exceptions" or (errorHandler.buildDepError "exceptions"))
-            (hsPkgs."async" or (errorHandler.buildDepError "async"))
-            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
-            (hsPkgs."random" or (errorHandler.buildDepError "random"))
-            (hsPkgs."unix" or (errorHandler.buildDepError "unix"))
-            (hsPkgs."retry" or (errorHandler.buildDepError "retry"))
-            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
-            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
-            (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
-            (hsPkgs."process" or (errorHandler.buildDepError "process"))
-            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
-            (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
-            (hsPkgs."yaml" or (errorHandler.buildDepError "yaml"))
-            (hsPkgs."rel8" or (errorHandler.buildDepError "rel8"))
-            (hsPkgs."hasql" or (errorHandler.buildDepError "hasql"))
-            (hsPkgs."hasql-pool" or (errorHandler.buildDepError "hasql-pool"))
-            (hsPkgs."hasql-transaction" or (errorHandler.buildDepError "hasql-transaction"))
-            (hsPkgs."resource-pool" or (errorHandler.buildDepError "resource-pool"))
-            (hsPkgs."servant-server" or (errorHandler.buildDepError "servant-server"))
-            (hsPkgs."servant-client-core" or (errorHandler.buildDepError "servant-client-core"))
-            (hsPkgs."openapi3" or (errorHandler.buildDepError "openapi3"))
-            (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
-            (hsPkgs."http-client-tls" or (errorHandler.buildDepError "http-client-tls"))
-            (hsPkgs."http-api-data" or (errorHandler.buildDepError "http-api-data"))
-            (hsPkgs."http-types" or (errorHandler.buildDepError "http-types"))
-            (hsPkgs."case-insensitive" or (errorHandler.buildDepError "case-insensitive"))
-            (hsPkgs."wai" or (errorHandler.buildDepError "wai"))
-            (hsPkgs."warp" or (errorHandler.buildDepError "warp"))
-            (hsPkgs."crypton" or (errorHandler.buildDepError "crypton"))
-            (hsPkgs."memory" or (errorHandler.buildDepError "memory"))
-            (hsPkgs."safe-money" or (errorHandler.buildDepError "safe-money"))
-            (hsPkgs."safe-money-aeson" or (errorHandler.buildDepError "safe-money-aeson"))
-            (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
-            (hsPkgs."ansi-terminal" or (errorHandler.buildDepError "ansi-terminal"))
-            (hsPkgs."prettyprinter" or (errorHandler.buildDepError "prettyprinter"))
-            (hsPkgs."template-haskell" or (errorHandler.buildDepError "template-haskell"))
-            (hsPkgs."lens" or (errorHandler.buildDepError "lens"))
-            (hsPkgs."microlens" or (errorHandler.buildDepError "microlens"))
-            (hsPkgs."microlens-th" or (errorHandler.buildDepError "microlens-th"))
-            (hsPkgs."fast-logger" or (errorHandler.buildDepError "fast-logger"))
-            (hsPkgs."monad-logger" or (errorHandler.buildDepError "monad-logger"))
-            (hsPkgs."configurator" or (errorHandler.buildDepError "configurator"))
-            (hsPkgs."cmark-gfm" or (errorHandler.buildDepError "cmark-gfm"))
-          ];
-          buildable = true;
-          modules = [
-            "Platform"
-            "Platform/Database"
-            "Platform/Database/Encode"
-            "Platform/Database/Rel8TH"
-            "Platform/Observability"
-            "Platform/Observability/Context"
-            "Platform/Observability/Emit"
-            "Platform/Observability/Fields"
-            "Platform/Observability/Redaction"
-            "Platform/Observability/Runtime"
-            "Platform/Observability/Store"
-            "Platform/Observability/Types"
-            "Platform/Observability/Wai"
-            "Platform/DurableTask/Cron"
-            "Platform/DurableTask/Checkpoint"
-            "Platform/DurableTask/Error"
-            "Platform/DurableTask/Polling"
-            "Platform/DurableTask/Pool"
-            "Platform/DurableTask/Types"
-            "Platform/DurableTask/Schedule"
-            "Platform/DurableTask/Workflow"
-            "Platform/Serde"
-            "Platform/Serde/Json"
-            "Platform/Serde/Json/Object"
-            "Platform/Serde/Json/Preview"
-            "Platform/Serde/Json/Text"
-            "Platform/Text"
-            "Platform/Config"
-            "Platform/Crypto"
-            "Platform/Error"
-            "Platform/Error/Servant"
-            "Platform/HTTP/Retry"
-            "Platform/Patch"
-            "Platform/Require"
-          ];
-          hsSourceDirs = [ "src-platform" ];
-        };
-        "logos" = {
-          depends = [
-            (hsPkgs."base" or (errorHandler.buildDepError "base"))
-            (hsPkgs."text" or (errorHandler.buildDepError "text"))
-            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
-            (hsPkgs."deepseq" or (errorHandler.buildDepError "deepseq"))
-            (hsPkgs."base16-bytestring" or (errorHandler.buildDepError "base16-bytestring"))
-            (hsPkgs."base64-bytestring" or (errorHandler.buildDepError "base64-bytestring"))
-            (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
-            (hsPkgs."uuid-types" or (errorHandler.buildDepError "uuid-types"))
-            (hsPkgs."time" or (errorHandler.buildDepError "time"))
-            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
-            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
-            (hsPkgs."vector" or (errorHandler.buildDepError "vector"))
-            (hsPkgs."insert-ordered-containers" or (errorHandler.buildDepError "insert-ordered-containers"))
-            (hsPkgs."unordered-containers" or (errorHandler.buildDepError "unordered-containers"))
-            (hsPkgs."mtl" or (errorHandler.buildDepError "mtl"))
-            (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
-            (hsPkgs."exceptions" or (errorHandler.buildDepError "exceptions"))
-            (hsPkgs."async" or (errorHandler.buildDepError "async"))
-            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
-            (hsPkgs."random" or (errorHandler.buildDepError "random"))
-            (hsPkgs."unix" or (errorHandler.buildDepError "unix"))
-            (hsPkgs."retry" or (errorHandler.buildDepError "retry"))
-            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
-            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
-            (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
-            (hsPkgs."process" or (errorHandler.buildDepError "process"))
-            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
-            (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
-            (hsPkgs."yaml" or (errorHandler.buildDepError "yaml"))
-            (hsPkgs."rel8" or (errorHandler.buildDepError "rel8"))
-            (hsPkgs."hasql" or (errorHandler.buildDepError "hasql"))
-            (hsPkgs."hasql-pool" or (errorHandler.buildDepError "hasql-pool"))
-            (hsPkgs."hasql-transaction" or (errorHandler.buildDepError "hasql-transaction"))
-            (hsPkgs."resource-pool" or (errorHandler.buildDepError "resource-pool"))
-            (hsPkgs."servant-server" or (errorHandler.buildDepError "servant-server"))
-            (hsPkgs."servant-client-core" or (errorHandler.buildDepError "servant-client-core"))
-            (hsPkgs."openapi3" or (errorHandler.buildDepError "openapi3"))
-            (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
-            (hsPkgs."http-client-tls" or (errorHandler.buildDepError "http-client-tls"))
-            (hsPkgs."http-api-data" or (errorHandler.buildDepError "http-api-data"))
-            (hsPkgs."http-types" or (errorHandler.buildDepError "http-types"))
-            (hsPkgs."case-insensitive" or (errorHandler.buildDepError "case-insensitive"))
-            (hsPkgs."wai" or (errorHandler.buildDepError "wai"))
-            (hsPkgs."warp" or (errorHandler.buildDepError "warp"))
-            (hsPkgs."crypton" or (errorHandler.buildDepError "crypton"))
-            (hsPkgs."memory" or (errorHandler.buildDepError "memory"))
-            (hsPkgs."safe-money" or (errorHandler.buildDepError "safe-money"))
-            (hsPkgs."safe-money-aeson" or (errorHandler.buildDepError "safe-money-aeson"))
-            (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
-            (hsPkgs."ansi-terminal" or (errorHandler.buildDepError "ansi-terminal"))
-            (hsPkgs."prettyprinter" or (errorHandler.buildDepError "prettyprinter"))
-            (hsPkgs."template-haskell" or (errorHandler.buildDepError "template-haskell"))
-            (hsPkgs."lens" or (errorHandler.buildDepError "lens"))
-            (hsPkgs."microlens" or (errorHandler.buildDepError "microlens"))
-            (hsPkgs."microlens-th" or (errorHandler.buildDepError "microlens-th"))
-            (hsPkgs."fast-logger" or (errorHandler.buildDepError "fast-logger"))
-            (hsPkgs."monad-logger" or (errorHandler.buildDepError "monad-logger"))
-            (hsPkgs."configurator" or (errorHandler.buildDepError "configurator"))
-            (hsPkgs."cmark-gfm" or (errorHandler.buildDepError "cmark-gfm"))
-            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
-            (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
-          ];
-          buildable = true;
-          modules = [
-            "Paths_cortex"
-            "Logos"
-            "Logos/Archetypes"
-            "Logos/Archetypes/Episteme"
-            "Logos/Archetypes/Episteme/Activation"
-            "Logos/Archetypes/Kritikos"
-            "Logos/Archetypes/Kritikos/Activation"
-            "Logos/Archetypes/Logos"
-            "Logos/Archetypes/Logos/Activation"
-            "Logos/Archetypes/Poiesis"
-            "Logos/Archetypes/Poiesis/Activation"
-            "Logos/Archetypes/Sophia"
-            "Logos/Archetypes/Sophia/Activation"
-            "Logos/Archetypes/Techne"
-            "Logos/Archetypes/Techne/Activation"
-            "Logos/Archetypes/Themis"
-            "Logos/Archetypes/Themis/Activation"
-            "Logos/Memory"
-            "Logos/Memory/Candidate"
-            "Logos/Memory/Candidates"
-            "Logos/Memory/Compact"
-            "Logos/Memory/Conflict"
-            "Logos/Memory/Document"
-            "Logos/Memory/Host"
-            "Logos/Memory/Pack"
-            "Logos/Memory/Query"
-            "Logos/Memory/Rank"
-            "Logos/Memory/Retrieve"
-            "Logos/Memory/Source"
-            "Logos/Memory/Types"
-            "Logos/Patterns/DeepReport"
-            "Logos/Patterns/DeepReport/Contracts"
-            "Logos/Patterns/DeepReport/Gather"
-            "Logos/Patterns/DeepReport/LegacyReportTask"
-            "Logos/Patterns/DeepReport/Section"
-            "Logos/Patterns/DeepReport/Section/Runtime"
-            "Logos/Patterns/PlanReview"
-            "Logos/Thought"
-            "Logos/Thought/Event"
-            "Logos/Thought/Frame"
-            "Logos/Thought/Host"
-            "Logos/Thought/Policy"
-            "Logos/Thought/Runtime"
-            "Logos/Thought/Stage"
-            "Logos/Thought/StructuredOutput"
-            "Logos/Thought/ToolHost"
-            "Logos/Thought/ToolLoop"
-            "Logos/Types"
-          ];
-          hsSourceDirs = [ "src-logos" ];
-        };
-      };
       exes = {
         "cortex-pulse" = {
           depends = [
             (hsPkgs."base" or (errorHandler.buildDepError "base"))
             (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
-            (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
+            (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
             (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
             (hsPkgs."text" or (errorHandler.buildDepError "text"))
             (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
@@ -434,7 +214,7 @@
           depends = [
             (hsPkgs."base" or (errorHandler.buildDepError "base"))
             (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
-            (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
+            (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
             (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
             (hsPkgs."hspec-discover" or (errorHandler.buildDepError "hspec-discover"))
             (hsPkgs."HUnit" or (errorHandler.buildDepError "HUnit"))
@@ -491,70 +271,8 @@
             "Cortex/Wire/CompileSpec"
             "Cortex/Wire/ParserSpec"
             "Cortex/Wire/PureSpec"
-            "Platform/DurableTask/CheckpointSpec"
-            "Platform/DurableTask/CronSpec"
-            "Platform/DurableTask/ErrorSpec"
-            "Platform/DurableTask/PollingSpec"
-            "Platform/DurableTask/PoolSpec"
-            "Platform/DurableTask/ScheduleSpec"
-            "Platform/DurableTask/TypesSpec"
           ];
           hsSourceDirs = [ "test" ];
-          mainPath = [ "Spec.hs" ];
-        };
-        "logos-test" = {
-          depends = [
-            (hsPkgs."base" or (errorHandler.buildDepError "base"))
-            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
-            (hsPkgs."cortex".components.sublibs.logos or (errorHandler.buildDepError "cortex:logos"))
-            (hsPkgs."cortex".components.sublibs.platform-runtime or (errorHandler.buildDepError "cortex:platform-runtime"))
-            (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
-            (hsPkgs."hspec-discover" or (errorHandler.buildDepError "hspec-discover"))
-            (hsPkgs."HUnit" or (errorHandler.buildDepError "HUnit"))
-            (hsPkgs."QuickCheck" or (errorHandler.buildDepError "QuickCheck"))
-            (hsPkgs."hedgehog" or (errorHandler.buildDepError "hedgehog"))
-            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
-            (hsPkgs."aeson-qq" or (errorHandler.buildDepError "aeson-qq"))
-            (hsPkgs."text" or (errorHandler.buildDepError "text"))
-            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
-            (hsPkgs."time" or (errorHandler.buildDepError "time"))
-            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
-            (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
-            (hsPkgs."uuid-types" or (errorHandler.buildDepError "uuid-types"))
-            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
-            (hsPkgs."raw-strings-qq" or (errorHandler.buildDepError "raw-strings-qq"))
-            (hsPkgs."mtl" or (errorHandler.buildDepError "mtl"))
-            (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
-            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
-            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
-            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
-            (hsPkgs."async" or (errorHandler.buildDepError "async"))
-          ];
-          build-tools = [
-            (hsPkgs.pkgsBuildBuild.hspec-discover.components.exes.hspec-discover or (pkgs.pkgsBuildBuild.hspec-discover or (errorHandler.buildToolDepError "hspec-discover:hspec-discover")))
-          ];
-          buildable = true;
-          modules = [
-            "Logos/Memory/CandidatesSpec"
-            "Logos/Memory/CompactSpec"
-            "Logos/Memory/ConflictSpec"
-            "Logos/Memory/DocumentSpec"
-            "Logos/Memory/PackSpec"
-            "Logos/Memory/QuerySpec"
-            "Logos/Memory/RankSpec"
-            "Logos/Memory/RetrieveSpec"
-            "Logos/Memory/SourceSpec"
-            "Logos/Patterns/DeepReport/ContractsSpec"
-            "Logos/Patterns/DeepReport/GatherSpec"
-            "Logos/Patterns/DeepReport/LegacyReportTaskSpec"
-            "Logos/Patterns/DeepReport/Section/RuntimeSpec"
-            "Logos/Patterns/DeepReport/SectionSpec"
-            "Logos/Patterns/PlanReviewSpec"
-            "Logos/PublicPreludeSpec"
-            "Logos/Thought/FrameSpec"
-            "Logos/Thought/ToolLoopSpec"
-          ];
-          hsSourceDirs = [ "test-logos" ];
           mainPath = [ "Spec.hs" ];
         };
       };

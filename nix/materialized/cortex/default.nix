@@ -429,7 +429,12 @@
       };
     };
   extras = hackage:
-    { packages = { cortex = ./.plan.nix/cortex.nix; }; };
+    {
+      packages = {
+        haskell-platform = ./.plan.nix/haskell-platform.nix;
+        cortex = ./.plan.nix/cortex.nix;
+      };
+    };
   modules = [
     {
       preExistingPkgs = [
@@ -464,7 +469,12 @@
       ];
     }
     ({ lib, ... }:
-      { packages = { "cortex" = { flags = {}; }; }; })
+      {
+        packages = {
+          "haskell-platform" = { flags = {}; };
+          "cortex" = { flags = {}; };
+        };
+      })
     ({ lib, ... }:
       {
         packages = {
@@ -519,7 +529,6 @@
           "cortex".components.tests."cortex-test".planned = lib.mkOverride 900 true;
           "blaze-builder".components.library.planned = lib.mkOverride 900 true;
           "array".components.library.planned = lib.mkOverride 900 true;
-          "cortex".components.sublibs."platform-runtime".planned = lib.mkOverride 900 true;
           "safe-money".components.library.planned = lib.mkOverride 900 true;
           "opaleye".components.library.planned = lib.mkOverride 900 true;
           "happy-lib".components.sublibs."backend-glr".planned = lib.mkOverride 900 true;
@@ -627,6 +636,7 @@
           "crypton-x509-system".components.library.planned = lib.mkOverride 900 true;
           "vector-space".components.library.planned = lib.mkOverride 900 true;
           "network".components.library.planned = lib.mkOverride 900 true;
+          "haskell-platform".components.library.planned = lib.mkOverride 900 true;
           "comonad".components.library.planned = lib.mkOverride 900 true;
           "bytestring".components.library.planned = lib.mkOverride 900 true;
           "postgresql-libpq-configure".components.library.planned = lib.mkOverride 900 true;
@@ -666,7 +676,6 @@
           "network-control".components.library.planned = lib.mkOverride 900 true;
           "ghc-internal".components.library.planned = lib.mkOverride 900 true;
           "yaml".components.library.planned = lib.mkOverride 900 true;
-          "cortex".components.tests."logos-test".planned = lib.mkOverride 900 true;
           "newtype-generics".components.library.planned = lib.mkOverride 900 true;
           "time".components.library.planned = lib.mkOverride 900 true;
           "bsb-http-chunked".components.library.planned = lib.mkOverride 900 true;
@@ -740,10 +749,10 @@
           "terminal-size".components.library.planned = lib.mkOverride 900 true;
           "base16-bytestring".components.library.planned = lib.mkOverride 900 true;
           "wai".components.library.planned = lib.mkOverride 900 true;
+          "haskell-platform".components.tests."platform-test".planned = lib.mkOverride 900 true;
           "tls".components.library.planned = lib.mkOverride 900 true;
           "tasty".components.library.planned = lib.mkOverride 900 true;
           "wl-pprint-annotated".components.library.planned = lib.mkOverride 900 true;
-          "cortex".components.sublibs."logos".planned = lib.mkOverride 900 true;
           "byteorder".components.library.planned = lib.mkOverride 900 true;
           "hasql".components.library.planned = lib.mkOverride 900 true;
           "text".components.library.planned = lib.mkOverride 900 true;

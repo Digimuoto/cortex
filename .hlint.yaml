@@ -101,18 +101,6 @@
 - warn: {lhs: "reverse (reverse xs)", rhs: "xs"}
 
 # =============================================================================
-# MONETARY ARITHMETIC SAFETY
-# =============================================================================
-# NOTE: Raw division (/) on Scientific can diverge with non-terminating decimals.
-# Always use scientificDiv from Portman.Core.Money for safe division.
-# This cannot be enforced by HLint (requires type information), so rely on code review.
-#
-# UNSAFE: x / y                    (can hang on 1/3, etc.)
-# SAFE:   scientificDiv x y        (uses Double intermediate, always terminates)
-#
-# Keep monetary arithmetic reviewable at the domain boundary.
-
-# =============================================================================
 # IMPORT ALIAS ENFORCEMENT
 # =============================================================================
 - modules:

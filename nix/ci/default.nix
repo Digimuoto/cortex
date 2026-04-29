@@ -22,7 +22,7 @@
       ];
       text = ''
         set -euo pipefail
-        fd -e hs . src src-platform src-logos app test test-logos -0 \
+        fd -e hs . src app test -0 \
           | xargs -0 fourmolu --mode check
       '';
     };
@@ -32,7 +32,7 @@
       runtimeInputs = [pkgs.haskellPackages.hlint];
       text = ''
         set -euo pipefail
-        exec hlint src src-platform src-logos app test test-logos
+        exec hlint src app test
       '';
     };
 
@@ -198,7 +198,7 @@
       check-logos-boundary = {
         type = "app";
         program = "${check-logos-boundary}/bin/check-logos-boundary";
-        meta.description = "Reject Cortex or Platform imports of Logos";
+        meta.description = "Reject Cortex imports of Logos";
       };
 
       _ci-check = {

@@ -6,7 +6,7 @@ allowed_regex='^(AllowAmbiguousTypes|BlockArguments|CPP|MagicHash|OverlappingIns
 if [ "$#" -gt 0 ]; then
   files=("$@")
 else
-  mapfile -d '' files < <(find src src-platform src-logos app test test-logos -type f -name '*.hs' -print0)
+  mapfile -d '' files < <(find src app test -type f -name '*.hs' -print0)
 fi
 
 if [ "${#files[@]}" -eq 0 ]; then

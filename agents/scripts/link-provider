@@ -61,16 +61,6 @@ link_contexts() {
   provider_file="$1"
 
   link_rel "$repo_root/agents/context.md" "$repo_root/$provider_file"
-
-  for context_dir in \
-    src-platform/Platform \
-    src-platform/Platform/Database \
-    src-platform/Platform/DurableTask
-  do
-    link_rel \
-      "$repo_root/agents/$context_dir/context.md" \
-      "$repo_root/$context_dir/$provider_file"
-  done
 }
 
 link_archetypes() {

@@ -225,7 +225,7 @@ When the review mode or doc class requires grounding, verify against the code in
 For Cortex symbol checks, use targeted searches:
 
 ```bash
-rg -n "SymbolName|OtherSymbol" src src-platform
+rg -n "SymbolName|OtherSymbol" src
 ```
 
 Mismatches between canonical docs and implementation are findings, but do not force implementation

@@ -17,8 +17,6 @@ build-type:         Simple
 extra-source-files:
     README.md
     NOTICE
-data-files:
-    config/cortex/memory-ranking.yaml
 
 common shared-properties
     default-language: GHC2024
@@ -80,7 +78,7 @@ common runtime-library-deps
         aeson-pretty >=0.8,
         yaml >=0.11,
 
-        -- Database (used by Platform.Database and downstream Cortex modules)
+        -- Database (used by Cortex persistence and the external Platform package)
         rel8 >=1.4,
         hasql >=1.6,
         hasql-pool >=0.10,
@@ -88,8 +86,7 @@ common runtime-library-deps
         resource-pool >=0.4,
 
         -- HTTP client + WAI middleware
-        -- (Platform.HTTP.Retry, Cortex.Capability.Provider.OpenRouter,
-        -- Platform.Observability.Wai)
+        -- (Cortex.Capability.Provider.OpenRouter and the external Platform package)
         servant-server >=0.20,
         servant-client-core >=0.20,
         openapi3 >=3.2,
@@ -101,7 +98,7 @@ common runtime-library-deps
         wai >=3.2,
         warp >=3.3,
 
-        -- Crypto (Platform.Crypto: AES-256-GCM, HKDF, SHA256).
+        -- Crypto (external Platform package: AES-256-GCM, HKDF, SHA256).
         -- Keep `Data.ByteArray.Bytes` aligned with crypton's AuthTag type.
         crypton >=0.34 && <1,
         memory >=0.18,
@@ -129,55 +126,13 @@ common runtime-library-deps
         -- Markdown rendering
         cmark-gfm >=0.2.5
 
--- Public sub-library: the Platform runtime substrate.
--- Cortex imports this; downstream consumers can too.
-library platform-runtime
-    import:           shared-properties, runtime-library-deps
-    visibility:       public
-    hs-source-dirs:   src-platform
-    exposed-modules:
-        Platform
-        Platform.Database
-        Platform.Database.Encode
-        Platform.Database.Rel8TH
-        Platform.Observability
-        Platform.Observability.Context
-        Platform.Observability.Emit
-        Platform.Observability.Fields
-        Platform.Observability.Redaction
-        Platform.Observability.Runtime
-        Platform.Observability.Store
-        Platform.Observability.Types
-        Platform.Observability.Wai
-        Platform.DurableTask.Cron
-        Platform.DurableTask.Checkpoint
-        Platform.DurableTask.Error
-        Platform.DurableTask.Polling
-        Platform.DurableTask.Pool
-        Platform.DurableTask.Types
-        Platform.DurableTask.Schedule
-        Platform.DurableTask.Workflow
-        Platform.Serde
-        Platform.Serde.Json
-        Platform.Serde.Json.Object
-        Platform.Serde.Json.Preview
-        Platform.Serde.Json.Text
-        Platform.Text
-        Platform.Config
-        Platform.Crypto
-        Platform.Error
-        Platform.Error.Servant
-        Platform.HTTP.Retry
-        Platform.Patch
-        Platform.Require
-
 -- Main library: Cortex substrate.
 library
     import:           shared-properties, runtime-library-deps
     hs-source-dirs:   src
     autogen-modules:  Paths_cortex
     build-depends:
-        cortex:platform-runtime,
+        haskell-platform,
         megaparsec >=9.2
     other-modules:
         Paths_cortex
@@ -275,67 +230,6 @@ library
         Cortex.Pulse.Scheduler
         Cortex.Pulse.Types
 
--- Downstream reasoning library: Logos.
--- Logos imports Cortex; Cortex must not import Logos.
-library logos
-    import:           shared-properties, runtime-library-deps
-    visibility:       public
-    hs-source-dirs:   src-logos
-    autogen-modules:  Paths_cortex
-    build-depends:
-        cortex,
-        cortex:platform-runtime
-    other-modules:
-        Paths_cortex
-    exposed-modules:
-        Logos
-        Logos.Archetypes
-        Logos.Archetypes.Episteme
-        Logos.Archetypes.Episteme.Activation
-        Logos.Archetypes.Kritikos
-        Logos.Archetypes.Kritikos.Activation
-        Logos.Archetypes.Logos
-        Logos.Archetypes.Logos.Activation
-        Logos.Archetypes.Poiesis
-        Logos.Archetypes.Poiesis.Activation
-        Logos.Archetypes.Sophia
-        Logos.Archetypes.Sophia.Activation
-        Logos.Archetypes.Techne
-        Logos.Archetypes.Techne.Activation
-        Logos.Archetypes.Themis
-        Logos.Archetypes.Themis.Activation
-        Logos.Memory
-        Logos.Memory.Candidate
-        Logos.Memory.Candidates
-        Logos.Memory.Compact
-        Logos.Memory.Conflict
-        Logos.Memory.Document
-        Logos.Memory.Host
-        Logos.Memory.Pack
-        Logos.Memory.Query
-        Logos.Memory.Rank
-        Logos.Memory.Retrieve
-        Logos.Memory.Source
-        Logos.Memory.Types
-        Logos.Patterns.DeepReport
-        Logos.Patterns.DeepReport.Contracts
-        Logos.Patterns.DeepReport.Gather
-        Logos.Patterns.DeepReport.LegacyReportTask
-        Logos.Patterns.DeepReport.Section
-        Logos.Patterns.DeepReport.Section.Runtime
-        Logos.Patterns.PlanReview
-        Logos.Thought
-        Logos.Thought.Event
-        Logos.Thought.Frame
-        Logos.Thought.Host
-        Logos.Thought.Policy
-        Logos.Thought.Runtime
-        Logos.Thought.Stage
-        Logos.Thought.StructuredOutput
-        Logos.Thought.ToolHost
-        Logos.Thought.ToolLoop
-        Logos.Types
-
 -- Pulse executor binary: substrate shell.
 -- Ships with an empty task registry; downstream consumers link their own.
 executable cortex-pulse
@@ -345,15 +239,14 @@ executable cortex-pulse
     build-depends:
         base >=4.16 && <5,
         cortex,
-        cortex:platform-runtime,
+        haskell-platform,
         optparse-applicative >=0.17,
         text >=2.0,
         bytestring >=0.11,
         containers >=0.6
     ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
--- Cortex-only test suite (hspec-discover).
--- Filtered from portman-test to Cortex.* and Platform.DurableTask.* specs.
+-- Cortex test suite (hspec-discover).
 test-suite cortex-test
     import:           shared-properties
     type:             exitcode-stdio-1.0
@@ -386,17 +279,10 @@ test-suite cortex-test
         Cortex.Wire.CompileSpec
         Cortex.Wire.ParserSpec
         Cortex.Wire.PureSpec
-        Platform.DurableTask.CheckpointSpec
-        Platform.DurableTask.CronSpec
-        Platform.DurableTask.ErrorSpec
-        Platform.DurableTask.PollingSpec
-        Platform.DurableTask.PoolSpec
-        Platform.DurableTask.ScheduleSpec
-        Platform.DurableTask.TypesSpec
     build-depends:
         base >=4.16 && <5,
         cortex,
-        cortex:platform-runtime,
+        haskell-platform,
         -- Test frameworks
         hspec >=2.10,
         hspec-discover >=2.10,
@@ -414,68 +300,6 @@ test-suite cortex-test
         hasql-transaction >=1.0,
         rel8 >=1.4,
         postgresql-simple >=0.7,
-
-        -- Text and data
-        text >=2.0,
-        bytestring >=0.11,
-        time >=1.12,
-        containers >=0.6,
-        uuid >=1.3,
-        uuid-types >=1.0,
-        scientific >=0.3,
-        raw-strings-qq >=1.1,
-
-        -- Utilities
-        mtl >=2.3,
-        transformers >=0.6,
-        filepath >=1.4,
-        directory >=1.3,
-        stm >=2.5,
-        async >=2.2
-    ghc-options: -threaded -rtsopts -with-rtsopts=-N
-
--- Logos reasoning-library test suite (hspec-discover).
-test-suite logos-test
-    import:           shared-properties
-    type:             exitcode-stdio-1.0
-    hs-source-dirs:   test-logos
-    main-is:          Spec.hs
-    build-tool-depends:
-        hspec-discover:hspec-discover >=2.10
-    other-modules:
-        Logos.Memory.CandidatesSpec
-        Logos.Memory.CompactSpec
-        Logos.Memory.ConflictSpec
-        Logos.Memory.DocumentSpec
-        Logos.Memory.PackSpec
-        Logos.Memory.QuerySpec
-        Logos.Memory.RankSpec
-        Logos.Memory.RetrieveSpec
-        Logos.Memory.SourceSpec
-        Logos.Patterns.DeepReport.ContractsSpec
-        Logos.Patterns.DeepReport.GatherSpec
-        Logos.Patterns.DeepReport.LegacyReportTaskSpec
-        Logos.Patterns.DeepReport.Section.RuntimeSpec
-        Logos.Patterns.DeepReport.SectionSpec
-        Logos.Patterns.PlanReviewSpec
-        Logos.PublicPreludeSpec
-        Logos.Thought.FrameSpec
-        Logos.Thought.ToolLoopSpec
-    build-depends:
-        base >=4.16 && <5,
-        cortex,
-        cortex:logos,
-        cortex:platform-runtime,
-        -- Test frameworks
-        hspec >=2.10,
-        hspec-discover >=2.10,
-        HUnit >=1.6,
-        QuickCheck >=2.14,
-        hedgehog >=1.2,
-
-        -- JSON
-        aeson >=2.1,
-        aeson-qq >=0.8,
 
         -- Text and data
         text >=2.0,

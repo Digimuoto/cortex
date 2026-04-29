@@ -25,7 +25,7 @@ import Cortex.Pulse.Types (PulseConfig (..))
 main :: IO ()
 main = do
   args <- execParser opts
-  maybe (pure ()) (setEnv "PORTMAN_WORKFLOW_DIR") (paWorkflowDir args)
+  maybe (pure ()) (setEnv "CORTEX_WORKFLOW_DIR") (paWorkflowDir args)
   -- Load secrets from files
   password <-
     if null (paDbPasswordFile args)
@@ -64,7 +64,7 @@ main = do
           , pulseMaxFrontierConcurrency = paMaxFrontierConcurrency args
           , pulseTaskTypeLimits = Map.fromList (paTaskTypeLimits args)
           }
-  -- Substrate shell: empty task registry. Consumers (e.g. Portman)
+  -- Substrate shell: empty task registry. Consumers
   -- build their own binary that imports Cortex.Pulse and passes a
   -- populated registry. Per ADR 0015 the runtime never imports
   -- reasoning-layer or consumer-specific task definitions.
@@ -132,7 +132,7 @@ pulseArgsParser =
       ( strOption
           ( long "workflow-dir"
               <> metavar "DIR"
-              <> help "Directory containing hot-loadable .cr workflows. Sets PORTMAN_WORKFLOW_DIR for this process."
+              <> help "Directory containing hot-loadable .cr workflows. Sets CORTEX_WORKFLOW_DIR for this process."
           )
       )
     <*> option
@@ -146,7 +146,7 @@ pulseArgsParser =
       T.pack
       ( strOption
           ( long "db-user"
-              <> value "portman"
+              <> value "cortex"
               <> metavar "USER"
               <> help "Database user"
           )
@@ -155,7 +155,7 @@ pulseArgsParser =
       T.pack
       ( strOption
           ( long "db-name"
-              <> value "portman"
+              <> value "cortex"
               <> metavar "NAME"
               <> help "Database name"
           )
@@ -179,7 +179,7 @@ pulseArgsParser =
           ( long "api-url"
               <> value "http://127.0.0.1:8080"
               <> metavar "URL"
-              <> help "Base Portman API URL used by Pulse task runners"
+              <> help "Base host API URL used by Pulse task runners"
           )
       )
     <*> strOption
@@ -199,7 +199,7 @@ pulseArgsParser =
       T.pack
       ( strOption
           ( long "jwt-issuer"
-              <> value "portman"
+              <> value "cortex-pulse"
               <> metavar "ISSUER"
               <> help "JWT issuer claim"
           )
@@ -208,7 +208,7 @@ pulseArgsParser =
       T.pack
       ( strOption
           ( long "jwt-audience"
-              <> value "portman-api"
+              <> value "cortex-host"
               <> metavar "AUDIENCE"
               <> help "JWT audience claim"
           )

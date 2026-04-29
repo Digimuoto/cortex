@@ -1,8 +1,8 @@
 # haskell.nix project configuration for Cortex.
 #
-# GHC 9.10 pinned (tracks Portman upstream — GHC 9.12 is blocked on
-# haskell.nix PR #2441). Materialization eliminates plan-to-nix IFD;
-# run `just update-materialized` after any cortex.cabal edit.
+# GHC 9.10 pinned (GHC 9.12 is blocked on haskell.nix PR #2441).
+# Materialization eliminates plan-to-nix IFD; run `just update-materialized`
+# after any cortex.cabal edit.
 {inputs, ...}: {
   perSystem = {
     config,
@@ -25,11 +25,17 @@
           materialized = ./materialized/cortex;
           checkMaterialization = false;
 
-          # Pin Hackage index for reproducibility (tracks Portman's pin).
+          # Pin Hackage index for reproducibility.
           index-state = "2026-04-02T00:00:00Z";
 
           # GHC 9.10 compatibility: some packages haven't updated upper bounds.
+          # Keep upstream package extra-source-files such as README.md and
+          # NOTICE at the package root, or regenerate materialization after
+          # changing them.
           cabalProjectLocal = ''
+            packages:
+              ${inputs.haskell-platform-src.outPath}
+
             allow-newer: all:ghc-prim
             allow-newer: all:base
             allow-newer: all:template-haskell
@@ -75,23 +81,30 @@
     packages = lib.filterAttrs (_: v: v != null) {
       # Main library (named "cortex" to match package name).
       cortex = projectFlake.packages."cortex:lib:cortex" or null;
-      # Public sub-library exposing the Platform.* runtime substrate.
-      platform-runtime = projectFlake.packages."cortex:lib:platform-runtime" or null;
-      # Public sub-library exposing the downstream Logos reasoning layer.
-      logos = projectFlake.packages."cortex:lib:logos" or null;
       # Pulse executor — substrate shell; consumers bind their own task registry.
       cortex-pulse = projectFlake.packages."cortex:exe:cortex-pulse" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).
       cortex-tests = projectFlake.packages."cortex:test:cortex-test" or null;
-      # Logos test suite (built, not run — `nix run .#logos-tests` to execute).
-      logos-tests = projectFlake.packages."cortex:test:logos-test" or null;
+      # Locked upstream source snapshots for downstream migration visibility.
+      haskell-platform-source = pkgs.runCommand "haskell-platform-source" {} ''
+        ln -s ${inputs.haskell-platform-src.outPath} "$out"
+      '';
+      logos-source = pkgs.runCommand "logos-source" {} ''
+        ln -s ${inputs.logos-src.outPath} "$out"
+      '';
     };
 
     # Expose flake checks; test-suites excluded from `nix flake check`
     # to keep it deterministic without a DB (some Pulse specs need one).
     checks =
       lib.filterAttrs
-      (name: v: v != null && name != "cortex:test:cortex-test" && name != "cortex:test:logos-test")
+      (
+        name: v:
+          v
+          != null
+          && name != "cortex:test:cortex-test"
+          && name != "haskell-platform:test:platform-test"
+      )
       (projectFlake.checks or {});
 
     # Regenerate materialized plans: `nix run .#update-materialized`.

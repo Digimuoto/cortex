@@ -13,12 +13,12 @@ on Cortex; it depends on Cortex, not the other way round.
   roots such as `Cortex.Agent`, `Cortex.Task`, `Cortex.Provider`, `Cortex.Research`, `Cortex.Run`,
   `Cortex.Graph`, `Cortex.Circuit`, `Cortex.Memory`, `Cortex.Document`, and `Cortex.Event` have been
   removed from the public tree.
-- `src-platform/Platform/` - runtime substrate library Cortex depends on: `Platform.Observability`,
-  `Platform.DurableTask`, `Platform.Database`, `Platform.HTTP.Retry`, `Platform.Text`, etc. Exposed
-  as a public Cabal sub-library (`cortex:platform-runtime`).
-- `src-logos/Logos/` - downstream reasoning library. Owns LLM workflows, thought orchestration,
-  cognitive memory, archetypes, and reusable reasoning patterns. Exposed as public Cabal sub-library
-  `cortex:logos`.
+- Private upstream `Digimuoto/haskell-platform` - runtime support library Cortex depends on:
+  `Platform.Observability`, `Platform.DurableTask`, `Platform.Database`, `Platform.HTTP.Retry`,
+  `Platform.Text`, etc. It is supplied to Cortex through the flake input `haskell-platform-src`.
+- Private downstream `Digimuoto/logos` - reasoning library built on Cortex. It owns LLM workflows,
+  thought orchestration, cognitive memory, archetypes, and reusable reasoning patterns. Cortex locks
+  it as `logos-src` for migration visibility, but does not build Logos from this repository.
 - `app/cortex-pulse/` - substrate shell executable. Ships with an empty task registry; consumers
   link their own registry when binding.
 - `editors/tree-sitter-wire/` - Wire DSL grammar. Consumed by the docs site for `wire` blocks and by
@@ -29,7 +29,6 @@ on Cortex; it depends on Cortex, not the other way round.
   substrate; Logos docs live under `docs/Consumers/Logos/` as downstream consumer documentation.
   Keep product docs out.
 - `test/` - hspec-discover driven Cortex-only suite.
-- `test-logos/` - hspec-discover driven Logos suite.
 - `agents/` - provider-neutral agent context, archetypes, skills, and setup scripts.
   Provider-specific files are generated from here.
 
@@ -40,9 +39,7 @@ All builds go through Nix. Do not invoke `cabal` or `ghc` directly.
 ```bash
 just build          # nix build .#cortex
 just build-pulse    # nix build .#cortex-pulse
-just build-logos    # nix build .#logos
 just test           # run the cortex-test suite
-just test-logos     # run the logos-test suite
 just fmt            # apply repo formatters
 just fmt-check      # fail on formatter drift
 just lint           # HLint over the full repo
@@ -63,7 +60,9 @@ just lean-clean
 GHC 9.10 is pinned via haskell.nix (`compiler-nix-name = "ghc910"` in `nix/haskell.nix`).
 Materialized plan-nix caches live under `nix/materialized/cortex/` and must be regenerated after any
 Cabal change. Entering `nix develop` installs repo-local pre-commit hooks for formatting, HLint, and
-Lean theory checks.
+Lean theory checks. The private flake inputs `haskell-platform-src` and `logos-src` use SSH Git
+URLs, so flake evaluation requires GitHub SSH credentials with read access to
+`Digimuoto/haskell-platform` and `Digimuoto/logos`.
 
 ## Git History Policy
 
@@ -162,7 +161,7 @@ context, archetypes, or skills.
 
 ## Non-Goals
 
-- No downstream product code. Cortex and Platform code only; downstream consumers live in their own
+- No downstream product code. Cortex code only; Platform and downstream consumers live in their own
   repos.
 - No UI, frontend, or REST server. Cortex is a library plus a Pulse executor binary.
 - No cross-link to consumer docs from Cortex canon unless the document is explicitly discussing

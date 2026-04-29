@@ -4,24 +4,26 @@ Cortex-specific layer map. Use this to walk evidence in order and to catch layer
 
 ## Layer 1 — Implementation reality
 
-| Path                        | What lives here                                                                                          | Watch for                                                                              |
-| --------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `src/Cortex/Algebra/`       | Pure graph algebra surface (Mokhov-style)                                                                | Algebraic laws stated in haddock vs proven in `theory/Cortex/Graph`                    |
-| `src/Cortex/Wire/`          | Wire authoring surface, parser, compiler, executor registry, pure evaluator                              | Wire-language ADRs (0010, 0017, 0020-0031); admission rules                            |
-| `src/Cortex/Pulse/`         | Pulse runtime kernel, frontier, durable execution, recovery                                              | ADR 0003-0009; theory under `theory/Cortex/Pulse/`                                     |
-| `src/Cortex/Capability/`    | Capability tokens and authority surface                                                                  | ADR 0010 closed-authority discipline                                                   |
-| `src/Cortex/Artifact/`      | Artifact and provenance contracts                                                                        | ADRs 0006, 0009, 0013                                                                  |
-| `src-platform/Platform/`    | Runtime substrate sub-library: `Platform.Observability`, `DurableTask`, `Database`, `HTTP.Retry`, `Text` | Layer-leak smell when generic Cortex semantics import Platform internals or vice versa |
-| `src-logos/Logos/`          | Downstream reasoning library: LLM workflows, archetypes, cognitive memory                                | Cortex must not depend on Logos; Logos may depend on Cortex                            |
-| `app/cortex-pulse/`         | Substrate shell executable                                                                               | Empty task registry by design; consumers link their own                                |
-| `editors/tree-sitter-wire/` | Wire grammar                                                                                             | Must keep parity with `docs/Reference/Wire/grammar.md`                                 |
-| `test/`, `test-logos/`      | hspec-discover test suites                                                                               | What is actually covered vs what the prose claims                                      |
+| Path or source                       | What lives here                                                                                          | Watch for                                                           |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `src/Cortex/Algebra/`                | Pure graph algebra surface (Mokhov-style)                                                                | Algebraic laws stated in haddock vs proven in `theory/Cortex/Graph` |
+| `src/Cortex/Wire/`                   | Wire authoring surface, parser, compiler, executor registry, pure evaluator                              | Wire-language ADRs (0010, 0017, 0020-0031); admission rules         |
+| `src/Cortex/Pulse/`                  | Pulse runtime kernel, frontier, durable execution, recovery                                              | ADR 0003-0009; theory under `theory/Cortex/Pulse/`                  |
+| `src/Cortex/Capability/`             | Capability tokens and authority surface                                                                  | ADR 0010 closed-authority discipline                                |
+| `src/Cortex/Artifact/`               | Artifact and provenance contracts                                                                        | ADRs 0006, 0009, 0013                                               |
+| Private `Digimuoto/haskell-platform` | Runtime support package: `Platform.Observability`, `DurableTask`, `Database`, `HTTP.Retry`, `Text`, etc. | Cortex consumes it through `haskell-platform-src`; do not inline it |
+| Private downstream `Digimuoto/logos` | Downstream reasoning library: LLM workflows, archetypes, cognitive memory                                | Cortex must not depend on Logos; Logos may depend on Cortex         |
+| `app/cortex-pulse/`                  | Substrate shell executable                                                                               | Empty task registry by design; consumers link their own             |
+| `editors/tree-sitter-wire/`          | Wire grammar                                                                                             | Must keep parity with `docs/Reference/Wire/grammar.md`              |
+| `test/`                              | Cortex hspec-discover test suite                                                                         | What is actually covered vs what the prose claims                   |
 
 Pitfalls:
 
 - A function in `src/Cortex/...` that takes `IO` should be checked against ADR 0010 (closed
   authority).
 - A type in `Cortex.*` referenced from `Logos.*` is fine; the reverse is a layer leak.
+- A new in-repo Platform or Logos source root is a boundary regression; update the split repository
+  and flake lock instead.
 - Any `error`, `undefined`, `unsafeCoerce`, or partial pattern match in `src/Cortex/` is a finding
   candidate.
 

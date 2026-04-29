@@ -77,8 +77,7 @@ cortexMemoryQueryToolName :: Text
 cortexMemoryQueryToolName = "cortex_memory_query"
 
 {- | JSON-Schema describing the tool's argument object.  Hand-written
-to match the style of the other built-in tools
-('Portman.Server.Handler.ToolSchema').
+to match the style of the other built-in tools.
 
 Every field is optional.  Defaults mirror the Haskell defaults:
 ancestor walk, settled-only scope, analyst preset, no routing

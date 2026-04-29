@@ -1,8 +1,9 @@
 ---
 title: "ADR 0018 — Canonical Haskell Module Tree"
 description:
-  "Cortex and Logos Haskell source trees are organized by canonical substrate and downstream library
-  layers, not implementation-era roots such as Agent, Task, Run, Provider, Json, or Document."
+  "Cortex and the downstream Logos repository organize Haskell modules by canonical substrate and
+  reasoning-library layers, not implementation-era roots such as Agent, Task, Run, Provider, Json,
+  or Document."
 sidebar:
   label: "0018. Haskell tree"
   order: 18
@@ -66,7 +67,7 @@ src/Cortex
 |-- Capability
 `-- Artifact
 
-src-logos/Logos
+Digimuoto/logos:src/Logos
 |-- Archetypes
 |-- Thought
 |-- Memory
@@ -89,7 +90,8 @@ Cortex
 `-- Artifact       -- generic durable outputs, metadata, provenance, host boundary
 ```
 
-The canonical Logos Haskell tree under `src-logos/Logos` is organized by reasoning-library layer:
+The canonical Logos Haskell tree under the downstream `Digimuoto/logos` repository's `src/Logos`
+tree is organized by reasoning-library layer:
 
 ```text
 Logos
@@ -100,10 +102,10 @@ Logos
 ```
 
 Only the Cortex roots should be treated as canonical public Cortex roots. `Logos` is public through
-the separate `cortex:logos` sub-library. A root module such as `Cortex.Wire` or `Logos` may be an
-umbrella module for its own component. Other root-level modules are either temporary compatibility
-shims, test fixtures, or private implementation details that should move under the nearest canonical
-root.
+the separate downstream `logos` package, not through a Cortex Cabal component. A root module such as
+`Cortex.Wire` or `Logos` may be an umbrella module for its own component. Other root-level modules
+are either temporary compatibility shims, test fixtures, or private implementation details that
+should move under the nearest canonical root.
 
 Compatibility shims may remain only when there is a concrete migration need. A shim must be shallow:
 it re-exports the canonical module, contains no independent logic, and is documented in the
@@ -373,9 +375,9 @@ importing its consumers. Do not solve cycles by adding a new public root.
 ## Cabal Exposure Policy
 
 `cortex.cabal` should expose canonical modules and temporary compatibility shims only. The main
-`cortex` library exposes substrate modules. The public `logos` sub-library exposes `Logos.*`
-modules. A compatibility shim should be removed from `exposed-modules` when Cortex, Logos, and known
-consumers have migrated.
+`cortex` library exposes substrate modules. The downstream `logos` package exposes `Logos.*` modules
+from its own repository. A compatibility shim should be removed from `exposed-modules` when Cortex,
+Logos, and known consumers have migrated.
 
 New public modules must be added under a canonical root. New internal helpers should prefer
 `other-modules` or a `.Internal` subtree under the owning root.

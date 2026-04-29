@@ -101,11 +101,12 @@ Read only what the scope demands, but always check the layer map before forming 
 ### Layer 1 — Implementation reality
 
 - `src/Cortex/` — Cortex Haskell library
-- `src-platform/Platform/` — runtime substrate sub-library
-- `src-logos/Logos/` — downstream reasoning library
+- private upstream `Digimuoto/haskell-platform` — runtime support package supplied through the
+  `haskell-platform-src` flake input
+- private downstream `Digimuoto/logos` — downstream reasoning library; Cortex must not import it
 - `app/cortex-pulse/` — substrate shell executable
 - `editors/tree-sitter-wire/` — Wire grammar
-- `test/`, `test-logos/` — hspec suites
+- `test/` — Cortex hspec suite; Platform and Logos tests live in their own repositories
 - module export lists, type signatures, partial functions, and `error` calls
 - `TODO`, `FIXME`, `HACK`, `XXX`, `-- TODO`, deprecation comments
 

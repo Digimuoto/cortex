@@ -65,7 +65,7 @@ import Platform.Observability
   ( LogEventSpec (..)
   , ObservabilityLogLevel (..)
   , defaultLogEvent
-  , defaultPortmanEnvConfig
+  , defaultPlatformEnvConfig
   , emitEvent
   , emitGlobalEvent
   , initObservabilityRuntime
@@ -85,7 +85,7 @@ runPulse registry rawConfig = do
           }
 
   -- 1. Observability
-  obsConfig <- loadObservabilityConfig defaultPortmanEnvConfig "cortex-pulse"
+  obsConfig <- loadObservabilityConfig defaultPlatformEnvConfig "cortex-pulse"
   obsRuntime <- initObservabilityRuntime obsConfig
   installGlobalObservabilityRuntime obsRuntime
 

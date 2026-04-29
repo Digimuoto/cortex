@@ -4,7 +4,7 @@ set -euo pipefail
 if [ "$#" -gt 0 ]; then
   files=("$@")
 else
-  mapfile -d '' files < <(find src src-platform app test -type f -name '*.hs' -print0)
+  mapfile -d '' files < <(find src app test -type f -name '*.hs' -print0)
 fi
 
 if [ "${#files[@]}" -eq 0 ]; then
@@ -14,12 +14,7 @@ fi
 violations=0
 
 while IFS=: read -r file line text; do
-  case "$file" in
-    src-logos/* | test-logos/*)
-      continue
-      ;;
-  esac
-  printf '%s:%s: Cortex/Platform code must not import Logos: %s\n' "$file" "$line" "$text" >&2
+  printf '%s:%s: Cortex code must not import Logos: %s\n' "$file" "$line" "$text" >&2
   violations=1
 done < <(
   perl -we '

@@ -58,12 +58,8 @@ jobs:
               - 'scripts/docs-lint'
             haskell:
               - 'app/**'
-              - 'config/cortex/**'
               - 'src/**'
-              - 'src-platform/**'
-              - 'src-logos/**'
               - 'test/**'
-              - 'test-logos/**'
               - '.license-header.txt'
               - '.hlint.yaml'
               - 'cabal.project'
@@ -212,11 +208,8 @@ jobs:
 
           for pkg in \
             cortex \
-            platform-runtime \
-            logos \
             cortex-pulse \
             cortex-tests \
-            logos-tests \
             cortex-theory \
             tree-sitter-wire \
             tree-sitter-wire-plugin
@@ -245,11 +238,8 @@ jobs:
           nix run github:zhaofengli/attic -- \
             push "$ATTIC_CACHE_NAME" \
               result-cortex \
-              result-platform-runtime \
-              result-logos \
               result-cortex-pulse \
               result-cortex-tests \
-              result-logos-tests \
               result-cortex-theory \
               result-tree-sitter-wire \
               result-tree-sitter-wire-plugin
@@ -349,9 +339,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Haskell test suites
-        run: |
-          nix run '.#cortex-tests' --print-build-logs
-          nix run '.#logos-tests' --print-build-logs
+        run: nix run '.#cortex-tests' --print-build-logs
 
   docs-lint:
     name: Lint Docs

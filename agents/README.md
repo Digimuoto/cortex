@@ -11,11 +11,6 @@ agents/
 ├── archetypes/                 # Shared Logos-style reasoning profiles
 ├── scripts/
 │   └── link-provider           # Builds Codex/Claude symlinks
-├── src-platform/
-│   └── Platform/
-│       ├── context.md
-│       ├── Database/context.md
-│       └── DurableTask/context.md
 └── skills/
     ├── impl/                   # Start implementation (branch, draft PR, plan)
     ├── publish/                # Commit + push the current branch
@@ -31,8 +26,7 @@ agents/
     └── doc-review-and-fix/     # Review and edit docs in one pass
 ```
 
-Each skill lives in its own directory with a `SKILL.md` entrypoint. Each source-tree context file
-mirrors the repo path it governs under `agents/<repo-path>/context.md`.
+Each skill lives in its own directory with a `SKILL.md` entrypoint.
 
 Shared archetype profiles live under `agents/archetypes/`. Skills load these profiles as reusable
 reasoning lenses, for example `kritikos` for adversarial review or `themis` for contract audit.
@@ -51,21 +45,18 @@ just agent-link-opencode
 `agent-link-codex` links:
 
 - `agents/context.md` -> `AGENTS.md`
-- `agents/<repo-path>/context.md` -> `<repo-path>/AGENTS.md`
 - `agents/archetypes` -> `.codex/archetypes`
 - `agents/skills/<name>` -> `.codex/skills/<name>`
 
 `agent-link-claude` links:
 
 - `agents/context.md` -> `CLAUDE.md`
-- `agents/<repo-path>/context.md` -> `<repo-path>/CLAUDE.md`
 - `agents/archetypes` -> `.claude/archetypes`
 - `agents/skills/<name>/SKILL.md` -> `.claude/commands/<name>.md`
 
 `agent-link-opencode` links:
 
 - `agents/context.md` -> `AGENTS.md`
-- `agents/<repo-path>/context.md` -> `<repo-path>/AGENTS.md`
 - `agents/archetypes` -> `.opencode/archetypes`
 - `agents/skills/<name>` -> `.opencode/skills/<name>`
 

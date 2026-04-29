@@ -20,6 +20,10 @@
                   doCheck = false;
                   testHaskellDepends = [];
                 });
+
+              "haskell-platform" =
+                final.haskell.lib.dontCheck
+                (hfinal.callCabal2nix "haskell-platform" inputs.haskell-platform-src.outPath {});
             };
           };
 

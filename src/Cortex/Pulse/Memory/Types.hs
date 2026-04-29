@@ -181,7 +181,7 @@ defaultWalkSpec =
 -- ----------------------------------------------------------------------------
 --
 -- These are reusable 'WalkSpec' shapes for the common Pulse stage
--- roles, defined so domain code (e.g. @Portman.Task.DeepReportWorkflow@)
+-- roles, defined so downstream domain code
 -- doesn't encode the walk geometry inline.  Tune weights at the call
 -- site if a stage wants semantic or temporal weighting; the default
 -- axis weights stay balanced (1.0/1.0/1.0).

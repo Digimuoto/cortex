@@ -98,7 +98,7 @@ Proposed squash plan:
    - includes workflow and Nix docs-site plumbing
    - validation: `just docs-check`
 
-2. `docs: condense Portman consumer example`
+2. `docs: condense consumer example`
    - includes consumer doc deletion and replacement page
    - validation: `just docs-check`
 

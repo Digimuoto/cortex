@@ -31,6 +31,14 @@
       url = "github:Digimuoto/repo-docs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    haskell-platform-src = {
+      url = "git+ssh://git@github.com/Digimuoto/haskell-platform.git";
+      flake = false;
+    };
+    logos-src = {
+      url = "git+ssh://git@github.com/Digimuoto/logos.git";
+      flake = false;
+    };
   };
 
   outputs = inputs @ {
