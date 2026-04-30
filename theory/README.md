@@ -126,6 +126,19 @@ Mechanized results now include:
   `evalOutputEquations_keys_present`, `pureNode_evalOutputs_keys_in_outputPorts`, and
   `pureNode_evalOutputs_outputPorts_present`: successful proof-side pure-node evaluation exposes
   exactly the declared output ports.
+- `closedBuiltinSignature_eq` and `closedBuiltinEnv_authorityFree`: the proof-side closed CorePure
+  builtin signature mirror contains only pure-value builtin entries. The Haskell evaluator parity
+  remains a runtime review-hook obligation, not a theorem in this file.
+- `topLevelBinding_value_hasOnlyFields`, `evalBindings_establish_staticContext`, and
+  `topLevelBindings_establish_staticContext`: top-level binding evaluation from the empty
+  environment constructs an `EnvMatchesStatic` witness for the static context established by those
+  bindings.
+- `OutputExpressionsSatisfyContracts`, `evalOutputEquationValues_satisfy_outputContracts`,
+  `evalOutputEquations_values_satisfy_outputContracts`,
+  `pureNode_evalOutputs_values_satisfy_outputContracts`, `ValueContract`, `outputValueContractOk`,
+  and `pureNode_evalOutputs_values_satisfy_valueContracts`: successful proof-side pure-node
+  evaluation can lift an abstract per-output contract relation, and a first concrete value-contract
+  carrier, from output expressions to the final output lookup.
 - `pureNode_lowering_evalOutputs_eq`: lowered native pure-task configs evaluate to the same
   proof-side output lookup function as their source pure nodes.
 - `plannedRewriteSafety_of_checks`: runtime planning checks supply the acyclicity and positive
@@ -204,8 +217,9 @@ Mechanized results now include:
 The remaining Track 3 obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next proof slices are:
 
-- CorePure value/contract soundness, closed builtin authority, duplicate record-path rejection, and
-  Haskell static-context correspondence;
+- Haskell correspondence for CorePure static-context construction, builtin authority review hooks,
+  duplicate record-path admission before every compiler surface, and full Wire output contract
+  wrapping;
 - constructed-delta registry-boundary preservation;
 - Haskell planner and budget-admission correspondence for `RuntimeConstructionInputs` and
   `AdmittedRewriteDelta`;
