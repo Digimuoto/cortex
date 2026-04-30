@@ -72,6 +72,7 @@ Common `details` fields observed across events (present when applicable):
 | `run.shutdown`                   | info     | Shutdown requested; executor stopping at a stage boundary.           |
 | `run.stuck`                      | error    | Frontier empty but not all nodes settled (blocked-graph diagnostic). |
 | `run.graph_state_persist_failed` | error    | Graph-state persistence write failed mid-run.                        |
+| `run.graph_state_stale_write`    | warn     | Executor lost a graph-state CAS race and stopped without overwrite.  |
 
 ### Stage
 

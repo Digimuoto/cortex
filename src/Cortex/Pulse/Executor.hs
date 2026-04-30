@@ -53,7 +53,7 @@ import Cortex.Pulse.Executor.Loop (runGraphPlan)
 import Cortex.Pulse.Executor.Persistence
   ( failRun
   , failUnsupportedTaskType
-  , requireGraphStatePersist
+  , requireGraphStatePersistVar
   , retryDelayMicros
   )
 import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
@@ -145,6 +145,7 @@ executeStagePlan taskContext runId task stagePlan = do
               , pgsAppliedRewriteId = Nothing
               , pgsNodeProvenance = initialProvenance stagePlan.spTopology
               , pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , pgsRevision = Nothing
               }
       gsVar <- newTVarIO initialPersistedState
       nodeCompletedAtVar <- newTVarIO Map.empty
@@ -164,10 +165,10 @@ executeStagePlan taskContext runId task stagePlan = do
               task
               stagePlan
               tvars
-      persistFailed <- requireGraphStatePersist env initialPersistedState
+      persistFailed <- requireGraphStatePersistVar env gsVar initialPersistedState
       case persistFailed of
-        Just outcome -> pure outcome
-        Nothing ->
+        Left outcome -> pure outcome
+        Right _ ->
           runGraphPlan
             taskContext.tcPool
             (tcConfig taskContext)

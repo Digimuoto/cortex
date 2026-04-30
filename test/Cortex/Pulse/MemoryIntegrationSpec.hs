@@ -126,6 +126,7 @@ initialPersistedState =
     , pgsAppliedRewriteId = Nothing
     , pgsNodeProvenance = Map.empty
     , pgsTopologyHash = Nothing
+    , pgsRevision = Nothing
     }
 
 completedAtMap :: Map.Map NodeId UTCTime

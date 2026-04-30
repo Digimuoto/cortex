@@ -34,7 +34,7 @@ import Data.Maybe (isJust)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time (diffUTCTime, getCurrentTime)
+import Data.Time (addUTCTime, diffUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
 import Hasql.Decoders qualified as D
@@ -87,7 +87,15 @@ import Cortex.Pulse.Executor
   , stageTemplateId
   )
 import Cortex.Pulse.Executor qualified as Executor
-import Cortex.Pulse.Materialize (NodeProvenanceEntry (..))
+import Cortex.Pulse.Executor.Persistence (requireGraphStatePersist)
+import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
+import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
+import Cortex.Pulse.Materialize
+  ( NodeProvenanceEntry (..)
+  , PersistedGraphState (..)
+  , computeTopologyHash
+  , initialProvenance
+  )
 import Cortex.Pulse.Memory (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Query
@@ -244,6 +252,13 @@ readGraphNodeOutputs pool runId = do
               <> show runId
               <> ": "
               <> err
+
+expectGraphStateSnapshot :: Pool -> UUID -> IO Q.PulseGraphStateSnapshot
+expectGraphStateSnapshot pool runId = do
+  result <- runSession pool $ Q.readGraphState runId
+  case result of
+    Nothing -> expectationFailure "Expected persisted graph state snapshot" >> fail "missing graph state"
+    Just snapshot -> pure snapshot
 
 -- | Count stage log entries for a run.
 countStageLogs :: Pool -> UUID -> IO Int32
@@ -605,20 +620,26 @@ writeGraphStateCompat
   -> Maybe Int64
   -> IO ()
 writeGraphStateCompat pool runId statuses outputs runtimeVersion appliedRewriteId = do
+  snapshot <- runSession pool $ Q.readGraphState runId
   now <- getCurrentTime
-  runTx pool $
-    Q.writeGraphState
-      Q.GraphStateWrite
-        { gswRunId = runId
-        , gswNodeStatuses = statuses
-        , gswNodeOutputs = outputs
-        , gswRemainingRewriteBudget = Nothing
-        , gswRuntimeVersion = runtimeVersion
-        , gswAppliedRewriteId = appliedRewriteId
-        , gswNodeProvenance = Nothing
-        , gswTopologyHash = Nothing
-        , gswUpdatedAt = now
-        }
+  result <-
+    runTx pool $
+      Q.writeGraphState
+        Q.GraphStateWrite
+          { gswRunId = runId
+          , gswNodeStatuses = statuses
+          , gswNodeOutputs = outputs
+          , gswRemainingRewriteBudget = Nothing
+          , gswRuntimeVersion = runtimeVersion
+          , gswAppliedRewriteId = appliedRewriteId
+          , gswNodeProvenance = Nothing
+          , gswTopologyHash = Nothing
+          , gswUpdatedAt = now
+          , gswExpectedRevision = fmap Q.pgssRevision snapshot
+          }
+  case result of
+    Q.GraphStateWriteApplied {} -> pure ()
+    Q.GraphStateWriteStale -> expectationFailure "expected graph_state compatibility write to apply"
 
 expectRecoveryPreconditionFailure :: Pool -> UUID -> Text -> IO ()
 expectRecoveryPreconditionFailure pool runId expectedMessageSnippet = do
@@ -2807,6 +2828,116 @@ spec = beforeAll setupTestDb $ do
           Just (Right outcome) -> outcome `shouldBe` OutcomeCompleted
 
   describe "graph-state persistence hardening" $ do
+    it "rejects graph_state writes whose expected revision is stale" $ \mPool -> withDb mPool $ \pool -> do
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-graph-state-cas-stale"
+      runId <- createTestRun pool taskId
+      let node = NodeId "test_alpha"
+          stagePlan =
+            mkLinearStagePlan
+              [simpleStage TestStageAlpha (\_runId state -> pure state)]
+              Aeson.Null
+              1
+              ReplayPolicyWarn
+          gs0 = initialGraphState stagePlan.spTopology
+      writeRawGraphStateForPlan pool runId stagePlan gs0
+      snapshot0 <- expectGraphStateSnapshot pool runId
+      let revision1 =
+            GraphStateRevision (addUTCTime 1 (unGraphStateRevision snapshot0.pgssRevision))
+          revision2 =
+            GraphStateRevision (addUTCTime 2 (unGraphStateRevision snapshot0.pgssRevision))
+          winningState = markCompleted node (Aeson.String "winner") gs0
+          staleState = markFailed node gs0
+          mkWrite revision state =
+            Q.GraphStateWrite
+              { gswRunId = runId
+              , gswNodeStatuses = Aeson.toJSON state.gsNodeStatuses
+              , gswNodeOutputs = Aeson.toJSON state.gsNodeOutputs
+              , gswRemainingRewriteBudget = Just (Aeson.toJSON defaultRewriteBudget)
+              , gswRuntimeVersion = Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32)
+              , gswAppliedRewriteId = Nothing
+              , gswNodeProvenance = Just (Aeson.toJSON (initialProvenance stagePlan.spTopology))
+              , gswTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , gswUpdatedAt = unGraphStateRevision revision
+              , gswExpectedRevision = Just snapshot0.pgssRevision
+              }
+
+      firstResult <- runTx pool $ Q.writeGraphState (mkWrite revision1 winningState)
+      firstResult `shouldBe` Q.GraphStateWriteApplied revision1
+      staleResult <- runTx pool $ Q.writeGraphState (mkWrite revision2 staleState)
+      staleResult `shouldBe` Q.GraphStateWriteStale
+
+      statuses <- readGraphNodeStatuses pool runId
+      (Map.lookup node =<< statuses) `shouldBe` Just NodeCompleted
+      outputs <- readGraphNodeOutputs pool runId
+      fmap (Map.lookup node . fst) outputs `shouldBe` Just (Just (Aeson.String "winner"))
+
+    it "stops a stale graph_state owner without overwriting newer state" $ \mPool -> withDb mPool $ \pool -> do
+      (shutdownFlag, _taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-graph-state-stale-owner"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let node = NodeId "test_alpha"
+          stagePlan =
+            mkLinearStagePlan
+              [simpleStage TestStageAlpha (\_runId state -> pure state)]
+              Aeson.Null
+              1
+              ReplayPolicyWarn
+          gs0 = initialGraphState stagePlan.spTopology
+      writeRawGraphStateForPlan pool runId stagePlan gs0
+      snapshot0 <- expectGraphStateSnapshot pool runId
+      let winningState = markCompleted node (Aeson.String "winner") gs0
+          winnerRevision =
+            GraphStateRevision (addUTCTime 1 (unGraphStateRevision snapshot0.pgssRevision))
+          winnerWrite =
+            Q.GraphStateWrite
+              { gswRunId = runId
+              , gswNodeStatuses = Aeson.toJSON winningState.gsNodeStatuses
+              , gswNodeOutputs = Aeson.toJSON winningState.gsNodeOutputs
+              , gswRemainingRewriteBudget = Just (Aeson.toJSON defaultRewriteBudget)
+              , gswRuntimeVersion = Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32)
+              , gswAppliedRewriteId = Nothing
+              , gswNodeProvenance = Just (Aeson.toJSON (initialProvenance stagePlan.spTopology))
+              , gswTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , gswUpdatedAt = unGraphStateRevision winnerRevision
+              , gswExpectedRevision = Just snapshot0.pgssRevision
+              }
+          stalePersistedState =
+            PersistedGraphState
+              { pgsGraphState = markFailed node gs0
+              , pgsRemainingRewriteBudget = defaultRewriteBudget
+              , pgsAppliedRewriteId = Nothing
+              , pgsNodeProvenance = initialProvenance stagePlan.spTopology
+              , pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , pgsRevision = Just snapshot0.pgssRevision
+              }
+      winnerResult <- runTx pool $ Q.writeGraphState winnerWrite
+      winnerResult `shouldBe` Q.GraphStateWriteApplied winnerRevision
+
+      gsVar <- newTVarIO stalePersistedState
+      nodeCompletedAtVar <- newTVarIO Map.empty
+      topologyVar <- newTVarIO stagePlan.spTopology
+      let tvars =
+            RunTVars
+              { rvGsVar = gsVar
+              , rvNodeCompletedAtVar = nodeCompletedAtVar
+              , rvTopologyVar = topologyVar
+              }
+          env = mkStageEnv pool testPulseConfig shutdownFlag runId task stagePlan tvars
+
+      persistResult <- requireGraphStatePersist env stalePersistedState
+
+      persistResult `shouldBe` Left OutcomeShutdown
+      statuses <- readGraphNodeStatuses pool runId
+      (Map.lookup node =<< statuses) `shouldBe` Just NodeCompleted
+      events <- readRunEvents pool runId
+      case filter ((== "run.graph_state_stale_write") . preEventType) events of
+        [event] -> preSeverity event `shouldBe` "warn"
+        matching ->
+          expectationFailure $
+            "Expected one stale graph-state event, found "
+              <> show (length matching)
+
     it "fails a sequential frontier when graph_state persistence fails" $ \mPool -> withDb mPool $ \pool -> do
       (_, taskContext) <- mkTaskContext pool
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-sequential-persist-failure"

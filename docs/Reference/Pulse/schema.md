@@ -150,7 +150,30 @@ pulse.run_events
 Append-only per-run event log. The normative event catalog, severity, and field contract live in
 [`events.md`](./events.md); persistence is best-effort — event writes never block or fail a run.
 
-## 8. Signals
+## 8. Graph state
+
+```text
+pulse.graph_state
+  run_id                    uuid primary key references pulse.runs(run_id) on delete cascade
+  node_statuses             jsonb not null
+  node_outputs              jsonb not null
+  remaining_rewrite_budget  jsonb
+  runtime_version           integer
+  applied_rewrite_id        bigint references pulse.graph_rewrites(rewrite_id)
+  node_provenance           jsonb
+  topology_hash             text
+  updated_at                timestamptz not null
+```
+
+Mutable latest graph snapshot for durable resume. `node_statuses` and `node_outputs` carry the
+runtime graph-state maps; rewrite fields bind the snapshot to the materialized rewrite lineage.
+
+`updated_at` is also the optimistic compare-and-swap revision token. The first graph-state write is
+insert-only. Later writes update the row only when the caller's expected revision matches the
+current `updated_at`; stale owners stop without overwriting newer graph state and emit
+[`run.graph_state_stale_write`](./events.md#run-lifecycle).
+
+## 9. Signals
 
 ```text
 pulse.signals

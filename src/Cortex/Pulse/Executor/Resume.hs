@@ -188,6 +188,7 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                           , pgsAppliedRewriteId = persistedSnapshot.pgssAppliedRewriteId
                           , pgsNodeProvenance = restoredProvenance
                           , pgsTopologyHash = persistedSnapshot.pgssTopologyHash
+                          , pgsRevision = Just persistedSnapshot.pgssRevision
                           }
                       topology0 = spTopology materializedStagePlan
                   case reconcileGraphState topology0 gs0 of
@@ -241,8 +242,8 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                                 then do
                                   persistFailed <- requireGraphStatePersist env persistedState
                                   case persistFailed of
-                                    Just outcome -> pure outcome
-                                    Nothing -> continueAfterRecovery env stagePlan persistedState recoveryStep
+                                    Left outcome -> pure outcome
+                                    Right persistedState' -> continueAfterRecovery env stagePlan persistedState' recoveryStep
                                 else
                                   continueAfterRecovery env stagePlan persistedState recoveryStep
     _ ->

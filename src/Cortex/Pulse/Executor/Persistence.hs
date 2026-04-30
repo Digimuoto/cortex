@@ -11,8 +11,11 @@ The module belongs to Cortex's upstream runtime and library surface.
 Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
 module Cortex.Pulse.Executor.Persistence
-  ( persistGraphState
+  ( GraphStatePersistError (..)
+  , persistGraphState
   , requireGraphStatePersist
+  , requireGraphStatePersistVar
+  , handleGraphStatePersistError
   , persistStageSuccess
   , persistStageRewrite
   , flushDeferredRejections
@@ -40,6 +43,7 @@ where
 
 import Control.Concurrent.MVar (withMVar)
 import Control.Concurrent.STM (atomically, modifyTVar', readTVarIO, writeTVar)
+import Control.Concurrent.STM.TVar (TVar)
 import Control.Monad (when)
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
@@ -47,7 +51,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time (UTCTime, getCurrentTime)
+import Data.Time (UTCTime, addUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 
 import Cortex.Pulse.Executor.Events
@@ -67,6 +71,7 @@ import Cortex.Pulse.Executor.Types
   , StageEnv (..)
   )
 import Cortex.Pulse.GraphRuntime (GraphState (..))
+import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Materialization
   ( PersistedGraphState (..)
   , PersistedRewrite (..)
@@ -107,9 +112,19 @@ import Platform.DurableTask.Checkpoint (buildCheckpointEnvelope)
 import Platform.DurableTask.Types (RunOutcome (..), StageStatus (..))
 import Platform.Observability (emitObsEvent)
 
-persistGraphState :: StageEnv -> PersistedGraphState -> IO (Either Text ())
+-- | Failure mode from a durable graph-state write.
+data GraphStatePersistError
+  = -- | The database rejected or failed the write.
+    GraphStatePersistDbError !Text
+  | -- | The row revision no longer matches; another owner wrote newer state.
+    GraphStatePersistStaleWrite
+  deriving stock (Eq, Show)
+
+-- | Persist graph state and return the same state annotated with its new revision.
+persistGraphState
+  :: StageEnv -> PersistedGraphState -> IO (Either GraphStatePersistError PersistedGraphState)
 persistGraphState env persistedState = do
-  now <- getCurrentTime
+  now <- nextGraphStateRevision persistedState.pgsRevision <$> getCurrentTime
   let input =
         Q.GraphStateWrite
           { gswRunId = env.seRunId
@@ -121,27 +136,83 @@ persistGraphState env persistedState = do
           , gswNodeProvenance = Just (Aeson.toJSON persistedState.pgsNodeProvenance)
           , gswTopologyHash = persistedState.pgsTopologyHash
           , gswUpdatedAt = now
+          , gswExpectedRevision = persistedState.pgsRevision
           }
   result <-
     DB.runTransaction env.sePool $
       Q.writeGraphState input
-  pure (first T.pack result)
+  pure $
+    case first (GraphStatePersistDbError . T.pack) result of
+      Left err -> Left err
+      Right (Q.GraphStateWriteApplied revision) ->
+        Right persistedState {pgsRevision = Just revision}
+      Right Q.GraphStateWriteStale ->
+        Left GraphStatePersistStaleWrite
 
-requireGraphStatePersist :: StageEnv -> PersistedGraphState -> IO (Maybe RunOutcome)
+-- | Persist graph state, interpreting write failure as a runtime outcome.
+requireGraphStatePersist
+  :: StageEnv -> PersistedGraphState -> IO (Either RunOutcome PersistedGraphState)
 requireGraphStatePersist env persistedState = do
   result <- persistGraphState env persistedState
   case result of
-    Right () -> pure Nothing
-    Left err -> do
-      now <- getCurrentTime
-      recordRunEvent
-        env
-        "run.graph_state_persist_failed"
-        Q.RunEventError
-        ("Graph state persistence failed: " <> err)
-        Nothing
-      failRun env.sePool env.seRunId now "graph_state_persist_failed" err True
-      pure (Just OutcomeFailed)
+    Right persistedState' -> pure (Right persistedState')
+    Left err ->
+      Left <$> handleGraphStatePersistError env err
+
+{- | Persist graph state, interpret failures, and publish the accepted revision
+back into the live graph-state TVar.
+
+Callers that already own the run-scoped 'PersistedGraphState' TVar should use
+this helper instead of open-coding the @Right state' -> writeTVar@ branch.
+-}
+requireGraphStatePersistVar
+  :: StageEnv
+  -> TVar PersistedGraphState
+  -> PersistedGraphState
+  -> IO (Either RunOutcome PersistedGraphState)
+requireGraphStatePersistVar env gsVar persistedState = do
+  result <- requireGraphStatePersist env persistedState
+  case result of
+    Right persistedState' ->
+      atomically $ writeTVar gsVar persistedState'
+    Left _ ->
+      pure ()
+  pure result
+
+{- | Choose the next graph-state revision for production writes.
+
+The DB-level CAS compares @expected_revision@ to the current @updated_at@
+value.  Keep the replacement timestamp strictly greater than the previous
+revision so a clock with coarse precision or brief backwards drift cannot
+write the same token back and accidentally leave a stale owner eligible.
+-}
+nextGraphStateRevision :: Maybe GraphStateRevision -> UTCTime -> UTCTime
+nextGraphStateRevision Nothing now = now
+nextGraphStateRevision (Just (GraphStateRevision previous)) now
+  | now > previous = now
+  | otherwise = addUTCTime 0.000001 previous
+
+-- | Record the operator-visible consequence of a graph-state persist failure.
+handleGraphStatePersistError :: StageEnv -> GraphStatePersistError -> IO RunOutcome
+handleGraphStatePersistError env = \case
+  GraphStatePersistDbError err -> do
+    now <- getCurrentTime
+    recordRunEvent
+      env
+      "run.graph_state_persist_failed"
+      Q.RunEventError
+      ("Graph state persistence failed: " <> err)
+      Nothing
+    failRun env.sePool env.seRunId now "graph_state_persist_failed" err True
+    pure OutcomeFailed
+  GraphStatePersistStaleWrite -> do
+    recordRunEvent
+      env
+      "run.graph_state_stale_write"
+      Q.RunEventWarn
+      "Graph state persistence lost the ownership race; stopping this executor without overwriting newer state"
+      Nothing
+    pure OutcomeShutdown
 
 persistStageSuccess
   :: StageEnv

@@ -105,10 +105,10 @@ runGraphPlan pool config shutdownFlag runId task stagePlan tvars = do
             Right (stagePlan', gsWithRewrite) -> do
               persistFailed <- requireGraphStatePersist env gsWithRewrite
               case persistFailed of
-                Just outcome -> pure outcome
-                Nothing -> do
+                Left outcome -> pure outcome
+                Right gsWithRewrite' -> do
                   atomically $ do
-                    writeTVar tvars.rvGsVar gsWithRewrite
+                    writeTVar tvars.rvGsVar gsWithRewrite'
                     writeTVar tvars.rvTopologyVar stagePlan'.spTopology
                   runGraphPlan pool config shutdownFlag runId task stagePlan' tvars
         Nothing -> runGraphPlan pool config shutdownFlag runId task stagePlan tvars

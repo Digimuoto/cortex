@@ -49,10 +49,12 @@ import Cortex.Pulse.Executor.Attempt
   )
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Persistence
-  ( failRun
+  ( GraphStatePersistError
+  , failRun
+  , handleGraphStatePersistError
   , persistGraphState
   , recordRunEvent
-  , requireGraphStatePersist
+  , requireGraphStatePersistVar
   )
 import Cortex.Pulse.Executor.Types
   ( RewriteAdmissionState (..)
@@ -297,14 +299,13 @@ runFrontierSequential env task stagePlan gsVar (nid : rest) = do
       let inputs = computeNodeInputs stagePlan gs nid
       let runningState =
             persistedState {pgsGraphState = markRunning nid persistedState.pgsGraphState}
-      atomically $ writeTVar gsVar runningState
       -- Persist running state so the API can report it during execution.
       -- Abort on failure, matching the concurrent frontier pattern.
-      markRunningFailed <- requireGraphStatePersist env runningState
+      markRunningFailed <- requireGraphStatePersistVar env gsVar runningState
       case markRunningFailed of
-        Just outcome -> pure (Just (Left outcome))
-        Nothing -> do
-          budgetRef <- newTVarIO persistedState.pgsRemainingRewriteBudget
+        Left outcome -> pure (Just (Left outcome))
+        Right runningState' -> do
+          budgetRef <- newTVarIO runningState'.pgsRemainingRewriteBudget
           admissionLock <- newMVar ()
           let rewriteAdmission =
                 RewriteAdmissionState
@@ -317,7 +318,7 @@ runFrontierSequential env task stagePlan gsVar (nid : rest) = do
               task
               stagePlan
               rewriteAdmission
-              persistedState.pgsRemainingRewriteBudget
+              runningState'.pgsRemainingRewriteBudget
               nid
               inputs
           recordUnexpectedNodeFailure env nodeResult
@@ -329,17 +330,18 @@ runFrontierSequential env task stagePlan gsVar (nid : rest) = do
             Just termOutcome -> do
               let stepResult = applyFrontierResults stagePlan.spTopology [nodeResult] gsCurrent
                   persistedState' = current {pgsGraphState = stepResultState stepResult}
-              atomically $ writeTVar gsVar persistedState'
-              persistFailed <- requireGraphStatePersist env persistedState'
-              pure (Just (Left (fromMaybe termOutcome persistFailed)))
+              persistFailed <- requireGraphStatePersistVar env gsVar persistedState'
+              case persistFailed of
+                Left outcome -> pure (Just (Left outcome))
+                Right _ ->
+                  pure (Just (Left termOutcome))
             Nothing -> do
               let stepResult = applyFrontierResults stagePlan.spTopology [nodeResult] gsCurrent
                   persistedState' = current {pgsGraphState = stepResultState stepResult}
-              atomically $ writeTVar gsVar persistedState'
-              persistFailed <- requireGraphStatePersist env persistedState'
+              persistFailed <- requireGraphStatePersistVar env gsVar persistedState'
               case persistFailed of
-                Just outcome -> pure (Just (Left outcome))
-                Nothing ->
+                Left outcome -> pure (Just (Left outcome))
+                Right _ ->
                   case mRewrite of
                     Just rewrite ->
                       pure (Just (Right [rewrite]))
@@ -414,7 +416,7 @@ collectWorkerResults
   :: StageEnv
   -> TVar PersistedGraphState
   -> TVar Bool
-  -> TVar (Maybe T.Text)
+  -> TVar (Maybe GraphStatePersistError)
   -> [WorkerHandle stageId]
   -> [(NodeResult, Maybe (PersistedRewrite stageId))]
   -> IO [(NodeResult, Maybe (PersistedRewrite stageId))]
@@ -433,7 +435,7 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
         Left err -> do
           atomically $ writeTVar persistFailRef (Just err)
           atomically $ writeTVar terminalFlag True
-        Right () -> pure ()
+        Right persistedState -> atomically $ writeTVar gsVar persistedState
       collectWorkerResults env gsVar terminalFlag persistFailRef remaining' ((nr, mRewrite) : acc)
     Left ex ->
       case mCompletedWorker of
@@ -458,7 +460,7 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
             Left err -> do
               atomically $ writeTVar persistFailRef (Just err)
               atomically $ writeTVar terminalFlag True
-            Right () -> pure ()
+            Right persistedState -> atomically $ writeTVar gsVar persistedState
           collectWorkerResults env gsVar terminalFlag persistFailRef remaining' ((nr, mRewrite) : acc)
         Nothing -> do
           recordRunEvent
@@ -495,7 +497,6 @@ classifyFrontierOutcome env topology gsVar results = do
         [ Aeson.object ["node" Aeson..= unNodeId nid, "blocked_by" Aeson..= fmap unNodeId failedPreds]
         | (nid, BlockedByFailed failedPreds) <- blockedReasons topology gs'
         ]
-  atomically $ writeTVar gsVar (currentState {pgsGraphState = gs'})
   unless (null failedNodeIds) $
     recordRunEvent
       env
@@ -509,9 +510,9 @@ classifyFrontierOutcome env topology gsVar results = do
               ]
           )
       )
-  classifyPersistFailed <-
+  classifyPersistResult <-
     if gs' /= gs1
-      then requireGraphStatePersist env (currentState {pgsGraphState = gs'})
+      then Just <$> requireGraphStatePersistVar env gsVar (currentState {pgsGraphState = gs'})
       else pure Nothing
   let nodeResults = fmap fst results
       rewriteResults = sortOn prRewriteId [rewrite | (_, Just rewrite) <- results]
@@ -520,10 +521,7 @@ classifyFrontierOutcome env topology gsVar results = do
         case stepResult of
           Settled _ OutcomeFailed -> Just OutcomeFailed
           _ -> Nothing
-  pure $
-    case classifyPersistFailed of
-      Just outcome -> Just (Left outcome)
-      Nothing ->
+      classifyTerminal =
         case terminalOutcomes of
           outcome : _ -> Just (Left outcome)
           [] ->
@@ -538,6 +536,11 @@ classifyFrontierOutcome env topology gsVar results = do
                       Suspended _ -> Just (Left OutcomeSuspended)
                       Stuck {} -> Nothing
                   _ -> Just (Right rewriteResults)
+  pure $
+    case classifyPersistResult of
+      Just (Left outcome) -> Just (Left outcome)
+      Just (Right _) -> classifyTerminal
+      Nothing -> classifyTerminal
 
 runFrontierConcurrent
   :: StableStageId stageId
@@ -565,25 +568,26 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
           { pgsGraphState =
               foldl' (flip markRunning) gs pendingNodeIds
           }
-  atomically $ writeTVar gsVar markRunningState
-  markRunningFailed <- requireGraphStatePersist env markRunningState
+  markRunningFailed <- requireGraphStatePersistVar env gsVar markRunningState
   case markRunningFailed of
-    Just outcome -> pure (Just (Left outcome))
-    Nothing -> do
+    Left outcome -> pure (Just (Left outcome))
+    Right markRunningState' -> do
       preCheckResult <- withPreAttemptGuards env "frontier" (pure (StageAdvance Aeson.Null))
       case preCheckResult of
         StageTerminal termOutcome -> do
           let cancelResults = [NodeResult nid OutcomeNodeCancelled | nid <- pendingNodeIds]
               persistedState' =
-                persistedState
+                markRunningState'
                   { pgsGraphState = stepResultState (applyFrontierResults topology cancelResults gs)
                   }
-          atomically $ writeTVar gsVar persistedState'
-          persistFailed <- requireGraphStatePersist env persistedState'
-          pure (Just (Left (fromMaybe termOutcome persistFailed)))
+          persistFailed <- requireGraphStatePersistVar env gsVar persistedState'
+          case persistFailed of
+            Left outcome -> pure (Just (Left outcome))
+            Right _ ->
+              pure (Just (Left termOutcome))
         _ -> do
           sem <- newQSem cap
-          budgetRef <- newTVarIO persistedState.pgsRemainingRewriteBudget
+          budgetRef <- newTVarIO markRunningState'.pgsRemainingRewriteBudget
           admissionLock <- newMVar ()
           let rewriteAdmission =
                 RewriteAdmissionState
@@ -598,7 +602,7 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
                 task
                 stagePlan
                 rewriteAdmission
-                persistedState.pgsRemainingRewriteBudget
+                markRunningState'.pgsRemainingRewriteBudget
                 terminalFlag
                 sem
                 inputsMap
@@ -611,21 +615,8 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
           mPersistFail <- readTVarIO persistFailRef
           case mPersistFail of
             Just err -> do
-              now <- getCurrentTime
-              recordRunEvent
-                env
-                "run.graph_state_persist_failed"
-                Q.RunEventError
-                ("Graph state persistence failed during frontier: " <> err)
-                Nothing
-              failRun
-                env.sePool
-                env.seRunId
-                now
-                "graph_state_persist_failed"
-                ("Graph state persistence failed: " <> err)
-                True
-              pure (Just (Left OutcomeFailed))
+              outcome <- handleGraphStatePersistError env err
+              pure (Just (Left outcome))
             Nothing -> do
               frontierResult <- classifyFrontierOutcome env topology gsVar results
               frontierEnd <- getCurrentTime

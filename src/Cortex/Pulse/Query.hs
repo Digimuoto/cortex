@@ -76,6 +76,7 @@ module Cortex.Pulse.Query
   , RunEventSeverity (..)
   , RunEventInsert (..)
   , GraphStateWrite (..)
+  , GraphStateWriteResult (..)
   , GraphRewriteInsert (..)
   , PulsePendingRunClaim (..)
   , createTaskDefinition
@@ -146,6 +147,7 @@ import Hasql.Transaction qualified as Tx
 import Rel8 hiding (Statement)
 import System.IO qualified
 
+import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Schema
 import Cortex.Pulse.Signal (SignalName (..))
@@ -249,6 +251,7 @@ data PulseGraphStateSnapshot = PulseGraphStateSnapshot
   , pgssAppliedRewriteId :: Maybe Int64
   , pgssNodeProvenance :: Maybe Value
   , pgssTopologyHash :: Maybe Text
+  , pgssRevision :: GraphStateRevision
   }
   deriving stock (Eq, Show)
 
@@ -331,7 +334,13 @@ data GraphStateWrite = GraphStateWrite
   , gswNodeProvenance :: Maybe Value
   , gswTopologyHash :: Maybe Text
   , gswUpdatedAt :: UTCTime
+  , gswExpectedRevision :: Maybe GraphStateRevision
   }
+  deriving stock (Eq, Show)
+
+data GraphStateWriteResult
+  = GraphStateWriteApplied !GraphStateRevision
+  | GraphStateWriteStale
   deriving stock (Eq, Show)
 
 data PulsePendingRunClaim = PulsePendingRunClaim
@@ -1474,7 +1483,7 @@ readGraphState runId =
   Session.statement runId $
     Statement
       "SELECT node_statuses, node_outputs, remaining_rewrite_budget, runtime_version, \
-      \applied_rewrite_id, node_provenance, topology_hash \
+      \applied_rewrite_id, node_provenance, topology_hash, updated_at \
       \FROM pulse.graph_state WHERE run_id = $1"
       (Enc.encode1 (Prelude.id, Enc.nonNullable Enc.uuid))
       (D.rowMaybe graphStateDecoder)
@@ -1489,6 +1498,7 @@ readGraphState runId =
         <*> D.column (D.nullable D.int8) -- applied_rewrite_id
         <*> D.column (D.nullable D.jsonb) -- node_provenance
         <*> D.column (D.nullable D.text) -- topology_hash
+        <*> (GraphStateRevision <$> D.column (D.nonNullable D.timestamptz)) -- updated_at
 
 -- | Read persisted graph state for admin display.
 readGraphStateForAdmin :: UUID -> Session (Maybe PulseGraphStateAdminView)
@@ -1513,24 +1523,62 @@ readGraphStateForAdmin runId =
         <*> D.column (D.nullable D.text) -- topology_hash
         <*> D.column (D.nonNullable D.timestamptz) -- updated_at
 
--- | Persist graph state (upsert).
-writeGraphState :: GraphStateWrite -> Transaction ()
+{- | Persist graph state using optimistic compare-and-swap semantics.
+
+A write with no expected revision is an insert-only first write. A write
+with an expected revision updates only the row whose @updated_at@ still
+matches that revision.  Production callers choose the replacement
+@updated_at@ through
+'Cortex.Pulse.Executor.Persistence.persistGraphState', which keeps revisions
+strictly increasing even if the system clock returns an equal or older
+timestamp.
+-}
+writeGraphState :: GraphStateWrite -> Transaction GraphStateWriteResult
 writeGraphState input =
-  Tx.statement input $
+  fmap toWriteResult . Tx.statement input $
     Statement
-      "INSERT INTO pulse.graph_state \
-      \(run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
-      \ runtime_version, applied_rewrite_id, node_provenance, topology_hash, updated_at) \
-      \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-      \ON CONFLICT (run_id) DO UPDATE SET \
-      \  node_statuses = EXCLUDED.node_statuses, \
-      \  node_outputs = EXCLUDED.node_outputs, \
-      \  remaining_rewrite_budget = EXCLUDED.remaining_rewrite_budget, \
-      \  runtime_version = EXCLUDED.runtime_version, \
-      \  applied_rewrite_id = EXCLUDED.applied_rewrite_id, \
-      \  node_provenance = EXCLUDED.node_provenance, \
-      \  topology_hash = EXCLUDED.topology_hash, \
-      \  updated_at = EXCLUDED.updated_at"
+      "WITH input AS ( \
+      \  SELECT \
+      \    $1::uuid AS run_id, \
+      \    $2::jsonb AS node_statuses, \
+      \    $3::jsonb AS node_outputs, \
+      \    $4::jsonb AS remaining_rewrite_budget, \
+      \    $5::int4 AS runtime_version, \
+      \    $6::int8 AS applied_rewrite_id, \
+      \    $7::jsonb AS node_provenance, \
+      \    $8::text AS topology_hash, \
+      \    $9::timestamptz AS updated_at, \
+      \    $10::timestamptz AS expected_revision \
+      \), inserted AS ( \
+      \  INSERT INTO pulse.graph_state \
+      \    (run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
+      \     runtime_version, applied_rewrite_id, node_provenance, topology_hash, updated_at) \
+      \  SELECT run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
+      \         runtime_version, applied_rewrite_id, node_provenance, topology_hash, updated_at \
+      \  FROM input \
+      \  WHERE expected_revision IS NULL \
+      \  ON CONFLICT (run_id) DO NOTHING \
+      \  RETURNING updated_at \
+      \), updated AS ( \
+      \  UPDATE pulse.graph_state gs SET \
+      \    node_statuses = input.node_statuses, \
+      \    node_outputs = input.node_outputs, \
+      \    remaining_rewrite_budget = input.remaining_rewrite_budget, \
+      \    runtime_version = input.runtime_version, \
+      \    applied_rewrite_id = input.applied_rewrite_id, \
+      \    node_provenance = input.node_provenance, \
+      \    topology_hash = input.topology_hash, \
+      \    updated_at = input.updated_at \
+      \  FROM input \
+      \  WHERE input.expected_revision IS NOT NULL \
+      \    AND gs.run_id = input.run_id \
+      \    AND gs.updated_at = input.expected_revision \
+      \  RETURNING gs.updated_at \
+      \) \
+      \SELECT updated_at FROM inserted \
+      \UNION ALL \
+      \SELECT updated_at FROM updated \
+      \LIMIT 1"
       ( Enc.encodeParams
           ( Enc.col (.gswRunId) (Enc.nonNullable Enc.uuid)
               :| [ Enc.col (.gswNodeStatuses) (Enc.nonNullable Enc.jsonb)
@@ -1541,11 +1589,18 @@ writeGraphState input =
                  , Enc.col (.gswNodeProvenance) (Enc.nullable Enc.jsonb)
                  , Enc.col (.gswTopologyHash) (Enc.nullable Enc.text)
                  , Enc.col (.gswUpdatedAt) (Enc.nonNullable Enc.timestamptz)
+                 , Enc.col
+                     (fmap unGraphStateRevision . (.gswExpectedRevision))
+                     (Enc.nullable Enc.timestamptz)
                  ]
           )
       )
-      D.noResult
+      (D.rowMaybe (GraphStateRevision <$> D.column (D.nonNullable D.timestamptz)))
       False
+  where
+    toWriteResult = \case
+      Just revision -> GraphStateWriteApplied revision
+      Nothing -> GraphStateWriteStale
 
 -- | Persist a graph rewrite event (append-only) and return its durable rewrite id.
 writeGraphRewrite :: GraphRewriteInsert -> Transaction Int64

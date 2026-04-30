@@ -121,7 +121,7 @@ a successful delivery. Both are surfaced through the run-detail API.
 ## 6. Storage and ordering
 
 Signal storage is the durable backing for the protocol; the normative contract is above.
-Schema-level detail is in [`schema.md §8`](./schema.md#8-signals).
+Schema-level detail is in [`schema.md §9`](./schema.md#9-signals).
 
 - Pending-uniqueness is scoped to `(run_id, signal_name)` via a partial unique index; `node_id` is
   informational.

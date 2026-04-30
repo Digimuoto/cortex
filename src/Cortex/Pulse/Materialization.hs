@@ -46,6 +46,7 @@ import Cortex.Algebra.Graph
   , relEdges
   , relVertices
   )
+import Cortex.Pulse.GraphStateRevision (GraphStateRevision)
 import Cortex.Pulse.Hydrate
   ( RewriteError (..)
   , SerializableStageDefinition (..)
@@ -103,6 +104,7 @@ data PersistedGraphState = PersistedGraphState
   , pgsAppliedRewriteId :: Maybe Int64
   , pgsNodeProvenance :: NodeProvenance
   , pgsTopologyHash :: Maybe Text
+  , pgsRevision :: Maybe GraphStateRevision
   }
   deriving stock (Eq, Show)
 

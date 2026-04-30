@@ -187,6 +187,7 @@ library
         Cortex.Pulse.Executor.Resume
         Cortex.Pulse.Executor.Types
         Cortex.Pulse.Frontier
+        Cortex.Pulse.GraphStateRevision
         Cortex.Pulse.Hydrate
         Cortex.Pulse.Materialize
         Cortex.Pulse.Outcome
