@@ -3019,14 +3019,12 @@ spec = beforeAll setupTestDb $ do
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
               }
-      -- The trigger fires on both INSERT and UPDATE.  writeGraphState uses
-      -- INSERT ... ON CONFLICT DO UPDATE, so the first call (INSERT) fires
-      -- once, and every subsequent call (INSERT-conflict then UPDATE) fires
-      -- twice.  Writes: (1) initial state INSERT, (2+3) markRunning
-      -- INSERT-conflict + UPDATE, (4+5) collectWorkerResults after first
-      -- worker.  We want to fail on (5) so workers actually run.
+      -- The trigger fires once per accepted graph_state write.  The first
+      -- call is an insert, and subsequent CAS writes are update-only:
+      -- (1) initial state, (2) markRunning, (3) collectWorkerResults after
+      -- the first worker.  We want to fail on (3) so workers actually run.
       outcome <-
-        withInjectedGraphStateWriteFailure pool runId 5
+        withInjectedGraphStateWriteFailure pool runId 3
           . withAsync (executeStagePlan taskContext runId task stagePlan)
           $ \planAsync -> do
             _ <- readMVar fastDone

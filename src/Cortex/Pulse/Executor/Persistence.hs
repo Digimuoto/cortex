@@ -51,7 +51,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time (UTCTime, addUTCTime, getCurrentTime)
+import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 
 import Cortex.Pulse.Executor.Events
@@ -185,12 +185,19 @@ The DB-level CAS compares @expected_revision@ to the current @updated_at@
 value.  Keep the replacement timestamp strictly greater than the previous
 revision so a clock with coarse precision or brief backwards drift cannot
 write the same token back and accidentally leave a stale owner eligible.
+PostgreSQL stores @timestamptz@ at microsecond precision, so the wall-clock
+value must be at least one microsecond ahead before we accept it.
 -}
 nextGraphStateRevision :: Maybe GraphStateRevision -> UTCTime -> UTCTime
 nextGraphStateRevision Nothing now = now
 nextGraphStateRevision (Just (GraphStateRevision previous)) now
-  | now > previous = now
-  | otherwise = addUTCTime 0.000001 previous
+  | now >= minimumNext = now
+  | otherwise = minimumNext
+  where
+    minimumNext = addUTCTime graphStateRevisionStep previous
+
+graphStateRevisionStep :: NominalDiffTime
+graphStateRevisionStep = 0.000001
 
 -- | Record the operator-visible consequence of a graph-state persist failure.
 handleGraphStatePersistError :: StageEnv -> GraphStatePersistError -> IO RunOutcome
