@@ -32,6 +32,11 @@ import Rel8 (Result)
 import Cortex.Algebra.Graph (Relation (..))
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Frontier (resolveDeliveredSignals)
+import Cortex.Pulse.Executor.Outcome
+  ( handleSettled
+  , handleStuck
+  , handleSuspended
+  )
 import Cortex.Pulse.Executor.Persistence
   ( failRun
   , requireGraphStatePersist
@@ -40,8 +45,10 @@ import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
 import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
 import Cortex.Pulse.GraphRuntime
   ( GraphState (..)
-  , normalizeForResume
-  , readyNodes
+  , StepResult (..)
+  , recoverPersistedGraphState
+  , renderRecoveryPreconditionErrors
+  , stepResultState
   )
 import Cortex.Pulse.Materialization
   ( NodeProvenance
@@ -220,19 +227,24 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                                   emitObsEvent $ EvtResumeIntegrityMismatch runId expectedHash dbHash
                             _ -> pure ()
                           gs1 <- resolveDeliveredSignals pool runId materializedState.pgsGraphState
-                          let persistedState =
-                                materializedState
-                                  { pgsGraphState = normalizeForResume gs1
-                                  }
-                              frontier = readyNodes (spTopology stagePlan) persistedState.pgsGraphState
-                          if persistedState /= persistedState0
-                            then do
-                              persistFailed <- requireGraphStatePersist env persistedState
-                              case persistFailed of
-                                Just outcome -> pure outcome
-                                Nothing -> continueAfterReplay stagePlan persistedState frontier
-                            else
-                              continueAfterReplay stagePlan persistedState frontier
+                          case recoverPersistedGraphState (spTopology stagePlan) gs1 of
+                            Left validationErrors ->
+                              failResume
+                                "graph_state_recovery_preconditions_failed"
+                                (renderRecoveryPreconditionErrors validationErrors)
+                            Right recoveryStep -> do
+                              let persistedState =
+                                    materializedState
+                                      { pgsGraphState = stepResultState recoveryStep
+                                      }
+                              if persistedState /= persistedState0
+                                then do
+                                  persistFailed <- requireGraphStatePersist env persistedState
+                                  case persistFailed of
+                                    Just outcome -> pure outcome
+                                    Nothing -> continueAfterRecovery env stagePlan persistedState recoveryStep
+                                else
+                                  continueAfterRecovery env stagePlan persistedState recoveryStep
     _ ->
       failResume
         "graph_state_parse_failed"
@@ -245,8 +257,15 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
       pure OutcomeFailed
 
     continueAfterReplay stagePlan persistedState frontier = do
-      emitObsEvent $ EvtResumeGraph runId
       blocked <- enforceGraphReplayPolicy pool runId stagePlan frontier
       case blocked of
         Just outcome -> pure outcome
         Nothing -> continueWithResumedState stagePlan persistedState frontier
+
+    continueAfterRecovery env stagePlan persistedState recoveryStep = do
+      emitObsEvent $ EvtResumeGraph runId
+      case recoveryStep of
+        Progressing _ frontier -> continueAfterReplay stagePlan persistedState frontier
+        Settled gs outcome -> handleSettled env gs outcome
+        Suspended gs -> handleSuspended env gs
+        Stuck gs diag -> handleStuck env runId gs diag

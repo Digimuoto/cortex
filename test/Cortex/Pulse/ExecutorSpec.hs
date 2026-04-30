@@ -25,7 +25,7 @@ import Control.Exception
   , throwIO
   , try
   )
-import Control.Monad (void, when)
+import Control.Monad (forM_, void, when)
 import Data.Aeson qualified as Aeson
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
 import Data.Int (Int32, Int64)
@@ -581,6 +581,21 @@ writeGraphStateForPlan pool runId stagePlan completedCount outputValue = do
     (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32))
     Nothing
 
+writeRawGraphStateForPlan
+  :: Pool
+  -> UUID
+  -> StagePlan stageId
+  -> GraphState Aeson.Value
+  -> IO ()
+writeRawGraphStateForPlan pool runId stagePlan gs =
+  writeGraphStateCompat
+    pool
+    runId
+    (Aeson.toJSON gs.gsNodeStatuses)
+    (Aeson.toJSON gs.gsNodeOutputs)
+    (Just (fromIntegral stagePlan.spCheckpointRuntimeVersion :: Int32))
+    Nothing
+
 writeGraphStateCompat
   :: Pool
   -> UUID
@@ -604,6 +619,17 @@ writeGraphStateCompat pool runId statuses outputs runtimeVersion appliedRewriteI
         , gswTopologyHash = Nothing
         , gswUpdatedAt = now
         }
+
+expectRecoveryPreconditionFailure :: Pool -> UUID -> Text -> IO ()
+expectRecoveryPreconditionFailure pool runId expectedMessageSnippet = do
+  runView <- runSession pool $ Q.getRunAdminView runId
+  case runView of
+    Nothing -> expectationFailure "Expected run admin view"
+    Just view -> do
+      Q.pravErrorType view `shouldBe` Just "graph_state_recovery_preconditions_failed"
+      case Q.pravErrorMessage view of
+        Nothing -> expectationFailure "Expected recovery precondition error message"
+        Just errMsg -> errMsg `shouldSatisfy` T.isInfixOf expectedMessageSnippet
 
 installGraphStateWriteFailureInjector :: Pool -> IO ()
 installGraphStateWriteFailureInjector pool =
@@ -3036,6 +3062,162 @@ spec = beforeAll setupTestDb $ do
         Nothing
       outcome <- resumeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
+
+  describe "graph-state recovery precondition validation" $ do
+    it "resume rejects off-topology output entries" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-recovery-output-domain"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let stagePlan =
+            mkLinearStagePlan
+              [simpleStage TestStageAlpha (\_runId state -> pure state)]
+              Aeson.Null
+              5
+              ReplayPolicyWarn
+          gs0 = initialGraphState stagePlan.spTopology
+          gs =
+            gs0
+              { gsNodeOutputs = Map.insert (NodeId "ghost") Aeson.Null gs0.gsNodeOutputs
+              }
+      writeRawGraphStateForPlan pool runId stagePlan gs
+
+      outcome <- resumeStagePlan taskContext runId task stagePlan
+
+      outcome `shouldBe` OutcomeFailed
+      expectRecoveryPreconditionFailure pool runId "output for node ghost is outside"
+
+    it "resume rejects completed or rewritten nodes missing output" $ \mPool -> withDb mPool $ \pool -> do
+      let missingOutputCases =
+            [ ("completed", NodeCompleted)
+            , ("rewritten", NodeRewritten)
+            ]
+      forM_ missingOutputCases $ \(caseName, status) -> do
+        (_, taskContext) <- mkTaskContext pool
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" ("test-recovery-missing-" <> caseName)
+        runId <- createTestRun pool taskId
+        task <- loadTaskDef pool taskId
+        let alpha = NodeId "test_alpha"
+            stagePlan =
+              mkLinearStagePlan
+                [simpleStage TestStageAlpha (\_runId state -> pure state)]
+                Aeson.Null
+                5
+                ReplayPolicyWarn
+            gs0 = initialGraphState stagePlan.spTopology
+            gs =
+              gs0
+                { gsNodeStatuses = Map.insert alpha status gs0.gsNodeStatuses
+                , gsNodeOutputs = Map.empty
+                }
+        writeRawGraphStateForPlan pool runId stagePlan gs
+
+        outcome <- resumeStagePlan taskContext runId task stagePlan
+
+        outcome `shouldBe` OutcomeFailed
+        expectRecoveryPreconditionFailure pool runId "has no persisted output"
+
+    it "resume rejects outputs on non-output-owning statuses" $ \mPool -> withDb mPool $ \pool -> do
+      let invalidOutputCases =
+            [ ("pending", NodePending)
+            , ("failed", NodeFailed)
+            , ("skipped", NodeSkipped)
+            , ("waiting", NodeWaiting "approval")
+            ]
+      forM_ invalidOutputCases $ \(caseName, status) -> do
+        (_, taskContext) <- mkTaskContext pool
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" ("test-recovery-output-" <> caseName)
+        runId <- createTestRun pool taskId
+        task <- loadTaskDef pool taskId
+        let alpha = NodeId "test_alpha"
+            stagePlan =
+              mkLinearStagePlan
+                [simpleStage TestStageAlpha (\_runId state -> pure state)]
+                Aeson.Null
+                5
+                ReplayPolicyWarn
+            gs0 = initialGraphState stagePlan.spTopology
+            gs =
+              gs0
+                { gsNodeStatuses = Map.insert alpha status gs0.gsNodeStatuses
+                , gsNodeOutputs = Map.singleton alpha Aeson.Null
+                }
+        writeRawGraphStateForPlan pool runId stagePlan gs
+
+        outcome <- resumeStagePlan taskContext runId task stagePlan
+
+        outcome `shouldBe` OutcomeFailed
+        expectRecoveryPreconditionFailure pool runId "is not allowed while status"
+
+    it "resume rejects successor-unblocking state with open causal history" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-recovery-causal-open"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let alpha = NodeId "test_alpha"
+          beta = NodeId "test_beta"
+          stagePlan =
+            mkLinearStagePlan
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , simpleStage TestStageBeta (\_runId state -> pure state)
+              ]
+              Aeson.Null
+              5
+              ReplayPolicyWarn
+          gs0 = initialGraphState stagePlan.spTopology
+          gs =
+            gs0
+              { gsNodeStatuses =
+                  Map.insert alpha NodePending $
+                    Map.insert beta NodeCompleted gs0.gsNodeStatuses
+              , gsNodeOutputs = Map.singleton beta Aeson.Null
+              }
+      writeRawGraphStateForPlan pool runId stagePlan gs
+
+      outcome <- resumeStagePlan taskContext runId task stagePlan
+
+      outcome `shouldBe` OutcomeFailed
+      expectRecoveryPreconditionFailure pool runId "successor-unblocking node test_beta"
+
+    it "resume propagates persisted ancestor failure before selecting a frontier" $ \mPool -> withDb mPool $ \pool -> do
+      gammaRanRef <- newIORef False
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-recovery-propagates-failure"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let alpha = NodeId "test_alpha"
+          beta = NodeId "test_beta"
+          gamma = NodeId "test_gamma"
+          stagePlan =
+            mkLinearStagePlan
+              [ simpleStage TestStageAlpha (\_runId state -> pure state)
+              , simpleStage TestStageBeta (\_runId state -> pure state)
+              , simpleStage TestStageGamma $ \_runId state -> do
+                  atomicModifyIORef' gammaRanRef (const (True, ()))
+                  pure state
+              ]
+              Aeson.Null
+              5
+              ReplayPolicyWarn
+          gs =
+            GraphState
+              { gsNodeStatuses =
+                  Map.fromList
+                    [ (alpha, NodeFailed)
+                    , (beta, NodeCompleted)
+                    , (gamma, NodePending)
+                    ]
+              , gsNodeOutputs = Map.singleton beta Aeson.Null
+              }
+      writeRawGraphStateForPlan pool runId stagePlan gs
+
+      outcome <- resumeStagePlan taskContext runId task stagePlan
+
+      outcome `shouldBe` OutcomeFailed
+      gammaRan <- readIORef gammaRanRef
+      gammaRan `shouldBe` False
+      statuses <- readGraphNodeStatuses pool runId
+      (Map.lookup gamma =<< statuses) `shouldBe` Just NodeFailed
 
   describe "first-writer-wins failRun" $ do
     it "second failRun does not overwrite the first error_type" $ \mPool -> withDb mPool $ \pool -> do

@@ -12,8 +12,10 @@ Tests may import the surface they exercise, but they do not define downstream pr
 -}
 module Cortex.Algebra.GraphSpec (spec) where
 
+import Control.Monad (forM_)
 import Data.Aeson qualified as Aeson
 import Data.List (sort, sortOn)
+import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
 import Data.Ord (Down (..))
@@ -38,6 +40,12 @@ normalizeSCCs = sortOn safeMin . fmap sort
   where
     safeMin [] = Nothing
     safeMin (x : _) = Just x
+
+recoveryErrors :: Relation NodeId -> GraphState Aeson.Value -> [RecoveryPreconditionError]
+recoveryErrors rel gs =
+  case validatePersistedRecoveryPreconditions rel gs of
+    Right () -> []
+    Left errs -> NE.toList errs
 
 spec :: Spec
 spec = do
@@ -452,6 +460,127 @@ spec = do
               , gsNodeOutputs = Map.empty :: Map.Map NodeId Int
               }
       normalizeForResume gs `shouldBe` gs
+
+  describe "validatePersistedRecoveryPreconditions" $ do
+    it "accepts a completed prefix with required outputs" $ do
+      let rel = toRelation (path [NodeId "a", NodeId "b"])
+          gs0 = initialGraphState rel
+          gs =
+            gs0
+              { gsNodeStatuses = Map.insert (NodeId "a") NodeCompleted gs0.gsNodeStatuses
+              , gsNodeOutputs = Map.singleton (NodeId "a") Aeson.Null
+              }
+      validatePersistedRecoveryPreconditions rel gs `shouldBe` Right ()
+
+    it "rejects status entries outside the topology without requiring resume reconciliation" $ do
+      let rel = toRelation (path [NodeId "a", NodeId "b"])
+          ghost = NodeId "ghost"
+          gs0 = initialGraphState rel
+          gs =
+            gs0
+              { gsNodeStatuses = Map.insert ghost NodePending gs0.gsNodeStatuses
+              }
+      recoveryErrors rel gs `shouldContain` [RecoveryStatusOutsideTopology ghost]
+
+    it "rejects missing explicit status entries for topology nodes" $ do
+      let rel = toRelation (path [NodeId "a", NodeId "b"])
+          missing = NodeId "b"
+          gs0 = initialGraphState rel
+          gs =
+            gs0
+              { gsNodeStatuses = Map.delete missing gs0.gsNodeStatuses
+              }
+      recoveryErrors rel gs `shouldContain` [RecoveryStatusMissing missing]
+
+    it "rejects status and output domains outside the topology" $ do
+      let rel = toRelation (path [NodeId "a", NodeId "b"])
+          ghost = NodeId "ghost"
+          gs0 = initialGraphState rel
+          gs =
+            gs0
+              { gsNodeStatuses = Map.insert ghost NodeCompleted gs0.gsNodeStatuses
+              , gsNodeOutputs = Map.singleton ghost Aeson.Null
+              }
+      recoveryErrors rel gs
+        `shouldContain` [ RecoveryStatusOutsideTopology ghost
+                        , RecoveryOutputOutsideTopology ghost
+                        ]
+
+    it "rejects completed and rewritten nodes missing required outputs" $ do
+      let rel = toRelation (vertices [NodeId "a"])
+          node = NodeId "a"
+          invalidStatuses =
+            [ NodeCompleted
+            , NodeRewritten
+            ]
+      forM_ invalidStatuses $ \status -> do
+        let gs =
+              GraphState
+                { gsNodeStatuses = Map.singleton node status
+                , gsNodeOutputs = Map.empty
+                }
+        recoveryErrors rel gs `shouldContain` [RecoveryRequiredOutputMissing node status]
+
+    it "rejects outputs on statuses that cannot own payloads" $ do
+      let rel = toRelation (vertices [NodeId "a"])
+          node = NodeId "a"
+          invalidStatuses =
+            [ NodePending
+            , NodeRunning
+            , NodeFailed
+            , NodeSkipped
+            , NodeInterrupted InterruptedShutdown
+            , NodeWaiting "approval"
+            ]
+      forM_ invalidStatuses $ \status -> do
+        let gs =
+              GraphState
+                { gsNodeStatuses = Map.singleton node status
+                , gsNodeOutputs = Map.singleton node Aeson.Null
+                }
+        recoveryErrors rel gs `shouldContain` [RecoveryOutputNotAllowed node status]
+
+    it "rejects successor-unblocking nodes with non-terminal strict ancestors" $ do
+      let rel = toRelation (path [NodeId "a", NodeId "b"])
+          ancestor = NodeId "a"
+          node = NodeId "b"
+          gs =
+            GraphState
+              { gsNodeStatuses =
+                  Map.fromList
+                    [ (ancestor, NodePending)
+                    , (node, NodeCompleted)
+                    ]
+              , gsNodeOutputs = Map.singleton node Aeson.Null
+              }
+      recoveryErrors rel gs
+        `shouldContain` [ RecoveryCausalHistoryOpen
+                            RecoveryCausalHistoryViolation
+                              { rchvNode = node
+                              , rchvAncestor = ancestor
+                              , rchvAncestorStatus = NodePending
+                              }
+                        ]
+
+    it "recovers persisted state with failure propagation before exposing a frontier" $ do
+      let rel = toRelation (path [NodeId "a", NodeId "b", NodeId "c"])
+          a = NodeId "a"
+          b = NodeId "b"
+          c = NodeId "c"
+          gs =
+            GraphState
+              { gsNodeStatuses =
+                  Map.fromList
+                    [ (a, NodeFailed)
+                    , (b, NodeCompleted)
+                    , (c, NodePending)
+                    ]
+              , gsNodeOutputs = Map.singleton b Aeson.Null
+              }
+      case recoverPersistedGraphState rel gs of
+        Right (Settled recovered OutcomeFailed) ->
+          Map.lookup c recovered.gsNodeStatuses `shouldBe` Just NodeFailed
+        other -> expectationFailure $ "Expected recovered failed settlement, got: " <> show other
 
   describe "applyFrontierResults terminal outcomes" $ do
     it "OutcomeNodeShutdown leaves node interrupted and returns Stuck" $ do

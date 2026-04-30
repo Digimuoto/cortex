@@ -77,8 +77,11 @@ Mechanized results now include:
   the runtime closure step.
 
 The Paper 1 Lean-Haskell modeling boundary is documented in
-`docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md`. Remaining obligations include
-Haskell-side establishment of the persisted recovery preconditions.
+`docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md`. The executable resume path
+now validates that the post-decode, post-reconciliation, post-rewrite-materialization, and
+post-signal-resolution resume input state satisfies the Haskell counterpart of the persisted
+recovery preconditions, then classifies the reset-and-failure-propagated recovered state before
+continuing from materialized graph state.
 
 ### Track 3 — Rewrite soundness
 

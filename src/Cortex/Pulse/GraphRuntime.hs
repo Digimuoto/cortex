@@ -34,6 +34,12 @@ module Cortex.Pulse.GraphRuntime
   , markSkipped
   , markWaiting
   , normalizeForResume
+  , RecoveryCausalHistoryViolation (..)
+  , RecoveryPreconditionError (..)
+  , validatePersistedRecoveryPreconditions
+  , recoverPersistedGraphState
+  , renderRecoveryPreconditionError
+  , renderRecoveryPreconditionErrors
   , StepResult (..)
   , StuckDiagnostic (..)
   , classifyGraphState
@@ -65,16 +71,21 @@ where
 
 import Data.Aeson (FromJSON, ToJSON, Value)
 import Data.Either (lefts)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 
 import Cortex.Algebra.Graph
   ( Relation (..)
   , predecessors
+  , reachable
   , successors
+  , transposeRelation
   )
 import Cortex.Pulse.Node (NodeId (..))
 
@@ -216,6 +227,14 @@ markWaiting :: NodeId -> Text -> GraphState o -> GraphState o
 markWaiting nid signalName gs =
   gs {gsNodeStatuses = Map.insert nid (NodeWaiting signalName) (gsNodeStatuses gs)}
 
+{- | Reset volatile in-flight statuses before resuming persisted graph state.
+
+This is the Haskell counterpart of Lean's @GraphState.resetRunningToPending@,
+not the full @recoveredState G state@ in @theory/Cortex/Pulse/Recovery.lean@
+(which also applies @propagateFailure@).  Runtime recovery validates the
+persisted preconditions before this reset; @classifyGraphState@ applies
+@propagateFailure@ before choosing the next frontier or terminal outcome.
+-}
 normalizeForResume :: GraphState o -> GraphState o
 normalizeForResume gs =
   gs {gsNodeStatuses = Map.map resetOne (gsNodeStatuses gs)}
@@ -228,6 +247,205 @@ normalizeForResume gs =
     resetOne NodeSkipped = NodeSkipped
     resetOne NodeRewritten = NodeRewritten
     resetOne (NodeWaiting s) = NodeWaiting s
+
+-- | Evidence for a persisted successor-unblocking node whose causal history is still open.
+data RecoveryCausalHistoryViolation = RecoveryCausalHistoryViolation
+  { rchvNode :: !NodeId
+  , rchvAncestor :: !NodeId
+  , rchvAncestorStatus :: !NodeStatus
+  }
+  deriving stock (Eq, Show)
+
+-- | Persisted graph-state validation error detected before recovery classification.
+data RecoveryPreconditionError
+  = RecoveryStatusOutsideTopology !NodeId
+  | RecoveryStatusMissing !NodeId
+  | RecoveryOutputOutsideTopology !NodeId
+  | RecoveryOutputNotAllowed !NodeId !NodeStatus
+  | RecoveryRequiredOutputMissing !NodeId !NodeStatus
+  | RecoveryCausalHistoryOpen !RecoveryCausalHistoryViolation
+  deriving stock (Eq, Show)
+
+{- | Validate persisted recovery input against the executable counterpart of
+Lean's persisted recovery preconditions.
+
+The Haskell map representation is intentionally stricter than Lean's total
+status/output functions: off-topology keys are rejected even when they would
+read as pending/no-output in Lean, and every topology node must have an
+explicit persisted status entry.  Runtime reconciliation and rewrite
+materialization restore those map invariants before calling this validator.
+-}
+validatePersistedRecoveryPreconditions
+  :: Relation NodeId
+  -> GraphState o
+  -> Either (NonEmpty RecoveryPreconditionError) ()
+validatePersistedRecoveryPreconditions topology state =
+  case recoveryPreconditionErrors topology state of
+    [] -> Right ()
+    err : errs -> Left (err :| errs)
+
+{- | Validate and classify a persisted graph state for resume.
+
+This is the runtime counterpart of Lean's @recoveredState G state@: validation
+checks the persisted preconditions, 'normalizeForResume' performs
+@resetRunningToPending@, and 'classifyGraphState' applies @propagateFailure@
+before returning a frontier or terminal outcome.
+-}
+recoverPersistedGraphState
+  :: Relation NodeId
+  -> GraphState Value
+  -> Either (NonEmpty RecoveryPreconditionError) StepResult
+recoverPersistedGraphState topology state =
+  case validatePersistedRecoveryPreconditions topology state of
+    Left errs -> Left errs
+    Right () -> Right (classifyGraphState topology (normalizeForResume state))
+
+-- | Render one persisted recovery validation error for operator-facing logs.
+renderRecoveryPreconditionError :: RecoveryPreconditionError -> Text
+renderRecoveryPreconditionError = \case
+  RecoveryStatusOutsideTopology node ->
+    "Persisted status for node "
+      <> unNodeId node
+      <> " is outside the materialized topology"
+  RecoveryStatusMissing node ->
+    "Persisted status for topology node "
+      <> unNodeId node
+      <> " is missing"
+  RecoveryOutputOutsideTopology node ->
+    "Persisted output for node "
+      <> unNodeId node
+      <> " is outside the materialized topology"
+  RecoveryOutputNotAllowed node status ->
+    "Persisted output for node "
+      <> unNodeId node
+      <> " is not allowed while status is "
+      <> renderNodeStatus status
+  RecoveryRequiredOutputMissing node status ->
+    "Persisted node "
+      <> unNodeId node
+      <> " is "
+      <> renderNodeStatus status
+      <> " but has no persisted output"
+  RecoveryCausalHistoryOpen violation ->
+    "Persisted successor-unblocking node "
+      <> unNodeId violation.rchvNode
+      <> " has non-terminal strict ancestor "
+      <> unNodeId violation.rchvAncestor
+      <> " with status "
+      <> renderNodeStatus violation.rchvAncestorStatus
+
+-- | Render all persisted recovery validation errors as a single operator-facing message.
+renderRecoveryPreconditionErrors :: NonEmpty RecoveryPreconditionError -> Text
+renderRecoveryPreconditionErrors =
+  T.intercalate "; " . fmap renderRecoveryPreconditionError . NE.toList
+
+recoveryPreconditionErrors :: Relation NodeId -> GraphState o -> [RecoveryPreconditionError]
+recoveryPreconditionErrors topology state =
+  statusDomainErrors
+    <> missingStatusErrors
+    <> outputDomainErrors
+    <> outputStatusErrors
+    <> missingOutputErrors
+    <> causalHistoryErrors
+  where
+    topologyNodes = relVertices topology
+    transposedTopology = transposeRelation topology
+    statusNodes = Map.keysSet state.gsNodeStatuses
+    outputNodes = Map.keysSet state.gsNodeOutputs
+
+    statusOf node = Map.findWithDefault NodePending node state.gsNodeStatuses
+    strictAncestorsOf node = Set.delete node (reachable transposedTopology node)
+
+    statusDomainErrors =
+      RecoveryStatusOutsideTopology
+        <$> Set.toList (Set.difference statusNodes topologyNodes)
+
+    missingStatusErrors =
+      RecoveryStatusMissing
+        <$> Set.toList (Set.difference topologyNodes statusNodes)
+
+    outputDomainErrors =
+      RecoveryOutputOutsideTopology
+        <$> Set.toList (Set.difference outputNodes topologyNodes)
+
+    outputStatusErrors =
+      [ RecoveryOutputNotAllowed node status
+      | node <- Set.toList (Set.intersection outputNodes topologyNodes)
+      , let status = statusOf node
+      , not (mayHaveOutputStatus status)
+      ]
+
+    missingOutputErrors =
+      [ RecoveryRequiredOutputMissing node status
+      | node <- Set.toList topologyNodes
+      , let status = statusOf node
+      , requiresOutputStatus status
+      , Map.notMember node state.gsNodeOutputs
+      ]
+
+    causalHistoryErrors =
+      [ RecoveryCausalHistoryOpen
+          RecoveryCausalHistoryViolation
+            { rchvNode = node
+            , rchvAncestor = ancestor
+            , rchvAncestorStatus = ancestorStatus
+            }
+      | node <- Set.toList topologyNodes
+      , unblocksSuccessorsStatus (statusOf node)
+      , ancestor <- Set.toList (strictAncestorsOf node)
+      , let ancestorStatus = statusOf ancestor
+      , not (isTerminalStatus ancestorStatus)
+      ]
+
+mayHaveOutputStatus :: NodeStatus -> Bool
+mayHaveOutputStatus = \case
+  NodeCompleted -> True
+  NodeRewritten -> True
+  NodePending -> False
+  NodeRunning -> False
+  NodeFailed -> False
+  NodeSkipped -> False
+  NodeInterrupted _ -> False
+  NodeWaiting _ -> False
+
+requiresOutputStatus :: NodeStatus -> Bool
+requiresOutputStatus = \case
+  NodeCompleted -> True
+  NodeRewritten -> True
+  NodePending -> False
+  NodeRunning -> False
+  NodeFailed -> False
+  NodeSkipped -> False
+  NodeInterrupted _ -> False
+  NodeWaiting _ -> False
+
+unblocksSuccessorsStatus :: NodeStatus -> Bool
+unblocksSuccessorsStatus = \case
+  NodeCompleted -> True
+  NodeSkipped -> True
+  NodeRewritten -> True
+  NodePending -> False
+  NodeRunning -> False
+  NodeFailed -> False
+  NodeInterrupted _ -> False
+  NodeWaiting _ -> False
+
+renderNodeStatus :: NodeStatus -> Text
+renderNodeStatus = \case
+  NodePending -> "pending"
+  NodeRunning -> "running"
+  NodeCompleted -> "completed"
+  NodeFailed -> "failed"
+  NodeSkipped -> "skipped"
+  NodeInterrupted reason -> "interrupted: " <> renderInterruptReason reason
+  NodeRewritten -> "rewritten"
+  NodeWaiting signalName -> "waiting on \"" <> signalName <> "\""
+
+renderInterruptReason :: InterruptReason -> Text
+renderInterruptReason = \case
+  InterruptedSiblingCancelled -> "sibling cancelled"
+  InterruptedShutdown -> "shutdown"
+  InterruptedRunCancelled -> "run cancelled"
 
 data NodeInputError
   = MissingOutput NodeId
