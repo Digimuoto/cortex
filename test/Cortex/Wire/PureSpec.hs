@@ -35,6 +35,7 @@ import Cortex.Wire
   , WirePorts (..)
   , WireValue (..)
   , bindPureInputValues
+  , corePureBuiltinSignature
   , evaluatePureTaskOutputs
   , mkWireValue
   , validatePurePorts
@@ -134,6 +135,99 @@ spec = describe "Cortex.Wire.Pure" $ do
       (Map.singleton "score" (CorePureCall (CorePureLambda ("x" :| ["x"]) (var "x")) [num 1, num 2]))
       `shouldBe` Left (PureDuplicateLambdaParam "x")
 
+  it "rejects duplicate CorePure record literal paths before evaluation" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      ( Map.singleton
+          "score"
+          ( CorePureIf
+              (CorePureLit (CorePureBool False))
+              ( CorePureRecord
+                  [ CorePureField ("a" :| []) (num 1)
+                  , CorePureField ("a" :| []) (num 2)
+                  ]
+              )
+              (num 0)
+          )
+      )
+      `shouldBe` Left (PureDuplicateRecordFieldPath ["a"] ["a"])
+
+  it "rejects duplicate CorePure record literal paths inside bindings and where clauses" $ do
+    let duplicateRecord =
+          CorePureRecord
+            [ CorePureField ("a" :| []) (num 1)
+            , CorePureField ("a" :| []) (num 2)
+            ]
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      [binding "bad" duplicateRecord]
+      Nothing
+      (Map.singleton "score" (var "bad"))
+      `shouldBe` Left (PureDuplicateRecordFieldPath ["a"] ["a"])
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      (Just duplicateRecord)
+      (Map.singleton "score" (num 0))
+      `shouldBe` Left (PureDuplicateRecordFieldPath ["a"] ["a"])
+
+  it "rejects CorePure record literal prefix conflicts in both orders" $ do
+    let nestedAfterScalar =
+          CorePureRecord
+            [ CorePureField ("a" :| []) (num 1)
+            , CorePureField ("a" :| ["b"]) (num 2)
+            ]
+        scalarAfterNested =
+          CorePureRecord
+            [ CorePureField ("a" :| ["b"]) (num 2)
+            , CorePureField ("a" :| []) (num 1)
+            ]
+    evaluatePureTaskOutputs scorePorts scoreInputs [] Nothing (Map.singleton "score" nestedAfterScalar)
+      `shouldBe` Left (PureDuplicateRecordFieldPath ["a"] ["a", "b"])
+    evaluatePureTaskOutputs scorePorts scoreInputs [] Nothing (Map.singleton "score" scalarAfterNested)
+      `shouldBe` Left (PureDuplicateRecordFieldPath ["a", "b"] ["a"])
+
+  it "permits sibling nested CorePure record literal paths" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      ( Map.singleton
+          "score"
+          ( CorePureRecord
+              [ CorePureField ("a" :| ["b"]) (num 1)
+              , CorePureField ("a" :| ["c"]) (num 2)
+              ]
+          )
+      )
+      `shouldBe` Right
+        ( Map.singleton
+            "score"
+            (Aeson.object ["a" Aeson..= Aeson.object ["b" Aeson..= numJson 1, "c" Aeson..= numJson 2]])
+        )
+
+  it "keeps explicit CorePure record merge right-biased" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      ( Map.singleton
+          "score"
+          ( bin
+              CorePureMerge
+              (CorePureRecord [CorePureField ("a" :| []) (num 1)])
+              (CorePureRecord [CorePureField ("a" :| []) (num 2)])
+          )
+      )
+      `shouldBe` Right (Map.singleton "score" (Aeson.object ["a" Aeson..= numJson 2]))
+
   it "zips arrays into fst/snd pair records in argument order" $
     evaluatePureTaskOutputs
       scorePorts
@@ -158,6 +252,27 @@ spec = describe "Cortex.Wire.Pure" $ do
                 ]
             )
         )
+
+  it "keeps the CorePure builtin authority-review signature explicit" $
+    corePureBuiltinSignature
+      `shouldBe` [ ("map", 2)
+                 , ("fmap", 2)
+                 , ("filter", 2)
+                 , ("zip", 2)
+                 , ("zipWith", 3)
+                 , ("length", 1)
+                 , ("sum", 1)
+                 , ("all", 2)
+                 , ("any", 2)
+                 , ("min", 2)
+                 , ("max", 2)
+                 , ("abs", 1)
+                 , ("clamp", 3)
+                 , ("concat", 1)
+                 , ("toString", 1)
+                 , ("joinWith", 2)
+                 , ("toJson", 1)
+                 ]
 
   it "allows where fields to shadow top-level delayed bindings" $
     evaluatePureTaskOutputs
@@ -403,3 +518,7 @@ call =
 bin :: CorePureBinOp -> CorePureExpr -> CorePureExpr -> CorePureExpr
 bin =
   CorePureBinary
+
+numJson :: Scientific -> Aeson.Value
+numJson =
+  Aeson.Number

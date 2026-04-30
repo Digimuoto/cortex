@@ -36,9 +36,11 @@ The page defines values, expressions, deterministic evaluation, static
 `where`-field discovery, pure-node admission, native pure-task lowering, and
 the local soundness side condition needed when a `where` expression contains
 CorePure `let`. The facts are local to this proof model; no theorem here claims
-that the Haskell evaluator or compiler already produces these Lean witnesses.
-The `where` soundness chain is exported for downstream output-value and contract
-proofs; the output-key theorems in this file are structural and do not need it.
+that the Haskell evaluator or compiler already produces these Lean witnesses. The
+closed-builtin table below is a proof-side signature mirror, not an evaluator
+oracle. The `where` soundness chain is exported for downstream output-value and
+contract proofs; the output-key theorems in this file are structural and do not
+need it.
 -/
 
 namespace Cortex.Wire
@@ -102,6 +104,131 @@ def hideFields (fields : Finset Name) (ctx : StaticContext) : StaticContext :=
   fun candidate => if candidate ∈ fields then none else ctx candidate
 
 end StaticContext
+
+/-! ## Closed Builtin Signature Mirror -/
+
+/-- Authority classes used to classify the proof-side CorePure builtin signature mirror. -/
+inductive BuiltinAuthority : Type where
+  | pureValue
+  | executor
+  | host
+  | durableState
+  | model
+  | tool
+  | rewrite
+  deriving DecidableEq, Repr
+
+/-- Proof-side signature for one closed CorePure builtin. -/
+structure BuiltinSpec where
+  /-- Builtin name exposed in the CorePure environment. -/
+  name : Name
+  /-- Builtin arity. -/
+  arity : Nat
+  /-- Authority class required by the builtin implementation. -/
+  authority : BuiltinAuthority
+
+namespace BuiltinSpec
+
+/-- `authorityFree spec` means a builtin stays inside pure value computation. -/
+def authorityFree (spec : BuiltinSpec) : Prop :=
+  spec.authority = BuiltinAuthority.pureValue
+
+end BuiltinSpec
+
+/-- Closed CorePure builtin signatures duplicated from the Haskell evaluator.
+
+This table is intentionally only a proof-side mirror. The Haskell side exposes
+`corePureBuiltinSignature` as the runtime review hook; no theorem in this file proves that Haskell
+evaluation consults this Lean table. -/
+def closedBuiltinEnv : List BuiltinSpec :=
+  [ { name := "map", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "fmap", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "filter", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "zip", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "zipWith", arity := 3, authority := BuiltinAuthority.pureValue }
+  , { name := "length", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "sum", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "all", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "any", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "min", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "max", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "abs", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "clamp", arity := 3, authority := BuiltinAuthority.pureValue }
+  , { name := "concat", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "toString", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "joinWith", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "toJson", arity := 1, authority := BuiltinAuthority.pureValue }
+  ]
+
+/-- Name/arity projection of the proof-side closed builtin mirror. -/
+def closedBuiltinSignature : List (Name × Nat) :=
+  closedBuiltinEnv.map (fun spec => (spec.name, spec.arity))
+
+/-- Explicit signature expected from the Haskell `corePureBuiltinSignature` review hook. -/
+theorem closedBuiltinSignature_eq :
+    closedBuiltinSignature =
+      [ ("map", 2)
+      , ("fmap", 2)
+      , ("filter", 2)
+      , ("zip", 2)
+      , ("zipWith", 3)
+      , ("length", 1)
+      , ("sum", 1)
+      , ("all", 2)
+      , ("any", 2)
+      , ("min", 2)
+      , ("max", 2)
+      , ("abs", 1)
+      , ("clamp", 3)
+      , ("concat", 1)
+      , ("toString", 1)
+      , ("joinWith", 2)
+      , ("toJson", 1)
+      ] :=
+  rfl
+
+/-- The proof-side closed CorePure builtin mirror contains no authority-bearing entry. -/
+theorem closedBuiltinEnv_authorityFree :
+    ∀ spec, spec ∈ closedBuiltinEnv → spec.authorityFree := by
+  intro spec hSpec
+  simp [closedBuiltinEnv] at hSpec
+  rcases hSpec with
+    hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec |
+      hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
+  · cases hSpec
+    rfl
 
 /-- Unary operators in the modeled CorePure subset. -/
 inductive UnaryOp : Type where
@@ -243,6 +370,34 @@ theorem recordFromValues_field_present
           exact (Finset.mem_insert.mp hInserted).resolve_left hCurrent
         obtain ⟨restValue, hRestLookup⟩ := ih hRestName
         exact ⟨restValue, by simp [recordFromValues, hRestLookup]⟩
+
+/-- A successful record lookup came from one of the evaluated field-value pairs. -/
+theorem recordFromValues_lookup_mem
+    {fields : List (Name × Value)}
+    {name : Name}
+    {fieldValue : Value}
+    (hLookup : recordFromValues fields name = some fieldValue) :
+    (name, fieldValue) ∈ fields := by
+  induction fields generalizing name fieldValue with
+  | nil =>
+      simp [recordFromValues] at hLookup
+  | cons field rest ih =>
+      rcases field with ⟨fieldName, currentValue⟩
+      cases hRest : recordFromValues rest name with
+      | some restValue =>
+          have hValue : restValue = fieldValue := by
+            simp [recordFromValues, hRest] at hLookup
+            exact hLookup
+          have hRestMember : (name, fieldValue) ∈ rest := by
+            simpa [hValue] using ih hRest
+          exact List.mem_cons_of_mem _ hRestMember
+      | none =>
+          by_cases hName : name = fieldName
+          · cases hName
+            simp [recordFromValues, hRest] at hLookup
+            cases hLookup
+            simp
+          · simp [recordFromValues, hRest, hName] at hLookup
 
 /-! ## Evaluation -/
 
@@ -494,6 +649,29 @@ def Expr.staticLetSafe (ctx : StaticContext) : Expr → Prop
   | Expr.binary BinaryOp.multiply _left _right => True
   | Expr.binary BinaryOp.and _left _right => True
   | Expr.binary BinaryOp.or _left _right => True
+
+/-- Per-binding static facts for top-level CorePure bindings. -/
+def TopLevelBindingStatics
+    (ctx : StaticContext)
+    (bindings : List (Name × Expr)) : Prop :=
+  ∀ name expr fields,
+    (name, expr) ∈ bindings →
+      ctx name = some fields →
+        Expr.staticLetSafe ctx expr ∧ whereStaticFields ctx expr = some fields
+
+/-- Top-level bindings establish the static context when every static entry is backed by a binding
+and every backed binding has matching static record-field discovery.
+
+This is not a Haskell correspondence proof by itself. It is the Lean-side witness shape that a
+compiler bridge must produce. -/
+structure TopLevelBindingsEstablishStaticContext
+    (ctx : StaticContext)
+    (bindings : List (Name × Expr)) : Prop where
+  /-- Any binding used by the static context has the corresponding static field discovery fact. -/
+  binding_static : TopLevelBindingStatics ctx bindings
+  /-- Any static context entry is backed by some top-level binding. -/
+  ctx_supported :
+    ∀ name fields, ctx name = some fields → ∃ expr, (name, expr) ∈ bindings
 
 /-- Static field discovery succeeds for record literals with exactly their field-name set. -/
 theorem where_staticFields_record
@@ -755,6 +933,104 @@ theorem whereStaticFields_sound
     Value.hasOnlyFields value fields :=
   whereStaticFields_sound_expr expr hSafe hMatch hStatic hEval
 
+/-- A top-level binding with a static-context entry evaluates to a value with those fields. -/
+theorem topLevelBinding_value_hasOnlyFields
+    {ctx : StaticContext}
+    {env : Env}
+    {bindings : List (Name × Expr)}
+    {name : Name}
+    {expr : Expr}
+    {fields : Finset Name}
+    {value : Value}
+    (hBindings : TopLevelBindingStatics ctx bindings)
+    (hMatch : EnvMatchesStatic env ctx)
+    (hMember : (name, expr) ∈ bindings)
+    (hStatic : ctx name = some fields)
+    (hEval : eval env expr = Except.ok value) :
+    Value.hasOnlyFields value fields := by
+  have hBinding := hBindings name expr fields hMember hStatic
+  exact whereStaticFields_sound hBinding.1 hMatch hBinding.2 hEval
+
+/-- Evaluating non-duplicate top-level bindings preserves the static context they establish. -/
+private theorem evalBindingsNoDuplicate_establish_staticContext
+    {ctx : StaticContext}
+    {env localEnv : Env}
+    {bindings : List (Name × Expr)}
+    (hBindings : TopLevelBindingStatics ctx bindings)
+    (hMatch : EnvMatchesStatic env ctx)
+    (hEval : evalBindingsNoDuplicate env bindings = Except.ok localEnv) :
+    EnvMatchesStatic localEnv ctx := by
+  induction bindings generalizing env localEnv with
+  | nil =>
+      simp [evalBindingsNoDuplicate] at hEval
+      cases hEval
+      exact hMatch
+  | cons head tail ih =>
+      rcases head with ⟨bindingName, bindingExpr⟩
+      have hTailBindings : TopLevelBindingStatics ctx tail := by
+        intro name expr fields hMember hStatic
+        exact hBindings name expr fields (List.mem_cons_of_mem _ hMember) hStatic
+      simp [evalBindingsNoDuplicate] at hEval
+      cases hBindingEval : eval env bindingExpr with
+      | error err =>
+          simp [hBindingEval] at hEval
+      | ok bindingValue =>
+          simp [hBindingEval] at hEval
+          have hNextMatch :
+              EnvMatchesStatic (Env.insert bindingName bindingValue env) ctx := by
+            intro candidate fields value hStaticLookup hEnvLookup
+            by_cases hCandidate : candidate = bindingName
+            · cases hCandidate
+              simp [Env.insert] at hEnvLookup
+              cases hEnvLookup
+              cases hBindingStatic : ctx bindingName with
+              | none =>
+                  simp [hBindingStatic] at hStaticLookup
+              | some bindingFields =>
+                  have hValueHas :=
+                    topLevelBinding_value_hasOnlyFields
+                      hBindings hMatch (by simp) hBindingStatic hBindingEval
+                  rw [hBindingStatic] at hStaticLookup
+                  cases hStaticLookup
+                  exact hValueHas
+            · simp [Env.insert, hCandidate] at hEnvLookup
+              exact hMatch candidate fields value hStaticLookup hEnvLookup
+          exact ih hTailBindings hNextMatch hEval
+
+/-- Runtime top-level binding evaluation preserves the static context it establishes. -/
+theorem evalBindings_establish_staticContext
+    {ctx : StaticContext}
+    {env localEnv : Env}
+    {bindings : List (Name × Expr)}
+    (hBindings : TopLevelBindingStatics ctx bindings)
+    (hMatch : EnvMatchesStatic env ctx)
+    (hEval : evalBindings env bindings = Except.ok localEnv) :
+    EnvMatchesStatic localEnv ctx := by
+  cases hDuplicate : duplicateName (bindings.map Prod.fst) with
+  | some duplicate =>
+      simp [evalBindings, hDuplicate] at hEval
+  | none =>
+      have hNoDuplicateEval :
+          evalBindingsNoDuplicate env bindings = Except.ok localEnv := by
+        simpa [evalBindings, hDuplicate] using hEval
+      exact
+        evalBindingsNoDuplicate_establish_staticContext
+          hBindings hMatch hNoDuplicateEval
+
+/-- Successful evaluation from the empty environment constructs an environment matching the static
+context established by the top-level bindings. -/
+theorem topLevelBindings_establish_staticContext
+    {ctx : StaticContext}
+    {env : Env}
+    {bindings : List (Name × Expr)}
+    (hBindings : TopLevelBindingsEstablishStaticContext ctx bindings)
+    (hEval : evalBindings Env.empty bindings = Except.ok env) :
+    EnvMatchesStatic env ctx := by
+  have hEmptyMatch : EnvMatchesStatic Env.empty ctx := by
+    intro _name _fields _value _hStatic hLookup
+    simp [Env.empty] at hLookup
+  exact evalBindings_establish_staticContext hBindings.binding_static hEmptyMatch hEval
+
 /-! ## Pure Node Lowering -/
 
 /-- Pure output equation in the proof-side lowering model. -/
@@ -842,6 +1118,66 @@ def lowerPureNode (_ctx : StaticContext) (node : PureNode) :
       { bindings := node.bindings
         whereExpr := node.whereExpr
         outputs := node.outputs } }
+
+/-! ## Output Value Contracts -/
+
+/-- First proof-side value-contract carrier for pure output values.
+
+This is intentionally smaller than JSON Schema or the runtime `WireValue` wrapper. It gives the
+proof track a concrete contract predicate that is no longer just an arbitrary `Name → Value → Prop`.
+-/
+inductive ValueContract : Type where
+  | any
+  | null
+  | bool
+  | int
+  | string
+  | record
+  deriving DecidableEq, Repr
+
+namespace ValueContract
+
+/-- A proof-side value satisfies a simple value contract. -/
+def accepts : ValueContract → Value → Prop
+  | any, _value => True
+  | null, Value.null => True
+  | null, Value.bool _value => False
+  | null, Value.int _value => False
+  | null, Value.string _value => False
+  | null, Value.record _fields => False
+  | bool, Value.null => False
+  | bool, Value.bool _value => True
+  | bool, Value.int _value => False
+  | bool, Value.string _value => False
+  | bool, Value.record _fields => False
+  | int, Value.null => False
+  | int, Value.bool _value => False
+  | int, Value.int _value => True
+  | int, Value.string _value => False
+  | int, Value.record _fields => False
+  | string, Value.null => False
+  | string, Value.bool _value => False
+  | string, Value.int _value => False
+  | string, Value.string _value => True
+  | string, Value.record _fields => False
+  | record, Value.null => False
+  | record, Value.bool _value => False
+  | record, Value.int _value => False
+  | record, Value.string _value => False
+  | record, Value.record _fields => True
+
+end ValueContract
+
+/-- Output-contract table for the proof-side value-contract carrier. -/
+abbrev OutputValueContracts : Type :=
+  Name → Option ValueContract
+
+/-- A named output value satisfies the concrete proof-side value-contract table. -/
+def outputValueContractOk
+    (contracts : OutputValueContracts)
+    (name : Name)
+    (value : Value) : Prop :=
+  ∃ contract, contracts name = some contract ∧ contract.accepts value
 
 /-- Open a record value into an environment, shadowing outer variables by field name. -/
 def openRecordIntoEnv (recordFields : Name → Option Value) (env : Env) : Env :=
@@ -947,6 +1283,56 @@ theorem evalOutputEquationValues_preserves_names
                 insert output.output (outputEquationKeySet rest)
               rw [ih hRest]
 
+/-- Abstract per-output contract predicate for an output-equation list in one environment. -/
+def OutputExpressionsSatisfyContracts
+    (contractOk : Name → Value → Prop)
+    (env : Env)
+    (outputs : List PureOutputEquation) : Prop :=
+  ∀ output,
+    output ∈ outputs →
+      ∀ value, eval env output.expr = Except.ok value → contractOk output.output value
+
+/-- Evaluated output-value pairs satisfy their declared abstract contracts. -/
+theorem evalOutputEquationValues_satisfy_outputContracts
+    {contractOk : Name → Value → Prop}
+    {env : Env}
+    {outputs : List PureOutputEquation}
+    {values : List (Name × Value)}
+    (hEval : evalOutputEquationValues env outputs = Except.ok values)
+    (hContracts : OutputExpressionsSatisfyContracts contractOk env outputs) :
+    ∀ name value, (name, value) ∈ values → contractOk name value := by
+  induction outputs generalizing values with
+  | nil =>
+      simp [evalOutputEquationValues] at hEval
+      cases hEval
+      intro name value hMember
+      simp at hMember
+  | cons output rest ih =>
+      simp [evalOutputEquationValues] at hEval
+      cases hOutputEval : eval env output.expr with
+      | error err =>
+          simp [hOutputEval] at hEval
+      | ok outputValue =>
+          simp [hOutputEval] at hEval
+          cases hRest : evalOutputEquationValues env rest with
+          | error err =>
+              simp [hRest] at hEval
+          | ok restValues =>
+              simp [hRest] at hEval
+              cases hEval
+              have hRestContracts :
+                  OutputExpressionsSatisfyContracts contractOk env rest := by
+                intro restOutput hRestMember value hRestEval
+                exact hContracts restOutput (by simp [hRestMember]) value hRestEval
+              intro name value hMember
+              simp at hMember
+              rcases hMember with hHead | hTail
+              · rcases hHead with ⟨hName, hValue⟩
+                cases hName
+                cases hValue
+                exact hContracts output (by simp) outputValue hOutputEval
+              · exact ih hRest hRestContracts name value hTail
+
 /-- Output lookup exposes only names present in the evaluated output-value list. -/
 theorem outputLookupFromValues_keys_subset
     {values : List (Name × Value)}
@@ -1003,6 +1389,29 @@ theorem evalOutputEquations_keys_present
       have hValueName : name ∈ valueFieldNameSet values := by
         simpa [hNames] using hName
       exact outputLookupFromValues_key_present hValueName
+
+/-- Successful output-equation lookup satisfies abstract output contracts. -/
+theorem evalOutputEquations_values_satisfy_outputContracts
+    {contractOk : Name → Value → Prop}
+    {env : Env}
+    {outputs : List PureOutputEquation}
+    {lookup : Name → Option Value}
+    (hEval : evalOutputEquations env outputs = Except.ok lookup)
+    (hContracts : OutputExpressionsSatisfyContracts contractOk env outputs) :
+    ∀ name value, lookup name = some value → contractOk name value := by
+  cases hValues : evalOutputEquationValues env outputs with
+  | error err =>
+      simp [evalOutputEquations, hValues] at hEval
+  | ok values =>
+      simp [evalOutputEquations, hValues] at hEval
+      cases hEval
+      intro name value hLookup
+      have hMember :
+          (name, value) ∈ values :=
+        recordFromValues_lookup_mem hLookup
+      exact
+        evalOutputEquationValues_satisfy_outputContracts
+          hValues hContracts name value hMember
 
 namespace PureNode
 
@@ -1238,6 +1647,65 @@ theorem pureNode_evalOutputs_outputPorts_present
           have hKeySet : name ∈ outputEquationKeySet node.outputs := by
             simpa [PureNode.outputKeys] using hOutputKey
           exact evalOutputEquations_keys_present hOutputEval hKeySet
+
+/-- Successful source pure-node evaluation satisfies abstract declared output contracts. -/
+theorem pureNode_evalOutputs_values_satisfy_outputContracts
+    {ctx : StaticContext}
+    {env : Env}
+    {node : PureNode}
+    {lookup : Name → Option Value}
+    {contractOk : Name → Value → Prop}
+    (hNode : PureNodeAdmitted ctx node)
+    (hEval : node.evalOutputs env = Except.ok lookup)
+    (hContracts :
+      ∀ outerEnv localEnv,
+        evalBindings env node.bindings = Except.ok outerEnv →
+          evalWhereEnv outerEnv node.whereExpr = Except.ok localEnv →
+            OutputExpressionsSatisfyContracts contractOk localEnv node.outputs) :
+    ∀ name value, lookup name = some value → name ∈ node.outputPorts ∧ contractOk name value := by
+  cases hBindings : evalBindings env node.bindings with
+  | error err =>
+      simp [PureNode.evalOutputs, hBindings] at hEval
+  | ok outerEnv =>
+      cases hWhere : evalWhereEnv outerEnv node.whereExpr with
+      | error err =>
+          simp [PureNode.evalOutputs, hBindings, hWhere] at hEval
+      | ok localEnv =>
+          have hOutputEval :
+              evalOutputEquations localEnv node.outputs = Except.ok lookup := by
+            simpa [PureNode.evalOutputs, hBindings, hWhere] using hEval
+          intro name value hLookup
+          constructor
+          · exact pureNode_evalOutputs_keys_in_outputPorts hNode hEval name value hLookup
+          · exact
+              evalOutputEquations_values_satisfy_outputContracts
+                hOutputEval
+                (hContracts outerEnv localEnv hBindings hWhere)
+                name
+                value
+                hLookup
+
+/-- Successful source pure-node evaluation satisfies the proof-side value-contract table. -/
+theorem pureNode_evalOutputs_values_satisfy_valueContracts
+    {ctx : StaticContext}
+    {env : Env}
+    {node : PureNode}
+    {lookup : Name → Option Value}
+    {contracts : OutputValueContracts}
+    (hNode : PureNodeAdmitted ctx node)
+    (hEval : node.evalOutputs env = Except.ok lookup)
+    (hContracts :
+      ∀ outerEnv localEnv,
+        evalBindings env node.bindings = Except.ok outerEnv →
+          evalWhereEnv outerEnv node.whereExpr = Except.ok localEnv →
+            OutputExpressionsSatisfyContracts
+              (outputValueContractOk contracts)
+              localEnv
+              node.outputs) :
+    ∀ name value,
+      lookup name = some value →
+        name ∈ node.outputPorts ∧ outputValueContractOk contracts name value :=
+  pureNode_evalOutputs_values_satisfy_outputContracts hNode hEval hContracts
 
 /-- Source pure nodes lower to one native pure task. -/
 theorem pureNode_lowers_to_one_nativeTask

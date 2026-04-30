@@ -19,6 +19,7 @@ module Cortex.Wire.Pure
   , validatePurePorts
   , bindPureInputValues
   , evaluatePureTaskOutputs
+  , corePureBuiltinSignature
   , pureWireExecutorId
   , pureWireExecutorProjection
   , pureExecutorConfigSchema
@@ -83,6 +84,7 @@ data PureEvalError
   | PureFunctionArity !Text !Int !Int
   | PureDuplicateBinding !Text
   | PureDuplicateLambdaParam !Text
+  | PureDuplicateRecordFieldPath ![Text] ![Text]
   | PureWhereExpectedRecord !Text
   deriving stock (Eq, Show, Generic)
 
@@ -146,11 +148,20 @@ renderPureEvalError = \case
     "Pure expression declares binding " <> bindingName <> " more than once in the same scope."
   PureDuplicateLambdaParam paramName ->
     "Pure expression declares lambda parameter " <> paramName <> " more than once."
+  PureDuplicateRecordFieldPath leftPath rightPath ->
+    "Pure record literal declares conflicting field paths "
+      <> renderRecordPath leftPath
+      <> " and "
+      <> renderRecordPath rightPath
+      <> "."
   PureWhereExpectedRecord actual ->
     "Pure where-clause must evaluate to a record, but received " <> actual <> "."
   where
     renderList values =
       "[" <> T.intercalate ", " values <> "]"
+
+    renderRecordPath =
+      T.intercalate "."
 
 validatePurePorts :: WirePorts -> Map Text CorePureExpr -> Either PureEvalError ()
 validatePurePorts ports outputExprs =
@@ -259,6 +270,7 @@ evaluatePureTaskOutputs
   -> Either PureEvalError (Map Text Aeson.Value)
 evaluatePureTaskOutputs ports inputBundle bindings whereExpr outputExprs = do
   validatePurePorts ports outputExprs
+  validateCorePureTaskExpressions bindings whereExpr outputExprs
   inputValues <- bindPureInputValues ports inputBundle
   let inputEnv = Map.map CorePureJson inputValues
   outerEnv <- bindCorePureBindings (corePureBuiltinEnv <> inputEnv) bindings
@@ -292,6 +304,77 @@ data CorePureValue
   = CorePureJson !Aeson.Value
   | CorePureClosure !(NonEmpty Text) !CorePureExpr !CorePureEnv
   | CorePureBuiltin !Text !Int ![CorePureValue] !([CorePureValue] -> Either PureEvalError CorePureValue)
+
+validateCorePureTaskExpressions
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> Map Text CorePureExpr
+  -> Either PureEvalError ()
+validateCorePureTaskExpressions bindings whereExpr outputExprs =
+  validateCorePureBindingNames bindings
+    *> traverse_ (validateCorePureExpr . (.corePureBindingExpr)) bindings
+    *> traverse_ validateCorePureExpr whereExpr
+    *> traverse_ validateCorePureExpr outputExprs
+
+validateCorePureExpr :: CorePureExpr -> Either PureEvalError ()
+validateCorePureExpr = \case
+  CorePureLit {} ->
+    Right ()
+  CorePureIdent {} ->
+    Right ()
+  CorePureList items ->
+    traverse_ validateCorePureExpr items
+  CorePureRecord fields ->
+    validateCorePureRecordFieldPaths fields
+      *> traverse_ (validateCorePureExpr . (.corePureFieldValue)) fields
+  CorePureFieldAccess baseExpr _fieldName ->
+    validateCorePureExpr baseExpr
+  CorePureIndex baseExpr indexExpr ->
+    validateCorePureExpr baseExpr *> validateCorePureExpr indexExpr
+  CorePureLambda params bodyExpr ->
+    validateCorePureParamNames params *> validateCorePureExpr bodyExpr
+  CorePureCall functionExpr argumentExprs ->
+    validateCorePureExpr functionExpr *> traverse_ validateCorePureExpr argumentExprs
+  CorePureUnary _unaryOp operandExpr ->
+    validateCorePureExpr operandExpr
+  CorePureBinary _binaryOp lhsExpr rhsExpr ->
+    validateCorePureExpr lhsExpr *> validateCorePureExpr rhsExpr
+  CorePureLet bindings bodyExpr ->
+    let bindingList = NE.toList bindings
+     in validateCorePureBindingNames bindingList
+          *> traverse_ (validateCorePureExpr . (.corePureBindingExpr)) bindingList
+          *> validateCorePureExpr bodyExpr
+  CorePureIf conditionExpr thenExpr elseExpr ->
+    validateCorePureExpr conditionExpr
+      *> validateCorePureExpr thenExpr
+      *> validateCorePureExpr elseExpr
+
+validateCorePureRecordFieldPaths :: [CorePureField] -> Either PureEvalError ()
+validateCorePureRecordFieldPaths fields =
+  case firstRecordFieldPathConflict (fmap (.corePureFieldPath) fields) of
+    Just (leftPath, rightPath) ->
+      Left (PureDuplicateRecordFieldPath (NE.toList leftPath) (NE.toList rightPath))
+    Nothing ->
+      Right ()
+
+firstRecordFieldPathConflict
+  :: [NonEmpty Text]
+  -> Maybe (NonEmpty Text, NonEmpty Text)
+firstRecordFieldPathConflict =
+  go []
+  where
+    go _seen [] =
+      Nothing
+    go seen (path : rest) =
+      case List.find (`recordFieldPathsConflict` path) seen of
+        Just priorPath -> Just (priorPath, path)
+        Nothing -> go (seen <> [path]) rest
+
+recordFieldPathsConflict :: NonEmpty Text -> NonEmpty Text -> Bool
+recordFieldPathsConflict leftPath rightPath =
+  let left = NE.toList leftPath
+      right = NE.toList rightPath
+   in left `List.isPrefixOf` right || right `List.isPrefixOf` left
 
 evaluateCorePureExpr :: CorePureEnv -> CorePureExpr -> Either PureEvalError CorePureValue
 evaluateCorePureExpr env = \case
@@ -521,30 +604,58 @@ applyCorePureValue functionValue argumentValues =
     other ->
       Left (PureFunctionExpected (corePureValueKind other))
 
+data CorePureBuiltinSpec = CorePureBuiltinSpec
+  { corePureBuiltinName :: !Text
+  , corePureBuiltinArity :: !Int
+  , corePureBuiltinImplementation :: !([CorePureValue] -> Either PureEvalError CorePureValue)
+  }
+
+corePureBuiltinSpecs :: [CorePureBuiltinSpec]
+corePureBuiltinSpecs =
+  [ builtin "map" 2 corePureMap
+  , builtin "fmap" 2 corePureMap
+  , builtin "filter" 2 corePureFilter
+  , builtin "zip" 2 corePureZip
+  , builtin "zipWith" 3 corePureZipWith
+  , builtin "length" 1 corePureLength
+  , builtin "sum" 1 corePureSum
+  , builtin "all" 2 corePureAll
+  , builtin "any" 2 corePureAny
+  , builtin "min" 2 (numericBuiltin2 min)
+  , builtin "max" 2 (numericBuiltin2 max)
+  , builtin "abs" 1 corePureAbs
+  , builtin "clamp" 3 corePureClamp
+  , builtin "concat" 1 corePureConcat
+  , builtin "toString" 1 corePureToString
+  , builtin "joinWith" 2 corePureJoinWith
+  , builtin "toJson" 1 corePureToJson
+  ]
+  where
+    builtin name arity implementation =
+      CorePureBuiltinSpec
+        { corePureBuiltinName = name
+        , corePureBuiltinArity = arity
+        , corePureBuiltinImplementation = implementation
+        }
+
+corePureBuiltinSignature :: [(Text, Int)]
+corePureBuiltinSignature =
+  [ (spec.corePureBuiltinName, spec.corePureBuiltinArity)
+  | spec <- corePureBuiltinSpecs
+  ]
+
 corePureBuiltinEnv :: CorePureEnv
 corePureBuiltinEnv =
   Map.fromList
-    [ builtin "map" 2 corePureMap
-    , builtin "fmap" 2 corePureMap
-    , builtin "filter" 2 corePureFilter
-    , builtin "zip" 2 corePureZip
-    , builtin "zipWith" 3 corePureZipWith
-    , builtin "length" 1 corePureLength
-    , builtin "sum" 1 corePureSum
-    , builtin "all" 2 corePureAll
-    , builtin "any" 2 corePureAny
-    , builtin "min" 2 (numericBuiltin2 min)
-    , builtin "max" 2 (numericBuiltin2 max)
-    , builtin "abs" 1 corePureAbs
-    , builtin "clamp" 3 corePureClamp
-    , builtin "concat" 1 corePureConcat
-    , builtin "toString" 1 corePureToString
-    , builtin "joinWith" 2 corePureJoinWith
-    , builtin "toJson" 1 corePureToJson
+    [ ( spec.corePureBuiltinName
+      , CorePureBuiltin
+          spec.corePureBuiltinName
+          spec.corePureBuiltinArity
+          []
+          spec.corePureBuiltinImplementation
+      )
+    | spec <- corePureBuiltinSpecs
     ]
-  where
-    builtin name arity implementation =
-      (name, CorePureBuiltin name arity [] implementation)
 
 partialClosureParams
   :: NonEmpty Text -> Int -> Either PureEvalError ([Text], NonEmpty Text)
