@@ -55,6 +55,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0036](0036-wire-latent-branch-budget-recovery.md)              | Latent Branch Budget and Recovery Policy                            | proposed |
 | [0037](0037-wire-latent-structural-control.md)                  | Wire Latent Structural Control Operators                            | proposed |
 | [0038](0038-wire-proof-track-theorem-ledger.md)                 | Wire Proof-Track Theorem Ledger                                     | proposed |
+| [0039](0039-wire-boundary-polarity-and-terminators.md)          | Wire Boundary Polarity and Terminators                              | proposed |
 
 ## Writing a new ADR
 
