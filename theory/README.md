@@ -224,6 +224,18 @@ Mechanized results now include:
   abstract `RewriteChain` model while preserving source validity, budget bounds, generic contracts,
   and registry-boundary invariants. The stronger constructed-delta registry theorem above avoids
   making the headline boundary theorem depend on arbitrary caller preservation proofs.
+- `LatentBranchFamily.fragmentsValid`, `.fragmentsPairwiseDisjoint`, `SelectActualize`,
+  `selectActualize_selectedFragment_valid`, `selectActualize_lowers_to_appendAfter`,
+  `selectActualize_admissible_of_constructedStep`,
+  `selectActualize_unselected_not_in_selectedFragment`, `selectActualize_runtimeRewrite_spec_eq`,
+  `selectActualize_consumes_selected_cost`,
+  `selectActualize_namespaced_selected_subgraph_contained`, and
+  `selectActualize_preserves_registryBoundary`: proof-side `select(...)` actualization is modeled as
+  certified latent structural control whose selected arm lowers definitionally to the existing
+  retained-owner `appendAfter` rewrite surface, reuses constructed-step admission, consumes the
+  constructed selected-arm delta cost, carries the namespaced selected subgraph into the admission
+  checks, inherits constructed-delta registry-boundary preservation, and keeps unselected branch
+  fragments outside the selected raw fragment through the family disjointness invariant.
 - `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
@@ -236,8 +248,8 @@ The remaining Track 3 obligations are now tracked in
   wrapping;
 - Haskell planner and budget-admission correspondence for `RuntimeConstructionInputs`,
   added-node/added-edge registry admission, and `AdmittedRewriteDelta`;
-- `SelectActualize` proof certificates for selected-arm lowering, unselected-arm
-  non-materialization, selected-cost budgeting, and later recovery determinism.
+- `SelectActualize` executable witness integration and later durable selected-branch recovery
+  determinism.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
 but chain-level preservation requires them to stay inside the registry boundary documented in
