@@ -12,6 +12,10 @@ related:
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/ADRs/0005-budgeted-rewrite-admission-and-materialization.md
   - docs/ADRs/0009-rewrite-provenance-and-topology-integrity.md
+  - docs/ADRs/0032-wire-boundary-contract-resources.md
+  - docs/ADRs/0034-wire-pure-select-actualization-authority.md
+  - docs/ADRs/0035-wire-rewrite-algebra-forms.md
+  - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
 ---
 
 # Rewrites Reference
@@ -80,6 +84,26 @@ The following constructors are recognized future forms but **not part of the adm
 v1**: `InsertBefore`, `PruneSubgraph`, `AddJoin`, `ReplaceNode`. Introducing any of them requires a
 new ADR and a runtime-version bump.
 
+### 1.4 Boundary laws and runtime constructors
+
+The v1 constructors are operational forms. The conceptual boundary laws are the stable semantic
+vocabulary:
+
+| Boundary law                     | v1 realization                | Contract/resource effect                                                                           |
+| -------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| Contract-preserving substitution | `ExpandNode anchor mode spec` | Consumes one rewrite slot and the anchor boundary; the replacement exposes the consumed boundary.  |
+| Append continuation              | `AppendAfter anchor spec`     | Consumes one rewrite slot while retaining the anchor; the continuation consumes the anchor output. |
+| Conditional branch actualization | `AppendAfter anchor spec`     | When the anchor is a conditional owner, the selected guarded branch becomes live topology.         |
+
+`SelectActualize owner selectedArm` is the compiler/proof vocabulary for the restricted
+actualization capability of a compiled `select(...)`. It is not a v1 `GraphRewrite` constructor and
+is not a separately persisted runtime token. Current runtime materialization records the admitted
+selected branch as an ordinary rewrite row.
+
+Observation/instrumentation is future boundary-law vocabulary only. There is no admitted v1
+constructor for it, and observers must not consume or alter the anchor boundary unless a later ADR
+adds a resource path.
+
 ## 2. Stage-result extension
 
 Stages signal rewrite proposals through a richer `StageResult`:
@@ -134,7 +158,20 @@ The proof contract is the leader here: runtime `RewriteBudget` and `RewriteCost`
 natural-vector shape as the mechanized rewrite-admission model, and runtime validation rejects list
 or JSON shapes that cannot denote the proof-side sets and natural numbers.
 
-### 3.3 Budget visibility
+### 3.3 Selected-cost latent branches
+
+Latent branch families use selected-cost accounting in the current runtime:
+
+- unselected arms do not consume runtime rewrite budget;
+- the selected arm consumes ordinary rewrite budget when actualized;
+- branch actualization is admitted or rejected through the same durable rewrite admission path as
+  other topology changes;
+- the runtime does not yet reserve capacity for every compiled latent arm.
+
+This differs from max-reserved capacity. A future reservation policy would need to say whether it
+reserves `max(branchCosts)`, reserves per branch family, or changes the rewrite-budget algebra.
+
+### 3.4 Budget visibility
 
 Remaining budget is persisted in graph state and surfaced on operator surfaces (run detail, rewrite
 history). Each admitted rewrite records budget-before and budget-after snapshots so operators can
@@ -239,6 +276,10 @@ Pre-watermark rewrite-capable runs are **legacy** and not guaranteed resumable. 
 schema change requires a runtime-version bump (see
 [ADR 0011](./../ADRs/0011-compatibility-barriers-and-fresh-run-recovery.md)).
 
+For selected branches, the admitted selected rewrite is the durable fact replayed by recovery.
+Unselected latent arms remain sealed alternatives in the compiled artifact and are not materialized
+for that run. The current model has no durable "discard branch" event.
+
 ## 6. Hydration
 
 ### 6.1 Keying
@@ -293,6 +334,14 @@ admin-visibility decisions track ([ADR 0008](../ADRs/0008-pulse-operator-visibil
   — provenance and integrity decision.
 - [../ADRs/0011-compatibility-barriers-and-fresh-run-recovery.md](../ADRs/0011-compatibility-barriers-and-fresh-run-recovery.md)
   — watermark version discipline.
+- [../ADRs/0032-wire-boundary-contract-resources.md](../ADRs/0032-wire-boundary-contract-resources.md)
+  — boundary obligations as planning resources.
+- [../ADRs/0034-wire-pure-select-actualization-authority.md](../ADRs/0034-wire-pure-select-actualization-authority.md)
+  — pure selectors and restricted actualization authority.
+- [../ADRs/0035-wire-rewrite-algebra-forms.md](../ADRs/0035-wire-rewrite-algebra-forms.md) —
+  conceptual boundary laws and v1 runtime constructors.
+- [../ADRs/0036-wire-latent-branch-budget-recovery.md](../ADRs/0036-wire-latent-branch-budget-recovery.md)
+  — selected-cost branch actualization and recovery policy.
 
 ---
 

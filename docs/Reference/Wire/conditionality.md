@@ -24,6 +24,7 @@ The short version is:
 
 - conditionality is not ordinary fan-out
 - conditionality is **exclusive-output reduction**
+- the formal resource model is **guarded-affine collapse**
 - the canonical surface is postfix `select(...)`
 - branches are **latent continuations** until one is selected
 - output labels are the canonical arm keys, with unique contract names accepted as fallback keys
@@ -53,7 +54,7 @@ This page therefore does five things:
 - specifies the target semantic model for conditionality
 - specifies the target `select(...)` surface
 - defines latent branches in the target model
-- states the main typing, composition, and budgeting rules
+- states the main typing, composition, resource, and budgeting rules
 - records how the current Cortex implementation realizes a narrower subset today
 
 This page does not repeat the full EBNF for `select(...)`; that lives in [grammar.md](grammar.md).
@@ -81,6 +82,12 @@ It is better understood as:
 - with an exclusive output boundary
 - reduced by `select(...)` into a graph `x'`
 - where `x'` has one actualized continuation path
+
+The resource term for this reduction is **guarded-affine collapse**. Before selection, each arm is a
+guarded continuation: it is validated as a possible future, but it is not live topology. It is
+affine because at most one guarded arm can be promoted for the run. Selection collapses the
+exclusive boundary by promoting the chosen arm into the live linear context and discarding the
+unchosen arms.
 
 This is also why parentheses are natural in branch bodies:
 
@@ -346,6 +353,8 @@ The reduced graph simply continues through the already-correct boundary.
 - **Owner remains** — The anchor stays visible for provenance and lineage.
 - **Latent until selected** — Unselected branches are not eligible under ordinary readiness rules;
   conditionality never lowers to ordinary fan-out.
+- **Guarded-affine resources** — Branch-local boundary obligations are checked under their arm key
+  before selection and become ordinary live obligations only for the selected arm.
 
 ## 8. Typing and Composition
 
@@ -555,19 +564,23 @@ So the current implementation status is:
 This page treats that narrower implementation as a subset of the intended model, not as the final
 shape of the language.
 
-## 11. Gas, Budget, and Provenance
+## 11. Resources, Budget, and Provenance
 
 Three truths should be kept explicit.
 
-### 11.1 The whole branch set should not count by sum
+### 11.1 The whole branch set is guarded-affine, not sum-prepaid
 
-For closed-world latent alternatives, the right intuition is:
+For closed-world latent alternatives, the right resource intuition is:
 
-- branch reserve is `max`, not `sum`
+- branch validation is universal: every arm must be valid if chosen
+- branch execution is exclusive: only one arm can become live
+- branch-local obligations are guarded and affine before selection
 
-because only one branch can actualize.
+That means Cortex should not charge `sum(allBranchCosts)` up front. The current runtime goes one
+step narrower: it does not reserve `max(branchCosts)` either. It charges the selected branch when
+the branch is actualized.
 
-### 11.2 Current runtime does not yet reserve latent capacity
+### 11.2 Current runtime uses selected-cost accounting
 
 Today, selected latent branches still consume ordinary rewrite budget because they are operationally
 realized through `AppendAfter`.
@@ -576,13 +589,16 @@ So current Cortex already gives:
 
 - no “sum of all branches” cost up front
 - truthful latent-branch semantics
+- selected-cost admission through the ordinary durable rewrite path
 
 but does **not yet** give:
 
 - guaranteed reserved capacity for any later-selected branch regardless of prior open rewrites
 
 If Cortex later decides that compiled latent alternatives must be guaranteed, that is an
-architectural choice beyond this chapter and likely ADR-worthy.
+architectural choice beyond this chapter and likely ADR-worthy. That future policy would need to say
+whether it reserves `max(branchCosts)`, reserves per branch family, or changes the rewrite-budget
+algebra.
 
 ### 11.3 Provenance remains attached to the owner
 
@@ -649,6 +665,7 @@ This chapter makes the following commitments unless later superseded:
 7. Shared continuation should usually live outside `select(...)`.
 8. Productive arms converge to a common downstream boundary.
 9. The current Cortex implementation is a narrower subset of this target model.
+10. The current runtime uses selected-cost branch actualization, not reserved latent capacity.
 
 ## 14. Deferred
 
@@ -673,6 +690,12 @@ alongside the accepted grammar.
 - [../rewrites.md](../rewrites.md) — runtime rewrite algebra and current `AppendAfter` realization.
 - [../../ADRs/0007-latent-branch-conditional-lowering.md](../../ADRs/0007-latent-branch-conditional-lowering.md)
   — accepted latent-branch architecture decision.
+- [../../ADRs/0033-wire-select-guarded-affine-collapse.md](../../ADRs/0033-wire-select-guarded-affine-collapse.md)
+  — guarded-affine collapse vocabulary.
+- [../../ADRs/0034-wire-pure-select-actualization-authority.md](../../ADRs/0034-wire-pure-select-actualization-authority.md)
+  — pure selectors and restricted actualization authority.
+- [../../ADRs/0036-wire-latent-branch-budget-recovery.md](../../ADRs/0036-wire-latent-branch-budget-recovery.md)
+  — selected-cost latent branch policy.
 - [../../Architecture/05-wire-language.md](../../Architecture/05-wire-language.md) — Wire substrate
   architecture.
 - [../../Architecture/07-rewrites-and-materialization.md](../../Architecture/07-rewrites-and-materialization.md)

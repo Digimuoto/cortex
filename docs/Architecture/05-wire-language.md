@@ -30,6 +30,8 @@ The normative rules live in the reference:
   namespace, port declarations, `=>` matching
 - [Configured executors and execution boundary](../Reference/Wire/configured-executors-and-execution-boundary.md)
   — configured executor values, typed node boundaries, runnable-wire boundary
+- [Conditionality](../Reference/Wire/conditionality.md) — `select(...)`, guarded-affine collapse,
+  latent continuations, and selected-branch actualization
 - [Rewrites](../Reference/rewrites.md) — bounded dynamic rewrite algebra, budget, admission,
   materialization, provenance
 - [Modules, imports, and file returns](../Reference/Wire/modules-imports-and-file-returns.md) — file
@@ -111,6 +113,30 @@ One practical design rule follows from this split: edges carry typed values, not
 When a node aggregates several upstream values, author that shape explicitly as typed input ports
 and pass a record or list to the executor body. Wire does not infer list aggregation from many
 incoming arrows.
+
+This typed port boundary is also the resource accounting surface for structural control. A node is
+an addressable runtime and provenance object, but the locally consumed resource is the boundary
+obligation it exposes. Rewrites, append continuations, and conditional actualization all have to
+state which boundary they consume and which boundary they return. Retaining a node for provenance is
+therefore not the same as keeping its original boundary obligation unspent.
+
+## Conditionality and latent control
+
+Wire conditionality is topology-level structural control, not value-level `if` hidden inside a
+stage. The canonical surface is postfix `select(...)`: the graph on the left exposes an exclusive
+output boundary, each arm provides a continuation for one variant, and exactly one continuation is
+actualized.
+
+The formal model is **guarded-affine collapse**. Before selection, every arm is checked as a sealed
+latent continuation, and each branch-local boundary obligation is guarded by its arm key and affine:
+it may be chosen at most once, but it is not live topology. Selection promotes the chosen arm into
+the live linear context and discards the unselected arms for that run.
+
+Pure computation may compute the selected arm key, but it does not gain graph rewrite authority. The
+structural effect belongs to the compiled `select(...)` operator and to a restricted actualization
+capability for that owner and arm. In the current runtime, that capability is realized through
+retained-owner `AppendAfter` admission rather than a separate persisted `SelectActualize` token.
+Branch actualization is not an arbitrary planner-authored rewrite.
 
 ## Configured executor values and reuse
 
@@ -200,6 +226,17 @@ Wire is also the authoring surface for runtime topology evolution. A rewrite is 
 of object from the initial graph; it is another composition over the same registered vocabulary and
 compatibility rules.
 
+The source-language view distinguishes three structural effects:
+
+- **substitution**, where an anchor boundary is consumed and replaced by a graph exposing the same
+  promised boundary;
+- **append continuation**, where the anchor stays live and its output feeds a new downstream graph;
+- **selected-branch actualization**, where a guarded continuation from a compiled branch family is
+  promoted into live topology.
+
+The current runtime may realize more than one conceptual effect with the same v1 constructor, but
+the Wire language should keep their resource laws distinct.
+
 The generic pattern is:
 
 ```text
@@ -214,6 +251,10 @@ Wire does not admit rewrites by itself. The handoff is:
 - Wire expresses the candidate structure
 - Circuit validates that the structure is still executable
 - Pulse decides admission, budgeting, materialization, and resume behavior
+
+For latent branches, Pulse uses the current **selected-cost** policy: unselected arms do not consume
+runtime rewrite budget, and the selected arm consumes ordinary rewrite budget when actualized. This
+is not a reserved-capacity guarantee for every compiled arm.
 
 That boundary keeps the language small. Wire describes candidate topology. Pulse owns runtime
 policy.
@@ -244,6 +285,8 @@ Cortex still owns the source language, composition rules, and substrate runtime.
   — contract, port, executor, and binding separation
 - [ADR 0020 — Wire Pure Output Equations](../ADRs/0020-wire-pure-output-equations.md) —
   deterministic CorePure output equations
+- [ADR 0034 — Pure Selectors and Restricted Actualization Authority](../ADRs/0034-wire-pure-select-actualization-authority.md)
+  — pure branch choice without general rewrite authority
 - [Wire Grammar](../Reference/Wire/grammar.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
 - [Consumer examples](../Consumers/) — downstream binding examples

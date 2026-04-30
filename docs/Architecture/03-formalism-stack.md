@@ -40,6 +40,12 @@ another wire value under `<>` or `=>` is itself a wire value. The class is close
 operators. This is what makes source authoring, configured executor reuse, and rewriting tractable:
 authors and rewrites manipulate the same kind of object the compiler consumes.
 
+Composition closure is graph-theoretic, not the whole resource story. Wire also tracks **boundary
+obligations**: the input/output contract boundary that an operation consumes, preserves, or
+transforms. Boundary resources sit above Mokhov graph equality. They say whether a rewrite,
+conditional, or planner certificate has accounted for the exposed contract boundary it promises,
+while the graph algebra still says what topology denotes.
+
 ## Detailed structure
 
 ### Mokhov's algebraic graph model
@@ -112,6 +118,25 @@ side — gas, admission, materialization, replay contracts — is the subject of
 [`chapter 07`](./07-rewrites-and-materialization.md). The formalism only records that rewrites are
 algebraic operations over the same object class, not a separate mutation layer.
 
+Boundary resources refine that statement without changing the algebra. A contract-preserving
+substitution consumes the anchor's boundary obligation and must expose the same boundary again. An
+append continuation keeps the anchor node and consumes the anchor output as the continuation input.
+A conditional branch actualization consumes an owner-bound actualization capability and promotes one
+guarded branch into the live linear resource context. Those are resource laws over the graph
+operation; they are not new Mokhov constructors.
+
+### Latent structural control
+
+`select(...)` is the first accepted **latent structural control** operator. Before selection, its
+branches are a sealed family of graph possibilities, not live topology and not a fifth constructor
+in the graph algebra. Every branch can be checked against its variant boundary, but each
+branch-local obligation is guarded and affine until the selected arm is actualized.
+
+After selection, the chosen branch lowers to ordinary Wire graph composition and the usual overlay
+and connect laws apply to the materialized result. Unselected branches do not become graph fragments
+for the run. This is how Wire can represent structured runtime choice without treating conditionals
+as ordinary fan-out or hiding the choice inside executor code.
+
 ## Boundaries and invariants
 
 What this stack enforces:
@@ -122,6 +147,11 @@ What this stack enforces:
   laws on the port-key-matched projection.
 - **Layered invariants.** Acyclicity and port-contract compatibility attach at the Circuit boundary,
   not at Graph. Fragments remain algebraically first-class below that line.
+- **Boundary-resource accounting.** Structural operations consume, preserve, or transform declared
+  boundary obligations. Node identity, provenance envelopes, and boundary obligations are related
+  but not the same resource.
+- **Latent control lowers after resolution.** A latent branch family is checked before runtime, but
+  only the selected branch enters the live graph and inherits the graph laws.
 - **Rewrites as algebraic operations.** Structural edits are expressible in the same algebra that
   authored the topology; admission preserves the laws.
 
@@ -133,10 +163,10 @@ provenance — all delegated to Circuit, Pulse, or the contract registry.
 The Mokhov alphabet is fixed at four constructors. Cortex does not extend it. New authoring
 convenience enters Wire as derived value operators (`//`, `++`, `let`, configured executor values)
 that reduce to explicit graph vertices before the expression reaches the Graph layer. New semantic
-categories — payload kinds, structural-authority classes, parameterized latent branches explored in
-the foundation synthesis note — attach as registry metadata on the Circuit layer, not as new graph
-primitives. The algebra stays small on purpose; the ecosystem grows by registering authority into a
-closed alphabet, not by mutating the alphabet.
+categories — payload kinds, boundary-resource modes, structural-authority classes, and latent
+structural control operators — attach as registry metadata, proof obligations, or runtime admission
+rules above the Circuit layer, not as new graph primitives. The algebra stays small on purpose; the
+ecosystem grows by registering authority into a closed alphabet, not by mutating the alphabet.
 
 ## Related
 
@@ -147,6 +177,10 @@ closed alphabet, not by mutating the alphabet.
   [`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md).
 - [`./07-rewrites-and-materialization.md`](./07-rewrites-and-materialization.md) — rewrite admission
   mechanics.
+- [`../ADRs/0032-wire-boundary-contract-resources.md`](../ADRs/0032-wire-boundary-contract-resources.md)
+  — boundary obligations as planning resources.
+- [`../ADRs/0037-wire-latent-structural-control.md`](../ADRs/0037-wire-latent-structural-control.md)
+  — latent structural control operators and their graph-algebra boundary.
 - [`../Publications/Paper-2-algebraic-foundations/manuscript.md`](../Publications/Paper-2-algebraic-foundations/manuscript.md)
   — algebraic foundations of staged durable execution.
 - [`../Publications/Paper-3-graph-substitution-semantics/manuscript.md`](../Publications/Paper-3-graph-substitution-semantics/manuscript.md)

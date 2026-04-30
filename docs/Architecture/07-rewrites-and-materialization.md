@@ -57,6 +57,19 @@ evidence-gathering branch. `AppendAfter` inserts a subgraph downstream of a node
 validation once the anchor finishes. `InsertBefore`, `PruneSubgraph`, `AddJoin`, and `ReplaceNode`
 are recognized future forms but not part of the admitted alphabet.
 
+Those constructors are the current runtime alphabet, not the full conceptual vocabulary. Cortex
+keeps the boundary laws explicit:
+
+| Boundary law                     | Current realization           | Resource effect                                                                                              |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Contract-preserving substitution | `ExpandNode anchor mode spec` | Consumes the anchor rewrite slot and boundary obligation; the replacement must expose the promised boundary. |
+| Append continuation              | `AppendAfter anchor spec`     | Consumes the anchor rewrite slot while retaining the anchor and using its output as continuation input.      |
+| Conditional branch actualization | `AppendAfter anchor spec`     | When the anchor is a conditional owner, retained-owner lowering makes the selected guarded branch live.      |
+
+The conditional row names the resource law, not a separate v1 `GraphRewrite` constructor. The
+compiler-side vocabulary may call the restricted capability `SelectActualize owner selectedArm`, but
+the current runtime persists ordinary admitted rewrite rows for the selected branch.
+
 A `SubgraphSpec` is a self-contained fragment: local topology, stage definitions for every local
 node, explicit entry nodes where inbound edges attach, explicit exit nodes where outbound edges
 continue. Entry and exit declarations are serialized lists but semantically sets, so duplicates are
@@ -101,6 +114,12 @@ Each admitted rewrite consumes a natural-valued `RewriteCost` computed staticall
 invalid before admission. Runaway rewrite elaboration becomes a runtime impossibility rather than an
 executor-discipline problem. Gas is visible in run history: operators can inspect remaining budget,
 each rewrite's cost, and the rewrite that exhausted a dimension.
+
+Latent branches use **selected-cost** accounting in the current runtime. A compiled branch family is
+validated as a closed set of possibilities, but unselected arms do not prepay or consume runtime
+rewrite budget. The selected arm consumes ordinary rewrite budget when it is actualized. This is
+deliberately weaker than a reserved-capacity policy: Cortex does not yet guarantee that every
+compiled latent arm can still materialize after unrelated rewrites have spent the remaining budget.
 
 ## Admission policy
 
@@ -172,6 +191,11 @@ See the
 [rewrite materialization and recovery plan](../Roadmap/Plans/rewrite-materialization-and-recovery.md)
 for the formal treatment of the materialization boundary and recovery invariants.
 
+For selected branches, recovery replays the same admitted selected rewrite from durable state. It
+does not materialize unselected alternatives and does not invent a separate "discard branch" event.
+If branch selection occurred but materialization did not finish, resume must finish the admitted
+selected branch before scheduling against the new topology.
+
 ## Provenance of rewrite events
 
 This chapter covers provenance of **structural events**; provenance of **values** flowing through
@@ -191,8 +215,13 @@ This layer enforces:
 - stages and planners propose; only the runtime admits.
 - rewrites stay inside the closed executor alphabet, contract registry, endpoint compatibility, DAG
   validity, and the five-dimensional gas budget.
+- conceptual boundary laws stay distinct even when v1 realizes them through the same runtime
+  constructor. Substitution, append continuation, and branch actualization consume different
+  boundary resources.
 - same-wave rewrite proposals are admitted in deterministic order against shared remaining budget;
   ordinary node execution across the frontier is still concurrent.
+- latent branch actualization follows selected-cost semantics: only the selected branch spends
+  rewrite budget and becomes live; unselected branches remain sealed alternatives for the artifact.
 - the rewrite log is append-only, and watermark and remaining budget update atomically with the
   node-state changes they imply.
 - static DAGs and linear stage paths remain valid programs — a run with no rewrites is a degenerate
@@ -207,12 +236,14 @@ to [Chapter 06](./06-pulse-runtime.md), value-envelope provenance to
 
 New rewrite forms enter by adding constructors to `GraphRewrite` and extending the validator — not
 by letting stages emit arbitrary edits. `InsertBefore`, `PruneSubgraph`, `AddJoin`, and
-`ReplaceNode` lie along this path. Richer gas dimensions (semantic weighting, effect classes,
-irreversibility boundaries) enter by extending `RewriteBudget` and the static cost estimator with a
-matching durability migration. Hierarchical subgraphs — composite nodes owning nested budgets — are
-the planned composition extension once the flat algebra has been proven on a real task. Planner
-integration proceeds by registering planner-capable nodes with a policy-gated, budget-aware
-contract, not by loosening admission checks.
+`ReplaceNode` lie along this path. New latent structural control operators are separate: each needs
+its own boundary law, actualization authority, budget policy, recovery story, and theorem target
+before it can lower into ordinary rewrite materialization. Richer gas dimensions (semantic
+weighting, effect classes, irreversibility boundaries) enter by extending `RewriteBudget` and the
+static cost estimator with a matching durability migration. Hierarchical subgraphs — composite nodes
+owning nested budgets — are the planned composition extension once the flat algebra has been proven
+on a real task. Planner integration proceeds by registering planner-capable nodes with a
+policy-gated, budget-aware contract, not by loosening admission checks.
 
 ## Related
 
@@ -221,6 +252,12 @@ contract, not by loosening admission checks.
   [./05-wire-language.md](./05-wire-language.md), [./06-pulse-runtime.md](./06-pulse-runtime.md),
   [./08-artifacts-and-provenance.md](./08-artifacts-and-provenance.md)
 - [../Reference/terminology.md](../Reference/terminology.md) — normative vocabulary.
+- [../Reference/rewrites.md](../Reference/rewrites.md) — normative rewrite algebra and boundary
+  laws.
+- [../Reference/Wire/conditionality.md](../Reference/Wire/conditionality.md) — `select(...)`,
+  guarded-affine collapse, and selected-cost branch actualization.
+- [../ADRs/0034-wire-pure-select-actualization-authority.md](../ADRs/0034-wire-pure-select-actualization-authority.md)
+  — pure selectors and restricted actualization authority.
 - [../Roadmap/Plans/rewrite-materialization-and-recovery.md](../Roadmap/Plans/rewrite-materialization-and-recovery.md),
   [../Publications/Paper-3-graph-substitution-semantics/manuscript.md](../Publications/Paper-3-graph-substitution-semantics/manuscript.md)
   — formal treatment.

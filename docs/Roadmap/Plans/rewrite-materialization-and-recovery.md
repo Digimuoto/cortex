@@ -101,6 +101,11 @@ Recovery should:
 
 This is closer to projection-checkpoint recovery than to raw log replay.
 
+For selected latent branches, the admitted selected rewrite is the recovery fact. Recovery must
+replay that same selected branch and must not materialize unselected branch alternatives. The
+current model has no durable "discard branch" event; unselected arms remain sealed possibilities in
+the compiled artifact rather than becoming runtime state for the run.
+
 ## Rewrite Admission Contract
 
 Admitted rewrites must satisfy explicit structural conditions:
@@ -119,6 +124,12 @@ The current shipped rejection policy is intentionally narrow:
 Configurable fallback or planner-visible rejection handling is future work, not part of the current
 contract.
 
+Conditional branch actualization is a restricted case of the same admission path in the current
+runtime. Conceptually it consumes an owner-bound actualization capability for one sealed branch, but
+v1 materialization persists an ordinary admitted rewrite row for the selected branch. The selected
+branch consumes ordinary rewrite budget at actualization time; unselected branches do not prepay or
+consume budget.
+
 ## Proof Obligations
 
 The plan centers on the new proof burdens:
@@ -128,6 +139,10 @@ The plan centers on the new proof burdens:
 3. hydration safety from persisted template identity back to executable semantics
 4. dataflow preservation for output-preserving rewrite modes
 5. admitted-rewrite-before-termination correctness
+6. selected-branch replay determinism: recovery materializes the same admitted selected branch
+   without making unselected alternatives live
+7. selected-cost budget preservation: only the admitted selected branch consumes runtime rewrite
+   budget, and no sum-prepayment for the latent family is implied
 
 The fixed-topology theorem can be reused only inside a single materialized topology epoch.
 
@@ -161,6 +176,8 @@ The following are explicitly outside the current shipped and theory contract:
 - configurable rewrite rejection fallback instead of fail-fast only
 - richer operator-facing graph visualization and rewrite provenance
 - hierarchical child workflows with explicit sub-budget assignment
+- reserved latent-branch capacity, including max-branch reservation or escrow rules for every
+  compiled branch family
 - integrity witnesses stronger than the current watermark model, such as materialized-graph
   checksums
 
@@ -172,3 +189,7 @@ The following are explicitly outside the current shipped and theory contract:
   — implementation-independent substitution theory.
 - [../../Architecture/07-rewrites-and-materialization.md](../../Architecture/07-rewrites-and-materialization.md)
   — canonical runtime architecture chapter.
+- [../../Reference/Wire/conditionality.md](../../Reference/Wire/conditionality.md) — guarded-affine
+  `select(...)` and selected-cost branch semantics.
+- [../../ADRs/0036-wire-latent-branch-budget-recovery.md](../../ADRs/0036-wire-latent-branch-budget-recovery.md)
+  — current latent-branch budget and recovery policy.
