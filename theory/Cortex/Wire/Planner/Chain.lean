@@ -437,6 +437,219 @@ variable {executor config contract authority : Type}
 variable [DecidableEq contract]
 variable [DecidableEq (StagedExecutorNode executor config authority)]
 
+namespace ConstructedPlanningStep
+
+variable {policy :
+  RuntimeNamespacePolicy (StagedExecutorNode executor config authority)}
+variable {context :
+  PlanningContext (StagedExecutorNode executor config authority)}
+variable {budget remaining : RewriteBudget}
+variable {rawRewrite :
+  GraphRewrite (StagedExecutorNode executor config authority)}
+variable {insertedDepth : Nat}
+
+/-- Build a registry-boundary constructed planning step from explicit new-node and added-edge
+admission obligations. -/
+theorem ofRegistryBoundary
+    (registry : ExecutorRegistry executor config contract authority)
+    (inputs : RuntimeConstructionInputs policy context rawRewrite insertedDepth)
+    (admitted :
+      AdmittedRewriteDelta
+        budget
+        (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth)
+        remaining)
+    (hDelta :
+      RegistryBoundaryDeltaAdmitted
+        registry
+        (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth)) :
+    ConstructedPlanningStep
+      policy
+      (registryBoundary registry)
+      context
+      budget
+      rawRewrite
+      insertedDepth
+      remaining :=
+  { inputs := inputs
+    admitted := admitted
+    contractPreserved :=
+      constructedPlannedRewriteDelta_registryBoundaryContractPreserved
+        registry
+        hDelta }
+
+/-- Constructed planning steps preserve the registry boundary from their explicit delta-admission
+obligations. -/
+theorem registryBoundaryPreserved
+    (registry : ExecutorRegistry executor config contract authority)
+    (step :
+      ConstructedPlanningStep
+        policy
+        (registryBoundary registry)
+        context
+        budget
+        rawRewrite
+        insertedDepth
+        remaining)
+    (hBoundary : registryBoundary registry context.topology)
+    (hDelta : RegistryBoundaryDeltaAdmitted registry step.delta) :
+    registryBoundary registry step.nextContext.topology := by
+  have hDeltaConstructed :
+      RegistryBoundaryDeltaAdmitted
+        registry
+        (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth) := by
+    simpa only [delta] using hDelta
+  simpa only [nextContext, delta] using
+    constructedPlannedRewriteDelta_preserves_registryBoundary
+      registry
+      hBoundary
+      hDeltaConstructed
+
+/-- Delta-admission evidence reconstructs the generic `contractPreserved` witness for a
+registry-boundary step. -/
+theorem registryBoundaryContractPreserved
+    (registry : ExecutorRegistry executor config contract authority)
+    (step :
+      ConstructedPlanningStep
+        policy
+        (registryBoundary registry)
+        context
+        budget
+        rawRewrite
+        insertedDepth
+        remaining)
+    (hDelta : RegistryBoundaryDeltaAdmitted registry step.delta) :
+    ∀ g,
+      denote g = denote context.topology →
+        registryBoundary registry g →
+          registryBoundary registry step.delta.topology := by
+  intro g hGraphEq hBoundary
+  have hContextBoundary : registryBoundary registry context.topology :=
+    registryBoundary_of_graphEq hGraphEq hBoundary
+  exact
+    ConstructedPlanningStep.registryBoundaryPreserved
+      registry
+      step
+      hContextBoundary
+      hDelta
+
+end ConstructedPlanningStep
+
+namespace ConstructedPlanningChain
+
+/-- Per-step registry obligations for a constructed planner chain.
+
+The predicate records exactly the obligations that are not implied by vertex admission: newly
+introduced vertices must be admitted by the registry, and newly introduced edges must be admitted as
+endpoint-compatible edges. The same per-step payload reconstructs the generic `contractPreserved`
+witness through `ConstructedPlanningStep.registryBoundaryContractPreserved`. -/
+inductive RegistryBoundaryDeltasAdmitted
+    (registry : ExecutorRegistry executor config contract authority)
+    {policy :
+      RuntimeNamespacePolicy (StagedExecutorNode executor config authority)} :
+    {context finalContext :
+      PlanningContext (StagedExecutorNode executor config authority)} →
+      {budget finalBudget : RewriteBudget} →
+        {steps : Nat} →
+          ConstructedPlanningChain
+            policy
+            (registryBoundary registry)
+            context
+            budget
+            finalContext
+            finalBudget
+            steps →
+            Prop where
+  | done
+      {context :
+        PlanningContext (StagedExecutorNode executor config authority)}
+      {budget : RewriteBudget} :
+      RegistryBoundaryDeltasAdmitted
+        registry
+        (ConstructedPlanningChain.done
+          (policy := policy)
+          (contractOk := registryBoundary registry)
+          (context := context)
+          (budget := budget))
+  | step
+      {context finalContext :
+        PlanningContext (StagedExecutorNode executor config authority)}
+      {budget remaining finalBudget : RewriteBudget}
+      {rawRewrite :
+        GraphRewrite (StagedExecutorNode executor config authority)}
+      {insertedDepth steps : Nat}
+      {planningStep :
+        ConstructedPlanningStep
+          policy
+          (registryBoundary registry)
+          context
+          budget
+          rawRewrite
+          insertedDepth
+          remaining}
+      {tail :
+        ConstructedPlanningChain
+          policy
+          (registryBoundary registry)
+          planningStep.nextContext
+          remaining
+          finalContext
+          finalBudget
+          steps}
+      (hDelta : RegistryBoundaryDeltaAdmitted registry planningStep.delta)
+      (hTail : RegistryBoundaryDeltasAdmitted registry tail) :
+      RegistryBoundaryDeltasAdmitted
+        registry
+        (ConstructedPlanningChain.step planningStep tail)
+
+/-- Constructed planner chains preserve the registry boundary from constructed-delta registry
+obligations, without using the generic `contractPreserved` witness carried by each step. -/
+theorem preserves_registryBoundary_of_constructedDelta
+    (registry : ExecutorRegistry executor config contract authority)
+    {policy :
+      RuntimeNamespacePolicy (StagedExecutorNode executor config authority)}
+    {context finalContext :
+      PlanningContext (StagedExecutorNode executor config authority)}
+    {budget finalBudget : RewriteBudget}
+    {steps : Nat}
+    (chain :
+      ConstructedPlanningChain
+        policy
+        (registryBoundary registry)
+        context
+        budget
+        finalContext
+        finalBudget
+        steps)
+    (hAdmissions : RegistryBoundaryDeltasAdmitted registry chain)
+    (hBoundary : registryBoundary registry context.topology) :
+    registryBoundary registry finalContext.topology := by
+  induction hAdmissions with
+  | done =>
+      exact hBoundary
+  | @step
+      context
+      finalContext
+      budget
+      remaining
+      finalBudget
+      rawRewrite
+      insertedDepth
+      steps
+      planningStep
+      tail
+      hDelta
+      _hTail
+      ih =>
+      exact
+        ih
+          (ConstructedPlanningStep.registryBoundaryPreserved
+            registry
+            planningStep
+            hBoundary
+            hDelta)
+
+end ConstructedPlanningChain
+
 /-- Constructed planner chains preserve the Wire registry boundary. -/
 theorem constructedPlanningChain_preserves_registryBoundary
     (registry : ExecutorRegistry executor config contract authority)
@@ -458,6 +671,35 @@ theorem constructedPlanningChain_preserves_registryBoundary
     (hBoundary : registryBoundary registry context.topology) :
     registryBoundary registry finalContext.topology :=
   rewriteChain_preserves_registryBoundary registry chain.toRewriteChain hBoundary
+
+/-- Constructed planner chains preserve the Wire registry boundary from explicit constructed-delta
+registry obligations. -/
+theorem constructedPlanningChain_preserves_registryBoundary_of_constructedDelta
+    (registry : ExecutorRegistry executor config contract authority)
+    {policy :
+      RuntimeNamespacePolicy (StagedExecutorNode executor config authority)}
+    {context finalContext :
+      PlanningContext (StagedExecutorNode executor config authority)}
+    {budget finalBudget : RewriteBudget}
+    {steps : Nat}
+    (chain :
+      ConstructedPlanningChain
+        policy
+        (registryBoundary registry)
+        context
+        budget
+        finalContext
+        finalBudget
+        steps)
+    (hAdmissions :
+      ConstructedPlanningChain.RegistryBoundaryDeltasAdmitted registry chain)
+    (hBoundary : registryBoundary registry context.topology) :
+    registryBoundary registry finalContext.topology :=
+  ConstructedPlanningChain.preserves_registryBoundary_of_constructedDelta
+    registry
+    chain
+    hAdmissions
+    hBoundary
 
 end RegistryBoundary
 

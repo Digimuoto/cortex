@@ -24,7 +24,10 @@ the runtime correspondence theorem that must connect them to the executable
 admission path. A registry with trivial predicates can satisfy this abstract
 model; the load-bearing claim is the later theorem that the Haskell registry
 constructs only these witnesses from real schema, contract, policy, and host
-authority checks.
+authority checks. Delta and chain-level preservation theorems over
+`registryBoundary` inherit this same abstraction: they preserve admitted
+boundaries, but they do not by themselves prove that runtime admission produced
+non-trivial registry witnesses.
 
 ## Theorem Split
 

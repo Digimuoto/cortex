@@ -199,6 +199,16 @@ Mechanized results now include:
   computes the final topology, relation diffs, entry/exit sets, definition update, and structural
   costs needed by `RuntimePlannerConstruction`; anchor absence for replacement rewrites is derived
   from namespace freshness plus source-topology acyclicity.
+- `RegistryBoundaryDeltaAdmitted`, `registryBoundary_preserved_of_addedNodes_addedEdges_admitted`,
+  and `constructedPlannedRewriteDelta_preserves_registryBoundary`: constructed planner deltas
+  preserve the registry boundary from a bundled added-node and added-edge admission payload, without
+  an arbitrary caller-supplied preservation witness for `registryBoundary`.
+- `constructedPlannedRewriteDelta_registryBoundaryContractPreserved`,
+  `ConstructedPlanningStep.ofRegistryBoundary`, `.registryBoundaryPreserved`,
+  `.registryBoundaryContractPreserved`, `ConstructedPlanningChain.RegistryBoundaryDeltasAdmitted`,
+  and `constructedPlanningChain_preserves_registryBoundary_of_constructedDelta`: registry-boundary
+  constructed steps and chains can discharge the generic `contractPreserved` slot from constructed
+  delta admission obligations.
 - `constructedPlannedRewriteDelta_admissible`: the constructed delta, runtime validation witnesses,
   and budget admission instantiate the abstract admissible-rewrite predicate.
 - `constructedPlannedRewriteDelta_admissible_of_inputs`: the source-valid planner input bundle,
@@ -212,7 +222,8 @@ Mechanized results now include:
   `.finalBudget_le_initial`, `.preserves_contracts`, and
   `constructedPlanningChain_preserves_registryBoundary`: constructed planner chains erase to the
   abstract `RewriteChain` model while preserving source validity, budget bounds, generic contracts,
-  and registry-boundary invariants.
+  and registry-boundary invariants. The stronger constructed-delta registry theorem above avoids
+  making the headline boundary theorem depend on arbitrary caller preservation proofs.
 - `rewriteChain_preserves_acyclic`, `rewriteChain_preserves_contracts`,
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
@@ -223,9 +234,8 @@ The remaining Track 3 obligations are now tracked in
 - Haskell correspondence for CorePure static-context construction, builtin authority review hooks,
   duplicate record-path admission before every compiler surface, and full Wire output contract
   wrapping;
-- constructed-delta registry-boundary preservation;
-- Haskell planner and budget-admission correspondence for `RuntimeConstructionInputs` and
-  `AdmittedRewriteDelta`;
+- Haskell planner and budget-admission correspondence for `RuntimeConstructionInputs`,
+  added-node/added-edge registry admission, and `AdmittedRewriteDelta`;
 - `SelectActualize` proof certificates for selected-arm lowering, unselected-arm
   non-materialization, selected-cost budgeting, and later recovery determinism.
 

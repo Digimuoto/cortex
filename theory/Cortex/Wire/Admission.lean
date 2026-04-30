@@ -431,6 +431,91 @@ structure PlanGraphRewriteChecks
 
 end PlanningPredicates
 
+/-! ## Registry Boundary Preservation -/
+
+section RegistryBoundaryPreservation
+
+variable {executor config contract authority : Type}
+variable [DecidableEq contract]
+variable [DecidableEq (StagedExecutorNode executor config authority)]
+
+/-- `RegistryBoundaryDeltaAdmitted registry delta` bundles the per-delta registry obligations that
+are not inherited from the source graph boundary.
+
+This witness is load-bearing only when paired with a `TopologyDiffMatches` proof for the same
+delta, which ties `delta.newNodes` and `delta.addedEdges` to the final topology. -/
+structure RegistryBoundaryDeltaAdmitted
+    (registry : ExecutorRegistry executor config contract authority)
+    (delta : PlannedRewriteDelta (StagedExecutorNode executor config authority)) :
+    Prop where
+  /-- Every genuinely added vertex is admitted by the registry. -/
+  newNodes :
+    ∀ node,
+      node ∈ delta.newNodes →
+        nodeAdmittedBy registry node
+  /-- Every genuinely added edge has registry-compatible endpoints. -/
+  addedEdges :
+    ∀ source target,
+      (source, target) ∈ delta.addedEdges →
+        edgeAdmittedBy registry source target
+
+/-- A planned delta preserves the registry boundary when every genuinely added vertex and edge is
+explicitly admitted.
+
+Existing vertices and edges reuse the source boundary witness. Vertices in `delta.newNodes` and
+edges in `delta.addedEdges` are the only new obligations, with edge compatibility kept separate
+from vertex admission. -/
+theorem registryBoundary_preserved_of_addedNodes_addedEdges_admitted
+    (registry : ExecutorRegistry executor config contract authority)
+    {context : PlanningContext (StagedExecutorNode executor config authority)}
+    {delta : PlannedRewriteDelta (StagedExecutorNode executor config authority)}
+    (hDiff : TopologyDiffMatches context delta)
+    (hBoundary : registryBoundary registry context.topology)
+    (hNewNodes :
+      ∀ node,
+        node ∈ delta.newNodes →
+          nodeAdmittedBy registry node)
+    (hAddedEdges :
+      ∀ source target,
+        (source, target) ∈ delta.addedEdges →
+          edgeAdmittedBy registry source target) :
+    registryBoundary registry delta.topology := by
+  constructor
+  · intro node hFinalNode
+    by_cases hOldNode : node ∈ (denote context.topology).vertices
+    · exact hBoundary.1 node hOldNode
+    · have hAddedNode : node ∈ delta.newNodes := by
+        rw [hDiff.newNodes_eq]
+        simp only [relationAddedNodes, Finset.mem_sdiff]
+        exact ⟨hFinalNode, hOldNode⟩
+      exact hNewNodes node hAddedNode
+  · intro source target hFinalEdge
+    by_cases hOldEdge : (source, target) ∈ (denote context.topology).edges
+    · exact hBoundary.2 source target hOldEdge
+    · have hAddedEdge : (source, target) ∈ delta.addedEdges := by
+        rw [hDiff.addedEdges_eq]
+        simp only [relationAddedEdges, Finset.mem_sdiff]
+        exact ⟨hFinalEdge, hOldEdge⟩
+      exact hAddedEdges source target hAddedEdge
+
+/-- A planned delta preserves the registry boundary from its bundled delta-admission evidence. -/
+theorem registryBoundary_preserved_of_delta_admitted
+    (registry : ExecutorRegistry executor config contract authority)
+    {context : PlanningContext (StagedExecutorNode executor config authority)}
+    {delta : PlannedRewriteDelta (StagedExecutorNode executor config authority)}
+    (hDiff : TopologyDiffMatches context delta)
+    (hBoundary : registryBoundary registry context.topology)
+    (hDelta : RegistryBoundaryDeltaAdmitted registry delta) :
+    registryBoundary registry delta.topology :=
+  registryBoundary_preserved_of_addedNodes_addedEdges_admitted
+    registry
+    hDiff
+    hBoundary
+    hDelta.newNodes
+    hDelta.addedEdges
+
+end RegistryBoundaryPreservation
+
 /-! ## Budget Admission -/
 
 section BudgetAdmission

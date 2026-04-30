@@ -708,6 +708,87 @@ noncomputable def constructedPlannedRewriteDelta
         frontierDelta := rewrite.spec.entryNodes.card - 1
         rewriteOps := 1 } }
 
+/-- Constructed planned deltas preserve the Wire registry boundary from explicit admission of
+their relation-diff vertices and edges. -/
+theorem constructedPlannedRewriteDelta_preserves_registryBoundary
+    {executor config contract authority : Type}
+    [DecidableEq contract]
+    [DecidableEq (StagedExecutorNode executor config authority)]
+    (registry : ExecutorRegistry executor config contract authority)
+    {policy :
+      RuntimeNamespacePolicy (StagedExecutorNode executor config authority)}
+    {context :
+      PlanningContext (StagedExecutorNode executor config authority)}
+    {rawRewrite :
+      GraphRewrite (StagedExecutorNode executor config authority)}
+    {insertedDepth : Nat}
+    (hBoundary : registryBoundary registry context.topology)
+    (hDelta :
+      RegistryBoundaryDeltaAdmitted
+        registry
+        (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth)) :
+    registryBoundary
+      registry
+      (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).topology := by
+  refine
+    registryBoundary_preserved_of_delta_admitted
+      registry
+      ?_
+      hBoundary
+      hDelta
+  refine
+    { newNodes_eq := ?_
+      removedNodes_eq := ?_
+      addedEdges_eq := ?_ }
+  · simp only
+      [ constructedPlannedRewriteDelta
+      , constructedFinalRelation
+      , denote_constructedFinalTopology
+      ]
+  · simp only
+      [ constructedPlannedRewriteDelta
+      , constructedFinalRelation
+      , denote_constructedFinalTopology
+      ]
+  · simp only
+      [ constructedPlannedRewriteDelta
+      , constructedFinalRelation
+      , denote_constructedFinalTopology
+      ]
+
+/-- Constructed planned deltas provide the `contractPreserved` witness needed when the contract
+predicate is exactly `registryBoundary registry`. -/
+theorem constructedPlannedRewriteDelta_registryBoundaryContractPreserved
+    {executor config contract authority : Type}
+    [DecidableEq contract]
+    [DecidableEq (StagedExecutorNode executor config authority)]
+    (registry : ExecutorRegistry executor config contract authority)
+    {policy :
+      RuntimeNamespacePolicy (StagedExecutorNode executor config authority)}
+    {context :
+      PlanningContext (StagedExecutorNode executor config authority)}
+    {rawRewrite :
+      GraphRewrite (StagedExecutorNode executor config authority)}
+    {insertedDepth : Nat}
+    (hDelta :
+      RegistryBoundaryDeltaAdmitted
+        registry
+        (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth)) :
+    ∀ g,
+      denote g = denote context.topology →
+        registryBoundary registry g →
+          registryBoundary
+            registry
+            (constructedPlannedRewriteDelta policy context rawRewrite insertedDepth).topology := by
+  intro g hGraphEq hBoundary
+  have hContextBoundary : registryBoundary registry context.topology :=
+    registryBoundary_of_graphEq hGraphEq hBoundary
+  exact
+    constructedPlannedRewriteDelta_preserves_registryBoundary
+      registry
+      hContextBoundary
+      hDelta
+
 /-- The constructed delta records anchor identity and derives anchor membership facts. -/
 theorem constructedPlannedRewriteDelta_anchorMatches
     {policy : RuntimeNamespacePolicy node}
