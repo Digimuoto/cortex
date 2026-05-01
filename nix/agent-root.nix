@@ -26,10 +26,9 @@ in
 
       - `src/Cortex/` is the main library. Public roots are `Cortex.Algebra`, `Cortex.Wire`,
         `Cortex.Pulse`, `Cortex.Capability`, and `Cortex.Artifact`.
-      - Private upstream `Digimuoto/haskell-platform` provides runtime support through the
+      - Public upstream `Digimuoto/haskell-platform` provides runtime support through the
         `haskell-platform-src` flake input.
-      - Private downstream `Digimuoto/logos` owns reasoning-library code and is locked as
-        `logos-src` for migration visibility.
+      - Downstream `Logos` owns reasoning-library code and consumes Cortex as a separate package.
       - `app/cortex-pulse/` is the substrate shell executable.
       - `editors/tree-sitter-wire/` is the Wire grammar used by docs and editors.
       - `theory/` is the Lean proof track.
@@ -74,8 +73,7 @@ in
       Non-goals: no downstream product code, no frontend or REST server, and no consumer-specific
       docs in Cortex canon unless the page is explicitly about downstream integration examples.
 
-      Private flake inputs use SSH Git URLs, so flake evaluation requires GitHub SSH credentials
-      with read access to `Digimuoto/haskell-platform` and `Digimuoto/logos`.
+      Cortex flake evaluation does not require access to downstream consumer repositories.
 
       Project-specific skills remain local for Cortex-only surfaces: Haskell style, Lean proof style,
       theorem attack, architecture, document review, and research synthesis.

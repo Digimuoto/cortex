@@ -32,11 +32,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     haskell-platform-src = {
-      url = "git+ssh://git@github.com/Digimuoto/haskell-platform.git";
-      flake = false;
-    };
-    logos-src = {
-      url = "git+ssh://git@github.com/Digimuoto/logos.git";
+      url = "github:Digimuoto/haskell-platform";
       flake = false;
     };
   };

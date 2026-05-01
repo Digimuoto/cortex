@@ -85,12 +85,9 @@
       cortex-pulse = projectFlake.packages."cortex:exe:cortex-pulse" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).
       cortex-tests = projectFlake.packages."cortex:test:cortex-test" or null;
-      # Locked upstream source snapshots for downstream migration visibility.
+      # Locked upstream source snapshot for dependency visibility.
       haskell-platform-source = pkgs.runCommand "haskell-platform-source" {} ''
         ln -s ${inputs.haskell-platform-src.outPath} "$out"
-      '';
-      logos-source = pkgs.runCommand "logos-source" {} ''
-        ln -s ${inputs.logos-src.outPath} "$out"
       '';
     };
 

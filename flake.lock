@@ -263,15 +263,15 @@
       "locked": {
         "lastModified": 1777641191,
         "narHash": "sha256-LnEBgrjwr2IP0OA9vR8yVbef7eK8QwnPpFWCm+uBN3U=",
-        "ref": "refs/heads/main",
+        "owner": "Digimuoto",
+        "repo": "haskell-platform",
         "rev": "325efb75fcee214c84af7cd3993009ede6c83a73",
-        "revCount": 43,
-        "type": "git",
-        "url": "ssh://git@github.com/Digimuoto/haskell-platform.git"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/Digimuoto/haskell-platform.git"
+        "owner": "Digimuoto",
+        "repo": "haskell-platform",
+        "type": "github"
       }
     },
     "hls": {
@@ -544,22 +544,6 @@
         "type": "github"
       }
     },
-    "logos-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1777486467,
-        "narHash": "sha256-NXhsA2NnE+eaR9kR0ZhFo+8JYPbZ45CSmqrIajcLEyo=",
-        "ref": "refs/heads/main",
-        "rev": "3dd3e26211c0bcd003cdaa3753f7f44fa36c4ed8",
-        "revCount": 1,
-        "type": "git",
-        "url": "ssh://git@github.com/Digimuoto/logos.git"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/Digimuoto/logos.git"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1776877367,
@@ -766,11 +750,11 @@
         "tree-sitter-json": "tree-sitter-json"
       },
       "locked": {
-        "lastModified": 1777512366,
-        "narHash": "sha256-LX9WP7JKosuyarH5o9KW50zAHh0Hrqz0ST8jW5/QS0Y=",
+        "lastModified": 1777658993,
+        "narHash": "sha256-eqCdEcutu2dneCez0wMIkhlyt2/Sery1A/Shlmdwoz8=",
         "owner": "Digimuoto",
         "repo": "repo-docs",
-        "rev": "7d648d5c38832603b31bceeab95d6e61edd960b3",
+        "rev": "50cefb4464772c47ae7fe5adaba294452856d6cf",
         "type": "github"
       },
       "original": {
@@ -784,7 +768,6 @@
         "flake-parts": "flake-parts",
         "haskell-nix": "haskell-nix",
         "haskell-platform-src": "haskell-platform-src",
-        "logos-src": "logos-src",
         "nixpkgs": "nixpkgs",
         "pre-commit-hooks": "pre-commit-hooks",
         "repo-docs": "repo-docs",
