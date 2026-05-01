@@ -28,11 +28,27 @@ slices replace scaffold assumptions with theorems, while unfinished tracks keep 
 `Cortex.Graph.Laws` now exposes the AST-facing laws as theorems over denotational equality
 (`GraphEq`), because raw syntax trees are not definitionally equal. `Cortex.Graph.Quotient` defines
 `AlgGraph α`, the quotient of raw graph expressions by `GraphEq`, and lifts the same laws to
-ordinary equality on that algebraic carrier.
+ordinary equality on that algebraic carrier. `Cortex.Graph.Safety` defines the graph-safety bridge
+shared by later tracks: relation paths, relation and graph acyclicity, endpoint closure for denoted
+Mokhov graphs, a runtime-style boolean edge predicate, and quotient-stable acyclicity facts.
 
 **Headline obligation:** `connect_decomposition` (`g · h · k = g · h ⊕ g · k ⊕ h · k`). This is what
 licenses circuit simplification and the executor's compatibility-edge derivation. The relation-level
 theorem, denotational AST theorem, and quotient-equality theorem now exist.
+
+Mechanized bridge results now include:
+
+- `Relation.Path`, `Relation.Acyclic`, `GraphPath`, and `GraphAcyclic`: a canonical reachability and
+  acyclicity vocabulary for downstream Pulse and Wire proofs.
+- `Relation.edgeBool`, `Relation.edgeBool_true_iff`, `Relation.edgeBool_source_mem`, and
+  `Relation.edgeBool_target_mem`: the finite relation edge predicate can be consumed by
+  runtime-style boolean-edge models while preserving endpoint membership.
+- `Relation.empty_edgeEndpointsInVertices`, `Relation.vertex_edgeEndpointsInVertices`,
+  `Relation.overlay_edgeEndpointsInVertices`, `Relation.connect_edgeEndpointsInVertices`, and
+  `denote_edgeEndpointsInVertices`: every denoted Mokhov graph relation is endpoint-closed.
+- `graphPath_source_mem`, `graphPath_target_mem`, `GraphEq.acyclic`, `GraphEq.acyclic_iff`,
+  `AlgGraph.Acyclic`, `AlgGraph.acyclic_ofGraph`, and `AlgGraph.acyclic_congr`: graph safety facts
+  are stable across denotational equality and quotient equality.
 
 ### Track 2 — Fixed-topology Pulse kernel
 
