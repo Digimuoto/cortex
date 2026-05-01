@@ -203,6 +203,22 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldBe` Left
           (WireInvalidPorts (CircuitNodeRef "classify") "where-clause field set is not statically determinable")
 
+    it "rejects duplicate CorePure record paths during compiler lowering" $
+      compileWireTextWithEnv strictExecutorEnv pureExecutorDuplicateRecordPathSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "score")
+              "Pure record literal declares conflicting field paths a and a."
+          )
+
+    it "rejects prefix-conflicting CorePure record paths during compiler lowering" $
+      compileWireTextWithEnv strictExecutorEnv pureExecutorPrefixRecordPathSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "score")
+              "Pure record literal declares conflicting field paths a.b and a."
+          )
+
     it "rejects duplicate names across CorePure helpers and ordinary value lets" $
       compileWireTextWithEnv strictExecutorEnv duplicatePureAndWireLetSourceText
         `shouldBe` Left (WireDuplicateLetBinding "acceptedItem")
@@ -435,6 +451,22 @@ whereDynamicShapeSourceText =
     , "  -> accepted: AcceptedSet = pure (accepted) ;"
     , "  where if true then { accepted = [] ; } else { rejected = [] ; } ;"
     , "classify"
+    ]
+
+pureExecutorDuplicateRecordPathSourceText :: T.Text
+pureExecutorDuplicateRecordPathSourceText =
+  T.unlines
+    [ "node score"
+    , "  -> out: Float = pure (if false then { a = 1 ; a = 2 ; } else 0) ;"
+    , "score"
+    ]
+
+pureExecutorPrefixRecordPathSourceText :: T.Text
+pureExecutorPrefixRecordPathSourceText =
+  T.unlines
+    [ "node score"
+    , "  -> out: Float = pure (if false then { a.b = 1 ; a = 2 ; } else 0) ;"
+    , "score"
     ]
 
 duplicatePureAndWireLetSourceText :: T.Text

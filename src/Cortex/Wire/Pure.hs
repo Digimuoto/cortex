@@ -17,6 +17,7 @@ module Cortex.Wire.Pure
   ( PureEvalError (..)
   , renderPureEvalError
   , validatePurePorts
+  , validatePureTaskConfig
   , bindPureInputValues
   , evaluatePureTaskOutputs
   , corePureBuiltinSignature
@@ -167,6 +168,16 @@ validatePurePorts :: WirePorts -> Map Text CorePureExpr -> Either PureEvalError 
 validatePurePorts ports outputExprs =
   validatePureInputPorts ports *> validatePureOutputPorts ports outputExprs
 
+validatePureTaskConfig
+  :: WirePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> Map Text CorePureExpr
+  -> Either PureEvalError ()
+validatePureTaskConfig ports bindings whereExpr outputExprs =
+  validatePurePorts ports outputExprs
+    *> validateCorePureTaskExpressions bindings whereExpr outputExprs
+
 validatePureInputPorts :: WirePorts -> Either PureEvalError ()
 validatePureInputPorts ports =
   traverse_
@@ -269,8 +280,7 @@ evaluatePureTaskOutputs
   -> Map Text CorePureExpr
   -> Either PureEvalError (Map Text Aeson.Value)
 evaluatePureTaskOutputs ports inputBundle bindings whereExpr outputExprs = do
-  validatePurePorts ports outputExprs
-  validateCorePureTaskExpressions bindings whereExpr outputExprs
+  validatePureTaskConfig ports bindings whereExpr outputExprs
   inputValues <- bindPureInputValues ports inputBundle
   let inputEnv = Map.map CorePureJson inputValues
   outerEnv <- bindCorePureBindings (corePureBuiltinEnv <> inputEnv) bindings

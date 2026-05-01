@@ -23,10 +23,24 @@ module Cortex.Pulse.Rewrite
   , RewritePlanningError (..)
   , RewriteAnchorDisposition (..)
   , PlannedRewriteDelta (..)
+  , ExpectedActual (..)
+  , RewriteWitnessError (..)
+  , renderRewriteWitnessError
+  , rewriteWitnessErrorType
+  , RewriteAdmissionError (..)
+  , RewriteAdmissionWitness
+  , rawGraphRewrite
+  , runtimeGraphRewrite
+  , plannedGraphRewriteDelta
+  , admittedGraphRewriteDelta
   , AdmittedRewriteDelta
   , admitRewriteDelta
   , admittedDelta
   , admittedRemainingBudget
+  , runtimePlannerRewrite
+  , validatePlannedRewriteDelta
+  , validateAdmittedRewriteDelta
+  , planGraphRewriteWithAdmissionWitness
   , planGraphRewrite
   , consumeRewriteBudget
   , BudgetContext (..)
@@ -229,6 +243,240 @@ data PlannedRewriteDelta def = PlannedRewriteDelta
   deriving stock (Eq, Show, Generic, Functor)
   deriving anyclass (FromJSON, ToJSON)
 
+data ExpectedActual a = ExpectedActual
+  { eaExpected :: !a
+  , eaActual :: !a
+  }
+  deriving stock (Eq, Show, Generic)
+
+{- | Typed drift report for the Haskell planner/theory correspondence surface.
+
+The Lean side names these facts in `PlanGraphRewriteChecks` and
+`AdmittedRewriteDelta`.  Haskell cannot prove them, but this checker
+recomputes the equations from the same inputs used by `planGraphRewrite` so
+future implementation drift fails loudly in tests or runtime debug paths.
+-}
+data RewriteWitnessError
+  = RewriteWitnessInputRejected [RewritePlanningError NodeId]
+  | RewriteWitnessAnchorMismatch !(ExpectedActual NodeId)
+  | RewriteWitnessTopologyMismatch
+  | RewriteWitnessInsertedVerticesMissing ![NodeId]
+  | RewriteWitnessInsertedEdgesMissing ![(NodeId, NodeId)]
+  | RewriteWitnessEntryNodesMismatch !(ExpectedActual [NodeId])
+  | RewriteWitnessExitNodesMismatch !(ExpectedActual [NodeId])
+  | RewriteWitnessAnchorDispositionMismatch !(ExpectedActual RewriteAnchorDisposition)
+  | RewriteWitnessRemovedAnchorPresent !NodeId
+  | RewriteWitnessRetainedAnchorMissing !NodeId
+  | RewriteWitnessNewNodesMismatch !(ExpectedActual (Set NodeId))
+  | RewriteWitnessRemovedNodesMismatch !(ExpectedActual (Set NodeId))
+  | RewriteWitnessAddedEdgesMismatch !(ExpectedActual (Set (NodeId, NodeId)))
+  | RewriteWitnessDefinitionUpdateMismatch !(ExpectedActual (Set NodeId))
+  | RewriteWitnessFinalDefinitionCoverageMismatch !(ExpectedActual (Set NodeId))
+  | RewriteWitnessCostMismatch !(ExpectedActual RewriteCost)
+  | RewriteWitnessFinalTopologyInvalid !(ValidationError NodeId)
+  | RewriteWitnessBudgetRejected !RewriteBudgetError
+  | RewriteWitnessRemainingBudgetMismatch !(ExpectedActual RewriteBudget)
+  deriving stock (Eq, Show, Generic)
+
+renderRewriteWitnessError :: RewriteWitnessError -> Text
+renderRewriteWitnessError = \case
+  RewriteWitnessInputRejected errors ->
+    "Rewrite witness input validation failed: " <> renderRewritePlanningErrors errors
+  RewriteWitnessAnchorMismatch pair ->
+    "Rewrite witness anchor mismatch: " <> renderExpectedActual renderNodeId pair
+  RewriteWitnessTopologyMismatch ->
+    "Rewrite witness final topology differs from the planned topology equation"
+  RewriteWitnessInsertedVerticesMissing nodes ->
+    "Rewrite witness final topology is missing inserted vertices: " <> renderNodeIds nodes
+  RewriteWitnessInsertedEdgesMissing edges ->
+    "Rewrite witness final topology is missing inserted edges: " <> renderEdgeList edges
+  RewriteWitnessEntryNodesMismatch pair ->
+    "Rewrite witness entry nodes mismatch: " <> renderExpectedActual renderNodeIds pair
+  RewriteWitnessExitNodesMismatch pair ->
+    "Rewrite witness exit nodes mismatch: " <> renderExpectedActual renderNodeIds pair
+  RewriteWitnessAnchorDispositionMismatch pair ->
+    "Rewrite witness anchor disposition mismatch: " <> renderExpectedActual renderAnchorDisposition pair
+  RewriteWitnessRemovedAnchorPresent nodeId ->
+    "Rewrite witness removed anchor is still present in final topology: " <> renderNodeId nodeId
+  RewriteWitnessRetainedAnchorMissing nodeId ->
+    "Rewrite witness retained anchor is missing from final topology: " <> renderNodeId nodeId
+  RewriteWitnessNewNodesMismatch pair ->
+    "Rewrite witness new-node set mismatch: " <> renderExpectedActual renderNodeSet pair
+  RewriteWitnessRemovedNodesMismatch pair ->
+    "Rewrite witness removed-node set mismatch: " <> renderExpectedActual renderNodeSet pair
+  RewriteWitnessAddedEdgesMismatch pair ->
+    "Rewrite witness added-edge set mismatch: " <> renderExpectedActual renderEdgeSet pair
+  RewriteWitnessDefinitionUpdateMismatch pair ->
+    "Rewrite witness definition-domain update mismatch: " <> renderExpectedActual renderNodeSet pair
+  RewriteWitnessFinalDefinitionCoverageMismatch pair ->
+    "Rewrite witness final definition coverage mismatch: " <> renderExpectedActual renderNodeSet pair
+  RewriteWitnessCostMismatch pair ->
+    "Rewrite witness cost mismatch: " <> renderExpectedActual renderRewriteCost pair
+  RewriteWitnessFinalTopologyInvalid err ->
+    "Rewrite witness final topology is invalid: " <> showText err
+  RewriteWitnessBudgetRejected err ->
+    "Rewrite witness budget check rejected the delta: " <> renderRewriteBudgetError err
+  RewriteWitnessRemainingBudgetMismatch pair ->
+    "Rewrite witness remaining-budget mismatch: " <> renderExpectedActual renderRewriteBudget pair
+
+{- | Stable error type string for planner/theory drift diagnostics.
+These values are intended for observability and should not be renamed casually.
+-}
+rewriteWitnessErrorType :: RewriteWitnessError -> Text
+rewriteWitnessErrorType = \case
+  RewriteWitnessInputRejected {} -> "rewrite_witness_input_rejected"
+  RewriteWitnessAnchorMismatch {} -> "rewrite_witness_anchor_mismatch"
+  RewriteWitnessTopologyMismatch {} -> "rewrite_witness_topology_mismatch"
+  RewriteWitnessInsertedVerticesMissing {} -> "rewrite_witness_inserted_vertices_missing"
+  RewriteWitnessInsertedEdgesMissing {} -> "rewrite_witness_inserted_edges_missing"
+  RewriteWitnessEntryNodesMismatch {} -> "rewrite_witness_entry_nodes_mismatch"
+  RewriteWitnessExitNodesMismatch {} -> "rewrite_witness_exit_nodes_mismatch"
+  RewriteWitnessAnchorDispositionMismatch {} -> "rewrite_witness_anchor_disposition_mismatch"
+  RewriteWitnessRemovedAnchorPresent {} -> "rewrite_witness_removed_anchor_present"
+  RewriteWitnessRetainedAnchorMissing {} -> "rewrite_witness_retained_anchor_missing"
+  RewriteWitnessNewNodesMismatch {} -> "rewrite_witness_new_nodes_mismatch"
+  RewriteWitnessRemovedNodesMismatch {} -> "rewrite_witness_removed_nodes_mismatch"
+  RewriteWitnessAddedEdgesMismatch {} -> "rewrite_witness_added_edges_mismatch"
+  RewriteWitnessDefinitionUpdateMismatch {} -> "rewrite_witness_definition_update_mismatch"
+  RewriteWitnessFinalDefinitionCoverageMismatch {} -> "rewrite_witness_final_definition_coverage_mismatch"
+  RewriteWitnessCostMismatch {} -> "rewrite_witness_cost_mismatch"
+  RewriteWitnessFinalTopologyInvalid {} -> "rewrite_witness_final_topology_invalid"
+  RewriteWitnessBudgetRejected {} -> "rewrite_witness_budget_rejected"
+  RewriteWitnessRemainingBudgetMismatch {} -> "rewrite_witness_remaining_budget_mismatch"
+
+renderExpectedActual :: (a -> Text) -> ExpectedActual a -> Text
+renderExpectedActual renderValue pair =
+  "expected=" <> renderValue pair.eaExpected <> "; actual=" <> renderValue pair.eaActual
+
+renderRewritePlanningErrors :: [RewritePlanningError NodeId] -> Text
+renderRewritePlanningErrors =
+  T.intercalate "; " . fmap renderRewritePlanningError
+
+renderRewritePlanningError :: RewritePlanningError NodeId -> Text
+renderRewritePlanningError = \case
+  RewriteInvalidTopology err ->
+    "rewrite produced invalid graph: " <> showText err
+  RewriteAnchorMissingFromTopology nodeId ->
+    "rewrite anchor node is outside the current topology: " <> renderNodeId nodeId
+  RewriteAnchorMissingDefinition nodeId ->
+    "rewrite anchor node is missing a definition: " <> renderNodeId nodeId
+  RewriteCurrentDefinitionsMissing nodes ->
+    "current topology is missing definitions for: " <> renderNodeIds nodes
+  RewriteCurrentDefinitionsOutsideTopology nodes ->
+    "current definitions contain nodes outside topology: " <> renderNodeIds nodes
+  RewriteTopologyEmpty ->
+    "rewrite subgraph must insert at least one node"
+  RewriteDefinitionsMissing nodes ->
+    "rewrite subgraph is missing definitions for: " <> renderNodeIds nodes
+  RewriteDefinitionsOutsideTopology nodes ->
+    "rewrite subgraph defines nodes outside topology: " <> renderNodeIds nodes
+  RewriteEntryNodesMissing ->
+    "rewrite subgraph must declare at least one entry node"
+  RewriteExitNodesMissing ->
+    "rewrite subgraph must declare at least one exit node"
+  RewriteDuplicateEntryNodes nodes ->
+    "rewrite subgraph declares duplicate entry nodes: " <> renderNodeIds nodes
+  RewriteDuplicateExitNodes nodes ->
+    "rewrite subgraph declares duplicate exit nodes: " <> renderNodeIds nodes
+  RewriteEntryNodesOutsideTopology nodes ->
+    "rewrite entry nodes are outside topology: " <> renderNodeIds nodes
+  RewriteExitNodesOutsideTopology nodes ->
+    "rewrite exit nodes are outside topology: " <> renderNodeIds nodes
+  RewriteInvalidLocalNodeIds nodes ->
+    "rewrite local node ids must be non-empty and must not contain namespace delimiter ':': "
+      <> renderNodeIds nodes
+  RewriteNamespacedNodeCollision nodes ->
+    "rewrite namespaced nodes collide with existing topology: " <> renderNodeIds nodes
+  RewriteOrphanNodes nodes ->
+    "rewrite subgraph contains orphan nodes: " <> renderNodeIds nodes
+
+renderNodeId :: NodeId -> Text
+renderNodeId = unNodeId
+
+renderNodeIds :: [NodeId] -> Text
+renderNodeIds = T.intercalate ", " . fmap renderNodeId
+
+renderNodeSet :: Set NodeId -> Text
+renderNodeSet = renderNodeIds . Set.toAscList
+
+renderEdge :: (NodeId, NodeId) -> Text
+renderEdge (fromNode, toNode) = renderNodeId fromNode <> " -> " <> renderNodeId toNode
+
+renderEdgeList :: [(NodeId, NodeId)] -> Text
+renderEdgeList = T.intercalate ", " . fmap renderEdge
+
+renderEdgeSet :: Set (NodeId, NodeId) -> Text
+renderEdgeSet = renderEdgeList . Set.toAscList
+
+renderAnchorDisposition :: RewriteAnchorDisposition -> Text
+renderAnchorDisposition = \case
+  RewriteAnchorRemoved -> "removed"
+  RewriteAnchorRetained -> "retained"
+
+renderRewriteCost :: RewriteCost -> Text
+renderRewriteCost cost =
+  "{added_nodes="
+    <> showText cost.rcAddedNodes
+    <> ", added_edges="
+    <> showText cost.rcAddedEdges
+    <> ", added_depth="
+    <> showText cost.rcAddedDepth
+    <> ", frontier_delta="
+    <> showText cost.rcFrontierDelta
+    <> ", rewrite_ops="
+    <> showText cost.rcRewriteOps
+    <> "}"
+
+renderRewriteBudget :: RewriteBudget -> Text
+renderRewriteBudget budget =
+  "{added_nodes="
+    <> showText budget.rbAddedNodesMax
+    <> ", added_edges="
+    <> showText budget.rbAddedEdgesMax
+    <> ", added_depth="
+    <> showText budget.rbAddedDepthMax
+    <> ", frontier_delta="
+    <> showText budget.rbFrontierDeltaMax
+    <> ", rewrite_ops="
+    <> showText budget.rbRewriteOpsMax
+    <> "}"
+
+renderRewriteBudgetError :: RewriteBudgetError -> Text
+renderRewriteBudgetError budgetErr@(RewriteBudgetExceeded remaining requested) =
+  "requested="
+    <> renderRewriteCost requested
+    <> "; remaining="
+    <> renderRewriteBudget remaining
+    <> "; exceeded_dimensions=["
+    <> T.intercalate ", " (fmap renderExceededDimension (exceededDimensions budgetErr))
+    <> "]"
+
+renderExceededDimension :: ExceededDimension -> Text
+renderExceededDimension dim =
+  showText dim.edDimension
+    <> "(requested="
+    <> showText dim.edRequested
+    <> ", remaining="
+    <> showText dim.edRemaining
+    <> ")"
+
+showText :: Show a => a -> Text
+showText = T.pack . show
+
+data RewriteAdmissionError
+  = RewriteAdmissionPlanningRejected ![RewritePlanningError NodeId]
+  | RewriteAdmissionWitnessInvalid ![RewriteWitnessError]
+  | RewriteAdmissionBudgetRejected !RewriteBudgetError
+  deriving stock (Eq, Show, Generic)
+
+data RewriteAdmissionWitness def = RewriteAdmissionWitness
+  { rawGraphRewrite :: !(GraphRewrite NodeId def)
+  , runtimeGraphRewrite :: !(GraphRewrite NodeId def)
+  , plannedGraphRewriteDelta :: !(PlannedRewriteDelta def)
+  , admittedGraphRewriteDelta :: !(AdmittedRewriteDelta def)
+  }
+  deriving stock (Show, Generic)
+
 {- | Witness that a rewrite delta has been admitted against a budget.
 The constructor is not exported — the only way to obtain an
 'AdmittedRewriteDelta' is through 'admitRewriteDelta'.
@@ -286,27 +534,15 @@ planGraphRewrite
   -> Relation NodeId
   -> Map NodeId def
   -> Either [RewritePlanningError NodeId] (PlannedRewriteDelta def)
-planGraphRewrite rewrite topology defs = case rewrite of
-  ExpandNode nid mode spec -> do
-    validateRewriteAnchor topology defs nid
-    validateSubgraphSpec spec
-    validateNamespaceDiscipline topology nid spec
-    let spec' = namespaceSubgraph nid spec
-        rewrite' = ExpandNode nid mode spec'
-        topoFinal = plannedFinalTopology rewrite' topology
-        defs' = plannedFinalDefinitions rewrite' defs
-    first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
-      pure (mkPlannedDelta rewrite' topology defs' topoFinal)
-  AppendAfter nid spec -> do
-    validateRewriteAnchor topology defs nid
-    validateSubgraphSpec spec
-    validateNamespaceDiscipline topology nid spec
-    let spec' = namespaceSubgraph nid spec
-        rewrite' = AppendAfter nid spec'
-        topoFinal = plannedFinalTopology rewrite' topology
-        defs' = plannedFinalDefinitions rewrite' defs
-    first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
-      pure (mkPlannedDelta rewrite' topology defs' topoFinal)
+planGraphRewrite rewrite topology defs = do
+  validateRewriteAnchor topology defs (rewriteAnchor rewrite)
+  validateSubgraphSpec (rewriteSpec rewrite)
+  validateNamespaceDiscipline topology (rewriteAnchor rewrite) (rewriteSpec rewrite)
+  let rewrite' = runtimePlannerRewrite rewrite
+      topoFinal = plannedFinalTopology rewrite' topology
+      defs' = plannedFinalDefinitions rewrite' defs
+  first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
+    pure (mkPlannedDelta rewrite' topology defs' topoFinal)
   where
     mkPlannedDelta rewrite' oldTopology defs' topoFinal =
       let (newNodes, removedNodes, addedEdges, _removedEdges) = relationDiff oldTopology topoFinal
@@ -340,6 +576,244 @@ planGraphRewrite rewrite topology defs = case rewrite of
             , prdAnchorDisposition = anchorDisposition
             , prdCost = cost
             }
+
+runtimePlannerRewrite :: GraphRewrite NodeId def -> GraphRewrite NodeId def
+runtimePlannerRewrite = \case
+  ExpandNode nid mode spec ->
+    ExpandNode nid mode (namespaceSubgraph nid spec)
+  AppendAfter nid spec ->
+    AppendAfter nid (namespaceSubgraph nid spec)
+
+validatePlannedRewriteDelta
+  :: GraphRewrite NodeId def
+  -> Relation NodeId
+  -> Map NodeId def
+  -> PlannedRewriteDelta def
+  -> Either [RewriteWitnessError] ()
+validatePlannedRewriteDelta rawRewrite topology defs delta =
+  case plannedRewriteWitnessErrors rawRewrite topology defs delta of
+    [] -> Right ()
+    errors -> Left errors
+
+validateAdmittedRewriteDelta
+  :: RewriteBudget
+  -> PlannedRewriteDelta def
+  -> AdmittedRewriteDelta def
+  -> Either [RewriteWitnessError] ()
+validateAdmittedRewriteDelta budget delta admitted =
+  case consumeRewriteBudget budget delta.prdCost of
+    Left err ->
+      Left [RewriteWitnessBudgetRejected err]
+    Right expectedRemaining
+      | expectedRemaining == admittedRemainingBudget admitted ->
+          Right ()
+      | otherwise ->
+          Left
+            [ RewriteWitnessRemainingBudgetMismatch $
+                ExpectedActual
+                  { eaExpected = expectedRemaining
+                  , eaActual = admittedRemainingBudget admitted
+                  }
+            ]
+
+planGraphRewriteWithAdmissionWitness
+  :: RewriteBudget
+  -> GraphRewrite NodeId def
+  -> Relation NodeId
+  -> Map NodeId def
+  -> Either RewriteAdmissionError (RewriteAdmissionWitness def)
+planGraphRewriteWithAdmissionWitness budget rawRewrite topology defs = do
+  delta <-
+    first RewriteAdmissionPlanningRejected $
+      planGraphRewrite rawRewrite topology defs
+  first RewriteAdmissionWitnessInvalid $
+    validatePlannedRewriteDelta rawRewrite topology defs delta
+  admitted <-
+    first RewriteAdmissionBudgetRejected $
+      admitRewriteDelta budget delta
+  first RewriteAdmissionWitnessInvalid $
+    validateAdmittedRewriteDelta budget delta admitted
+  pure
+    RewriteAdmissionWitness
+      { rawGraphRewrite = rawRewrite
+      , runtimeGraphRewrite = runtimePlannerRewrite rawRewrite
+      , plannedGraphRewriteDelta = delta
+      , admittedGraphRewriteDelta = admitted
+      }
+
+plannedRewriteWitnessErrors
+  :: GraphRewrite NodeId def
+  -> Relation NodeId
+  -> Map NodeId def
+  -> PlannedRewriteDelta def
+  -> [RewriteWitnessError]
+plannedRewriteWitnessErrors rawRewrite topology defs delta =
+  concat
+    [ inputValidationErrors
+    , anchorErrors
+    , topologyErrors
+    , containedErrors
+    , entryExitErrors
+    , anchorDispositionErrors
+    , topologyDiffErrors
+    , definitionErrors
+    , costErrors
+    , finalAcyclicErrors
+    ]
+  where
+    rewrite' = runtimePlannerRewrite rawRewrite
+    spec' = rewriteSpec rewrite'
+    expectedTopology = plannedFinalTopology rewrite' topology
+    expectedDefinitionKeys = plannedFinalDefinitionKeys rewrite' defs
+    (expectedNewNodes, expectedRemovedNodes, expectedAddedEdges, _expectedRemovedEdges) =
+      relationDiff topology delta.prdTopology
+
+    inputValidationErrors =
+      case validateRewriteAnchor topology defs (rewriteAnchor rawRewrite)
+        *> validateSubgraphSpec (rewriteSpec rawRewrite)
+        *> validateNamespaceDiscipline topology (rewriteAnchor rawRewrite) (rewriteSpec rawRewrite) of
+        Left errors -> [RewriteWitnessInputRejected errors]
+        Right () -> []
+
+    anchorErrors =
+      [ RewriteWitnessAnchorMismatch $
+          ExpectedActual
+            { eaExpected = rewriteAnchor rawRewrite
+            , eaActual = delta.prdAnchorNode
+            }
+      | delta.prdAnchorNode /= rewriteAnchor rawRewrite
+      ]
+
+    topologyErrors =
+      [RewriteWitnessTopologyMismatch | delta.prdTopology /= expectedTopology]
+
+    containedErrors =
+      let missingVertices =
+            Set.toAscList $
+              Set.difference spec'.sgsTopology.relVertices delta.prdTopology.relVertices
+          missingEdges =
+            Set.toAscList $
+              Set.difference spec'.sgsTopology.relEdges delta.prdTopology.relEdges
+       in [RewriteWitnessInsertedVerticesMissing missingVertices | not (null missingVertices)]
+            <> [RewriteWitnessInsertedEdgesMissing missingEdges | not (null missingEdges)]
+
+    entryExitErrors =
+      [ RewriteWitnessEntryNodesMismatch $
+          ExpectedActual
+            { eaExpected = spec'.sgsEntryNodes
+            , eaActual = delta.prdEntryNodes
+            }
+      | delta.prdEntryNodes /= spec'.sgsEntryNodes
+      ]
+        <> [ RewriteWitnessExitNodesMismatch $
+               ExpectedActual
+                 { eaExpected = spec'.sgsExitNodes
+                 , eaActual = delta.prdExitNodes
+                 }
+           | delta.prdExitNodes /= spec'.sgsExitNodes
+           ]
+
+    anchorDispositionErrors =
+      [ RewriteWitnessAnchorDispositionMismatch $
+          ExpectedActual
+            { eaExpected = rewriteAnchorDisposition rewrite'
+            , eaActual = delta.prdAnchorDisposition
+            }
+      | delta.prdAnchorDisposition /= rewriteAnchorDisposition rewrite'
+      ]
+        <> case delta.prdAnchorDisposition of
+          RewriteAnchorRemoved ->
+            [ RewriteWitnessRemovedAnchorPresent (rewriteAnchor rewrite')
+            | Set.member (rewriteAnchor rewrite') delta.prdTopology.relVertices
+            ]
+          RewriteAnchorRetained ->
+            [ RewriteWitnessRetainedAnchorMissing (rewriteAnchor rewrite')
+            | not (Set.member (rewriteAnchor rewrite') delta.prdTopology.relVertices)
+            ]
+
+    topologyDiffErrors =
+      [ RewriteWitnessNewNodesMismatch $
+          ExpectedActual
+            { eaExpected = expectedNewNodes
+            , eaActual = delta.prdNewNodes
+            }
+      | delta.prdNewNodes /= expectedNewNodes
+      ]
+        <> [ RewriteWitnessRemovedNodesMismatch $
+               ExpectedActual
+                 { eaExpected = expectedRemovedNodes
+                 , eaActual = delta.prdRemovedNodes
+                 }
+           | delta.prdRemovedNodes /= expectedRemovedNodes
+           ]
+        <> [ RewriteWitnessAddedEdgesMismatch $
+               ExpectedActual
+                 { eaExpected = expectedAddedEdges
+                 , eaActual = delta.prdAddedEdges
+                 }
+           | delta.prdAddedEdges /= expectedAddedEdges
+           ]
+
+    definitionErrors =
+      let actualDefinitionKeys = Map.keysSet delta.prdDefinitions
+          topologyNodes = delta.prdTopology.relVertices
+       in [ RewriteWitnessDefinitionUpdateMismatch $
+              ExpectedActual
+                { eaExpected = expectedDefinitionKeys
+                , eaActual = actualDefinitionKeys
+                }
+          | actualDefinitionKeys /= expectedDefinitionKeys
+          ]
+            <> [ RewriteWitnessFinalDefinitionCoverageMismatch $
+                   ExpectedActual
+                     { eaExpected = topologyNodes
+                     , eaActual = actualDefinitionKeys
+                     }
+               | actualDefinitionKeys /= topologyNodes
+               ]
+
+    costErrors =
+      let expectedCost = plannedRewriteCost rewrite' delta
+       in [ RewriteWitnessCostMismatch $
+              ExpectedActual
+                { eaExpected = expectedCost
+                , eaActual = delta.prdCost
+                }
+          | delta.prdCost /= expectedCost
+          ]
+
+    finalAcyclicErrors =
+      case validateDAG delta.prdTopology of
+        Left err -> [RewriteWitnessFinalTopologyInvalid err]
+        Right () -> []
+
+plannedFinalDefinitionKeys :: GraphRewrite NodeId def -> Map NodeId def -> Set NodeId
+plannedFinalDefinitionKeys rewrite defs =
+  let spec = rewriteSpec rewrite
+   in case rewriteAnchorDisposition rewrite of
+        RewriteAnchorRemoved ->
+          Set.delete (rewriteAnchor rewrite) (Map.keysSet defs) <> Map.keysSet spec.sgsDefinitions
+        RewriteAnchorRetained ->
+          Map.keysSet defs <> Map.keysSet spec.sgsDefinitions
+
+plannedRewriteCost :: GraphRewrite NodeId def -> PlannedRewriteDelta def -> RewriteCost
+plannedRewriteCost rewrite delta =
+  -- Deliberately re-derive mkPlannedDelta's cost from delta state for the drift checker.
+  let insertedDepthNodes =
+        longestInsertedPathNodeCount
+          (rewriteSpec rewrite).sgsTopology
+          (rewriteSpec rewrite).sgsEntryNodes
+          (rewriteSpec rewrite).sgsExitNodes
+      addedDepth = case delta.prdAnchorDisposition of
+        RewriteAnchorRemoved -> max 0 (insertedDepthNodes - 1)
+        RewriteAnchorRetained -> insertedDepthNodes
+   in RewriteCost
+        { rcAddedNodes = fromIntegral (Set.size delta.prdNewNodes)
+        , rcAddedEdges = fromIntegral (Set.size delta.prdAddedEdges)
+        , rcAddedDepth = fromIntegral addedDepth
+        , rcFrontierDelta = fromIntegral (max 0 (length delta.prdEntryNodes - 1))
+        , rcRewriteOps = 1
+        }
 
 rewriteAnchor :: GraphRewrite NodeId def -> NodeId
 rewriteAnchor = \case

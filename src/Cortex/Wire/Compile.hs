@@ -90,6 +90,7 @@ import Cortex.Wire.Executor
   , wireExecutorRegistryVocabulary
   )
 import Cortex.Wire.Parser (parseWireFile, renderParseError)
+import Cortex.Wire.Pure (renderPureEvalError, validatePureTaskConfig)
 import Cortex.Wire.Syntax
 
 compileWireText :: Text -> Either WireCore.WireError CompiledCircuit
@@ -1324,16 +1325,8 @@ loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
   outputConfig <- pureOutputConfigMap nodeRef ports.lnpOutputs pureBody.nodePureBodyOutputs
   let runtimePorts = taskWirePortsFromLowered ports
       executor = WireCore.WireExecutorNative "pure"
-      configValue =
-        Aeson.Object $
-          insertMaybeJson
-            "where"
-            pureBody.nodePureBodyWhere
-            ( KeyMap.fromList
-                [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
-                , (Key.fromText "outputs", Aeson.toJSON outputConfig)
-                ]
-            )
+  mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
+    validatePureTaskConfig runtimePorts topLevelBindings pureBody.nodePureBodyWhere outputConfig
   validateExecutorProjection compileEnv nodeRef executor runtimePorts
   pure
     LoweredNode
@@ -1350,7 +1343,7 @@ loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
                     executor
                     Nothing
                     Nothing
-                    (Just configValue)
+                    (Just (nativePureTaskConfigValue topLevelBindings pureBody.nodePureBodyWhere outputConfig))
                     []
                     runtimePorts
                     Nothing
@@ -1365,6 +1358,22 @@ loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
       , lnInputs = ports.lnpInputs
       , lnOutputs = ports.lnpOutputs
       }
+
+nativePureTaskConfigValue
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> Map Text CorePureExpr
+  -> Aeson.Value
+nativePureTaskConfigValue topLevelBindings whereExpr outputConfig =
+  Aeson.Object $
+    insertMaybeJson
+      "where"
+      whereExpr
+      ( KeyMap.fromList
+          [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+          , (Key.fromText "outputs", Aeson.toJSON outputConfig)
+          ]
+      )
 
 validateWhereClause
   :: LoweringState

@@ -13,6 +13,7 @@ Tests may import the surface they exercise, but they do not define downstream pr
 module Cortex.Pulse.GraphRewriteSpec (spec) where
 
 import Data.Aeson qualified as Aeson
+import Data.Functor (void)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -53,6 +54,7 @@ import Cortex.Pulse.Rewrite
   , ExpansionMode (..)
   , GraphRewrite (..)
   , PlannedRewriteDelta (..)
+  , RewriteAdmissionError (..)
   , RewriteAnchorDisposition (..)
   , RewriteBudget (..)
   , RewriteBudgetError (..)
@@ -60,10 +62,19 @@ import Cortex.Pulse.Rewrite
   , RewritePlanningError (..)
   , SubgraphSpec (..)
   , admitRewriteDelta
+  , admittedDelta
+  , admittedGraphRewriteDelta
   , admittedRemainingBudget
   , consumeRewriteBudget
   , exceededDimensions
   , planGraphRewrite
+  , planGraphRewriteWithAdmissionWitness
+  , plannedGraphRewriteDelta
+  , rawGraphRewrite
+  , runtimeGraphRewrite
+  , runtimePlannerRewrite
+  , validateAdmittedRewriteDelta
+  , validatePlannedRewriteDelta
   )
 import Cortex.Pulse.Types (defaultRewriteBudget)
 
@@ -349,10 +360,27 @@ spec = do
             expectedRemoved
             expectedAddedEdges
             expectedDepth = do
-              case planGraphRewrite rewrite initialTopo initialDefs of
+              case planGraphRewriteWithAdmissionWitness defaultRewriteBudget rewrite initialTopo initialDefs of
                 Left errs ->
-                  expectationFailure $ "planGraphRewrite failed: " <> show errs
-                Right delta -> do
+                  expectationFailure $ "planGraphRewriteWithAdmissionWitness failed: " <> show errs
+                Right witness -> do
+                  -- StageDefinition carries actions, so erase definition payloads before Eq checks.
+                  void (rawGraphRewrite witness) `shouldBe` void rewrite
+                  void (runtimeGraphRewrite witness) `shouldBe` void (runtimePlannerRewrite rewrite)
+                  validatePlannedRewriteDelta
+                    rewrite
+                    initialTopo
+                    initialDefs
+                    (plannedGraphRewriteDelta witness)
+                    `shouldBe` Right ()
+                  validateAdmittedRewriteDelta
+                    defaultRewriteBudget
+                    (plannedGraphRewriteDelta witness)
+                    (admittedGraphRewriteDelta witness)
+                    `shouldBe` Right ()
+                  void (admittedDelta (admittedGraphRewriteDelta witness))
+                    `shouldBe` void (plannedGraphRewriteDelta witness)
+                  let delta = plannedGraphRewriteDelta witness
                   prdAnchorNode delta `shouldBe` NodeId "b"
                   prdAnchorDisposition delta `shouldBe` expectedDisposition
                   prdEntryNodes delta `shouldBe` [entry]
@@ -491,6 +519,29 @@ spec = do
                 budgetErr `shouldBe` RewriteBudgetExceeded remaining (prdCost delta)
               Right _ ->
                 expectationFailure "admitRewriteDelta should reject over-budget delta"
+
+      it "planGraphRewriteWithAdmissionWitness reports over-budget admission" $ do
+        let subTopo = toRelation (edge (NodeId "sub1") (NodeId "sub2") :: Graph NodeId)
+            subDefs = Map.fromList [(NodeId "sub1", mkDef Sub1), (NodeId "sub2", mkDef Sub2)]
+            spec' = SubgraphSpec subTopo subDefs [NodeId "sub1"] [NodeId "sub2"]
+            rewrite = AppendAfter (NodeId "b") spec'
+            remaining =
+              RewriteBudget
+                { rbAddedNodesMax = 2
+                , rbAddedEdgesMax = 2
+                , rbAddedDepthMax = 1
+                , rbFrontierDeltaMax = 0
+                , rbRewriteOpsMax = 1
+                }
+        case planGraphRewrite rewrite initialTopo initialDefs of
+          Left errs ->
+            expectationFailure $ "planGraphRewrite failed: " <> show errs
+          Right delta ->
+            case planGraphRewriteWithAdmissionWitness remaining rewrite initialTopo initialDefs of
+              Left err ->
+                err `shouldBe` RewriteAdmissionBudgetRejected (RewriteBudgetExceeded remaining (prdCost delta))
+              Right _ ->
+                expectationFailure "Expected admission witness to report over-budget rewrite"
 
       it "exceededDimensions reports which budget dimensions were exceeded" $ do
         let budgetErr =

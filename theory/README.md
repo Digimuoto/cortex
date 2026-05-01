@@ -286,14 +286,19 @@ Mechanized results now include:
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
+On the executable side, the current Haskell correspondence checks now include native-pure compiler
+preflight through `validatePureTaskConfig` before serialized pure task configs reach runtime
+evaluation, plus `planGraphRewriteWithAdmissionWitness`, which reruns the Lean-shaped planner and
+budget-admission equations around `planGraphRewrite` and `admitRewriteDelta`.
+
 The remaining Track 3 obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next proof slices are:
 
 - Haskell correspondence for CorePure static-context construction, builtin authority review hooks,
-  duplicate record-path admission before every compiler surface, and full Wire output contract
-  wrapping;
-- Haskell planner and budget-admission correspondence for `RuntimeConstructionInputs`,
-  added-node/added-edge registry admission, and `AdmittedRewriteDelta`;
+  parser/elaborator duplicate record-path witnesses outside the native-pure lowering path, and full
+  Wire output contract wrapping;
+- Haskell planner and budget-admission correspondence for full `RuntimeConstructionInputs` and
+  added-node/added-edge registry admission;
 - graph-to-DAG bridge construction for `WireTopologyDAGBridge`, executable materialization witnesses
   for `MaterializedPulseState`, retained-node status/output continuity across rewrites, and later
   durable selected-branch recovery determinism.
