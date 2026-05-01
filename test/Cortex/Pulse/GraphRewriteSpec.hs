@@ -52,6 +52,7 @@ import Cortex.Pulse.Rewrite
   ( BudgetDimension (..)
   , ExceededDimension (..)
   , ExpansionMode (..)
+  , ExpectedActual (..)
   , GraphRewrite (..)
   , PlannedRewriteDelta (..)
   , RewriteAdmissionError (..)
@@ -60,6 +61,7 @@ import Cortex.Pulse.Rewrite
   , RewriteBudgetError (..)
   , RewriteCost (..)
   , RewritePlanningError (..)
+  , RewriteWitnessError (..)
   , SubgraphSpec (..)
   , admitRewriteDelta
   , admittedDelta
@@ -71,6 +73,7 @@ import Cortex.Pulse.Rewrite
   , planGraphRewriteWithAdmissionWitness
   , plannedGraphRewriteDelta
   , rawGraphRewrite
+  , renderRewriteWitnessError
   , runtimeGraphRewrite
   , runtimePlannerRewrite
   , validateAdmittedRewriteDelta
@@ -422,6 +425,68 @@ spec = do
           Set.empty
           (Set.fromList [(NodeId "b", entry), (entry, exit), (exit, NodeId "c")])
           2
+
+      it "reports stable witness errors for tampered planned deltas" $ do
+        let rewrite = AppendAfter (NodeId "b") spec'
+        case planGraphRewriteWithAdmissionWitness defaultRewriteBudget rewrite initialTopo initialDefs of
+          Left errs ->
+            expectationFailure $ "planGraphRewriteWithAdmissionWitness failed: " <> show errs
+          Right witness -> do
+            let delta = plannedGraphRewriteDelta witness
+                originalCost = delta.prdCost
+                tamperedCost =
+                  originalCost {rcRewriteOps = originalCost.rcRewriteOps + 1}
+                tamperedDelta = delta {prdCost = tamperedCost}
+                expectedError =
+                  RewriteWitnessCostMismatch
+                    ExpectedActual
+                      { eaExpected = originalCost
+                      , eaActual = tamperedCost
+                      }
+            validatePlannedRewriteDelta rewrite initialTopo initialDefs tamperedDelta
+              `shouldBe` Left [expectedError]
+            case validatePlannedRewriteDelta rewrite initialTopo initialDefs tamperedDelta of
+              Left witnessErrors ->
+                fmap renderRewriteWitnessError witnessErrors
+                  `shouldBe` [renderRewriteWitnessError expectedError]
+              Right () ->
+                expectationFailure "Expected tampered planned delta to fail validation"
+
+      it "reports stable witness errors for tampered admitted budgets" $ do
+        let rewrite = AppendAfter (NodeId "b") spec'
+            largerBudget =
+              defaultRewriteBudget
+                { rbRewriteOpsMax = defaultRewriteBudget.rbRewriteOpsMax + 1
+                }
+        case planGraphRewriteWithAdmissionWitness largerBudget rewrite initialTopo initialDefs of
+          Left errs ->
+            expectationFailure $ "planGraphRewriteWithAdmissionWitness failed: " <> show errs
+          Right witness -> do
+            let delta = plannedGraphRewriteDelta witness
+                admitted = admittedGraphRewriteDelta witness
+                expectedRemaining =
+                  defaultRewriteBudget
+                    { rbAddedNodesMax = defaultRewriteBudget.rbAddedNodesMax - delta.prdCost.rcAddedNodes
+                    , rbAddedEdgesMax = defaultRewriteBudget.rbAddedEdgesMax - delta.prdCost.rcAddedEdges
+                    , rbAddedDepthMax = defaultRewriteBudget.rbAddedDepthMax - delta.prdCost.rcAddedDepth
+                    , rbFrontierDeltaMax =
+                        defaultRewriteBudget.rbFrontierDeltaMax - delta.prdCost.rcFrontierDelta
+                    , rbRewriteOpsMax = defaultRewriteBudget.rbRewriteOpsMax - delta.prdCost.rcRewriteOps
+                    }
+                expectedError =
+                  RewriteWitnessRemainingBudgetMismatch
+                    ExpectedActual
+                      { eaExpected = expectedRemaining
+                      , eaActual = admittedRemainingBudget admitted
+                      }
+            validateAdmittedRewriteDelta defaultRewriteBudget delta admitted
+              `shouldBe` Left [expectedError]
+            case validateAdmittedRewriteDelta defaultRewriteBudget delta admitted of
+              Left witnessErrors ->
+                fmap renderRewriteWitnessError witnessErrors
+                  `shouldBe` [renderRewriteWitnessError expectedError]
+              Right () ->
+                expectationFailure "Expected tampered admitted delta to fail validation"
 
     describe "rewrite budgeting" $ do
       it "computes structural rewrite cost and decrements remaining budget pointwise" $ do

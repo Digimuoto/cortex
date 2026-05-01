@@ -15,12 +15,19 @@ Wire modules own authoring and compilation mechanics while host authority stays 
 -}
 module Cortex.Wire.Pure
   ( PureEvalError (..)
+  , CorePureBuiltinAuthority (..)
+  , CorePureBuiltinAuthorityReport (..)
+  , CorePureStaticContext (..)
   , renderPureEvalError
   , validatePurePorts
   , validatePureTaskConfig
+  , corePureStaticContextFromBindings
+  , corePureWhereStaticFields
   , bindPureInputValues
   , evaluatePureTaskOutputs
   , corePureBuiltinSignature
+  , corePureBuiltinAuthorityReport
+  , corePureBuiltinAuthorityFree
   , pureWireExecutorId
   , pureWireExecutorProjection
   , pureExecutorConfigSchema
@@ -40,6 +47,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, toBoundedInteger)
 import Data.Scientific qualified as Scientific
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -87,6 +95,25 @@ data PureEvalError
   | PureDuplicateLambdaParam !Text
   | PureDuplicateRecordFieldPath ![Text] ![Text]
   | PureWhereExpectedRecord !Text
+  | PureStaticFieldSetUndeterminable
+  | PureStaticBindingCycle !Text
+  | PureStaticLetShadowsStatic !Text
+  deriving stock (Eq, Show, Generic)
+
+data CorePureBuiltinAuthority
+  = CorePureBuiltinPureValue
+  deriving stock (Eq, Show, Generic)
+
+data CorePureBuiltinAuthorityReport = CorePureBuiltinAuthorityReport
+  { corePureBuiltinAuthorityName :: !Text
+  , corePureBuiltinAuthorityArity :: !Int
+  , corePureBuiltinAuthority :: !CorePureBuiltinAuthority
+  }
+  deriving stock (Eq, Show, Generic)
+
+newtype CorePureStaticContext = CorePureStaticContext
+  { corePureStaticContextFields :: Map Text (Set Text)
+  }
   deriving stock (Eq, Show, Generic)
 
 renderPureEvalError :: PureEvalError -> Text
@@ -157,6 +184,12 @@ renderPureEvalError = \case
       <> "."
   PureWhereExpectedRecord actual ->
     "Pure where-clause must evaluate to a record, but received " <> actual <> "."
+  PureStaticFieldSetUndeterminable ->
+    "Pure where-clause field set is not statically determinable."
+  PureStaticBindingCycle bindingName ->
+    "Pure where-clause field discovery found a cyclic top-level binding at " <> bindingName <> "."
+  PureStaticLetShadowsStatic bindingName ->
+    "Pure where-clause local let binding shadows statically known binding " <> bindingName <> "."
   where
     renderList values =
       "[" <> T.intercalate ", " values <> "]"
@@ -177,6 +210,83 @@ validatePureTaskConfig
 validatePureTaskConfig ports bindings whereExpr outputExprs =
   validatePurePorts ports outputExprs
     *> validateCorePureTaskExpressions bindings whereExpr outputExprs
+
+corePureStaticContextFromBindings
+  :: [CorePureBinding] -> Either PureEvalError CorePureStaticContext
+corePureStaticContextFromBindings bindings = do
+  validateCorePureBindingNames bindings
+  let preliminaryFields =
+        [ (binding.corePureBindingName, fields)
+        | binding <- bindings
+        , Right fields <- [corePureStaticFieldsFromBindings bindings Set.empty binding.corePureBindingExpr]
+        ]
+      preliminaryContext = CorePureStaticContext (Map.fromList preliminaryFields)
+      checkedFields =
+        [ (binding.corePureBindingName, fields)
+        | binding <- bindings
+        , Right fields <- [staticFieldsFromContext preliminaryContext binding.corePureBindingExpr]
+        ]
+  Right (CorePureStaticContext (Map.fromList checkedFields))
+
+corePureWhereStaticFields
+  :: CorePureStaticContext -> CorePureExpr -> Either PureEvalError (Set Text)
+corePureWhereStaticFields =
+  staticFieldsFromContext
+
+staticFieldsFromContext
+  :: CorePureStaticContext -> CorePureExpr -> Either PureEvalError (Set Text)
+staticFieldsFromContext ctx = \case
+  CorePureRecord fields ->
+    Right (Set.fromList [NE.head field.corePureFieldPath | field <- fields])
+  CorePureLet bindings bodyExpr -> do
+    validateStaticLetBindings ctx (NE.toList bindings)
+    staticFieldsFromContext ctx bodyExpr
+  CorePureIdent name ->
+    case Map.lookup name ctx.corePureStaticContextFields of
+      Just fields -> Right fields
+      Nothing -> Left PureStaticFieldSetUndeterminable
+  CorePureBinary CorePureMerge lhs rhs ->
+    Set.union <$> staticFieldsFromContext ctx lhs <*> staticFieldsFromContext ctx rhs
+  _ ->
+    Left PureStaticFieldSetUndeterminable
+
+validateStaticLetBindings
+  :: CorePureStaticContext -> [CorePureBinding] -> Either PureEvalError ()
+validateStaticLetBindings ctx =
+  traverse_ validateBinding
+  where
+    validateBinding binding =
+      case Map.lookup binding.corePureBindingName ctx.corePureStaticContextFields of
+        Just _fields -> Left (PureStaticLetShadowsStatic binding.corePureBindingName)
+        Nothing -> Right ()
+
+corePureStaticFieldsFromBindings
+  :: [CorePureBinding] -> Set Text -> CorePureExpr -> Either PureEvalError (Set Text)
+corePureStaticFieldsFromBindings bindings visited = \case
+  CorePureRecord fields ->
+    Right (Set.fromList [NE.head field.corePureFieldPath | field <- fields])
+  CorePureLet _ bodyExpr ->
+    corePureStaticFieldsFromBindings bindings visited bodyExpr
+  CorePureIdent name
+    | Set.member name visited ->
+        Left (PureStaticBindingCycle name)
+    | otherwise ->
+        case lookupBinding name of
+          Just bindingExpr ->
+            corePureStaticFieldsFromBindings bindings (Set.insert name visited) bindingExpr
+          Nothing ->
+            Left PureStaticFieldSetUndeterminable
+  CorePureBinary CorePureMerge lhs rhs ->
+    Set.union
+      <$> corePureStaticFieldsFromBindings bindings visited lhs
+      <*> corePureStaticFieldsFromBindings bindings visited rhs
+  _ ->
+    Left PureStaticFieldSetUndeterminable
+  where
+    lookupBinding name =
+      case [binding.corePureBindingExpr | binding <- bindings, binding.corePureBindingName == name] of
+        bindingExpr : _ -> Just bindingExpr
+        [] -> Nothing
 
 validatePureInputPorts :: WirePorts -> Either PureEvalError ()
 validatePureInputPorts ports =
@@ -617,6 +727,7 @@ applyCorePureValue functionValue argumentValues =
 data CorePureBuiltinSpec = CorePureBuiltinSpec
   { corePureBuiltinName :: !Text
   , corePureBuiltinArity :: !Int
+  , corePureBuiltinAuthority :: !CorePureBuiltinAuthority
   , corePureBuiltinImplementation :: !([CorePureValue] -> Either PureEvalError CorePureValue)
   }
 
@@ -645,6 +756,7 @@ corePureBuiltinSpecs =
       CorePureBuiltinSpec
         { corePureBuiltinName = name
         , corePureBuiltinArity = arity
+        , corePureBuiltinAuthority = CorePureBuiltinPureValue
         , corePureBuiltinImplementation = implementation
         }
 
@@ -653,6 +765,22 @@ corePureBuiltinSignature =
   [ (spec.corePureBuiltinName, spec.corePureBuiltinArity)
   | spec <- corePureBuiltinSpecs
   ]
+
+corePureBuiltinAuthorityReport :: [CorePureBuiltinAuthorityReport]
+corePureBuiltinAuthorityReport =
+  [ CorePureBuiltinAuthorityReport
+      { corePureBuiltinAuthorityName = spec.corePureBuiltinName
+      , corePureBuiltinAuthorityArity = spec.corePureBuiltinArity
+      , corePureBuiltinAuthority = spec.corePureBuiltinAuthority
+      }
+  | spec <- corePureBuiltinSpecs
+  ]
+
+corePureBuiltinAuthorityFree :: Bool
+corePureBuiltinAuthorityFree =
+  all
+    (\report -> report.corePureBuiltinAuthority == CorePureBuiltinPureValue)
+    corePureBuiltinAuthorityReport
 
 corePureBuiltinEnv :: CorePureEnv
 corePureBuiltinEnv =

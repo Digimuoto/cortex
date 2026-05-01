@@ -194,6 +194,14 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv strictExecutorEnv pureExecutorWithLetBoundWhereSourceText
         `shouldSatisfy` isRight
 
+    it "rejects node-local where lets that shadow statically known records" $
+      compileWireTextWithEnv strictExecutorEnv whereLocalLetShadowsStaticSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "classify")
+              "where-clause local let binding shadows static binding defaults"
+          )
+
     it "rejects where fields that collide with input ports" $
       compileWireTextWithEnv strictExecutorEnv whereInputCollisionSourceText
         `shouldBe` Left (WireInvalidPorts (CircuitNodeRef "classify") "where field collides with input port evidence")
@@ -430,6 +438,20 @@ pureExecutorWithLetBoundWhereSourceText =
     , "  <- evidence: EvidenceSet ;"
     , "  -> accepted: AcceptedSet = pure (accepted) ;"
     , "  where defaults ;"
+    , "classify"
+    ]
+
+whereLocalLetShadowsStaticSourceText :: T.Text
+whereLocalLetShadowsStaticSourceText =
+  T.unlines
+    [ "let defaults = { accepted = [] ; rejected = [] ; } ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  where let"
+    , "    defaults = { accepted = evidence.items ; } ;"
+    , "  in"
+    , "  defaults ;"
     , "classify"
     ]
 

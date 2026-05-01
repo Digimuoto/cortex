@@ -58,7 +58,7 @@ import Cortex.Wire.Pure
   , pureWireExecutorId
   , pureWireExecutorProjection
   , renderPureEvalError
-  , validatePurePorts
+  , validatePureTaskConfig
   )
 import Cortex.Wire.Runtime
   ( wireInputBundleFromStageInputs
@@ -97,7 +97,11 @@ pureTaskConfigFromMetadata taskNode = do
     case AesonTypes.parseEither parsePureTaskMetadata taskNode.circuitTaskNodeMetadata of
       Left err -> Left (T.pack err)
       Right parsedConfig -> Right parsedConfig
-  case validatePurePorts config.pureTaskConfigPorts config.pureTaskConfigOutputs of
+  case validatePureTaskConfig
+    config.pureTaskConfigPorts
+    config.pureTaskConfigBindings
+    config.pureTaskConfigWhere
+    config.pureTaskConfigOutputs of
     Left err -> Left (renderPureEvalError err)
     Right () -> Right config
 

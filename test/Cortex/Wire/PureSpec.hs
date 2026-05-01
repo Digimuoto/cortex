@@ -16,6 +16,7 @@ import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Test.Hspec
 
@@ -23,9 +24,12 @@ import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
   ( CorePureBinOp (..)
   , CorePureBinding (..)
+  , CorePureBuiltinAuthority (..)
+  , CorePureBuiltinAuthorityReport (..)
   , CorePureExpr (..)
   , CorePureField (..)
   , CorePureLiteral (..)
+  , CorePureStaticContext (..)
   , PureEvalError (..)
   , WireInputBundle
   , WireInputCardinality (..)
@@ -35,7 +39,11 @@ import Cortex.Wire
   , WirePorts (..)
   , WireValue (..)
   , bindPureInputValues
+  , corePureBuiltinAuthorityFree
+  , corePureBuiltinAuthorityReport
   , corePureBuiltinSignature
+  , corePureStaticContextFromBindings
+  , corePureWhereStaticFields
   , evaluatePureTaskOutputs
   , mkWireValue
   , validatePurePorts
@@ -273,6 +281,75 @@ spec = describe "Cortex.Wire.Pure" $ do
                  , ("joinWith", 2)
                  , ("toJson", 1)
                  ]
+
+  it "keeps the CorePure builtin authority report closed and authority-free" $ do
+    corePureBuiltinAuthorityFree `shouldBe` True
+    let authorityRows =
+          [ ( report.corePureBuiltinAuthorityName
+            , report.corePureBuiltinAuthorityArity
+            , report.corePureBuiltinAuthority
+            )
+          | report <- corePureBuiltinAuthorityReport
+          ]
+    authorityRows
+      `shouldBe` [ ("map", 2, CorePureBuiltinPureValue)
+                 , ("fmap", 2, CorePureBuiltinPureValue)
+                 , ("filter", 2, CorePureBuiltinPureValue)
+                 , ("zip", 2, CorePureBuiltinPureValue)
+                 , ("zipWith", 3, CorePureBuiltinPureValue)
+                 , ("length", 1, CorePureBuiltinPureValue)
+                 , ("sum", 1, CorePureBuiltinPureValue)
+                 , ("all", 2, CorePureBuiltinPureValue)
+                 , ("any", 2, CorePureBuiltinPureValue)
+                 , ("min", 2, CorePureBuiltinPureValue)
+                 , ("max", 2, CorePureBuiltinPureValue)
+                 , ("abs", 1, CorePureBuiltinPureValue)
+                 , ("clamp", 3, CorePureBuiltinPureValue)
+                 , ("concat", 1, CorePureBuiltinPureValue)
+                 , ("toString", 1, CorePureBuiltinPureValue)
+                 , ("joinWith", 2, CorePureBuiltinPureValue)
+                 , ("toJson", 1, CorePureBuiltinPureValue)
+                 ]
+
+  it "establishes CorePure static context from top-level record bindings" $ do
+    let bindings =
+          [ binding "base" (CorePureRecord [CorePureField ("a" :| []) (num 1)])
+          , binding "alias" (var "base")
+          , binding
+              "merged"
+              ( bin
+                  CorePureMerge
+                  (var "alias")
+                  (CorePureRecord [CorePureField ("b" :| []) (num 2)])
+              )
+          , binding "scalar" (num 10)
+          ]
+        expectedContext =
+          CorePureStaticContext
+            ( Map.fromList
+                [ ("alias", Set.singleton "a")
+                , ("base", Set.singleton "a")
+                , ("merged", Set.fromList ["a", "b"])
+                ]
+            )
+    corePureStaticContextFromBindings bindings `shouldBe` Right expectedContext
+    corePureWhereStaticFields expectedContext (var "merged")
+      `shouldBe` Right (Set.fromList ["a", "b"])
+    corePureWhereStaticFields expectedContext (var "scalar")
+      `shouldBe` Left PureStaticFieldSetUndeterminable
+
+  it "rejects node-local CorePure let bindings that shadow static records" $ do
+    case corePureStaticContextFromBindings
+      [binding "known" (CorePureRecord [CorePureField ("a" :| []) (num 1)])] of
+      Left err ->
+        expectationFailure ("expected static context, got: " <> show err)
+      Right staticContext -> do
+        let localShadow =
+              CorePureLet
+                (binding "known" (CorePureRecord [CorePureField ("z" :| []) (num 2)]) :| [])
+                (var "known")
+        corePureWhereStaticFields staticContext localShadow
+          `shouldBe` Left (PureStaticLetShadowsStatic "known")
 
   it "allows where fields to shadow top-level delayed bindings" $
     evaluatePureTaskOutputs

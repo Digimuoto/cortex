@@ -30,6 +30,7 @@ module Cortex.Wire.NodeBoundary
   , executorNodeBoundaryNormalForm
   , signalNodeBoundaryNormalForm
   , artifactNodeBoundaryNormalForm
+  , validateNodeBoundaryNormalForm
   , normalFormPorts
   , normalFormOutputPorts
   , wrapNodeBoundaryOutput
@@ -54,7 +55,7 @@ import Cortex.Wire.AST
   , WireOutputPort (..)
   , WirePorts (..)
   )
-import Cortex.Wire.Circuit.IR (CircuitNodeRef)
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Contract (WireContractRegistry (..), WireContractSpec (..))
 import Cortex.Wire.Syntax (CorePureBinding, CorePureExpr)
 import Cortex.Wire.Value
@@ -256,6 +257,48 @@ normalFormPorts =
 normalFormOutputPorts :: NodeBoundaryNormalForm -> Map Text WireOutputPort
 normalFormOutputPorts =
   nodeBoundaryOutputPorts . nodeBoundaryEgress
+
+validateNodeBoundaryNormalForm :: NodeBoundaryNormalForm -> Either Text ()
+validateNodeBoundaryNormalForm form = do
+  validatePhasePair
+  if normalFormOutputPorts form == form.nodeBoundaryPorts.wirePortsOutputs
+    then Right ()
+    else
+      Left
+        ( "Wire node "
+            <> form.nodeBoundaryRef.unCircuitNodeRef
+            <> " boundary egress ports do not match declared output ports."
+        )
+  where
+    validatePhasePair =
+      case (form.nodeBoundaryIngress, form.nodeBoundaryBody) of
+        (NodeBoundaryCorePureIngress {}, NodeBoundaryCorePureBody {}) ->
+          Right ()
+        (NodeBoundaryExecutorIngress {}, NodeBoundaryExecutorBody {}) ->
+          Right ()
+        (NodeBoundaryExecutorIngress {}, NodeBoundarySignalBody {}) ->
+          Right ()
+        (NodeBoundaryExecutorIngress {}, NodeBoundaryArtifactBody {}) ->
+          Right ()
+        (NodeBoundaryCorePureIngress {}, NodeBoundaryExecutorBody {}) ->
+          corePureIngressMismatch
+        (NodeBoundaryCorePureIngress {}, NodeBoundarySignalBody {}) ->
+          corePureIngressMismatch
+        (NodeBoundaryCorePureIngress {}, NodeBoundaryArtifactBody {}) ->
+          corePureIngressMismatch
+        (NodeBoundaryExecutorIngress {}, NodeBoundaryCorePureBody {}) ->
+          Left
+            ( "Wire node "
+                <> form.nodeBoundaryRef.unCircuitNodeRef
+                <> " has executor ingress with a CorePure body."
+            )
+
+    corePureIngressMismatch =
+      Left
+        ( "Wire node "
+            <> form.nodeBoundaryRef.unCircuitNodeRef
+            <> " has CorePure ingress with a non-CorePure body."
+        )
 
 wrapNodeBoundaryOutput
   :: Maybe WireContractRegistry

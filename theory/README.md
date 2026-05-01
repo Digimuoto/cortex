@@ -300,24 +300,27 @@ Mechanized results now include:
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
-On the executable side, the current Haskell correspondence checks now include a private
-node-boundary normal-form IR for compiler lowering, shared runtime egress wrappers for single and
-multi-output Wire values, native-pure compiler preflight through `validatePureTaskConfig` before
-serialized pure task configs reach runtime evaluation, plus `planGraphRewriteWithAdmissionWitness`,
-which reruns the Lean-shaped planner and budget-admission equations around `planGraphRewrite` and
+On the executable side, the current Haskell correspondence checks now include
+`corePureStaticContextFromBindings` and `corePureWhereStaticFields` for CorePure static `where`
+discovery, `corePureBuiltinAuthorityReport` for closed builtin-table review,
+`validatePureTaskConfig` before serialized native-pure task configs reach runtime evaluation, a
+private node-boundary normal-form IR with compiler validation hooks, shared runtime egress wrappers
+for single and multi-output Wire values, plus `planGraphRewriteWithAdmissionWitness`, which reruns
+the Lean-shaped planner and budget-admission equations around `planGraphRewrite` and
 `admitRewriteDelta`.
 
 The remaining Track 3 obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next proof slices are:
 
-- Haskell correspondence for CorePure static-context construction, builtin authority review hooks,
-  parser/elaborator duplicate record-path witnesses outside the native-pure lowering path, compiler
-  production of node-boundary normal-form witnesses, and full Wire output contract wrapping;
+- Haskell correspondence for full CorePure evaluator/value semantics, parser/elaborator duplicate
+  record-path witnesses outside the native-pure lowering path, executor body certificates, and full
+  Wire output contract wrapping;
 - Haskell planner and budget-admission correspondence for full `RuntimeConstructionInputs` and
   added-node/added-edge registry admission;
 - graph-to-DAG bridge construction for `WireTopologyDAGBridge`, executable materialization witnesses
-  for `MaterializedPulseState`, retained-node status/output continuity across rewrites, and later
-  durable selected-branch recovery determinism.
+  for `MaterializedPulseState`, retained-node status/output continuity across rewrites,
+  SelectActualize runtime/materialization correspondence tracked by GitHub #138, and later durable
+  selected-branch recovery determinism.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
 but chain-level preservation requires them to stay inside the registry boundary documented in

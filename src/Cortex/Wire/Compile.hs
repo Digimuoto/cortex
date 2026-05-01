@@ -95,9 +95,16 @@ import Cortex.Wire.NodeBoundary
   , normalFormPorts
   , pureNodeBoundaryNormalForm
   , signalNodeBoundaryNormalForm
+  , validateNodeBoundaryNormalForm
   )
 import Cortex.Wire.Parser (parseWireFile, renderParseError)
-import Cortex.Wire.Pure (renderPureEvalError, validatePureTaskConfig)
+import Cortex.Wire.Pure
+  ( PureEvalError (..)
+  , corePureStaticContextFromBindings
+  , corePureWhereStaticFields
+  , renderPureEvalError
+  , validatePureTaskConfig
+  )
 import Cortex.Wire.Syntax
 
 compileWireText :: Text -> Either WireCore.WireError CompiledCircuit
@@ -1192,6 +1199,8 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
           signalName <- requireTextField nodeRef "on" exactFields
           let normalForm =
                 signalNodeBoundaryNormalForm nodeRef runtimePorts whereExpr inputExpr signalName
+          mapLeft (WireCore.WireInvalidPorts nodeRef) $
+            validateNodeBoundaryNormalForm normalForm
           Right $
             CompiledCircuitSignal
               CircuitSignalBoundary
@@ -1215,6 +1224,8 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                   inputExpr
                   artifactKind
                   (qnameToQualifiedRef targetRef)
+          mapLeft (WireCore.WireInvalidPorts nodeRef) $
+            validateNodeBoundaryNormalForm normalForm
           Right $
             CompiledCircuitArtifact
               CircuitArtifactBoundary
@@ -1247,6 +1258,8 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                   inputExpr
                   executor
                   configValue
+          mapLeft (WireCore.WireInvalidPorts nodeRef) $
+            validateNodeBoundaryNormalForm normalForm
           validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
           tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
           memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
@@ -1360,6 +1373,8 @@ loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
           pureBody.nodePureBodyWhere
           outputConfig
       executor = WireCore.WireExecutorNative "pure"
+  mapLeft (WireCore.WireInvalidPorts nodeRef) $
+    validateNodeBoundaryNormalForm normalForm
   mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
     validatePureTaskConfig
       (normalFormPorts normalForm)
@@ -1424,7 +1439,14 @@ validateWhereClause st nodeRef inputPorts whereExpr =
   case whereExpr of
     Nothing -> Right ()
     Just exprValue -> do
-      fieldNames <- staticWhereFieldNames st nodeRef Set.empty exprValue
+      staticContext <-
+        mapLeft
+          (WireCore.WireInvalidPorts nodeRef . renderStaticWhereError)
+          (corePureStaticContextFromBindings st.lsPureBindings)
+      fieldNames <-
+        mapLeft
+          (WireCore.WireInvalidPorts nodeRef . renderStaticWhereError)
+          (corePureWhereStaticFields staticContext exprValue)
       let inputNames = Set.fromList (fmap (.lpInternalName) inputPorts)
           collisions = Set.toAscList (Set.intersection fieldNames inputNames)
       case collisions of
@@ -1436,42 +1458,16 @@ validateWhereClause st nodeRef inputPorts whereExpr =
             )
         [] -> Right ()
 
-staticWhereFieldNames
-  :: LoweringState
-  -> CircuitNodeRef
-  -> Set.Set Text
-  -> CorePureExpr
-  -> Either WireCore.WireError (Set.Set Text)
-staticWhereFieldNames st nodeRef visited = \case
-  CorePureRecord fields ->
-    Right (Set.fromList [NE.head field.corePureFieldPath | field <- fields])
-  -- Only the final expression exposes fields; local bindings are intentionally not expanded here.
-  CorePureLet _ bodyExpr ->
-    staticWhereFieldNames st nodeRef visited bodyExpr
-  CorePureIdent name
-    | Set.member name visited ->
-        Left (whereStaticFieldError nodeRef)
-    | otherwise ->
-        case lookupTopLevelPureBinding name of
-          Just bindingExpr ->
-            staticWhereFieldNames st nodeRef (Set.insert name visited) bindingExpr
-          Nothing ->
-            Left (whereStaticFieldError nodeRef)
-  CorePureBinary CorePureMerge lhs rhs ->
-    Set.union
-      <$> staticWhereFieldNames st nodeRef visited lhs
-      <*> staticWhereFieldNames st nodeRef visited rhs
-  _ ->
-    Left (whereStaticFieldError nodeRef)
-  where
-    lookupTopLevelPureBinding name =
-      case [binding.corePureBindingExpr | binding <- st.lsPureBindings, binding.corePureBindingName == name] of
-        bindingExpr : _ -> Just bindingExpr
-        [] -> Nothing
-
-whereStaticFieldError :: CircuitNodeRef -> WireCore.WireError
-whereStaticFieldError nodeRef =
-  WireCore.WireInvalidPorts nodeRef "where-clause field set is not statically determinable"
+renderStaticWhereError :: PureEvalError -> Text
+renderStaticWhereError = \case
+  PureStaticFieldSetUndeterminable ->
+    "where-clause field set is not statically determinable"
+  PureStaticBindingCycle _ ->
+    "where-clause field set is not statically determinable"
+  PureStaticLetShadowsStatic bindingName ->
+    "where-clause local let binding shadows static binding " <> bindingName
+  err ->
+    renderPureEvalError err
 
 pureOutputConfigMap
   :: CircuitNodeRef
