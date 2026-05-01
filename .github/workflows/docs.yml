@@ -39,11 +39,17 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Build documentation
         run: |
+          chmod -R u+w _site result-docs-site 2>/dev/null || true
           rm -rf _site result-docs-site
           nix build .#docs-site --out-link result-docs-site --print-build-logs
           mkdir -p _site

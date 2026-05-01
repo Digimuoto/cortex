@@ -41,8 +41,13 @@ jobs:
       nix: ${{ steps.filter.outputs.nix }}
       site: ${{ steps.filter.outputs.site }}
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Detect changed paths
         uses: dorny/paths-filter@v3
@@ -108,9 +113,13 @@ jobs:
     runs-on: [self-hosted, nix, mercury, cortex]
     timeout-minutes: 5
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          clean: false
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
@@ -138,8 +147,13 @@ jobs:
     runs-on: [self-hosted, nix, mercury, cortex]
     timeout-minutes: 5
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Check GitHub merge policy
         env:
@@ -152,8 +166,13 @@ jobs:
     runs-on: [self-hosted, nix, mercury, cortex]
     timeout-minutes: 5
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Check commit messages
         uses: webiny/action-conventional-commits@v1.4.2
@@ -166,8 +185,13 @@ jobs:
     runs-on: [self-hosted, nix, mercury, cortex]
     timeout-minutes: 5
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Check PR title
         uses: CondeNast/conventional-pull-request-action@v0.2.0
@@ -181,8 +205,13 @@ jobs:
     if: needs.changes.outputs.code != 'false' || needs.changes.outputs.docs != 'false'
     timeout-minutes: 15
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Check disk space
         run: |
@@ -214,8 +243,13 @@ jobs:
       )
     timeout-minutes: 90
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Build all supported outputs
         run: |
@@ -271,8 +305,13 @@ jobs:
       needs.changes.outputs.haskell != 'false'
     timeout-minutes: 20
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run HLint
         run: nix run '.#lint-haskell' --print-build-logs
@@ -296,8 +335,13 @@ jobs:
       (needs.changes.outputs.theory != 'false' || needs.changes.outputs.nix != 'false')
     timeout-minutes: 10
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run Lean lint
         run: nix run '.#lean-lint' --print-build-logs
@@ -313,8 +357,13 @@ jobs:
       (needs.changes.outputs.theory != 'false' || needs.changes.outputs.nix != 'false')
     timeout-minutes: 20
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Build Lean theory
         run: nix run '.#_check-theory' --print-build-logs
@@ -334,8 +383,13 @@ jobs:
       )
     timeout-minutes: 45
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run flake checks
         run: nix flake check --print-build-logs
@@ -350,8 +404,13 @@ jobs:
       needs.changes.outputs.haskell != 'false'
     timeout-minutes: 45
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run Haskell test suites
         run: nix run '.#cortex-tests' --print-build-logs
@@ -363,8 +422,13 @@ jobs:
     if: needs.changes.outputs.docs != 'false' || needs.changes.outputs.nix != 'false'
     timeout-minutes: 10
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run docs lint
         run: nix run '.#docs-lint' --print-build-logs
@@ -379,8 +443,13 @@ jobs:
       needs.changes.outputs.site != 'false'
     timeout-minutes: 30
     steps:
+      - name: Restore workspace permissions
+        run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Build documentation site
         run: nix build '.#docs-site' --print-build-logs
