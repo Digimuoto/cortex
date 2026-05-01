@@ -25,6 +25,7 @@ import Cortex.Wire.Planner
 import Cortex.Wire.Planner.Construction
 import Cortex.Wire.Planner.Chain
 import Cortex.Wire.Select
+import Cortex.Wire.PulseSafety
 
 /-!
 ## Overview
