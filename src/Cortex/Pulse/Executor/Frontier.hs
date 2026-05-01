@@ -43,6 +43,7 @@ import Data.UUID (UUID)
 import Rel8 (Result)
 
 import Cortex.Algebra.Graph (Relation)
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Attempt
   ( attemptStage
   , withPreAttemptGuards
@@ -155,7 +156,7 @@ executeStage
 executeStage env task stagePlan rewriteAdmission remainingBudget nid stageDef stageName inputs = do
   now <- getCurrentTime
   stageAuditResult <-
-    DB.runTransaction env.sePool $ do
+    PulseDB.runTransaction env.sePool $ do
       maybeLogId <- Q.findOpenStageLogId env.seRunId stageName
       logId <- maybe (Q.appendStageStarted env.seRunId stageName now) pure maybeLogId
       nextAttemptNumber <- Q.getNextStageAttemptNumber logId
@@ -235,7 +236,7 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
         StageSuspended signalName -> do
           now <- getCurrentTime
           suspendResult <-
-            DB.runTransaction env.sePool $
+            PulseDB.runTransaction env.sePool $
               Q.registerSignalWait env.seRunId nid signalName now Nothing
           case suspendResult of
             Left err -> do
@@ -654,7 +655,7 @@ resolveDeliveredSignals pool runId gs = do
   foldM resolveOne gs waitingNodes
   where
     resolveOne state (nid, sigName) = do
-      result <- DB.withConnection pool $ Q.lookupDeliveredSignal runId sigName (unNodeId nid)
+      result <- PulseDB.withConnection pool $ Q.lookupDeliveredSignal runId sigName (unNodeId nid)
       case result of
         Right (Just mPayload) -> do
           let output = fromMaybe Aeson.Null mPayload

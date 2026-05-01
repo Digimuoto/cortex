@@ -22,6 +22,7 @@ import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
 
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Persistence (failRun)
 import Cortex.Pulse.Node (NodeId (..))
@@ -58,7 +59,7 @@ enforceGraphReplayPolicy pool runId stagePlan = go
           | otherwise -> do
               let policy = fromMaybe defaultPolicy stageDef.sdReplayPolicyOverride
                   stageName = unNodeId nid
-              stageLogResult <- DB.withConnection pool $ Q.listStageLogDetails runId
+              stageLogResult <- PulseDB.withConnection pool $ Q.listStageLogDetails runId
               case stageLogResult of
                 Left err ->
                   case policy of

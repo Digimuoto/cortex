@@ -54,6 +54,7 @@ import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events
   ( ExecutorEvent (..)
   , FailrunInfo (..)
@@ -139,7 +140,7 @@ persistGraphState env persistedState = do
           , gswExpectedRevision = persistedState.pgsRevision
           }
   result <-
-    DB.runTransaction env.sePool $
+    PulseDB.runTransaction env.sePool $
       Q.writeGraphState input
   pure $
     case first (GraphStatePersistDbError . T.pack) result of
@@ -234,7 +235,7 @@ persistStageSuccess env attemptRef nodeId stageName stageEnd newState = do
       checkpointState = buildCheckpointState env stageName newState
   cpResult <-
     requireTx env.sePool env.seRunId "write_checkpoint"
-      . DB.runTransaction env.sePool
+      . PulseDB.runTransaction env.sePool
       $ do
         Q.writeCheckpoint env.seRunId env.seTaskType stageName checkpointState completionSummary stageEnd
         Q.updateStageAttemptCompleted attemptRef.sarAttemptLogId StageCompleted Nothing stageEnd
@@ -344,7 +345,7 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                 remainingBudget = admittedRemainingBudget admitted
             cpResult <-
               requireTx env.sePool env.seRunId "write_checkpoint"
-                . DB.runTransaction env.sePool
+                . PulseDB.runTransaction env.sePool
                 $ do
                   rewriteId <-
                     Q.writeGraphRewrite
@@ -423,7 +424,7 @@ handleRewriteAdmissionFailure
   -> IO (StageAttemptResult stageId)
 handleRewriteAdmissionFailure env attemptRef stageName stageEnd failureSpec mDetails rejectedRewrites = do
   stageLogResult <-
-    DB.runTransaction env.sePool $ do
+    PulseDB.runTransaction env.sePool $ do
       mapM_ Q.writeGraphRewrite rejectedRewrites
       Q.updateStageAttemptCompleted
         attemptRef.sarAttemptLogId
@@ -493,7 +494,7 @@ atomically with the run failure record.
 flushDeferredRejections :: StageEnv -> [Q.GraphRewriteInsert] -> IO ()
 flushDeferredRejections _ [] = pure ()
 flushDeferredRejections env inserts = do
-  result <- DB.runTransaction env.sePool $ mapM_ Q.writeGraphRewrite inserts
+  result <- PulseDB.runTransaction env.sePool $ mapM_ Q.writeGraphRewrite inserts
   case result of
     Left txErr ->
       emitObsEvent $ EvtDbCritical env.seRunId "deferred_rejection_flush" (T.pack txErr)
@@ -562,7 +563,7 @@ handleSkip env attemptRef stageName inputs failure skipSummary stageEnd = do
       checkpointState = buildCheckpointState env stageName inputState
   cpResult <-
     requireTx env.sePool env.seRunId "write_checkpoint"
-      . DB.runTransaction env.sePool
+      . PulseDB.runTransaction env.sePool
       $ do
         Q.writeCheckpoint env.seRunId env.seTaskType stageName checkpointState (Just skipSummary) stageEnd
         Q.updateStageAttemptCompleted
@@ -597,7 +598,7 @@ handleTerminalFailure env stageDef attemptRef stageName failure stageEnd failure
   let failureSummary = stageFailureSummary attemptRef.sarAttempt failure
       outcome = terminalStageOutcome failure
   stageLogResult <-
-    DB.runTransaction env.sePool $ do
+    PulseDB.runTransaction env.sePool $ do
       Q.updateStageAttemptCompleted
         attemptRef.sarAttemptLogId
         StageFailed
@@ -659,7 +660,7 @@ failRun pool runId now errType errMsg retryable = do
           , rfuErrMsg = errMsg
           , rfuRetryable = retryable
           }
-  result <- DB.runTransaction pool $ Q.updateRunFailed update
+  result <- PulseDB.runTransaction pool $ Q.updateRunFailed update
   case result of
     Right () -> pure ()
     Left dbErr ->
@@ -681,7 +682,7 @@ timeoutRun pool runId now errType errMsg = do
           , rtuErrType = errType
           , rtuErrMsg = errMsg
           }
-  result <- DB.runTransaction pool $ Q.updateRunTimedOut update
+  result <- PulseDB.runTransaction pool $ Q.updateRunTimedOut update
   case result of
     Right () -> pure ()
     Left dbErr ->

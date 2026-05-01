@@ -147,12 +147,18 @@
             (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
             (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
             (hsPkgs."async" or (errorHandler.buildDepError "async"))
+            (hsPkgs."memory" or (errorHandler.buildDepError "memory"))
+            (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
+            (hsPkgs."http-types" or (errorHandler.buildDepError "http-types"))
           ];
           build-tools = [
             (hsPkgs.pkgsBuildBuild.hspec-discover.components.exes.hspec-discover or (pkgs.pkgsBuildBuild.hspec-discover or (errorHandler.buildToolDepError "hspec-discover:hspec-discover")))
           ];
           buildable = true;
           modules = [
+            "Platform/ConfigSpec"
+            "Platform/CryptoSpec"
+            "Platform/DatabaseSpec"
             "Platform/DurableTask/CheckpointSpec"
             "Platform/DurableTask/CronSpec"
             "Platform/DurableTask/ErrorSpec"
@@ -160,12 +166,38 @@
             "Platform/DurableTask/PoolSpec"
             "Platform/DurableTask/ScheduleSpec"
             "Platform/DurableTask/TypesSpec"
+            "Platform/DurableTask/WorkflowSpec"
+            "Platform/ErrorSpec"
+            "Platform/HTTP/RetrySpec"
+            "Platform/Observability/RedactionSpec"
           ];
           hsSourceDirs = [ "test" ];
+          mainPath = [ "Spec.hs" ];
+        };
+        "platform-integration-test" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
+            (hsPkgs."hasql" or (errorHandler.buildDepError "hasql"))
+            (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
+            (hsPkgs."hspec-discover" or (errorHandler.buildDepError "hspec-discover"))
+            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
+            (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."typed-process" or (errorHandler.buildDepError "typed-process"))
+          ];
+          build-tools = [
+            (hsPkgs.pkgsBuildBuild.hspec-discover.components.exes.hspec-discover or (pkgs.pkgsBuildBuild.hspec-discover or (errorHandler.buildToolDepError "hspec-discover:hspec-discover")))
+          ];
+          buildable = true;
+          modules = [ "Platform/Database/IntegrationSpec" "Platform/Test/Db" ];
+          hsSourceDirs = [ "test-integration" ];
           mainPath = [ "Spec.hs" ];
         };
       };
     };
   } // rec {
-    src = pkgs.lib.mkDefault ../../lbkbiz7iz7adbbw45kgwj98gy183s0g8-source;
+    src = pkgs.lib.mkDefault ../../hhakla44sd28kf3wlm62w0zdq1m6mm1k-source;
   }

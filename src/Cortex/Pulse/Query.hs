@@ -29,6 +29,7 @@ module Cortex.Pulse.Query
     -- * Checkpoint
   , writeCheckpoint
   , readCheckpointPayload
+  , readCheckpointPayloadValidated
 
     -- * Stage Log
   , findOpenStageLogId
@@ -147,6 +148,13 @@ import Hasql.Transaction qualified as Tx
 import Rel8 hiding (Statement)
 import System.IO qualified
 
+import Cortex.Pulse.Checkpoint
+  ( CheckpointReadExpectation
+  , CheckpointReadResult (..)
+  , StoredCheckpointPayload (..)
+  , validateStoredCheckpointPayload
+  )
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Schema
@@ -651,6 +659,11 @@ writeCheckpoint rId taskType cpName cpState cpSummary now =
 {- | Read the latest inner checkpoint payload for a run, stripping the envelope.
 Returns the @cePayload@ field from the 'CheckpointEnvelope', or 'Nothing'
 if no checkpoint row exists or the envelope cannot be parsed.
+
+This is a compatibility/raw reader: it parses the envelope shape but does not
+validate task type, task version, runtime version, or checkpoint name. New
+surfaces that need the compatibility contract should use
+'readCheckpointPayloadValidated'.
 -}
 readCheckpointPayload :: UUID -> Session (Maybe Value)
 readCheckpointPayload rId = do
@@ -666,6 +679,29 @@ readCheckpointPayload rId = do
     case parseCheckpointEnvelope raw of
       Left _ -> Nothing
       Right env -> Just (cePayload env)
+
+-- | Read and validate the latest checkpoint payload for a run.
+readCheckpointPayloadValidated :: CheckpointReadExpectation -> UUID -> Session CheckpointReadResult
+readCheckpointPayloadValidated expectation runId = do
+  mStored <-
+    Session.statement runId $
+      Statement
+        "SELECT task_type, checkpoint_name, state FROM pulse.checkpoints WHERE run_id = $1"
+        (E.param (E.nonNullable E.uuid))
+        ( D.rowMaybe $
+            StoredCheckpointPayload
+              <$> D.column (D.nonNullable D.text)
+              <*> D.column (D.nonNullable D.text)
+              <*> D.column (D.nonNullable D.jsonb)
+        )
+        True
+  pure $
+    case mStored of
+      Nothing -> CheckpointMissing
+      Just stored ->
+        case validateStoredCheckpointPayload expectation stored of
+          Left failure -> CheckpointRejected failure
+          Right payload -> CheckpointValidated payload
 
 -- ============================================================================
 -- Stage Log
@@ -1430,7 +1466,7 @@ one round-trip of latency per event.
 -}
 recordRunEvent :: DB.Pool -> RunEventInsert -> IO ()
 recordRunEvent pool input = do
-  result <- DB.runTransaction pool $ appendRunEvent input
+  result <- PulseDB.runTransaction pool $ appendRunEvent input
   case result of
     Left err -> System.IO.hPutStrLn System.IO.stderr $ "recordRunEvent: best-effort write failed: " <> err
     Right () -> pure ()

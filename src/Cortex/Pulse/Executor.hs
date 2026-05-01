@@ -48,6 +48,7 @@ import Cortex.Algebra.Graph
   ( ValidationError (..)
   , validateDAG
   )
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Loop (runGraphPlan)
 import Cortex.Pulse.Executor.Persistence
@@ -187,7 +188,7 @@ resumeStagePlan
   -> IO RunOutcome
 resumeStagePlan taskContext runId task stagePlan = do
   let pool = taskContext.tcPool
-  graphStateResult <- DB.withConnection pool $ Q.readGraphState runId
+  graphStateResult <- PulseDB.withConnection pool $ Q.readGraphState runId
   case graphStateResult of
     Right (Just row) ->
       resumeFromPersistedState
@@ -274,7 +275,7 @@ pre-restart nodes rather than crashing the run.
 -}
 hydrateNodeCompletedAtVar :: DB.Pool -> UUID -> IO (Map NodeId UTCTime)
 hydrateNodeCompletedAtVar pool runId = do
-  result <- DB.withConnection pool $ Q.readNodeCompletionTimes runId
+  result <- PulseDB.withConnection pool $ Q.readNodeCompletionTimes runId
   case result of
     Left err -> do
       emitObsEvent $

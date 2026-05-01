@@ -50,7 +50,8 @@ import Cortex.Capability.Provider.OpenRouter.Client
   )
 
 import Platform.HTTP.Retry
-  ( retryPolicy
+  ( Idempotency (NonIdempotent)
+  , defaultRetryPolicy
   , shouldRetry
   )
 import Platform.Serde.Json.Text
@@ -129,15 +130,18 @@ requestOpenRouterEmbeddings manager apiKey inputs = do
               $ parsed.orembData
   where
     executeRequest request =
-      recovering retryPolicy [\_ -> MC.Handler $ \(e :: HttpException) -> pure (shouldRetry e)] $ \_ -> do
-        response <- httpLbs request manager
-        let status = responseStatus response
-        when (status == status429 || status == status500 || status == status503 || status == status504)
-          . throwIO
-          $ HttpExceptionRequest
-            request
-            (StatusCodeException (void response) (BSL.toStrict $ responseBody response))
-        pure response
+      recovering
+        defaultRetryPolicy
+        [\_ -> MC.Handler $ \(e :: HttpException) -> pure (shouldRetry NonIdempotent e)]
+        $ \_ -> do
+          response <- httpLbs request manager
+          let status = responseStatus response
+          when (status == status429 || status == status500 || status == status503 || status == status504)
+            . throwIO
+            $ HttpExceptionRequest
+              request
+              (StatusCodeException (void response) (BSL.toStrict $ responseBody response))
+          pure response
 
 parseEmbeddingsRequest :: Text -> [Text] -> IO Request
 parseEmbeddingsRequest apiKey inputs = do

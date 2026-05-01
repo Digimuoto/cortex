@@ -261,11 +261,11 @@
     "haskell-platform-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1777503669,
-        "narHash": "sha256-nKxy3ECWKsNdfKygRU1t0koFyncQyDHwhI6rycdTR7U=",
+        "lastModified": 1777641191,
+        "narHash": "sha256-LnEBgrjwr2IP0OA9vR8yVbef7eK8QwnPpFWCm+uBN3U=",
         "ref": "refs/heads/main",
-        "rev": "4e237a7ceacc4acb0c2ba85a23a3a581ecc94881",
-        "revCount": 3,
+        "rev": "325efb75fcee214c84af7cd3993009ede6c83a73",
+        "revCount": 43,
         "type": "git",
         "url": "ssh://git@github.com/Digimuoto/haskell-platform.git"
       },

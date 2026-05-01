@@ -104,6 +104,7 @@
           != null
           && name != "cortex:test:cortex-test"
           && name != "haskell-platform:test:platform-test"
+          && name != "haskell-platform:test:platform-integration-test"
       )
       (projectFlake.checks or {});
 

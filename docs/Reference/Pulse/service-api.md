@@ -88,18 +88,22 @@ read Pulse tables.
 Error categories used across run and stage failures. Consumer-specific error categories live in the
 consumer's own page.
 
-| Category                  | Retryable        | Description                                     |
-| ------------------------- | ---------------- | ----------------------------------------------- |
-| `model_timeout`           | yes              | Model-backed capability call exceeded deadline. |
-| `model_refusal`           | no               | Model-backed capability refused the request.    |
-| `model_rate_limit`        | yes (backoff)    | Provider rate limit hit.                        |
-| `tool_failure`            | depends          | Tool call failed.                               |
-| `stale_data`              | yes (refresh)    | Upstream data too old.                          |
-| `config_decode_error`     | no               | Operator must fix config.                       |
-| `checkpoint_corruption`   | no               | Manual intervention required.                   |
-| `checkpoint_incompatible` | no               | Envelope version does not match current code.   |
-| `stage_timeout`           | per retry policy | Per-stage timeout fired.                        |
-| `host_action_failure`     | depends          | Downstream host-action call failed.             |
+| Category                              | Retryable        | Description                                         |
+| ------------------------------------- | ---------------- | --------------------------------------------------- |
+| `model_timeout`                       | yes              | Model-backed capability call exceeded deadline.     |
+| `model_refusal`                       | no               | Model-backed capability refused the request.        |
+| `model_rate_limit`                    | yes (backoff)    | Provider rate limit hit.                            |
+| `tool_failure`                        | depends          | Tool call failed.                                   |
+| `stale_data`                          | yes (refresh)    | Upstream data too old.                              |
+| `config_decode_error`                 | no               | Operator must fix config.                           |
+| `checkpoint_corruption`               | no               | Stored checkpoint payload cannot be decoded.        |
+| `checkpoint_format_unsupported`       | yes              | Envelope format version is unsupported.             |
+| `checkpoint_task_type_mismatch`       | no               | Envelope task type differs from current task.       |
+| `checkpoint_task_version_mismatch`    | yes              | Envelope task version differs from current code.    |
+| `checkpoint_runtime_version_mismatch` | yes              | Envelope runtime version differs from current code. |
+| `checkpoint_name_mismatch`            | no               | Stored checkpoint stage does not match expectation. |
+| `stage_timeout`                       | per retry policy | Per-stage timeout fired.                            |
+| `host_action_failure`                 | depends          | Downstream host-action call failed.                 |
 
 The error category and retryable flag are persisted in the stage log and emitted in observability
 events.

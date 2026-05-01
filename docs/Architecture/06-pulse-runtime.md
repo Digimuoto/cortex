@@ -155,9 +155,9 @@ carries a `StageDefinition` that names the stage kind, its template, its action,
 and optional per-stage timeout and retry policy. Shapes are in
 [`../Reference/Pulse/types.md`](../Reference/Pulse/types.md#4-stage-plan).
 
-`spCheckpointRuntimeVersion` is embedded in checkpoint envelopes and validated on resume. Bumping it
-after a breaking stage-plan change causes in-flight runs to fail cleanly instead of resuming against
-incompatible code.
+`spCheckpointRuntimeVersion` is embedded in checkpoint envelopes and persisted graph state. Graph
+state runtime version is validated on resume; validated checkpoint readers apply the same version
+contract when inspecting checkpoint rows.
 
 ### Replay safety
 
@@ -183,13 +183,15 @@ needing resume. This enforces serialization discipline from day one.
 
 ### Resume
 
-On resume, Pulse parses the raw checkpoint payload into a `CheckpointEnvelope` and validates format,
-task type, task version, and runtime version against the current code. A mismatch produces a
-`checkpoint_incompatible` failure — the run fails non-retryably rather than silently resuming
-against changed code. The executor then extracts the last completed stage and its state, skips up to
-that stage, warns if the next stage is `Irreversible` with a prior entry, and resumes from the next
-stage. Host-action results needed for remaining stages come from the checkpoint state, not by
-re-calling the host action.
+Current Pulse resume is graph-state driven. The executor reads `pulse.graph_state`, validates the
+persisted runtime version, replays admitted rewrite materialization up to the stored watermark,
+reconciles topology, validates persisted recovery preconditions, propagates failure closure, and
+then continues from the recovered frontier.
+
+Checkpoint rows remain versioned `CheckpointEnvelope` values. Surfaces that read checkpoint payloads
+directly parse and validate envelope format, task type, task version, runtime version, and
+checkpoint name before exposing the payload. A mismatch returns a structured checkpoint validation
+failure instead of silently treating the stored payload as current.
 
 ### Current rewrite contract
 
@@ -322,8 +324,9 @@ What this runtime enforces:
 
 - **Durability at every stage boundary.** No stage transition is admitted without a checkpoint
   write. Resume is a pure function of persisted state.
-- **Version compatibility.** Format, task, task-config, and runtime versions on the checkpoint
-  envelope must all match on resume. Mismatch fails the run non-retryably.
+- **Version compatibility.** Graph-state runtime version must match on resume. Checkpoint envelope
+  format, task type, task version, runtime version, and checkpoint name must match when a surface
+  reads checkpoint payloads directly.
 - **Clean service boundary.** Neither side reads the other's tables. Pulse fetches domain context
   through the host-action contract; consumers fetch run state through Pulse's service API.
 - **Single terminal-state writer.** Only Pulse transitions runs to terminal states. Cancel is a

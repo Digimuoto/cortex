@@ -30,6 +30,7 @@ import Data.UUID (UUID)
 import Rel8 (Result)
 
 import Cortex.Algebra.Graph (Relation (..))
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Frontier (resolveDeliveredSignals)
 import Cortex.Pulse.Executor.Outcome
@@ -107,7 +108,7 @@ materializedTopologyForAdmin maybeStagePlan pool runId mRuntimeVersion mAppliedR
               if watermark <= 0
                 then pure (Right (Just (spTopology initialStagePlan)))
                 else do
-                  rewritesResult <- DB.withConnection pool $ Q.readGraphRewritesUpTo runId watermark
+                  rewritesResult <- PulseDB.withConnection pool $ Q.readGraphRewritesUpTo runId watermark
                   pure $ do
                     rewriteRows <- first T.pack rewritesResult
                     let applyOne plan rewriteRow = first renderRewriteError $ do
@@ -130,7 +131,7 @@ resumeFromPersistedState
 resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePlan persistedSnapshot continueWithResumedState = do
   let expectedRuntimeVersion = initialStagePlan.spCheckpointRuntimeVersion
 
-  rewritesResult <- DB.withConnection pool $ Q.readGraphRewrites runId
+  rewritesResult <- PulseDB.withConnection pool $ Q.readGraphRewrites runId
   case ( rewritesResult
        , Aeson.fromJSON persistedSnapshot.pgssNodeStatuses
        , Aeson.fromJSON persistedSnapshot.pgssNodeOutputs

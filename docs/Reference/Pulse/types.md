@@ -69,11 +69,11 @@ data CheckpointEnvelope = CheckpointEnvelope
   }
 ```
 
-On resume, the executor parses the stored checkpoint payload into a `CheckpointEnvelope` and
-validates all four versions against the current code. A mismatch produces a
-`checkpoint_incompatible` failure — the run fails non-retryably rather than silently resuming
-against a changed stage plan. Legacy checkpoints that predate the envelope format are rejected with
-a descriptive error.
+Checkpoint readers parse the stored payload into a `CheckpointEnvelope` and validate envelope
+format, task type, task version, runtime version, and checkpoint name against the current code.
+Legacy checkpoints that predate the envelope format are rejected with a descriptive
+`checkpoint_corruption` error. Current resume is graph-state driven; checkpoint validation protects
+direct checkpoint reads and any future legacy continuation surface.
 
 Checkpoint state must be serializable and resumable from stored state only. Application-level size
 limit: 256 KB.
@@ -122,8 +122,9 @@ data StageDefinition stageId = StageDefinition
   }
 ```
 
-`spCheckpointRuntimeVersion` is embedded in checkpoint envelopes and validated on resume. Bumping it
-after a breaking stage-plan change causes in-flight runs to fail cleanly.
+`spCheckpointRuntimeVersion` is embedded in checkpoint envelopes and graph state. Graph state
+runtime version is validated on resume; checkpoint readers validate the envelope runtime version
+before exposing checkpoint payloads.
 
 For rewrite-capable runs, `spInitialRewriteBudget` seeds the per-run structural rewrite budget;
 Pulse persists the remaining budget in graph state and decrements it atomically with rewrite

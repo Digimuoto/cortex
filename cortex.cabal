@@ -175,6 +175,8 @@ library
         Cortex.Capability.Tool.Record
         Cortex.Pulse
         Cortex.Pulse.Attempt
+        Cortex.Pulse.Checkpoint
+        Cortex.Pulse.Database
         Cortex.Pulse.Event
         Cortex.Pulse.Executor
         Cortex.Pulse.Executor.Attempt
@@ -263,6 +265,7 @@ test-suite cortex-test
         Cortex.Capability.Provider.OpenRouterSpec
         Cortex.Capability.StructuredOutputSpec
         Cortex.PublicPreludeSpec
+        Cortex.Pulse.CheckpointSpec
         Cortex.Pulse.RewriteAnchorValidationSpec
         Cortex.Pulse.RewriteRetryHydrationSpec
         Cortex.Pulse.StageTemplateRegistrySpec

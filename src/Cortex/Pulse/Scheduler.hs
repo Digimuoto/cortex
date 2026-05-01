@@ -41,11 +41,12 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time (NominalDiffTime, UTCTime, diffUTCTime, getCurrentTime)
+import Data.Time (NominalDiffTime, UTCTime, diffUTCTime, getCurrentTime, utc)
 import Data.UUID (UUID)
 import Hasql.Transaction (Transaction)
 import Rel8 (Result)
 
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor (TaskContext (..), TaskRegistry)
 import Cortex.Pulse.Executor qualified as Executor
 import Cortex.Pulse.Health (PulseHealthState (..))
@@ -127,36 +128,40 @@ runSchedulerLoop registry taskContext healthState = do
       now <- getCurrentTime
 
       -- 1. Reap completed runs (finalize via metadata lookup)
-      Pool.reapCompleted runPool $ \runId result -> do
-        meta <- Map.lookup runId <$> readTVarIO runMeta
-        atomically $ modifyTVar' runMeta (Map.delete runId)
-        outcome <- case result of
-          Right o -> pure o
-          Left err -> markRunFailedForUnexpectedExit runId err
-        endTime <- getCurrentTime
-        let finalize = case meta of
-              Just m -> finalizeTaskSchedule pool (Just runId) m.rmTask m.rmTriggerSource endTime outcome
-              Nothing ->
+      Pool.reapCompleted
+        runPool
+        ( \runId result -> do
+            meta <- Map.lookup runId <$> readTVarIO runMeta
+            atomically $ modifyTVar' runMeta (Map.delete runId)
+            outcome <- case result of
+              Right o -> pure o
+              Left err -> markRunFailedForUnexpectedExit runId err
+            endTime <- getCurrentTime
+            let finalize = case meta of
+                  Just m -> finalizeTaskSchedule pool (Just runId) m.rmTask m.rmTriggerSource endTime outcome
+                  Nothing ->
+                    emitSchedulerEvent
+                      ObsWarn
+                      "pulse.scheduler.reap.meta_missing"
+                      "Run metadata missing during reap"
+                      [("run_id", Aeson.toJSON runId)]
+            case outcome of
+              OutcomeSuspended ->
+                -- Run is suspended (waiting on signal), do NOT finalize the schedule.
+                -- The run stays in 'waiting' status until a signal is delivered, at which
+                -- point it transitions back to 'pending' and the scheduler re-claims it.
                 emitSchedulerEvent
-                  ObsWarn
-                  "pulse.scheduler.reap.meta_missing"
-                  "Run metadata missing during reap"
+                  ObsInfo
+                  "pulse.scheduler.reap.suspended"
+                  "Run suspended, awaiting signal"
                   [("run_id", Aeson.toJSON runId)]
-        case outcome of
-          OutcomeSuspended ->
-            -- Run is suspended (waiting on signal), do NOT finalize the schedule.
-            -- The run stays in 'waiting' status until a signal is delivered, at which
-            -- point it transitions back to 'pending' and the scheduler re-claims it.
-            emitSchedulerEvent
-              ObsInfo
-              "pulse.scheduler.reap.suspended"
-              "Run suspended, awaiting signal"
-              [("run_id", Aeson.toJSON runId)]
-          OutcomeCompleted -> finalize
-          OutcomeFailed -> finalize
-          OutcomeCancelled -> finalize
-          OutcomeTimedOut -> finalize
-          OutcomeShutdown -> finalize
+              OutcomeCompleted -> finalize
+              OutcomeFailed -> finalize
+              OutcomeCancelled -> finalize
+              OutcomeTimedOut -> finalize
+              OutcomeShutdown -> finalize
+        )
+        schedulerFinalizerErrorHandler
 
       -- 2. Recovery (time-based cadence)
       nextRecoveryAt <-
@@ -206,6 +211,14 @@ runSchedulerLoop registry taskContext healthState = do
           let sleepMicros = if shouldStop then min pollIntervalMicros 100_000 else pollIntervalMicros
           Polling.threadDelayWithJitter sleepMicros 0.2
           loop nextRecoveryAt runPool runMeta lastClaimedTypeVar
+
+    schedulerFinalizerErrorHandler :: UUID -> SomeException -> IO ()
+    schedulerFinalizerErrorHandler runId err =
+      emitSchedulerEvent
+        ObsError
+        "pulse.scheduler.reap.finalizer_error"
+        ("Run finalizer failed during pool reap: " <> T.pack (displayException err))
+        [("run_id", Aeson.toJSON runId)]
 
     -- \| Try to claim and launch up to @slots@ tasks with round-robin fairness.
     -- Recomputes per-type exclusions after each launch so caps are enforced
@@ -270,7 +283,8 @@ runSchedulerLoop registry taskContext healthState = do
       -> IO (Maybe (UUID, PulseTaskDefinitionRow Result, Maybe TriggerSource, IO RunOutcome))
     claimNextAvailableRun excluded deprioritized now = do
       pendingResult <-
-        DB.runTransaction pool $ Q.claimNextPendingRun leaseOwner now leaseDuration excluded deprioritized
+        PulseDB.runTransaction pool $
+          Q.claimNextPendingRun leaseOwner now leaseDuration excluded deprioritized
       case pendingResult of
         Left err -> do
           emitSchedulerEvent
@@ -295,7 +309,8 @@ runSchedulerLoop registry taskContext healthState = do
       -> UTCTime
       -> IO (Maybe (UUID, PulseTaskDefinitionRow Result, Maybe TriggerSource, IO RunOutcome))
     claimNextDueTask excluded deprioritized skippedTaskIds now = do
-      taskResult <- DB.withConnection pool $ Q.getNextDueTask excluded deprioritized skippedTaskIds now
+      taskResult <-
+        PulseDB.withConnection pool $ Q.getNextDueTask excluded deprioritized skippedTaskIds now
       case taskResult of
         Left err -> do
           emitSchedulerEvent
@@ -323,7 +338,7 @@ runSchedulerLoop registry taskContext healthState = do
                 , ("task_type", Aeson.toJSON task.taskType)
                 ]
               claimResult <-
-                DB.runTransaction pool $
+                PulseDB.runTransaction pool $
                   Q.claimAndCreateRun
                     task.taskId
                     leaseOwner
@@ -372,7 +387,7 @@ runSchedulerLoop registry taskContext healthState = do
             False
           pure Nothing
         Just parsedTriggerSource -> do
-          taskResult <- DB.withConnection pool $ Q.getTaskForRun runId
+          taskResult <- PulseDB.withConnection pool $ Q.getTaskForRun runId
           case taskResult of
             Left err -> do
               emitSchedulerEvent
@@ -422,7 +437,7 @@ runSchedulerLoop registry taskContext healthState = do
               ("Failed to mark run as failed after executor exception: " <> T.pack dbErr)
               [("run_id", Aeson.toJSON runId)]
         )
-        ( DB.runTransaction pool $
+        ( PulseDB.runTransaction pool $
             Q.updateRunFailed
               Q.RunFailureUpdate
                 { rfuRunId = runId
@@ -473,7 +488,7 @@ finalizeTaskSchedule pool maybeRunId task triggerSource endTime outcome = do
                 (writeErrContext <> ": " <> T.pack err)
                 [("task_id", Aeson.toJSON taskId)]
           )
-          (DB.runTransaction pool $ applyScheduleDecisionTx taskId endTime outcome decision)
+          (PulseDB.runTransaction pool $ applyScheduleDecisionTx taskId endTime outcome decision)
   case decision of
     NoScheduleChange -> pure ()
     RecordOutcomeOnly -> do
@@ -550,7 +565,7 @@ finalizeTaskSchedule pool maybeRunId task triggerSource endTime outcome = do
 
 recoverExpiredRuns :: DB.Pool -> Text -> UTCTime -> IO (Either String Int64)
 recoverExpiredRuns pool currentLeaseOwner now = do
-  recoveryResult <- DB.runTransaction pool $ do
+  recoveryResult <- PulseDB.runTransaction pool $ do
     recoveredRuns <- Q.recoverExpiredRuns currentLeaseOwner now
     for_ recoveredRuns $ \recoveredRun ->
       case recoveredRun.perrCronExpression of
@@ -617,7 +632,7 @@ withLeaseRenewal pool runId leaseDuration action = do
         Left (Left err) -> throwIO err
         Right () -> do
           now <- getCurrentTime
-          result <- DB.withConnection pool $ Q.renewRunLease runId now leaseDuration
+          result <- PulseDB.withConnection pool $ Q.renewRunLease runId now leaseDuration
           case result of
             Left err ->
               failRunForLeaseLoss
@@ -673,7 +688,7 @@ withLeaseRenewal pool runId leaseDuration action = do
                   ("Failed to mark run as failed after lease loss: " <> T.pack dbErr)
                   [("run_id", Aeson.toJSON runId), ("error_type", Aeson.toJSON errType)]
             )
-            ( DB.runTransaction pool $
+            ( PulseDB.runTransaction pool $
                 Q.updateRunFailed
                   Q.RunFailureUpdate
                     { rfuRunId = runId
@@ -731,7 +746,7 @@ failAndDiscard pool runId now errType errMsg retryable =
           ("Failed to persist run failure status (best-effort): " <> T.pack dbErr)
           [("run_id", Aeson.toJSON runId), ("error_type", Aeson.toJSON errType)]
     )
-    ( DB.runTransaction pool $
+    ( PulseDB.runTransaction pool $
         Q.updateRunFailed
           Q.RunFailureUpdate
             { rfuRunId = runId
@@ -765,6 +780,7 @@ pulseScheduleConfig =
   ScheduleConfig
     { scOneOffFailureBackoff = 300
     , scCronParseBackoff = 300
+    , scTimeZone = utc
     }
 
 pulseScheduleKind :: PulseTaskDefinitionRow Result -> ScheduleKind

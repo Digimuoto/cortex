@@ -12,6 +12,7 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 -}
 module Cortex.Pulse
   ( runPulse
+  , module Cortex.Pulse.Checkpoint
   , module Cortex.Pulse.Executor
   , module Cortex.Pulse.Hydrate
   , module Cortex.Pulse.Materialize
@@ -40,6 +41,8 @@ import Data.UUID (UUID)
 import System.Exit (exitFailure)
 import System.Posix.Signals (Handler (CatchOnce), installHandler, sigINT, sigTERM)
 
+import Cortex.Pulse.Checkpoint
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor (TaskContext (..), TaskRegistry)
 import Cortex.Pulse.Executor qualified as Executor
 import Cortex.Pulse.Health (PulseHealthState (..), initialHealthState, runHealthServer)
@@ -112,7 +115,16 @@ runPulse registry rawConfig = do
           , DB.dbPoolSize = pulseDbPoolSize config
           , DB.dbPoolTimeout = 30
           }
-  pool <- DB.createPool dbConfig
+  poolResult <- DB.createPool dbConfig
+  pool <- case poolResult of
+    Left err -> do
+      emitEvent (Just obsRuntime) $
+        (defaultLogEvent ObsError "cortex-pulse" "pulse.db.pool.create" "Failed to create DB pool")
+          { eventOutcome = "failure"
+          , eventExtraFields = [("error", Aeson.toJSON err)]
+          }
+      exitFailure
+    Right createdPool -> pure createdPool
 
   -- 3. Shutdown flag + health state
   shutdownFlag <- newTVarIO False
@@ -132,7 +144,7 @@ runPulse registry rawConfig = do
       leaseDuration = fromIntegral (pulseLeaseDurationSeconds config)
 
   -- 4a. Reclaim owned runs (this instance's previous incarnation)
-  reclaimResult <- DB.withConnection pool $ Q.reclaimOwnedRuns leaseOwner now leaseDuration
+  reclaimResult <- PulseDB.withConnection pool $ Q.reclaimOwnedRuns leaseOwner now leaseDuration
   reclaimedRunIds <- case reclaimResult of
     Left err -> do
       emitEvent (Just obsRuntime) $
@@ -241,7 +253,7 @@ resumeReclaimedRuns registry taskContext leaseDuration runIds =
 resumeOneRun :: TaskRegistry -> TaskContext -> Int32 -> UUID -> IO ()
 resumeOneRun registry taskContext leaseDuration runId = do
   let pool = taskContext.tcPool
-  taskResult <- DB.withConnection pool $ Q.getTaskForRun runId
+  taskResult <- PulseDB.withConnection pool $ Q.getTaskForRun runId
   case taskResult of
     Left err -> do
       -- Fail the run AND restore the parent task's schedule so it can be
@@ -257,7 +269,7 @@ resumeOneRun registry taskContext leaseDuration runId = do
               )
               [("run_id", Aeson.toJSON runId)]
         )
-        ( DB.runTransaction pool $
+        ( PulseDB.runTransaction pool $
             Q.updateRunFailed
               Q.RunFailureUpdate
                 { rfuRunId = runId
@@ -268,7 +280,8 @@ resumeOneRun registry taskContext leaseDuration runId = do
                 }
         )
       -- Restore task schedule: set next_run_at so the task is discoverable again
-      restoreResult <- DB.withConnection pool $ Q.restoreTaskForFailedRun runId (addUTCTime 60 now) now
+      restoreResult <-
+        PulseDB.withConnection pool $ Q.restoreTaskForFailedRun runId (addUTCTime 60 now) now
       case restoreResult of
         Left dbErr ->
           emitEvent'
@@ -299,7 +312,7 @@ resumeOneRun registry taskContext leaseDuration runId = do
               )
               [("run_id", Aeson.toJSON runId)]
         )
-        ( DB.runTransaction pool $
+        ( PulseDB.runTransaction pool $
             Q.updateRunFailed
               Q.RunFailureUpdate
                 { rfuRunId = runId
@@ -320,7 +333,7 @@ resumeOneRun registry taskContext leaseDuration runId = do
         "pulse.recovery.resume"
         "Resuming reclaimed run"
         [("run_id", Aeson.toJSON runId), ("task_name", Aeson.toJSON (task.taskName))]
-      triggerSourceResult <- DB.withConnection pool $ Q.getRunAdminView runId
+      triggerSourceResult <- PulseDB.withConnection pool $ Q.getRunAdminView runId
       triggerSource <-
         case triggerSourceResult of
           Right (Just runView) ->

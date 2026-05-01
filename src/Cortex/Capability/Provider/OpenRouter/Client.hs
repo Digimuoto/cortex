@@ -73,7 +73,7 @@ import Cortex.Capability.Provider.OpenRouter.Wire
   ( OpenRouterCompletion (..)
   )
 
-import Platform.HTTP.Retry (retryPolicy, shouldRetry)
+import Platform.HTTP.Retry (Idempotency (NonIdempotent), defaultRetryPolicy, shouldRetry)
 import Platform.Serde.Json.Preview
   ( truncateText
   )
@@ -268,15 +268,18 @@ requestOpenRouterChoice manager apiKey choiceReq = do
           , requestFailureUsage = Nothing
           }
       executeRequest request =
-        recovering retryPolicy [\_ -> MC.Handler $ \(e :: HttpException) -> pure (shouldRetry e)] $ \_ -> do
-          response <- httpLbs request manager
-          let status = responseStatus response
-          when (status == status429 || status == status500 || status == status503 || status == status504)
-            . throwIO
-            $ HttpExceptionRequest
-              request
-              (StatusCodeException (void response) (BSL.toStrict $ responseBody response))
-          pure response
+        recovering
+          defaultRetryPolicy
+          [\_ -> MC.Handler $ \(e :: HttpException) -> pure (shouldRetry NonIdempotent e)]
+          $ \_ -> do
+            response <- httpLbs request manager
+            let status = responseStatus response
+            when (status == status429 || status == status500 || status == status503 || status == status504)
+              . throwIO
+              $ HttpExceptionRequest
+                request
+                (StatusCodeException (void response) (BSL.toStrict $ responseBody response))
+            pure response
       -- Some providers intermittently return HTTP 200 with an empty `choices`
       -- array (the "returned no completion choices" failure class). This is
       -- not caught by the HTTP retry policy inside executeRequest because the

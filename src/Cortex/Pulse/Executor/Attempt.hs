@@ -30,6 +30,7 @@ import Rel8 (Result)
 import System.Timeout (Timeout)
 import System.Timeout qualified as Timeout
 
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..), StageRetryInfo (..))
 import Cortex.Pulse.Executor.Persistence
   ( failRun
@@ -66,7 +67,6 @@ import Cortex.Pulse.Rewrite (BudgetContext (..), RewriteBudget, RewriteRejection
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
 import Cortex.Pulse.Signal (unSignalName)
 
-import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..), StageStatus (..))
 import Platform.Observability (emitObsEvent)
 
@@ -80,7 +80,7 @@ attemptStage
 attemptStage env task stagePlan stageCall = do
   attemptStartedAt <- getCurrentTime
   attemptLogIdResult <-
-    DB.runTransaction env.sePool $
+    PulseDB.runTransaction env.sePool $
       Q.appendStageAttemptStarted
         stageCall.scLogId
         env.seRunId
@@ -205,7 +205,7 @@ attemptStage env task stagePlan stageCall = do
       Right (StageSuspend signalName) -> do
         flushDeferredRejections env (reverse deferredRejections)
         attemptResult <-
-          DB.runTransaction env.sePool $
+          PulseDB.runTransaction env.sePool $
             Q.updateStageAttemptCompleted
               attemptRef.sarAttemptLogId
               StageCompleted
@@ -244,13 +244,42 @@ attemptStage env task stagePlan stageCall = do
       if reExecCount < stagePlan.spMaxRewriteReExecutions
         then do
           let deferredRejections' = rejection'.rrDeferredInsert : deferredRejections
+              continueAfterGuards = do
+                emitObsEvent $
+                  EvtRewriteReExecution
+                    env.seRunId
+                    stageCall.scStageName
+                    rejectionCtx.rrcAttemptNumber
+                reRemainingBudget <- readTVarIO stageCall.scRewriteAdmission.rasRemainingBudget
+                -- Re-execution is a new stage entry: bind a fresh
+                -- memory snapshot so the re-run sees state as of
+                -- re-entry, not the original attempt.
+                reMemoryHandle <- env.seMemoryFactory
+                let reBudgetCtx = budgetContextFromRemainingBudget stagePlan reRemainingBudget
+                    reCtx =
+                      ctx
+                        { scAttempt = stageCall.scAttempt
+                        , scBudgetContext = reBudgetCtx
+                        , scRewriteRejection = Just rejectionCtx
+                        , scMemory = reMemoryHandle
+                        }
+                reResult <- runStageAttempt task stageCall.scStageDef reCtx
+                reEnd <- getCurrentTime
+                dispatchStageResult
+                  attemptRef
+                  reBudgetCtx
+                  reCtx
+                  (reExecCount + 1)
+                  deferredRejections'
+                  reEnd
+                  reResult
           guardCheck <- withPreAttemptGuards env stageCall.scStageName (pure (StageAdvance Aeson.Null))
           case guardCheck of
             StageTerminal outcome -> do
               flushDeferredRejections env (reverse deferredRejections')
               abortedAt <- getCurrentTime
-              _ <-
-                DB.runTransaction env.sePool $ do
+              abortPersistResult <-
+                PulseDB.runTransaction env.sePool $ do
                   Q.updateStageAttemptCompleted
                     attemptRef.sarAttemptLogId
                     StageFailed
@@ -261,32 +290,17 @@ attemptStage env task stagePlan stageCall = do
                     StageFailed
                     (Just (Aeson.String "Aborted before rewrite re-execution"))
                     abortedAt
+              case abortPersistResult of
+                Left txErr ->
+                  emitObsEvent $
+                    EvtDbCritical env.seRunId "rewrite_reexecution_abort_persist" (T.pack txErr)
+                Right () -> pure ()
               pure (StageTerminal outcome)
-            _ -> do
-              emitObsEvent $ EvtRewriteReExecution env.seRunId stageCall.scStageName rejectionCtx.rrcAttemptNumber
-              reRemainingBudget <- readTVarIO stageCall.scRewriteAdmission.rasRemainingBudget
-              -- Re-execution is a new stage entry: bind a fresh
-              -- memory snapshot so the re-run sees state as of
-              -- re-entry, not the original attempt.
-              reMemoryHandle <- env.seMemoryFactory
-              let reBudgetCtx = budgetContextFromRemainingBudget stagePlan reRemainingBudget
-                  reCtx =
-                    ctx
-                      { scAttempt = stageCall.scAttempt
-                      , scBudgetContext = reBudgetCtx
-                      , scRewriteRejection = Just rejectionCtx
-                      , scMemory = reMemoryHandle
-                      }
-              reResult <- runStageAttempt task stageCall.scStageDef reCtx
-              reEnd <- getCurrentTime
-              dispatchStageResult
-                attemptRef
-                reBudgetCtx
-                reCtx
-                (reExecCount + 1)
-                deferredRejections'
-                reEnd
-                reResult
+            StageAdvance {} -> continueAfterGuards
+            StageAdvanceWithRewrite {} -> continueAfterGuards
+            StageSkip -> continueAfterGuards
+            StageSuspended {} -> continueAfterGuards
+            StageRewriteRejected {} -> continueAfterGuards
         else
           let allRejections = reverse (rejection'.rrDeferredInsert : deferredRejections)
            in applyExhaustionPolicy env stagePlan stageCall attemptRef stageEnd allRejections rejection'
@@ -391,12 +405,12 @@ withPreAttemptGuards env stageName continue = do
         (Just (Aeson.object ["before_stage" Aeson..= stageName]))
       pure (StageTerminal OutcomeShutdown)
     else do
-      cancelResult <- DB.withConnection env.sePool $ Q.checkCancellation env.seRunId
+      cancelResult <- PulseDB.withConnection env.sePool $ Q.checkCancellation env.seRunId
       case cancelResult of
         Right True -> do
           now <- getCurrentTime
           cancelWriteResult <-
-            DB.runTransaction env.sePool $
+            PulseDB.runTransaction env.sePool $
               Q.updateRunCancelled env.seRunId now "cancel_requested_at was set"
           case cancelWriteResult of
             Left err ->
@@ -430,7 +444,7 @@ handleRetry
 handleRetry env task stagePlan stageCall attemptRef failure delayMicros stageEnd = do
   attemptAuditResult <-
     requireTx env.sePool env.seRunId "update_stage_attempt_failed"
-      . DB.runTransaction env.sePool
+      . PulseDB.runTransaction env.sePool
       $ Q.updateStageAttemptCompleted
         attemptRef.sarAttemptLogId
         StageFailed
@@ -476,7 +490,7 @@ handleRetry env task stagePlan stageCall attemptRef failure delayMicros stageEnd
         StageTerminal OutcomeCancelled -> do
           cancelledAt <- getCurrentTime
           result <-
-            DB.runTransaction env.sePool $
+            PulseDB.runTransaction env.sePool $
               Q.updateStageCompleted
                 attemptRef.sarLogId
                 StageFailed

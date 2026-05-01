@@ -23,6 +23,7 @@ import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
 
+import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events (ExecutorEvent (..))
 import Cortex.Pulse.Executor.Persistence
   ( failRun
@@ -37,7 +38,6 @@ import Cortex.Pulse.GraphRuntime
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Query qualified as Q
 
-import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
 import Platform.Observability (emitObsEvent)
 
@@ -61,7 +61,7 @@ handleSettled env _gs = \case
     now <- getCurrentTime
     completionResult <-
       requireTx env.sePool env.seRunId "update_run_completed"
-        . DB.runTransaction env.sePool
+        . PulseDB.runTransaction env.sePool
         $ Q.updateRunCompleted env.seRunId now
     case completionResult of
       Nothing -> pure OutcomeFailed
@@ -78,7 +78,7 @@ handleSuspended :: StageEnv -> GraphState Aeson.Value -> IO RunOutcome
 handleSuspended env _gs = do
   waitResult <-
     requireTx env.sePool env.seRunId "update_run_waiting"
-      . DB.runTransaction env.sePool
+      . PulseDB.runTransaction env.sePool
       $ Q.updateRunWaiting env.seRunId
   case waitResult of
     Nothing -> pure OutcomeFailed
