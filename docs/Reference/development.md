@@ -56,6 +56,21 @@ Do not use Linear or a downstream product tracker as active Cortex planning stat
 may retain external issue IDs when they explain past migration context, but new Cortex work belongs
 in this repository's GitHub issue system.
 
+## CI Runner Trust Boundary
+
+Public pull-request workflows are treated as untrusted code. They run only lightweight checks on
+GitHub-hosted runners and must not dispatch arbitrary PR code to private self-hosted runners.
+
+Self-hosted runners such as Mercury are reserved for trusted events: `push` to protected internal
+branches, documentation deployment, cache publication, release work, and explicit
+`workflow_dispatch` runs started by maintainers. Full Nix builds require private flake inputs, so
+maintainers can use the manual CI dispatch path for trusted PR branches after reviewing the code
+that will execute.
+
+If Cortex later adds public pull-request Nix smoke checks, keep them on GitHub-hosted runners and
+install Nix explicitly, for example with the Determinate Nix installer action. Those checks must not
+use repository secrets, private SSH credentials, or private flake inputs.
+
 ## Lean Theory
 
 | Command           | Purpose                                               |
