@@ -100,7 +100,10 @@
       name = "ci-check";
       runtimeInputs = [
         check-format
+        check-haskell-format
+        check-language-pragmas
         check-logos-boundary
+        check-module-haddock
         docs-lint
         lean-lint
         lint-haskell
