@@ -21,6 +21,39 @@ related:
 Contracts are named typed interfaces. Ports are labeled node-boundary slots typed by contracts. `=>`
 connects output ports to input ports when their contract and label match exactly.
 
+## Nodes, Ports, And Edges
+
+A `node` declaration supplies both graph identity and a typed boundary:
+
+```wire
+node classify
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet ;
+  -> rejected: RejectedSet ;
+  = @review.classify (evidence) ;
+```
+
+The identifier `classify` names the node. The `<-` clauses declare input ports. The `->` clauses
+declare output ports. The body after `=` is the implementation behind that boundary.
+
+The graph edge operator connects already-declared ports:
+
+```wire
+source => classify
+classify => reviewer
+```
+
+An edge never evaluates an expression and never changes payload shape. Boundary adaptation belongs
+to the producer node's egress adapter, the consumer node's ingress adapter, or an explicit pure node
+between them.
+
+```mermaid
+flowchart LR
+    ProducerOut[producer output port<br/>label + contract]
+    ConsumerIn[consumer input port<br/>same label + compatible contract]
+    ProducerOut ==>|=>| ConsumerIn
+```
+
 ## Port Syntax
 
 ```wire

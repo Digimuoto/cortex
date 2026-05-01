@@ -89,6 +89,13 @@ import Cortex.Wire.Executor
   , wireExecutorIdToText
   , wireExecutorRegistryVocabulary
   )
+import Cortex.Wire.NodeBoundary
+  ( artifactNodeBoundaryNormalForm
+  , executorNodeBoundaryNormalForm
+  , normalFormPorts
+  , pureNodeBoundaryNormalForm
+  , signalNodeBoundaryNormalForm
+  )
 import Cortex.Wire.Parser (parseWireFile, renderParseError)
 import Cortex.Wire.Pure (renderPureEvalError, validatePureTaskConfig)
 import Cortex.Wire.Syntax
@@ -1183,6 +1190,8 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
     _
       | isJust maybeSignal -> do
           signalName <- requireTextField nodeRef "on" exactFields
+          let normalForm =
+                signalNodeBoundaryNormalForm nodeRef runtimePorts whereExpr inputExpr signalName
           Right $
             CompiledCircuitSignal
               CircuitSignalBoundary
@@ -1190,11 +1199,22 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                 , circuitSignalName = signalName
                 , circuitSignalDescription = label
                 , circuitSignalMetadata =
-                    awaitMetadata label runtimePorts (lookupMaybeInt32Field "timeout" exactFields)
+                    awaitMetadata
+                      label
+                      (normalFormPorts normalForm)
+                      (lookupMaybeInt32Field "timeout" exactFields)
                 }
       | isJust maybeKind || isJust maybeTarget -> do
           artifactKind <- requireTextField nodeRef "kind" exactFields
           targetRef <- requireQNameField nodeRef "to" exactFields
+          let normalForm =
+                artifactNodeBoundaryNormalForm
+                  nodeRef
+                  runtimePorts
+                  whereExpr
+                  inputExpr
+                  artifactKind
+                  (qnameToQualifiedRef targetRef)
           Right $
             CompiledCircuitArtifact
               CircuitArtifactBoundary
@@ -1205,7 +1225,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                     emitMetadata
                       artifactKind
                       (qnameToQualifiedRef targetRef)
-                      runtimePorts
+                      (normalFormPorts normalForm)
                       (lookupMaybeInt32Field "timeout" exactFields)
                 }
       | otherwise -> do
@@ -1215,13 +1235,21 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
               ( WireCore.WireParseError
                   "Pure nodes must be authored with output equations, not @pure executor application."
               )
-          validateExecutorProjection compileEnv nodeRef executor runtimePorts
-          tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
-          memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
           let instructionsText =
                 lookupMaybeTextField "instructions" exactFields
                   <|> lookupMaybeTextField "prompt" exactFields
               configValue = executorConfigValue genericFields whereExpr inputExpr
+              normalForm =
+                executorNodeBoundaryNormalForm
+                  nodeRef
+                  runtimePorts
+                  whereExpr
+                  inputExpr
+                  executor
+                  configValue
+          validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
+          tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
+          memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
           Right $
             CompiledCircuitTask
               CircuitTaskNode
@@ -1236,7 +1264,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                       instructionsText
                       configValue
                       tools
-                      runtimePorts
+                      (normalFormPorts normalForm)
                       (lookupMaybeInt32Field "timeout" exactFields)
                       (lookupMaybeInt32Field "retry" exactFields)
                       (lookupMaybeInt32Field "stepBudget" exactFields)
@@ -1324,10 +1352,21 @@ loweredPureNodeFromBody
 loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
   outputConfig <- pureOutputConfigMap nodeRef ports.lnpOutputs pureBody.nodePureBodyOutputs
   let runtimePorts = taskWirePortsFromLowered ports
+      normalForm =
+        pureNodeBoundaryNormalForm
+          nodeRef
+          runtimePorts
+          topLevelBindings
+          pureBody.nodePureBodyWhere
+          outputConfig
       executor = WireCore.WireExecutorNative "pure"
   mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
-    validatePureTaskConfig runtimePorts topLevelBindings pureBody.nodePureBodyWhere outputConfig
-  validateExecutorProjection compileEnv nodeRef executor runtimePorts
+    validatePureTaskConfig
+      (normalFormPorts normalForm)
+      topLevelBindings
+      pureBody.nodePureBodyWhere
+      outputConfig
+  validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
   pure
     LoweredNode
       { lnRef = nodeRef
@@ -1345,7 +1384,7 @@ loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
                     Nothing
                     (Just (nativePureTaskConfigValue topLevelBindings pureBody.nodePureBodyWhere outputConfig))
                     []
-                    runtimePorts
+                    (normalFormPorts normalForm)
                     Nothing
                     Nothing
                     Nothing

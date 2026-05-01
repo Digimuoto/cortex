@@ -121,19 +121,21 @@ integer/boolean/record evaluation, static `where`-field discovery soundness, an 
 no authority-bearing constructors, and one-source-node-to-one-native-pure-task lowering.
 `Cortex.Wire.Registry` models the `@` executor boundary as pure staging of registered authority:
 executor lookup, config validation, registry-wide contract vocabulary, endpoint compatibility,
-effect-class policy, output validation, and host authority. `Cortex.Wire.Rewrite` defines the
-proof-carrying rewrite certificate surface: an admitted `Rewrite` carries preservation evidence for
-graph acyclicity, the caller-supplied contract predicate, and consumption of the five-dimensional
-runtime rewrite budget. `Cortex.Wire.Admission` now models the proof-side bridge from
-`planGraphRewrite` and `admitRewriteDelta`: anchor existence, anchor definition coverage,
-inserted-subgraph validity, entry/exit non-emptiness, orphan-freedom, denotational equality to a
-relation-level final-topology construction, relation-diff equations, anchor-disposition coupling,
-structural cost equations for every budget dimension, the final definition-domain update equation,
-final-definition coverage, final acyclicity, and pointwise budget consumption. `Cortex.Wire.Planner`
-names the executable-planner correspondence boundary: subgraph namespacing, namespace discipline,
-the AST-to-relation mapping lemma, and the construction-to-checks theorem used to feed
-runtime-shaped planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Planner.Construction`
-adds a proof-side planner construction: it realizes the relation-level final topology as a graph
+effect-class policy, output validation, and host authority. `Cortex.Wire.NodeBoundary` names ADR
+0039's ingress/body/egress/edge normal-form obligations and instantiates them for CorePure and
+registry-admitted edges. `Cortex.Wire.Rewrite` defines the proof-carrying rewrite certificate
+surface: an admitted `Rewrite` carries preservation evidence for graph acyclicity, the
+caller-supplied contract predicate, and consumption of the five-dimensional runtime rewrite budget.
+`Cortex.Wire.Admission` now models the proof-side bridge from `planGraphRewrite` and
+`admitRewriteDelta`: anchor existence, anchor definition coverage, inserted-subgraph validity,
+entry/exit non-emptiness, orphan-freedom, denotational equality to a relation-level final-topology
+construction, relation-diff equations, anchor-disposition coupling, structural cost equations for
+every budget dimension, the final definition-domain update equation, final-definition coverage,
+final acyclicity, and pointwise budget consumption. `Cortex.Wire.Planner` names the
+executable-planner correspondence boundary: subgraph namespacing, namespace discipline, the
+AST-to-relation mapping lemma, and the construction-to-checks theorem used to feed runtime-shaped
+planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Planner.Construction` adds a
+proof-side planner construction: it realizes the relation-level final topology as a graph
 representative, computes delta diff sets and costs from that relation, and proves the constructed
 delta establishes the planner-construction bridge under the remaining runtime validation witnesses.
 
@@ -175,6 +177,18 @@ Mechanized results now include:
   carrier, from output expressions to the final output lookup.
 - `pureNode_lowering_evalOutputs_eq`: lowered native pure-task configs evaluate to the same
   proof-side output lookup function as their source pure nodes.
+- `NodeBoundaryNormalForm`, `ingress_sound`, `body_sound`, `egress_sound`, and `edge_sound`: ADR
+  0039's four normal-form obligations now have a named proof carrier and generic theorem surfaces.
+- `CorePure.corePureBoundary`, `CorePure.corePure_ingress_sound`, `CorePure.corePure_body_sound`,
+  `CorePure.corePure_egress_sound`, and
+  `CorePure.corePure_evalOutputs_eq_egress_after_body_after_ingress`: proof-side CorePure evaluation
+  instantiates the generic normal-form carrier and factors through ingress, body, and egress while
+  preserving the admitted static environment, declared output ports, and output value contracts.
+- `registered_body_sound`: registered executor body soundness is explicitly certificate territory at
+  this layer, rather than being smuggled into Wire's structural proofs.
+- `registry_contract_edge_sound`, `registry_edge_sound`, and `registryBoundary_edge_sound`:
+  registry-admitted edges discharge ADR 0039's edge-compatibility obligation through the generic
+  `EdgeSound` predicate.
 - `plannedRewriteSafety_of_checks`: runtime planning checks supply the acyclicity and positive
   rewrite-operation parts of a proof-carrying rewrite.
 - `planGraphRewriteChecks_topology_matches`: planning checks expose the final-topology construction
@@ -286,17 +300,19 @@ Mechanized results now include:
   `rewriteChain_preserves_registryBoundary`, `rewriteChain_steps_le_rewriteOps`, and
   `rewriteChain_finalBudget_le_initial`: local rewrite certificates lift across finite chains.
 
-On the executable side, the current Haskell correspondence checks now include native-pure compiler
-preflight through `validatePureTaskConfig` before serialized pure task configs reach runtime
-evaluation, plus `planGraphRewriteWithAdmissionWitness`, which reruns the Lean-shaped planner and
-budget-admission equations around `planGraphRewrite` and `admitRewriteDelta`.
+On the executable side, the current Haskell correspondence checks now include a private
+node-boundary normal-form IR for compiler lowering, shared runtime egress wrappers for single and
+multi-output Wire values, native-pure compiler preflight through `validatePureTaskConfig` before
+serialized pure task configs reach runtime evaluation, plus `planGraphRewriteWithAdmissionWitness`,
+which reruns the Lean-shaped planner and budget-admission equations around `planGraphRewrite` and
+`admitRewriteDelta`.
 
 The remaining Track 3 obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next proof slices are:
 
 - Haskell correspondence for CorePure static-context construction, builtin authority review hooks,
-  parser/elaborator duplicate record-path witnesses outside the native-pure lowering path, and full
-  Wire output contract wrapping;
+  parser/elaborator duplicate record-path witnesses outside the native-pure lowering path, compiler
+  production of node-boundary normal-form witnesses, and full Wire output contract wrapping;
 - Haskell planner and budget-admission correspondence for full `RuntimeConstructionInputs` and
   added-node/added-edge registry admission;
 - graph-to-DAG bridge construction for `WireTopologyDAGBridge`, executable materialization witnesses

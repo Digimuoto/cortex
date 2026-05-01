@@ -95,6 +95,58 @@ time.
 This is also where the downstream boundary stays clean. A host system extends Cortex by registering
 its own domain vocabulary around Wire rather than by changing Wire semantics.
 
+## Nodes, Ports, And Edges
+
+Wire's graph vocabulary has three different objects that should not be collapsed into each other:
+
+- A **node** is an addressable runtime and provenance object admitted into graph position.
+- A **port** is a labeled input or output slot on the node boundary, typed by a contract.
+- An **edge** connects one output port obligation to one compatible input port obligation.
+
+```mermaid
+flowchart LR
+    subgraph A[Node analyze]
+      AIn[evidence: EvidenceSet<br/>input port]
+      ABody[@review.analyze<br/>local body]
+      AOut[analysis: AnalysisRecord<br/>output port]
+      AIn --> ABody --> AOut
+    end
+
+    subgraph B[Node summarize]
+      BIn[analysis: AnalysisRecord<br/>input port]
+      BBody[@review.summarize<br/>local body]
+      BOut[summary: Summary<br/>output port]
+      BIn --> BBody --> BOut
+    end
+
+    AOut ==>|contract + label match| BIn
+```
+
+In source, the same shape is explicit:
+
+```wire
+node analyze
+  <- evidence: EvidenceSet ;
+  -> analysis: AnalysisRecord ;
+  = @review.analyze (evidence) ;
+
+node summarize
+  <- analysis: AnalysisRecord ;
+  -> summary: Summary ;
+  = @review.summarize (analysis) ;
+
+analyze => summarize
+```
+
+The node has identity and lifecycle. The ports carry the typed boundary obligations. The edge is
+only the structural connection that says a producer output port satisfies a consumer input port. It
+is not a place to hide computation, authority, projection, aggregation, or retry policy.
+
+This distinction matters for rewrites and recovery. A retained node can remain present for
+provenance while its exposed boundary obligation has been transformed or consumed. Conversely, a
+boundary obligation can be copied, moved, sealed, or discharged by node egress rules without
+treating the node object itself as the linear resource.
+
 ## Boundary typing
 
 Wire composes through endpoint compatibility rather than through semantic edge labels.
