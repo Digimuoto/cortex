@@ -155,17 +155,20 @@ update-materialized:
 show:
     nix flake show
 
+_agent-link PROVIDER:
+    agent_link="$(nix build --builders '' --impure --no-link --print-out-paths --expr 'import ./nix/agent-link.nix { provider = "{{ PROVIDER }}"; }')" && "$agent_link/bin/agent-link-{{ PROVIDER }}"
+
 # Link repo-local agent context and skills for Codex
 agent-link-codex:
-    agents/scripts/link-provider codex
+    just _agent-link codex
 
 # Link repo-local agent context and skills for Claude
 agent-link-claude:
-    agents/scripts/link-provider claude
+    just _agent-link claude
 
 # Link repo-local agent context and skills for OpenCode
 agent-link-opencode:
-    agents/scripts/link-provider opencode
+    just _agent-link opencode
 
 # Start Nix REPL
 repl:

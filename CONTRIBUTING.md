@@ -179,9 +179,10 @@ just update-materialized
 
 ## Agent Use
 
-Repo-local agent workflows live under `agents/`. If you use an agent:
+Repo-local agent overlays live under `nix/agent-root.nix` and `nix/agent-overlays.nix`. If you use
+an agent:
 
-- follow `agents/context.md` and `agents/README.md`
+- follow `docs/Reference/development.md`
 - regenerate provider symlinks with `just agent-link-codex` or `just agent-link-claude`; generated
   provider symlinks are gitignored
 - preserve human authorship on commits

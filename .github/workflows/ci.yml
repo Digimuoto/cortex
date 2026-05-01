@@ -59,7 +59,7 @@ jobs:
               - '!docs/**'
             docs:
               - 'docs/**'
-              - 'agents/skills/doc-review*/**'
+              - 'nix/agent-*.nix'
               - 'nix/docs.nix'
               - 'scripts/docs-lint'
             haskell:
@@ -80,7 +80,7 @@ jobs:
               - 'scripts/check-module-haddock.sh'
             theory:
               - 'theory/**'
-              - 'agents/skills/lean-code-style/**'
+              - 'nix/agent-*.nix'
               - 'nix/lean.nix'
               - 'scripts/lean-lint'
               - 'flake.lock'
@@ -391,7 +391,24 @@ jobs:
         with:
           clean: false
 
+      - name: Trust GitHub SSH host key
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+          if [ -w /etc/ssh/ssh_known_hosts ]; then
+            ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts
+          elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            ssh-keyscan github.com | sudo tee -a /etc/ssh/ssh_known_hosts >/dev/null
+          fi
+
       - name: Run flake checks
+        env:
+          GIT_SSH_COMMAND: ssh -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes
         run: nix flake check --print-build-logs
 
   test:

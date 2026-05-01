@@ -72,12 +72,16 @@ If Cabal inputs change, regenerate the materialized Haskell plan:
 just update-materialized
 ```
 
-Repo-local agent context lives under `agents/`. Provider files such as `AGENTS.md` and `CLAUDE.md`
-are generated, gitignored symlinks:
+Shared agent skills and archetypes are supplied by calling the public `Digimuoto/agents` flake from
+local `just agent-link-*` commands. Cortex does not keep a tracked `agents/` tree or export agent
+tooling from its own flake. Cortex-local agent context is configured in `nix/agent-root.nix`, and
+repo-specific skill overlays are generated from `nix/agent-overlays.nix`. Provider files such as
+`AGENTS.md` and `CLAUDE.md` are generated, gitignored symlinks:
 
 ```bash
 just agent-link-codex
 just agent-link-claude
+just agent-link-opencode
 ```
 
 ## Before Publishing

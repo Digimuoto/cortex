@@ -84,7 +84,7 @@
             entry = "${config.packages.lean-lint}/bin/lean-lint";
             language = "system";
             pass_filenames = false;
-            files = "^theory/.*|^scripts/lean-lint$|^agents/skills/lean-code-style/.*|^nix/(lean\\.nix|ci/.*)$|^justfile$";
+            files = "^theory/.*|^scripts/lean-lint$|^nix/(agent-.*\\.nix|lean\\.nix|ci/.*)$|^justfile$";
           };
 
           lean-theory = {
@@ -104,7 +104,7 @@
             entry = "${config.packages.docs-lint}/bin/docs-lint";
             language = "system";
             pass_filenames = false;
-            files = "^docs/.*|^scripts/docs-lint$|^agents/skills/doc-review.*|^nix/(docs\\.nix|ci/.*)$|^justfile$";
+            files = "^docs/.*|^scripts/docs-lint$|^nix/(agent-.*\\.nix|docs\\.nix|ci/.*)$|^justfile$";
           };
         };
       };
