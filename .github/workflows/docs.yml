@@ -7,7 +7,12 @@ on:
       - "docs/**"
       - "theory/**"
       - "editors/tree-sitter-wire/**"
-      - "nix/docs.nix"
+      - "src/**"
+      - "src-platform/**"
+      - "app/**"
+      - "cortex.cabal"
+      - "cabal.project"
+      - "nix/**"
       - "flake.nix"
       - "flake.lock"
       - ".github/workflows/docs.yml"
@@ -15,31 +20,34 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  NIX_CONFIG: |
+    accept-flake-config = true
+    experimental-features = nix-command flakes
+    extra-substituters = https://cache.digimuoto.com/digimuoto https://cache.iog.io https://cache.nixos.org
+    extra-trusted-public-keys = digimuoto:GwbeTccfYk+oeV3BLGKC5gzqDJmbHYetR5x0TOBEBCA= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGkljaxJfsF5+0= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nix, mercury, cortex]
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          extra_nix_config: |
-            accept-flake-config = true
-
       - name: Build documentation
         run: |
-          nix build .#docs-site
+          rm -rf _site result-docs-site
+          nix build .#docs-site --out-link result-docs-site --print-build-logs
           mkdir -p _site
-          cp -a result/. _site/
+          cp -a result-docs-site/. _site/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -50,8 +58,12 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nix, mercury, cortex]
     needs: build
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
