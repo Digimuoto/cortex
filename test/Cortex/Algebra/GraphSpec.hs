@@ -878,6 +878,13 @@ spec = do
                 === applyFrontierResults rel shuffled gs
       property (forAll genFrontierScenario prop)
 
+    it "recovered frontier classification is permutation-invariant for fixed outcomes" $ do
+      let prop (rel, gs, results) =
+            forAll (shuffle results) $ \shuffled ->
+              recoverPersistedGraphState rel (reduceFacts results gs)
+                === recoverPersistedGraphState rel (reduceFacts shuffled gs)
+      property (forAll genFrontierScenario prop)
+
     it "sequential and batch reduction produce the same classification" $ do
       let prop (rel, gs, results) =
             let batchResult = applyFrontierResults rel results gs
