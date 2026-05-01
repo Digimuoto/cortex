@@ -19,6 +19,7 @@ related:
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0025-configured-executor-values.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # ADR 0031 - Wire Binding Forms and Node Where Clauses
@@ -138,6 +139,9 @@ not a top-level binding modifier and not an exported value. Earlier sketches con
 node values (`let X = node ...`); this implementation slice keeps named `node X ...` as the only
 node authoring form. If anonymous node values return later, they must reuse the same where-clause
 semantics rather than inventing a second local-binding surface.
+
+In ADR 0039's node-boundary normal form, `where` contributes authority-free local scope for ingress
+and egress expressions. It is not graph topology, edge behavior, or hidden executor authority.
 
 Parentheses around the where-expression are never required. CorePure expression forms terminate
 themselves: a record literal at `}`, a `let ... in <body>` at the body's own end, a name at the end
@@ -431,5 +435,6 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
 - [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
 - [ADR 0025 - Configured Executor Values](./0025-configured-executor-values.md)
 - [ADR 0030 - Wire Node Implementation Forms](./0030-wire-node-implementation-forms.md)
+- [ADR 0039 - Wire Node Boundary Transform Normal Form](./0039-wire-node-boundary-transform-normal-form.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)
 - [Pure Execution](../Reference/Wire/pure-execution.md)

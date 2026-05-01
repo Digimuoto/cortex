@@ -15,6 +15,7 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0025-configured-executor-values.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # Wire Reference — Configured Executors and Execution Boundary
@@ -47,6 +48,11 @@ node analyze
   inferred from neighboring graph expressions.
 - Configured executors cannot appear on either side of `<>` or `=>`.
 - There is no implicit fan-in, list aggregation, or context concatenation at the graph boundary.
+
+Under [ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md), the configured
+executor is still only staged authority. The node body exists only after a declaration supplies the
+typed boundary; the executor argument is ingress adaptation, and output validation/wrapping is
+egress adaptation.
 
 ## Evaluation Boundary
 

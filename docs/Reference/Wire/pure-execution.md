@@ -14,6 +14,7 @@ related:
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # Wire Reference — Pure Execution
@@ -176,6 +177,11 @@ accepts JSON values.
 
 Evaluation is all-or-nothing for the node: either every declared output is produced, or the pure
 task fails with a typed evaluator error.
+
+In the node boundary normal form from
+[ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md), pure output equations are
+the visible egress adapter from the node-local CorePure environment to the declared output port
+environment.
 
 ## CorePure Expressions
 

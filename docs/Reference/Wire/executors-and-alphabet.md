@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0025-configured-executor-values.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # Wire Reference — Executors and the Alphabet
@@ -79,6 +80,11 @@ node analyze
   -> analysis: AnalysisRecord ;
   = @review.analyst { temperature = 0.2 ; } (evidence) ;
 ```
+
+In [ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md)'s normal form, the
+executor-call argument is the node's ingress adapter: it translates typed input ports and local
+CorePure helpers into the one value presented to the registered body. Output projection, validation,
+and wrapping are the egress obligation before edges consume output ports.
 
 ## Registry Admission
 
@@ -149,6 +155,8 @@ Cortex's guarantee is that this authority was explicit and admitted before runti
 - `@qualified.name { ... }` creates a configured executor value.
 - Configured executors are not graph vertices.
 - Executors run only through explicit typed node bodies.
+- Executor-call input expressions are ingress adapters from input ports to one body argument.
+- Output projection, validation, and wrapping are egress obligations, not edge-local behavior.
 - Every executor node has the same external shape: typed inputs, typed outputs, and deterministic
   failure on contract/config/output violations.
 - `pure (...)` is not an executor-authority boundary and is never spelled `@pure`.

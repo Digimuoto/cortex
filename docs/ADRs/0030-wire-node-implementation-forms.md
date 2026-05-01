@@ -23,6 +23,7 @@ related:
   - docs/ADRs/0026-wire-failure-taxonomy.md
   - docs/ADRs/0027-typed-llm-output-binding.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # ADR 0030 - Wire Node Implementation Forms
@@ -95,6 +96,10 @@ clause defined in [ADR 0031](./0031-wire-binding-forms-and-where-clauses.md).
 
 In this form, output declarations state the node's typed output boundary, while the executor body
 states the implementation behind that entire boundary.
+
+ADR 0039 names the semantic normal form behind this syntax: the executor argument is ingress
+adaptation from input ports to one body argument, the executor call is the local body, and output
+projection/validation is egress adaptation back to declared output ports.
 
 ### Pure Output Equations
 
@@ -264,4 +269,5 @@ executor call. Zero-output and multi-output external executors must use the node
 - [ADR 0025 - Configured Executor Values](./0025-configured-executor-values.md)
 - [ADR 0026 - Wire Failure Taxonomy](./0026-wire-failure-taxonomy.md)
 - [ADR 0027 - Typed LLM Output Binding](./0027-typed-llm-output-binding.md)
+- [ADR 0039 - Wire Node Boundary Transform Normal Form](./0039-wire-node-boundary-transform-normal-form.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)

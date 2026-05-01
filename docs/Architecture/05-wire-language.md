@@ -120,6 +120,31 @@ obligation it exposes. Rewrites, append continuations, and conditional actualiza
 state which boundary they consume and which boundary they return. Retaining a node for provenance is
 therefore not the same as keeping its original boundary obligation unspent.
 
+## Node boundary normal form
+
+Wire nodes have a semantic normal form even when source syntax stays compact:
+
+```text
+input port environment
+  -> ingress adapter
+  -> local body
+  -> egress adapter
+  -> output port environment
+```
+
+The ingress adapter is authority-free boundary work over incoming ports: record packing, projection,
+normalization, and deterministic precondition calculation. The local body is the authority-bearing
+or transparent computation behind the whole node boundary. The egress adapter maps the body result
+to declared output ports, validates or wraps those values, and accounts for copy, move, or seal
+behavior at the boundary.
+
+Edges never run these adapters. They only witness that a producer output port resource satisfies a
+consumer input port obligation. If an authoring pattern appears to need "computation on an edge",
+that computation belongs in producer egress, consumer ingress, or an explicit pure node.
+
+See [ADR 0039](../ADRs/0039-wire-node-boundary-transform-normal-form.md) for the normal-form
+decision.
+
 ## Conditionality and latent control
 
 Wire conditionality is topology-level structural control, not value-level `if` hidden inside a

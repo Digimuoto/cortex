@@ -21,6 +21,7 @@ related:
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # The Wire Language — Specification
@@ -245,6 +246,11 @@ node analyze
   -> analysis: AnalysisRecord ;
   = analyst (evidence) ;
 ```
+
+Semantically, the expression passed to the executor is the node's ingress adapter: it translates the
+input port environment into the single body argument. The declared output clauses plus registry
+projection and runtime output validation form the egress adapter back to output ports. See
+[ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md).
 
 ## 6. Executor Calls And Config
 

@@ -26,6 +26,7 @@ related:
   - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
   - docs/ADRs/0037-wire-latent-structural-control.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - "GitHub #99"
 ---
 
@@ -108,6 +109,8 @@ locally well-accounted before it is admitted or proved safe.
 - ADR 0038 tracks the concrete theorem names and implementation issues for these proof targets.
 - Runtime prose should avoid claiming that nodes are linear resources. The stricter claim is that
   boundary obligations are locally accounted resources.
+- ADR 0039 places copy, move, and seal accounting in node egress obligations and port-resource
+  rules. It does not permit programmable edge-local transformations.
 
 #### Documentation Obligations After Acceptance
 
@@ -142,4 +145,5 @@ locally well-accounted before it is admitted or proved safe.
 - [0036-wire-latent-branch-budget-recovery.md](0036-wire-latent-branch-budget-recovery.md)
 - [0037-wire-latent-structural-control.md](0037-wire-latent-structural-control.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
+- [0039-wire-node-boundary-transform-normal-form.md](0039-wire-node-boundary-transform-normal-form.md)
 - GitHub #99

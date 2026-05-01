@@ -13,6 +13,7 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
+  - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
 # Wire Reference — Contracts, Ports, and Matching
@@ -40,6 +41,10 @@ A port key is:
 ```
 
 `=>` matches the contract and label, with direction reversed: output to input.
+
+Boundary adaptation belongs to node ingress/egress adapters or to explicit pure nodes, not to the
+edge. `=>` only checks that an already-produced output port resource satisfies a consumer input
+obligation.
 
 ## Cardinality
 
