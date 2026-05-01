@@ -43,6 +43,12 @@ Mechanized bridge results now include:
 - `Relation.edgeBool`, `Relation.edgeBool_true_iff`, `Relation.edgeBool_source_mem`, and
   `Relation.edgeBool_target_mem`: the finite relation edge predicate can be consumed by
   runtime-style boolean-edge models while preserving endpoint membership.
+- `Cortex.Pulse.EdgePath.edgeBool_iff_relationPath`, `Cortex.Pulse.DAG.ofRelation`,
+  `Cortex.Pulse.DAG.ofRelation_edge_true_iff`, and `Cortex.Pulse.DAG.ofRelation_reaches_iff_path`:
+  endpoint-closed acyclic relations instantiate the fixed-topology Pulse DAG surface.
+- `Cortex.Wire.graphPath_iff_graphSafetyPath` and `Cortex.Wire.acyclic_iff_graphSafetyAcyclic`:
+  Wire's existing rewrite path and acyclicity predicates are propositionally equivalent to the
+  canonical graph-safety vocabulary.
 - `Relation.empty_edgeEndpointsInVertices`, `Relation.vertex_edgeEndpointsInVertices`,
   `Relation.overlay_edgeEndpointsInVertices`, `Relation.connect_edgeEndpointsInVertices`, and
   `denote_edgeEndpointsInVertices`: every denoted Mokhov graph relation is endpoint-closed.

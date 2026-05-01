@@ -1,3 +1,4 @@
+import Cortex.Graph.Safety
 import Mathlib.Data.Finset.Basic
 import Mathlib.Order.WellFoundedSet
 
@@ -65,6 +66,46 @@ theorem last_step {a b : ν}
       rcases ihRight with hDirect | ⟨c, hPrefix, hEdge⟩
       · exact Or.inr ⟨_, hLeft, hDirect⟩
       · exact Or.inr ⟨c, EdgePath.trans hLeft hPrefix, hEdge⟩
+
+end EdgePath
+
+/-! ## Relation Bridges -/
+
+namespace EdgePath
+
+variable {ν : Type} [DecidableEq ν]
+
+/-- `of_relationPath_edgeBool` lowers relation reachability to boolean-edge reachability. -/
+theorem of_relationPath_edgeBool
+    {relation : Cortex.Graph.Relation ν}
+    {source target : ν}
+    (hPath : Cortex.Graph.Relation.Path relation source target) :
+    EdgePath (Cortex.Graph.Relation.edgeBool relation) source target := by
+  induction hPath with
+  | direct hEdge =>
+      exact EdgePath.direct (Cortex.Graph.Relation.edgeBool_true_of_mem hEdge)
+  | trans _ _ ihLeft ihRight =>
+      exact EdgePath.trans ihLeft ihRight
+
+/-- `to_relationPath_edgeBool` lifts boolean-edge reachability to relation reachability. -/
+theorem to_relationPath_edgeBool
+    {relation : Cortex.Graph.Relation ν}
+    {source target : ν}
+    (hPath : EdgePath (Cortex.Graph.Relation.edgeBool relation) source target) :
+    Cortex.Graph.Relation.Path relation source target := by
+  induction hPath with
+  | direct hEdge =>
+      exact Cortex.Graph.Relation.Path.of_edgeBool_true hEdge
+  | trans _ _ ihLeft ihRight =>
+      exact Cortex.Graph.Relation.Path.trans ihLeft ihRight
+
+/-- `edgeBool_iff_relationPath` equates Pulse paths with relation paths. -/
+theorem edgeBool_iff_relationPath
+    (relation : Cortex.Graph.Relation ν)
+    (source target : ν) :
+    EdgePath (Cortex.Graph.Relation.edgeBool relation) source target ↔
+      Cortex.Graph.Relation.Path relation source target :=
+  ⟨to_relationPath_edgeBool, of_relationPath_edgeBool⟩
 
 end EdgePath
 
@@ -160,6 +201,49 @@ theorem exists_reaches_minimal
   have hPredecessorSet : predecessor ∈ nodeSet := by
     simpa [nodeSet] using hPredecessor
   exact hMinimal predecessor hPredecessorSet ⟨hReach, hPredecessorSet, hNode⟩
+
+/-! ## Relation Construction -/
+
+section RelationConstruction
+
+variable {ν : Type} [DecidableEq ν]
+
+/-- `ofRelation` constructs a Pulse DAG from an endpoint-closed acyclic relation. -/
+def ofRelation
+    (relation : Cortex.Graph.Relation ν)
+    (hEndpoints : Cortex.Graph.Relation.EdgeEndpointsInVertices relation)
+    (hAcyclic : Cortex.Graph.Relation.Acyclic relation) :
+    DAG ν :=
+  { nodes := relation.vertices
+    edge := Cortex.Graph.Relation.edgeBool relation
+    edge_source_mem := fun hEdge =>
+      Cortex.Graph.Relation.edgeBool_source_mem hEndpoints hEdge
+    edge_target_mem := fun hEdge =>
+      Cortex.Graph.Relation.edgeBool_target_mem hEndpoints hEdge
+    acyclic := fun node hPath =>
+      hAcyclic node (EdgePath.to_relationPath_edgeBool hPath) }
+
+/-- `ofRelation_edge_true_iff` identifies the constructed DAG edge predicate. -/
+theorem ofRelation_edge_true_iff
+    (relation : Cortex.Graph.Relation ν)
+    (hEndpoints : Cortex.Graph.Relation.EdgeEndpointsInVertices relation)
+    (hAcyclic : Cortex.Graph.Relation.Acyclic relation)
+    (source target : ν) :
+    (ofRelation relation hEndpoints hAcyclic).edge source target = true ↔
+      (source, target) ∈ relation.edges :=
+  Cortex.Graph.Relation.edgeBool_true_iff relation source target
+
+/-- `ofRelation_reaches_iff_path` identifies constructed DAG reachability. -/
+theorem ofRelation_reaches_iff_path
+    (relation : Cortex.Graph.Relation ν)
+    (hEndpoints : Cortex.Graph.Relation.EdgeEndpointsInVertices relation)
+    (hAcyclic : Cortex.Graph.Relation.Acyclic relation)
+    (source target : ν) :
+    (ofRelation relation hEndpoints hAcyclic).reaches source target ↔
+      Cortex.Graph.Relation.Path relation source target :=
+  EdgePath.edgeBool_iff_relationPath relation source target
+
+end RelationConstruction
 
 end DAG
 

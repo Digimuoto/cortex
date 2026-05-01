@@ -91,6 +91,14 @@ theorem edgeBool_true_iff
     edgeBool relation source target = true ↔ (source, target) ∈ relation.edges := by
   simp [edgeBool]
 
+/-- `edgeBool_true_of_mem` turns relation membership into a true runtime-style edge. -/
+theorem edgeBool_true_of_mem
+    {relation : Relation α}
+    {source target : α}
+    (hEdge : (source, target) ∈ relation.edges) :
+    edgeBool relation source target = true :=
+  (edgeBool_true_iff relation source target).2 hEdge
+
 /-- `Path.of_edgeBool_true` turns a true runtime-style edge into relation reachability. -/
 theorem Path.of_edgeBool_true
     {relation : Relation α}
@@ -236,6 +244,28 @@ def GraphPath (graph : Graph α) (source target : α) : Prop :=
 def GraphAcyclic (graph : Graph α) : Prop :=
   Relation.Acyclic (denote graph)
 
+/-- `graphAcyclic_iff_no_graphPath` unfolds graph acyclicity through graph paths. -/
+theorem graphAcyclic_iff_no_graphPath (graph : Graph α) :
+    GraphAcyclic graph ↔ ∀ node : α, ¬ GraphPath graph node node :=
+  Iff.rfl
+
+/-- `graphAcyclic_no_self` rules out self-reachability in an acyclic graph. -/
+theorem graphAcyclic_no_self
+    {graph : Graph α}
+    (hAcyclic : GraphAcyclic graph)
+    (node : α) :
+    ¬ GraphPath graph node node :=
+  hAcyclic node
+
+/-- `graphAcyclic_false_of_path` eliminates a cyclic path witness. -/
+theorem graphAcyclic_false_of_path
+    {graph : Graph α}
+    {node : α}
+    (hAcyclic : GraphAcyclic graph)
+    (hPath : GraphPath graph node node) :
+    False :=
+  hAcyclic node hPath
+
 /-- `graphPath_source_mem` keeps graph-path sources inside the denoted vertex set. -/
 theorem graphPath_source_mem
     {graph : Graph α}
@@ -275,22 +305,56 @@ end GraphEq
 
 namespace AlgGraph
 
+/-- `AlgGraph.Path graph source target` is reachability through a quotient graph denotation. -/
+def Path (graph : AlgGraph α) (source target : α) : Prop :=
+  Relation.Path (denote graph) source target
+
 /-- `AlgGraph.Acyclic graph` is acyclicity of a quotient graph's relation denotation. -/
 def Acyclic (graph : AlgGraph α) : Prop :=
   Relation.Acyclic (denote graph)
+
+/-- `path_ofGraph` identifies quotient reachability with raw graph reachability. -/
+theorem path_ofGraph
+    (graph : Graph α)
+    (source target : α) :
+    Path (ofGraph graph) source target ↔ GraphPath graph source target :=
+  Iff.rfl
 
 /-- `acyclic_ofGraph` identifies quotient acyclicity with raw graph acyclicity. -/
 theorem acyclic_ofGraph (graph : Graph α) :
     Acyclic (ofGraph graph) ↔ GraphAcyclic graph :=
   Iff.rfl
 
-/-- `acyclic_congr` transports quotient acyclicity across quotient equality. -/
+/-- `denote_edgeEndpointsInVertices` says quotient graph denotations are endpoint-closed. -/
+theorem denote_edgeEndpointsInVertices (graph : AlgGraph α) :
+    Relation.EdgeEndpointsInVertices (denote graph) := by
+  refine Quotient.inductionOn graph ?_
+  intro rawGraph
+  exact Cortex.Graph.denote_edgeEndpointsInVertices rawGraph
+
+/-- `path_source_mem` keeps quotient-path sources inside the quotient denotation. -/
+theorem path_source_mem
+    {graph : AlgGraph α}
+    {source target : α}
+    (hPath : Path graph source target) :
+    source ∈ (denote graph).vertices :=
+  Relation.Path.source_mem (denote_edgeEndpointsInVertices graph) hPath
+
+/-- `path_target_mem` keeps quotient-path targets inside the quotient denotation. -/
+theorem path_target_mem
+    {graph : AlgGraph α}
+    {source target : α}
+    (hPath : Path graph source target) :
+    target ∈ (denote graph).vertices :=
+  Relation.Path.target_mem (denote_edgeEndpointsInVertices graph) hPath
+
+/-- `acyclic_congr` transports quotient acyclicity across raw `GraphEq` representatives. -/
 theorem acyclic_congr
-    {left right : AlgGraph α}
-    (hEq : left = right) :
-    Acyclic left ↔ Acyclic right := by
-  cases hEq
-  exact Iff.rfl
+    {left right : Graph α}
+    (hEq : GraphEq left right) :
+    Acyclic (ofGraph left) ↔ Acyclic (ofGraph right) := by
+  rw [acyclic_ofGraph left, acyclic_ofGraph right]
+  exact GraphEq.acyclic_iff hEq
 
 end AlgGraph
 

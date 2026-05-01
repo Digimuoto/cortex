@@ -1,3 +1,4 @@
+import Cortex.Graph.Safety
 import Cortex.Wire.Registry
 import Mathlib.Data.Nat.Basic
 
@@ -63,6 +64,56 @@ inductive GraphPath {α : Type} [DecidableEq α] (g : Graph α) : α → α → 
 /-- `Acyclic g` rules out non-empty paths from a vertex back to itself. -/
 def Acyclic {α : Type} [DecidableEq α] (g : Graph α) : Prop :=
   ∀ node : α, ¬ GraphPath g node node
+
+/-- `graphPath_of_graphSafetyPath` bridges the canonical graph path into Wire paths. -/
+theorem graphPath_of_graphSafetyPath
+    {α : Type}
+    [DecidableEq α]
+    {g : Graph α}
+    {source target : α}
+    (hPath : Cortex.Graph.GraphPath g source target) :
+    GraphPath g source target := by
+  change Cortex.Graph.Relation.Path (denote g) source target at hPath
+  induction hPath with
+  | direct hEdge =>
+      exact GraphPath.direct hEdge
+  | trans _ _ ihLeft ihRight =>
+      exact GraphPath.trans ihLeft ihRight
+
+/-- `graphSafetyPath_of_graphPath` bridges Wire paths into the canonical graph path. -/
+theorem graphSafetyPath_of_graphPath
+    {α : Type}
+    [DecidableEq α]
+    {g : Graph α}
+    {source target : α}
+    (hPath : GraphPath g source target) :
+    Cortex.Graph.GraphPath g source target := by
+  induction hPath with
+  | direct hEdge =>
+      exact Cortex.Graph.Relation.Path.direct hEdge
+  | trans _ _ ihLeft ihRight =>
+      exact Cortex.Graph.Relation.Path.trans ihLeft ihRight
+
+/-- `graphPath_iff_graphSafetyPath` equates Wire and canonical graph paths. -/
+theorem graphPath_iff_graphSafetyPath
+    {α : Type}
+    [DecidableEq α]
+    (g : Graph α)
+    (source target : α) :
+    GraphPath g source target ↔ Cortex.Graph.GraphPath g source target :=
+  ⟨graphSafetyPath_of_graphPath, graphPath_of_graphSafetyPath⟩
+
+/-- `acyclic_iff_graphSafetyAcyclic` equates Wire and canonical graph acyclicity. -/
+theorem acyclic_iff_graphSafetyAcyclic
+    {α : Type}
+    [DecidableEq α]
+    (g : Graph α) :
+    Acyclic g ↔ Cortex.Graph.GraphAcyclic g := by
+  constructor
+  · intro hAcyclic node hPath
+    exact hAcyclic node (graphPath_of_graphSafetyPath hPath)
+  · intro hAcyclic node hPath
+    exact hAcyclic node (graphSafetyPath_of_graphPath hPath)
 
 /-- `RewriteCost` mirrors the runtime's structural rewrite-cost dimensions. -/
 structure RewriteCost where
