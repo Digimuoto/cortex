@@ -15,6 +15,7 @@ here.
 
 | Kind                           | Where                                      | Lifetime                              | Dated? |
 | ------------------------------ | ------------------------------------------ | ------------------------------------- | ------ |
+| Usage guide                    | [Usage/](Usage/)                           | Long-term canon                       | No     |
 | Canonical architecture chapter | [Architecture/](Architecture/)             | Long-term canon                       | No     |
 | Normative specification        | [Reference/](Reference/)                   | Long-term canon                       | No     |
 | Code style guide               | [Style.md](Style.md)                       | Long-term canon                       | No     |
@@ -37,6 +38,10 @@ here.
 
 **Where do I write up the Wire grammar surface?** Use `Reference/Wire/`. Canonical language rules
 live in reference docs, not research notes.
+
+**Where do I explain how to use Cortex?** Use `Usage/`. Usage pages should lead with working paths,
+commands, and decision points. Link to `Architecture/` for rationale and `Reference/` for exact
+rules.
 
 **Where do I document runtime architecture?** Use `Architecture/06-pulse-runtime.md` for the stable
 model and `Architecture/07-rewrites-and-materialization.md` for topology evolution.

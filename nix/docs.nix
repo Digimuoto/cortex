@@ -43,6 +43,7 @@
           # folder order. Nested sections mostly carry their own numbered or
           # frontmatter order.
           topLevelOrder = [
+            "Usage"
             "Architecture"
             "Reference"
             "ADRs"

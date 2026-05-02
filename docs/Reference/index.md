@@ -9,7 +9,8 @@ sidebar:
 # Cortex Reference
 
 Consultable material. Designed to be jumped into for a specific rule or workflow rather than read
-front-to-back.
+front-to-back. If you are trying to do a task rather than look up a rule, start with
+[Usage/](../Usage/).
 
 ## Contents
 
@@ -44,5 +45,6 @@ architecture book for context.
 ## Related
 
 - [../Architecture/](../Architecture/) — canonical architecture chapters.
+- [../Usage/](../Usage/) — practical user guide.
 - [../glossary.md](../glossary.md) — quick-reference term lookup.
 - [../taxonomy.md](../taxonomy.md) — conceptual classification.

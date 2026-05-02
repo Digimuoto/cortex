@@ -10,9 +10,9 @@ sidebar:
 
 # Cortex Documentation
 
-Cortex is a standalone Haskell substrate for graph-shaped durable workflows. It gives you algebraic
-topology, a small language for authoring workflows, a durable runtime for executing them, and
-value-provenance surfaces for explaining what happened.
+Cortex is a standalone Haskell substrate for graph-shaped durable workflows. It gives you a small
+language for authoring workflows, a durable runtime for executing them, and value-provenance
+surfaces for explaining what happened.
 
 The boundary is deliberate: Cortex owns reusable mechanics; downstream products own domain
 semantics, policy, tools, operators, transport, and persistence.
@@ -89,6 +89,15 @@ flowchart LR
     P --> A[Artifacts + provenance]
 ```
 
+## If You Just Want To Use It
+
+Start with [Usage/](Usage/). It is the practical guide: build Cortex, inspect the Pulse runtime,
+write a first Wire workflow, deploy a consumer-bound Pulse binary, and find the right
+troubleshooting surface.
+
+The architecture chapters explain why Cortex is designed this way. The reference pages state exact
+rules. Usage should be the first stop when the question is "what do I do next?"
+
 ## Architectural Ideas
 
 - **Algebraic topology is the semantic object.** Cortex treats graph structure as execution
@@ -104,21 +113,23 @@ flowchart LR
 
 ## Read First
 
-1. **[Architecture overview](Architecture/01-overview.md)** - system frame and ownership boundary.
-2. **[Ownership and boundaries](Architecture/02-ownership-and-boundaries.md)** - what belongs in
+1. **[Usage guide](Usage/)** - practical path for building, authoring, running, and deploying.
+2. **[Architecture overview](Architecture/01-overview.md)** - system frame and ownership boundary.
+3. **[Ownership and boundaries](Architecture/02-ownership-and-boundaries.md)** - what belongs in
    Cortex versus a downstream product.
-3. **[Wire language](Architecture/05-wire-language.md)** - how source programs describe executable
+4. **[Wire language](Architecture/05-wire-language.md)** - how source programs describe executable
    topology.
-4. **[Wire grammar](Reference/Wire/grammar.md)** - the normative language surface.
-5. **[Pulse runtime](Architecture/06-pulse-runtime.md)** - durable execution, events, signals,
+5. **[Wire grammar](Reference/Wire/grammar.md)** - the normative language surface.
+6. **[Pulse runtime](Architecture/06-pulse-runtime.md)** - durable execution, events, signals,
    retries, and host actions.
-6. **[Rewrites and materialization](Architecture/07-rewrites-and-materialization.md)** - controlled
+7. **[Rewrites and materialization](Architecture/07-rewrites-and-materialization.md)** - controlled
    topology evolution.
-7. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** - structured outputs
+8. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** - structured outputs
    and explanation.
 
 ## Explore The Canon
 
+- **[Usage/](Usage/)** - practical guide for using Cortex.
 - **[Architecture/](Architecture/)** - conceptual chapters for the substrate.
 - **[Reference/](Reference/)** - normative specifications for Wire, Pulse, rewrites, terminology,
   and contributor workflow.

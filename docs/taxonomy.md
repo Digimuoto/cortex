@@ -108,11 +108,11 @@ contracts, ports, templates, prompts, memory presets, and evaluation policy.
 
 Docs are classified on two axes:
 
-|                         | Stable canon                             | Dated artifacts   |
-| ----------------------- | ---------------------------------------- | ----------------- |
-| **Canonical authority** | `Architecture/`, `Reference/`, `ADRs/`   | none              |
-| **Project working**     | `Roadmap/Epics/`, `Roadmap/Plans/`       | `Research-notes/` |
-| **Historical**          | `Roadmap/Completed/`, `Roadmap/Archive/` | `Experiments/`    |
+|                         | Stable canon                                     | Dated artifacts   |
+| ----------------------- | ------------------------------------------------ | ----------------- |
+| **Canonical authority** | `Usage/`, `Architecture/`, `Reference/`, `ADRs/` | none              |
+| **Project working**     | `Roadmap/Epics/`, `Roadmap/Plans/`               | `Research-notes/` |
+| **Historical**          | `Roadmap/Completed/`, `Roadmap/Archive/`         | `Experiments/`    |
 
 Cross-cutting canon: `Templates/`, `index.md`, `map.md`, `glossary.md`, `taxonomy.md`
 Consumer-specific: `Consumers/{consumer}.md`, or `Consumers/{consumer}/` for a larger public binding

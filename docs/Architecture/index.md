@@ -10,8 +10,11 @@ sidebar:
 
 # Cortex Architecture
 
-Canonical chapters. Enumerated `NN-` for reading order. Each chapter explains how the system fits
-together at its layer and what its design commitments are.
+Canonical explanation chapters. Enumerated `NN-` for reading order. Each chapter explains how the
+system fits together at its layer and what its design commitments are.
+
+If you are trying to build, run, or deploy Cortex before reading the design story, start with
+[Usage/](../Usage/) instead.
 
 ## Reading paths
 
@@ -46,6 +49,7 @@ needed.
 ## Related
 
 - [../Reference/](../Reference/) — normative specs.
+- [../Usage/](../Usage/) — practical guide for building, running, and deploying.
 - [../ADRs/](../ADRs/) — decision records.
 - [../Consumers/Logos/](../Consumers/Logos/) — downstream reasoning-library docs built on Cortex.
 - [../Roadmap/](../Roadmap/) — active engineering work.
