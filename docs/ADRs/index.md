@@ -57,6 +57,9 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0038](0038-wire-proof-track-theorem-ledger.md)                 | Wire Proof-Track Theorem Ledger                                     | proposed   |
 | [0039](0039-wire-node-boundary-transform-normal-form.md)        | Wire Node Boundary Transform Normal Form                            | proposed   |
 | [0040](0040-logos-owned-reasoning-surfaces.md)                  | Logos-Owned Reasoning Surfaces                                      | accepted   |
+| [0041](0041-wire-cli-command-surface.md)                        | Wire CLI Command Surface                                            | proposed   |
+| [0042](0042-wire-standard-effect-executors.md)                  | Wire Standard Effect Executors                                      | proposed   |
+| [0043](0043-pulse-in-memory-runner.md)                          | Pulse In-Memory Runner                                              | proposed   |
 
 ## Writing a new ADR
 
