@@ -12,11 +12,13 @@ Tests may import the surface they exercise, but they do not define downstream pr
 -}
 module Cortex.Wire.ParserSpec (spec) where
 
+import Data.Either (isRight)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Test.Hspec
 
 import Cortex.Wire.Parser
@@ -29,6 +31,15 @@ parseOrFail src = case parseWireFile "test" src of
 
 spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
+  describe "examples" $ do
+    it "parses the interactive priority planner example" $ do
+      source <- TIO.readFile "examples/wire/interactive-priority-planner.wire"
+      parseWireFile "examples/wire/interactive-priority-planner.wire" source `shouldSatisfy` isRight
+
+    it "parses the mini build-system example" $ do
+      source <- TIO.readFile "examples/wire/mini-build-system.wire"
+      parseWireFile "examples/wire/mini-build-system.wire" source `shouldSatisfy` isRight
+
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $
       parseWireFile "test" "node n : -> out: T = @review.x ({});"

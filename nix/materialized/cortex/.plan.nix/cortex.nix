@@ -184,6 +184,22 @@
           hsSourceDirs = [ "app/cortex-pulse" ];
           mainPath = [ "Main.hs" ];
         };
+        "wire" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
+            (hsPkgs."async" or (errorHandler.buildDepError "async"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."process" or (errorHandler.buildDepError "process"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+          ];
+          buildable = true;
+          hsSourceDirs = [ "app/wire" ];
+          mainPath = [ "Main.hs" ];
+        };
       };
       tests = {
         "cortex-test" = {

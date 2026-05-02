@@ -23,6 +23,11 @@ build-pulse:
     @echo "🔨 Building cortex-pulse..."
     nix build .#cortex-pulse
 
+# Build the Wire CLI executable
+build-wire:
+    @echo "🔨 Building wire..."
+    nix build .#wire
+
 # Run the cortex-test suite (hspec-discover)
 test:
     @echo "🧪 Running cortex tests..."

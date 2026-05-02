@@ -605,6 +605,7 @@
           "microlens-th".components.library.planned = lib.mkOverride 900 true;
           "hspec".components.library.planned = lib.mkOverride 900 true;
           "conduit-extra".components.library.planned = lib.mkOverride 900 true;
+          "cortex".components.exes."wire".planned = lib.mkOverride 900 true;
           "typed-process".components.library.planned = lib.mkOverride 900 true;
           "auto-update".components.library.planned = lib.mkOverride 900 true;
           "parallel".components.library.planned = lib.mkOverride 900 true;

@@ -1,0 +1,114 @@
+# Mini build-system Wire example for the standalone `wire` command.
+#
+# Run:
+#
+#   nix run .#wire examples/wire/mini-build-system.wire
+#
+# Type `release` for a full project gate, `docs` for a documentation-only
+# gate, or anything else for a smaller development gate.
+
+contract BuildTarget;
+contract CommandSpec;
+contract CommandResult;
+contract BuildReport;
+
+node read_target
+  -> target: BuildTarget = @cortex.io.stdin { prompt = "Build target (release/docs/dev): "; } (null);
+
+node plan_build
+  <- target: BuildTarget;
+  -> compileSpec: CommandSpec = pure (compileSpec);
+  -> testSpec: CommandSpec = pure (testSpec);
+  -> docsSpec: CommandSpec = pure (docsSpec);
+  -> lintSpec: CommandSpec = pure (lintSpec);
+  where let
+    release = target == "release";
+    docsOnly = target == "docs";
+    compileSpec = {
+      inherit target;
+      name = "compile";
+      argv = ["just", "build"];
+      cwd = ".";
+      required = !docsOnly;
+      skip = docsOnly;
+      echo = true;
+    };
+    testSpec = {
+      inherit target;
+      name = "test";
+      argv = if release then ["just", "test"] else ["nix", "run", ".#cortex-tests", "--", "-m", "Cortex.Wire.Parser"];
+      cwd = ".";
+      required = !docsOnly;
+      skip = docsOnly;
+      echo = true;
+    };
+    docsSpec = {
+      inherit target;
+      name = "docs";
+      argv = if release then ["just", "docs-build"] else ["just", "docs-check"];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    lintSpec = {
+      inherit target;
+      name = "lint";
+      argv = ["just", "lint"];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+  in
+  { inherit compileSpec testSpec docsSpec lintSpec; };
+
+node compile_check
+  <- compileSpec: CommandSpec;
+  -> compile: CommandResult = @cortex.io.command {} (compileSpec);
+
+node test_check
+  <- testSpec: CommandSpec;
+  -> test: CommandResult = @cortex.io.command {} (testSpec);
+
+node docs_check
+  <- docsSpec: CommandSpec;
+  -> docs: CommandResult = @cortex.io.command {} (docsSpec);
+
+node lint_check
+  <- lintSpec: CommandSpec;
+  -> lint: CommandResult = @cortex.io.command {} (lintSpec);
+
+node summarize_build
+  <- compile: CommandResult;
+  <- test: CommandResult;
+  <- docs: CommandResult;
+  <- lint: CommandResult;
+  -> summary: BuildReport = pure (summary);
+  where let
+    checks = [compile, test, docs, lint];
+    required = checks |> filter (check: check.required);
+    passed = required |> filter (check: check.ok);
+    failures = required |> filter (check: !check.ok);
+    skipped = checks |> filter (check: check.skipped);
+    requiredNames = required |> map (check: check.name) |> joinWith ", ";
+    skippedNames = skipped |> map (check: check.name) |> joinWith ", ";
+    results = checks |> map (check: "${check.name}=${check.status}") |> joinWith ", ";
+    exitCodes = checks |> map (check: "${check.name}=${if check.skipped then check.status else check.exitCode}") |> joinWith ", ";
+    targetName = compile.target;
+    passedLine = "Required passed: ${length passed}/${length required}";
+    skippedLine = if length skipped == 0 then "Skipped: none" else "Skipped: ${skippedNames}";
+    gate = if length failures == 0 then "publish gate: open" else "publish gate: blocked";
+    summary = "Target: ${targetName}\nFrontier: compile, test, docs, lint\nRequired checks: ${requiredNames}\n${passedLine}\n${skippedLine}\nResults: ${results}\nExit codes: ${exitCodes}\n${gate}";
+  in
+  { inherit summary; };
+
+node print_report
+  <- summary: BuildReport;
+  = @cortex.io.stdout { newline = true; } (summary);
+
+read_target
+  => plan_build
+  => (compile_check <> test_check <> docs_check <> lint_check)
+  => summarize_build
+  => print_report

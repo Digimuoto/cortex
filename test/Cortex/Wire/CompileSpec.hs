@@ -236,6 +236,14 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldSatisfy` isParseFailure
 
   describe "fixtures" $ do
+    it "compiles the interactive priority planner example" $ do
+      source <- TIO.readFile "examples/wire/interactive-priority-planner.wire"
+      compileWireText source `shouldSatisfy` isRight
+
+    it "compiles the mini build-system example" $ do
+      source <- TIO.readFile "examples/wire/mini-build-system.wire"
+      compileWireText source `shouldSatisfy` isRight
+
     it "compiles the pure output equations fixture" $ do
       source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
       compileWireText source `shouldSatisfy` isRight

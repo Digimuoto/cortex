@@ -83,6 +83,8 @@
       cortex = projectFlake.packages."cortex:lib:cortex" or null;
       # Pulse executor — substrate shell; consumers bind their own task registry.
       cortex-pulse = projectFlake.packages."cortex:exe:cortex-pulse" or null;
+      # Wire source CLI — local build/run workflows for .wire files.
+      wire = projectFlake.packages."cortex:exe:wire" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).
       cortex-tests = projectFlake.packages."cortex:test:cortex-test" or null;
       # Locked upstream source snapshot for dependency visibility.
@@ -106,16 +108,23 @@
       (projectFlake.checks or {});
 
     # Regenerate materialized plans: `nix run .#update-materialized`.
-    apps.update-materialized = {
-      type = "app";
-      program = toString (pkgs.writeShellScript "update-materialized" ''
-        set -e
-        echo "🔄 Regenerating materialized haskell.nix plans..."
-        ${pkgs.cortexProject.plan-nix.passthru.generateMaterialized} nix/materialized/cortex
-        echo "✅ Materialized plans regenerated in nix/materialized/cortex/"
-        echo "   Don't forget to commit the changes."
-      '');
-      meta.description = "Regenerate materialized haskell.nix plans under nix/materialized/cortex";
+    apps = {
+      wire = {
+        type = "app";
+        program = "${projectFlake.packages."cortex:exe:wire"}/bin/wire";
+        meta.description = "Work with Wire source files";
+      };
+      update-materialized = {
+        type = "app";
+        program = toString (pkgs.writeShellScript "update-materialized" ''
+          set -e
+          echo "🔄 Regenerating materialized haskell.nix plans..."
+          ${pkgs.cortexProject.plan-nix.passthru.generateMaterialized} nix/materialized/cortex
+          echo "✅ Materialized plans regenerated in nix/materialized/cortex/"
+          echo "   Don't forget to commit the changes."
+        '');
+        meta.description = "Regenerate materialized haskell.nix plans under nix/materialized/cortex";
+      };
     };
   };
 }

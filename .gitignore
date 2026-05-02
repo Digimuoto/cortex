@@ -30,6 +30,10 @@ theory/.lake/
 !docs/
 !docs/**
 
+# examples/ — runnable examples and smoke fixtures
+!examples/
+!examples/**
+
 # assets/ — tracked images used by README and docs
 !assets/
 !assets/**

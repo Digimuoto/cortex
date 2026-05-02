@@ -217,6 +217,23 @@ executable cortex-pulse
         containers >=0.6
     ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
+-- Wire source CLI: local build/run workflows for .wire files.
+executable wire
+    import:           shared-properties
+    hs-source-dirs:   app/wire
+    main-is:          Main.hs
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        aeson >=2.1,
+        aeson-pretty >=0.8,
+        async >=2.2,
+        bytestring >=0.11,
+        containers >=0.6,
+        process >=1.6,
+        text >=2.0
+    ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+
 -- Cortex test suite (hspec-discover).
 test-suite cortex-test
     import:           shared-properties

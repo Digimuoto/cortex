@@ -1,0 +1,44 @@
+# Interactive Wire example for the standalone `wire` command.
+#
+# Intended run command after the `wire` CLI and stdio executors land:
+#
+#   nix run .#wire examples/wire/interactive-priority-planner.wire
+#
+# Type `high` at the prompt for a more aggressive plan; any other input
+# chooses the conservative threshold.
+
+contract UserInput;
+contract PlanSummary;
+
+node read_mode
+  -> answer: UserInput = @cortex.io.stdin { prompt = "Planning mode (high/safe): "; } (null);
+
+node build_plan
+  <- answer: UserInput;
+  -> summary: PlanSummary = pure (summary);
+  where let
+    highMode = answer == "high";
+    threshold = if highMode then 0.6 else 0.8;
+    mode = if highMode then "high-throughput" else "safe-default";
+    tasks = [
+      { name = "write ADRs"; score = 0.95; hours = 1; },
+      { name = "implement stdin/stdout executors"; score = 0.88; hours = 3; },
+      { name = "ship in-memory runner"; score = 0.84; hours = 5; },
+      { name = "add CLI benchmark harness"; score = 0.62; hours = 2; },
+      { name = "polish docs screenshots"; score = 0.45; hours = 1; },
+    ];
+    selected = tasks |> filter (task: task.score >= threshold);
+    selectedNames = selected |> map (task: task.name);
+    selectedList = joinWith ", " selectedNames;
+    selectedHours = selected |> map (task: task.hours) |> sum;
+    summary = "Mode: ${mode}\nSelected ${length selected} tasks: ${selectedList}\nEstimated hours: ${selectedHours}";
+  in
+  { inherit summary; };
+
+node print_plan
+  <- summary: PlanSummary;
+  = @cortex.io.stdout { newline = true; } (summary);
+
+read_mode
+  => build_plan
+  => print_plan
