@@ -126,16 +126,17 @@ In source, the same shape is explicit:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = @review.analyze (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = @review.analyze (evidence);
 
 node summarize
-  <- analysis: AnalysisRecord ;
-  -> summary: Summary ;
-  = @review.summarize (analysis) ;
+  <- analysis: AnalysisRecord;
+  -> summary: Summary;
+  = @review.summarize (analysis);
 
-analyze => summarize
+analyze
+  => summarize
 ```
 
 The node has identity and lifecycle. The ports carry the typed boundary obligations. The edge is
@@ -232,14 +233,14 @@ policy such as tools, memory authority, model choice, timeouts, budgets, and dom
 
 ```wire
 let sectionWriter = @native.report_section_writer {
-  memory = topological { preset = "analyst" } ;
-  model = "gpt-5.4" ;
-} ;
+  memory = topological { preset = "analyst" };
+  model = "gpt-5.4";
+};
 
 node valuation_writer
-  <- brief: SectionBrief ;
-  -> fragment: ReportFragment ;
-  = sectionWriter (brief) ;
+  <- brief: SectionBrief;
+  -> fragment: ReportFragment;
+  = sectionWriter (brief);
 ```
 
 Per-node variation should appear as typed input data or as a separately named configured executor
@@ -269,15 +270,15 @@ Pure node bodies bind output labels directly:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = pure (accepted);
+  -> rejected: RejectedSet = pure (rejected);
   where let
-    items = evidence.items ;
-    accepted = items |> filter (x: x.score >= 0.7) ;
-    rejected = items |> filter (x: x.score < 0.7) ;
+    items = evidence.items;
+    accepted = items |> filter (x: x.score >= 0.7);
+    rejected = items |> filter (x: x.score < 0.7);
   in
-  { accepted = accepted ; rejected = rejected ; } ;
+  { inherit accepted rejected; };
 ```
 
 The binding story is deliberately split by surface:

@@ -6,21 +6,26 @@ set -eu
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-FIXTURES_DIR="$REPO/test/fixtures/wire"
+FIXTURE_DIRS=(
+  "$REPO/test/fixtures/wire"
+  "$REPO/examples/wire"
+)
 
 cd "$HERE"
 
 fails=0
-for f in "$FIXTURES_DIR"/*.wire; do
-  [ -e "$f" ] || continue
-  name="${f#$REPO/}"
-  if tree-sitter parse -q "$f" >/dev/null 2>&1; then
-    printf 'ok   %s\n' "$name"
-  else
-    printf 'fail %s\n' "$name"
-    tree-sitter parse "$f" 2>&1 | grep -E 'ERROR|MISSING' | head -3 | sed 's/^/     /'
-    fails=$((fails + 1))
-  fi
+for dir in "${FIXTURE_DIRS[@]}"; do
+  for f in "$dir"/*.wire; do
+    [ -e "$f" ] || continue
+    name="${f#$REPO/}"
+    if tree-sitter parse -q "$f" >/dev/null 2>&1; then
+      printf 'ok   %s\n' "$name"
+    else
+      printf 'fail %s\n' "$name"
+      tree-sitter parse "$f" 2>&1 | grep -E 'ERROR|MISSING' | head -3 | sed 's/^/     /'
+      fails=$((fails + 1))
+    fi
+  done
 done
 
 if [ "$fails" -gt 0 ]; then

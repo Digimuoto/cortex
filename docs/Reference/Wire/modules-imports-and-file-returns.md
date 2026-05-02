@@ -23,12 +23,12 @@ rules.
 A `.wire` file is a sequence of top-level forms:
 
 ```wire
-contract EvidenceSet ;
-export let acceptedItem = item: item.score >= 0.7 ;
+contract EvidenceSet;
+export let acceptedItem = item: item.score >= 0.7;
 
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem);
 
 classify
 ```
@@ -39,8 +39,8 @@ file-return expression, the file is declaration-only.
 ## Imports
 
 ```wire
-import pipeline from "./pipeline.wire" ;
-import { acceptedItem, analyst } from "./helpers.wire" ;
+import pipeline from "./pipeline.wire";
+import { acceptedItem, analyst } from "./helpers.wire";
 ```
 
 The named import form imports another file's file-return value. The explicit import form imports
@@ -52,9 +52,9 @@ node by binding it:
 
 ```wire
 node planner
-  -> plan: PlannerOutput = @review.planner ({}) ;
+  -> plan: PlannerOutput = @review.planner ({});
 
-export let exported_planner = planner ;
+export let exported_planner = planner;
 ```
 
 ## Declaration-Only Files

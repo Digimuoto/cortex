@@ -53,22 +53,24 @@ contract Result;
 contract ArtifactRef;
 
 node plan
-  <- topic: Topic ;
+  <- topic: Topic;
   -> outline: Outline = @workflow.plan {
-    mode = "concise" ;
-  } (topic) ;
+    mode = "concise";
+  } (topic);
 
 node run
-  <- outline: Outline ;
+  <- outline: Outline;
   -> result: Result = @workflow.execute {
-    retry = { max_attempts = 2 } ;
-  } (outline) ;
+    retry = { max_attempts = 2 };
+  } (outline);
 
 node publish
-  <- result: Result ;
-  -> artifact: ArtifactRef = @host.artifact_store (result) ;
+  <- result: Result;
+  -> artifact: ArtifactRef = @host.artifact_store (result);
 
-plan => run => publish
+plan
+  => run
+  => publish
 ```
 
 The same source is compiled into a graph-shaped executable artifact. Pulse then executes the

@@ -92,7 +92,8 @@ unchosen arms.
 This is also why parentheses are natural in branch bodies:
 
 ```wire
-(gather_missing_constraints => repair_plan)
+(gather_missing_constraints
+  => repair_plan)
 ```
 
 is one **continuation graph**. It has its own entry boundary and its own exit boundary, and
@@ -106,7 +107,8 @@ under the normal readiness rules. That is wrong for Wire.
 In ordinary fan-out:
 
 ```wire
-a => (b <> c)
+a
+  => (b <> c)
 ```
 
 both `b` and `c` are part of the live graph and both are eligible to become actual work when their
@@ -132,9 +134,9 @@ Wire already has one crucial ingredient: **sum-grouped output ports**.
 
 ```wire
 node gate
-  <- evidence: EvidenceBundle ;
-  -> fragment: AnalysisFragment | error: ExecutorError ;
-  = @review.review (evidence) ;
+  <- evidence: EvidenceBundle;
+  -> fragment: AnalysisFragment | error: ExecutorError;
+  = @review.review (evidence);
 ```
 
 The accepted grammar already says:
@@ -167,7 +169,8 @@ The target surface is a postfix conditional form:
 selector select(
   Variant1: branch1,
   Variant2: branch2
-) => shared_continuation
+)
+  => shared_continuation
 ```
 
 The intended reading is:
@@ -195,7 +198,8 @@ So:
 x select(
   Left: a,
   Right: b
-) => continuation
+)
+  => continuation
 ```
 
 means:
@@ -207,7 +211,9 @@ means:
 This does **not** mean the same thing as:
 
 ```wire
-x => (a <> b) => continuation
+x
+  => (a <> b)
+  => continuation
 ```
 
 The boundary shape may be similar when all arms are productive, but the actuality story is
@@ -232,9 +238,9 @@ So with:
 
 ```wire
 node validate_plan
-  <- draft: DraftPlan ;
-  -> valid: ResearchPlan | issue: PlanIssue ;
-  = @review.validate_plan (draft) ;
+  <- draft: DraftPlan;
+  -> valid: ResearchPlan | issue: PlanIssue;
+  = @review.validate_plan (draft);
 ```
 
 this is the natural conditional:
@@ -242,7 +248,8 @@ this is the natural conditional:
 ```wire
 validate_plan select(
   valid: (),
-  issue: (gather_missing_constraints => repair_plan)
+  issue: (gather_missing_constraints
+    => repair_plan)
 )
 ```
 
@@ -258,7 +265,7 @@ This is better than positional matching because:
 
 Under composition, empty wire is identity:
 
-```wire
+```text
 a <> () = a
 () <> a = a
 a => () = a
@@ -277,7 +284,8 @@ In:
 ```wire
 validate_plan select(
   valid: (),
-  issue: (gather_missing_constraints => repair_plan)
+  issue: (gather_missing_constraints
+    => repair_plan)
 )
 ```
 
@@ -330,7 +338,8 @@ When you write:
 ```wire
 validate_plan select(
   valid: (),
-  issue: (gather_missing_constraints => repair_plan)
+  issue: (gather_missing_constraints
+    => repair_plan)
 )
 ```
 
@@ -373,7 +382,8 @@ Good:
 review_report select(
   ReviewedReport: (),
   ReviewIssue: revise_report
-) => publish_report
+)
+  => publish_report
 ```
 
 because both arms expose the same downstream boundary expected by `publish_report`.
@@ -384,7 +394,8 @@ Deferred:
 review_report select(
   ReviewedReport: (),
   ReviewIssue: error_terminal
-) => publish_report
+)
+  => publish_report
 ```
 
 because one branch is productive and the other is absorptive or terminal. That introduces optional
@@ -423,8 +434,10 @@ This is better:
 ```wire
 validate_plan select(
   valid: (),
-  issue: (gather_missing_constraints => repair_plan)
-) => (load_positions <> load_option_chains <> load_filings <> load_macro_context)
+  issue: (gather_missing_constraints
+    => repair_plan)
+)
+  => (load_positions <> load_option_chains <> load_filings <> load_macro_context)
 ```
 
 than this:
@@ -432,7 +445,9 @@ than this:
 ```wire
 validate_plan select(
   valid: load_positions,
-  issue: (gather_missing_constraints => repair_plan => load_positions)
+  issue: (gather_missing_constraints
+    => repair_plan
+    => load_positions)
 )
 ```
 
@@ -454,35 +469,36 @@ Keeping shared continuation outside `select(...)`:
 
 ```wire
 node validate_plan
-  <- draft: DraftPlan ;
-  -> valid: ResearchPlan | issue: PlanIssue ;
-  = @review.validate_plan (draft) ;
+  <- draft: DraftPlan;
+  -> valid: ResearchPlan | issue: PlanIssue;
+  = @review.validate_plan (draft);
 
 node gather_missing_constraints
-  <- issue: PlanIssue ;
-  -> missing: MissingConstraints ;
-  = @artifact.gather_missing_constraints (issue) ;
+  <- issue: PlanIssue;
+  -> missing: MissingConstraints;
+  = @artifact.gather_missing_constraints (issue);
 
 node repair_plan
-  <- missing: MissingConstraints ;
-  -> valid: ResearchPlan ;
-  = @review.repair_plan (missing) ;
+  <- missing: MissingConstraints;
+  -> valid: ResearchPlan;
+  = @review.repair_plan (missing);
 
 node review_report
-  <- draft: DraftReport ;
-  -> reviewed: ReviewedReport | issue: ReviewIssue ;
-  = @review.review_report (draft) ;
+  <- draft: DraftReport;
+  -> reviewed: ReviewedReport | issue: ReviewIssue;
+  = @review.review_report (draft);
 
 node revise_report
-  <- issue: ReviewIssue ;
-  -> reviewed: ReviewedReport ;
-  = @review.revise_report (issue) ;
+  <- issue: ReviewIssue;
+  -> reviewed: ReviewedReport;
+  = @review.revise_report (issue);
 
 load_brief
   => draft_plan
   => validate_plan select(
        valid: (),
-       issue: (gather_missing_constraints => repair_plan)
+       issue: (gather_missing_constraints
+         => repair_plan)
      )
   => (load_positions <> load_option_chains <> load_filings <> load_macro_context)
   => (analyze_equities <> analyze_options <> analyze_risk)
@@ -509,10 +525,14 @@ The target language model scales naturally to more than two arms:
 ```wire
 classify_issue select(
   LowIssue: simple_fix,
-  MediumIssue: (gather_context => standard_fix),
-  HighIssue: (escalate => senior_review),
-  CriticalIssue: (page_oncall => incident_plan)
-) => execute_remediation
+  MediumIssue: (gather_context
+    => standard_fix),
+  HighIssue: (escalate
+    => senior_review),
+  CriticalIssue: (page_oncall
+    => incident_plan)
+)
+  => execute_remediation
 ```
 
 The same rules still apply:
@@ -639,7 +659,8 @@ to:
 required_evidence_missing select(
   Ready: (),
   MissingEvidence: repair
-) => analyst
+)
+  => analyst
 ```
 
 The exact legacy names in real workflows will vary, but the semantic mapping is stable:

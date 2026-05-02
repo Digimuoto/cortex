@@ -6,121 +6,121 @@
 let topo_awareness = ''
   You have access to the full upstream substrate via topological memory.
   Claim discipline is enforced by executor config, not by information availability.
-'' ;
+'';
 
 let weak_evidence_rule = ''
   If contrary evidence is genuinely weak across the substrate, state
   that explicitly as a finding with its own section.
-'' ;
+'';
 
-let citation_rule = ''Cite evidenceRefs by toolCallId for every concrete claim.'' ;
+let citation_rule = ''Cite evidenceRefs by toolCallId for every concrete claim.'';
 
-let analyst_suffix = topo_awareness ++ weak_evidence_rule ++ citation_rule ;
+let analyst_suffix = topo_awareness ++ weak_evidence_rule ++ citation_rule;
 
 # ---- configured executor values ----
 
 let gatherer_mechanism_exec = @review.gatherer {
-  memory = topological { preset = "analyst" ; } ;
-  tools = [getDate, searchAssets, getAssetFundamentals, webSearch] ;
-} ;
+  memory = topological { preset = "analyst"; };
+  tools = [getDate, searchAssets, getAssetFundamentals, webSearch];
+};
 
 let gatherer_timing_exec = @review.gatherer {
-  memory = topological { preset = "analyst" ; } ;
-  tools = [getDate, searchAssets, getAssetNews, webSearch] ;
-} ;
+  memory = topological { preset = "analyst"; };
+  tools = [getDate, searchAssets, getAssetNews, webSearch];
+};
 
 let gatherer_beneficiaries_exec = @review.gatherer {
-  memory = topological { preset = "analyst" ; } ;
-  tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch] ;
-} ;
+  memory = topological { preset = "analyst"; };
+  tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch];
+};
 
 let analyst_mechanism_exec = @review.analyst {
-  maxOutputTokens = 16384 ;
-  memory = topological { preset = "analyst" ; } ;
-  instructions = ''Attack the mechanism leg.'' ++ analyst_suffix ;
-} ;
+  maxOutputTokens = 16384;
+  memory = topological { preset = "analyst"; };
+  instructions = ''Attack the mechanism leg.'' ++ analyst_suffix;
+};
 
 let analyst_timing_exec = @review.analyst {
-  maxOutputTokens = 16384 ;
-  memory = topological { preset = "analyst" ; } ;
-  instructions = ''Attack the timing leg.'' ++ analyst_suffix ;
-} ;
+  maxOutputTokens = 16384;
+  memory = topological { preset = "analyst"; };
+  instructions = ''Attack the timing leg.'' ++ analyst_suffix;
+};
 
 let analyst_beneficiaries_exec = @review.analyst {
-  maxOutputTokens = 16384 ;
-  memory = topological { preset = "analyst" ; } ;
-  instructions = ''Attack the beneficiary leg.'' ++ analyst_suffix ;
-} ;
+  maxOutputTokens = 16384;
+  memory = topological { preset = "analyst"; };
+  instructions = ''Attack the beneficiary leg.'' ++ analyst_suffix;
+};
 
 # ---- nodes ----
 
 node planner
-  -> plan: PlannerOutput | planner_error: ExecutorError ;
-  = @review.planner ({}) ;
+  -> plan: PlannerOutput | planner_error: ExecutorError;
+  = @review.planner ({});
 
 node gatherer_mechanism
-  <- plan: PlannerOutput ;
-  -> mechanism: EvidenceBundle | gatherer_mechanism_error: ExecutorError ;
-  = gatherer_mechanism_exec (plan) ;
+  <- plan: PlannerOutput;
+  -> mechanism: EvidenceBundle | gatherer_mechanism_error: ExecutorError;
+  = gatherer_mechanism_exec (plan);
 
 node gatherer_timing
-  <- plan: PlannerOutput ;
-  -> timing: EvidenceBundle | gatherer_timing_error: ExecutorError ;
-  = gatherer_timing_exec (plan) ;
+  <- plan: PlannerOutput;
+  -> timing: EvidenceBundle | gatherer_timing_error: ExecutorError;
+  = gatherer_timing_exec (plan);
 
 node gatherer_beneficiaries
-  <- plan: PlannerOutput ;
-  -> beneficiaries: EvidenceBundle | gatherer_beneficiaries_error: ExecutorError ;
-  = gatherer_beneficiaries_exec (plan) ;
+  <- plan: PlannerOutput;
+  -> beneficiaries: EvidenceBundle | gatherer_beneficiaries_error: ExecutorError;
+  = gatherer_beneficiaries_exec (plan);
 
 node analyst_mechanism
-  <- mechanism: EvidenceBundle ;
-  -> mechanism_fragment: AnalysisFragment | analyst_mechanism_error: ExecutorError ;
-  = analyst_mechanism_exec (mechanism) ;
+  <- mechanism: EvidenceBundle;
+  -> mechanism_fragment: AnalysisFragment | analyst_mechanism_error: ExecutorError;
+  = analyst_mechanism_exec (mechanism);
 
 node analyst_timing
-  <- timing: EvidenceBundle ;
-  -> timing_fragment: AnalysisFragment | analyst_timing_error: ExecutorError ;
-  = analyst_timing_exec (timing) ;
+  <- timing: EvidenceBundle;
+  -> timing_fragment: AnalysisFragment | analyst_timing_error: ExecutorError;
+  = analyst_timing_exec (timing);
 
 node analyst_beneficiaries
-  <- beneficiaries: EvidenceBundle ;
-  -> beneficiaries_fragment: AnalysisFragment | analyst_beneficiaries_error: ExecutorError ;
-  = analyst_beneficiaries_exec (beneficiaries) ;
+  <- beneficiaries: EvidenceBundle;
+  -> beneficiaries_fragment: AnalysisFragment | analyst_beneficiaries_error: ExecutorError;
+  = analyst_beneficiaries_exec (beneficiaries);
 
 node merge
-  <- mechanism_fragment: AnalysisFragment ;
-  <- timing_fragment: AnalysisFragment ;
-  <- beneficiaries_fragment: AnalysisFragment ;
-  -> merged: AnalysisFragment ;
+  <- mechanism_fragment: AnalysisFragment;
+  <- timing_fragment: AnalysisFragment;
+  <- beneficiaries_fragment: AnalysisFragment;
+  -> merged: AnalysisFragment;
   = @review.report_merge ({
-    fragments = [mechanism_fragment, timing_fragment, beneficiaries_fragment] ;
-  }) ;
+    fragments = [mechanism_fragment, timing_fragment, beneficiaries_fragment];
+  });
 
 node review
-  <- merged: AnalysisFragment ;
-  -> concerns: ReviewConcerns | review_error: ExecutorError ;
-  = @review.review (merged) ;
+  <- merged: AnalysisFragment;
+  -> concerns: ReviewConcerns | review_error: ExecutorError;
+  = @review.review (merged);
 
 node rewriter
-  <- merged: AnalysisFragment ;
-  <- concerns: ReviewConcerns ;
-  -> bundle: ReviewBundle | rewriter_error: ExecutorError ;
+  <- merged: AnalysisFragment;
+  <- concerns: ReviewConcerns;
+  -> bundle: ReviewBundle | rewriter_error: ExecutorError;
   = @review.rewriter ({
-    analysis = merged ;
-    concerns = concerns ;
-  }) ;
+    analysis = merged;
+    inherit concerns;
+  });
 
 node error_sink
-  <- planner_error: ExecutorError ;
-  <- gatherer_mechanism_error: ExecutorError ;
-  <- gatherer_timing_error: ExecutorError ;
-  <- gatherer_beneficiaries_error: ExecutorError ;
-  <- analyst_mechanism_error: ExecutorError ;
-  <- analyst_timing_error: ExecutorError ;
-  <- analyst_beneficiaries_error: ExecutorError ;
-  <- review_error: ExecutorError ;
-  <- rewriter_error: ExecutorError ;
+  <- planner_error: ExecutorError;
+  <- gatherer_mechanism_error: ExecutorError;
+  <- gatherer_timing_error: ExecutorError;
+  <- gatherer_beneficiaries_error: ExecutorError;
+  <- analyst_mechanism_error: ExecutorError;
+  <- analyst_timing_error: ExecutorError;
+  <- analyst_beneficiaries_error: ExecutorError;
+  <- review_error: ExecutorError;
+  <- rewriter_error: ExecutorError;
   = @artifact.log ({
     errors = [
       planner_error,
@@ -132,35 +132,46 @@ node error_sink
       analyst_beneficiaries_error,
       review_error,
       rewriter_error,
-    ] ;
-  }) ;
+    ];
+  });
 
 node report
-  <- bundle: ReviewBundle ;
-  -> artifact: ReportArtifactRef ;
+  <- bundle: ReviewBundle;
+  -> artifact: ReportArtifactRef;
   = @cortex.deep_report {
-    title = "Thesis Parallel Claim Branches" ;
-    description = "Structural experiment in claim-scoped analyst branching." ;
-    match.skill = "deep-report" ;
-    match.priority = 105 ;
+    title = "Thesis Parallel Claim Branches";
+    description = "Structural experiment in claim-scoped analyst branching.";
+    match.skill = "deep-report";
+    match.priority = 105;
     match.requestContainsAny = [
       "parallel claim branches",
       "claim-scoped analysts",
-    ] ;
-    render.aggregateOpenGaps = true ;
-    render.allowExtraSectionHeadings = true ;
-    workspace.sourceKind = "deep-report" ;
-  } (bundle) ;
+    ];
+    render.aggregateOpenGaps = true;
+    render.allowExtraSectionHeadings = true;
+    workspace.sourceKind = "deep-report";
+  } (bundle);
 
 # ---- the wire ----
 
 let branches =
-  planner => (
-    (gatherer_mechanism => analyst_mechanism)
-    <> (gatherer_timing => analyst_timing)
-    <> (gatherer_beneficiaries => analyst_beneficiaries)
-  ) ;
+  planner
+    => (
+      (gatherer_mechanism
+        => analyst_mechanism)
+      <> (gatherer_timing
+        => analyst_timing)
+      <> (gatherer_beneficiaries
+        => analyst_beneficiaries)
+  );
 
-let thesis = branches => merge => review => rewriter ;
+let thesis =
+  branches
+    => merge
+    => review
+    => rewriter;
 
-(thesis => report) <> (thesis => error_sink)
+(thesis
+  => report)
+<> (thesis
+  => error_sink)

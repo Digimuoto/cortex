@@ -17,6 +17,8 @@ pages that factor out specific rule areas for quick consultation.
 
 - **[grammar.md](grammar.md)** — the normative grammar specification. The authoritative document;
   other pages in this directory point into its sections.
+- **[style.md](style.md)** — canonical formatting and layout conventions for Wire source files,
+  examples, and documentation snippets.
 - **[modules-imports-and-file-returns.md](modules-imports-and-file-returns.md)** — module model,
   `import` semantics, file-return expressions, declaration-only files. Corresponds to grammar §9.
 - **[contracts-ports-and-matching.md](contracts-ports-and-matching.md)** — contract namespace, port

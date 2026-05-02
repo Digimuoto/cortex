@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Strict mechanical style checks for Wire source and docs snippets."""
+
+from __future__ import annotations
+
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+SELF_FIELD_RE = re.compile(r"(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\1\s*;")
+
+IGNORED_DIRS = {
+    ".direnv",
+    ".git",
+    ".lake",
+    ".mypy_cache",
+    ".stack-work",
+    "dist-newstyle",
+    "node_modules",
+}
+
+
+@dataclass
+class StripState:
+    in_block_comment: bool = False
+    in_multiline_string: bool = False
+    in_string: bool = False
+    record_depth: int = 0
+
+
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def should_skip(path: Path) -> bool:
+    if any(part in IGNORED_DIRS for part in path.relative_to(ROOT).parts):
+        return True
+    return any(part.startswith("result") for part in path.relative_to(ROOT).parts)
+
+
+def wire_files() -> list[Path]:
+    return sorted(
+        path
+        for path in ROOT.rglob("*.wire")
+        if path.is_file() and not should_skip(path)
+    )
+
+
+def markdown_files() -> list[Path]:
+    paths: list[Path] = []
+    for path in DOCS.rglob("*.md"):
+        if not path.is_file():
+            continue
+        relative_parts = path.relative_to(DOCS).parts
+        if path == DOCS / "index.md" or relative_parts[:1] in {
+            ("Architecture",),
+            ("Reference",),
+            ("Usage",),
+        }:
+            paths.append(path)
+    return sorted(paths)
+
+
+def strip_comments_and_strings(line: str, state: StripState) -> str:
+    """Preserve columns while replacing Wire comments and strings with spaces."""
+
+    out: list[str] = []
+    index = 0
+    while index < len(line):
+        char = line[index]
+        pair = line[index : index + 2]
+
+        if state.in_block_comment:
+            if pair == "*/":
+                state.in_block_comment = False
+                out.append("  ")
+                index += 2
+            else:
+                out.append(" ")
+                index += 1
+            continue
+
+        if state.in_multiline_string:
+            if pair == "''":
+                state.in_multiline_string = False
+                out.append("  ")
+                index += 2
+            else:
+                out.append(" ")
+                index += 1
+            continue
+
+        if state.in_string:
+            if char == "\\" and index + 1 < len(line):
+                out.append("  ")
+                index += 2
+            elif char == '"':
+                state.in_string = False
+                out.append(" ")
+                index += 1
+            else:
+                out.append(" ")
+                index += 1
+            continue
+
+        if pair == "/*":
+            state.in_block_comment = True
+            out.append("  ")
+            index += 2
+            continue
+
+        if pair == "''":
+            state.in_multiline_string = True
+            out.append("  ")
+            index += 2
+            continue
+
+        if char == '"':
+            state.in_string = True
+            out.append(" ")
+            index += 1
+            continue
+
+        if char == "#":
+            out.append(" " * (len(line) - index))
+            break
+
+        out.append(char)
+        index += 1
+
+    if not state.in_multiline_string:
+        state.in_string = False
+    return "".join(out)
+
+
+def add_line_errors(
+    errors: list[str],
+    path: Path,
+    line_number: int,
+    raw_line: str,
+    code_line: str,
+    state: StripState,
+) -> None:
+    for index, char in enumerate(code_line):
+        if char == ";" and index > 0 and raw_line[index - 1] in {" ", "\t"}:
+            errors.append(
+                f"{rel(path)}:{line_number}:{index}: remove whitespace before semicolon"
+            )
+
+    for match in SELF_FIELD_RE.finditer(code_line):
+        if record_depth_before_index(code_line, state.record_depth, match.start()) > 0:
+            column = match.start() + 1
+            errors.append(
+                f"{rel(path)}:{line_number}:{column}: use `inherit {match.group(1)};` "
+                "for same-name record fields"
+            )
+
+    arrow_matches = list(re.finditer(r"<-|->", code_line))
+    if arrow_matches:
+        stripped = code_line.lstrip(" \t")
+        if not (stripped.startswith("<-") or stripped.startswith("->")):
+            column = arrow_matches[0].start() + 1
+            errors.append(
+                f"{rel(path)}:{line_number}:{column}: port arrow must start its own node-body line"
+            )
+        elif len(arrow_matches) > 1:
+            column = arrow_matches[1].start() + 1
+            errors.append(
+                f"{rel(path)}:{line_number}:{column}: keep one port arrow per line"
+            )
+
+    connect_matches = list(re.finditer(r"=>", code_line))
+    if connect_matches:
+        stripped = code_line.lstrip(" \t")
+        if not stripped.startswith("=>"):
+            column = connect_matches[0].start() + 1
+            errors.append(
+                f"{rel(path)}:{line_number}:{column}: connect operator must start "
+                "a causal-stage line"
+            )
+        elif len(connect_matches) > 1:
+            column = connect_matches[1].start() + 1
+            errors.append(
+                f"{rel(path)}:{line_number}:{column}: keep one connect operator per line"
+            )
+
+    state.record_depth = update_record_depth(code_line, state.record_depth)
+
+
+def record_depth_before_index(line: str, initial_depth: int, index: int) -> int:
+    return update_record_depth(line[:index], initial_depth)
+
+
+def update_record_depth(line: str, initial_depth: int) -> int:
+    depth = initial_depth
+    for char in line:
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(0, depth - 1)
+    return depth
+
+
+def check_wire_text(
+    errors: list[str],
+    path: Path,
+    text: str,
+    start_line: int = 1,
+) -> None:
+    state = StripState()
+    for offset, raw_line in enumerate(text.splitlines(), start=0):
+        code_line = strip_comments_and_strings(raw_line, state)
+        add_line_errors(errors, path, start_line + offset, raw_line, code_line, state)
+
+
+def check_markdown_wire_blocks(errors: list[str], path: Path) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    in_wire_block = False
+    block_start = 0
+    block_lines: list[str] = []
+
+    for line_number, line in enumerate(lines, start=1):
+        fence_match = re.match(r"^```([A-Za-z0-9_-]+)?(?:\s.*)?$", line)
+        if fence_match:
+            if in_wire_block:
+                check_wire_text(errors, path, "\n".join(block_lines), block_start)
+                in_wire_block = False
+                block_lines = []
+                continue
+
+            info = fence_match.group(1) or ""
+            if info == "wire":
+                in_wire_block = True
+                block_start = line_number + 1
+                block_lines = []
+            continue
+
+        if in_wire_block:
+            block_lines.append(line)
+
+
+def main() -> int:
+    errors: list[str] = []
+
+    for path in wire_files():
+        check_wire_text(errors, path, path.read_text(encoding="utf-8"))
+
+    for path in markdown_files():
+        check_markdown_wire_blocks(errors, path)
+
+    if errors:
+        print("Wire style violations:", file=sys.stderr)
+        for error in errors:
+            print(f"  {error}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

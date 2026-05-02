@@ -77,6 +77,11 @@ docs-lint:
     @echo "🔍 Running docs lint..."
     nix run .#docs-lint
 
+# Run strict Wire source style checks
+wire-style-check:
+    @echo "🔍 Running Wire style checks..."
+    nix run .#check-wire-style
+
 # ============================================================================
 # DOCUMENTATION SITE
 # ============================================================================

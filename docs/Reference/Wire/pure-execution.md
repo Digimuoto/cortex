@@ -26,17 +26,17 @@ state, artifact writes, or host callbacks.
 The source form is:
 
 ```wire
-let acceptedItem = item: item.score >= 0.7 ;
+let acceptedItem = item: item.score >= 0.7;
 
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (acceptedItems) ;
-  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items) ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = pure (acceptedItems);
+  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
   where let
-    items = evidence.items ;
-    acceptedItems = filter acceptedItem items ;
+    items = evidence.items;
+    acceptedItems = filter acceptedItem items;
   in
-  { items = items ; acceptedItems = acceptedItems ; } ;
+  { inherit items acceptedItems; };
 ```
 
 `pure (...)` is not an `@` executor application. Authored `@pure { ... }` is rejected. The compiler
@@ -59,17 +59,17 @@ tasks, but that lowering is not source-level authority.
 
 A pure node uses the clause form from the Wire grammar:
 
-```wire
+```text
 node <name>
-  (<- <input-name> : <Contract> ;)*
-  (-> <output-name> : <Contract> = pure (<corepure-expr>) ;)+
-  (where <corepure-record-expr> ;)?
+  (<- <input-name> : <Contract>;)*
+  (-> <output-name> : <Contract> = pure (<corepure-expr>);)+
+  (where <corepure-record-expr>;)?
 ```
 
 A pure output equation declares one output port and its value:
 
 ```wire
--> label: Contract = pure (<corepure_expr>) ;
+-> label: Contract = pure (<corepure_expr>);
 ```
 
 The output label is the Wire routing label. The expression result is implicit; there is no `return`,
@@ -93,8 +93,8 @@ Top-level delayed helpers are written as ordinary module `let` bindings whose ri
 CorePure helper expression:
 
 ```wire
-let acceptedItem = item: item.score >= 0.7 ;
-let scoreThreshold = 0.7 ;
+let acceptedItem = item: item.score >= 0.7;
+let scoreThreshold = 0.7;
 ```
 
 Module `let` is phase-neutral syntax. `acceptedItem` is a delayed CorePure helper function.
@@ -154,11 +154,11 @@ For example:
 
 ```wire
 node score
-  <- evidence: EvidenceSet ;
-  <- weights: WeightSet ;
+  <- evidence: EvidenceSet;
+  <- weights: WeightSet;
   -> score: ScoreSet = pure ({
-    total = sum (zipWith (s: w: s * w) evidence.scores weights.values) ;
-  }) ;
+    total = sum (zipWith (s: w: s * w) evidence.scores weights.values);
+  });
 ```
 
 Here `evidence` and `weights` are CorePure variables containing the JSON payload values from the

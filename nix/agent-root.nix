@@ -75,8 +75,9 @@ in
 
       Cortex flake evaluation does not require access to downstream consumer repositories.
 
-      Project-specific skills remain local for Cortex-only surfaces: Haskell style, Lean proof style,
-      theorem attack, architecture, document review, and research synthesis.
+      Project-specific skills remain local for Cortex-only surfaces: Haskell style, Wire source
+      style, Lean proof style, theorem attack, architecture, document review, and research
+      synthesis.
     '';
 
     inherit localSkills;

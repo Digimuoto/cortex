@@ -18,6 +18,8 @@ front-to-back. If you are trying to do a task rather than look up a rule, start 
   source of truth for vocabulary.
 - **[Wire/](Wire/)** — Wire language reference:
   - **[grammar.md](Wire/grammar.md)** — normative grammar specification.
+  - **[style.md](Wire/style.md)** — formatting and layout conventions for Wire examples and source
+    files.
   - **[modules-imports-and-file-returns.md](Wire/modules-imports-and-file-returns.md)** — module
     model, import semantics, file-return rules.
   - **[contracts-ports-and-matching.md](Wire/contracts-ports-and-matching.md)** — contract

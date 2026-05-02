@@ -87,6 +87,15 @@
       '';
     };
 
+    check-wire-style = pkgs.writeShellApplication {
+      name = "check-wire-style";
+      runtimeInputs = [pkgs.python3];
+      text = ''
+        set -euo pipefail
+        exec python3 scripts/check-wire-style
+      '';
+    };
+
     check-theory = pkgs.writeShellApplication {
       name = "check-theory";
       runtimeInputs = [pkgs.nix];
@@ -105,6 +114,7 @@
         check-logos-boundary
         check-module-haddock
         docs-lint
+        check-wire-style
         lean-lint
         lint-haskell
         check-theory
@@ -145,11 +155,15 @@
         docs-lint
         echo
 
-        echo "Step 9: Lean theory"
+        echo "Step 9: Wire style"
+        check-wire-style
+        echo
+
+        echo "Step 10: Lean theory"
         check-theory
         echo
 
-        echo "Step 10: flake checks"
+        echo "Step 11: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -162,6 +176,7 @@
       check-logos-boundary = check-logos-boundary;
       check-language-pragmas = check-language-pragmas;
       check-module-haddock = check-module-haddock;
+      check-wire-style = check-wire-style;
       docs-lint = docs-lint;
       lean-lint = lean-lint;
       lint-haskell = lint-haskell;
@@ -202,6 +217,12 @@
         type = "app";
         program = "${check-logos-boundary}/bin/check-logos-boundary";
         meta.description = "Reject Cortex imports of Logos";
+      };
+
+      check-wire-style = {
+        type = "app";
+        program = "${check-wire-style}/bin/check-wire-style";
+        meta.description = "Reject non-canonical Wire source layout";
       };
 
       _ci-check = {

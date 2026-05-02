@@ -3,6 +3,9 @@
   lib ? pkgs.lib,
 }: let
   skillFiles = {
+    wire-code-style = {
+      "SKILL.md" = {source = ./agents/skills/wire-code-style/SKILL.md;};
+    };
     architecture = {
       "SKILL.md" = ''
         LS0tCm5hbWU6IGFyY2hpdGVjdHVyZQpkZXNjcmlwdGlvbjogPgogIEFuYWx5emUgaGFyZCBDb3J0ZXggYXJjaGl0
@@ -3429,13 +3432,22 @@
       ''
       + lib.concatStringsSep "\n" (
         lib.mapAttrsToList (
-          relativePath: encoded: ''
-            target="$out/${relativePath}"
-            mkdir -p "$(${pkgs.coreutils}/bin/dirname "$target")"
-            ${pkgs.coreutils}/bin/base64 --decode > "$target" <<'EOF'
-            ${encoded}
-            EOF
-          ''
+          relativePath: value:
+            ''
+              target="$out/${relativePath}"
+              mkdir -p "$(${pkgs.coreutils}/bin/dirname "$target")"
+            ''
+            + (
+              if builtins.isAttrs value && value ? source
+              then ''
+                cp ${value.source} "$target"
+              ''
+              else ''
+                ${pkgs.coreutils}/bin/base64 --decode > "$target" <<'EOF'
+                ${value}
+                EOF
+              ''
+            )
         )
         files
       )

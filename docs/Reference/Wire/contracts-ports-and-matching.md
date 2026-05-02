@@ -27,10 +27,10 @@ A `node` declaration supplies both graph identity and a typed boundary:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet ;
-  -> rejected: RejectedSet ;
-  = @review.classify (evidence) ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet;
+  -> rejected: RejectedSet;
+  = @review.classify (evidence);
 ```
 
 The identifier `classify` names the node. The `<-` clauses declare input ports. The `->` clauses
@@ -39,8 +39,10 @@ declare output ports. The body after `=` is the implementation behind that bound
 The graph edge operator connects already-declared ports:
 
 ```wire
-source => classify
-classify => reviewer
+source
+  => classify
+classify
+  => reviewer
 ```
 
 An edge never evaluates an expression and never changes payload shape. Boundary adaptation belongs
@@ -57,9 +59,9 @@ flowchart LR
 ## Port Syntax
 
 ```wire
-<- label: Contract ;
--> label: Contract ;
--> ok: Value | error: ExecutorError ;
+<- label: Contract;
+-> label: Contract;
+-> ok: Value | error: ExecutorError;
 ```
 
 Authored ports require labels. Labels are routing identity. A labeled port never matches an
@@ -89,13 +91,13 @@ explicit transformation node:
 
 ```wire
 node merge
-  <- mechanism: AnalysisFragment ;
-  <- timing: AnalysisFragment ;
-  <- beneficiaries: AnalysisFragment ;
-  -> merged: AnalysisFragment ;
+  <- mechanism: AnalysisFragment;
+  <- timing: AnalysisFragment;
+  <- beneficiaries: AnalysisFragment;
+  -> merged: AnalysisFragment;
   = @review.report_merge ({
-    fragments = [mechanism, timing, beneficiaries] ;
-  }) ;
+    fragments = [mechanism, timing, beneficiaries];
+  });
 ```
 
 ## Sum Groups
@@ -103,7 +105,7 @@ node merge
 Sum groups are output-only:
 
 ```wire
--> value: AnalysisFragment | error: ExecutorError ;
+-> value: AnalysisFragment | error: ExecutorError;
 ```
 
 Exactly one variant fires per evaluation. Each variant has its own label and contract and matches
@@ -116,8 +118,8 @@ admits that shape:
 
 ```wire
 node log_event
-  <- event: Event ;
-  = @artifact.log (event) ;
+  <- event: Event;
+  = @artifact.log (event);
 ```
 
 Wire does not assign special source/sink semantics in syntax. Empty boundary sides are ordinary

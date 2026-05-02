@@ -106,6 +106,16 @@
             pass_filenames = false;
             files = "^docs/.*|^scripts/docs-lint$|^nix/(agent-.*\\.nix|docs\\.nix|ci/.*)$|^justfile$";
           };
+
+          wire-style = {
+            enable = true;
+            name = "wire-style";
+            description = "Run strict Wire source style checks";
+            entry = "${config.packages.check-wire-style}/bin/check-wire-style";
+            language = "system";
+            pass_filenames = false;
+            files = "^.*\\.wire$|^docs/(Architecture|Reference|Usage)/.*\\.md$|^docs/index\\.md$|^scripts/check-wire-style$|^nix/ci/.*$|^justfile$";
+          };
         };
       };
     };

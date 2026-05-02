@@ -27,10 +27,10 @@ alphabet and pairs it with inert config data:
 
 ```wire
 let analyst = @review.analyst {
-  model = "gpt-5.4" ;
-  temperature = 0.2 ;
-  memory = topological { preset = "analyst" ; } ;
-} ;
+  model = "gpt-5.4";
+  temperature = 0.2;
+  memory = topological { preset = "analyst"; };
+};
 ```
 
 This does not run the executor and does not create a graph vertex. It creates a configured executor
@@ -52,7 +52,7 @@ concrete typed port boundary.
 The application form is:
 
 ```wire
-@qualified.name { field = value ; }
+@qualified.name { field = value; }
 ```
 
 The result has:
@@ -67,18 +67,18 @@ It becomes executable only through a node body:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = analyst (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = analyst (evidence);
 ```
 
 Inline calls are equivalent when no reuse is needed:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = @review.analyst { temperature = 0.2 ; } (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = @review.analyst { temperature = 0.2; } (evidence);
 ```
 
 In [ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md)'s normal form, the
@@ -110,9 +110,9 @@ parameters, tools, and nested tagged records, but they cannot run executors.
 
 ```wire
 let reviewer = @review.review {
-  tools = [webSearch, readArtifact] ;
-  memory = topological { preset = "reviewer" ; } ;
-} ;
+  tools = [webSearch, readArtifact];
+  memory = topological { preset = "reviewer"; };
+};
 ```
 
 `topological { ... }` is a config constructor. It may grant the executor a memory/retrieval policy
@@ -125,12 +125,12 @@ CorePure is authored without `@`:
 
 ```wire
 node score
-  <- evidence: EvidenceSet ;
-  <- weights: WeightSet ;
+  <- evidence: EvidenceSet;
+  <- weights: WeightSet;
   let
     weighted = zipWith (score: weight: score * weight) weights.values evidence.scores
   in
-  -> total: Score = pure (sum weighted) ;
+  -> total: Score = pure (sum weighted);
 ```
 
 `pure (...)` is inside Wire's deterministic expression layer. Authored `@pure` is rejected. The

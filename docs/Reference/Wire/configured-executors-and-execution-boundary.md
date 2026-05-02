@@ -24,8 +24,8 @@ Configured executor values are reusable authority/config values:
 
 ```wire
 let analyst = @review.analyst {
-  temperature = 0.2 ;
-} ;
+  temperature = 0.2;
+};
 ```
 
 They are not nodes. They have no graph identity, no typed port boundary, and no place in graph
@@ -34,9 +34,9 @@ admits it into graph position:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = analyst (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = analyst (evidence);
 ```
 
 ## Boundary Rules
@@ -77,7 +77,7 @@ execution.
 Executor config may grant memory or retrieval authority:
 
 ```wire
-memory = topological { preset = "analyst" ; } ;
+memory = topological { preset = "analyst"; };
 ```
 
 That authority belongs to the executor binding. It is legal as registered config/tool authority, but

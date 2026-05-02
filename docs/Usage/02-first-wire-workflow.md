@@ -27,14 +27,15 @@ contract Outline;
 contract Result;
 
 node plan
-  <- topic: Topic ;
-  -> outline: Outline = @workflow.plan (topic) ;
+  <- topic: Topic;
+  -> outline: Outline = @workflow.plan (topic);
 
 node run
-  <- outline: Outline ;
-  -> result: Result = @workflow.execute (outline) ;
+  <- outline: Outline;
+  -> result: Result = @workflow.execute (outline);
 
-plan => run
+plan
+  => run
 ```
 
 This source says:
