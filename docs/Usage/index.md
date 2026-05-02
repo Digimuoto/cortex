@@ -41,16 +41,17 @@ from a consumer repo and pass a populated registry to `Cortex.Pulse.runPulse`.
 
 ## Reading Path
 
-| If you want to...                    | Start with                                                 |
-| ------------------------------------ | ---------------------------------------------------------- |
-| Build the repo and see the surfaces  | [Quickstart](01-quickstart.md)                             |
-| Understand the shape of a Wire file  | [Your first Wire workflow](02-first-wire-workflow.md)      |
-| Learn what Pulse needs at runtime    | [Running Pulse](03-running-pulse.md)                       |
-| Prepare an operator-facing service   | [Deploying Pulse](04-deploying-pulse.md)                   |
-| Embed Cortex in another Haskell repo | [Integrating from Haskell](05-integrating-from-haskell.md) |
-| Diagnose common failures             | [Troubleshooting](06-troubleshooting.md)                   |
-| Look up exact syntax or schemas      | [Reference](../Reference/)                                 |
-| Understand the design commitments    | [Architecture overview](../Architecture/01-overview.md)    |
+| If you want to...                     | Start with                                                 |
+| ------------------------------------- | ---------------------------------------------------------- |
+| Build the repo and see the surfaces   | [Quickstart](01-quickstart.md)                             |
+| Understand the shape of a Wire file   | [Your first Wire workflow](02-first-wire-workflow.md)      |
+| Learn what Pulse needs at runtime     | [Running Pulse](03-running-pulse.md)                       |
+| Prepare an operator-facing service    | [Deploying Pulse](04-deploying-pulse.md)                   |
+| Embed Cortex in another Haskell repo  | [Integrating from Haskell](05-integrating-from-haskell.md) |
+| Diagnose common failures              | [Troubleshooting](06-troubleshooting.md)                   |
+| Check proof and correspondence status | [Proof status](../Reference/proof-status.md)               |
+| Look up exact syntax or schemas       | [Reference](../Reference/)                                 |
+| Understand the design commitments     | [Architecture overview](../Architecture/01-overview.md)    |
 
 ## What This First Pass Covers
 
@@ -59,6 +60,14 @@ book. Writing Wire deserves its own teaching sequence because the language has n
 contracts, CorePure expressions, executor authority, configured executor values, signals, and
 rewrites. The Usage chapter should teach the shortest operational path; the Wire book should teach
 the language properly.
+
+## What Is Proven
+
+Cortex has a machine-checked proof surface for graph safety, fixed-topology Pulse safety, CorePure
+evaluation boundaries, node ingress/body/egress normal form, rewrite admission, and selected-branch
+actualization. The [proof status](../Reference/proof-status.md) dashboard separates those Lean
+claims from Haskell implementation correspondence so you can see which guarantees are closed,
+hooked, or still open.
 
 ## Related
 

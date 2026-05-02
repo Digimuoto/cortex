@@ -13,6 +13,7 @@ related:
   - docs/Architecture/03-formalism-stack.md
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/07-rewrites-and-materialization.md
+  - docs/Reference/proof-status.md
   - docs/Reference/Wire/pure-execution.md
   - docs/Reference/Wire/conditionality.md
   - docs/Reference/rewrites.md
@@ -75,6 +76,10 @@ Wire proof work should use a theorem ledger that separates four classes of oblig
 The ledger is the canonical place to add or retire Wire proof targets. Individual ADRs should state
 their semantic obligations, while this ADR records the implementation-facing theorem names,
 dependencies, and status.
+
+The human-readable dashboard for readers who want claims, counts, and Haskell correspondence status
+lives in [Reference/proof-status.md](../Reference/proof-status.md). This ADR remains the decision
+record; the reference page is the current-state status view.
 
 ## Ledger
 

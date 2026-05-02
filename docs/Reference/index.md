@@ -28,6 +28,8 @@ front-to-back. If you are trying to do a task rather than look up a rule, start 
     authority, configured executor values, ambient identifiers in config values.
 - **[rewrites.md](rewrites.md)** — bounded dynamic rewrite algebra, budget, admission,
   materialization, hydration, provenance.
+- **[proof-status.md](proof-status.md)** — human-readable matrix of Lean proof claims and Haskell
+  correspondence status.
 - **[development.md](development.md)** — build, test, formatting, docs, theory, and local validation
   commands.
 - **[Pulse/](Pulse/)** — Pulse runtime reference:

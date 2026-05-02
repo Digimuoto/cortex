@@ -126,6 +126,8 @@ rules. Usage should be the first stop when the question is "what do I do next?"
    topology evolution.
 8. **[Artifacts and provenance](Architecture/08-artifacts-and-provenance.md)** - structured outputs
    and explanation.
+9. **[Proof status](Reference/proof-status.md)** - current Lean proof and Haskell correspondence
+   matrix.
 
 ## Explore The Canon
 
