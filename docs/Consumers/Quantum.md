@@ -109,6 +109,53 @@ so an account or provider credentials cannot accidentally queue hardware jobs. H
 should be added as a separate explicit binding with provider, credential, queue, cost, and audit
 policy in its own config path.
 
+## IBM Quantum Runtime REST Runner
+
+The repository also includes an explicit hardware runner that talks to IBM Quantum Runtime through
+REST:
+
+```sh
+nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-bell-state-ibm-rest.wire --dry-run --config examples/wire/quantum-ibm-runtime.config.example.json
+```
+
+That example starts with a config node:
+
+```wire
+node ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+```
+
+The runner treats that node as the source of the provider config path. The config path is resolved
+relative to the `.wire` file. The example threads the config token into the first prepare node only
+to make the Wire graph connected; the runner treats it as orchestration data, not quantum state.
+`*.local.json` files are ignored by git, so real credentials should live in
+`examples/wire/quantum-ibm-runtime.local.json`. The tracked template at
+[`../../examples/wire/quantum-ibm-runtime.config.example.json`](../../examples/wire/quantum-ibm-runtime.config.example.json)
+shows the expected shape:
+
+```json
+{
+  "api_key_env": "QISKIT_IBM_API_KEY",
+  "instance_crn": "REPLACE_WITH_IBM_QUANTUM_RUNTIME_SERVICE_CRN",
+  "backend": "least_busy"
+}
+```
+
+`api_key_env` keeps the API key in the environment. A local config may instead use an `api_key`
+field, but that file should remain untracked. `instance_crn` is the IBM Quantum Runtime service CRN
+used in the REST `Service-CRN` header.
+
+Hardware submission is opt-in:
+
+```sh
+nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-bell-state-ibm-rest.wire --shots 100 --confirm-hardware
+```
+
+Without `--confirm-hardware`, the runner refuses to submit. With `--dry-run` or `--emit-request`, it
+builds the OpenQASM 3 sampler request locally without requesting an IAM token and without queueing a
+job. `backend = "least_busy"` asks the runner to choose an online non-simulator backend with enough
+qubits; a concrete backend can be selected with the config `backend` field or the `--backend` flag.
+
 ## Linearity Caveat
 
 Current Wire admission validates typed ports and cardinality-one inputs, but it does not make a

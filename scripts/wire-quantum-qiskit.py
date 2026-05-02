@@ -110,6 +110,12 @@ def print_plan_summary(input_path: str, plan: JSON) -> None:
     print(f"source: {input_path}")
     print("execution: not run")
     print("backend family: Qiskit")
+    runtime_config = plan.get("runtime_config")
+    if isinstance(runtime_config, dict):
+        print(
+            "runtime config: "
+            f"{runtime_config['node']} -> {runtime_config['path']}"
+        )
     print(f"qubits: {plan['num_qubits']}")
     print(f"measurements: {format_measurements(measurements)}")
     print()
@@ -248,6 +254,7 @@ def build_quantum_plan(compiled: JSON) -> JSON:
     measurements: list[JSON] = []
     qubit_wires: set[int] = set()
     allocated_qubits: dict[int, str] = {}
+    runtime_config: JSON | None = None
 
     for node_ref in order:
         metadata = task_metadata(nodes, node_ref)
@@ -258,9 +265,35 @@ def build_quantum_plan(compiled: JSON) -> JSON:
         if not isinstance(config, dict):
             raise WireQuantumError(f"node {node_ref} has non-object config")
 
-        if target == "quantum.prepare_zero":
+        if target == "quantum.ibm_runtime_config":
             if inputs:
-                raise WireQuantumError(f"{node_ref}: prepare_zero expects no inputs")
+                raise WireQuantumError(f"{node_ref}: ibm_runtime_config expects no inputs")
+            output = single_output(
+                node_ref,
+                output_ports,
+                "IBMQuantumConfig",
+                "quantum.ibm_runtime_config",
+            )
+            if runtime_config is not None:
+                raise WireQuantumError(
+                    "quantum plan declares more than one IBM runtime config node"
+                )
+            runtime_config = {
+                "node": node_ref,
+                "path": string_config(node_ref, config, "path"),
+                "output": output["name"],
+            }
+            node_outputs[node_ref] = {
+                output["name"]: QuantumValue(
+                    "config",
+                    None,
+                    "IBMQuantumConfig",
+                    node_ref,
+                    output["name"],
+                )
+            }
+        elif target == "quantum.prepare_zero":
+            allow_only_config_inputs(node_ref, inputs, "quantum.prepare_zero")
             if len(output_ports) != 1:
                 raise WireQuantumError(f"{node_ref}: prepare_zero expects exactly one Qubit output")
             output = output_ports[0]
@@ -354,7 +387,7 @@ def build_quantum_plan(compiled: JSON) -> JSON:
     if not qubit_wires:
         raise WireQuantumError("quantum plan did not allocate any qubits")
 
-    return {
+    plan = {
         "backend_family": "qiskit",
         "topological_order": order,
         "num_qubits": max(qubit_wires) + 1,
@@ -362,6 +395,9 @@ def build_quantum_plan(compiled: JSON) -> JSON:
         "operations": operations,
         "measurements": measurements,
     }
+    if runtime_config is not None:
+        plan["runtime_config"] = runtime_config
+    return plan
 
 
 def parse_edges(topology: JSON) -> list[tuple[str, str]]:
@@ -498,6 +534,13 @@ def int_config(node_ref: str, config: JSON, field: str) -> int:
     return value
 
 
+def string_config(node_ref: str, config: JSON, field: str) -> str:
+    value = config.get(field)
+    if not isinstance(value, str) or not value:
+        raise WireQuantumError(f"node {node_ref} config field {field} must be a string")
+    return value
+
+
 def allocate_qubit(node_ref: str, wire: int, allocated_qubits: dict[int, str]) -> None:
     previous = allocated_qubits.get(wire)
     if previous is not None:
@@ -537,6 +580,19 @@ def named_qubit_input(
     if value is None or value.contract != "Qubit" or value.kind != "qubit":
         raise WireQuantumError(f"{node_ref}: {executor} expects Qubit input {name}")
     return value
+
+
+def allow_only_config_inputs(
+    node_ref: str,
+    inputs: dict[str, QuantumValue],
+    executor: str,
+) -> None:
+    for name, value in inputs.items():
+        if value.contract != "IBMQuantumConfig" or value.kind != "config":
+            raise WireQuantumError(
+                f"{node_ref}: {executor} input {name} must be IBMQuantumConfig "
+                "when used as a hardware orchestration dependency"
+            )
 
 
 def single_output(node_ref: str, outputs: list[JSON], contract: str, executor: str) -> JSON:

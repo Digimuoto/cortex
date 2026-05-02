@@ -44,6 +44,10 @@ spec = describe "Cortex.Wire.Parser" $ do
       source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
       parseWireFile "examples/wire/quantum-bell-state.wire" source `shouldSatisfy` isRight
 
+    it "parses the IBM REST quantum Bell-state example" $ do
+      source <- TIO.readFile "examples/wire/quantum-bell-state-ibm-rest.wire"
+      parseWireFile "examples/wire/quantum-bell-state-ibm-rest.wire" source `shouldSatisfy` isRight
+
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $
       parseWireFile "test" "node n : -> out: T = @review.x ({});"

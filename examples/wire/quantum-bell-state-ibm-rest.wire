@@ -1,0 +1,56 @@
+# Quantum Wire example for IBM Quantum Runtime REST hardware execution.
+#
+# The first node carries the provider config file path. The config file should
+# be an ignored local JSON file, not a committed secret-bearing artifact.
+
+contract IBMQuantumConfig;
+contract Qubit;
+contract Bit;
+
+node ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+
+node prepare_control
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+
+node prepare_target
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+
+node hadamard_control
+  <- control: Qubit;
+  -> control: Qubit = @quantum.h {} (control);
+
+node entangle
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cnot ({ inherit control; inherit target; });
+
+node measure_control
+  <- control: Qubit;
+  -> control: Bit = @quantum.measure_z {} (control);
+
+node measure_target
+  <- target: Qubit;
+  -> target: Bit = @quantum.measure_z {} (target);
+
+ibm_runtime_config
+  => (
+    (
+      prepare_control
+        => hadamard_control
+        => entangle
+    )
+    <>
+    (
+      prepare_target
+        => entangle
+    )
+    <>
+    (
+      entangle
+        => (measure_control <> measure_target)
+    )
+)
