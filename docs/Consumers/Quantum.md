@@ -90,7 +90,13 @@ The runner:
 - carries `Qubit` ports as symbolic Qiskit wire indices;
 - builds one `QuantumCircuit`;
 - executes it on Qiskit Aer `aer_simulator`;
-- returns JSON counts and label-decoded counts.
+- prints a concise run summary with label-decoded counts.
+
+Machine-readable output is available with `--json`:
+
+```sh
+nix run .#wire-quantum-qiskit -- examples/wire/quantum-bell-state.wire --json
+```
 
 Plan inspection without simulator execution is also available:
 

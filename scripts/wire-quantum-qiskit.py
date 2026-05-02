@@ -60,13 +60,22 @@ def main() -> int:
         action="store_true",
         help="Print the backend-neutral quantum plan without executing Qiskit.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print machine-readable JSON instead of the human summary.",
+    )
     args = parser.parse_args()
 
     try:
         compiled = load_compiled_circuit(args.input, args.wire_bin)
         plan = build_quantum_plan(compiled)
         if args.emit_plan:
-            print_json(plan)
+            if args.json_output:
+                print_json(plan)
+            else:
+                print_plan_summary(args.input, plan)
             return 0
         result = execute_qiskit_plan(
             plan,
@@ -74,7 +83,10 @@ def main() -> int:
             shots=args.shots,
             seed=args.seed,
         )
-        print_json(result)
+        if args.json_output:
+            print_json(result)
+        else:
+            print_run_summary(args.input, result)
         return 0
     except WireQuantumError as exc:
         print(f"wire-quantum-qiskit: {exc}", file=sys.stderr)
@@ -90,6 +102,108 @@ def positive_int(raw: str) -> int:
 
 def print_json(value: JSON) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def print_plan_summary(input_path: str, plan: JSON) -> None:
+    measurements = plan["measurements"]
+    print("Wire quantum plan")
+    print(f"source: {input_path}")
+    print("execution: not run")
+    print("backend family: Qiskit")
+    print(f"qubits: {plan['num_qubits']}")
+    print(f"measurements: {format_measurements(measurements)}")
+    print()
+    print("Operations:")
+    for operation in plan["operations"]:
+        print(f"  - {format_operation(operation)}")
+    print()
+    print("This only inspected the compiled Wire graph; no simulator or hardware job ran.")
+
+
+def print_run_summary(input_path: str, result: JSON) -> None:
+    plan = result["plan"]
+    measurements = plan["measurements"]
+    shots = result["shots"]
+
+    print("Wire quantum run")
+    print(f"source: {input_path}")
+    print("execution: local simulation (not real hardware)")
+    print(f"backend: Qiskit Aer {result['backend']}")
+    print(f"shots: {shots}")
+    print(f"seed: {result['seed'] if result['seed'] is not None else 'random'}")
+    print(f"qiskit: {result['qiskit_version']} / aer: {result['qiskit_aer_version']}")
+    print(f"qubits: {plan['num_qubits']}")
+    print(f"measurements: {format_measurements(measurements)}")
+    print()
+    print("What happened:")
+    print("Wire compiled the graph into typed quantum executor nodes.")
+    print("The runner mapped @quantum.prepare_zero, @quantum.h, and @quantum.cnot,")
+    print("plus @quantum.measure_z, into one Qiskit circuit.")
+    print("It sampled that circuit on the local Aer simulator.")
+    print("No provider account was used and no real quantum hardware job was queued.")
+    print()
+    print("Result:")
+    print(format_result_table(result["counts"], measurements, shots))
+
+
+def format_measurements(measurements: list[JSON]) -> str:
+    if not measurements:
+        return "none"
+    return ", ".join(
+        f"{measurement['output']}=q[{measurement['wire']}]"
+        for measurement in measurements
+    )
+
+
+def format_operation(operation: JSON) -> str:
+    gate = operation["gate"]
+    node = operation["node"]
+    if gate == "prepare_zero":
+        return f"{node}: prepare_zero q[{operation['wire']}]"
+    if gate == "h":
+        return f"{node}: h q[{operation['wire']}]"
+    if gate == "cnot":
+        return f"{node}: cnot q[{operation['control']}], q[{operation['target']}]"
+    if gate == "measure_z":
+        return (
+            f"{node}: measure_z q[{operation['wire']}] "
+            f"-> {operation['output']} (c[{operation['classical_bit']}])"
+        )
+    return f"{node}: {gate}"
+
+
+def format_result_table(counts: dict[str, int], measurements: list[JSON], shots: int) -> str:
+    rows = []
+    for bits, count in sorted(counts.items()):
+        label = label_bits(bits, measurements)
+        percent = (count / shots * 100) if shots else 0
+        rows.append((bits, label, str(count), f"{percent:.2f}%"))
+    if not rows:
+        return "  (no measurement counts)"
+
+    headers = ("bits", "outputs", "shots", "percent")
+    widths = [
+        max([len(headers[0]), *(len(row[0]) for row in rows)]),
+        max([len(headers[1]), *(len(row[1]) for row in rows)]),
+        max([len(headers[2]), *(len(row[2]) for row in rows)]),
+        max([len(headers[3]), *(len(row[3]) for row in rows)]),
+    ]
+    lines = [
+        "  "
+        + f"{headers[0]:<{widths[0]}}  "
+        + f"{headers[1]:<{widths[1]}}  "
+        + f"{headers[2]:>{widths[2]}}  "
+        + f"{headers[3]:>{widths[3]}}"
+    ]
+    for bits, label, count, percent in rows:
+        lines.append(
+            "  "
+            + f"{bits:<{widths[0]}}  "
+            + f"{label:<{widths[1]}}  "
+            + f"{count:>{widths[2]}}  "
+            + f"{percent:>{widths[3]}}"
+        )
+    return "\n".join(lines)
 
 
 def load_compiled_circuit(input_path: str, wire_bin: str) -> JSON:
@@ -509,19 +623,23 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
 
 def labeled_counts(counts: dict[str, int], measurements: list[JSON]) -> dict[str, int]:
     labeled: dict[str, int] = {}
-    width = len(measurements)
     for raw_bits, count in counts.items():
-        bits = raw_bits.replace(" ", "")
-        if len(bits) != width:
-            raise WireQuantumError(f"unexpected Qiskit bitstring width: {raw_bits}")
-        fields = []
-        for measurement in measurements:
-            classical_bit = measurement["classical_bit"]
-            # Qiskit renders classical bit n-1 on the left and bit 0 on the right.
-            bit = bits[width - classical_bit - 1]
-            fields.append(f"{measurement['output']}={bit}")
-        labeled[",".join(fields)] = count
+        labeled[label_bits(raw_bits, measurements)] = count
     return dict(sorted(labeled.items()))
+
+
+def label_bits(raw_bits: str, measurements: list[JSON]) -> str:
+    bits = raw_bits.replace(" ", "")
+    width = len(measurements)
+    if len(bits) != width:
+        raise WireQuantumError(f"unexpected Qiskit bitstring width: {raw_bits}")
+    fields = []
+    for measurement in measurements:
+        classical_bit = measurement["classical_bit"]
+        # Qiskit renders classical bit n-1 on the left and bit 0 on the right.
+        bit = bits[width - classical_bit - 1]
+        fields.append(f"{measurement['output']}={bit}")
+    return ",".join(fields)
 
 
 if __name__ == "__main__":
