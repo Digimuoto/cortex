@@ -14,6 +14,7 @@ related:
   - docs/Architecture/08-artifacts-and-provenance.md
   - docs/Consumers/Logos/reasoning-library.md
   - docs/ADRs/0001-structured-report-ir.md
+  - docs/ADRs/0013-report-provenance-artifact-contract.md
   - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - docs/ADRs/0018-canonical-haskell-module-tree.md
 ---
@@ -103,5 +104,6 @@ Costs and obligations:
 - [Chapter 08 - Artifacts and provenance](../Architecture/08-artifacts-and-provenance.md)
 - [Logos reasoning library](../Consumers/Logos/reasoning-library.md)
 - [ADR 0001 - Structured Document IR](0001-structured-report-ir.md)
+- [ADR 0013 - Artifact Provenance Contract](0013-report-provenance-artifact-contract.md)
 - [ADR 0016 - Cortex Roots and Logos Pattern Extraction](0016-cortex-roots-and-logos-pattern-extraction.md)
 - [ADR 0018 - Canonical Haskell Module Tree](0018-canonical-haskell-module-tree.md)
