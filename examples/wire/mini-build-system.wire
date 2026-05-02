@@ -2,7 +2,7 @@
 #
 # Run:
 #
-#   nix run .#wire examples/wire/mini-build-system.wire
+#   nix run .#wire -- run examples/wire/mini-build-system.wire
 #
 # Type `release` for a full project gate, `docs` for a documentation-only
 # gate, or anything else for a smaller development gate.

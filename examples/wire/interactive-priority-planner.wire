@@ -2,7 +2,7 @@
 #
 # Intended run command after the `wire` CLI and stdio executors land:
 #
-#   nix run .#wire examples/wire/interactive-priority-planner.wire
+#   nix run .#wire -- run examples/wire/interactive-priority-planner.wire
 #
 # Type `high` at the prompt for a more aggressive plan; any other input
 # chooses the conservative threshold.

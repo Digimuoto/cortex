@@ -34,10 +34,6 @@ theory/.lake/
 !examples/
 !examples/**
 
-# assets/ — tracked images used by README and docs
-!assets/
-!assets/**
-
 # nix/ — includes materialized/ for reproducible builds
 !nix/
 !nix/**

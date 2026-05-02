@@ -1,80 +1,87 @@
-<p align="center">
-  <img src="assets/cortex-readme-banner.png" alt="Cortex" />
-</p>
-
-<p align="center">
-  <a href="https://github.com/Digimuoto/cortex/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Digimuoto/cortex/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://digimuoto.github.io/cortex/"><img alt="Docs" src="https://github.com/Digimuoto/cortex/actions/workflows/docs.yml/badge.svg" /></a>
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
-  <img alt="Build: Nix" src="https://img.shields.io/badge/build-Nix-5277C3" />
-</p>
-
 # Cortex
 
-Cortex is a standalone durable runtime substrate: a typed topology layer, a source language for
-composing that topology, and a runtime for executing it.
+[![CI](https://github.com/Digimuoto/cortex/actions/workflows/ci.yml/badge.svg)](https://github.com/Digimuoto/cortex/actions/workflows/ci.yml)
+[![Docs](https://github.com/Digimuoto/cortex/actions/workflows/docs.yml/badge.svg)](https://digimuoto.github.io/cortex/)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+![Build: Nix](https://img.shields.io/badge/build-Nix-5277C3)
 
-The core layers are:
+Cortex is a durable runtime substrate for typed graph programs. It provides:
 
-| Layer          | Role                                                                |
-| -------------- | ------------------------------------------------------------------- |
-| **Algebra**    | Pure topology: vertices, overlay, connect, and graph laws.          |
-| **Wire**       | Source language, contracts, compiled circuit form, and rewrites.    |
-| **Pulse**      | Durable execution, checkpoints, events, signals, and persistence.   |
-| **Capability** | Registered authority surfaces such as models, tools, and providers. |
-| **Artifact**   | Durable outputs, metadata, provenance, and rendering boundaries.    |
+- **Wire**, a small source language for contract-checked dataflow graphs;
+- **Pulse**, a runtime for executing ready frontiers and durable continuations;
+- **Algebra**, the graph laws underneath Wire and Pulse;
+- **Capability** and **Artifact** boundaries for registered authority and durable outputs.
 
-Downstream products bind Cortex to their own domain semantics, tools, product policy, operators,
-transport, and persistence. Cortex owns the reusable substrate.
+The point is to make topology explicit: pure planning stays pure, external authority stays
+registered, and independent nodes can run as a frontier.
 
-## Minimal Wire
+## Wire
 
-Wire composes registered authority. Executors, contracts, tools, and payload meaning are registered
-outside the language; Wire describes how those typed pieces connect.
+<!-- GitHub does not load repo-local Wire highlighting for README fences; `haskell` is a readable fallback. -->
 
-```wire
-contract Plan;
-contract Evidence;
-contract Report;
+```haskell
+contract UserInput;
+contract Greeting;
 
-node plan   : -> Plan               = @workflow.plan {};
-node gather : <- Plan -> Evidence   = @tool.search {};
-node write  : <- Evidence -> Report = @artifact.report {};
+node read_name
+  -> name: UserInput = @cortex.io.stdin { prompt = "Name: "; } (null);
 
-plan => gather => write
+node greet
+  <- name: UserInput;
+  -> greeting: Greeting = pure ("Hello, ${name}.");
+
+node print_greeting
+  <- greeting: Greeting;
+  = @cortex.io.stdout { newline = true; } (greeting);
+
+read_name
+  => greet
+  => print_greeting
+```
+
+The connect operator `=>` advances causal time.
+
+## Try It
+
+```bash
+nix run .#wire -- run examples/wire/interactive-priority-planner.wire
+nix run .#wire -- run examples/wire/mini-build-system.wire
+```
+
+All normal development goes through Nix and `just`:
+
+```bash
+just build
+just test
+just docs-build
+just lean-build
 ```
 
 ## Documentation
 
-- [Docs landing](https://digimuoto.github.io/cortex/) - architecture, reference, ADRs, roadmap, and
-  consumer bindings.
-- [Stable canon](https://digimuoto.github.io/cortex/#stable-canon) - architecture, reference, ADRs,
-  and canonical docs.
-- [Working artifacts](https://digimuoto.github.io/cortex/#working-artifacts) - roadmap, research
-  notes, controlled experiments, and templates.
-- [Start here](https://digimuoto.github.io/cortex/#start-here) - the intended first reading path
-  through the published docs.
-- [Consumer examples](https://digimuoto.github.io/cortex/#consumer-examples) - downstream binding
-  examples.
+The full guide and reference live in the published docs:
+
+- [Start here](https://digimuoto.github.io/cortex/Usage/) for practical usage.
+- [Architecture](https://digimuoto.github.io/cortex/Architecture/) for the substrate model.
+- [Wire reference](https://digimuoto.github.io/cortex/Reference/Wire/) for syntax and semantics.
+- [Proof status](https://digimuoto.github.io/cortex/Reference/proof-status/) for the current
+  mechanized surface.
+- [ADRs](https://digimuoto.github.io/cortex/ADRs/) for design decisions.
 
 ## Repository
 
 ```text
 src/Cortex/               Cortex substrate library
-app/cortex-pulse/         Pulse executor binary
+app/wire/                 Local Wire command
+app/cortex-pulse/         Pulse executor shell
+examples/wire/            Runnable Wire examples
 editors/tree-sitter-wire/ Wire tree-sitter grammar
-theory/                   Lean mechanization scaffold
-docs/                     Published Cortex documentation
-nix/agent-*.nix           Cortex-local overlays for external agent context
+theory/                   Lean mechanization
+docs/                     Published documentation
 ```
 
-Cortex depends on the public `Digimuoto/haskell-platform` repository through the
-`haskell-platform-src` flake input. Logos is a downstream consumer and is not a Cortex flake input,
-package dependency, or exported source snapshot.
-
-Shared agent skills and archetypes are supplied by the public `Digimuoto/agents` flake. Provider
-files such as `AGENTS.md` and `CLAUDE.md` are generated, gitignored symlinks from the local
-`just agent-link-*` commands.
+Cortex depends on `Digimuoto/haskell-platform` through the `haskell-platform-src` flake input.
+Downstream systems bind Cortex to their own executors, tools, policies, operators, and persistence.
 
 ## License
 
