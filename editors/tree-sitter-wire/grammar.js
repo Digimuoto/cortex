@@ -268,7 +268,7 @@ module.exports = grammar({
 
     record: $ => seq(
       '{',
-      repeat(seq($.field, ';')),
+      repeat(seq(choice($.field, $.inherit_field), ';')),
       '}',
     ),
 
@@ -276,6 +276,11 @@ module.exports = grammar({
       field('path', $.field_path),
       '=',
       field('value', $.expression),
+    ),
+
+    inherit_field: $ => seq(
+      'inherit',
+      repeat1(field('name', $.identifier)),
     ),
 
     field_path: $ => seq(
@@ -440,7 +445,7 @@ module.exports = grammar({
 
     core_pure_record: $ => seq(
       '{',
-      repeat(seq($.core_pure_field, ';')),
+      repeat(seq(choice($.core_pure_field, $.inherit_field), ';')),
       '}',
     ),
 
@@ -466,26 +471,31 @@ module.exports = grammar({
     ),
 
     string: $ => seq(
-      '"',
+      token('"'),
       repeat(choice(
         $.escape_sequence,
-        /\$\{[^}]*\}/,
-        /[^"\\\n\r]/,
+        $._string_interpolation,
+        $._string_content,
       )),
-      '"',
+      token.immediate('"'),
     ),
 
     indented_string: $ => seq(
-      "''",
+      token("''"),
       repeat(choice(
-        /\$\{[^}]*\}/,
-        /[^']/,
-        /'[^']/,
+        $._indented_string_interpolation,
+        $._indented_string_content,
+        $._indented_string_single_quote,
       )),
-      "''",
+      token.immediate("''"),
     ),
 
-    escape_sequence: _ => token(seq('\\', /[ntr"\\$]/)),
+    escape_sequence: _ => token.immediate(seq('\\', /[ntr"\\$]/)),
+    _string_interpolation: _ => token.immediate(prec(2, /\$\{[^}\n\r]*\}/)),
+    _string_content: _ => token.immediate(prec(1, /([^"\\\n\r$]+|\$)/)),
+    _indented_string_interpolation: _ => token.immediate(prec(2, /\$\{[^}]*\}/)),
+    _indented_string_content: _ => token.immediate(prec(1, /[^']+/)),
+    _indented_string_single_quote: _ => token.immediate(prec(1, /'[^']/)),
     number: _ => token(/-?[0-9]+(\.[0-9]+)?/),
     boolean: _ => choice('true', 'false'),
     null: _ => 'null',
@@ -493,7 +503,7 @@ module.exports = grammar({
 
     identifier: _ => token(/[A-Za-z_][A-Za-z0-9_]*/),
 
-    line_comment: _ => token(seq('#', /.*/)),
+    line_comment: _ => token(prec(-1, seq('#', /.*/))),
     block_comment: _ => token(seq('/*', /([^*]|\*[^/])*/, '*/')),
   },
 });

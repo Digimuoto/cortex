@@ -96,6 +96,22 @@ spec = describe "Cortex.Wire.Parser" $ do
             length fields `shouldBe` 1
         other -> expectationFailure ("unexpected forms: " <> show other)
 
+    it "desugars ordinary record inherit fields" $ do
+      let WireFile forms _ =
+            parseOrFail "let analyst = @review.analyst { inherit temperature; } ;"
+      case forms of
+        [ TopLet
+            LetPrivate
+            "analyst"
+            (LetRhsWire (ExprConfiguredExecutor _ (Record fields)))
+          ] ->
+            fields
+              `shouldBe` [ Field
+                             ("temperature" :| [])
+                             (ExprIdent (QName ("temperature" :| [])))
+                         ]
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
   describe "node declarations" $ do
     it "parses pure output equations with a where-clause" $ do
       let WireFile forms _ =
@@ -229,6 +245,13 @@ spec = describe "Cortex.Wire.Parser" $ do
           CorePureMerge
           (CorePureRecord [CorePureField ("a" :| []) (CorePureLit (CorePureNumber 1))])
           (CorePureRecord [CorePureField ("b" :| []) (CorePureLit (CorePureNumber 2))])
+
+    it "desugars CorePure record inherit fields" $
+      parseCorePureNodeOutput "{ inherit accepted rejected; }"
+        `shouldBe` CorePureRecord
+          [ CorePureField ("accepted" :| []) (CorePureIdent "accepted")
+          , CorePureField ("rejected" :| []) (CorePureIdent "rejected")
+          ]
 
     it "parses if-then-else" $
       parseCorePureNodeOutput "if accepted then \"yes\" else \"no\""

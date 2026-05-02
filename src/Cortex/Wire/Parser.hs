@@ -114,6 +114,7 @@ reservedWords =
   , "false"
   , "from"
   , "if"
+  , "inherit"
   , "import"
   , "in"
   , "let"
@@ -361,12 +362,12 @@ constructorExpr = do
 recordExpr :: Parser Record
 recordExpr = do
   _ <- symbol "{"
-  fields <- many terminatedField
+  fields <- concat <$> many terminatedField
   _ <- symbol "}"
   pure (Record fields)
 
-terminatedField :: Parser Field
-terminatedField = field <* symbol ";"
+terminatedField :: Parser [Field]
+terminatedField = (try inheritFields <|> fmap pure field) <* symbol ";"
 
 field :: Parser Field
 field = do
@@ -374,6 +375,15 @@ field = do
   restSegs <- many (symbol "." *> identifier)
   _ <- symbol "="
   Field (firstSeg :| restSegs) <$> expr
+
+inheritFields :: Parser [Field]
+inheritFields = do
+  keyword "inherit"
+  names <- some identifier
+  pure
+    [ Field (name :| []) (ExprIdent (QName (name :| [])))
+    | name <- names
+    ]
 
 listExpr :: Parser Expr
 listExpr = do
@@ -703,12 +713,12 @@ corePureList = do
 corePureRecord :: Parser CorePureExpr
 corePureRecord = do
   _ <- symbol "{"
-  fields <- many corePureTerminatedField
+  fields <- concat <$> many corePureTerminatedField
   _ <- symbol "}"
   pure (CorePureRecord fields)
 
-corePureTerminatedField :: Parser CorePureField
-corePureTerminatedField = corePureField <* symbol ";"
+corePureTerminatedField :: Parser [CorePureField]
+corePureTerminatedField = (try corePureInheritFields <|> fmap pure corePureField) <* symbol ";"
 
 corePureField :: Parser CorePureField
 corePureField = do
@@ -716,6 +726,12 @@ corePureField = do
   restSegs <- many (symbol "." *> identifier)
   _ <- symbol "="
   CorePureField (firstSeg :| restSegs) <$> corePureExpr
+
+corePureInheritFields :: Parser [CorePureField]
+corePureInheritFields = do
+  keyword "inherit"
+  names <- some identifier
+  pure [CorePureField (name :| []) (CorePureIdent name) | name <- names]
 
 chainLeft :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainLeft operand operator = do

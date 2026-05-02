@@ -60,7 +60,7 @@ Literal forms:
 - numbers: decimal integers and floats;
 - booleans: `true`, `false`;
 - null: `null`;
-- records: `{ key = value ; nested.key = value ; }`;
+- records: `{ key = value; nested.key = value; inherit key; }`;
 - lists: `[a, b, c]`;
 - unit/empty wire: `()`.
 
@@ -105,7 +105,7 @@ file-return position or on either side of graph operators.
 **Configured executor values** have the form:
 
 ```wire
-@qualified.executor { field = value ; }
+@qualified.executor { field = value; }
 ```
 
 They are inert values containing executor identity plus pure config data. They are `let`-bindable
@@ -127,9 +127,9 @@ is known if an executor registry declares it or the program asserts it with `con
 Port clauses:
 
 ```wire
-<- label: Contract ;
--> label: Contract ;
--> label_a: ContractA | label_b: ContractB ;
+<- label: Contract;
+-> label: Contract;
+-> label_a: ContractA | label_b: ContractB;
 ```
 
 Labels are required on authored ports. A port key is `(direction, contract, label)`. `=>` connects
@@ -172,20 +172,20 @@ There is no colon after `node name`.
 Pure nodes compute deterministic JSON-shaped values:
 
 ```wire
-let scoreThreshold = 0.7 ;
+let scoreThreshold = 0.7;
 
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = pure (accepted);
   -> summary: Report = pure (''
     Accepted: ${length accepted} items
     Threshold: ${scoreThreshold}
-  '') ;
+  '');
   where let
-    items = evidence.items ;
-    accepted = items |> filter (item: item.score >= scoreThreshold) ;
+    items = evidence.items;
+    accepted = items |> filter (item: item.score >= scoreThreshold);
   in
-  { items = items ; accepted = accepted ; } ;
+  { inherit items accepted; };
 ```
 
 Rules:
@@ -210,41 +210,41 @@ is an executor call:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  -> usage: UsageMetadata ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  -> usage: UsageMetadata;
   = @review.analyzeWithUsage {
-    model = "gpt-5.4" ;
-  } (evidence) ;
+    model = "gpt-5.4";
+  } (evidence);
 ```
 
 Single-output executor nodes may use the shorthand:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord = @review.analyze (evidence);
 ```
 
 Zero-output executor nodes use an executor body with no output clauses:
 
 ```wire
 node log_event
-  <- event: Event ;
-  = @artifact.log (event) ;
+  <- event: Event;
+  = @artifact.log (event);
 ```
 
 Configured executors are applied by name:
 
 ```wire
 let analyst = @review.analyst {
-  temperature = 0.2 ;
-} ;
+  temperature = 0.2;
+};
 
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = analyst (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = analyst (evidence);
 ```
 
 Semantically, the expression passed to the executor is the node's ingress adapter: it translates the
@@ -266,18 +266,19 @@ explicit CorePure record:
 
 ```wire
 node merge
-  <- mechanism: AnalysisFragment ;
-  <- timing: AnalysisFragment ;
-  <- beneficiaries: AnalysisFragment ;
-  -> merged: AnalysisFragment ;
+  <- mechanism: AnalysisFragment;
+  <- timing: AnalysisFragment;
+  <- beneficiaries: AnalysisFragment;
+  -> merged: AnalysisFragment;
   = @review.report_merge ({
-    fragments = [mechanism, timing, beneficiaries] ;
-  }) ;
+    fragments = [mechanism, timing, beneficiaries];
+  });
 ```
 
 Executor config is inert data. It may contain records, lists, strings, numbers, booleans, configured
 values admitted by the config schema, tool names, and tagged config constructors such as
-`topological { preset = "analyst" ; }`. The registry validates whether those fields are meaningful.
+`topological { preset = "analyst"; }`. The registry validates whether those fields are meaningful.
+Record fields support Nix-style `inherit name;` sugar, which desugars to `name = name;`.
 
 ## 7. Graph Composition
 
@@ -297,8 +298,10 @@ edges. Multiple edges into the same cardinality-one input are a compile error.
 The implementation requires parentheses when `<>` and `=>` are mixed in one expression:
 
 ```wire
-(a <> b) => c
-a => (b <> c)
+(a <> b)
+  => c
+a
+  => (b <> c)
 ```
 
 Unparenthesized `a => b <> c` is rejected.
@@ -371,9 +374,9 @@ value:
 
 ```wire
 node planner
-  -> plan: PlannerOutput = @review.planner ({}) ;
+  -> plan: PlannerOutput = @review.planner ({});
 
-export let exported_planner = planner ;
+export let exported_planner = planner;
 ```
 
 ## 10. Type-Checking Summary
@@ -398,42 +401,44 @@ every required input boundary must be supplied before Pulse can run it.
 ## 11. Complete Example
 
 ```wire
-let threshold = 0.7 ;
+let threshold = 0.7;
 
 let analyst = @review.analyst {
-  model = "gpt-5.4" ;
-  temperature = 0.2 ;
-} ;
+  model = "gpt-5.4";
+  temperature = 0.2;
+};
 
 node gather
-  -> evidence: EvidenceSet = @review.gather ({}) ;
+  -> evidence: EvidenceSet = @review.gather ({});
 
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = pure (accepted);
+  -> rejected: RejectedSet = pure (rejected);
   -> summary: Report = pure (''
     Classification complete.
     Accepted: ${length accepted}
     Rejected: ${length rejected}
     Threshold: ${threshold}
-  '') ;
+  '');
   where let
-    items = evidence.items ;
-    accepted = items |> filter (x: x.score >= threshold) ;
-    rejected = items |> filter (x: x.score < threshold) ;
+    items = evidence.items;
+    accepted = items |> filter (x: x.score >= threshold);
+    rejected = items |> filter (x: x.score < threshold);
   in
-  { items = items ; accepted = accepted ; rejected = rejected ; } ;
+  { inherit items accepted rejected; };
 
 node analyze
-  <- accepted: AcceptedSet ;
-  -> analysis: AnalysisRecord ;
+  <- accepted: AcceptedSet;
+  -> analysis: AnalysisRecord;
   = analyst ({
-    accepted = accepted ;
-    instructions = "Analyze ${length accepted.items} accepted items." ;
-  }) ;
+    inherit accepted;
+    instructions = "Analyze ${length accepted.items} accepted items.";
+  });
 
-gather => classify => analyze
+gather
+  => classify
+  => analyze
 ```
 
 ## 12. Rejected Legacy Surface

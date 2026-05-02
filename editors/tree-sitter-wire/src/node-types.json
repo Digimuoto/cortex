@@ -1545,6 +1545,10 @@
         {
           "type": "core_pure_field",
           "named": true
+        },
+        {
+          "type": "inherit_field",
+          "named": true
         }
       ]
     }
@@ -1799,6 +1803,22 @@
     "type": "indented_string",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "inherit_field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
   },
   {
     "type": "inline_executor_call",
@@ -2233,6 +2253,10 @@
       "types": [
         {
           "type": "field",
+          "named": true
+        },
+        {
+          "type": "inherit_field",
           "named": true
         }
       ]
@@ -2739,6 +2763,10 @@
   },
   {
     "type": "in",
+    "named": false
+  },
+  {
+    "type": "inherit",
     "named": false
   },
   {
