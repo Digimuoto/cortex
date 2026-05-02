@@ -2,8 +2,6 @@
   pkgs = hackage:
     {
       packages = {
-        MemoTrie.revision = import ./cabal-files/MemoTrie.nix;
-        MemoTrie.flags.examples = false;
         semigroups.revision = import ./cabal-files/semigroups.nix;
         conduit.revision = import ./cabal-files/conduit.nix;
         singleton-bool.revision = import ./cabal-files/singleton-bool.nix;
@@ -108,9 +106,6 @@
         kan-extensions.revision = import ./cabal-files/kan-extensions.nix;
         postgresql-libpq.revision = import ./cabal-files/postgresql-libpq.nix;
         postgresql-libpq.flags.use-pkg-config = false;
-        vector-space.revision = import ./cabal-files/vector-space.nix;
-        cmark-gfm.revision = import ./cabal-files/cmark-gfm.nix;
-        cmark-gfm.flags.pkgconfig = false;
         microlens-th.revision = import ./cabal-files/microlens-th.nix;
         wai-extra.revision = import ./cabal-files/wai-extra.nix;
         wai-extra.flags.build-example = false;
@@ -192,7 +187,6 @@
         openapi3.revision = import ./cabal-files/openapi3.nix;
         blaze-markup.revision = import ./cabal-files/blaze-markup.nix;
         network-byte-order.revision = import ./cabal-files/network-byte-order.nix;
-        newtype-generics.revision = import ./cabal-files/newtype-generics.nix;
         safe-exceptions.revision = import ./cabal-files/safe-exceptions.nix;
         time.revision = hackage.time."1.12.2".revisions.default;
         array.revision = hackage.array."0.5.8.0".revisions.default;
@@ -308,7 +302,6 @@
         integer-logarithms.flags.integer-gmp = true;
         integer-logarithms.flags.check-bounds = false;
         time-compat.revision = import ./cabal-files/time-compat.nix;
-        safe-money-aeson.revision = import ./cabal-files/safe-money-aeson.nix;
         wai.revision = import ./cabal-files/wai.nix;
         tagged.revision = import ./cabal-files/tagged.nix;
         tagged.flags.template-haskell = true;
@@ -350,7 +343,6 @@
         cereal.revision = import ./cabal-files/cereal.nix;
         cereal.flags.bytestring-builder = false;
         containers.revision = hackage.containers."0.7".revisions.default;
-        Boolean.revision = import ./cabal-files/Boolean.nix;
         th-orphans.revision = import ./cabal-files/th-orphans.nix;
         postgresql-binary.revision = import ./cabal-files/postgresql-binary.nix;
         prettyprinter-ansi-terminal.revision = import ./cabal-files/prettyprinter-ansi-terminal.nix;
@@ -380,8 +372,6 @@
         lens.flags.test-hunit = true;
         dlist.revision = import ./cabal-files/dlist.nix;
         dlist.flags.werror = false;
-        safe-money.revision = import ./cabal-files/safe-money.nix;
-        NumInstances.revision = import ./cabal-files/NumInstances.nix;
         libyaml-clib.revision = import ./cabal-files/libyaml-clib.nix;
         concurrent-output.revision = import ./cabal-files/concurrent-output.nix;
         http-semantics.revision = import ./cabal-files/http-semantics.nix;
@@ -529,7 +519,6 @@
           "cortex".components.tests."cortex-test".planned = lib.mkOverride 900 true;
           "blaze-builder".components.library.planned = lib.mkOverride 900 true;
           "array".components.library.planned = lib.mkOverride 900 true;
-          "safe-money".components.library.planned = lib.mkOverride 900 true;
           "opaleye".components.library.planned = lib.mkOverride 900 true;
           "happy-lib".components.sublibs."backend-glr".planned = lib.mkOverride 900 true;
           "unix".components.library.planned = lib.mkOverride 900 true;
@@ -548,7 +537,6 @@
           "erf".components.library.planned = lib.mkOverride 900 true;
           "directory".components.library.planned = lib.mkOverride 900 true;
           "HUnit".components.library.planned = lib.mkOverride 900 true;
-          "NumInstances".components.library.planned = lib.mkOverride 900 true;
           "syb".components.library.planned = lib.mkOverride 900 true;
           "http2".components.library.planned = lib.mkOverride 900 true;
           "semigroupoids".components.library.planned = lib.mkOverride 900 true;
@@ -591,7 +579,6 @@
           "concurrent-output".components.library.planned = lib.mkOverride 900 true;
           "wai-app-static".components.exes."warp".planned = lib.mkOverride 900 true;
           "vector-algorithms".components.library.planned = lib.mkOverride 900 true;
-          "Boolean".components.library.planned = lib.mkOverride 900 true;
           "crypton".components.library.planned = lib.mkOverride 900 true;
           "dec".components.library.planned = lib.mkOverride 900 true;
           "aeson".components.library.planned = lib.mkOverride 900 true;
@@ -633,9 +620,7 @@
           "cereal".components.library.planned = lib.mkOverride 900 true;
           "cmdargs".components.library.planned = lib.mkOverride 900 true;
           "rts".components.library.planned = lib.mkOverride 900 true;
-          "safe-money-aeson".components.library.planned = lib.mkOverride 900 true;
           "crypton-x509-system".components.library.planned = lib.mkOverride 900 true;
-          "vector-space".components.library.planned = lib.mkOverride 900 true;
           "network".components.library.planned = lib.mkOverride 900 true;
           "haskell-platform".components.library.planned = lib.mkOverride 900 true;
           "comonad".components.library.planned = lib.mkOverride 900 true;
@@ -677,7 +662,6 @@
           "network-control".components.library.planned = lib.mkOverride 900 true;
           "ghc-internal".components.library.planned = lib.mkOverride 900 true;
           "yaml".components.library.planned = lib.mkOverride 900 true;
-          "newtype-generics".components.library.planned = lib.mkOverride 900 true;
           "time".components.library.planned = lib.mkOverride 900 true;
           "bsb-http-chunked".components.library.planned = lib.mkOverride 900 true;
           "primitive".components.library.planned = lib.mkOverride 900 true;
@@ -736,7 +720,6 @@
           "microlens".components.library.planned = lib.mkOverride 900 true;
           "hsc2hs".components.exes."hsc2hs".planned = lib.mkOverride 900 true;
           "vector-stream".components.library.planned = lib.mkOverride 900 true;
-          "MemoTrie".components.library.planned = lib.mkOverride 900 true;
           "unix-time".components.library.planned = lib.mkOverride 900 true;
           "temporary".components.library.planned = lib.mkOverride 900 true;
           "base".components.library.planned = lib.mkOverride 900 true;
@@ -746,7 +729,6 @@
           "warp".components.library.planned = lib.mkOverride 900 true;
           "vector".components.library.planned = lib.mkOverride 900 true;
           "contravariant".components.library.planned = lib.mkOverride 900 true;
-          "cmark-gfm".components.library.planned = lib.mkOverride 900 true;
           "terminal-size".components.library.planned = lib.mkOverride 900 true;
           "base16-bytestring".components.library.planned = lib.mkOverride 900 true;
           "wai".components.library.planned = lib.mkOverride 900 true;

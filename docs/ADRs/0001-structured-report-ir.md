@@ -6,20 +6,21 @@ description:
 sidebar:
   label: "0001. Structured Document IR"
   order: 1
-status: accepted
+status: superseded
 date: 2026-03-07
-superseded_by: null
+superseded_by: docs/ADRs/0040-logos-owned-reasoning-surfaces.md
 related:
   - docs/Architecture/08-artifacts-and-provenance.md
   - docs/ADRs/0013-report-provenance-artifact-contract.md
+  - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
 ---
 
 # ADR 0001 - Structured Document IR
 
 ## Status
 
-Accepted. Cortex exposes `ReportIR` as the typed document-artifact contract for workflows that need
-deterministic rendering instead of raw model-authored Markdown.
+Superseded by ADR 0040. This ADR remains as the historical decision for structured document IR, but
+the implementation no longer belongs to Cortex. Logos now owns the report/document IR surface.
 
 ## Context
 

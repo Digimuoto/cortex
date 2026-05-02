@@ -44,6 +44,8 @@ spec =
 removedRootEntries :: [FilePath]
 removedRootEntries =
   [ "Agent"
+  , "Artifact"
+  , "Artifact.hs"
   , "Circuit"
   , "Document"
   , "Event.hs"
@@ -76,6 +78,11 @@ removedExposedModulePrefixes =
   fmap
     ("        " <>)
     [ "Cortex.Agent"
+    , "Cortex.Artifact"
+    , "Cortex.Capability.Model"
+    , "Cortex.Capability.Provider"
+    , "Cortex.Capability.StructuredOutput"
+    , "Cortex.Capability.Tool"
     , "Cortex.Circuit"
     , "Cortex.Document"
     , "Cortex.Event"
@@ -98,6 +105,11 @@ removedModuleDeclarationPrefixes =
   fmap
     ("module " <>)
     [ "Cortex.Agent"
+    , "Cortex.Artifact"
+    , "Cortex.Capability.Model"
+    , "Cortex.Capability.Provider"
+    , "Cortex.Capability.StructuredOutput"
+    , "Cortex.Capability.Tool"
     , "Cortex.Circuit"
     , "Cortex.Document"
     , "Cortex.Event"

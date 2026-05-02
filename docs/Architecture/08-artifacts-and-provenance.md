@@ -203,4 +203,6 @@ The pattern is:
   kind, contract registry, and provenance
 - [ADR 0013 — Artifact Provenance Contract](../ADRs/0013-report-provenance-artifact-contract.md) —
   artifact provenance contract decision
+- [ADR 0040 — Logos-Owned Reasoning Surfaces](../ADRs/0040-logos-owned-reasoning-surfaces.md) —
+  concrete report/document IR ownership
 - [Consumer examples](../Consumers/) — downstream binding examples

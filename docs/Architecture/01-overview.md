@@ -41,7 +41,7 @@ For Wire-specific detail:
 The core architectural split is:
 
 - Cortex owns reusable substrate concerns: authoring and typing, topology and compilation, durable
-  execution, capability abstractions, and provider adapters.
+  execution, and executor-registration capability abstractions.
 - A downstream product owns domain semantics, product policy, operator surfaces, transport, and
   persistence.
 
@@ -88,9 +88,8 @@ Cortex is not a thin provider wrapper. It owns the reusable substrate end to end
   [Chapter 06 — Pulse runtime](06-pulse-runtime.md).
 - **Runtime evolution** — admitted rewrites, materialization, and graph-native execution; see
   [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md).
-- **Capability substrate** — provider-neutral capability surfaces, provider adapters, and reusable
-  policy hooks.
-- **Artifact and settled-state query primitives** — reusable provenance, artifact, and durable
+- **Capability substrate** — executor registration and native pure-executor capability surfaces.
+- **Value provenance and settled-state query primitives** — reusable provenance and durable
   context-query surfaces that are not product-specific.
 
 ## What Stays Downstream
@@ -101,7 +100,8 @@ Downstream ownership includes:
 
 - domain executor config, tool registries, and policy
 - grounding and truth rules specific to a domain
-- product-specific artifact assembly, report flows, and work-product schemas
+- model/provider bindings, product-specific artifact assembly, report flows, and work-product
+  schemas
 - approval behavior and operator choices tied to a specific product UX
 - transport, auth, delivery, persistence, and edge error translation
 

@@ -15,25 +15,25 @@ status: active
 epistemological modes under `Logos.Archetypes`, one bounded model-mediated node evaluation under
 `Logos.Thought`, cognitive memory under `Logos.Memory`, and reusable reasoning programs under
 `Logos.Patterns`. It does not extend the runtime alphabet. Algebra, Wire, Pulse, Capability, and
-Artifact mechanics remain the substrate. Logos composes those mechanics into reusable reasoning
-programs.
+runtime provenance mechanics remain the substrate. Logos composes those mechanics into reusable
+reasoning programs.
 
 ## Core model
 
 The split is vertical:
 
-| Layer                      | Owns                                                                                                                                                       | Does not own                                                              |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Cortex runtime substrate   | Algebra, Wire language and compiled circuit form, Pulse execution, Capability authority, Artifact provenance.                                              | Product persona, domain policy, concrete reasoning templates.             |
-| `Logos`                    | Archetype taxonomy, thoughts, cognitive memory, reusable pattern catalogs, `.wire` templates, prompt families, memory presets, contract-entry conventions. | Runtime authority, new executor kinds, new contract registry, host tools. |
-| Downstream product binding | Domain prompts, product policy, domain tools, approval behavior, product artifact semantics.                                                               | Generic substrate mechanics or generic Logos archetype definitions.       |
+| Layer                      | Owns                                                                                                                                                  | Does not own                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Cortex runtime substrate   | Algebra, Wire language and compiled circuit form, Pulse execution, executor-registration capability, runtime provenance.                              | Product persona, domain policy, concrete reasoning templates.             |
+| `Logos`                    | Archetype taxonomy, thoughts, cognitive memory, provider/model adapters, reusable pattern catalogs, `.wire` templates, prompt families, artifact IRs. | Runtime authority, new executor kinds, new contract registry, host tools. |
+| Downstream product binding | Domain prompts, product policy, domain tools, approval behavior, product artifact semantics.                                                          | Generic substrate mechanics or generic Logos archetype definitions.       |
 
 The dependency direction is strict:
 
 ```mermaid
 flowchart LR
     Product[Downstream product binding] --> Logos[Logos<br/>structured reasoning library]
-    Logos --> Runtime[Cortex substrate<br/>Algebra, Wire, Pulse, Capability, Artifact]
+    Logos --> Runtime[Cortex substrate<br/>Algebra, Wire, Pulse, Capability]
 ```
 
 Substrate code must not import Logos. Logos may import runtime types and publish catalog values or
@@ -138,7 +138,7 @@ Logos can expose the following catalog artifacts:
 | ----------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Archetype definitions   | Haskell data values under `Logos.Archetypes`                                              | Metadata only. No runtime registration.                                                                |
 | Activation bundle slots | Prompts, corpus selectors, embeddings, tools, memory policy, evaluation, runtime contract | Stubbed in this PR; later activated by thought frames and interpreted through existing substrate APIs. |
-| Thought runtime         | Frame, policy, host, tool loop, structured output, thought events                         | Uses model and tool capabilities without owning provider or tool authority.                            |
+| Thought runtime         | Frame, policy, host, tool loop, structured output, thought events                         | Uses Logos model/provider surfaces without granting host authority.                                    |
 | Cognitive memory        | Retrieval, ranking, packing, compaction, source selection, topological context            | Builds model context over substrate state; Pulse remains durable execution state.                      |
 | Pattern catalogs        | `Logos.Patterns.<Name>` modules                                                           | Library-owned reasoning programs interpreted by existing substrate APIs.                               |
 | Template programs       | `.wire` modules shipped by Logos patterns                                                 | Imported by consumers and compiled by the normal Wire compiler.                                        |

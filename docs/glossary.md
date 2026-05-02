@@ -23,10 +23,10 @@ orientation.
   artifact Pulse executes. Grammar: [Reference/Wire/grammar.md](Reference/Wire/grammar.md).
 - **Pulse** — the durable runtime that executes Circuits. See
   [Architecture/06-pulse-runtime.md](Architecture/06-pulse-runtime.md).
-- **Capability** — external authority surfaces available to execution: models, tools, providers, and
-  their neutral request/record types.
-- **Artifact** — generic durable outputs, provenance, metadata, rendering, and artifact host
-  boundaries.
+- **Capability** — executor registration and native pure-executor capability surfaces available to
+  execution.
+- **Artifact reference** — a runtime value that points to a durable artifact owned by a consumer or
+  host boundary.
 
 ## Downstream Logos
 
@@ -38,8 +38,7 @@ orientation.
   durable persona.
 - **Logos.Memory** — cognitive memory: retrieval, ranking, packing, compaction, source selection,
   topological context, and memory tools.
-- **Logos.Patterns** — planned reusable reasoning-program catalogs such as the DeepReport extraction
-  target.
+- **Logos.Patterns** — reusable reasoning-program catalogs such as DeepReport.
 - **Logos archetype** — the `Logos.Archetypes.Logos` archetype for discursive reason, argument, and
   symbolic reasoning.
 - **Logos activation bundle** — the operational implementation of an archetype: prompt discipline,

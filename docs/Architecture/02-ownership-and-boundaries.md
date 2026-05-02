@@ -22,11 +22,11 @@ and what may and may not cross each boundary.
 
 Three subsystems carry the bulk of the weight on either side of the boundary:
 
-| Subsystem            | Role                                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Cortex substrate** | Reusable runtime and language substrate: capability abstractions, the Graph / Circuit / Wire layers, and the Pulse runtime.       |
-| **Product binding**  | Host-specific configuration of Cortex: executor config, grounding policy, tool registries, artifact assembly, and product policy. |
-| **Server edge**      | Transport and persistence: HTTP, auth, streaming, request/response conversion, and persistence wiring.                            |
+| Subsystem            | Role                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cortex substrate** | Reusable runtime and language substrate: executor-registration capability abstractions, the Graph / Circuit / Wire layers, and the Pulse runtime. |
+| **Product binding**  | Host-specific configuration of Cortex: executor config, grounding policy, tool registries, artifact assembly, and product policy.                 |
+| **Server edge**      | Transport and persistence: HTTP, auth, streaming, request/response conversion, and persistence wiring.                                            |
 
 Two further subsystems are host-internal and do not interact with Cortex directly:
 
@@ -52,9 +52,10 @@ flowchart LR
 ```
 
 The placement rule: if a module would be reusable outside the host as durable runtime, Wire
-language, capability, or artifact infrastructure, it belongs in the Cortex substrate, even when the
-product binding is currently the only caller. If it knows about host domain semantics,
-product-specific artifacts, truth policy, or host tool authority, it stays downstream.
+language, or executor-registration infrastructure, it belongs in the Cortex substrate, even when the
+product binding is currently the only caller. If it knows about host domain semantics, model
+providers, product-specific artifacts, truth policy, or host tool authority, it stays downstream or
+in Logos.
 
 ## Public import boundary
 
@@ -88,8 +89,7 @@ layers:
 - **Runtime layer.** The Pulse runtime — durable stage execution, checkpointing, rewrite hydration,
   and frontier scheduling — ships as its own service. Run lifecycle and stage events sit alongside
   it.
-- **Provider and capability layer.** Provider-specific HTTP clients and wire decoding,
-  provider-neutral request/response types and tool-call records, generic JSON and text helpers.
+- **Capability layer.** Executor registration and native pure-executor capability surfaces.
 
 ### Product binding
 
@@ -98,7 +98,7 @@ nothing more:
 
 - executor config and capability-catalog policy
 - domain-specific grounding and truth policy
-- artifact assembly and product-specific IR
+- model-provider binding, artifact assembly, and product-specific IR
 - product-specific tool registries
 - approval and policy behavior tied to product UX
 
@@ -115,9 +115,8 @@ today; mechanical enforcement is a direction-of-travel goal.
 
 ### Cortex substrate
 
-Allowed: generic provider integrations; provider-neutral capability abstractions; Wire / Graph /
-Circuit / Pulse primitives; generic JSON, text, time, and runtime helpers; generic observability
-hooks.
+Allowed: executor-registration capability abstractions; Wire / Graph / Circuit / Pulse primitives;
+generic JSON, text, time, and runtime helpers through Platform; generic observability hooks.
 
 Forbidden: any host-specific import; server transport types; host durable-task scheduling; database
 queries and schemas; domain-specific imports; host artifact contracts.
@@ -129,9 +128,9 @@ no rewrite lineage, no task scheduler coupling, no run-outcome semantics. It is 
 
 Allowed: the Cortex substrate, host domain core, host product code.
 
-Forbidden as a long-term home: provider wire details, generic runtime helpers, or any utility that
-should be reusable by another host. If such code lands in the product binding during migration, it
-is a migration aid, not a durable boundary.
+Forbidden as a long-term home: generic runtime helpers, or any utility that should be reusable by
+another host. Reasoning-library provider details belong in Logos; product-specific provider policy
+belongs in the product binding.
 
 ### Server edge
 

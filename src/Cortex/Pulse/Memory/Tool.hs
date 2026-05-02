@@ -70,9 +70,7 @@ import Cortex.Pulse.Node (NodeId (..))
 -- Tool identity
 -- ============================================================================
 
-{- | Canonical tool name.  Matches the identifier the caller emits in
-'CortexToolCall.cortexToolCallName'.
--}
+-- | Canonical tool name. Matches the identifier a caller emits in its tool-call name field.
 cortexMemoryQueryToolName :: Text
 cortexMemoryQueryToolName = "cortex_memory_query"
 

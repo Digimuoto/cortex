@@ -2,7 +2,7 @@
 title: Cortex Documentation
 description:
   "Cortex as an upstream durable runtime substrate: algebraic topology, Wire authoring, Pulse
-  execution, controlled rewrites, artifacts, provenance, and downstream bindings."
+  execution, controlled rewrites, value provenance, and downstream bindings."
 sidebar:
   label: Cortex
   order: 2
@@ -12,7 +12,7 @@ sidebar:
 
 Cortex is a standalone Haskell substrate for graph-shaped durable workflows. It gives you algebraic
 topology, a small language for authoring workflows, a durable runtime for executing them, and
-artifact/provenance surfaces for explaining what happened.
+value-provenance surfaces for explaining what happened.
 
 The boundary is deliberate: Cortex owns reusable mechanics; downstream products own domain
 semantics, policy, tools, operators, transport, and persistence.
@@ -25,7 +25,7 @@ semantics, policy, tools, operators, transport, and persistence.
 | **Algebra and Wire semantics** | Pure graph algebra plus validated executable topology before a run starts.                          |
 | **Pulse execution**            | Durable graph execution with checkpoints, signals, run events, cancellation, retry, and inspection. |
 | **Controlled rewrites**        | Runtime topology changes are proposals admitted through explicit rewrite rules and budgets.         |
-| **Artifacts and provenance**   | Structured outputs carry stable artifact-local provenance instead of relying on generated prose.    |
+| **Value provenance**           | Runtime values carry stable contract and provenance metadata instead of relying on generated prose. |
 | **Host-action boundary**       | Product-specific side effects stay behind authenticated, idempotent host APIs.                      |
 
 ## System Layers
@@ -35,8 +35,7 @@ semantics, policy, tools, operators, transport, and persistence.
 | **Algebra**    | Pure topology laws: vertices, edges, overlay, connect, DAG validation.    | Graph/relation algebra              |
 | **Wire**       | Source language, contracts, compiled circuit form, and runtime envelopes. | `.wire` source and compiled circuit |
 | **Pulse**      | Durable execution of compiled circuits.                                   | Run state and events                |
-| **Capability** | External authority surfaces: models, tools, providers.                    | Registered authority                |
-| **Artifact**   | Durable outputs, provenance, rendering, host boundary.                    | Artifact IR and metadata            |
+| **Capability** | Executor registration and native pure-executor capability surfaces.       | Registered authority                |
 
 The core rule: **Wire composes registered authority; implementations own what that authority
 means.** Wire references registered executors, contracts, tools, config constructors, and wiring. It
@@ -67,7 +66,7 @@ node run
 
 node publish
   <- result: Result ;
-  -> artifact: ArtifactRef = @artifact.store (result) ;
+  -> artifact: ArtifactRef = @host.artifact_store (result) ;
 
 plan => run => publish
 ```
@@ -100,7 +99,7 @@ flowchart LR
   budgeting, and materialization.
 - **Runtime and host stay separate.** Pulse owns durable execution; hosts own domain mutation and
   product policy through host actions.
-- **Artifacts explain themselves.** Provenance is attached to structured artifact nodes before
+- **Values explain themselves.** Provenance is attached to runtime values before downstream artifact
   rendering, so explanation does not depend on brittle text spans.
 
 ## Read First

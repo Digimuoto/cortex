@@ -22,6 +22,7 @@ related:
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
   - "GitHub #62"
 ---
 
@@ -30,8 +31,8 @@ related:
 ## Status
 
 Proposed - records the concrete Haskell module tree and migration policy for the final `src/Cortex`
-root refactor. ADR 0016 defines the conceptual root taxonomy; this ADR decides how that taxonomy is
-enforced in source modules, Cabal exposure, compatibility shims, and import direction.
+root refactor. ADR 0040 narrows this ADR after implementation: the current public Cortex Haskell
+roots are substrate roots only, and concrete reasoning/provider/report surfaces live in Logos.
 
 ## Context
 
@@ -64,8 +65,7 @@ src/Cortex
 |-- Algebra
 |-- Wire
 |-- Pulse
-|-- Capability
-`-- Artifact
+`-- Capability
 
 Digimuoto/logos:src/Logos
 |-- Archetypes
@@ -86,8 +86,7 @@ Cortex
 |-- Algebra        -- law-bearing graph/relation algebra
 |-- Wire           -- source language, contracts, ports, compiled circuit form
 |-- Pulse          -- durable execution runtime, run state, events, persistence
-|-- Capability     -- external authority: model clients, tools, providers
-`-- Artifact       -- generic durable outputs, metadata, provenance, host boundary
+`-- Capability     -- executor registration and native pure-executor capability surfaces
 ```
 
 The canonical Logos Haskell tree under the downstream `Digimuoto/logos` repository's `src/Logos`
@@ -195,50 +194,32 @@ metadata needed for replay and operator visibility.
 
 ### `Cortex.Capability`
 
-`Cortex.Capability` owns external authority surfaces:
+`Cortex.Capability` owns substrate authority surfaces:
 
-- provider-neutral model request/response types
-- model clients and provider adapters
-- tool definitions, tool-call records, host execution interfaces, and authority checks
-- structured-output mechanics that are provider/tool capability rather than reasoning-pattern
-  semantics
+- executor registration records
+- native pure-executor configuration
+- authority checks that are required before a bound action can enter Pulse
 
 Target examples:
 
-- `Cortex.Capability.Model.*`
-- `Cortex.Capability.Tool.*`
 - `Cortex.Capability.Executor`
-- `Cortex.Capability.Provider.OpenRouter.*`
-- `Cortex.Capability.StructuredOutput`
+- `Cortex.Capability.Executor.Pure`
 
-Root `Cortex.Provider.*` is not canonical. Existing `Cortex.Capability.Provider.OpenRouter.*`
-modules are the canonical target; root provider modules should either move there or become shallow
-shims while consumers migrate.
+Model clients, provider adapters, tool-call records, and structured-output fallback policy are not
+part of the Cortex public Haskell surface after ADR 0040. They live in Logos or in host bindings.
 
 Capability does not own prompts, reasoning memory, archetype activations, or pattern-level
 evaluation. Those are Logos concerns that consume capabilities.
 
 ### `Cortex.Artifact`
 
-`Cortex.Artifact` owns generic durable outputs:
+`Cortex.Artifact` is not a current public Haskell root. Artifact and provenance remain Cortex
+architecture concepts through Wire contracts, runtime envelopes, and Pulse provenance. The concrete
+report/document IR and rendering surface moved to `Logos.Patterns.DeepReport.Artifact.*` in
+ADR 0040.
 
-- artifact IR
-- artifact metadata
-- provenance and source references
-- host/rendering boundary for generic artifacts
-- artifact references usable by Wire, Pulse, and Logos without report-specific semantics
-
-Target examples:
-
-- `Cortex.Artifact.IR`
-- `Cortex.Artifact.Metadata`
-- `Cortex.Artifact.Provenance`
-- `Cortex.Artifact.Host`
-
-Root `Cortex.Document.IR`, `Cortex.Document.Metadata`, and `Cortex.Document.Host` move or shim here.
-`Cortex.Document.Report`, `Cortex.Document.Section`, and research-report semantics do not belong in
-Artifact unless they are reduced to generic artifact structure; LLM-shaped report semantics belong
-in `Logos.Patterns.DeepReport.*`.
+A future substrate-shaped artifact API requires a separate ADR and a concrete reusable need. Until
+then, do not add an empty `Cortex.Artifact` marker root.
 
 ### `Logos`
 
@@ -285,9 +266,9 @@ The layers own different parts of executor meaning:
 | Context                      | Owns                                                                                                                                                                                                                            | Does not own                                                                                          |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `Cortex.Wire.Executor`       | Source-level executor references such as `@native.deep_report`, lowered native evaluator ids such as `pure`, compile-time projections, port constraints, contract obligations, and inert purity/effect metadata needed by Wire. | Host authority, Haskell application codecs, provider keys, DB access, prompts, or Pulse scheduling.   |
-| `Cortex.Capability.Executor` | Authority-bearing registration records: config decoders, admitted tools, model/provider requirements, application codecs, host interpreters, and runnable binding into substrate actions.                                       | Reasoning-pattern semantics or durable scheduling.                                                    |
+| `Cortex.Capability.Executor` | Authority-bearing registration records: config decoders, native pure-executor configuration, application codecs, host interpreters, and runnable binding into substrate actions.                                                | Model provider policy, reasoning-pattern semantics, or durable scheduling.                            |
 | `Cortex.Pulse.Executor`      | Durable execution of already-bound stage actions: scheduling, persistence, replay, resume, retry, cancellation, and execution events.                                                                                           | Wire executor registry, source-level executor ids, application semantics, or provider/tool admission. |
-| `Logos.*`                    | Reasoning-shaped executor profiles, adapters, prompts, pattern templates, and reusable catalog values that consumers may opt into.                                                                                              | Host authority, provider credentials, product tools, DB loading, or artifact destinations.            |
+| `Logos.*`                    | Reasoning-shaped executor profiles, model/provider adapters, prompts, tool-call records, pattern templates, report artifact IR, and reusable catalog values that consumers may opt into.                                        | Host authority, provider credentials, product tools, DB loading, or artifact destinations.            |
 
 This makes `@native.deep_report` a Wire executor reference admitted by a host binding. The reusable
 DeepReport pieces may live under `Logos.Patterns.DeepReport.*`, but the binding that grants runnable
@@ -326,7 +307,7 @@ exposed roots once no internal or known external consumer still requires them.
 | `Cortex.Graph`, `Cortex.Graph.*`         | `Cortex.Algebra.Graph.*`                                                       | Move implementation under Algebra; keep shallow root shims during migration.        |
 | `Cortex.Circuit`, `Cortex.Circuit.*`     | `Cortex.Wire.Circuit.*`                                                        | Move compiled-form modules under Wire; keep shallow root shims during migration.    |
 | `Cortex.Event`, `Cortex.Events`          | `Cortex.Pulse.Event` or `Logos.Thought.Event`                                  | Split execution events from thought lifecycle events.                               |
-| `Cortex.Provider.OpenRouter.*`           | `Cortex.Capability.Provider.OpenRouter.*`                                      | Capability path is canonical; root provider path becomes a shim or is removed.      |
+| `Cortex.Provider.OpenRouter.*`           | `Logos.Provider.OpenRouter.*`                                                  | Provider adapters are Logos surfaces after ADR 0040.                                |
 | `Cortex.Agent.Config`                    | `Logos.Thought.Frame`                                                          | Model/budget/prompt appendix are thought-frame concerns.                            |
 | `Cortex.Agent.Policy`                    | `Logos.Thought.Policy`                                                         | Tool scope and approval policy belong to thought orchestration.                     |
 | `Cortex.Agent.Definition`                | `Logos.Thought.Frame` or removed                                               | Avoid durable persona semantics in Cortex.                                          |
@@ -334,7 +315,7 @@ exposed roots once no internal or known external consumer still requires them.
 | `Cortex.Task.ToolHost`                   | `Logos.Thought.ToolHost`                                                       | Host-side tool execution for a thought.                                             |
 | `Cortex.Task.ToolLoop`                   | `Logos.Thought.ToolLoop`                                                       | Model/tool loop is thought orchestration over capabilities.                         |
 | `Cortex.Task.Runtime`                    | `Logos.Thought.Runtime`                                                        | Thin thought runner and lifecycle helpers.                                          |
-| `Cortex.Task.StructuredOutput`           | `Logos.Thought.StructuredOutput` or `Cortex.Capability.StructuredOutput`       | Decode mechanics belong to Capability; fallback/prompt policy belongs to Logos.     |
+| `Cortex.Task.StructuredOutput`           | `Logos.Thought.StructuredOutput`                                               | Structured-output fallback and model-output parsing are Logos concerns.             |
 | `Cortex.Task.Plan`                       | `Logos.Patterns.PlanReview`                                                    | Planner/reviewer shape is a reusable reasoning pattern.                             |
 | `Cortex.Task.Gather`                     | `Logos.Patterns.DeepReport.Gather`                                             | Evidence gathering is DeepReport pattern semantics.                                 |
 | `Cortex.Task.Report`                     | `Logos.Patterns.DeepReport.LegacyReportTask` initially                         | Decompose after contracts and ports stabilize.                                      |
@@ -342,7 +323,7 @@ exposed roots once no internal or known external consumer still requires them.
 | `Cortex.Research.Runtime`                | `Logos.Patterns.DeepReport.Section.Runtime`                                    | Section-output parsing belongs with the pattern.                                    |
 | `Cortex.Run.Types`                       | `Cortex.Pulse.Run` and `Logos.Thought.Stage`                                   | Durable run ids are Pulse; thought stage descriptors are Logos.                     |
 | `Cortex.Run.Engine`                      | `Logos.Thought.Event` or `Logos.Thought.Runtime`                               | Current event emission is thought lifecycle machinery.                              |
-| `Cortex.Document.IR`, `Metadata`, `Host` | `Cortex.Artifact.*`                                                            | Generic artifact substrate.                                                         |
+| `Cortex.Document.IR`, `Metadata`, `Host` | `Logos.Patterns.DeepReport.Artifact.*`                                         | ADR 0040 moves the concrete report/document IR to Logos.                            |
 | `Cortex.Document.Report`, `Section`      | `Logos.Patterns.DeepReport.*`                                                  | Report/research semantics are Logos pattern semantics.                              |
 | `Cortex.Memory.*`                        | `Logos.Memory.*`, `Cortex.Pulse.*`, `Cortex.Capability.*`, or internal helpers | Classify per module; cognitive context moves to Logos, persistence stays substrate. |
 | `Cortex.MemoryCompaction`                | `Logos.Memory.Compact`                                                         | Keep root shim only if concrete consumers require it.                               |
@@ -359,14 +340,12 @@ The source tree enforces the vertical split:
 
 - `Logos` may import substrate modules.
 - Substrate modules must not import `Logos`.
-- `Cortex.Algebra` must not import Wire, Pulse, Capability, Artifact, or Logos.
+- `Cortex.Algebra` must not import Wire, Pulse, Capability, or Logos.
 - `Cortex.Wire` may import Algebra, but not Pulse or Logos.
-- `Cortex.Pulse` may import Algebra, Wire, Capability, and Artifact where runtime execution requires
-  those substrate surfaces, but not Logos.
+- `Cortex.Pulse` may import Algebra, Wire, and Capability where runtime execution requires those
+  substrate surfaces, but not Logos.
 - `Cortex.Capability` may import platform support and shared substrate value types when necessary,
   but it must not encode reasoning-pattern semantics.
-- `Cortex.Artifact` may define generic output/provenance types usable by Wire, Pulse, and Logos, but
-  it must not depend on Logos patterns.
 - `Platform.*` must not import `Cortex.*`.
 
 When a cycle appears, the type belongs in the lowest layer that can own the concept without
@@ -388,10 +367,10 @@ The refactor should land in small buildable slices:
 
 1. Add this ADR and update architecture/index links.
 2. Add canonical namespace spines and shallow compatibility shims where missing.
-3. Move provider adapters to `Cortex.Capability.Provider.*` and retire root provider imports.
+3. Move provider adapters to Logos and retire Cortex provider imports.
 4. Move graph algebra to `Cortex.Algebra.Graph.*`.
 5. Move compiled circuit modules to `Cortex.Wire.Circuit.*`.
-6. Add `Cortex.Artifact.*` and move generic document substrate there.
+6. Move report/document artifact IR to Logos.
 7. Move thought runtime surfaces from `Agent`, `Task`, and `Run` into `Logos.Thought.*`.
 8. Move report/research surfaces into `Logos.Patterns.DeepReport.*`.
 9. Classify memory modules and move cognitive-context modules to `Logos.Memory.*`.
@@ -456,12 +435,12 @@ Rejected. `Document` currently mixes generic artifact substrate with report and 
 
 - Which old root modules still have concrete external consumers that require temporary exposed
   shims?
-- Should `Cortex.Task.StructuredOutput` split between `Cortex.Capability.StructuredOutput` and
-  `Logos.Thought.StructuredOutput`, or should one canonical module own the whole current surface?
+- Should any provider-neutral model contract ever become substrate API, or should all model/provider
+  surfaces stay in Logos and host bindings?
 - Which `Cortex.Memory.*` modules are purely cognitive context construction, and which are generic
   enough to remain substrate/internal support?
-- Does `Cortex.Artifact` need a generic contract catalog for artifact references, or should artifact
-  contracts remain in Wire until schemas mature?
+- Does a future `Cortex.Artifact` root need a generic contract catalog for artifact references, or
+  should artifact contracts remain in Wire until schemas mature?
 
 ## Related
 

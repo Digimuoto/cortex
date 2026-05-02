@@ -54,7 +54,6 @@
           (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
           (hsPkgs."random" or (errorHandler.buildDepError "random"))
           (hsPkgs."unix" or (errorHandler.buildDepError "unix"))
-          (hsPkgs."retry" or (errorHandler.buildDepError "retry"))
           (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
           (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
           (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
@@ -67,20 +66,12 @@
           (hsPkgs."hasql-pool" or (errorHandler.buildDepError "hasql-pool"))
           (hsPkgs."hasql-transaction" or (errorHandler.buildDepError "hasql-transaction"))
           (hsPkgs."resource-pool" or (errorHandler.buildDepError "resource-pool"))
-          (hsPkgs."servant-server" or (errorHandler.buildDepError "servant-server"))
-          (hsPkgs."servant-client-core" or (errorHandler.buildDepError "servant-client-core"))
           (hsPkgs."openapi3" or (errorHandler.buildDepError "openapi3"))
-          (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
-          (hsPkgs."http-client-tls" or (errorHandler.buildDepError "http-client-tls"))
-          (hsPkgs."http-api-data" or (errorHandler.buildDepError "http-api-data"))
           (hsPkgs."http-types" or (errorHandler.buildDepError "http-types"))
-          (hsPkgs."case-insensitive" or (errorHandler.buildDepError "case-insensitive"))
           (hsPkgs."wai" or (errorHandler.buildDepError "wai"))
           (hsPkgs."warp" or (errorHandler.buildDepError "warp"))
           (hsPkgs."crypton" or (errorHandler.buildDepError "crypton"))
           (hsPkgs."memory" or (errorHandler.buildDepError "memory"))
-          (hsPkgs."safe-money" or (errorHandler.buildDepError "safe-money"))
-          (hsPkgs."safe-money-aeson" or (errorHandler.buildDepError "safe-money-aeson"))
           (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
           (hsPkgs."ansi-terminal" or (errorHandler.buildDepError "ansi-terminal"))
           (hsPkgs."prettyprinter" or (errorHandler.buildDepError "prettyprinter"))
@@ -91,7 +82,6 @@
           (hsPkgs."fast-logger" or (errorHandler.buildDepError "fast-logger"))
           (hsPkgs."monad-logger" or (errorHandler.buildDepError "monad-logger"))
           (hsPkgs."configurator" or (errorHandler.buildDepError "configurator"))
-          (hsPkgs."cmark-gfm" or (errorHandler.buildDepError "cmark-gfm"))
           (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
           (hsPkgs."megaparsec" or (errorHandler.buildDepError "megaparsec"))
         ];
@@ -100,6 +90,7 @@
           "Paths_cortex"
           "Cortex/Wire/AST"
           "Cortex/Wire/Contracts"
+          "Cortex/Wire/NodeBoundary"
           "Cortex/Wire/Proposal"
           "Cortex/Wire/Runtime"
           "Cortex/Wire/Value"
@@ -113,27 +104,9 @@
           "Cortex/Algebra/Graph/Mokhov"
           "Cortex/Algebra/Graph/Search"
           "Cortex/Algebra/Graph/Validate"
-          "Cortex/Artifact"
-          "Cortex/Artifact/Host"
-          "Cortex/Artifact/IR"
-          "Cortex/Artifact/Metadata"
           "Cortex/Capability"
           "Cortex/Capability/Executor"
           "Cortex/Capability/Executor/Pure"
-          "Cortex/Capability/Model"
-          "Cortex/Capability/Model/Client"
-          "Cortex/Capability/Model/Message"
-          "Cortex/Capability/Model/Output"
-          "Cortex/Capability/Model/Types"
-          "Cortex/Capability/Provider"
-          "Cortex/Capability/Provider/OpenRouter"
-          "Cortex/Capability/Provider/OpenRouter/Client"
-          "Cortex/Capability/Provider/OpenRouter/Embedding"
-          "Cortex/Capability/Provider/OpenRouter/Wire"
-          "Cortex/Capability/StructuredOutput"
-          "Cortex/Capability/Tool"
-          "Cortex/Capability/Tool/Definition"
-          "Cortex/Capability/Tool/Record"
           "Cortex/Pulse"
           "Cortex/Pulse/Attempt"
           "Cortex/Pulse/Checkpoint"
@@ -251,11 +224,8 @@
           buildable = true;
           modules = [
             "Cortex/Algebra/GraphSpec"
-            "Cortex/Artifact/IRSpec"
             "Cortex/CanonicalModuleTreeSpec"
             "Cortex/Capability/Executor/PureSpec"
-            "Cortex/Capability/Provider/OpenRouterSpec"
-            "Cortex/Capability/StructuredOutputSpec"
             "Cortex/PublicPreludeSpec"
             "Cortex/Pulse/CheckpointSpec"
             "Cortex/Pulse/RewriteAnchorValidationSpec"
@@ -275,6 +245,7 @@
             "Cortex/Wire/CompileSpec"
             "Cortex/Wire/ParserSpec"
             "Cortex/Wire/PureSpec"
+            "Cortex/Wire/RuntimeSpec"
           ];
           hsSourceDirs = [ "test" ];
           mainPath = [ "Spec.hs" ];

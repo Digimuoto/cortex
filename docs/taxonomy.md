@@ -13,7 +13,7 @@ Glossary ([glossary.md](glossary.md)) defines terms one at a time. This page sho
 
 ## Layers
 
-Cortex separates five canonical substrate roots. Arrows here show operational relationships, not
+Cortex separates four canonical substrate roots. Arrows here show operational relationships, not
 import or dependency direction:
 
 ```mermaid
@@ -21,19 +21,17 @@ flowchart TD
     A[Algebra<br/>graph/relation laws]
     W[Wire<br/>source, contracts, compiled circuit]
     P[Pulse<br/>durable runtime]
-    C[Capability<br/>models, tools, providers]
-    R[Artifact<br/>outputs and provenance]
+    C[Capability<br/>executor registration]
 
     A -- "topology laws for" --> W
     W -- "compiled circuit runs on" --> P
     C -- "grants registered authority to" --> P
-    P -- "emits durable outputs as" --> R
 ```
 
 Algebra is the pure substrate Wire authors over. Mechanized theory names the safety contracts that
 runtime implementation must enforce. Wire owns the compiled circuit form. Pulse executes compiled
-circuits durably. Capability exposes external authority. Artifact owns durable outputs and
-provenance.
+circuits durably. Capability exposes executor authority. Value provenance and artifact references
+are runtime/contract concepts, not a current public Haskell root.
 
 ## Roles a value can play
 
@@ -68,12 +66,12 @@ Every contract declares a **payload kind** that selects validation and rendering
 
 Cortex has a small closed set of globally-ambient namespaces:
 
-| Namespace               | Registered where                                      | Referenced in Wire how                        |
-| ----------------------- | ----------------------------------------------------- | --------------------------------------------- |
-| **Executor alphabet**   | External registry (`Cortex.Capability.*` + consumers) | `@qualified.name`                             |
-| **Contract namespace**  | Contract registry + `contract X;` assertions          | bare `Name` in port signatures                |
-| **Tool registry**       | External registry                                     | bare `name` inside config `tools = [...]`     |
-| **Config constructors** | Executor config schemas                               | `qualified.name { ... }` inside config values |
+| Namespace               | Registered where                                    | Referenced in Wire how                        |
+| ----------------------- | --------------------------------------------------- | --------------------------------------------- |
+| **Executor alphabet**   | External registry (`Cortex.Capability` + consumers) | `@qualified.name`                             |
+| **Contract namespace**  | Contract registry + `contract X;` assertions        | bare `Name` in port signatures                |
+| **Tool registry**       | External registry                                   | bare `name` inside config `tools = [...]`     |
+| **Config constructors** | Executor config schemas                             | `qualified.name { ... }` inside config values |
 
 Beyond these four, every name is local: introduced by `let`, `node`, or `import`. The executor
 alphabet is authority-bearing; ordinary config constructors are not. The syntax distinction is the

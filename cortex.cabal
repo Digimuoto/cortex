@@ -68,7 +68,6 @@ common runtime-library-deps
         stm >=2.5,
         random >=1.2,
         unix >=2.8,
-        retry >=0.9,
         filepath >=1.4,
         directory >=1.3,
         temporary >=1.3,
@@ -85,16 +84,9 @@ common runtime-library-deps
         hasql-transaction >=1.0,
         resource-pool >=0.4,
 
-        -- HTTP client + WAI middleware
-        -- (Cortex.Capability.Provider.OpenRouter and the external Platform package)
-        servant-server >=0.20,
-        servant-client-core >=0.20,
+        -- HTTP / WAI middleware
         openapi3 >=3.2,
-        http-client >=0.7,
-        http-client-tls >=0.3,
-        http-api-data >=0.5,
         http-types >=0.12,
-        case-insensitive >=1.2,
         wai >=3.2,
         warp >=3.3,
 
@@ -102,10 +94,6 @@ common runtime-library-deps
         -- Keep `Data.ByteArray.Bytes` aligned with crypton's AuthTag type.
         crypton >=0.34 && <1,
         memory >=0.18,
-
-        -- Money (Cortex value modules)
-        safe-money >=0.9,
-        safe-money-aeson >=0.1,
 
         -- CLI / terminal
         optparse-applicative >=0.17,
@@ -121,10 +109,7 @@ common runtime-library-deps
         -- Logging & Config
         fast-logger >=3.1,
         monad-logger >=0.3,
-        configurator >=0.3,
-
-        -- Markdown rendering
-        cmark-gfm >=0.2.5
+        configurator >=0.3
 
 -- Main library: Cortex substrate.
 library
@@ -153,27 +138,9 @@ library
         Cortex.Algebra.Graph.Mokhov
         Cortex.Algebra.Graph.Search
         Cortex.Algebra.Graph.Validate
-        Cortex.Artifact
-        Cortex.Artifact.Host
-        Cortex.Artifact.IR
-        Cortex.Artifact.Metadata
         Cortex.Capability
         Cortex.Capability.Executor
         Cortex.Capability.Executor.Pure
-        Cortex.Capability.Model
-        Cortex.Capability.Model.Client
-        Cortex.Capability.Model.Message
-        Cortex.Capability.Model.Output
-        Cortex.Capability.Model.Types
-        Cortex.Capability.Provider
-        Cortex.Capability.Provider.OpenRouter
-        Cortex.Capability.Provider.OpenRouter.Client
-        Cortex.Capability.Provider.OpenRouter.Embedding
-        Cortex.Capability.Provider.OpenRouter.Wire
-        Cortex.Capability.StructuredOutput
-        Cortex.Capability.Tool
-        Cortex.Capability.Tool.Definition
-        Cortex.Capability.Tool.Record
         Cortex.Pulse
         Cortex.Pulse.Attempt
         Cortex.Pulse.Checkpoint
@@ -260,11 +227,8 @@ test-suite cortex-test
         hspec-discover:hspec-discover >=2.10
     other-modules:
         Cortex.Algebra.GraphSpec
-        Cortex.Artifact.IRSpec
         Cortex.CanonicalModuleTreeSpec
         Cortex.Capability.Executor.PureSpec
-        Cortex.Capability.Provider.OpenRouterSpec
-        Cortex.Capability.StructuredOutputSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
         Cortex.Pulse.RewriteAnchorValidationSpec
