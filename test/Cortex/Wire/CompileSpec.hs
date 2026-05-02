@@ -39,8 +39,11 @@ import Cortex.Wire.Contract
   , wireContractRegistryFromList
   )
 import Cortex.Wire.Executor
-  ( WireExecutorEffect (..)
+  ( WireExecutorConfigShape (..)
+  , WireExecutorEffect (..)
   , WireExecutorId (..)
+  , WireExecutorPortPolicy (..)
+  , WireExecutorProjection (..)
   , wireExecutorProjectionFromPorts
   , wireExecutorRegistryFromList
   )
@@ -276,6 +279,16 @@ spec = describe "Cortex.Wire.Compile" $ do
     it "compiles the mini build-system example" $ do
       source <- TIO.readFile "examples/wire/mini-build-system.wire"
       compileWireText source `shouldSatisfy` isRight
+
+    it "compiles the quantum Bell-state example with consumer executor projections" $ do
+      source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
+      compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "prepare_control", CircuitNodeRef "prepare_target"]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_control", CircuitNodeRef "measure_target"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "entangle")
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_control", CircuitNodeRef "measure_target"]
 
     it "compiles the pure output equations fixture" $ do
       source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
@@ -747,6 +760,30 @@ strictExecutorEnv =
           , pureWireExecutorProjection
           ]
     , wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
+quantumExecutorEnv :: WireCompileEnv
+quantumExecutorEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvExecutorRegistry =
+        wireExecutorRegistryFromList
+          [ quantumExecutorProjection "quantum.prepare_zero"
+          , quantumExecutorProjection "quantum.h"
+          , quantumExecutorProjection "quantum.cnot"
+          , quantumExecutorProjection "quantum.measure_z"
+          ]
+    , wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
+quantumExecutorProjection :: T.Text -> WireExecutorProjection
+quantumExecutorProjection executorId =
+  WireExecutorProjection
+    { wireExecutorProjectionId = WireExecutorId executorId
+    , wireExecutorProjectionPorts = WirePorts Map.empty Map.empty
+    , wireExecutorProjectionVocabulary = Set.fromList ["Qubit", "Bit", "RotationAngle"]
+    , wireExecutorProjectionEffect = WireExecutorHostEffect
+    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 
 projectedExecutorPorts :: WirePorts

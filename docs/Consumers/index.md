@@ -19,6 +19,8 @@ runtimes. These pages show binding patterns without making any consumer the fram
   archetypes, memory, and patterns sit above Cortex without becoming substrate runtime authority.
 - **[Portman](Portman.md)** - private downstream example. Shows how one product binds Cortex to
   product policy, artifacts, persistence, and Pulse host actions.
+- **[Quantum](Quantum.md)** - consumer binding example. Shows how Wire can author quantum circuit
+  topology while a host owns gate semantics and backend execution.
 
 ## What belongs here
 
