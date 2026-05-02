@@ -14,7 +14,7 @@ module Main (main) where
 
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Exception (IOException, try)
+import Control.Exception (IOException, try, uninterruptibleMask_)
 import Control.Monad (foldM, unless, when, zipWithM)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
@@ -233,7 +233,7 @@ runNodeLevel outputLock useScope pureBindings compiled state nodeDecls = do
               nodeId = NodeId nodeDecl.nodeDeclName
               directPredecessors =
                 Set.toAscList (predecessors compiled.compiledCircuitTopology nodeRef)
-          nodeInputs <- either dieText pure (nodeInputsFromState state directPredecessors)
+          nodeInputs <- either (dieTextLocked outputLock) pure (nodeInputsFromState state directPredecessors)
           outputs <- runNode outputLock useScope pureBindings nodeInputs nodeDecl
           pure (nodeId, outputs)
       )
@@ -247,31 +247,33 @@ runNodeLevel outputLock useScope pureBindings compiled state nodeDecls = do
 runNode
   :: MVar () -> RunUseScope -> [CorePureBinding] -> NodeInputs -> NodeDecl -> IO (Map Text WireValue)
 runNode outputLock useScope pureBindings nodeInputs nodeDecl = do
-  loweredPorts <- either dieText pure (lowerPortSignature useScope nodeDecl.nodeDeclPortSig)
+  loweredPorts <-
+    either (dieTextLocked outputLock) pure (lowerPortSignature useScope nodeDecl.nodeDeclPortSig)
   let ports = wirePortsFromLowered loweredPorts
   case nodeDecl.nodeDeclBody of
     NodeBodyPure pureBody ->
-      runPureNode useScope pureBindings nodeInputs ports loweredPorts pureBody
+      runPureNode outputLock useScope pureBindings nodeInputs ports loweredPorts pureBody
     NodeBodyExecutor _whereExpr executorCall ->
       runExecutorNode outputLock useScope nodeDecl.nodeDeclName nodeInputs ports executorCall
 
 runPureNode
-  :: RunUseScope
+  :: MVar ()
+  -> RunUseScope
   -> [CorePureBinding]
   -> NodeInputs
   -> WirePorts
   -> LoweredPorts
   -> NodePureBody
   -> IO (Map Text WireValue)
-runPureNode useScope pureBindings nodeInputs ports loweredPorts pureBody = do
+runPureNode outputLock useScope pureBindings nodeInputs ports loweredPorts pureBody = do
   outputExprs <-
     either
-      dieText
+      (dieTextLocked outputLock)
       pure
       (pureOutputConfigMap useScope loweredPorts.loweredOutputs pureBody.nodePureBodyOutputs)
   outputValues <-
     either
-      (dieText . renderPureEvalError)
+      (dieTextLocked outputLock . renderPureEvalError)
       pure
       ( evaluatePureTaskOutputs
           ports
@@ -294,14 +296,14 @@ runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
       Just BuiltinExecutorCommand ->
         runCommandNode outputLock nodeInputs ports record inputExpr
       Nothing ->
-        dieText $
+        dieTextLocked outputLock $
           "wire run does not yet support executor @"
             <> renderQName executorName
             <> " in node "
             <> nodeName
             <> "."
   ExecutorCallConfigured configuredName _inputExpr ->
-    dieText $
+    dieTextLocked outputLock $
       "wire run does not yet support configured executor "
         <> configuredName
         <> " in node "
@@ -335,11 +337,11 @@ runStdinNode outputLock ports record = do
       TIO.putStr promptText
       hFlush stdout
   inputText <- TIO.getLine
-  wrapSingleOutput "std.io.stdin" ports (Aeson.String inputText)
+  wrapSingleOutput outputLock "std.io.stdin" ports (Aeson.String inputText)
 
 runStdoutNode :: MVar () -> NodeInputs -> Record -> CorePureExpr -> IO (Map Text WireValue)
 runStdoutNode outputLock nodeInputs record inputExpr = do
-  value <- either dieText pure (lookupExecutorInput nodeInputs inputExpr)
+  value <- either (dieTextLocked outputLock) pure (lookupExecutorInput nodeInputs inputExpr)
   let rendered = renderOutputValue value.wireValueValue
       newline = fromMaybe True (lookupBoolField "newline" record)
   withMVar outputLock $ \() ->
@@ -351,23 +353,24 @@ runStdoutNode outputLock nodeInputs record inputExpr = do
 runCommandNode
   :: MVar () -> NodeInputs -> WirePorts -> Record -> CorePureExpr -> IO (Map Text WireValue)
 runCommandNode outputLock nodeInputs ports record inputExpr = do
-  maybeInput <- either dieText pure (lookupOptionalExecutorInput nodeInputs inputExpr)
-  commandSpec <- either dieText pure (commandSpecFromInput record maybeInput)
+  maybeInput <-
+    either (dieTextLocked outputLock) pure (lookupOptionalExecutorInput nodeInputs inputExpr)
+  commandSpec <- either (dieTextLocked outputLock) pure (commandSpecFromInput record maybeInput)
   commandResult <- executeCommandSpec commandSpec
   when commandSpec.commandSpecEcho $
     echoCommandResult outputLock commandSpec commandResult
   let result = commandResultValue commandSpec commandResult
-  wrapSingleOutput "std.io.command" ports result
+  wrapSingleOutput outputLock "std.io.command" ports result
 
-wrapSingleOutput :: Text -> WirePorts -> Aeson.Value -> IO (Map Text WireValue)
-wrapSingleOutput executorName ports value =
+wrapSingleOutput :: MVar () -> Text -> WirePorts -> Aeson.Value -> IO (Map Text WireValue)
+wrapSingleOutput outputLock executorName ports value =
   case Map.toList ports.wirePortsOutputs of
     [(portName, _port)] ->
       pure (wrapOutputs Nothing ports (Map.singleton portName value))
     [] ->
       noOutputs
     outputs ->
-      dieText $
+      dieTextLocked outputLock $
         executorName
           <> " expects zero or one output port in the local runner, got "
           <> tshow (length outputs)
@@ -881,3 +884,11 @@ dieText :: Text -> IO a
 dieText errText = do
   TIO.hPutStrLn stderr errText
   exitFailure
+
+dieTextLocked :: MVar () -> Text -> IO a
+dieTextLocked outputLock errText =
+  uninterruptibleMask_ $ do
+    withMVar outputLock $ \() -> do
+      TIO.hPutStrLn stderr errText
+      hFlush stderr
+    exitFailure
