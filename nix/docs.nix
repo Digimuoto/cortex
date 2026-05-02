@@ -1,4 +1,4 @@
-# Cortex documentation site — served at the repo root (/).
+# Cortex documentation site — deployed as a GitHub Pages project site.
 #
 # Outputs: packages.docs-site, apps.docs-{dev,preview}.
 {
@@ -7,8 +7,9 @@
       enable = true;
 
       # The Cortex research wiki: architecture, ADRs, reference specs,
-      # publications, research notes. This is the sole site in this repo,
-      # so it sits at routeBase "/".
+      # publications, research notes. GitHub Pages serves the repository
+      # artifact under /cortex, so generated routes and asset URLs must
+      # carry that route base even though the docs source tree is flat.
       sites.default = {
         contentDir = ../docs;
         theme = "cortex-light";
@@ -26,7 +27,7 @@
           tagline = "Research wiki";
           description = "Cortex engineering specifications, ADRs, research notes, and publications";
           publicBaseUrl = "https://digimuoto.github.io/cortex";
-          routeBase = "/";
+          routeBase = "/cortex";
         };
 
         repo = {
