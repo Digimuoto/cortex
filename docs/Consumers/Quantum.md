@@ -76,6 +76,33 @@ nodes to a backend-specific circuit builder:
 This keeps PennyLane/Qiskit/Cirq APIs out of Cortex. Cortex sees executor IDs, config records,
 ports, contracts, and run results.
 
+## Local Qiskit Runner
+
+The repository includes a Nix-backed local simulator bridge for the example vocabulary:
+
+```sh
+nix run .#wire-quantum-qiskit -- examples/wire/quantum-bell-state.wire --shots 1024 --seed 7
+```
+
+The runner:
+
+- compiles `.wire` input with the flake's `wire` executable;
+- carries `Qubit` ports as symbolic Qiskit wire indices;
+- builds one `QuantumCircuit`;
+- executes it on Qiskit Aer `aer_simulator`;
+- returns JSON counts and label-decoded counts.
+
+Plan inspection without simulator execution is also available:
+
+```sh
+nix run .#wire-quantum-qiskit -- examples/wire/quantum-bell-state.wire --emit-plan
+```
+
+The runner intentionally supports only the local Aer simulator. It refuses non-local backend names
+so an account or provider credentials cannot accidentally queue hardware jobs. Hardware execution
+should be added as a separate explicit binding with provider, credential, queue, cost, and audit
+policy in its own config path.
+
 ## Linearity Caveat
 
 Current Wire admission validates typed ports and cardinality-one inputs, but it does not make a

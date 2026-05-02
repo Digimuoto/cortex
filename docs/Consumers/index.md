@@ -20,7 +20,8 @@ runtimes. These pages show binding patterns without making any consumer the fram
 - **[Portman](Portman.md)** - private downstream example. Shows how one product binds Cortex to
   product policy, artifacts, persistence, and Pulse host actions.
 - **[Quantum](Quantum.md)** - consumer binding example. Shows how Wire can author quantum circuit
-  topology while a host owns gate semantics and backend execution.
+  topology while a host owns gate semantics and backend execution, including a local Qiskit
+  simulator bridge.
 
 ## What belongs here
 

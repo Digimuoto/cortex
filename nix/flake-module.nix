@@ -16,6 +16,7 @@
     ./haskell.nix
     ./lean.nix
     ./devshell.nix
+    ./quantum.nix
     ./docs.nix
     ./editors.nix
     ./ci
