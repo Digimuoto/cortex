@@ -143,7 +143,9 @@ shows the expected shape:
 
 `api_key_env` keeps the API key in the environment. A local config may instead use an `api_key`
 field, but that file should remain untracked. `instance_crn` is the IBM Quantum Runtime service CRN
-used in the REST `Service-CRN` header.
+used in the REST `Service-CRN` header. The default API base URL is
+`https://quantum.cloud.ibm.com/api/v1`; `eu-de` instances should use
+`https://eu-de.quantum.cloud.ibm.com/api/v1`.
 
 Hardware submission is opt-in:
 

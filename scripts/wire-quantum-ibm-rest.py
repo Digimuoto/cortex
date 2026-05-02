@@ -26,12 +26,13 @@ from typing import Any
 
 
 JSON = dict[str, Any]
-IBM_API_BASE_URL = "https://quantum.cloud.ibm.com/api"
+IBM_API_BASE_URL = "https://quantum.cloud.ibm.com/api/v1"
 IBM_IAM_TOKEN_URL = "https://iam.cloud.ibm.com/identity/token"
 IBM_API_VERSION = "2026-03-15"
 IAM_API_KEY_GRANT = "urn:ibm:params:oauth:grant-type:apikey"
 PLACEHOLDER_MARKERS = ("REPLACE_WITH", "YOUR_", "<")
 BITSTRING_RE = re.compile(r"^[01][01 ]*$")
+USER_AGENT = "cortex-wire-quantum/0.1"
 
 
 def main() -> int:
@@ -388,6 +389,7 @@ def fetch_iam_token(config: JSON, quantum: Any) -> str:
         {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
         },
         data=form,
         quantum=quantum,
@@ -560,6 +562,7 @@ def runtime_headers(
         "Authorization": f"Bearer {token}",
         "IBM-API-Version": config["api_version"],
         "Service-CRN": config["instance_crn"] or "",
+        "User-Agent": USER_AGENT,
     }
     if content_type is not None:
         headers["Content-Type"] = content_type
