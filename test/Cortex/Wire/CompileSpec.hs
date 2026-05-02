@@ -795,7 +795,10 @@ quantumExecutorEnv =
         wireExecutorRegistryFromList
           [ quantumExecutorProjection "quantum.prepare_zero"
           , quantumExecutorProjection "quantum.h"
+          , quantumExecutorProjection "quantum.rz"
+          , quantumExecutorProjection "quantum.sx"
           , quantumExecutorProjection "quantum.cnot"
+          , quantumExecutorProjection "quantum.cz"
           , quantumExecutorProjection "quantum.measure_z"
           , quantumExecutorProjection "quantum.ibm_runtime_config"
           ]

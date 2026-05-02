@@ -143,8 +143,7 @@ def print_run_summary(input_path: str, result: JSON) -> None:
     print()
     print("What happened:")
     print("Wire compiled the graph into typed quantum executor nodes.")
-    print("The runner mapped @quantum.prepare_zero, @quantum.h, and @quantum.cnot,")
-    print("plus @quantum.measure_z, into one Qiskit circuit.")
+    print("The runner mapped the admitted @quantum.* gates into one Qiskit circuit.")
     print("It sampled that circuit on the local Aer simulator.")
     print("No provider account was used and no real quantum hardware job was queued.")
     print()
@@ -168,8 +167,14 @@ def format_operation(operation: JSON) -> str:
         return f"{node}: prepare_zero q[{operation['wire']}]"
     if gate == "h":
         return f"{node}: h q[{operation['wire']}]"
+    if gate == "rz":
+        return f"{node}: rz({operation['angle']}) q[{operation['wire']}]"
+    if gate == "sx":
+        return f"{node}: sx q[{operation['wire']}]"
     if gate == "cnot":
         return f"{node}: cnot q[{operation['control']}], q[{operation['target']}]"
+    if gate == "cz":
+        return f"{node}: cz q[{operation['control']}], q[{operation['target']}]"
     if gate == "measure_z":
         return (
             f"{node}: measure_z q[{operation['wire']}] "
@@ -335,6 +340,51 @@ def build_quantum_plan(compiled: JSON) -> JSON:
                     "wire": input_wire,
                 }
             )
+        elif target == "quantum.rz":
+            input_value = single_qubit_input(node_ref, inputs, "quantum.rz")
+            output = single_output(node_ref, output_ports, "Qubit", "quantum.rz")
+            input_wire = require_wire(node_ref, input_value)
+            qubit_wires.add(input_wire)
+            node_outputs[node_ref] = {
+                output["name"]: QuantumValue(
+                    "qubit",
+                    input_wire,
+                    "Qubit",
+                    node_ref,
+                    output["name"],
+                )
+            }
+            operations.append(
+                {
+                    "node": node_ref,
+                    "executor": target,
+                    "gate": "rz",
+                    "wire": input_wire,
+                    "angle": number_config(node_ref, config, "angle"),
+                }
+            )
+        elif target == "quantum.sx":
+            input_value = single_qubit_input(node_ref, inputs, "quantum.sx")
+            output = single_output(node_ref, output_ports, "Qubit", "quantum.sx")
+            input_wire = require_wire(node_ref, input_value)
+            qubit_wires.add(input_wire)
+            node_outputs[node_ref] = {
+                output["name"]: QuantumValue(
+                    "qubit",
+                    input_wire,
+                    "Qubit",
+                    node_ref,
+                    output["name"],
+                )
+            }
+            operations.append(
+                {
+                    "node": node_ref,
+                    "executor": target,
+                    "gate": "sx",
+                    "wire": input_wire,
+                }
+            )
         elif target == "quantum.cnot":
             control = named_qubit_input(node_ref, inputs, "control", "quantum.cnot")
             target_qubit = named_qubit_input(node_ref, inputs, "target", "quantum.cnot")
@@ -359,6 +409,34 @@ def build_quantum_plan(compiled: JSON) -> JSON:
                     "node": node_ref,
                     "executor": target,
                     "gate": "cnot",
+                    "control": control_wire,
+                    "target": target_wire,
+                }
+            )
+        elif target == "quantum.cz":
+            control = named_qubit_input(node_ref, inputs, "control", "quantum.cz")
+            target_qubit = named_qubit_input(node_ref, inputs, "target", "quantum.cz")
+            require_output_names(
+                node_ref,
+                output_ports,
+                ["control", "target"],
+                "Qubit",
+                "quantum.cz",
+            )
+            control_wire = require_wire(node_ref, control)
+            target_wire = require_wire(node_ref, target_qubit)
+            if control_wire == target_wire:
+                raise WireQuantumError(f"{node_ref}: cz control and target must be distinct")
+            qubit_wires.update([control_wire, target_wire])
+            node_outputs[node_ref] = {
+                "control": QuantumValue("qubit", control_wire, "Qubit", node_ref, "control"),
+                "target": QuantumValue("qubit", target_wire, "Qubit", node_ref, "target"),
+            }
+            operations.append(
+                {
+                    "node": node_ref,
+                    "executor": target,
+                    "gate": "cz",
                     "control": control_wire,
                     "target": target_wire,
                 }
@@ -534,6 +612,13 @@ def int_config(node_ref: str, config: JSON, field: str) -> int:
     return value
 
 
+def number_config(node_ref: str, config: JSON, field: str) -> float:
+    value = config.get(field)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise WireQuantumError(f"node {node_ref} config field {field} must be a number")
+    return float(value)
+
+
 def string_config(node_ref: str, config: JSON, field: str) -> str:
     value = config.get(field)
     if not isinstance(value, str) or not value:
@@ -648,8 +733,14 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
             continue
         if gate == "h":
             circuit.h(operation["wire"])
+        elif gate == "rz":
+            circuit.rz(operation["angle"], operation["wire"])
+        elif gate == "sx":
+            circuit.sx(operation["wire"])
         elif gate == "cnot":
             circuit.cx(operation["control"], operation["target"])
+        elif gate == "cz":
+            circuit.cz(operation["control"], operation["target"])
         elif gate == "measure_z":
             circuit.measure(operation["wire"], operation["classical_bit"])
         else:

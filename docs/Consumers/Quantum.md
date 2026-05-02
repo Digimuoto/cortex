@@ -51,8 +51,11 @@ A useful first vocabulary is:
 | Executor                | Port shape                                        | Host behavior                                 |
 | ----------------------- | ------------------------------------------------- | --------------------------------------------- |
 | `@quantum.prepare_zero` | zero inputs, one `Qubit` output                   | Introduce a backend qubit initialized to `0`. |
+| `@quantum.rz`           | one `Qubit` input, one `Qubit` output             | Apply a Z-axis rotation.                      |
+| `@quantum.sx`           | one `Qubit` input, one `Qubit` output             | Apply a square-root X gate.                   |
 | `@quantum.h`            | one `Qubit` input, one `Qubit` output             | Apply a Hadamard gate.                        |
 | `@quantum.rx`           | `Qubit` plus `RotationAngle`, one `Qubit` output  | Apply a parameterized X rotation.             |
+| `@quantum.cz`           | `control` and `target` `Qubit` inputs and outputs | Apply a controlled-Z gate.                    |
 | `@quantum.cnot`         | `control` and `target` `Qubit` inputs and outputs | Apply a controlled-not gate.                  |
 | `@quantum.measure_z`    | one `Qubit` input, one `Bit` output               | Measure in the Z basis.                       |
 
@@ -127,9 +130,11 @@ node ibm_runtime_config
 
 The runner treats that node as the source of the provider config path. The config path is resolved
 relative to the `.wire` file. The example threads the config token into the first prepare node only
-to make the Wire graph connected; the runner treats it as orchestration data, not quantum state.
-`*.local.json` files are ignored by git, so real credentials should live in
-`examples/wire/quantum-ibm-runtime.local.json`. The tracked template at
+to make the Wire graph connected; the runner treats it as orchestration data, not quantum state. The
+hardware example authors the Bell circuit from backend primitive gates: `h` is decomposed as
+`rz(pi/2) => sx => rz(pi/2)`, and `cnot` as `h(target) => cz => h(target)`. `*.local.json` files are
+ignored by git, so real credentials should live in `examples/wire/quantum-ibm-runtime.local.json`.
+The tracked template at
 [`../../examples/wire/quantum-ibm-runtime.config.example.json`](../../examples/wire/quantum-ibm-runtime.config.example.json)
 shows the expected shape:
 

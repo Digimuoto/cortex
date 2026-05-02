@@ -353,9 +353,21 @@ def build_openqasm3(plan: JSON, quantum: Any) -> str:
         if gate == "prepare_zero":
             continue
         if gate == "h":
-            lines.append(f"h q[{operation['wire']}];")
+            raise quantum.WireQuantumError(
+                "IBM hardware runner requires primitive Wire gates; decompose "
+                "quantum.h as quantum.rz(pi/2) => quantum.sx => quantum.rz(pi/2)"
+            )
+        elif gate == "rz":
+            lines.append(f"rz({operation['angle']}) q[{operation['wire']}];")
+        elif gate == "sx":
+            lines.append(f"sx q[{operation['wire']}];")
         elif gate == "cnot":
-            lines.append(f"cx q[{operation['control']}], q[{operation['target']}];")
+            raise quantum.WireQuantumError(
+                "IBM hardware runner requires primitive Wire gates; decompose "
+                "quantum.cnot as h(target) => quantum.cz => h(target)"
+            )
+        elif gate == "cz":
+            lines.append(f"cz q[{operation['control']}], q[{operation['target']}];")
         elif gate == "measure_z":
             lines.append(
                 f"c[{operation['classical_bit']}] = measure q[{operation['wire']}];"
@@ -637,6 +649,9 @@ def extract_counts(raw_result: Any, measurements: list[JSON]) -> dict[str, int] 
     direct_counts = find_direct_counts(raw_result, width)
     if direct_counts is not None:
         return direct_counts
+    sample_counts = find_sample_counts(raw_result, width)
+    if sample_counts is not None:
+        return sample_counts
     for tensor in iter_tensors(raw_result):
         tensor_counts = counts_from_bool_tensor(tensor, width)
         if tensor_counts is not None:
@@ -681,6 +696,59 @@ def normalize_counts(value: Any, width: int) -> dict[str, int] | None:
             return None
         counts[bits] = int(raw_count)
     return dict(sorted(counts.items()))
+
+
+def find_sample_counts(value: Any, width: int) -> dict[str, int] | None:
+    if isinstance(value, dict):
+        candidate = normalize_samples(value, width)
+        if candidate is not None:
+            return candidate
+        for child in value.values():
+            found = find_sample_counts(child, width)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = find_sample_counts(child, width)
+            if found is not None:
+                return found
+    return None
+
+
+def normalize_samples(value: Any, width: int) -> dict[str, int] | None:
+    if not isinstance(value, dict):
+        return None
+    samples = value.get("samples")
+    num_bits = value.get("num_bits", width)
+    if not isinstance(samples, list) or not isinstance(num_bits, int) or num_bits < width:
+        return None
+
+    counter: Counter[str] = Counter()
+    for sample in samples:
+        bits = sample_to_bitstring(sample, num_bits)
+        if bits is None:
+            return None
+        counter[bits[-width:]] += 1
+    return dict(sorted(counter.items()))
+
+
+def sample_to_bitstring(sample: Any, width: int) -> str | None:
+    if isinstance(sample, int) and sample >= 0:
+        return format(sample, f"0{width}b")
+    if not isinstance(sample, str):
+        return None
+    if sample.startswith(("0x", "0X")):
+        try:
+            return format(int(sample, 16), f"0{width}b")
+        except ValueError:
+            return None
+    if sample.startswith(("0b", "0B")):
+        bits = sample[2:]
+    else:
+        bits = sample.replace(" ", "")
+    if len(bits) <= width and set(bits) <= {"0", "1"}:
+        return bits.zfill(width)
+    return None
 
 
 def iter_tensors(value: Any) -> Any:
