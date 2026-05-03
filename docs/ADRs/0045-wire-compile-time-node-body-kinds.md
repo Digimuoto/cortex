@@ -23,6 +23,7 @@ related:
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
+  - docs/ADRs/0046-wire-compile-time-graph-forms.md
 ---
 
 # ADR 0045 - Wire Compile-Time Node-Body Kinds
@@ -149,12 +150,13 @@ remains the vertex.
 
 This preserves ADR 0010's closed-authority rule and ADR 0024's typed executor-node interface.
 
-### Relationship to graph kinds
+### Relationship to graph forms
 
-This ADR does not add general graph kinds, loops, generators, or higher-order graph functions. Those
+This ADR does not add general graph forms, loops, generators, or higher-order graph functions. Those
 are plausible future features, especially for parameterized sweeps such as the quantum eraser phase
-table, but they add another decision: how a kind expands multiple nodes and returns a graph value
-with a stable boundary.
+table, but they add another decision: how a source abstraction expands multiple nodes and returns a
+graph value with a stable boundary. ADR 0046 handles that graph-valued structural abstraction
+separately.
 
 The first slice solves the repeated node-boundary problem without changing graph composition
 semantics.

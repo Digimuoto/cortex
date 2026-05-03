@@ -62,6 +62,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0043](0043-pulse-in-memory-runner.md)                          | Pulse In-Memory Runner                                              | proposed   |
 | [0044](0044-wire-namespace-use-imports.md)                      | Wire Namespace Use Imports                                          | proposed   |
 | [0045](0045-wire-compile-time-node-body-kinds.md)               | Wire Compile-Time Node-Body Kinds                                   | proposed   |
+| [0046](0046-wire-compile-time-graph-forms.md)                   | Wire Compile-Time Graph Forms                                       | proposed   |
 
 ## Writing a new ADR
 
