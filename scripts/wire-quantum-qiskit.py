@@ -171,10 +171,17 @@ def format_operation(operation: JSON) -> str:
         return f"{node}: rz({operation['angle']}) q[{operation['wire']}]"
     if gate == "sx":
         return f"{node}: sx q[{operation['wire']}]"
+    if gate == "x":
+        return f"{node}: x q[{operation['wire']}]"
     if gate == "cnot":
         return f"{node}: cnot q[{operation['control']}], q[{operation['target']}]"
     if gate == "cz":
         return f"{node}: cz q[{operation['control']}], q[{operation['target']}]"
+    if gate == "rzz":
+        return (
+            f"{node}: rzz({operation['angle']}) "
+            f"q[{operation['control']}], q[{operation['target']}]"
+        )
     if gate == "measure_z":
         return (
             f"{node}: measure_z q[{operation['wire']}] "
@@ -385,6 +392,28 @@ def build_quantum_plan(compiled: JSON) -> JSON:
                     "wire": input_wire,
                 }
             )
+        elif target == "quantum.x":
+            input_value = single_qubit_input(node_ref, inputs, "quantum.x")
+            output = single_output(node_ref, output_ports, "Qubit", "quantum.x")
+            input_wire = require_wire(node_ref, input_value)
+            qubit_wires.add(input_wire)
+            node_outputs[node_ref] = {
+                output["name"]: QuantumValue(
+                    "qubit",
+                    input_wire,
+                    "Qubit",
+                    node_ref,
+                    output["name"],
+                )
+            }
+            operations.append(
+                {
+                    "node": node_ref,
+                    "executor": target,
+                    "gate": "x",
+                    "wire": input_wire,
+                }
+            )
         elif target == "quantum.cnot":
             control = named_qubit_input(node_ref, inputs, "control", "quantum.cnot")
             target_qubit = named_qubit_input(node_ref, inputs, "target", "quantum.cnot")
@@ -439,6 +468,35 @@ def build_quantum_plan(compiled: JSON) -> JSON:
                     "gate": "cz",
                     "control": control_wire,
                     "target": target_wire,
+                }
+            )
+        elif target == "quantum.rzz":
+            control = named_qubit_input(node_ref, inputs, "control", "quantum.rzz")
+            target_qubit = named_qubit_input(node_ref, inputs, "target", "quantum.rzz")
+            require_output_names(
+                node_ref,
+                output_ports,
+                ["control", "target"],
+                "Qubit",
+                "quantum.rzz",
+            )
+            control_wire = require_wire(node_ref, control)
+            target_wire = require_wire(node_ref, target_qubit)
+            if control_wire == target_wire:
+                raise WireQuantumError(f"{node_ref}: rzz qubits must be distinct")
+            qubit_wires.update([control_wire, target_wire])
+            node_outputs[node_ref] = {
+                "control": QuantumValue("qubit", control_wire, "Qubit", node_ref, "control"),
+                "target": QuantumValue("qubit", target_wire, "Qubit", node_ref, "target"),
+            }
+            operations.append(
+                {
+                    "node": node_ref,
+                    "executor": target,
+                    "gate": "rzz",
+                    "control": control_wire,
+                    "target": target_wire,
+                    "angle": number_config(node_ref, config, "angle"),
                 }
             )
         elif target == "quantum.measure_z":
@@ -737,10 +795,14 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
             circuit.rz(operation["angle"], operation["wire"])
         elif gate == "sx":
             circuit.sx(operation["wire"])
+        elif gate == "x":
+            circuit.x(operation["wire"])
         elif gate == "cnot":
             circuit.cx(operation["control"], operation["target"])
         elif gate == "cz":
             circuit.cz(operation["control"], operation["target"])
+        elif gate == "rzz":
+            circuit.rzz(operation["angle"], operation["control"], operation["target"])
         elif gate == "measure_z":
             circuit.measure(operation["wire"], operation["classical_bit"])
         else:

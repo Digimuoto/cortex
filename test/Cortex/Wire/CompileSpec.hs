@@ -307,6 +307,19 @@ spec = describe "Cortex.Wire.Compile" $ do
         other ->
           expectationFailure ("expected task node, got: " <> show other)
 
+    it "compiles the quantum IPEA round example with primitive executors" $ do
+      source <- TIO.readFile "examples/wire/quantum-ipea-round.wire"
+      compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "ibm_runtime_config"
+          , CircuitNodeRef "prepare_target"
+          ]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_phase"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "phase_rzz")
+        `shouldBe` Set.fromList [CircuitNodeRef "feedback_control_rz"]
+
     it "compiles the pure output equations fixture" $ do
       source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
       compileWireText source `shouldSatisfy` isRight
@@ -797,8 +810,10 @@ quantumExecutorEnv =
           , quantumExecutorProjection "quantum.h"
           , quantumExecutorProjection "quantum.rz"
           , quantumExecutorProjection "quantum.sx"
+          , quantumExecutorProjection "quantum.x"
           , quantumExecutorProjection "quantum.cnot"
           , quantumExecutorProjection "quantum.cz"
+          , quantumExecutorProjection "quantum.rzz"
           , quantumExecutorProjection "quantum.measure_z"
           , quantumExecutorProjection "quantum.ibm_runtime_config"
           ]

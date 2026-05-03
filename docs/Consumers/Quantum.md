@@ -53,9 +53,11 @@ A useful first vocabulary is:
 | `@quantum.prepare_zero` | zero inputs, one `Qubit` output                   | Introduce a backend qubit initialized to `0`. |
 | `@quantum.rz`           | one `Qubit` input, one `Qubit` output             | Apply a Z-axis rotation.                      |
 | `@quantum.sx`           | one `Qubit` input, one `Qubit` output             | Apply a square-root X gate.                   |
+| `@quantum.x`            | one `Qubit` input, one `Qubit` output             | Apply an X gate.                              |
 | `@quantum.h`            | one `Qubit` input, one `Qubit` output             | Apply a Hadamard gate.                        |
 | `@quantum.rx`           | `Qubit` plus `RotationAngle`, one `Qubit` output  | Apply a parameterized X rotation.             |
 | `@quantum.cz`           | `control` and `target` `Qubit` inputs and outputs | Apply a controlled-Z gate.                    |
+| `@quantum.rzz`          | `control` and `target` `Qubit` inputs and outputs | Apply a parameterized ZZ interaction.         |
 | `@quantum.cnot`         | `control` and `target` `Qubit` inputs and outputs | Apply a controlled-not gate.                  |
 | `@quantum.measure_z`    | one `Qubit` input, one `Bit` output               | Measure in the Z basis.                       |
 
@@ -162,6 +164,59 @@ Without `--confirm-hardware`, the runner refuses to submit. With `--dry-run` or 
 builds the OpenQASM 3 sampler request locally without requesting an IAM token and without queueing a
 job. `backend = "least_busy"` asks the runner to choose an online non-simulator backend with enough
 qubits; a concrete backend can be selected with the config `backend` field or the `--backend` flag.
+
+## Iterative Phase Estimation Runner
+
+The `wire-quantum-ipea` app demonstrates adaptive phase estimation as a sequence of fresh Wire
+rounds. Each round compiles a new Wire graph, executes one quantum measurement, carries that
+measured bit back into classical Python state, and uses the accumulated bits to choose the next
+round's feedback angle. This is adaptive circuit authoring, not hidden mid-circuit backend feedback.
+
+Local simulation is the default:
+
+```sh
+nix run .#wire-quantum-ipea -- --shots 100 --seed 7
+```
+
+The default target phase is `5/8` with `3` measured bits, so an ideal run estimates bitstring `101`.
+The generated round shape is represented by
+[`../../examples/wire/quantum-ipea-round.wire`](../../examples/wire/quantum-ipea-round.wire). It
+uses primitive gates accepted by the IBM hardware runner: the Hadamard fragments are
+`rz(pi/2) => sx => rz(pi/2)`, and the controlled phase is decomposed into two `rz(theta/2)` nodes
+plus one `rzz(-theta/2)` node. The Wire file binds those fragments with graph-valued `let`s:
+
+```wire
+let h_control =
+  h_control_rz_a
+    => h_control_sx
+    => h_control_rz_b;
+
+let controlled_phase =
+  (phase_control_rz <> phase_target_rz)
+    => phase_rzz;
+
+let feedback_and_readout =
+  feedback_control_rz
+    => readout_h
+    => measure_phase;
+```
+
+Dry-run mode compiles every generated round and can persist the generated Wire without simulation or
+provider submission:
+
+```sh
+nix run .#wire-quantum-ipea -- --dry-run --emit-round-wire /tmp/wire-ipea-rounds
+```
+
+Hardware execution uses the same ignored IBM Runtime config file as the Bell example and still
+requires explicit confirmation:
+
+```sh
+nix run .#wire-quantum-ipea -- --hardware --shots 100 --confirm-hardware
+```
+
+Because each round is a separate provider job, this demo spends hardware budget per measured phase
+bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
 ## Linearity Caveat
 

@@ -33,6 +33,18 @@ IAM_API_KEY_GRANT = "urn:ibm:params:oauth:grant-type:apikey"
 PLACEHOLDER_MARKERS = ("REPLACE_WITH", "YOUR_", "<")
 BITSTRING_RE = re.compile(r"^[01][01 ]*$")
 USER_AGENT = "cortex-wire-quantum/0.1"
+PUBLIC_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+JOB_STATUS_LABELS = {
+    "completed": "Completed",
+    "done": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "canceled": "Cancelled",
+    "queued": "Queued",
+    "running": "Running",
+    "pending": "Pending",
+}
+TERMINAL_JOB_STATUSES = {"completed", "failed", "cancelled", "canceled"}
 
 
 def main() -> int:
@@ -129,7 +141,15 @@ def main() -> int:
             if args.json_output:
                 quantum.print_json(result)
             else:
-                print_request_summary(result, include_payload=args.emit_request)
+                print_request_summary(
+                    source=args.input,
+                    config_path=str(config_path),
+                    backend_request=backend_request,
+                    shots=args.shots,
+                    plan=plan,
+                    openqasm3=qasm,
+                    request_payload=payload if args.emit_request else None,
+                )
             return 0
 
         token = fetch_iam_token(config, quantum)
@@ -147,12 +167,17 @@ def main() -> int:
                 "job_id": job_id,
                 "shots": args.shots,
                 "plan": plan,
-                "submission": submitted["response"],
             }
             if args.json_output:
                 quantum.print_json(result)
             else:
-                print_submission_summary(result)
+                print_submission_summary(
+                    source=args.input,
+                    config_path=str(config_path),
+                    backend=backend,
+                    job_id=job_id,
+                    shots=args.shots,
+                )
             return 0
 
         poll_interval = args.poll_interval or config["poll_interval_seconds"]
@@ -176,20 +201,30 @@ def main() -> int:
             "backend": backend,
             "backend_family": "ibm_quantum_runtime_rest",
             "job_id": job_id,
-            "status": job_status(final_job),
+            "status": public_job_status(final_job),
             "shots": args.shots,
             "plan": plan,
             "counts": counts,
             "labeled_counts": (
                 quantum.labeled_counts(counts, plan["measurements"]) if counts else None
             ),
-            "metrics": metrics,
-            "raw_result": raw_result,
+            "qpu_usage_seconds": qpu_usage_seconds(metrics),
         }
         if args.json_output:
             quantum.print_json(result)
         else:
-            print_hardware_run_summary(result, quantum)
+            print_hardware_run_summary(
+                source=args.input,
+                config_path=str(config_path),
+                backend=backend,
+                job_id=job_id,
+                status=result["status"],
+                shots=args.shots,
+                plan=plan,
+                counts=counts,
+                qpu_usage=result["qpu_usage_seconds"],
+                quantum=quantum,
+            )
         return 0
     except quantum.WireQuantumError as exc:
         print(f"wire-quantum-ibm-rest: {exc}", file=sys.stderr)
@@ -361,6 +396,8 @@ def build_openqasm3(plan: JSON, quantum: Any) -> str:
             lines.append(f"rz({operation['angle']}) q[{operation['wire']}];")
         elif gate == "sx":
             lines.append(f"sx q[{operation['wire']}];")
+        elif gate == "x":
+            lines.append(f"x q[{operation['wire']}];")
         elif gate == "cnot":
             raise quantum.WireQuantumError(
                 "IBM hardware runner requires primitive Wire gates; decompose "
@@ -368,6 +405,11 @@ def build_openqasm3(plan: JSON, quantum: Any) -> str:
             )
         elif gate == "cz":
             lines.append(f"cz q[{operation['control']}], q[{operation['target']}];")
+        elif gate == "rzz":
+            lines.append(
+                f"rzz({operation['angle']}) q[{operation['control']}], "
+                f"q[{operation['target']}];"
+            )
         elif gate == "measure_z":
             lines.append(
                 f"c[{operation['classical_bit']}] = measure q[{operation['wire']}];"
@@ -467,7 +509,7 @@ def submit_job(config: JSON, token: str, payload: JSON, quantum: Any) -> JSON:
     job_id = first_string(response, ["id", "job_id", "jobId"])
     if job_id is None:
         raise quantum.WireQuantumError("IBM job submission response did not include a job id")
-    return {"job_id": job_id, "response": response}
+    return {"job_id": public_identifier(job_id, "IBM job id", quantum)}
 
 
 def poll_job(
@@ -482,9 +524,9 @@ def poll_job(
     deadline = time.monotonic() + timeout_seconds
     while True:
         job = fetch_job(config, token, job_id, quantum)
-        status = job_status(job)
+        status = public_job_status(job)
         normalized = status.lower()
-        if normalized in {"completed", "failed", "cancelled", "canceled"}:
+        if normalized in TERMINAL_JOB_STATUSES:
             if normalized != "completed":
                 raise quantum.WireQuantumError(f"IBM job {job_id} ended with status {status}")
             return job
@@ -493,7 +535,7 @@ def poll_job(
                 f"timed out waiting for IBM job {job_id}; last status was {status}"
             )
         if not quiet:
-            print(f"IBM job {job_id}: {status}; polling again in {poll_interval}s", file=sys.stderr)
+            sys.stderr.write("IBM job is not terminal; polling again.\n")
         time.sleep(poll_interval)
 
 
@@ -542,9 +584,9 @@ def request_json(
         with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
         raise quantum.WireQuantumError(
-            f"IBM Runtime REST {method} {url} failed with HTTP {exc.code}: {body}"
+            f"IBM Runtime REST {method} {url} failed with HTTP {exc.code}; "
+            "response body omitted"
         ) from exc
     except urllib.error.URLError as exc:
         raise quantum.WireQuantumError(
@@ -630,6 +672,12 @@ def first_string(value: Any, fields: list[str]) -> str | None:
     return None
 
 
+def public_identifier(value: str, label: str, quantum: Any) -> str:
+    if PUBLIC_IDENTIFIER_RE.fullmatch(value):
+        return value
+    raise quantum.WireQuantumError(f"{label} used an unexpected format")
+
+
 def job_status(job: Any) -> str:
     if not isinstance(job, dict):
         return "unknown"
@@ -642,6 +690,11 @@ def job_status(job: Any) -> str:
         return str(state)
     status = job.get("status")
     return str(status) if status is not None else "unknown"
+
+
+def public_job_status(job: Any) -> str:
+    normalized = job_status(job).strip().lower()
+    return JOB_STATUS_LABELS.get(normalized, "Unknown")
 
 
 def extract_counts(raw_result: Any, measurements: list[JSON]) -> dict[str, int] | None:
@@ -805,16 +858,23 @@ def counts_from_bool_tensor(tensor: JSON, width: int) -> dict[str, int] | None:
     return dict(sorted(counter.items()))
 
 
-def print_request_summary(result: JSON, include_payload: bool) -> None:
-    plan = result["plan"]
+def print_request_summary(
+    source: str,
+    config_path: str,
+    backend_request: str,
+    shots: int,
+    plan: JSON,
+    openqasm3: str,
+    request_payload: JSON | None,
+) -> None:
     print("Wire IBM Quantum request")
-    print(f"source: {result['source']}")
+    emit_field("source", source)
     print("execution: dry run (not submitted)")
-    print(f"config: {result['config_path']}")
-    print(f"backend: {result['backend_request']}")
-    print(f"shots: {result['shots']}")
-    print(f"qubits: {plan['num_qubits']}")
-    print(f"measurements: {format_measurements(plan)}")
+    emit_field("config", config_path)
+    emit_field("backend", backend_request)
+    emit_field("shots", shots)
+    emit_field("qubits", plan["num_qubits"])
+    emit_field("measurements", format_measurements(plan))
     print()
     print("What would happen:")
     print("Wire compiles the graph into typed quantum executor nodes.")
@@ -822,40 +882,55 @@ def print_request_summary(result: JSON, include_payload: bool) -> None:
     print("No IAM token was requested and no IBM Quantum job was queued.")
     print()
     print("OpenQASM 3:")
-    print(result["openqasm3"], end="")
-    if include_payload:
+    emit_block(openqasm3)
+    if request_payload is not None:
         print()
         print("REST payload:")
-        print(json.dumps(result["request_payload"], indent=2, sort_keys=True))
+        emit_line(json.dumps(request_payload, indent=2, sort_keys=True))
 
 
-def print_submission_summary(result: JSON) -> None:
+def print_submission_summary(
+    source: str,
+    config_path: str,
+    backend: str,
+    job_id: str,
+    shots: int,
+) -> None:
     print("Wire IBM Quantum job")
-    print(f"source: {result['source']}")
+    emit_field("source", source)
     print("execution: submitted (not polled)")
-    print(f"config: {result['config_path']}")
-    print(f"backend: {result['backend']}")
-    print(f"job: {result['job_id']}")
-    print(f"shots: {result['shots']}")
+    emit_field("config", config_path)
+    emit_field("backend", backend)
+    emit_field("job", job_id)
+    emit_field("shots", shots)
     print()
     print("The job is now queued with IBM Quantum Runtime.")
 
 
-def print_hardware_run_summary(result: JSON, quantum: Any) -> None:
-    plan = result["plan"]
+def print_hardware_run_summary(
+    source: str,
+    config_path: str,
+    backend: str,
+    job_id: str,
+    status: str,
+    shots: int,
+    plan: JSON,
+    counts: dict[str, int] | None,
+    qpu_usage: float | None,
+    quantum: Any,
+) -> None:
     print("Wire IBM Quantum run")
-    print(f"source: {result['source']}")
+    emit_field("source", source)
     print("execution: IBM Quantum hardware via Runtime REST")
-    print(f"config: {result['config_path']}")
-    print(f"backend: {result['backend']}")
-    print(f"job: {result['job_id']}")
-    print(f"status: {result['status']}")
-    print(f"shots: {result['shots']}")
-    print(f"qubits: {plan['num_qubits']}")
-    print(f"measurements: {format_measurements(plan)}")
-    usage = qpu_usage_seconds(result.get("metrics"))
-    if usage is not None:
-        print(f"qpu usage: {usage:.3f}s")
+    emit_field("config", config_path)
+    emit_field("backend", backend)
+    emit_field("job", job_id)
+    emit_field("status", status)
+    emit_field("shots", shots)
+    emit_field("qubits", plan["num_qubits"])
+    emit_field("measurements", format_measurements(plan))
+    if qpu_usage is not None:
+        emit_field("qpu usage", f"{qpu_usage:.3f}s")
     print()
     print("What happened:")
     print("Wire compiled the graph into typed quantum executor nodes.")
@@ -864,12 +939,30 @@ def print_hardware_run_summary(result: JSON, quantum: Any) -> None:
     print("Credentials came from the config file path carried by the first Wire node.")
     print()
     print("Result:")
-    counts = result.get("counts")
     if counts:
-        print(quantum.format_result_table(counts, plan["measurements"], result["shots"]))
+        emit_line(quantum.format_result_table(counts, plan["measurements"], shots))
     else:
         print("  IBM returned a result shape this example decoder did not recognize.")
-        print("  Re-run with --json to inspect raw_result.")
+        print("  No raw provider payload is printed because it can contain account data.")
+
+
+def emit_field(label: str, value: Any) -> None:
+    emit_raw(f"{label}: {value}\n")
+
+
+def emit_line(value: str) -> None:
+    emit_raw(value)
+    if not value.endswith("\n"):
+        emit_raw("\n")
+
+
+def emit_block(value: str) -> None:
+    emit_raw(value)
+
+
+def emit_raw(value: str) -> None:
+    sys.stdout.flush()
+    os.write(sys.stdout.fileno(), value.encode("utf-8"))
 
 
 def qpu_usage_seconds(metrics: Any) -> float | None:

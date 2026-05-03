@@ -31,10 +31,22 @@
           "$@"
       '';
     };
+
+    wire-quantum-ipea = pkgs.writeShellApplication {
+      name = "wire-quantum-ipea";
+      text = ''
+        set -euo pipefail
+        scripts_dir="${../scripts}"
+        exec ${qiskitPython}/bin/python "$scripts_dir/wire-quantum-ipea.py" \
+          --wire-bin ${config.packages.wire}/bin/wire \
+          "$@"
+      '';
+    };
   in {
     packages = {
       wire-quantum-qiskit = wire-quantum-qiskit;
       wire-quantum-ibm-rest = wire-quantum-ibm-rest;
+      wire-quantum-ipea = wire-quantum-ipea;
     };
 
     apps = {
@@ -47,6 +59,11 @@
         type = "app";
         program = "${wire-quantum-ibm-rest}/bin/wire-quantum-ibm-rest";
         meta.description = "Submit Wire quantum examples to IBM Quantum Runtime REST";
+      };
+      wire-quantum-ipea = {
+        type = "app";
+        program = "${wire-quantum-ipea}/bin/wire-quantum-ipea";
+        meta.description = "Run iterative phase estimation as composed Wire quantum rounds";
       };
     };
   };
