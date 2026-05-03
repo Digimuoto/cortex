@@ -45,6 +45,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Ratio (denominator)
 import Data.Scientific (Scientific, toBoundedInteger)
 import Data.Scientific qualified as Scientific
 import Data.Set (Set)
@@ -80,6 +81,7 @@ import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloa
 data PureEvalError
   = PureMissingVariable !Text
   | PureDivisionByZero
+  | PureNonTerminatingDecimalDivision !Text !Text
   | PureInputPortUnsupported !Text !Text
   | PureInputPortRequiresLabel !Text !Text
   | PureInputPortMissing !Text !Text
@@ -124,6 +126,12 @@ renderPureEvalError = \case
     "Pure expression references missing variable " <> variableName <> "."
   PureDivisionByZero ->
     "Pure expression attempted division by zero."
+  PureNonTerminatingDecimalDivision numeratorText denominatorText ->
+    "Pure expression attempted non-terminating decimal division "
+      <> numeratorText
+      <> " / "
+      <> denominatorText
+      <> "."
   PureInputPortUnsupported portName reason ->
     "Pure input port " <> portName <> " is unsupported: " <> reason <> "."
   PureInputPortRequiresLabel portName contractId ->
@@ -646,9 +654,7 @@ evaluateCorePureBinary binaryOp lhs rhs =
     CorePureDivide -> do
       lhsNumber <- corePureNumber lhs
       rhsNumber <- corePureNumber rhs
-      if rhsNumber == 0
-        then Left PureDivisionByZero
-        else Right (CorePureJson (Aeson.Number (lhsNumber / rhsNumber)))
+      CorePureJson . Aeson.Number <$> divideScientific lhsNumber rhsNumber
     CorePureMerge -> do
       lhsObject <- corePureObject lhs
       rhsObject <- corePureObject rhs
@@ -677,6 +683,23 @@ numericBinary
   -> Either PureEvalError CorePureValue
 numericBinary op lhs rhs =
   CorePureJson . Aeson.Number <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
+
+divideScientific :: Scientific -> Scientific -> Either PureEvalError Scientific
+divideScientific lhs rhs
+  | rhs == 0 = Left PureDivisionByZero
+  | decimalTerminating (denominator quotient) = Right (fromRational quotient)
+  | otherwise =
+      Left (PureNonTerminatingDecimalDivision (canonicalNumber lhs) (canonicalNumber rhs))
+  where
+    quotient = toRational lhs / toRational rhs
+
+decimalTerminating :: Integer -> Bool
+decimalTerminating value =
+  stripFactor 5 (stripFactor 2 value) == 1
+  where
+    stripFactor factor current
+      | current `mod` factor == 0 = stripFactor factor (current `div` factor)
+      | otherwise = current
 
 numericCompare
   :: (Scientific -> Scientific -> Bool)

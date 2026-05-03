@@ -212,9 +212,9 @@ node summarize_experiment
               c0 = counts["0"];
               c1 = counts["1"];
               shots = result.shots;
-              screenP0 = c0 / shots;
+              screenZero = "${c0} of ${shots}";
             in
-            "  ${mode} | ${phase} | ${screenP0} | ${expected} | - | - | 0:${c0},1:${c1}";
+            "  ${mode} | ${phase} | ${screenZero} | ${expected} | - | - | 0:${c0},1:${c1}";
           twoBitLine = mode: phase: expected: result:
             let
               counts = result.complete_counts;
@@ -223,27 +223,27 @@ node summarize_experiment
               c10 = counts["10"];
               c11 = counts["11"];
               shots = result.shots;
-              screenP0 = (c00 + c10) / shots;
+              screenZero = "${c00 + c10} of ${shots}";
               marker0Total = c00 + c01;
               marker1Total = c10 + c11;
-              marker0P0 = c00 / marker0Total;
-              marker1P0 = c10 / marker1Total;
+              marker0Zero = "${c00} of ${marker0Total}";
+              marker1Zero = "${c10} of ${marker1Total}";
             in
-            "  ${mode} | ${phase} | ${screenP0} | ${expected} | ${marker0P0} | ${marker1P0} | 00:${c00},01:${c01},10:${c10},11:${c11}";
+            "  ${mode} | ${phase} | ${screenZero} | ${expected} | ${marker0Zero} | ${marker1Zero} | 00:${c00},01:${c01},10:${c10},11:${c11}";
           rows = [
-            oneBitLine "open" "0" 1 open0Json,
-            oneBitLine "open" "1/4" 0.5 open14Json,
-            oneBitLine "open" "1/2" 0 open12Json,
-            twoBitLine "which_path" "0" 0.5 which0Json,
-            twoBitLine "which_path" "1/4" 0.5 which14Json,
-            twoBitLine "which_path" "1/2" 0.5 which12Json,
-            twoBitLine "eraser" "0" 0.5 eraser0Json,
-            twoBitLine "eraser" "1/4" 0.5 eraser14Json,
-            twoBitLine "eraser" "1/2" 0.5 eraser12Json
+            oneBitLine "open" "0" "near all" open0Json,
+            oneBitLine "open" "1/4" "near half" open14Json,
+            oneBitLine "open" "1/2" "near none" open12Json,
+            twoBitLine "which_path" "0" "near half" which0Json,
+            twoBitLine "which_path" "1/4" "near half" which14Json,
+            twoBitLine "which_path" "1/2" "near half" which12Json,
+            twoBitLine "eraser" "0" "near half" eraser0Json,
+            twoBitLine "eraser" "1/4" "near half" eraser14Json,
+            twoBitLine "eraser" "1/2" "near half" eraser12Json
           ];
           table = rows |> joinWith "\n";
         in
-        "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nWhat happened:\nWire planned the sweep, sequenced nine hardware command leaves, parsed each REST JSON result with fromJson, and rendered this analyzer report in a pure Wire node. No Qiskit simulator path is used for the experiment.\n\nThree circular polarizers frame:\n  open: no which-path polarization tag; the screen follows the phase fringe.\n  which_path: opposite circular tags make the alternatives distinguishable, so the unsorted screen marginal sits near 0.5.\n  eraser: the final analyzer projects the circular tags into a common basis. The unsorted screen still stays near 0.5, but the marker-conditioned slices recover complementary fringes.\n\nResults:\n  mode | phase | screen p0 | expected | marker0 p0 | marker1 p0 | counts\n${table}\n\nRun gate: complete"
+        "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nWhat happened:\nWire planned the sweep, sequenced nine hardware command leaves, parsed each REST JSON result with fromJson, and rendered this analyzer report in a pure Wire node. No Qiskit simulator path is used for the experiment.\n\nThree circular polarizers frame:\n  open: no which-path polarization tag; the screen follows the phase fringe.\n  which_path: opposite circular tags make the alternatives distinguishable, so the unsorted screen marginal sits near half.\n  eraser: the final analyzer projects the circular tags into a common basis. The unsorted screen still stays near half, but the marker-conditioned slices recover complementary fringes.\n\nResults:\n  mode | phase | screen zeroes | expected | marker0 zeroes | marker1 zeroes | counts\n${table}\n\nRun gate: complete"
       else
         "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nThe IBM REST runner completed, but at least one result did not contain decoded counts. Re-run the failed circuit directly with --json and inspect raw_result.\n\nResults: ${statuses}\nRun gate: result decoder needs attention"
     else

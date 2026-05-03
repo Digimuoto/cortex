@@ -126,6 +126,15 @@ spec = describe "Cortex.Wire.Pure" $ do
       (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
       `shouldBe` Left PureDivisionByZero
 
+  it "rejects non-terminating decimal division without crashing" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      (Map.singleton "score" (bin CorePureDivide (num 1) (num 3)))
+      `shouldBe` Left (PureNonTerminatingDecimalDivision "1" "3")
+
   it "rejects duplicate CorePure binding names in the same scope" $
     evaluatePureTaskOutputs
       scorePorts

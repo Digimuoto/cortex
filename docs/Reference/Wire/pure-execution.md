@@ -249,6 +249,7 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 
 - missing variables;
 - division by zero;
+- non-terminating decimal division;
 - unsupported pure input ports;
 - repeated same-contract input ports without explicit labels;
 - missing or ambiguous input values;
