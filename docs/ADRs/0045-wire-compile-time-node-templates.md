@@ -1,8 +1,8 @@
 ---
-title: "ADR 0045 - Wire Compile-Time Node Templates"
+title: "ADR 0045 - Wire Compile-Time Node-Body Templates"
 description:
-  "Adds hygienic compile-time node templates that elaborate repeated typed node declarations into
-  ordinary Wire nodes before graph admission."
+  "Adds hygienic compile-time node-body templates that elaborate repeated typed node bodies into
+  ordinary Wire node declarations before graph admission."
 sidebar:
   label: "0045. Node templates"
   order: 45
@@ -25,7 +25,7 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
-# ADR 0045 - Wire Compile-Time Node Templates
+# ADR 0045 - Wire Compile-Time Node-Body Templates
 
 ## Status
 
@@ -67,20 +67,27 @@ author the repeated declaration pattern once while preserving the expanded graph
 
 ## Decision
 
-Wire should add **compile-time node templates**.
+Wire should add **compile-time node-body templates**.
 
-A node template is a source-level declaration that expands into one ordinary `node` declaration
-during elaboration. Template expansion happens before graph composition, file-return selection,
-admission, Pulse execution, or rewrite materialization. After expansion, the rest of Cortex sees the
-same explicit typed nodes it would have seen if the author had written them by hand.
+A node-body template is a source-level declaration that supplies the typed boundary and body of one
+node, but not the node head. It is instantiated only by an ordinary `node <name> = ... ;`
+declaration. During elaboration, that declaration expands into one ordinary `node` declaration whose
+name comes from the call site and whose boundary/body comes from the template.
+
+Template expansion happens before graph composition, file-return selection, admission, Pulse
+execution, or rewrite materialization. After expansion, the rest of Cortex sees the same explicit
+typed nodes it would have seen if the author had written them by hand.
 
 The initial feature is intentionally narrow:
 
-- a template body expands to exactly one node declaration;
-- template parameters are compile-time values only;
-- parameters may stand for node names, port labels, contract names, ordinary static values, and
-  configured executor values;
-- template calls are declarations, not CorePure expressions and not graph expressions;
+- a template body is a node-definition fragment: input clauses, output/body clauses, and an optional
+  `where` clause, but no `node` head;
+- every instantiated template expands to exactly one node declaration;
+- template parameters are kinded compile-time parameters only;
+- the initial parameter kinds are `PortLabel`, `Contract`, `Value`, and `ConfiguredExecutor`;
+- template calls are valid only in `node <name> = <template_call>;` position;
+- template calls are not declarations by themselves, not CorePure expressions, and not graph
+  expressions;
 - a template declaration is not a graph value and cannot appear in file-return position;
 - template expansion must be deterministic and finite.
 
@@ -89,13 +96,12 @@ Illustrative syntax:
 ```wire
 let h_gate = @quantum.h {};
 
-template one_qubit_gate(name, port, gate) =
-  node ${name}
-    <- ${port}: Qubit;
-    -> ${port}: Qubit = ${gate} (${port});
+template one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit = gate (label);
 
-one_qubit_gate(eraser0_screen_h, screen, h_gate);
-one_qubit_gate(eraser0_marker_h, marker, h_gate);
+node eraser0_screen_h = one_qubit_gate(screen, h_gate);
+node eraser0_marker_h = one_qubit_gate(marker, h_gate);
 ```
 
 The exact token spelling belongs in the grammar reference and implementation patch. The semantic
@@ -119,9 +125,10 @@ graph.
 
 ### Identity and hygiene
 
-Expanded nodes must have stable source identities. The first slice should require explicit node-name
-arguments rather than implicit generated names. A duplicate node name after template expansion is
-the same compile-time error as a duplicate handwritten node.
+Expanded nodes must have stable source identities. The node name is always supplied by the
+instantiating `node <name> = ... ;` declaration, never by a template parameter or generated-name
+rule. A duplicate node name after template expansion is the same compile-time error as a duplicate
+handwritten node.
 
 Template holes are hygienic:
 
@@ -161,6 +168,10 @@ semantics.
   make configured executor values inert. A graph vertex must have an explicit typed node boundary.
 - **Add unrestricted textual macros.** Rejected because textual expansion would be hard to keep
   hygienic, authority-free, deterministic, and source-span aware.
+- **Use CorePure lambda syntax for templates.** Rejected because CorePure lambdas produce values,
+  while templates produce structural node-definition fragments. Reusing lambda syntax would imply
+  partial application, expression-position use, and runtime value capture that v1 templates do not
+  have.
 - **Add graph templates first.** Rejected for the initial slice because multi-node template
   expansion also has to settle generated graph boundaries, name allocation, and import/export
   semantics.
@@ -187,8 +198,10 @@ semantics.
 ### Obligations
 
 - Add parser and AST support for template declarations and template calls.
+- Add the `node <name> = <template_call>;` node-declaration form.
 - Add a deterministic template-expansion pass before ordinary graph lowering.
 - Reject runtime-dependent template arguments.
+- Reject bare template calls outside node-instantiation position.
 - Reject duplicate expanded node names.
 - Record template-origin metadata in compiled artifacts or debug output.
 - Add tests for hygiene, duplicate detection, source spans, configured-executor parameters, and
