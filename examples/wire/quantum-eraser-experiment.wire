@@ -173,6 +173,14 @@ node summarize_experiment
     failures = runs |> filter (run: !run.ok);
     statuses = runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
     targets = runs |> map (run: run.target) |> joinWith "\n  ";
+    empty = "";
+    space = " ";
+    noneText = "none";
+    noStderr = "(empty)";
+    failureDetails =
+      failures
+        |> map (run: "  ${run.name}\n    exit: ${if run.exitCode == null then noneText else run.exitCode}\n    target: ${run.target}\n    argv: ${run.argv |> joinWith space}\n    stderr: ${if run.stderr == empty then noStderr else run.stderr}")
+        |> joinWith "\n";
     success = length failures == 0;
     summary = if success then
       let
@@ -239,7 +247,7 @@ node summarize_experiment
       else
         "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nThe IBM REST runner completed, but at least one result did not contain decoded counts. Re-run the failed circuit directly with --json and inspect raw_result.\n\nResults: ${statuses}\nRun gate: result decoder needs attention"
     else
-      "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nAt least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.\n\nResults: ${statuses}\nRun gate: failed";
+      "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nAt least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.\n\nResults: ${statuses}\n\nFailed rows:\n${failureDetails}\nRun gate: failed";
   in
   { inherit summary; };
 

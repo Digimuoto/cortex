@@ -559,7 +559,11 @@ def poll_job(
         normalized = status.lower()
         if normalized in TERMINAL_JOB_STATUSES:
             if normalized != "completed":
-                raise quantum.WireQuantumError(f"IBM job {job_id} ended with status {status}")
+                detail = job_failure_detail(job)
+                suffix = f": {detail}" if detail else ""
+                raise quantum.WireQuantumError(
+                    f"IBM job {job_id} ended with status {status}{suffix}"
+                )
             return job
         if time.monotonic() >= deadline:
             raise quantum.WireQuantumError(
@@ -726,6 +730,40 @@ def job_status(job: Any) -> str:
 def public_job_status(job: Any) -> str:
     normalized = job_status(job).strip().lower()
     return JOB_STATUS_LABELS.get(normalized, "Unknown")
+
+
+def job_failure_detail(job: Any) -> str | None:
+    if not isinstance(job, dict):
+        return None
+    state = job.get("state")
+    if isinstance(state, dict):
+        detail = first_public_detail(
+            state,
+            ["reason", "message", "error_message", "status_message", "failure_reason"],
+        )
+        if detail is not None:
+            return detail
+    return first_public_detail(
+        job,
+        ["reason", "message", "error_message", "status_message", "failure_reason", "error"],
+    )
+
+
+def first_public_detail(value: JSON, fields: list[str]) -> str | None:
+    for field in fields:
+        detail = public_detail_text(value.get(field))
+        if detail is not None:
+            return detail
+    return None
+
+
+def public_detail_text(value: Any) -> str | None:
+    if isinstance(value, str):
+        detail = " ".join(value.split())
+        return detail[:500] if detail else None
+    if isinstance(value, dict):
+        return first_public_detail(value, ["message", "reason", "code", "name"])
+    return None
 
 
 def extract_counts(raw_result: Any, measurements: list[JSON]) -> dict[str, int] | None:
