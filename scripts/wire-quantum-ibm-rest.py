@@ -112,6 +112,7 @@ def main() -> int:
     try:
         compiled = quantum.load_compiled_circuit(args.input, args.wire_bin)
         plan = quantum.build_quantum_plan(compiled)
+        plan["backend_family"] = "ibm_quantum_runtime_rest"
         config_path = select_config_path(args.input, args.config, plan, quantum)
         will_submit = not args.dry_run and not args.emit_request
         if will_submit and not args.confirm_hardware:
@@ -195,6 +196,9 @@ def main() -> int:
         raw_result = fetch_job_results(config, token, job_id, quantum)
         metrics = fetch_job_metrics(config, token, job_id, quantum)
         counts = extract_counts(raw_result, plan["measurements"])
+        complete_counts = (
+            quantum.complete_counts(counts, len(plan["measurements"])) if counts else None
+        )
         result = {
             "execution": "hardware",
             "source": args.input,
@@ -206,8 +210,14 @@ def main() -> int:
             "shots": args.shots,
             "plan": plan,
             "counts": counts,
+            "complete_counts": complete_counts,
             "labeled_counts": (
                 quantum.labeled_counts(counts, plan["measurements"]) if counts else None
+            ),
+            "complete_labeled_counts": (
+                quantum.labeled_counts(complete_counts, plan["measurements"])
+                if complete_counts
+                else None
             ),
             "qpu_usage_seconds": qpu_usage_seconds(metrics),
         }

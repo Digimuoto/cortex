@@ -51,6 +51,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as Vector
 import GHC.Generics (Generic)
 
@@ -94,6 +95,7 @@ data PureEvalError
   | PureDuplicateBinding !Text
   | PureDuplicateLambdaParam !Text
   | PureDuplicateRecordFieldPath ![Text] ![Text]
+  | PureJsonParseError !Text
   | PureWhereExpectedRecord !Text
   | PureStaticFieldSetUndeterminable
   | PureStaticBindingCycle !Text
@@ -182,6 +184,8 @@ renderPureEvalError = \case
       <> " and "
       <> renderRecordPath rightPath
       <> "."
+  PureJsonParseError reason ->
+    "Pure expression could not parse JSON: " <> reason <> "."
   PureWhereExpectedRecord actual ->
     "Pure where-clause must evaluate to a record, but received " <> actual <> "."
   PureStaticFieldSetUndeterminable ->
@@ -750,6 +754,7 @@ corePureBuiltinSpecs =
   , builtin "toString" 1 corePureToString
   , builtin "joinWith" 2 corePureJoinWith
   , builtin "toJson" 1 corePureToJson
+  , builtin "fromJson" 1 corePureFromJson
   ]
   where
     builtin name arity implementation =
@@ -929,6 +934,14 @@ corePureToJson [value] = do
   jsonValue <- corePureValueToJson value
   Right (CorePureJson (Aeson.String (canonicalJson jsonValue)))
 corePureToJson args = impossibleBuiltinArity "toJson" 1 args
+
+corePureFromJson :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFromJson [value] = do
+  text <- corePureStringValue value
+  case Aeson.eitherDecodeStrict (TE.encodeUtf8 text) of
+    Right jsonValue -> Right (CorePureJson jsonValue)
+    Left reason -> Left (PureJsonParseError (T.pack reason))
+corePureFromJson args = impossibleBuiltinArity "fromJson" 1 args
 
 applyJsonFunction :: CorePureValue -> Aeson.Value -> Either PureEvalError CorePureValue
 applyJsonFunction functionValue value =

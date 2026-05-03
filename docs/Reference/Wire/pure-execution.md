@@ -238,6 +238,7 @@ The implemented builtin environment is closed:
 | `toString` | 1     | Converts strings, numbers, and booleans to strings.                  |
 | `joinWith` | 2     | Joins an array of strings with a separator; separator first.         |
 | `toJson`   | 1     | Canonical compact JSON serialization for structured values.          |
+| `fromJson` | 1     | Parses a JSON string into a structured CorePure value.               |
 
 Every builtin is ordinary CorePure function application. Builtins do not receive host authority.
 Functions intended for pipe use are data-last.
@@ -260,6 +261,7 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 - function arity mismatches;
 - duplicate binding names within one scope;
 - duplicate lambda parameters.
+- invalid JSON passed to `fromJson`;
 - `where` expressions that do not evaluate to records.
 
 These failures are runtime pure-task failures after the graph has been admitted. Source and binding

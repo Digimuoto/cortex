@@ -47,12 +47,12 @@
       name = "wire-quantum-eraser";
       text = ''
         set -euo pipefail
-        if [ "$#" -ne 0 ]; then
-          echo "usage: wire-quantum-eraser" >&2
-          echo "runs examples/wire/quantum-eraser-experiment.wire through wire run" >&2
+        if [ "$#" -ne 1 ] || [ "$1" != "--confirm-hardware" ]; then
+          echo "usage: wire-quantum-eraser --confirm-hardware" >&2
+          echo "runs examples/wire/quantum-eraser-experiment.wire as nine IBM Runtime REST hardware jobs" >&2
           exit 64
         fi
-        export PATH="${wire-quantum-qiskit}/bin:$PATH"
+        export PATH="${wire-quantum-ibm-rest}/bin:$PATH"
         exec ${config.packages.wire}/bin/wire run examples/wire/quantum-eraser-experiment.wire
       '';
     };
@@ -83,7 +83,7 @@
       wire-quantum-eraser = {
         type = "app";
         program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
-        meta.description = "Run the delayed-choice quantum eraser experiment Wire scaffold";
+        meta.description = "Run the delayed-choice quantum eraser Wire sweep on IBM Runtime REST hardware";
       };
     };
   };

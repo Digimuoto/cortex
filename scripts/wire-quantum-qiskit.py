@@ -816,6 +816,7 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
     backend = AerSimulator(**backend_kwargs)
     compiled = transpile(circuit, backend)
     counts = backend.run(compiled, **run_kwargs).result().get_counts(compiled)
+    complete = complete_counts(counts, len(measurements))
 
     return {
         "backend": backend_name,
@@ -826,7 +827,16 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
         "seed": seed,
         "plan": plan,
         "counts": dict(sorted(counts.items())),
+        "complete_counts": complete,
         "labeled_counts": labeled_counts(counts, measurements),
+        "complete_labeled_counts": labeled_counts(complete, measurements),
+    }
+
+
+def complete_counts(counts: dict[str, int], width: int) -> dict[str, int]:
+    return {
+        format(index, f"0{width}b"): int(counts.get(format(index, f"0{width}b"), 0))
+        for index in range(2**width)
     }
 
 
