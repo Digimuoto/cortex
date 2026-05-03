@@ -61,6 +61,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0042](0042-wire-standard-effect-executors.md)                  | Wire Standard Effect Executors                                      | proposed   |
 | [0043](0043-pulse-in-memory-runner.md)                          | Pulse In-Memory Runner                                              | proposed   |
 | [0044](0044-wire-namespace-use-imports.md)                      | Wire Namespace Use Imports                                          | proposed   |
+| [0045](0045-wire-compile-time-node-templates.md)                | Wire Compile-Time Node Templates                                    | proposed   |
 
 ## Writing a new ADR
 
