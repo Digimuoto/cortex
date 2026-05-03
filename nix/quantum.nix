@@ -47,10 +47,12 @@
       name = "wire-quantum-eraser";
       text = ''
         set -euo pipefail
-        scripts_dir="${../scripts}"
-        exec ${qiskitPython}/bin/python "$scripts_dir/wire-quantum-eraser.py" \
-          --wire-bin ${config.packages.wire}/bin/wire \
-          "$@"
+        wire_file="examples/wire/quantum-eraser-round.wire"
+        if [ "$#" -gt 0 ] && [ -f "$1" ]; then
+          wire_file="$1"
+          shift
+        fi
+        exec ${wire-quantum-qiskit}/bin/wire-quantum-qiskit "$wire_file" "$@"
       '';
     };
   in {
@@ -80,7 +82,7 @@
       wire-quantum-eraser = {
         type = "app";
         program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
-        meta.description = "Run a delayed-choice quantum eraser analogue as Wire circuits";
+        meta.description = "Run the checked-in delayed-choice quantum eraser Wire circuit";
       };
     };
   };

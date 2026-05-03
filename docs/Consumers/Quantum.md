@@ -218,31 +218,32 @@ nix run .#wire-quantum-ipea -- --hardware --shots 100 --confirm-hardware
 Because each round is a separate provider job, this demo spends hardware budget per measured phase
 bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
-## Quantum Eraser Runner
+## Quantum Eraser Wire Circuit
 
-The `wire-quantum-eraser` app demonstrates a gate-model analogue of the delayed-choice quantum
-eraser. It is deliberately framed as a correlation experiment, not as retrocausality: the later
-marker-basis choice does not change the unconditional screen statistics. Interference is recovered
-only after sorting the results by the marker outcome.
+[`../../examples/wire/quantum-eraser-round.wire`](../../examples/wire/quantum-eraser-round.wire) is
+the source of truth for the delayed-choice quantum eraser example. The `wire-quantum-eraser` app is
+only a convenience alias for running that checked-in Wire file through the generic Qiskit bridge; it
+does not generate circuits or own the experiment control loop.
 
-Local simulation is the default:
+The example is a gate-model analogue of the delayed-choice quantum eraser, framed as a correlation
+experiment rather than retrocausality: the later marker-basis choice does not change the
+unconditional screen statistics. Interference is recovered only after sorting the results by the
+marker outcome.
+
+Local simulation of the checked-in Wire file is the default:
 
 ```sh
 nix run .#wire-quantum-eraser -- --shots 512 --seed 11
 ```
 
-The runner sweeps phase values across three circuit modes:
+This is equivalent to:
 
-| Mode         | Meaning                                                                |
-| ------------ | ---------------------------------------------------------------------- |
-| `open`       | No which-path marker; the screen qubit shows an interference fringe.   |
-| `which_path` | The marker qubit stores path information; the screen marginal is flat. |
-| `eraser`     | The marker is read in the eraser basis; postselected branches fringe.  |
+```sh
+nix run .#wire-quantum-qiskit -- examples/wire/quantum-eraser-round.wire --shots 512 --seed 11
+```
 
-The generated eraser circuit shape is represented by
-[`../../examples/wire/quantum-eraser-round.wire`](../../examples/wire/quantum-eraser-round.wire). It
-uses graph-valued `let`s to name the screen split/recombine fragments, the marker path-marking
-fragments, and the eraser-basis readout:
+The Wire source uses graph-valued `let`s to name the screen split/recombine fragments, the marker
+path-marking fragments, and the delayed eraser-basis readout:
 
 ```wire
 let recombine_screen =
@@ -252,29 +253,23 @@ let recombine_screen =
     => measure_screen;
 
 let marker_eraser_readout =
-  marker_eraser_rz_a
-    => marker_eraser_sx
-    => marker_eraser_rz_b
-    => measure_marker;
+  z_marker_eraser_rz_a
+    => z_marker_eraser_sx
+    => z_marker_eraser_rz_b
+    => z_measure_marker;
 ```
 
-Dry-run mode compiles the generated circuits and can persist their Wire sources without simulation
-or provider submission:
+Dry-run mode compiles the same Wire file and emits the OpenQASM 3 request without provider
+submission:
 
 ```sh
-nix run .#wire-quantum-eraser -- --dry-run --emit-wire /tmp/wire-eraser
+nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-round.wire --dry-run --config examples/wire/quantum-ibm-runtime.config.example.json
 ```
 
-Hardware execution uses one provider job per selected phase and mode:
+Hardware execution submits that Wire-authored circuit as one provider job:
 
 ```sh
-nix run .#wire-quantum-eraser -- --hardware --shots 100 --confirm-hardware
-```
-
-For a smaller hardware run, choose only the eraser mode and two phases:
-
-```sh
-nix run .#wire-quantum-eraser -- --hardware --modes eraser --phases 0,1/2 --shots 100 --confirm-hardware
+nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-round.wire --shots 100 --confirm-hardware
 ```
 
 ## Linearity Caveat
