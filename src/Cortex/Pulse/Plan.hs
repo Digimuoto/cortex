@@ -63,7 +63,8 @@ import Cortex.Algebra.Graph
 import Cortex.Pulse.Memory.Types (MemoryHandle, MemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Rewrite
-  ( BudgetContext
+  ( BoundaryResourceUse
+  , BudgetContext
   , GraphRewrite (..)
   , RewriteAnchorDisposition
   , RewriteBudget
@@ -251,6 +252,7 @@ data StageLatentNode = StageLatentNode
 data StageLatentDeltaSignature = StageLatentDeltaSignature
   { sldsAnchorNodeId :: NodeId
   , sldsAnchorDisposition :: RewriteAnchorDisposition
+  , sldsBoundaryResourceUse :: BoundaryResourceUse
   , sldsNewNodes :: Set NodeId
   , sldsAddedEdges :: Set (NodeId, NodeId)
   , sldsEntryNodes :: [NodeId]

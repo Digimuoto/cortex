@@ -49,6 +49,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.Planner.Construction,
     `Cortex.Wire.Planner.Chain,
     `Cortex.Wire.Select,
+    `Cortex.Wire.BoundaryResource,
     `Cortex.Wire.NodeBoundary,
     `Cortex.Wire.PulseSafety
   ]

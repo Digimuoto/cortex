@@ -123,19 +123,20 @@ no authority-bearing constructors, and one-source-node-to-one-native-pure-task l
 executor lookup, config validation, registry-wide contract vocabulary, endpoint compatibility,
 effect-class policy, output validation, and host authority. `Cortex.Wire.NodeBoundary` names ADR
 0039's ingress/body/egress/edge normal-form obligations and instantiates them for CorePure and
-registry-admitted edges. `Cortex.Wire.Rewrite` defines the proof-carrying rewrite certificate
-surface: an admitted `Rewrite` carries preservation evidence for graph acyclicity, the
-caller-supplied contract predicate, and consumption of the five-dimensional runtime rewrite budget.
-`Cortex.Wire.Admission` now models the proof-side bridge from `planGraphRewrite` and
-`admitRewriteDelta`: anchor existence, anchor definition coverage, inserted-subgraph validity,
-entry/exit non-emptiness, orphan-freedom, denotational equality to a relation-level final-topology
-construction, relation-diff equations, anchor-disposition coupling, structural cost equations for
-every budget dimension, the final definition-domain update equation, final-definition coverage,
-final acyclicity, and pointwise budget consumption. `Cortex.Wire.Planner` names the
-executable-planner correspondence boundary: subgraph namespacing, namespace discipline, the
-AST-to-relation mapping lemma, and the construction-to-checks theorem used to feed runtime-shaped
-planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Planner.Construction` adds a
-proof-side planner construction: it realizes the relation-level final topology as a graph
+registry-admitted edges. `Cortex.Wire.BoundaryResource` names ADR 0032/0035's local resource
+vocabulary for boundary laws, anchor rewrite slots, and anchor-boundary use. `Cortex.Wire.Rewrite`
+defines the proof-carrying rewrite certificate surface: an admitted `Rewrite` carries preservation
+evidence for graph acyclicity, the caller-supplied contract predicate, and consumption of the
+five-dimensional runtime rewrite budget. `Cortex.Wire.Admission` now models the proof-side bridge
+from `planGraphRewrite` and `admitRewriteDelta`: anchor existence, anchor definition coverage,
+inserted-subgraph validity, entry/exit non-emptiness, orphan-freedom, denotational equality to a
+relation-level final-topology construction, relation-diff equations, anchor-disposition coupling,
+structural cost equations for every budget dimension, the final definition-domain update equation,
+final-definition coverage, final acyclicity, and pointwise budget consumption. `Cortex.Wire.Planner`
+names the executable-planner correspondence boundary: subgraph namespacing, namespace discipline,
+the AST-to-relation mapping lemma, and the construction-to-checks theorem used to feed
+runtime-shaped planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Planner.Construction`
+adds a proof-side planner construction: it realizes the relation-level final topology as a graph
 representative, computes delta diff sets and costs from that relation, and proves the constructed
 delta establishes the planner-construction bridge under the remaining runtime validation witnesses.
 
@@ -189,6 +190,30 @@ Mechanized results now include:
 - `registry_contract_edge_sound`, `registry_edge_sound`, and `registryBoundary_edge_sound`:
   registry-admitted edges discharge ADR 0039's edge-compatibility obligation through the generic
   `EdgeSound` predicate.
+- `BoundaryLaw`, `AnchorBoundaryUse`, `RewriteSlot`, `BoundaryResourceUse`,
+  `BudgetedBoundaryResourceUse`, `GraphRewrite.expandNode_resourceUse`,
+  `GraphRewrite.appendAfter_resourceUse`, `ConstructedPlanningStep.boundaryResourceUse`,
+  `ConstructedPlanningStep.boundaryResourceCost_fits_budget`,
+  `ConstructedPlanningStep.rewriteSlotsUnique`, `ConstructedPlanningChain.ContainsRewriteSlot`,
+  `ConstructedPlanningChain.SlotUnique`, `ConstructedPlanningChain.SlotUniqueTrace`,
+  `RewriteSlotsUnique`, `rewriteSlot_spent_at_most_once`, and `BoundaryResource.boundaryPreserved`:
+  ADR 0032's boundary-resource vocabulary now has a Lean-side carrier for constructor-specific
+  resource use, budgeted constructed-step resource use, single-step rewrite-slot uniqueness,
+  proof-relevant slot-unique epoch traces, and constructed-step boundary preservation.
+  `RewriteSlotsUnique` is occurrence-sensitive through `Nodup` over the projected rewrite slots.
+- `GraphRewrite.substitution_consumes_anchor_boundary`,
+  `GraphRewrite.appendContinuation_retains_anchor_boundary`,
+  `BoundaryResource.SubstitutionExposesAnchorBoundary`,
+  `BoundaryResource.substitution_preserves_boundary`, and
+  `BoundaryResource.appendContinuation_preserves_boundary`: ADR 0035's substitution and
+  append-continuation boundary laws are distinct theorem surfaces over existing rewrite forms;
+  substitution carries a consumed-anchor-boundary exposure hook that append does not require.
+- `LatentBranchFamily.resourceUse`,
+  `SelectActualize.selectActualize_resourceUse_slot_coherent_with_lowering`, and
+  `SelectActualize.selectActualize_toGraphRewrite_resourceUse_law_eq_appendContinuation`:
+  selected-arm actualization uses the upper-layer conditional branch actualization resource law
+  while sharing the owner rewrite slot with the retained-owner append rewrite seen by runtime
+  admission.
 - `plannedRewriteSafety_of_checks`: runtime planning checks supply the acyclicity and positive
   rewrite-operation parts of a proof-carrying rewrite.
 - `planGraphRewriteChecks_topology_matches`: planning checks expose the final-topology construction

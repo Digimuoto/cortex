@@ -24,6 +24,10 @@ module Cortex.Pulse.Rewrite
   , RewriteAnchorDisposition (..)
   , PlannedRewriteDelta (..)
   , ExpectedActual (..)
+  , BoundaryLaw (..)
+  , AnchorBoundaryUse (..)
+  , BoundaryResourceUse (..)
+  , BudgetedBoundaryResourceUse (..)
   , RewriteWitnessError (..)
   , renderRewriteWitnessError
   , rewriteWitnessErrorType
@@ -33,11 +37,14 @@ module Cortex.Pulse.Rewrite
   , runtimeGraphRewrite
   , plannedGraphRewriteDelta
   , admittedGraphRewriteDelta
+  , admittedBoundaryResourceUse
   , AdmittedRewriteDelta
   , admitRewriteDelta
   , admittedDelta
   , admittedRemainingBudget
   , runtimePlannerRewrite
+  , rewriteBoundaryResourceUse
+  , budgetedBoundaryResourceUse
   , validatePlannedRewriteDelta
   , validateAdmittedRewriteDelta
   , planGraphRewriteWithAdmissionWitness
@@ -248,6 +255,33 @@ data ExpectedActual a = ExpectedActual
   , eaActual :: !a
   }
   deriving stock (Eq, Show, Generic)
+
+data BoundaryLaw
+  = ContractPreservingSubstitution
+  | AppendContinuation
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data AnchorBoundaryUse
+  = AnchorBoundaryConsumed
+  | AnchorBoundaryRetained
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data BoundaryResourceUse = BoundaryResourceUse
+  { bruLaw :: !BoundaryLaw
+  , bruSlotAnchor :: !NodeId
+  , bruAnchorBoundaryUse :: !AnchorBoundaryUse
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data BudgetedBoundaryResourceUse = BudgetedBoundaryResourceUse
+  { bbruUse :: !BoundaryResourceUse
+  , bbruCost :: !RewriteCost
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
 
 {- | Typed drift report for the Haskell planner/theory correspondence surface.
 
@@ -474,6 +508,7 @@ data RewriteAdmissionWitness def = RewriteAdmissionWitness
   , runtimeGraphRewrite :: !(GraphRewrite NodeId def)
   , plannedGraphRewriteDelta :: !(PlannedRewriteDelta def)
   , admittedGraphRewriteDelta :: !(AdmittedRewriteDelta def)
+  , admittedBoundaryResourceUse :: !BudgetedBoundaryResourceUse
   }
   deriving stock (Show, Generic)
 
@@ -584,6 +619,29 @@ runtimePlannerRewrite = \case
   AppendAfter nid spec ->
     AppendAfter nid (namespaceSubgraph nid spec)
 
+rewriteBoundaryResourceUse :: GraphRewrite NodeId def -> BoundaryResourceUse
+rewriteBoundaryResourceUse = \case
+  ExpandNode nid _mode _spec ->
+    BoundaryResourceUse
+      { bruLaw = ContractPreservingSubstitution
+      , bruSlotAnchor = nid
+      , bruAnchorBoundaryUse = AnchorBoundaryConsumed
+      }
+  AppendAfter nid _spec ->
+    BoundaryResourceUse
+      { bruLaw = AppendContinuation
+      , bruSlotAnchor = nid
+      , bruAnchorBoundaryUse = AnchorBoundaryRetained
+      }
+
+budgetedBoundaryResourceUse
+  :: GraphRewrite NodeId def -> RewriteCost -> BudgetedBoundaryResourceUse
+budgetedBoundaryResourceUse rewrite cost =
+  BudgetedBoundaryResourceUse
+    { bbruUse = rewriteBoundaryResourceUse rewrite
+    , bbruCost = cost
+    }
+
 validatePlannedRewriteDelta
   :: GraphRewrite NodeId def
   -> Relation NodeId
@@ -639,6 +697,8 @@ planGraphRewriteWithAdmissionWitness budget rawRewrite topology defs = do
       , runtimeGraphRewrite = runtimePlannerRewrite rawRewrite
       , plannedGraphRewriteDelta = delta
       , admittedGraphRewriteDelta = admitted
+      , admittedBoundaryResourceUse =
+          budgetedBoundaryResourceUse (runtimePlannerRewrite rawRewrite) delta.prdCost
       }
 
 plannedRewriteWitnessErrors

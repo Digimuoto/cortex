@@ -50,6 +50,7 @@ import Cortex.Pulse.Memory (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Rewrite
   ( BudgetDimension (..)
+  , BudgetedBoundaryResourceUse (..)
   , ExceededDimension (..)
   , ExpansionMode (..)
   , ExpectedActual (..)
@@ -64,6 +65,7 @@ import Cortex.Pulse.Rewrite
   , RewriteWitnessError (..)
   , SubgraphSpec (..)
   , admitRewriteDelta
+  , admittedBoundaryResourceUse
   , admittedDelta
   , admittedGraphRewriteDelta
   , admittedRemainingBudget
@@ -74,6 +76,7 @@ import Cortex.Pulse.Rewrite
   , plannedGraphRewriteDelta
   , rawGraphRewrite
   , renderRewriteWitnessError
+  , rewriteBoundaryResourceUse
   , runtimeGraphRewrite
   , runtimePlannerRewrite
   , validateAdmittedRewriteDelta
@@ -384,6 +387,11 @@ spec = do
                   void (admittedDelta (admittedGraphRewriteDelta witness))
                     `shouldBe` void (plannedGraphRewriteDelta witness)
                   let delta = plannedGraphRewriteDelta witness
+                  admittedBoundaryResourceUse witness
+                    `shouldBe` BudgetedBoundaryResourceUse
+                      { bbruUse = rewriteBoundaryResourceUse (runtimePlannerRewrite rewrite)
+                      , bbruCost = delta.prdCost
+                      }
                   prdAnchorNode delta `shouldBe` NodeId "b"
                   prdAnchorDisposition delta `shouldBe` expectedDisposition
                   prdEntryNodes delta `shouldBe` [entry]

@@ -39,6 +39,7 @@ import Cortex.Pulse.Plan
   , StageDefinition (..)
   , StageLatentBranch (..)
   , StageLatentCondition (..)
+  , StageLatentDeltaSignature (..)
   , StagePlan (..)
   , StageReplaySafety (..)
   , StageResult (..)
@@ -47,7 +48,13 @@ import Cortex.Pulse.Plan
   , stageActionId
   , stageTemplateId
   )
-import Cortex.Pulse.Rewrite (BudgetContext (..), PlannedRewriteDelta (..))
+import Cortex.Pulse.Rewrite
+  ( AnchorBoundaryUse (..)
+  , BoundaryLaw (..)
+  , BoundaryResourceUse (..)
+  , BudgetContext (..)
+  , PlannedRewriteDelta (..)
+  )
 import Cortex.Pulse.Types (defaultRewriteBudget)
 import Cortex.Wire.Circuit
   ( CircuitArtifactBoundary (..)
@@ -272,7 +279,13 @@ spec = do
           outerCondition.slcAnchorNodeId `shouldBe` NodeId "__cortex_workflow__/condition/1"
           fmap (.slbBranchId) outerCondition.slcBranches `shouldBe` ["then"]
           case outerCondition.slcBranches of
-            [outerBranch] ->
+            [outerBranch] -> do
+              outerBranch.slbDeltaSignature.sldsBoundaryResourceUse
+                `shouldBe` BoundaryResourceUse
+                  { bruLaw = AppendContinuation
+                  , bruSlotAnchor = NodeId "__cortex_workflow__/condition/1"
+                  , bruAnchorBoundaryUse = AnchorBoundaryRetained
+                  }
               fmap (.slcAnchorNodeId) outerBranch.slbNestedConditions
                 `shouldBe` [NodeId "__cortex_workflow__/condition/1:__cortex_workflow__/condition/1/0"]
             _ ->

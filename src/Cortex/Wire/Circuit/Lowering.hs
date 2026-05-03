@@ -70,6 +70,7 @@ import Cortex.Pulse.Rewrite
   , RewriteAnchorDisposition (..)
   , RewriteBudget
   , SubgraphSpec (..)
+  , rewriteBoundaryResourceUse
   )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
@@ -462,6 +463,7 @@ lowerLatentBranch pulseConfig binder anchorNodeId postSuccessorNodes branchId fr
         StageLatentDeltaSignature
           { sldsAnchorNodeId = anchorNodeId
           , sldsAnchorDisposition = RewriteAnchorRetained
+          , sldsBoundaryResourceUse = rewriteBoundaryResourceUse (AppendAfter anchorNodeId loweredFragment)
           , sldsNewNodes = canonicalTopology.relVertices
           , sldsAddedEdges =
               canonicalTopology.relEdges
