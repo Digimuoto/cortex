@@ -179,8 +179,15 @@ node summarize_experiment
     noStderr = "(empty)";
     failureDetails =
       failures
-        |> map (run: "  ${run.name}\n    exit: ${if run.exitCode == null then noneText else run.exitCode}\n    target: ${run.target}\n    argv: ${run.argv |> joinWith space}\n    stderr: ${if run.stderr == empty then noStderr else run.stderr}")
-        |> joinWith "\n";
+        |> map (run: ''
+          ${run.name}
+            exit: ${if run.exitCode == null then noneText else run.exitCode}
+            target: ${run.target}
+            argv: ${run.argv |> joinWith space}
+            stderr: ${if run.stderr == empty then noStderr else run.stderr}
+
+        '')
+        |> joinWith "";
     success = length failures == 0;
     summary = if success then
       let
@@ -206,7 +213,7 @@ node summarize_experiment
       in
       if hasCounts then
         let
-          oneBitLine = mode: phase: expected: result:
+          oneBitBlock = phase: expected: result:
             let
               counts = result.complete_counts;
               c0 = counts["0"];
@@ -214,8 +221,13 @@ node summarize_experiment
               shots = result.shots;
               screenZero = "${c0} of ${shots}";
             in
-            "  ${mode} | ${phase} | ${screenZero} | ${expected} | - | - | 0:${c0},1:${c1}";
-          twoBitLine = mode: phase: expected: result:
+            ''
+              phase ${phase}
+                screen zeroes: ${screenZero} (${expected})
+                counts: 0:${c0}, 1:${c1}
+
+            '';
+          twoBitBlock = phase: expected: result:
             let
               counts = result.complete_counts;
               c00 = counts["00"];
@@ -229,25 +241,105 @@ node summarize_experiment
               marker0Zero = "${c00} of ${marker0Total}";
               marker1Zero = "${c10} of ${marker1Total}";
             in
-            "  ${mode} | ${phase} | ${screenZero} | ${expected} | ${marker0Zero} | ${marker1Zero} | 00:${c00},01:${c01},10:${c10},11:${c11}";
-          rows = [
-            oneBitLine "open" "0" "near all" open0Json,
-            oneBitLine "open" "1/4" "near half" open14Json,
-            oneBitLine "open" "1/2" "near none" open12Json,
-            twoBitLine "which_path" "0" "near half" which0Json,
-            twoBitLine "which_path" "1/4" "near half" which14Json,
-            twoBitLine "which_path" "1/2" "near half" which12Json,
-            twoBitLine "eraser" "0" "near half" eraser0Json,
-            twoBitLine "eraser" "1/4" "near half" eraser14Json,
-            twoBitLine "eraser" "1/2" "near half" eraser12Json
-          ];
-          table = rows |> joinWith "\n";
+            ''
+              phase ${phase}
+                screen zeroes: ${screenZero} (${expected})
+                marker 0 slice: ${marker0Zero} screen zeroes
+                marker 1 slice: ${marker1Zero} screen zeroes
+                counts: 00:${c00}, 01:${c01}, 10:${c10}, 11:${c11}
+
+            '';
+          openRows = [
+            oneBitBlock "0" "near all" open0Json,
+            oneBitBlock "1/4" "near half" open14Json,
+            oneBitBlock "1/2" "near none" open12Json
+          ] |> joinWith "";
+          whichRows = [
+            twoBitBlock "0" "near half" which0Json,
+            twoBitBlock "1/4" "near half" which14Json,
+            twoBitBlock "1/2" "near half" which12Json
+          ] |> joinWith "";
+          eraserRows = [
+            twoBitBlock "0" "near half" eraser0Json,
+            twoBitBlock "1/4" "near half" eraser14Json,
+            twoBitBlock "1/2" "near half" eraser12Json
+          ] |> joinWith "";
         in
-        "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nWhat happened:\nWire planned the sweep, sequenced nine hardware command leaves, parsed each REST JSON result with fromJson, and rendered this analyzer report in a pure Wire node. No Qiskit simulator path is used for the experiment.\n\nThree circular polarizers frame:\n  open: no which-path polarization tag; the screen follows the phase fringe.\n  which_path: opposite circular tags make the alternatives distinguishable, so the unsorted screen marginal sits near half.\n  eraser: the final analyzer projects the circular tags into a common basis. The unsorted screen still stays near half, but the marker-conditioned slices recover complementary fringes.\n\nResults:\n  mode | phase | screen zeroes | expected | marker0 zeroes | marker1 zeroes | counts\n${table}\n\nRun gate: complete"
+        ''
+          Wire delayed-choice quantum eraser experiment
+          =============================================
+
+          Run
+            execution: Wire graph + @cortex.io.command
+            backend: IBM Quantum Runtime REST hardware
+            shots: 100 per circuit
+            circuits: 9 checked-in Wire files
+
+          Files executed
+            ${targets}
+
+          What Wire did
+            Wire planned the sweep, sequenced nine hardware command leaves,
+            parsed each REST JSON result with fromJson, and rendered this
+            analyzer report in a pure Wire node. No Qiskit simulator path is
+            used for the experiment.
+
+          Three circular polarizers frame
+            open: no which-path polarization tag; the screen follows the phase fringe.
+            which_path: opposite circular tags distinguish the alternatives; the unsorted screen marginal sits near half.
+            eraser: the final analyzer projects the circular tags into a common basis. The unsorted screen still stays near half, while marker-conditioned slices recover complementary fringes.
+
+          Results
+
+          open
+          ${openRows}which_path
+          ${whichRows}eraser
+          ${eraserRows}Run gate: complete
+        ''
       else
-        "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nThe IBM REST runner completed, but at least one result did not contain decoded counts. Re-run the failed circuit directly with --json and inspect raw_result.\n\nResults: ${statuses}\nRun gate: result decoder needs attention"
+        ''
+          Wire delayed-choice quantum eraser experiment
+          =============================================
+
+          Run
+            execution: Wire graph + @cortex.io.command
+            backend: IBM Quantum Runtime REST hardware
+            shots: 100 per circuit
+            circuits: 9 checked-in Wire files
+
+          Files executed
+            ${targets}
+
+          The IBM REST runner completed, but at least one result did not contain decoded counts.
+          Re-run the failed circuit directly with --json and inspect raw_result.
+
+          Results
+            ${statuses}
+
+          Run gate: result decoder needs attention
+        ''
     else
-      "Wire delayed-choice quantum eraser experiment\nexecution: Wire graph + @cortex.io.command\nbackend: IBM Quantum Runtime REST hardware\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nAt least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.\n\nResults: ${statuses}\n\nFailed rows:\n${failureDetails}\nRun gate: failed";
+      ''
+        Wire delayed-choice quantum eraser experiment
+        =============================================
+
+        Run
+          execution: Wire graph + @cortex.io.command
+          backend: IBM Quantum Runtime REST hardware
+          shots: 100 per circuit
+          circuits: 9 checked-in Wire files
+
+        Files executed
+          ${targets}
+
+        At least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.
+
+        Results
+          ${statuses}
+
+        Failed rows
+        ${failureDetails}Run gate: failed
+      '';
   in
   { inherit summary; };
 
