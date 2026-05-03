@@ -63,10 +63,14 @@ module Cortex.Wire
   , renderParseError
   , compileWireFile
   , compileWireFileWithEnv
+  , compileWireFileWithReturn
+  , compileWireFileWithReturnAndEnv
   , compileWireFragmentFile
   , compileWireFragmentFileWithEnv
   , compileWireText
   , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  , compileWireTextWithReturnAndEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
   )
@@ -76,12 +80,16 @@ import Cortex.Wire.Circuit
 import Cortex.Wire.Compile
   ( compileWireFile
   , compileWireFileWithEnv
+  , compileWireFileWithReturn
+  , compileWireFileWithReturnAndEnv
   , compileWireFragmentFile
   , compileWireFragmentFileWithEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
   , compileWireText
   , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  , compileWireTextWithReturnAndEnv
   )
 import Cortex.Wire.Contract
   ( WireCompileEnv (..)

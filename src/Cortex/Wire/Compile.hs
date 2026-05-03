@@ -13,10 +13,14 @@ Wire modules own authoring and compilation mechanics while host authority stays 
 module Cortex.Wire.Compile
   ( compileWireFile
   , compileWireFileWithEnv
+  , compileWireFileWithReturn
+  , compileWireFileWithReturnAndEnv
   , compileWireFragmentFile
   , compileWireFragmentFileWithEnv
   , compileWireText
   , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  , compileWireTextWithReturnAndEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
   )
@@ -130,6 +134,19 @@ compileWireTextWithEnv compileEnv sourceText = do
       (parseWireFile "wire" sourceText)
   compileWireFileWithEnv compileEnv wireFile
 
+compileWireTextWithReturn :: Text -> Text -> Either WireCore.WireError CompiledCircuit
+compileWireTextWithReturn =
+  compileWireTextWithReturnAndEnv emptyWireCompileEnv
+
+compileWireTextWithReturnAndEnv
+  :: WireCompileEnv -> Text -> Text -> Either WireCore.WireError CompiledCircuit
+compileWireTextWithReturnAndEnv compileEnv selectedReturn sourceText = do
+  wireFile <-
+    mapLeft
+      (WireCore.WireParseError . renderParseError)
+      (parseWireFile "wire" sourceText)
+  compileWireFileWithReturnAndEnv compileEnv selectedReturn wireFile
+
 compileWireFragmentText :: Text -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentText =
   compileWireFragmentTextWithEnv emptyWireCompileEnv
@@ -151,6 +168,21 @@ compileWireFileWithEnv :: WireCompileEnv -> WireFile -> Either WireCore.WireErro
 compileWireFileWithEnv compileEnv wireFile = do
   lowered <- lowerWireFile compileEnv wireFile
   compileLoweredWireFile compileEnv True wireFile lowered
+
+compileWireFileWithReturn :: Text -> WireFile -> Either WireCore.WireError CompiledCircuit
+compileWireFileWithReturn =
+  compileWireFileWithReturnAndEnv emptyWireCompileEnv
+
+compileWireFileWithReturnAndEnv
+  :: WireCompileEnv -> Text -> WireFile -> Either WireCore.WireError CompiledCircuit
+compileWireFileWithReturnAndEnv compileEnv selectedReturn wireFile =
+  let selectedWireFile =
+        wireFile
+          { wireFileReturn = Just (ExprIdent (QName (selectedReturn :| [])))
+          }
+   in do
+        lowered <- lowerWireFileWithUnusedPolicy compileEnv AllowUnusedDeclaredNodes selectedWireFile
+        compileLoweredWireFile compileEnv True selectedWireFile lowered
 
 compileWireFragmentFile :: WireFile -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentFile =
@@ -209,10 +241,16 @@ data LoweredWireFile = LoweredWireFile
   , lwfDeclaredContracts :: !(Set.Set Text)
   }
 
+data UnusedNodePolicy
+  = RequireAllDeclaredNodesUsed
+  | AllowUnusedDeclaredNodes
+  deriving stock (Eq, Show)
+
 data LoweringState = LoweringState
   { lsBindings :: !(Map Text EvalValue)
   , lsPureBindings :: ![CorePureBinding]
   , lsGraphBindings :: !(Map Text GraphFragment)
+  , lsExportedGraphNodeRefs :: !(Set.Set CircuitNodeRef)
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
@@ -227,6 +265,7 @@ emptyLoweringState =
     { lsBindings = Map.empty
     , lsPureBindings = []
     , lsGraphBindings = Map.empty
+    , lsExportedGraphNodeRefs = Set.empty
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
@@ -312,17 +351,24 @@ emptyFragment =
     }
 
 lowerWireFile :: WireCompileEnv -> WireFile -> Either WireCore.WireError LoweredWireFile
-lowerWireFile compileEnv wireFile = do
+lowerWireFile compileEnv =
+  lowerWireFileWithUnusedPolicy compileEnv RequireAllDeclaredNodesUsed
+
+lowerWireFileWithUnusedPolicy
+  :: WireCompileEnv -> UnusedNodePolicy -> WireFile -> Either WireCore.WireError LoweredWireFile
+lowerWireFileWithUnusedPolicy compileEnv unusedNodePolicy wireFile = do
   loweredState <-
     foldlM (lowerTopForm compileEnv) emptyLoweringState wireFile.wireFileTopForms
   fileReturn <- maybe (Left WireCore.WireMissingCircuit) Right wireFile.wireFileReturn
   (resultFragment, maybeMetadata, loweredState') <- lowerFileReturn loweredState fileReturn
-  let usedNodeRefs = foldMap loweredNodeRefs resultFragment.gfNodes
+  let usedNodeRefs =
+        foldMap loweredNodeRefs resultFragment.gfNodes
+          <> loweredState'.lsExportedGraphNodeRefs
       declaredNodeRefs = Set.fromList (fmap (.lnRef) (Map.elems loweredState'.lsNamedNodes))
       unusedNodeRefs = Set.toAscList (Set.difference declaredNodeRefs usedNodeRefs)
-  case unusedNodeRefs of
-    unusedRef : _ -> Left (WireCore.WireUnusedNodeRef unusedRef)
-    [] ->
+  case (unusedNodePolicy, unusedNodeRefs) of
+    (RequireAllDeclaredNodesUsed, unusedRef : _) -> Left (WireCore.WireUnusedNodeRef unusedRef)
+    _ ->
       Right
         LoweredWireFile
           { lwfFragment = resultFragment
@@ -373,7 +419,7 @@ lowerTopForm compileEnv st = \case
     lowerUseSpec st useSpec
   TopImport _ ->
     Left (WireCore.WireParseError "Wire imports are not compiled yet.")
-  TopLet _visibility name rhs -> do
+  TopLet visibility name rhs -> do
     if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
       else case rhs of
@@ -389,7 +435,7 @@ lowerTopForm compileEnv st = \case
                        ]
               }
         LetRhsWire expr ->
-          lowerWireLetBinding st name expr
+          lowerWireLetBinding visibility st name expr
   TopNode nodeDecl -> do
     loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
@@ -461,14 +507,25 @@ stdIoContractId itemName =
     (stdIoContractIdForName itemName)
 
 lowerWireLetBinding
-  :: LoweringState
+  :: LetVisibility
+  -> LoweringState
   -> Text
   -> Expr
   -> Either WireCore.WireError LoweringState
-lowerWireLetBinding st name expr
+lowerWireLetBinding visibility st name expr
   | isGraphLetExpr st expr = do
       graphValue <- lowerGraphExpr st expr
-      Right st {lsGraphBindings = Map.insert name graphValue st.lsGraphBindings}
+      let exportedNodeRefs =
+            case visibility of
+              LetExported ->
+                foldMap loweredNodeRefs graphValue.gfNodes
+              LetPrivate ->
+                Set.empty
+      Right
+        st
+          { lsGraphBindings = Map.insert name graphValue st.lsGraphBindings
+          , lsExportedGraphNodeRefs = st.lsExportedGraphNodeRefs <> exportedNodeRefs
+          }
   | otherwise = do
       value <- evalValue st expr
       let st' = st {lsBindings = Map.insert name value st.lsBindings}

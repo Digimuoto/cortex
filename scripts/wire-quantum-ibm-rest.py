@@ -63,6 +63,11 @@ def main() -> int:
         help="Wire CLI to use when the input is a .wire source file.",
     )
     parser.add_argument(
+        "--return",
+        dest="wire_return",
+        help="Compile the named Wire file-return or graph binding from a .wire source file.",
+    )
+    parser.add_argument(
         "--config",
         help="Override the config path carried by @quantum.ibm_runtime_config.",
     )
@@ -110,7 +115,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        compiled = quantum.load_compiled_circuit(args.input, args.wire_bin)
+        compiled = quantum.load_compiled_circuit(args.input, args.wire_bin, args.wire_return)
         plan = quantum.build_quantum_plan(compiled)
         plan["backend_family"] = "ibm_quantum_runtime_rest"
         config_path = select_config_path(args.input, args.config, plan, quantum)

@@ -49,7 +49,7 @@
         set -euo pipefail
         if [ "$#" -ne 1 ] || [ "$1" != "--confirm-hardware" ]; then
           echo "usage: wire-quantum-eraser --confirm-hardware" >&2
-          echo "runs examples/wire/quantum-eraser-experiment.wire as nine IBM Runtime REST hardware jobs" >&2
+          echo "runs nine selected circuit graphs from examples/wire/quantum-eraser-experiment.wire as IBM Runtime REST hardware jobs" >&2
           exit 64
         fi
         export PATH="${wire-quantum-ibm-rest}/bin:$PATH"

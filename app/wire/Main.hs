@@ -73,6 +73,7 @@ import Cortex.Wire
   , WireValue (..)
   , WireValueSet (..)
   , compileWireFile
+  , compileWireFileWithReturn
   , evaluatePureTaskOutputs
   , parseWireFile
   , renderParseError
@@ -92,7 +93,7 @@ import Cortex.Wire
   )
 
 data Command
-  = CommandBuild !FilePath
+  = CommandBuild !(Maybe Text) !FilePath
   | CommandRun !FilePath
   | CommandHelp
   deriving stock (Eq, Show)
@@ -164,7 +165,7 @@ main = do
   case command of
     Left errText -> dieText errText
     Right CommandHelp -> TIO.putStr usageText
-    Right (CommandBuild path) -> buildWire path
+    Right (CommandBuild maybeSelectedReturn path) -> buildWire maybeSelectedReturn path
     Right (CommandRun path) -> runWire path
 
 parseCommand :: [String] -> Either Text Command
@@ -172,10 +173,14 @@ parseCommand = \case
   [] -> Right CommandHelp
   ["--help"] -> Right CommandHelp
   ["-h"] -> Right CommandHelp
-  ["build", path] -> Right (CommandBuild path)
+  ["build", path] -> Right (CommandBuild Nothing path)
+  ["build", "--return", selectedReturn, path] ->
+    Right (CommandBuild (Just (T.pack selectedReturn)) path)
+  ["build", path, "--return", selectedReturn] ->
+    Right (CommandBuild (Just (T.pack selectedReturn)) path)
   ["run", path] -> Right (CommandRun path)
   [path] -> Right (CommandRun path)
-  "build" : _ -> Left "usage: wire build FILE"
+  "build" : _ -> Left "usage: wire build [--return NAME] FILE"
   "run" : _ -> Left "usage: wire run FILE"
   _ -> Left usageText
 
@@ -187,15 +192,17 @@ usageText =
     , "usage:"
     , "  wire FILE"
     , "  wire run FILE"
-    , "  wire build FILE"
+    , "  wire build [--return NAME] FILE"
     , ""
     , "The local runner currently supports stdin/stdout executors plus CorePure DAG frontiers."
     ]
 
-buildWire :: FilePath -> IO ()
-buildWire path = do
+buildWire :: Maybe Text -> FilePath -> IO ()
+buildWire maybeSelectedReturn path = do
   wireFile <- readAndParseWireFile path
-  compiled <- either (dieText . renderWireError) pure (compileWireFile wireFile)
+  let compile =
+        maybe compileWireFile compileWireFileWithReturn maybeSelectedReturn
+  compiled <- either (dieText . renderWireError) pure (compile wireFile)
   BSL.putStr (AesonPretty.encodePretty compiled)
   BSL.putStr "\n"
 

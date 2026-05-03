@@ -222,10 +222,11 @@ bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
 [`../../examples/wire/quantum-eraser-experiment.wire`](../../examples/wire/quantum-eraser-experiment.wire)
 is the source of truth for the full delayed-choice quantum eraser sweep. It is an executable Wire
-scaffold: a pure planning node builds nine `std.io.command` leaves, the topology sequences those
-leaves, and a final pure node parses and summarizes the run with `fromJson`. The final report is
-printed and written to `/tmp/wire-quantum-eraser-report.txt` through `std.io.writeFile`. Each
-command leaf submits a checked-in Wire circuit file through the IBM Runtime REST bridge.
+scaffold and a circuit catalog in one file: the nine hardware circuits are exported graph values,
+the pure planning node builds nine `std.io.command` leaves that select those values with
+`wire build --return`, the topology sequences the jobs, and a final pure node parses and summarizes
+the run with `fromJson`. The final report is printed and written to
+`./wire-quantum-eraser-report.txt` through `std.io.writeFile`.
 
 The example is a gate-model analogue of the delayed-choice quantum eraser, framed as a correlation
 experiment rather than retrocausality: the later marker-basis choice does not change the
@@ -242,15 +243,15 @@ The app runs the Wire file through `wire run` and places `wire-quantum-ibm-rest`
 command leaves. The command leaves request JSON output, and the final pure Wire analyzer renders a
 compact table framed around the three-circular-polarizer analogy: path marking flattens the
 unconditional screen, while eraser-basis marker slices recover complementary fringes. The experiment
-executes these checked-in circuit files:
+executes these exported graph values from the same Wire source:
 
-- `quantum-eraser-open-phase-{0,1_4,1_2}.wire`
-- `quantum-eraser-which-path-phase-{0,1_4,1_2}.wire`
-- `quantum-eraser-round.wire` for eraser phase `0`
-- `quantum-eraser-eraser-phase-{1_4,1_2}.wire`
+- `open_phase_{0,1_4,1_2}`
+- `which_path_phase_{0,1_4,1_2}`
+- `eraser_phase_{0,1_4,1_2}`
 
-The eraser round uses graph-valued `let`s to name the screen split/recombine fragments, the marker
-path-marking fragments, and the delayed eraser-basis readout:
+The source keeps graph-valued `let`s for the circuit fragments. For example, each eraser graph names
+the screen split/recombine fragments, the marker path-marking fragments, and the delayed
+eraser-basis readout:
 
 ```wire
 let recombine_screen =
@@ -266,18 +267,19 @@ let marker_eraser_readout =
     => z_measure_marker;
 ```
 
-To inspect an individual circuit before spending provider time, run that file through the IBM REST
-bridge in dry-run mode. Dry-run compiles the Wire file and emits the OpenQASM 3 request without
-provider submission:
+To inspect an individual circuit before spending provider time, select the graph value through the
+IBM REST bridge in dry-run mode. Dry-run compiles the selected graph and emits the OpenQASM 3
+request without provider submission:
 
 ```sh
-nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-round.wire --dry-run --config examples/wire/quantum-ibm-runtime.config.example.json
+nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-experiment.wire --return eraser_phase_0 --dry-run --config examples/wire/quantum-ibm-runtime.config.example.json
 ```
 
-Hardware execution of an individual row submits that Wire-authored circuit as one provider job:
+Hardware execution of an individual row submits the selected Wire-authored circuit as one provider
+job:
 
 ```sh
-nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-round.wire --shots 100 --confirm-hardware
+nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-experiment.wire --return eraser_phase_0 --shots 100 --confirm-hardware
 ```
 
 ## Linearity Caveat

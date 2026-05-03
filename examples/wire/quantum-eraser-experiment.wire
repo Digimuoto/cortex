@@ -4,14 +4,803 @@
 #
 #   nix run .#wire-quantum-eraser -- --confirm-hardware
 #
-# The experiment graph is Wire. Each command leaf submits one checked-in Wire
-# circuit file through the IBM Runtime REST bridge. The final analyzer is a
-# pure Wire node that parses JSON stdout with fromJson.
+# The experiment graph is Wire. Each command leaf selects one exported circuit
+# graph value from this file and submits it through the IBM Runtime REST bridge.
+# The final analyzer is a pure Wire node that parses JSON stdout with fromJson.
 
 use std.io.{@stdout, @command, @writeFile, CommandSpec, CommandResult};
 
 contract ExperimentStart;
 contract ExperimentReport;
+contract IBMQuantumConfig;
+contract Qubit;
+contract Bit;
+
+# Hardware circuit graph values for the eraser sweep.
+#
+# Each exported graph is selected with `wire build --return NAME` by the
+# IBM REST command leaves below. The default file-return at the bottom
+# remains the experiment orchestration graph.
+
+# open_phase_0: from examples/wire/quantum-eraser-open-phase-0.wire
+node open0_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node open0_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node open0_split_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open0_split_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+node open0_split_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open0_phase_screen
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 0.0; } (screen);
+node open0_recombine_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open0_recombine_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+node open0_recombine_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open0_measure_screen
+  <- screen: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (screen);
+let open0_split_path =
+  open0_split_rz_a
+    => open0_split_sx
+    => open0_split_rz_b;
+let open0_recombine_path =
+  open0_phase_screen
+    => open0_recombine_rz_a
+    => open0_recombine_sx
+    => open0_recombine_rz_b
+    => open0_measure_screen;
+
+export let open_phase_0 =
+  open0_ibm_runtime_config
+    => open0_prepare_screen
+    => open0_split_path
+    => open0_recombine_path
+;
+
+# open_phase_1_4: from examples/wire/quantum-eraser-open-phase-1_4.wire
+node open14_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node open14_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node open14_split_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open14_split_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+node open14_split_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open14_phase_screen
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open14_recombine_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open14_recombine_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+node open14_recombine_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open14_measure_screen
+  <- screen: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (screen);
+let open14_split_path =
+  open14_split_rz_a
+    => open14_split_sx
+    => open14_split_rz_b;
+let open14_recombine_path =
+  open14_phase_screen
+    => open14_recombine_rz_a
+    => open14_recombine_sx
+    => open14_recombine_rz_b
+    => open14_measure_screen;
+
+export let open_phase_1_4 =
+  open14_ibm_runtime_config
+    => open14_prepare_screen
+    => open14_split_path
+    => open14_recombine_path
+;
+
+# open_phase_1_2: from examples/wire/quantum-eraser-open-phase-1_2.wire
+node open12_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node open12_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node open12_split_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open12_split_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+node open12_split_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open12_phase_screen
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 3.141592653589793; } (screen);
+node open12_recombine_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open12_recombine_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+node open12_recombine_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+node open12_measure_screen
+  <- screen: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (screen);
+let open12_split_path =
+  open12_split_rz_a
+    => open12_split_sx
+    => open12_split_rz_b;
+let open12_recombine_path =
+  open12_phase_screen
+    => open12_recombine_rz_a
+    => open12_recombine_sx
+    => open12_recombine_rz_b
+    => open12_measure_screen;
+
+export let open_phase_1_2 =
+  open12_ibm_runtime_config
+    => open12_prepare_screen
+    => open12_split_path
+    => open12_recombine_path
+;
+
+# which_path_phase_0: from examples/wire/quantum-eraser-which-path-phase-0.wire
+node which0_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node which0_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node which0_prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+node which0_split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which0_split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node which0_split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which0_phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 0.0; } (control);
+node which0_mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which0_mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node which0_mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which0_mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+node which0_z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which0_z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node which0_z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which0_recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which0_recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node which0_recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which0_measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+node which0_z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+let which0_split_path =
+  which0_split_rz_a
+    => which0_split_sx
+    => which0_split_rz_b
+    => which0_phase_screen;
+let which0_mark_marker_pre =
+  which0_mark_pre_rz_a
+    => which0_mark_pre_sx
+    => which0_mark_pre_rz_b;
+let which0_mark_marker_post =
+  which0_z_mark_post_rz_a
+    => which0_z_mark_post_sx
+    => which0_z_mark_post_rz_b;
+let which0_recombine_screen =
+  which0_recombine_rz_a
+    => which0_recombine_sx
+    => which0_recombine_rz_b
+    => which0_measure_screen;
+let which0_marker_which_path_readout =
+  which0_z_measure_marker;
+
+export let which_path_phase_0 =
+  which0_ibm_runtime_config
+    => (
+      (
+        which0_prepare_screen
+          => which0_split_path
+          => which0_mark_cz
+          => which0_recombine_screen
+      )
+      <>
+      (
+        which0_prepare_marker
+          => which0_mark_marker_pre
+          => which0_mark_cz
+          => which0_mark_marker_post
+          => which0_marker_which_path_readout
+      )
+  )
+;
+
+# which_path_phase_1_4: from examples/wire/quantum-eraser-which-path-phase-1_4.wire
+node which14_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node which14_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node which14_prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+node which14_split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which14_split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node which14_split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which14_phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which14_mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which14_mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node which14_mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which14_mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+node which14_z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which14_z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node which14_z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which14_recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which14_recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node which14_recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which14_measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+node which14_z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+let which14_split_path =
+  which14_split_rz_a
+    => which14_split_sx
+    => which14_split_rz_b
+    => which14_phase_screen;
+let which14_mark_marker_pre =
+  which14_mark_pre_rz_a
+    => which14_mark_pre_sx
+    => which14_mark_pre_rz_b;
+let which14_mark_marker_post =
+  which14_z_mark_post_rz_a
+    => which14_z_mark_post_sx
+    => which14_z_mark_post_rz_b;
+let which14_recombine_screen =
+  which14_recombine_rz_a
+    => which14_recombine_sx
+    => which14_recombine_rz_b
+    => which14_measure_screen;
+let which14_marker_which_path_readout =
+  which14_z_measure_marker;
+
+export let which_path_phase_1_4 =
+  which14_ibm_runtime_config
+    => (
+      (
+        which14_prepare_screen
+          => which14_split_path
+          => which14_mark_cz
+          => which14_recombine_screen
+      )
+      <>
+      (
+        which14_prepare_marker
+          => which14_mark_marker_pre
+          => which14_mark_cz
+          => which14_mark_marker_post
+          => which14_marker_which_path_readout
+      )
+  )
+;
+
+# which_path_phase_1_2: from examples/wire/quantum-eraser-which-path-phase-1_2.wire
+node which12_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node which12_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node which12_prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+node which12_split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which12_split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node which12_split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which12_phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 3.141592653589793; } (control);
+node which12_mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which12_mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node which12_mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which12_mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+node which12_z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which12_z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node which12_z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node which12_recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which12_recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node which12_recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node which12_measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+node which12_z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+let which12_split_path =
+  which12_split_rz_a
+    => which12_split_sx
+    => which12_split_rz_b
+    => which12_phase_screen;
+let which12_mark_marker_pre =
+  which12_mark_pre_rz_a
+    => which12_mark_pre_sx
+    => which12_mark_pre_rz_b;
+let which12_mark_marker_post =
+  which12_z_mark_post_rz_a
+    => which12_z_mark_post_sx
+    => which12_z_mark_post_rz_b;
+let which12_recombine_screen =
+  which12_recombine_rz_a
+    => which12_recombine_sx
+    => which12_recombine_rz_b
+    => which12_measure_screen;
+let which12_marker_which_path_readout =
+  which12_z_measure_marker;
+
+export let which_path_phase_1_2 =
+  which12_ibm_runtime_config
+    => (
+      (
+        which12_prepare_screen
+          => which12_split_path
+          => which12_mark_cz
+          => which12_recombine_screen
+      )
+      <>
+      (
+        which12_prepare_marker
+          => which12_mark_marker_pre
+          => which12_mark_cz
+          => which12_mark_marker_post
+          => which12_marker_which_path_readout
+      )
+  )
+;
+
+# eraser_phase_0: from examples/wire/quantum-eraser-round.wire
+node eraser0_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node eraser0_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node eraser0_prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+node eraser0_split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser0_split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node eraser0_split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser0_phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 0.0; } (control);
+node eraser0_mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser0_mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser0_mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser0_mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+node eraser0_z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser0_z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser0_z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser0_recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser0_recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node eraser0_recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser0_measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+node eraser0_z_marker_eraser_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser0_z_marker_eraser_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser0_z_marker_eraser_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser0_z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+let eraser0_split_path =
+  eraser0_split_rz_a
+    => eraser0_split_sx
+    => eraser0_split_rz_b
+    => eraser0_phase_screen;
+let eraser0_mark_marker_pre =
+  eraser0_mark_pre_rz_a
+    => eraser0_mark_pre_sx
+    => eraser0_mark_pre_rz_b;
+let eraser0_mark_marker_post =
+  eraser0_z_mark_post_rz_a
+    => eraser0_z_mark_post_sx
+    => eraser0_z_mark_post_rz_b;
+let eraser0_recombine_screen =
+  eraser0_recombine_rz_a
+    => eraser0_recombine_sx
+    => eraser0_recombine_rz_b
+    => eraser0_measure_screen;
+let eraser0_marker_eraser_readout =
+  eraser0_z_marker_eraser_rz_a
+    => eraser0_z_marker_eraser_sx
+    => eraser0_z_marker_eraser_rz_b
+    => eraser0_z_measure_marker;
+
+export let eraser_phase_0 =
+  eraser0_ibm_runtime_config
+    => (
+      (
+        eraser0_prepare_screen
+          => eraser0_split_path
+          => eraser0_mark_cz
+          => eraser0_recombine_screen
+      )
+      <>
+      (
+        eraser0_prepare_marker
+          => eraser0_mark_marker_pre
+          => eraser0_mark_cz
+          => eraser0_mark_marker_post
+          => eraser0_marker_eraser_readout
+      )
+  )
+;
+
+# eraser_phase_1_4: from examples/wire/quantum-eraser-eraser-phase-1_4.wire
+node eraser14_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node eraser14_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node eraser14_prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+node eraser14_split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser14_split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node eraser14_split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser14_phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser14_mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser14_mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser14_mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser14_mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+node eraser14_z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser14_z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser14_z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser14_recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser14_recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node eraser14_recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser14_measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+node eraser14_z_marker_eraser_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser14_z_marker_eraser_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser14_z_marker_eraser_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser14_z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+let eraser14_split_path =
+  eraser14_split_rz_a
+    => eraser14_split_sx
+    => eraser14_split_rz_b
+    => eraser14_phase_screen;
+let eraser14_mark_marker_pre =
+  eraser14_mark_pre_rz_a
+    => eraser14_mark_pre_sx
+    => eraser14_mark_pre_rz_b;
+let eraser14_mark_marker_post =
+  eraser14_z_mark_post_rz_a
+    => eraser14_z_mark_post_sx
+    => eraser14_z_mark_post_rz_b;
+let eraser14_recombine_screen =
+  eraser14_recombine_rz_a
+    => eraser14_recombine_sx
+    => eraser14_recombine_rz_b
+    => eraser14_measure_screen;
+let eraser14_marker_eraser_readout =
+  eraser14_z_marker_eraser_rz_a
+    => eraser14_z_marker_eraser_sx
+    => eraser14_z_marker_eraser_rz_b
+    => eraser14_z_measure_marker;
+
+export let eraser_phase_1_4 =
+  eraser14_ibm_runtime_config
+    => (
+      (
+        eraser14_prepare_screen
+          => eraser14_split_path
+          => eraser14_mark_cz
+          => eraser14_recombine_screen
+      )
+      <>
+      (
+        eraser14_prepare_marker
+          => eraser14_mark_marker_pre
+          => eraser14_mark_cz
+          => eraser14_mark_marker_post
+          => eraser14_marker_eraser_readout
+      )
+  )
+;
+
+# eraser_phase_1_2: from examples/wire/quantum-eraser-eraser-phase-1_2.wire
+node eraser12_ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+node eraser12_prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+node eraser12_prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+node eraser12_split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser12_split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node eraser12_split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser12_phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 3.141592653589793; } (control);
+node eraser12_mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser12_mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser12_mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser12_mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+node eraser12_z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser12_z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser12_z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser12_recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser12_recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+node eraser12_recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+node eraser12_measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+node eraser12_z_marker_eraser_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser12_z_marker_eraser_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+node eraser12_z_marker_eraser_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+node eraser12_z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+let eraser12_split_path =
+  eraser12_split_rz_a
+    => eraser12_split_sx
+    => eraser12_split_rz_b
+    => eraser12_phase_screen;
+let eraser12_mark_marker_pre =
+  eraser12_mark_pre_rz_a
+    => eraser12_mark_pre_sx
+    => eraser12_mark_pre_rz_b;
+let eraser12_mark_marker_post =
+  eraser12_z_mark_post_rz_a
+    => eraser12_z_mark_post_sx
+    => eraser12_z_mark_post_rz_b;
+let eraser12_recombine_screen =
+  eraser12_recombine_rz_a
+    => eraser12_recombine_sx
+    => eraser12_recombine_rz_b
+    => eraser12_measure_screen;
+let eraser12_marker_eraser_readout =
+  eraser12_z_marker_eraser_rz_a
+    => eraser12_z_marker_eraser_sx
+    => eraser12_z_marker_eraser_rz_b
+    => eraser12_z_measure_marker;
+
+export let eraser_phase_1_2 =
+  eraser12_ibm_runtime_config
+    => (
+      (
+        eraser12_prepare_screen
+          => eraser12_split_path
+          => eraser12_mark_cz
+          => eraser12_recombine_screen
+      )
+      <>
+      (
+        eraser12_prepare_marker
+          => eraser12_mark_marker_pre
+          => eraser12_mark_cz
+          => eraser12_mark_marker_post
+          => eraser12_marker_eraser_readout
+      )
+  )
+;
 
 node start_experiment
   -> start: ExperimentStart = pure ("start");
@@ -29,10 +818,11 @@ node plan_experiment
   -> eraser12Spec: CommandSpec = pure (eraser12Spec);
   where let
     shots = "100";
+    source = "examples/wire/quantum-eraser-experiment.wire";
     open0Spec = {
       name = "open phase 0";
-      target = "examples/wire/quantum-eraser-open-phase-0.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-open-phase-0.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#open_phase_0";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "open_phase_0", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -40,8 +830,8 @@ node plan_experiment
     };
     open14Spec = {
       name = "open phase 1/4";
-      target = "examples/wire/quantum-eraser-open-phase-1_4.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-open-phase-1_4.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#open_phase_1_4";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "open_phase_1_4", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -49,8 +839,8 @@ node plan_experiment
     };
     open12Spec = {
       name = "open phase 1/2";
-      target = "examples/wire/quantum-eraser-open-phase-1_2.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-open-phase-1_2.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#open_phase_1_2";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "open_phase_1_2", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -58,8 +848,8 @@ node plan_experiment
     };
     which0Spec = {
       name = "which-path phase 0";
-      target = "examples/wire/quantum-eraser-which-path-phase-0.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-which-path-phase-0.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#which_path_phase_0";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "which_path_phase_0", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -67,8 +857,8 @@ node plan_experiment
     };
     which14Spec = {
       name = "which-path phase 1/4";
-      target = "examples/wire/quantum-eraser-which-path-phase-1_4.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-which-path-phase-1_4.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#which_path_phase_1_4";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "which_path_phase_1_4", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -76,8 +866,8 @@ node plan_experiment
     };
     which12Spec = {
       name = "which-path phase 1/2";
-      target = "examples/wire/quantum-eraser-which-path-phase-1_2.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-which-path-phase-1_2.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#which_path_phase_1_2";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "which_path_phase_1_2", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -85,8 +875,8 @@ node plan_experiment
     };
     eraser0Spec = {
       name = "eraser phase 0";
-      target = "examples/wire/quantum-eraser-round.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-round.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#eraser_phase_0";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "eraser_phase_0", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -94,8 +884,8 @@ node plan_experiment
     };
     eraser14Spec = {
       name = "eraser phase 1/4";
-      target = "examples/wire/quantum-eraser-eraser-phase-1_4.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-eraser-phase-1_4.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#eraser_phase_1_4";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "eraser_phase_1_4", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -103,8 +893,8 @@ node plan_experiment
     };
     eraser12Spec = {
       name = "eraser phase 1/2";
-      target = "examples/wire/quantum-eraser-eraser-phase-1_2.wire";
-      argv = ["wire-quantum-ibm-rest", "examples/wire/quantum-eraser-eraser-phase-1_2.wire", "--shots", shots, "--confirm-hardware", "--json"];
+      target = "examples/wire/quantum-eraser-experiment.wire#eraser_phase_1_2";
+      argv = ["wire-quantum-ibm-rest", source, "--return", "eraser_phase_1_2", "--shots", shots, "--confirm-hardware", "--json"];
       cwd = ".";
       required = true;
       skip = false;
@@ -245,21 +1035,15 @@ node summarize_experiment
       in
       if hasCounts then
         let
-          oneBitBlock = phase: expected: result:
+          oneBit = result:
             let
               counts = result.complete_counts;
               c0 = counts["0"];
               c1 = counts["1"];
               shots = result.shots;
-              screenZero = "${c0} of ${shots}";
             in
-            ''
-              phase ${phase}
-                screen zeroes: ${screenZero} (${expected})
-                counts: 0:${c0}, 1:${c1}
-
-            '';
-          twoBitBlock = phase: expected: result:
+            { inherit c0 c1 shots; };
+          twoBit = result:
             let
               counts = result.complete_counts;
               c00 = counts["00"];
@@ -267,67 +1051,134 @@ node summarize_experiment
               c10 = counts["10"];
               c11 = counts["11"];
               shots = result.shots;
-              screenZero = "${c00 + c10} of ${shots}";
+              screenZero = c00 + c10;
               marker0Total = c00 + c01;
               marker1Total = c10 + c11;
-              marker0Zero = "${c00} of ${marker0Total}";
-              marker1Zero = "${c10} of ${marker1Total}";
             in
-            ''
-              phase ${phase}
-                screen zeroes: ${screenZero} (${expected})
-                marker 0 slice: ${marker0Zero} screen zeroes
-                marker 1 slice: ${marker1Zero} screen zeroes
-                counts: 00:${c00}, 01:${c01}, 10:${c10}, 11:${c11}
+            { inherit c00 c01 c10 c11 shots screenZero marker0Total marker1Total; };
+          oneRow = mode: phase: expected: bit:
+            "  ${mode} | ${phase} | ${bit.c0}/${bit.shots} | ${expected} | - | - | 0:${bit.c0},1:${bit.c1}\n";
+          twoRow = mode: phase: expected: bit:
+            "  ${mode} | ${phase} | ${bit.screenZero}/${bit.shots} | ${expected} | ${bit.c00}/${bit.marker0Total} | ${bit.c10}/${bit.marker1Total} | 00:${bit.c00},01:${bit.c01},10:${bit.c10},11:${bit.c11}\n";
+          open0Bits = oneBit(open0Json);
+          open14Bits = oneBit(open14Json);
+          open12Bits = oneBit(open12Json);
+          which0Bits = twoBit(which0Json);
+          which14Bits = twoBit(which14Json);
+          which12Bits = twoBit(which12Json);
+          eraser0Bits = twoBit(eraser0Json);
+          eraser14Bits = twoBit(eraser14Json);
+          eraser12Bits = twoBit(eraser12Json);
+          resultRows = [
+            "  mode | phase | screen=0 | expected screen | marker=0 screen=0 | marker=1 screen=0 | raw counts\n",
+            "  ---- | ----- | -------- | --------------- | ----------------- | ----------------- | ----------\n",
+            oneRow "open" "0" "bright" open0Bits,
+            oneRow "open" "1/4" "balanced" open14Bits,
+            oneRow "open" "1/2" "dark" open12Bits,
+            twoRow "which_path" "0" "balanced" which0Bits,
+            twoRow "which_path" "1/4" "balanced" which14Bits,
+            twoRow "which_path" "1/2" "balanced" which12Bits,
+            twoRow "eraser" "0" "balanced before sorting" eraser0Bits,
+            twoRow "eraser" "1/4" "balanced before sorting" eraser14Bits,
+            twoRow "eraser" "1/2" "balanced before sorting" eraser12Bits
+          ] |> joinWith "";
+          openReading = ''
+            Open graph: no middle circular tag
+              No path marker is inserted between the splitter and recombiner.
+              In the circular-polarizer picture, this is the reference stack:
+              the screen behaves like the final analyzer with no middle
+              which-path filter left in the beam.
 
-            '';
-          openRows = [
-            oneBitBlock "0" "near all" open0Json,
-            oneBitBlock "1/4" "near half" open14Json,
-            oneBitBlock "1/2" "near none" open12Json
-          ] |> joinWith "";
-          whichRows = [
-            twoBitBlock "0" "near half" which0Json,
-            twoBitBlock "1/4" "near half" which14Json,
-            twoBitBlock "1/2" "near half" which12Json
-          ] |> joinWith "";
-          eraserRows = [
-            twoBitBlock "0" "near half" eraser0Json,
-            twoBitBlock "1/4" "near half" eraser14Json,
-            twoBitBlock "1/2" "near half" eraser12Json
-          ] |> joinWith "";
+              Phase 0: screen=0 appeared ${open0Bits.c0}/${open0Bits.shots} times, the bright fringe.
+              Phase 1/4: screen=0 appeared ${open14Bits.c0}/${open14Bits.shots} times, the halfway setting.
+              Phase 1/2: screen=0 appeared ${open12Bits.c0}/${open12Bits.shots} times, the dark fringe.
+
+              Those three numbers are the reference interference fringe.
+
+          '';
+          whichPathReading = ''
+            Which-path graph: opposite circular tags left in place
+              The marker is the middle polarizer. It tags the two alternatives
+              as opposite circular polarizations, so the screen alone can no
+              longer combine them into a phase fringe.
+
+              Unsorted screen=0 counts:
+                phase 0: ${which0Bits.screenZero}/${which0Bits.shots}
+                phase 1/4: ${which14Bits.screenZero}/${which14Bits.shots}
+                phase 1/2: ${which12Bits.screenZero}/${which12Bits.shots}
+
+              Instead of following the open fringe ${open0Bits.c0}/${open0Bits.shots}
+              -> ${open14Bits.c0}/${open14Bits.shots} -> ${open12Bits.c0}/${open12Bits.shots},
+              all three which-path rows sit around half.
+
+              Sorting by the readable marker still does not recover the clean
+              fringe:
+                phase 0 marker=0: ${which0Bits.c00}/${which0Bits.marker0Total}
+                phase 0 marker=1: ${which0Bits.c10}/${which0Bits.marker1Total}
+                phase 1/2 marker=0: ${which12Bits.c00}/${which12Bits.marker0Total}
+                phase 1/2 marker=1: ${which12Bits.c10}/${which12Bits.marker1Total}
+
+              The circular path labels are still present, so the alternatives
+              remain distinguishable.
+
+          '';
+          eraserReading = ''
+            Eraser graph: final analyzer erases the circular tag
+              The eraser adds the third polarizer: a final marker analyzer that
+              projects the left/right circular tags into a common basis.
+
+              Before sorting by marker, the screen still respects no-signalling:
+                phase 0 screen=0: ${eraser0Bits.screenZero}/${eraser0Bits.shots}
+                phase 1/4 screen=0: ${eraser14Bits.screenZero}/${eraser14Bits.shots}
+                phase 1/2 screen=0: ${eraser12Bits.screenZero}/${eraser12Bits.shots}
+
+              Those unsorted numbers stay near half, so the later analyzer did
+              not rewrite the earlier screen distribution.
+
+              The interference returns only after conditioning on the marker.
+                phase 0 marker=0: ${eraser0Bits.c00}/${eraser0Bits.marker0Total}
+                phase 0 marker=1: ${eraser0Bits.c10}/${eraser0Bits.marker1Total}
+                phase 1/2 marker=0: ${eraser12Bits.c00}/${eraser12Bits.marker0Total}
+                phase 1/2 marker=1: ${eraser12Bits.c10}/${eraser12Bits.marker1Total}
+                phase 1/4 marker=0: ${eraser14Bits.c00}/${eraser14Bits.marker0Total}
+                phase 1/4 marker=1: ${eraser14Bits.c10}/${eraser14Bits.marker1Total}
+
+              Phase 0 is bright in marker=0 and dark in marker=1. Phase 1/2
+              trades those roles. Phase 1/4 crosses near the middle.
+
+              That is the quantum eraser in the polarized-filter picture: the
+              middle circular marker destroys the visible screen fringe, and
+              the final analyzer recovers two opposite fringes only when the
+              data is sorted by its marker result.
+
+          '';
         in
         ''
           Wire delayed-choice quantum eraser experiment
           =============================================
 
           Run
-            execution: Wire graph + std.io.command
+            source: examples/wire/quantum-eraser-experiment.wire
+            execution: one Wire orchestration graph + std.io.command leaves
             backend: IBM Quantum Runtime REST hardware
             shots: 100 per circuit
-            circuits: 9 checked-in Wire files
-            report file: /tmp/wire-quantum-eraser-report.txt
+            circuits: 9 exported graph values selected from this same Wire file
+            report file: ./wire-quantum-eraser-report.txt
 
-          Files executed
+          Circuit graph values submitted
             ${targets}
 
           What Wire did
             Wire planned the sweep, sequenced nine hardware command leaves,
-            parsed each REST JSON result with fromJson, and rendered this
-            analyzer report in a pure Wire node. No Qiskit simulator path is
-            used for the experiment.
-
-          Three circular polarizers frame
-            open: no which-path polarization tag; the screen follows the phase fringe.
-            which_path: opposite circular tags distinguish the alternatives; the unsorted screen marginal sits near half.
-            eraser: the final analyzer projects the circular tags into a common basis. The unsorted screen still stays near half, while marker-conditioned slices recover complementary fringes.
+            selected each circuit with wire build --return, parsed each REST
+            JSON result with fromJson, and rendered this analyzer report in a
+            pure Wire node. No Qiskit simulator path is used for the experiment.
 
           Results
+          ${resultRows}
 
-          open
-          ${openRows}which_path
-          ${whichRows}eraser
-          ${eraserRows}Run gate: complete
+          Reading the numbers through three circular polarizers
+          ${openReading}${whichPathReading}${eraserReading}Run gate: complete
         ''
       else
         ''
@@ -335,13 +1186,14 @@ node summarize_experiment
           =============================================
 
           Run
-            execution: Wire graph + std.io.command
+            source: examples/wire/quantum-eraser-experiment.wire
+            execution: one Wire orchestration graph + std.io.command leaves
             backend: IBM Quantum Runtime REST hardware
             shots: 100 per circuit
-            circuits: 9 checked-in Wire files
-            report file: /tmp/wire-quantum-eraser-report.txt
+            circuits: 9 exported graph values selected from this same Wire file
+            report file: ./wire-quantum-eraser-report.txt
 
-          Files executed
+          Circuit graph values submitted
             ${targets}
 
           The IBM REST runner completed, but at least one result did not contain decoded counts.
@@ -358,13 +1210,14 @@ node summarize_experiment
         =============================================
 
         Run
-          execution: Wire graph + std.io.command
+          source: examples/wire/quantum-eraser-experiment.wire
+          execution: one Wire orchestration graph + std.io.command leaves
           backend: IBM Quantum Runtime REST hardware
           shots: 100 per circuit
-          circuits: 9 checked-in Wire files
-          report file: /tmp/wire-quantum-eraser-report.txt
+          circuits: 9 exported graph values selected from this same Wire file
+          report file: ./wire-quantum-eraser-report.txt
 
-        Files executed
+        Circuit graph values submitted
           ${targets}
 
         At least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.
@@ -384,7 +1237,7 @@ node print_report
 
 node write_report
   <- summary: ExperimentReport;
-  = @writeFile { path = "/tmp/wire-quantum-eraser-report.txt"; } (summary);
+  = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (summary);
 
 (
   start_experiment

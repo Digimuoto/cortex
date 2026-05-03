@@ -30,7 +30,12 @@ import Cortex.Wire.Circuit.Artifact
   , CompiledCircuitNode (..)
   )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
-import Cortex.Wire.Compile (compileWireFragmentText, compileWireText, compileWireTextWithEnv)
+import Cortex.Wire.Compile
+  ( compileWireFragmentText
+  , compileWireText
+  , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  )
 import Cortex.Wire.Contract
   ( WireCompileEnv (..)
   , WireContractSpec (..)
@@ -88,6 +93,16 @@ spec = describe "Cortex.Wire.Compile" $ do
     compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "analyst"]
     successors compiled.compiledCircuitTopology (CircuitNodeRef "planner")
       `shouldBe` Set.singleton (CircuitNodeRef "analyst")
+
+  it "allows exported graph libraries outside the default file return" $ do
+    compiled <- requireRight (compileWireText exportedGraphLibrarySourceText)
+    compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "main"]
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "main")
+
+  it "compiles a selected graph-valued return" $ do
+    compiled <- requireRight (compileWireTextWithReturn "library_graph" exportedGraphLibrarySourceText)
+    compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "library"]
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "library")
 
   it "lowers executor where records into executor config" $ do
     compiled <- requireRight (compileWireText executorWhereSourceText)
@@ -448,6 +463,17 @@ graphLetSourceText =
     , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
     , "let pipeline = planner => analyst ;"
     , "pipeline"
+    ]
+
+exportedGraphLibrarySourceText :: T.Text
+exportedGraphLibrarySourceText =
+  T.unlines
+    [ "node library"
+    , "  -> out: LibraryOutput = @review.library ({}) ;"
+    , "node main"
+    , "  -> out: MainOutput = @review.main ({}) ;"
+    , "export let library_graph = library ;"
+    , "main"
     ]
 
 zeroOutputSourceText :: T.Text

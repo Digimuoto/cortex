@@ -49,6 +49,11 @@ def main() -> int:
         help="Wire CLI to use when the input is a .wire source file.",
     )
     parser.add_argument(
+        "--return",
+        dest="wire_return",
+        help="Compile the named Wire file-return or graph binding from a .wire source file.",
+    )
+    parser.add_argument(
         "--backend",
         default="aer_simulator",
         help="Qiskit backend. Only 'aer_simulator' is enabled by this local runner.",
@@ -69,7 +74,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        compiled = load_compiled_circuit(args.input, args.wire_bin)
+        compiled = load_compiled_circuit(args.input, args.wire_bin, args.wire_return)
         plan = build_quantum_plan(compiled)
         if args.emit_plan:
             if args.json_output:
@@ -224,14 +229,24 @@ def format_result_table(counts: dict[str, int], measurements: list[JSON], shots:
     return "\n".join(lines)
 
 
-def load_compiled_circuit(input_path: str, wire_bin: str) -> JSON:
+def load_compiled_circuit(
+    input_path: str,
+    wire_bin: str,
+    wire_return: str | None = None,
+) -> JSON:
     if input_path == "-":
+        if wire_return is not None:
+            raise WireQuantumError("--return cannot be used when reading compiled JSON from stdin")
         return json.load(sys.stdin)
 
     path = Path(input_path)
     if path.suffix == ".wire":
+        command = [wire_bin, "build"]
+        if wire_return is not None:
+            command.extend(["--return", wire_return])
+        command.append(str(path))
         proc = subprocess.run(
-            [wire_bin, "build", str(path)],
+            command,
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
