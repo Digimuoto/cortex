@@ -16,6 +16,8 @@ module Cortex.Wire.Std
   , stdIoStdinExecutorId
   , stdIoStdoutExecutorId
   , stdIoCommandExecutorId
+  , stdIoReadFileExecutorId
+  , stdIoWriteFileExecutorId
   , stdIoExecutorLeaves
   , stdIoExecutorIdForLeaf
   , isStdIoExecutorId
@@ -67,15 +69,23 @@ stdIoStdoutExecutorId = "std.io.stdout"
 stdIoCommandExecutorId :: Text
 stdIoCommandExecutorId = "std.io.command"
 
+stdIoReadFileExecutorId :: Text
+stdIoReadFileExecutorId = "std.io.readFile"
+
+stdIoWriteFileExecutorId :: Text
+stdIoWriteFileExecutorId = "std.io.writeFile"
+
 stdIoExecutorLeaves :: Set Text
 stdIoExecutorLeaves =
-  Set.fromList ["stdin", "stdout", "command"]
+  Set.fromList ["stdin", "stdout", "command", "readFile", "writeFile"]
 
 stdIoExecutorIdForLeaf :: Text -> Maybe Text
 stdIoExecutorIdForLeaf = \case
   "stdin" -> Just stdIoStdinExecutorId
   "stdout" -> Just stdIoStdoutExecutorId
   "command" -> Just stdIoCommandExecutorId
+  "readFile" -> Just stdIoReadFileExecutorId
+  "writeFile" -> Just stdIoWriteFileExecutorId
   _ -> Nothing
 
 isStdIoExecutorId :: Text -> Bool
@@ -85,6 +95,8 @@ isStdIoExecutorId executorId =
       [ stdIoStdinExecutorId
       , stdIoStdoutExecutorId
       , stdIoCommandExecutorId
+      , stdIoReadFileExecutorId
+      , stdIoWriteFileExecutorId
       ]
 
 stdIoCommandSpecContractId :: Text
@@ -126,6 +138,8 @@ stdIoExecutorProjections =
   [ stdIoProjection stdIoStdinExecutorId
   , stdIoProjection stdIoStdoutExecutorId
   , stdIoProjection stdIoCommandExecutorId
+  , stdIoProjection stdIoReadFileExecutorId
+  , stdIoProjection stdIoWriteFileExecutorId
   ]
 
 stdIoExecutorRegistry :: WireExecutorRegistry

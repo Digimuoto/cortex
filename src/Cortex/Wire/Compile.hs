@@ -111,8 +111,10 @@ import Cortex.Wire.Std
   , stdIoExecutorIdForLeaf
   , stdIoExecutorLeaves
   , stdIoNamespace
+  , stdIoReadFileExecutorId
   , stdIoStdinExecutorId
   , stdIoStdoutExecutorId
+  , stdIoWriteFileExecutorId
   )
 import Cortex.Wire.Syntax
 
@@ -2288,6 +2290,11 @@ validateStdIoExecutorShape nodeRef executorId ports
       requireShape 1 0 "std.io.stdout expects exactly one input port and zero output ports."
   | executorId == stdIoCommandExecutorId =
       requireAtMostOneEach "std.io.command expects zero or one input port and zero or one output port."
+  | executorId == stdIoReadFileExecutorId =
+      requireInputAtMostOutputExactOne
+        "std.io.readFile expects zero or one input port and exactly one output port."
+  | executorId == stdIoWriteFileExecutorId =
+      requireShape 1 0 "std.io.writeFile expects exactly one input port and zero output ports."
   | otherwise =
       Right ()
   where
@@ -2300,6 +2307,10 @@ validateStdIoExecutorShape nodeRef executorId ports
 
     requireAtMostOneEach message =
       unless (inputCount <= 1 && outputCount <= 1) $
+        Left (WireCore.WireInvalidPorts nodeRef message)
+
+    requireInputAtMostOutputExactOne message =
+      unless (inputCount <= 1 && outputCount == 1) $
         Left (WireCore.WireInvalidPorts nodeRef message)
 
 mapLeft :: (a -> b) -> Either a c -> Either b c

@@ -271,6 +271,35 @@ spec = describe "Cortex.Wire.Compile" $ do
               "std.io.stdout expects exactly one input port and zero output ports."
           )
 
+    it "lowers std.io file executors" $ do
+      compiled <- requireRight (compileWireText stdIoFileExecutorsSourceText)
+      case Map.lookup (CircuitNodeRef "read_report") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget "std.io.readFile"
+        other ->
+          expectationFailure ("expected read_report task node, got: " <> show other)
+      case Map.lookup (CircuitNodeRef "write_report") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget "std.io.writeFile"
+        other ->
+          expectationFailure ("expected write_report task node, got: " <> show other)
+
+    it "enforces standard readFile port shape" $
+      compileWireText stdIoReadFileBadShapeSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "bad_read")
+              "std.io.readFile expects zero or one input port and exactly one output port."
+          )
+
+    it "enforces standard writeFile port shape" $
+      compileWireText stdIoWriteFileBadShapeSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "bad_write")
+              "std.io.writeFile expects exactly one input port and zero output ports."
+          )
+
   describe "fixtures" $ do
     it "compiles the interactive priority planner example" $ do
       source <- TIO.readFile "examples/wire/interactive-priority-planner.wire"
@@ -342,7 +371,7 @@ spec = describe "Cortex.Wire.Compile" $ do
       Set.fromList compiled.compiledCircuitEntryNodes
         `shouldBe` Set.fromList [CircuitNodeRef "start_experiment"]
       Set.fromList compiled.compiledCircuitExitNodes
-        `shouldBe` Set.fromList [CircuitNodeRef "print_report"]
+        `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
       successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_0")
         `shouldBe` Set.fromList [CircuitNodeRef "gate_open_14", CircuitNodeRef "summarize_experiment"]
       successors compiled.compiledCircuitTopology (CircuitNodeRef "gate_open_14")
@@ -668,6 +697,39 @@ stdIoStdoutBadShapeSourceText =
     , "node bad_stdout"
     , "  -> printed: Printed = @stdout {} (null) ;"
     , "bad_stdout"
+    ]
+
+stdIoFileExecutorsSourceText :: T.Text
+stdIoFileExecutorsSourceText =
+  T.unlines
+    [ "use std.io.{@readFile, @writeFile};"
+    , "contract Report;"
+    , "node read_report"
+    , "  -> report: Report = @readFile { path = \"/tmp/wire-report.txt\"; } (null) ;"
+    , "node write_report"
+    , "  <- report: Report;"
+    , "  = @writeFile { path = \"/tmp/wire-report-copy.txt\"; } (report) ;"
+    , "read_report => write_report"
+    ]
+
+stdIoReadFileBadShapeSourceText :: T.Text
+stdIoReadFileBadShapeSourceText =
+  T.unlines
+    [ "use std.io.{@readFile};"
+    , "node bad_read"
+    , "  = @readFile { path = \"/tmp/wire-report.txt\"; } (null) ;"
+    , "bad_read"
+    ]
+
+stdIoWriteFileBadShapeSourceText :: T.Text
+stdIoWriteFileBadShapeSourceText =
+  T.unlines
+    [ "use std.io.{@writeFile};"
+    , "contract Report;"
+    , "node bad_write"
+    , "  <- report: Report;"
+    , "  -> written: Report = @writeFile { path = \"/tmp/wire-report.txt\"; } (report) ;"
+    , "bad_write"
     ]
 
 requireRight :: Show err => Either err a -> IO a

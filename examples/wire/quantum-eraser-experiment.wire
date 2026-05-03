@@ -8,7 +8,7 @@
 # circuit file through the IBM Runtime REST bridge. The final analyzer is a
 # pure Wire node that parses JSON stdout with fromJson.
 
-use std.io.{@stdout, @command, CommandSpec, CommandResult};
+use std.io.{@stdout, @command, @writeFile, CommandSpec, CommandResult};
 
 contract ExperimentStart;
 contract ExperimentReport;
@@ -306,6 +306,7 @@ node summarize_experiment
             backend: IBM Quantum Runtime REST hardware
             shots: 100 per circuit
             circuits: 9 checked-in Wire files
+            report file: /tmp/wire-quantum-eraser-report.txt
 
           Files executed
             ${targets}
@@ -338,6 +339,7 @@ node summarize_experiment
             backend: IBM Quantum Runtime REST hardware
             shots: 100 per circuit
             circuits: 9 checked-in Wire files
+            report file: /tmp/wire-quantum-eraser-report.txt
 
           Files executed
             ${targets}
@@ -360,6 +362,7 @@ node summarize_experiment
           backend: IBM Quantum Runtime REST hardware
           shots: 100 per circuit
           circuits: 9 checked-in Wire files
+          report file: /tmp/wire-quantum-eraser-report.txt
 
         Files executed
           ${targets}
@@ -378,6 +381,10 @@ node summarize_experiment
 node print_report
   <- summary: ExperimentReport;
   = @stdout { newline = true; } (summary);
+
+node write_report
+  <- summary: ExperimentReport;
+  = @writeFile { path = "/tmp/wire-quantum-eraser-report.txt"; } (summary);
 
 (
   start_experiment
@@ -444,5 +451,5 @@ node print_report
     <> run_eraser_12
   )
     => summarize_experiment
-    => print_report
+    => (print_report <> write_report)
 )

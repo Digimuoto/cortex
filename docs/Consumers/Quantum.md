@@ -223,8 +223,9 @@ bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 [`../../examples/wire/quantum-eraser-experiment.wire`](../../examples/wire/quantum-eraser-experiment.wire)
 is the source of truth for the full delayed-choice quantum eraser sweep. It is an executable Wire
 scaffold: a pure planning node builds nine `std.io.command` leaves, the topology sequences those
-leaves, and a final pure node parses and summarizes the run with `fromJson`. Each command leaf
-submits a checked-in Wire circuit file through the IBM Runtime REST bridge.
+leaves, and a final pure node parses and summarizes the run with `fromJson`. The final report is
+printed and written to `/tmp/wire-quantum-eraser-report.txt` through `std.io.writeFile`. Each
+command leaf submits a checked-in Wire circuit file through the IBM Runtime REST bridge.
 
 The example is a gate-model analogue of the delayed-choice quantum eraser, framed as a correlation
 experiment rather than retrocausality: the later marker-basis choice does not change the

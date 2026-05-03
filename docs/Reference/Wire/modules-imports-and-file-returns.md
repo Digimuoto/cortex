@@ -41,7 +41,7 @@ file-return expression, the file is declaration-only.
 Registry namespace imports use `use`:
 
 ```wire
-use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 use std.io.{@command as @shell, CommandSpec as Spec};
 ```
 

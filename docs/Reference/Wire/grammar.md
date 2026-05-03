@@ -90,7 +90,7 @@ namespace imports are distinct: `import` loads another `.wire` file; `use` selec
 executor and contract names. The initial implemented namespace is `std.io`:
 
 ```wire
-use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 ```
 
 Executor selectors carry `@` at the leaf because they import executor authority names. Contract

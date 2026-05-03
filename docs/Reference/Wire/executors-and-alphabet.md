@@ -39,7 +39,7 @@ value that can be reused in explicit node implementation bodies.
 Standard-pack executors are source-scoped through `use`:
 
 ```wire
-use std.io.{@stdin, @stdout, @command};
+use std.io.{@stdin, @stdout, @command, @readFile, @writeFile};
 
 node read_mode
   -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
@@ -47,6 +47,16 @@ node read_mode
 
 The `use` form brings names into source scope; it does not bind host authority by itself. The host
 registry still admits and binds the canonical executor ID, such as `std.io.stdin`.
+
+The local `wire run` interpreter recognizes these standard IO executor leaves:
+
+| Executor           | Boundary shape                        | Runtime behavior                                 |
+| ------------------ | ------------------------------------- | ------------------------------------------------ |
+| `std.io.stdin`     | zero inputs, exactly one output       | optionally prints a prompt and reads one line    |
+| `std.io.stdout`    | exactly one input, zero outputs       | prints the input payload                         |
+| `std.io.command`   | zero or one input, zero or one output | executes one argv vector and captures the result |
+| `std.io.readFile`  | zero or one input, exactly one output | reads UTF-8 text from a configured/input `path`  |
+| `std.io.writeFile` | exactly one input, zero outputs       | writes the input payload as UTF-8 text to `path` |
 
 ## Three Layers
 

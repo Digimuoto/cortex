@@ -83,8 +83,10 @@ import Cortex.Wire
   , stdIoContractIdForName
   , stdIoExecutorIdForLeaf
   , stdIoNamespace
+  , stdIoReadFileExecutorId
   , stdIoStdinExecutorId
   , stdIoStdoutExecutorId
+  , stdIoWriteFileExecutorId
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
   )
@@ -124,6 +126,8 @@ data BuiltinExecutor
   = BuiltinExecutorStdin
   | BuiltinExecutorStdout
   | BuiltinExecutorCommand
+  | BuiltinExecutorReadFile
+  | BuiltinExecutorWriteFile
   deriving stock (Eq, Show)
 
 data RunUseScope = RunUseScope
@@ -295,6 +299,10 @@ runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
         runStdoutNode outputLock nodeInputs record inputExpr
       Just BuiltinExecutorCommand ->
         runCommandNode outputLock nodeInputs ports record inputExpr
+      Just BuiltinExecutorReadFile ->
+        runReadFileNode outputLock nodeInputs ports record inputExpr
+      Just BuiltinExecutorWriteFile ->
+        runWriteFileNode outputLock nodeInputs record inputExpr
       Nothing ->
         dieTextLocked outputLock $
           "wire run does not yet support executor @"
@@ -317,6 +325,8 @@ builtinExecutorFromQName useScope executorName =
       | executorId == stdIoStdinExecutorId -> Just BuiltinExecutorStdin
       | executorId == stdIoStdoutExecutorId -> Just BuiltinExecutorStdout
       | executorId == stdIoCommandExecutorId -> Just BuiltinExecutorCommand
+      | executorId == stdIoReadFileExecutorId -> Just BuiltinExecutorReadFile
+      | executorId == stdIoWriteFileExecutorId -> Just BuiltinExecutorWriteFile
     _ -> Nothing
 
 resolveRunExecutorQName :: RunUseScope -> QName -> Maybe Text
@@ -361,6 +371,32 @@ runCommandNode outputLock nodeInputs ports record inputExpr = do
     echoCommandResult outputLock commandSpec commandResult
   let result = commandResultValue commandSpec commandResult
   wrapSingleOutput outputLock "std.io.command" ports result
+
+runReadFileNode
+  :: MVar () -> NodeInputs -> WirePorts -> Record -> CorePureExpr -> IO (Map Text WireValue)
+runReadFileNode outputLock nodeInputs ports record inputExpr = do
+  maybeInput <-
+    either (dieTextLocked outputLock) pure (lookupOptionalExecutorInput nodeInputs inputExpr)
+  path <-
+    either
+      (dieTextLocked outputLock)
+      pure
+      (filePathFromConfigOrInput "std.io.readFile" record maybeInput)
+  result <- try @IOException (TIO.readFile path)
+  content <-
+    case result of
+      Right text -> pure text
+      Left err -> dieTextLocked outputLock ("std.io.readFile failed for " <> T.pack path <> ": " <> tshow err)
+  wrapSingleOutput outputLock "std.io.readFile" ports (Aeson.String content)
+
+runWriteFileNode :: MVar () -> NodeInputs -> Record -> CorePureExpr -> IO (Map Text WireValue)
+runWriteFileNode outputLock nodeInputs record inputExpr = do
+  value <- either (dieTextLocked outputLock) pure (lookupExecutorInput nodeInputs inputExpr)
+  path <- either (dieTextLocked outputLock) pure (filePathFromConfig "std.io.writeFile" record)
+  result <- try @IOException (TIO.writeFile path (renderOutputValue value.wireValueValue))
+  case result of
+    Right () -> noOutputs
+    Left err -> dieTextLocked outputLock ("std.io.writeFile failed for " <> T.pack path <> ": " <> tshow err)
 
 wrapSingleOutput :: MVar () -> Text -> WirePorts -> Aeson.Value -> IO (Map Text WireValue)
 wrapSingleOutput outputLock executorName ports value =
@@ -569,6 +605,42 @@ commandNameFromArgv :: [Text] -> Text
 commandNameFromArgv = \case
   [] -> "command"
   program : args -> T.unwords (program : args)
+
+filePathFromConfigOrInput :: Text -> Record -> Maybe WireValue -> Either Text FilePath
+filePathFromConfigOrInput executorName record maybeInput =
+  case maybeInput of
+    Just wireValue ->
+      case wireValue.wireValueValue of
+        Aeson.Object objectValue -> T.unpack <$> requiredObjectTextField executorName "path" objectValue
+        _ -> filePathFromConfig executorName record
+    Nothing ->
+      filePathFromConfig executorName record
+
+filePathFromConfig :: Text -> Record -> Either Text FilePath
+filePathFromConfig executorName record =
+  case lookupTextField "path" record of
+    Just path
+      | not (T.null path) -> Right (T.unpack path)
+      | otherwise -> Left (executorName <> " config field path must not be empty.")
+    Nothing -> Left (executorName <> " requires a path field in config.")
+
+requiredObjectTextField :: Text -> Text -> Aeson.Object -> Either Text Text
+requiredObjectTextField executorName fieldName objectValue =
+  case AesonKeyMap.lookup (AesonKey.fromText fieldName) objectValue of
+    Just (Aeson.String text)
+      | not (T.null text) -> Right text
+      | otherwise -> Left (executorName <> " input field " <> fieldName <> " must not be empty.")
+    Just value ->
+      Left
+        ( executorName
+            <> " input field "
+            <> fieldName
+            <> " must be a string, got "
+            <> renderOutputValue value
+            <> "."
+        )
+    Nothing ->
+      Left (executorName <> " requires input field " <> fieldName <> ".")
 
 nodeInputsFromState :: RunState -> [CircuitNodeRef] -> Either Text NodeInputs
 nodeInputsFromState state producerRefs = do
