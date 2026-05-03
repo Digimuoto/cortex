@@ -900,7 +900,7 @@ useStmt = do
 
 useItem :: Parser UseItem
 useItem =
-  try useExecutorItem <|> useContractItem
+  useExecutorItem <|> useContractItem
   where
     useExecutorItem = do
       _ <- symbol "@"

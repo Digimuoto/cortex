@@ -58,10 +58,12 @@ node open0_recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
 node open0_recombine_sx = qubit_gate(screen, quantum_sx);
 node open0_recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
 node open0_measure_screen = qubit_measure(screen, screen);
+
 let open0_split_path =
   open0_split_rz_a
     => open0_split_sx
     => open0_split_rz_b;
+
 let open0_recombine_path =
   open0_phase_screen
     => open0_recombine_rz_a
@@ -90,10 +92,12 @@ node open14_recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
 node open14_recombine_sx = qubit_gate(screen, quantum_sx);
 node open14_recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
 node open14_measure_screen = qubit_measure(screen, screen);
+
 let open14_split_path =
   open14_split_rz_a
     => open14_split_sx
     => open14_split_rz_b;
+
 let open14_recombine_path =
   open14_phase_screen
     => open14_recombine_rz_a
@@ -105,8 +109,7 @@ export let open_phase_1_4 =
   open14_ibm_runtime_config
     => open14_prepare_screen
     => open14_split_path
-    => open14_recombine_path
-;
+    => open14_recombine_path;
 
 # open_phase_1_2: from examples/wire/quantum-eraser-open-phase-1_2.wire
 node open12_ibm_runtime_config
@@ -122,10 +125,12 @@ node open12_recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
 node open12_recombine_sx = qubit_gate(screen, quantum_sx);
 node open12_recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
 node open12_measure_screen = qubit_measure(screen, screen);
+
 let open12_split_path =
   open12_split_rz_a
     => open12_split_sx
     => open12_split_rz_b;
+
 let open12_recombine_path =
   open12_phase_screen
     => open12_recombine_rz_a
@@ -137,8 +142,7 @@ export let open_phase_1_2 =
   open12_ibm_runtime_config
     => open12_prepare_screen
     => open12_split_path
-    => open12_recombine_path
-;
+    => open12_recombine_path;
 
 # which_path_phase_0: from examples/wire/quantum-eraser-which-path-phase-0.wire
 node which0_ibm_runtime_config
@@ -164,24 +168,29 @@ node which0_recombine_sx = qubit_gate(control, quantum_sx);
 node which0_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
 node which0_measure_screen = qubit_measure(control, screen);
 node which0_z_measure_marker = qubit_measure(target, marker);
+
 let which0_split_path =
   which0_split_rz_a
     => which0_split_sx
     => which0_split_rz_b
     => which0_phase_screen;
+
 let which0_mark_marker_pre =
   which0_mark_pre_rz_a
     => which0_mark_pre_sx
     => which0_mark_pre_rz_b;
+
 let which0_mark_marker_post =
   which0_z_mark_post_rz_a
     => which0_z_mark_post_sx
     => which0_z_mark_post_rz_b;
+
 let which0_recombine_screen =
   which0_recombine_rz_a
     => which0_recombine_sx
     => which0_recombine_rz_b
     => which0_measure_screen;
+
 let which0_marker_which_path_readout =
   which0_z_measure_marker;
 
@@ -202,8 +211,7 @@ export let which_path_phase_0 =
           => which0_mark_marker_post
           => which0_marker_which_path_readout
       )
-  )
-;
+  );
 
 # which_path_phase_1_4: from examples/wire/quantum-eraser-which-path-phase-1_4.wire
 node which14_ibm_runtime_config
@@ -229,24 +237,29 @@ node which14_recombine_sx = qubit_gate(control, quantum_sx);
 node which14_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
 node which14_measure_screen = qubit_measure(control, screen);
 node which14_z_measure_marker = qubit_measure(target, marker);
+
 let which14_split_path =
   which14_split_rz_a
     => which14_split_sx
     => which14_split_rz_b
     => which14_phase_screen;
+
 let which14_mark_marker_pre =
   which14_mark_pre_rz_a
     => which14_mark_pre_sx
     => which14_mark_pre_rz_b;
+
 let which14_mark_marker_post =
   which14_z_mark_post_rz_a
     => which14_z_mark_post_sx
     => which14_z_mark_post_rz_b;
+
 let which14_recombine_screen =
   which14_recombine_rz_a
     => which14_recombine_sx
     => which14_recombine_rz_b
     => which14_measure_screen;
+
 let which14_marker_which_path_readout =
   which14_z_measure_marker;
 
@@ -267,8 +280,7 @@ export let which_path_phase_1_4 =
           => which14_mark_marker_post
           => which14_marker_which_path_readout
       )
-  )
-;
+  );
 
 # which_path_phase_1_2: from examples/wire/quantum-eraser-which-path-phase-1_2.wire
 node which12_ibm_runtime_config

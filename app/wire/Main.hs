@@ -14,7 +14,7 @@ module Main (main) where
 
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Exception (IOException, try, uninterruptibleMask_)
+import Control.Exception (IOException, displayException, try, uninterruptibleMask_)
 import Control.Monad (foldM, unless, when, zipWithM)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
@@ -61,8 +61,6 @@ import Cortex.Wire
   , Record (..)
   , SumVariant (..)
   , TopForm (..)
-  , UseItem (..)
-  , UseSpec (..)
   , WireFile (..)
   , WireInputBundle (..)
   , WireInputCardinality (..)
@@ -78,18 +76,21 @@ import Cortex.Wire
   , parseWireFile
   , renderParseError
   , renderPureEvalError
-  , renderQName
   , renderWireError
   , stdIoCommandExecutorId
-  , stdIoContractIdForName
-  , stdIoExecutorIdForLeaf
-  , stdIoNamespace
   , stdIoReadFileExecutorId
   , stdIoStdinExecutorId
   , stdIoStdoutExecutorId
   , stdIoWriteFileExecutorId
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
+  )
+import Cortex.Wire.Use
+  ( WireUseError (..)
+  , WireUseScope
+  , applyWireUseSpecs
+  , resolveWireContract
+  , resolveWireExecutorQName
   )
 
 data Command
@@ -131,12 +132,6 @@ data BuiltinExecutor
   | BuiltinExecutorWriteFile
   deriving stock (Eq, Show)
 
-data RunUseScope = RunUseScope
-  { runUseExecutors :: !(Map Text Text)
-  , runUseContracts :: !(Map Text Text)
-  }
-  deriving stock (Eq, Show)
-
 data CommandSpec = CommandSpec
   { commandSpecName :: !Text
   , commandSpecTarget :: !(Maybe Text)
@@ -175,8 +170,6 @@ parseCommand = \case
   ["-h"] -> Right CommandHelp
   ["build", path] -> Right (CommandBuild Nothing path)
   ["build", "--return", selectedReturn, path] ->
-    Right (CommandBuild (Just (T.pack selectedReturn)) path)
-  ["build", path, "--return", selectedReturn] ->
     Right (CommandBuild (Just (T.pack selectedReturn)) path)
   ["run", path] -> Right (CommandRun path)
   [path] -> Right (CommandRun path)
@@ -230,7 +223,7 @@ emptyRunState =
 
 runNodeLevel
   :: MVar ()
-  -> RunUseScope
+  -> WireUseScope
   -> [CorePureBinding]
   -> CompiledCircuit
   -> RunState
@@ -256,7 +249,7 @@ runNodeLevel outputLock useScope pureBindings compiled state nodeDecls = do
       }
 
 runNode
-  :: MVar () -> RunUseScope -> [CorePureBinding] -> NodeInputs -> NodeDecl -> IO (Map Text WireValue)
+  :: MVar () -> WireUseScope -> [CorePureBinding] -> NodeInputs -> NodeDecl -> IO (Map Text WireValue)
 runNode outputLock useScope pureBindings nodeInputs nodeDecl = do
   loweredPorts <-
     either (dieTextLocked outputLock) pure (lowerPortSignature useScope nodeDecl.nodeDeclPortSig)
@@ -269,7 +262,7 @@ runNode outputLock useScope pureBindings nodeInputs nodeDecl = do
 
 runPureNode
   :: MVar ()
-  -> RunUseScope
+  -> WireUseScope
   -> [CorePureBinding]
   -> NodeInputs
   -> WirePorts
@@ -296,27 +289,28 @@ runPureNode outputLock useScope pureBindings nodeInputs ports loweredPorts pureB
   pure (wrapOutputs Nothing ports outputValues)
 
 runExecutorNode
-  :: MVar () -> RunUseScope -> Text -> NodeInputs -> WirePorts -> ExecutorCall -> IO (Map Text WireValue)
+  :: MVar ()
+  -> WireUseScope
+  -> Text
+  -> NodeInputs
+  -> WirePorts
+  -> ExecutorCall
+  -> IO (Map Text WireValue)
 runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
   ExecutorCallInline executorName record inputExpr ->
     case builtinExecutorFromQName useScope executorName of
-      Just BuiltinExecutorStdin ->
+      Right BuiltinExecutorStdin ->
         runStdinNode outputLock ports record
-      Just BuiltinExecutorStdout ->
+      Right BuiltinExecutorStdout ->
         runStdoutNode outputLock nodeInputs record inputExpr
-      Just BuiltinExecutorCommand ->
+      Right BuiltinExecutorCommand ->
         runCommandNode outputLock nodeInputs ports record inputExpr
-      Just BuiltinExecutorReadFile ->
+      Right BuiltinExecutorReadFile ->
         runReadFileNode outputLock nodeInputs ports record inputExpr
-      Just BuiltinExecutorWriteFile ->
+      Right BuiltinExecutorWriteFile ->
         runWriteFileNode outputLock nodeInputs record inputExpr
-      Nothing ->
-        dieTextLocked outputLock $
-          "wire run does not yet support executor @"
-            <> renderQName executorName
-            <> " in node "
-            <> nodeName
-            <> "."
+      Left errText ->
+        dieTextLocked outputLock (errText <> " Node: " <> nodeName <> ".")
   ExecutorCallConfigured configuredName _inputExpr ->
     dieTextLocked outputLock $
       "wire run does not yet support configured executor "
@@ -325,26 +319,20 @@ runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
         <> nodeName
         <> "."
 
-builtinExecutorFromQName :: RunUseScope -> QName -> Maybe BuiltinExecutor
-builtinExecutorFromQName useScope executorName =
-  case resolveRunExecutorQName useScope executorName of
-    Just executorId
-      | executorId == stdIoStdinExecutorId -> Just BuiltinExecutorStdin
-      | executorId == stdIoStdoutExecutorId -> Just BuiltinExecutorStdout
-      | executorId == stdIoCommandExecutorId -> Just BuiltinExecutorCommand
-      | executorId == stdIoReadFileExecutorId -> Just BuiltinExecutorReadFile
-      | executorId == stdIoWriteFileExecutorId -> Just BuiltinExecutorWriteFile
-    _ -> Nothing
-
-resolveRunExecutorQName :: RunUseScope -> QName -> Maybe Text
-resolveRunExecutorQName useScope qname@(QName segments) =
-  case segments of
-    localName NE.:| [] ->
-      case Map.lookup localName useScope.runUseExecutors of
-        Just executorId -> Just executorId
-        Nothing -> Just (renderQName qname)
-    _ ->
-      Just (renderQName qname)
+builtinExecutorFromQName :: WireUseScope -> QName -> Either Text BuiltinExecutor
+builtinExecutorFromQName useScope executorName = do
+  executorId <-
+    case resolveWireExecutorQName useScope executorName of
+      Right resolved -> Right resolved
+      Left outOfScope ->
+        Left ("Executor " <> outOfScope <> " is not in Wire source scope; import it with `use` first.")
+  case executorId of
+    _ | executorId == stdIoStdinExecutorId -> Right BuiltinExecutorStdin
+    _ | executorId == stdIoStdoutExecutorId -> Right BuiltinExecutorStdout
+    _ | executorId == stdIoCommandExecutorId -> Right BuiltinExecutorCommand
+    _ | executorId == stdIoReadFileExecutorId -> Right BuiltinExecutorReadFile
+    _ | executorId == stdIoWriteFileExecutorId -> Right BuiltinExecutorWriteFile
+    _ -> Left ("wire run does not yet support executor @" <> executorId)
 
 runStdinNode :: MVar () -> WirePorts -> Record -> IO (Map Text WireValue)
 runStdinNode outputLock ports record = do
@@ -393,7 +381,8 @@ runReadFileNode outputLock nodeInputs ports record inputExpr = do
   content <-
     case result of
       Right text -> pure text
-      Left err -> dieTextLocked outputLock ("std.io.readFile failed for " <> T.pack path <> ": " <> tshow err)
+      Left err ->
+        dieTextLocked outputLock ("std.io.readFile failed for " <> T.pack path <> ": " <> exceptionText err)
   wrapSingleOutput outputLock "std.io.readFile" ports (Aeson.String content)
 
 runWriteFileNode :: MVar () -> NodeInputs -> Record -> CorePureExpr -> IO (Map Text WireValue)
@@ -403,7 +392,10 @@ runWriteFileNode outputLock nodeInputs record inputExpr = do
   result <- try @IOException (TIO.writeFile path (renderOutputValue value.wireValueValue))
   case result of
     Right () -> noOutputs
-    Left err -> dieTextLocked outputLock ("std.io.writeFile failed for " <> T.pack path <> ": " <> tshow err)
+    Left err ->
+      dieTextLocked
+        outputLock
+        ("std.io.writeFile failed for " <> T.pack path <> ": " <> exceptionText err)
 
 wrapSingleOutput :: MVar () -> Text -> WirePorts -> Aeson.Value -> IO (Map Text WireValue)
 wrapSingleOutput outputLock executorName ports value =
@@ -746,60 +738,30 @@ topLevelPureBindings wireFile =
   | TopLet _visibility name (LetRhsCorePure expr) <- wireFile.wireFileTopForms
   ]
 
-emptyRunUseScope :: RunUseScope
-emptyRunUseScope =
-  RunUseScope
-    { runUseExecutors = Map.empty
-    , runUseContracts = Map.empty
-    }
-
-useScopeFromWireFile :: WireFile -> Either Text RunUseScope
+useScopeFromWireFile :: WireFile -> Either Text WireUseScope
 useScopeFromWireFile wireFile =
-  foldM
-    lowerUseSpec
-    emptyRunUseScope
-    [ useSpec
-    | TopUse useSpec <- wireFile.wireFileTopForms
-    ]
-
-lowerUseSpec :: RunUseScope -> UseSpec -> Either Text RunUseScope
-lowerUseSpec useScope useSpec = do
-  when (renderQName useSpec.useSpecNamespace /= stdIoNamespace) $
-    Left ("wire run does not know use namespace " <> renderQName useSpec.useSpecNamespace <> ".")
-  foldM lowerUseItem useScope (NE.toList useSpec.useSpecItems)
+  case applyWireUseSpecs (const False) useSpecs of
+    Left err -> Left (renderRunUseError err)
+    Right scope -> Right scope
   where
-    lowerUseItem state = \case
-      UseExecutor itemName maybeAlias -> do
-        executorId <-
-          maybe
-            (Left ("wire run does not know std.io executor @" <> itemName <> "."))
-            Right
-            (stdIoExecutorIdForLeaf itemName)
-        let localName = fromMaybe itemName maybeAlias
-        Right
-          state
-            { runUseExecutors = Map.insert localName executorId state.runUseExecutors
-            }
-      UseContract itemName maybeAlias -> do
-        contractId <-
-          maybe
-            (Left ("wire run does not know std.io contract " <> itemName <> "."))
-            Right
-            (stdIoContractIdForName itemName)
-        let localName = fromMaybe itemName maybeAlias
-        Right
-          state
-            { runUseContracts = Map.insert localName contractId state.runUseContracts
-            }
+    useSpecs =
+      [ useSpec
+      | TopUse useSpec <- wireFile.wireFileTopForms
+      ]
 
-resolveRunContract :: RunUseScope -> Text -> Text
-resolveRunContract useScope contractName =
-  Map.findWithDefault contractName contractName useScope.runUseContracts
+renderRunUseError :: WireUseError -> Text
+renderRunUseError = \case
+  WireUseUnknownNamespace namespace ->
+    "wire run does not know use namespace " <> namespace <> "."
+  WireUseUnknownItem namespace itemName ->
+    "wire run does not know use item " <> itemName <> " in namespace " <> namespace <> "."
+  WireUseDuplicateBinding name ->
+    "Wire file binds name " <> name <> " more than once."
 
-lowerPortSignature :: RunUseScope -> [PortDecl] -> Either Text LoweredPorts
+lowerPortSignature :: WireUseScope -> [PortDecl] -> Either Text LoweredPorts
 lowerPortSignature useScope portSig = do
   let inputs =
-        [ (label, resolveRunContract useScope contractName, WireInputCardinalityOne)
+        [ (label, resolveWireContract useScope contractName, WireInputCardinalityOne)
         | PortInputDecl label (ContractId contractName) <- portSig
         ]
       outputs =
@@ -842,9 +804,9 @@ lowerPortSignature useScope portSig = do
       concatMap
         ( \case
             PortOutputDecl label (ContractId contractName) ->
-              [(label, resolveRunContract useScope contractName)]
+              [(label, resolveWireContract useScope contractName)]
             PortOutputSumDecl variants ->
-              [ (variant.svLabel, resolveRunContract useScope variant.svContract.unContractId)
+              [ (variant.svLabel, resolveWireContract useScope variant.svContract.unContractId)
               | variant <- NE.toList variants
               ]
             PortInputDecl {} ->
@@ -876,7 +838,7 @@ wirePortsFromLowered loweredPorts =
     }
 
 pureOutputConfigMap
-  :: RunUseScope -> [LoweredPort] -> NonEmpty PureOutputEquation -> Either Text (Map Text CorePureExpr)
+  :: WireUseScope -> [LoweredPort] -> NonEmpty PureOutputEquation -> Either Text (Map Text CorePureExpr)
 pureOutputConfigMap useScope outputPorts outputEquations = do
   let outputEquationList = NE.toList outputEquations
   when (length outputPorts /= length outputEquationList) $
@@ -885,7 +847,7 @@ pureOutputConfigMap useScope outputPorts outputEquations = do
   where
     matchOutput port outputEquation = do
       let ContractId rawContractName = outputEquation.pureOutputEquationContract
-          contractName = resolveRunContract useScope rawContractName
+          contractName = resolveWireContract useScope rawContractName
       when
         ( port.loweredPortLabel /= outputEquation.pureOutputEquationLabel
             || port.loweredPortContract /= contractName
@@ -959,6 +921,10 @@ tshow :: Show a => a -> Text
 tshow =
   T.pack . show
 
+exceptionText :: IOException -> Text
+exceptionText =
+  T.pack . displayException
+
 dieText :: Text -> IO a
 dieText errText = do
   TIO.hPutStrLn stderr errText
@@ -966,6 +932,7 @@ dieText errText = do
 
 dieTextLocked :: MVar () -> Text -> IO a
 dieTextLocked outputLock errText =
+  -- Mask so sibling cancellation cannot interleave this stderr write.
   uninterruptibleMask_ $ do
     withMVar outputLock $ \() -> do
       TIO.hPutStrLn stderr errText

@@ -694,6 +694,8 @@ numericFloatDivide lhs rhs = do
       let lhsFloat = Scientific.toRealFloat lhsNumber :: Double
           rhsFloat = Scientific.toRealFloat rhsNumber :: Double
           result = lhsFloat / rhsFloat
+      -- Guard conversion overflow separately from division overflow so CorePure
+      -- never materializes non-finite JSON numbers.
       if finiteFloat lhsFloat && finiteFloat rhsFloat && finiteFloat result
         then Right (CorePureJson (Aeson.Number (Scientific.fromFloatDigits result)))
         else Left (PureNonFiniteFloatDivision (canonicalNumber lhsNumber) (canonicalNumber rhsNumber))

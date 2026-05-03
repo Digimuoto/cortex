@@ -19,10 +19,16 @@ module Cortex.Wire.Std
   , stdIoReadFileExecutorId
   , stdIoWriteFileExecutorId
   , stdIoExecutorLeaves
+  , stdIoExecutorIds
   , stdIoExecutorIdForLeaf
   , isStdIoExecutorId
+  , stdIoCommandShapeMessage
   , stdIoCommandSpecContractId
   , stdIoCommandResultContractId
+  , stdIoReadFileShapeMessage
+  , stdIoStdinShapeMessage
+  , stdIoStdoutShapeMessage
+  , stdIoWriteFileShapeMessage
   , stdIoContractIdForName
   , stdIoContractSpecs
   , stdIoContractRegistry
@@ -75,9 +81,21 @@ stdIoReadFileExecutorId = "std.io.readFile"
 stdIoWriteFileExecutorId :: Text
 stdIoWriteFileExecutorId = "std.io.writeFile"
 
+-- Leaf names are authored inside `use std.io.{...}`; canonical ids are the
+-- executor targets stored in compiled artifacts and runtime registries.
 stdIoExecutorLeaves :: Set Text
 stdIoExecutorLeaves =
   Set.fromList ["stdin", "stdout", "command", "readFile", "writeFile"]
+
+stdIoExecutorIds :: Set Text
+stdIoExecutorIds =
+  Set.fromList
+    [ stdIoStdinExecutorId
+    , stdIoStdoutExecutorId
+    , stdIoCommandExecutorId
+    , stdIoReadFileExecutorId
+    , stdIoWriteFileExecutorId
+    ]
 
 stdIoExecutorIdForLeaf :: Text -> Maybe Text
 stdIoExecutorIdForLeaf = \case
@@ -90,14 +108,27 @@ stdIoExecutorIdForLeaf = \case
 
 isStdIoExecutorId :: Text -> Bool
 isStdIoExecutorId executorId =
-  executorId
-    `Set.member` Set.fromList
-      [ stdIoStdinExecutorId
-      , stdIoStdoutExecutorId
-      , stdIoCommandExecutorId
-      , stdIoReadFileExecutorId
-      , stdIoWriteFileExecutorId
-      ]
+  executorId `Set.member` stdIoExecutorIds
+
+stdIoStdinShapeMessage :: Text
+stdIoStdinShapeMessage =
+  "std.io.stdin expects zero input ports and exactly one output port."
+
+stdIoStdoutShapeMessage :: Text
+stdIoStdoutShapeMessage =
+  "std.io.stdout expects exactly one input port and zero output ports."
+
+stdIoCommandShapeMessage :: Text
+stdIoCommandShapeMessage =
+  "std.io.command expects zero or one input port and zero or one output port."
+
+stdIoReadFileShapeMessage :: Text
+stdIoReadFileShapeMessage =
+  "std.io.readFile expects zero or one input port and exactly one output port."
+
+stdIoWriteFileShapeMessage :: Text
+stdIoWriteFileShapeMessage =
+  "std.io.writeFile expects exactly one input port and zero output ports."
 
 stdIoCommandSpecContractId :: Text
 stdIoCommandSpecContractId = "std.io.CommandSpec.v1"

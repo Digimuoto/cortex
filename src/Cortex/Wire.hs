@@ -16,6 +16,7 @@ module Cortex.Wire
   , module Cortex.Wire.Executor
   , module Cortex.Wire.Pure
   , module Cortex.Wire.Std
+  , module Cortex.Wire.Use
   , WireCompileEnv (..)
   , WireProjectionMode (..)
   , WireContractSpec (..)
@@ -138,6 +139,7 @@ import Cortex.Wire.Runtime
   )
 import Cortex.Wire.Std
 import Cortex.Wire.Syntax
+import Cortex.Wire.Use
 import Cortex.Wire.Value
   ( WirePayloadKind (..)
   , WireValue (..)

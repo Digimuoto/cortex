@@ -49,33 +49,26 @@ quantumEraserSweepFixtures =
 spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
   describe "examples" $ do
-    it "parses the interactive priority planner example" $ do
-      source <- TIO.readFile "examples/wire/interactive-priority-planner.wire"
-      parseWireFile "examples/wire/interactive-priority-planner.wire" source `shouldSatisfy` isRight
+    it "parses the interactive priority planner example" $
+      parseWireFixture "examples/wire/interactive-priority-planner.wire"
 
-    it "parses the mini build-system example" $ do
-      source <- TIO.readFile "examples/wire/mini-build-system.wire"
-      parseWireFile "examples/wire/mini-build-system.wire" source `shouldSatisfy` isRight
+    it "parses the mini build-system example" $
+      parseWireFixture "examples/wire/mini-build-system.wire"
 
-    it "parses the quantum Bell-state example" $ do
-      source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
-      parseWireFile "examples/wire/quantum-bell-state.wire" source `shouldSatisfy` isRight
+    it "parses the quantum Bell-state example" $
+      parseWireFixture "examples/wire/quantum-bell-state.wire"
 
-    it "parses the IBM REST quantum Bell-state example" $ do
-      source <- TIO.readFile "examples/wire/quantum-bell-state-ibm-rest.wire"
-      parseWireFile "examples/wire/quantum-bell-state-ibm-rest.wire" source `shouldSatisfy` isRight
+    it "parses the IBM REST quantum Bell-state example" $
+      parseWireFixture "examples/wire/quantum-bell-state-ibm-rest.wire"
 
-    it "parses the quantum IPEA round example" $ do
-      source <- TIO.readFile "examples/wire/quantum-ipea-round.wire"
-      parseWireFile "examples/wire/quantum-ipea-round.wire" source `shouldSatisfy` isRight
+    it "parses the quantum IPEA round example" $
+      parseWireFixture "examples/wire/quantum-ipea-round.wire"
 
-    it "parses the quantum eraser round example" $ do
-      source <- TIO.readFile "examples/wire/quantum-eraser-round.wire"
-      parseWireFile "examples/wire/quantum-eraser-round.wire" source `shouldSatisfy` isRight
+    it "parses the quantum eraser round example" $
+      parseWireFixture "examples/wire/quantum-eraser-round.wire"
 
-    it "parses the full quantum eraser experiment scaffold" $ do
-      source <- TIO.readFile "examples/wire/quantum-eraser-experiment.wire"
-      parseWireFile "examples/wire/quantum-eraser-experiment.wire" source `shouldSatisfy` isRight
+    it "parses the full quantum eraser experiment scaffold" $
+      parseWireFixture "examples/wire/quantum-eraser-experiment.wire"
 
     it "parses the quantum eraser sweep circuit examples" $
       mapM_ parseWireFixture quantumEraserSweepFixtures

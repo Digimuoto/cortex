@@ -53,6 +53,11 @@ import Cortex.Wire.Executor
   , wireExecutorRegistryFromList
   )
 import Cortex.Wire.Pure (pureWireExecutorProjection)
+import Cortex.Wire.Std
+  ( stdIoReadFileShapeMessage
+  , stdIoStdoutShapeMessage
+  , stdIoWriteFileShapeMessage
+  )
 import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 
 spec :: Spec
@@ -287,12 +292,16 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireText stdIoCanonicalWithoutUseSourceText
         `shouldBe` Left (WireExecutorNotInScope "@std.io.command")
 
+    it "rejects use names that collide with local contracts" $
+      compileWireText stdIoUseContractCollisionSourceText
+        `shouldBe` Left (WireDuplicateBinding "CommandSpec")
+
     it "enforces standard stdout port shape" $
       compileWireText stdIoStdoutBadShapeSourceText
         `shouldBe` Left
           ( WireInvalidPorts
               (CircuitNodeRef "bad_stdout")
-              "std.io.stdout expects exactly one input port and zero output ports."
+              stdIoStdoutShapeMessage
           )
 
     it "lowers std.io file executors" $ do
@@ -313,7 +322,7 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldBe` Left
           ( WireInvalidPorts
               (CircuitNodeRef "bad_read")
-              "std.io.readFile expects zero or one input port and exactly one output port."
+              stdIoReadFileShapeMessage
           )
 
     it "enforces standard writeFile port shape" $
@@ -321,7 +330,7 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldBe` Left
           ( WireInvalidPorts
               (CircuitNodeRef "bad_write")
-              "std.io.writeFile expects exactly one input port and zero output ports."
+              stdIoWriteFileShapeMessage
           )
 
   describe "fixtures" $ do
@@ -733,6 +742,13 @@ stdIoCanonicalWithoutUseSourceText =
     [ "node run"
     , "  -> result: CommandResult = @std.io.command {} (null) ;"
     , "run"
+    ]
+
+stdIoUseContractCollisionSourceText :: T.Text
+stdIoUseContractCollisionSourceText =
+  T.unlines
+    [ "use std.io.{CommandSpec};"
+    , "contract CommandSpec;"
     ]
 
 stdIoStdoutBadShapeSourceText :: T.Text

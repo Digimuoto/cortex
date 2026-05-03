@@ -111,16 +111,26 @@ import Cortex.Wire.Pure
   )
 import Cortex.Wire.Std
   ( stdIoCommandExecutorId
-  , stdIoContractIdForName
-  , stdIoExecutorIdForLeaf
-  , stdIoExecutorLeaves
-  , stdIoNamespace
+  , stdIoCommandShapeMessage
   , stdIoReadFileExecutorId
+  , stdIoReadFileShapeMessage
   , stdIoStdinExecutorId
+  , stdIoStdinShapeMessage
   , stdIoStdoutExecutorId
+  , stdIoStdoutShapeMessage
   , stdIoWriteFileExecutorId
+  , stdIoWriteFileShapeMessage
   )
 import Cortex.Wire.Syntax
+import Cortex.Wire.Use
+  ( WireUseError (..)
+  , WireUseScope (..)
+  , applyWireUseSpec
+  , emptyWireUseScope
+  , resolveWireContract
+  , resolveWireExecutorQName
+  , wireUseDeclaredContracts
+  )
 
 compileWireText :: Text -> Either WireCore.WireError CompiledCircuit
 compileWireText =
@@ -254,9 +264,7 @@ data LoweringState = LoweringState
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
-  , lsExecutorUses :: !(Map Text Text)
-  , lsStdExecutorsInScope :: !(Set.Set Text)
-  , lsContractUses :: !(Map Text Text)
+  , lsUseScope :: !WireUseScope
   }
 
 emptyLoweringState :: LoweringState
@@ -269,9 +277,7 @@ emptyLoweringState =
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
-    , lsExecutorUses = Map.empty
-    , lsStdExecutorsInScope = Set.empty
-    , lsContractUses = Map.empty
+    , lsUseScope = emptyWireUseScope
     }
 
 data EvalValue
@@ -368,7 +374,15 @@ lowerWireFileWithUnusedPolicy compileEnv unusedNodePolicy wireFile = do
       unusedNodeRefs = Set.toAscList (Set.difference declaredNodeRefs usedNodeRefs)
   case (unusedNodePolicy, unusedNodeRefs) of
     (RequireAllDeclaredNodesUsed, unusedRef : _) -> Left (WireCore.WireUnusedNodeRef unusedRef)
-    _ ->
+    (RequireAllDeclaredNodesUsed, []) ->
+      Right
+        LoweredWireFile
+          { lwfFragment = resultFragment
+          , lwfMetadata = maybeMetadata
+          , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
+          , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
+          }
+    (AllowUnusedDeclaredNodes, _) ->
       Right
         LoweredWireFile
           { lwfFragment = resultFragment
@@ -412,8 +426,8 @@ lowerTopForm
   :: WireCompileEnv -> LoweringState -> TopForm -> Either WireCore.WireError LoweringState
 lowerTopForm compileEnv st = \case
   TopContract contractId ->
-    if Map.member contractId.unContractId st.lsContractUses
-      then Left (WireCore.WireDuplicateUseBinding contractId.unContractId)
+    if topLevelBindingNameTaken st contractId.unContractId
+      then Left (WireCore.WireDuplicateBinding contractId.unContractId)
       else Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
   TopUse useSpec ->
     lowerUseSpec st useSpec
@@ -446,65 +460,36 @@ lowerTopForm compileEnv st = \case
           st
             { lsNamedNodes = Map.insert nodeName loweredNode st.lsNamedNodes
             }
-  where
-    topLevelBindingNameTaken state name =
-      Map.member name state.lsBindings
-        || Map.member name state.lsGraphBindings
-        || Map.member name state.lsNamedNodes
-        || Map.member name state.lsExecutorUses
-        || Map.member name state.lsContractUses
-        || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
+
+topLevelBindingNameTaken :: LoweringState -> Text -> Bool
+topLevelBindingNameTaken state name =
+  Map.member name state.lsBindings
+    || Map.member name state.lsGraphBindings
+    || Map.member name state.lsNamedNodes
+    || Map.member name state.lsUseScope.wireUseExecutors
+    || Map.member name state.lsUseScope.wireUseContracts
+    || Set.member name state.lsDeclaredContracts
+    || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
 
 lowerUseSpec :: LoweringState -> UseSpec -> Either WireCore.WireError LoweringState
 lowerUseSpec st useSpec = do
-  when (renderQName useSpec.useSpecNamespace /= stdIoNamespace) $
-    Left (WireCore.WireUnknownUseNamespace (renderQName useSpec.useSpecNamespace))
-  foldlM lowerUseItem st (NE.toList useSpec.useSpecItems)
-  where
-    lowerUseItem state = \case
-      UseExecutor itemName maybeAlias -> do
-        canonical <- stdIoExecutorId itemName
-        let localName = fromMaybe itemName maybeAlias
-        ensureUseNameFresh localName state
-        Right
-          state
-            { lsExecutorUses = Map.insert localName canonical state.lsExecutorUses
-            , lsStdExecutorsInScope = Set.insert canonical state.lsStdExecutorsInScope
-            }
-      UseContract itemName maybeAlias -> do
-        canonical <- stdIoContractId itemName
-        let localName = fromMaybe itemName maybeAlias
-        ensureUseNameFresh localName state
-        Right
-          state
-            { lsContractUses = Map.insert localName canonical state.lsContractUses
-            , lsDeclaredContracts = Set.insert canonical state.lsDeclaredContracts
-            }
+  useScope <-
+    mapLeft wireUseErrorToWireError $
+      applyWireUseSpec (topLevelBindingNameTaken st) st.lsUseScope useSpec
+  Right
+    st
+      { lsUseScope = useScope
+      , lsDeclaredContracts = st.lsDeclaredContracts <> wireUseDeclaredContracts useScope
+      }
 
-    ensureUseNameFresh localName state =
-      when
-        ( Map.member localName state.lsExecutorUses
-            || Map.member localName state.lsContractUses
-            || Map.member localName state.lsBindings
-            || Map.member localName state.lsGraphBindings
-            || Map.member localName state.lsNamedNodes
-            || Set.member localName state.lsDeclaredContracts
-        )
-        (Left (WireCore.WireDuplicateUseBinding localName))
-
-stdIoExecutorId :: Text -> Either WireCore.WireError Text
-stdIoExecutorId itemName =
-  maybe
-    (Left (WireCore.WireUnknownUseItem stdIoNamespace ("@" <> itemName)))
-    Right
-    (stdIoExecutorIdForLeaf itemName)
-
-stdIoContractId :: Text -> Either WireCore.WireError Text
-stdIoContractId itemName =
-  maybe
-    (Left (WireCore.WireUnknownUseItem stdIoNamespace itemName))
-    Right
-    (stdIoContractIdForName itemName)
+wireUseErrorToWireError :: WireUseError -> WireCore.WireError
+wireUseErrorToWireError = \case
+  WireUseUnknownNamespace namespace ->
+    WireCore.WireUnknownUseNamespace namespace
+  WireUseUnknownItem namespace itemName ->
+    WireCore.WireUnknownUseItem namespace itemName
+  WireUseDuplicateBinding name ->
+    WireCore.WireDuplicateBinding name
 
 lowerWireLetBinding
   :: LetVisibility
@@ -1743,7 +1728,7 @@ lowerPortSignature st nodeRef portSig = do
 
 resolveContractId :: LoweringState -> Text -> Text
 resolveContractId st contractName =
-  Map.findWithDefault contractName contractName st.lsContractUses
+  resolveWireContract st.lsUseScope contractName
 
 allocatedPortName :: Bool -> Int -> PortLabel -> Text -> Int -> Text
 allocatedPortName isInput idx portLabel contractName totalPorts =
@@ -2296,24 +2281,9 @@ qnameToQualifiedRef (QName segments) =
     }
 
 resolveExecutorQName :: LoweringState -> QName -> Either WireCore.WireError Text
-resolveExecutorQName st qname@(QName segments) =
-  case segments of
-    localName :| []
-      | Just canonical <- Map.lookup localName st.lsExecutorUses ->
-          Right canonical
-      | Set.member localName stdIoExecutorLeaves ->
-          Left (WireCore.WireExecutorNotInScope ("@" <> localName))
-      | otherwise ->
-          Right rendered
-    _
-      | "std.io." `T.isPrefixOf` rendered ->
-          if Set.member rendered st.lsStdExecutorsInScope
-            then Right rendered
-            else Left (WireCore.WireExecutorNotInScope ("@" <> rendered))
-      | otherwise ->
-          Right rendered
-  where
-    rendered = renderQName qname
+resolveExecutorQName st qname =
+  mapLeft WireCore.WireExecutorNotInScope $
+    resolveWireExecutorQName st.lsUseScope qname
 
 validateExecutorProjection
   :: WireCompileEnv
@@ -2342,16 +2312,15 @@ validateStdIoExecutorShape
   :: CircuitNodeRef -> Text -> WireCore.WirePorts -> Either WireCore.WireError ()
 validateStdIoExecutorShape nodeRef executorId ports
   | executorId == stdIoStdinExecutorId =
-      requireShape 0 1 "std.io.stdin expects zero input ports and exactly one output port."
+      requireShape 0 1 stdIoStdinShapeMessage
   | executorId == stdIoStdoutExecutorId =
-      requireShape 1 0 "std.io.stdout expects exactly one input port and zero output ports."
+      requireShape 1 0 stdIoStdoutShapeMessage
   | executorId == stdIoCommandExecutorId =
-      requireAtMostOneEach "std.io.command expects zero or one input port and zero or one output port."
+      requireAtMostOneEach stdIoCommandShapeMessage
   | executorId == stdIoReadFileExecutorId =
-      requireInputAtMostOutputExactOne
-        "std.io.readFile expects zero or one input port and exactly one output port."
+      requireInputAtMostOutputExactOne stdIoReadFileShapeMessage
   | executorId == stdIoWriteFileExecutorId =
-      requireShape 1 0 "std.io.writeFile expects exactly one input port and zero output ports."
+      requireShape 1 0 stdIoWriteFileShapeMessage
   | otherwise =
       Right ()
   where
