@@ -52,6 +52,10 @@ spec = describe "Cortex.Wire.Parser" $ do
       source <- TIO.readFile "examples/wire/quantum-ipea-round.wire"
       parseWireFile "examples/wire/quantum-ipea-round.wire" source `shouldSatisfy` isRight
 
+    it "parses the quantum eraser round example" $ do
+      source <- TIO.readFile "examples/wire/quantum-eraser-round.wire"
+      parseWireFile "examples/wire/quantum-eraser-round.wire" source `shouldSatisfy` isRight
+
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $
       parseWireFile "test" "node n : -> out: T = @review.x ({});"

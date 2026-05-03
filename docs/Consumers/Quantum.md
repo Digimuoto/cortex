@@ -218,6 +218,65 @@ nix run .#wire-quantum-ipea -- --hardware --shots 100 --confirm-hardware
 Because each round is a separate provider job, this demo spends hardware budget per measured phase
 bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
+## Quantum Eraser Runner
+
+The `wire-quantum-eraser` app demonstrates a gate-model analogue of the delayed-choice quantum
+eraser. It is deliberately framed as a correlation experiment, not as retrocausality: the later
+marker-basis choice does not change the unconditional screen statistics. Interference is recovered
+only after sorting the results by the marker outcome.
+
+Local simulation is the default:
+
+```sh
+nix run .#wire-quantum-eraser -- --shots 512 --seed 11
+```
+
+The runner sweeps phase values across three circuit modes:
+
+| Mode         | Meaning                                                                |
+| ------------ | ---------------------------------------------------------------------- |
+| `open`       | No which-path marker; the screen qubit shows an interference fringe.   |
+| `which_path` | The marker qubit stores path information; the screen marginal is flat. |
+| `eraser`     | The marker is read in the eraser basis; postselected branches fringe.  |
+
+The generated eraser circuit shape is represented by
+[`../../examples/wire/quantum-eraser-round.wire`](../../examples/wire/quantum-eraser-round.wire). It
+uses graph-valued `let`s to name the screen split/recombine fragments, the marker path-marking
+fragments, and the eraser-basis readout:
+
+```wire
+let recombine_screen =
+  recombine_rz_a
+    => recombine_sx
+    => recombine_rz_b
+    => measure_screen;
+
+let marker_eraser_readout =
+  marker_eraser_rz_a
+    => marker_eraser_sx
+    => marker_eraser_rz_b
+    => measure_marker;
+```
+
+Dry-run mode compiles the generated circuits and can persist their Wire sources without simulation
+or provider submission:
+
+```sh
+nix run .#wire-quantum-eraser -- --dry-run --emit-wire /tmp/wire-eraser
+```
+
+Hardware execution uses one provider job per selected phase and mode:
+
+```sh
+nix run .#wire-quantum-eraser -- --hardware --shots 100 --confirm-hardware
+```
+
+For a smaller hardware run, choose only the eraser mode and two phases:
+
+```sh
+nix run .#wire-quantum-eraser -- --hardware --modes eraser --phases 0,1/2 --shots 100 --confirm-hardware
+```
+
 ## Linearity Caveat
 
 Current Wire admission validates typed ports and cardinality-one inputs, but it does not make a

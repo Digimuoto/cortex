@@ -42,11 +42,23 @@
           "$@"
       '';
     };
+
+    wire-quantum-eraser = pkgs.writeShellApplication {
+      name = "wire-quantum-eraser";
+      text = ''
+        set -euo pipefail
+        scripts_dir="${../scripts}"
+        exec ${qiskitPython}/bin/python "$scripts_dir/wire-quantum-eraser.py" \
+          --wire-bin ${config.packages.wire}/bin/wire \
+          "$@"
+      '';
+    };
   in {
     packages = {
       wire-quantum-qiskit = wire-quantum-qiskit;
       wire-quantum-ibm-rest = wire-quantum-ibm-rest;
       wire-quantum-ipea = wire-quantum-ipea;
+      wire-quantum-eraser = wire-quantum-eraser;
     };
 
     apps = {
@@ -64,6 +76,11 @@
         type = "app";
         program = "${wire-quantum-ipea}/bin/wire-quantum-ipea";
         meta.description = "Run iterative phase estimation as composed Wire quantum rounds";
+      };
+      wire-quantum-eraser = {
+        type = "app";
+        program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
+        meta.description = "Run a delayed-choice quantum eraser analogue as Wire circuits";
       };
     };
   };

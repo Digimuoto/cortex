@@ -320,6 +320,22 @@ spec = describe "Cortex.Wire.Compile" $ do
       successors compiled.compiledCircuitTopology (CircuitNodeRef "phase_rzz")
         `shouldBe` Set.fromList [CircuitNodeRef "feedback_control_rz"]
 
+    it "compiles the quantum eraser round example with primitive executors" $ do
+      source <- TIO.readFile "examples/wire/quantum-eraser-round.wire"
+      compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "ibm_runtime_config"
+          , CircuitNodeRef "prepare_marker"
+          ]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_screen", CircuitNodeRef "z_measure_marker"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "mark_cz")
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "recombine_rz_a"
+          , CircuitNodeRef "z_mark_post_rz_a"
+          ]
+
     it "compiles the pure output equations fixture" $ do
       source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
       compileWireText source `shouldSatisfy` isRight
