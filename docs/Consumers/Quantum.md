@@ -218,31 +218,34 @@ nix run .#wire-quantum-ipea -- --hardware --shots 100 --confirm-hardware
 Because each round is a separate provider job, this demo spends hardware budget per measured phase
 bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
-## Quantum Eraser Wire Circuit
+## Quantum Eraser Wire Experiment
 
-[`../../examples/wire/quantum-eraser-round.wire`](../../examples/wire/quantum-eraser-round.wire) is
-the source of truth for the delayed-choice quantum eraser example. The `wire-quantum-eraser` app is
-only a convenience alias for running that checked-in Wire file through the generic Qiskit bridge; it
-does not generate circuits or own the experiment control loop.
+[`../../examples/wire/quantum-eraser-experiment.wire`](../../examples/wire/quantum-eraser-experiment.wire)
+is the source of truth for the full delayed-choice quantum eraser sweep. It is an executable Wire
+scaffold: a pure planning node builds nine `@cortex.io.command` leaves, the topology sequences those
+leaves, and a final pure node summarizes the run. Each command leaf invokes the generic
+Wire-to-Qiskit bridge on a checked-in Wire circuit file.
 
 The example is a gate-model analogue of the delayed-choice quantum eraser, framed as a correlation
 experiment rather than retrocausality: the later marker-basis choice does not change the
 unconditional screen statistics. Interference is recovered only after sorting the results by the
 marker outcome.
 
-Local simulation of the checked-in Wire file is the default:
+Local simulation of the full Wire scaffold is the default:
 
 ```sh
-nix run .#wire-quantum-eraser -- --shots 512 --seed 11
+nix run .#wire-quantum-eraser
 ```
 
-This is equivalent to:
+The app runs the Wire file through `wire run` and places `wire-quantum-qiskit` on `PATH` for the
+command leaves. The experiment executes these checked-in circuit files:
 
-```sh
-nix run .#wire-quantum-qiskit -- examples/wire/quantum-eraser-round.wire --shots 512 --seed 11
-```
+- `quantum-eraser-open-phase-{0,1_4,1_2}.wire`
+- `quantum-eraser-which-path-phase-{0,1_4,1_2}.wire`
+- `quantum-eraser-round.wire` for eraser phase `0`
+- `quantum-eraser-eraser-phase-{1_4,1_2}.wire`
 
-The Wire source uses graph-valued `let`s to name the screen split/recombine fragments, the marker
+The eraser round uses graph-valued `let`s to name the screen split/recombine fragments, the marker
 path-marking fragments, and the delayed eraser-basis readout:
 
 ```wire
@@ -259,14 +262,15 @@ let marker_eraser_readout =
     => z_measure_marker;
 ```
 
-Dry-run mode compiles the same Wire file and emits the OpenQASM 3 request without provider
-submission:
+For provider submission, run an individual circuit file through the IBM REST bridge. Dry-run mode
+compiles that Wire file and emits the OpenQASM 3 request without provider submission:
 
 ```sh
 nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-round.wire --dry-run --config examples/wire/quantum-ibm-runtime.config.example.json
 ```
 
-Hardware execution submits that Wire-authored circuit as one provider job:
+Hardware execution submits that Wire-authored circuit as one provider job. A full nine-circuit
+hardware sweep would spend one provider job per row:
 
 ```sh
 nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-round.wire --shots 100 --confirm-hardware

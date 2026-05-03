@@ -47,12 +47,13 @@
       name = "wire-quantum-eraser";
       text = ''
         set -euo pipefail
-        wire_file="examples/wire/quantum-eraser-round.wire"
-        if [ "$#" -gt 0 ] && [ -f "$1" ]; then
-          wire_file="$1"
-          shift
+        if [ "$#" -ne 0 ]; then
+          echo "usage: wire-quantum-eraser" >&2
+          echo "runs examples/wire/quantum-eraser-experiment.wire through wire run" >&2
+          exit 64
         fi
-        exec ${wire-quantum-qiskit}/bin/wire-quantum-qiskit "$wire_file" "$@"
+        export PATH="${wire-quantum-qiskit}/bin:$PATH"
+        exec ${config.packages.wire}/bin/wire run examples/wire/quantum-eraser-experiment.wire
       '';
     };
   in {
@@ -82,7 +83,7 @@
       wire-quantum-eraser = {
         type = "app";
         program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
-        meta.description = "Run the checked-in delayed-choice quantum eraser Wire circuit";
+        meta.description = "Run the delayed-choice quantum eraser experiment Wire scaffold";
       };
     };
   };

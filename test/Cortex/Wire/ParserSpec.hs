@@ -29,6 +29,23 @@ parseOrFail src = case parseWireFile "test" src of
   Left err -> error ("parse failed: " <> show (renderParseError err))
   Right ok -> ok
 
+parseWireFixture :: FilePath -> Expectation
+parseWireFixture path = do
+  source <- TIO.readFile path
+  parseWireFile path source `shouldSatisfy` isRight
+
+quantumEraserSweepFixtures :: [FilePath]
+quantumEraserSweepFixtures =
+  [ "examples/wire/quantum-eraser-open-phase-0.wire"
+  , "examples/wire/quantum-eraser-open-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-open-phase-1_2.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-0.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-1_2.wire"
+  , "examples/wire/quantum-eraser-eraser-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-eraser-phase-1_2.wire"
+  ]
+
 spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
   describe "examples" $ do
@@ -55,6 +72,13 @@ spec = describe "Cortex.Wire.Parser" $ do
     it "parses the quantum eraser round example" $ do
       source <- TIO.readFile "examples/wire/quantum-eraser-round.wire"
       parseWireFile "examples/wire/quantum-eraser-round.wire" source `shouldSatisfy` isRight
+
+    it "parses the full quantum eraser experiment scaffold" $ do
+      source <- TIO.readFile "examples/wire/quantum-eraser-experiment.wire"
+      parseWireFile "examples/wire/quantum-eraser-experiment.wire" source `shouldSatisfy` isRight
+
+    it "parses the quantum eraser sweep circuit examples" $
+      mapM_ parseWireFixture quantumEraserSweepFixtures
 
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $

@@ -1,0 +1,227 @@
+# Full delayed-choice quantum eraser experiment scaffold.
+#
+# Run:
+#
+#   nix run .#wire-quantum-eraser
+#
+# The experiment graph is Wire. Each command leaf invokes the generic
+# Wire-to-Qiskit bridge on a checked-in Wire circuit file.
+
+contract CommandSpec;
+contract CommandResult;
+contract ExperimentStart;
+contract ExperimentReport;
+
+node start_experiment
+  -> start: ExperimentStart = pure ("start");
+
+node plan_experiment
+  <- start: ExperimentStart;
+  -> open0Spec: CommandSpec = pure (open0Spec);
+  -> open14Spec: CommandSpec = pure (open14Spec);
+  -> open12Spec: CommandSpec = pure (open12Spec);
+  -> which0Spec: CommandSpec = pure (which0Spec);
+  -> which14Spec: CommandSpec = pure (which14Spec);
+  -> which12Spec: CommandSpec = pure (which12Spec);
+  -> eraser0Spec: CommandSpec = pure (eraser0Spec);
+  -> eraser14Spec: CommandSpec = pure (eraser14Spec);
+  -> eraser12Spec: CommandSpec = pure (eraser12Spec);
+  where let
+    shots = "100";
+    seed = "11";
+    open0Spec = {
+      name = "open phase 0";
+      target = "examples/wire/quantum-eraser-open-phase-0.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-open-phase-0.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    open14Spec = {
+      name = "open phase 1/4";
+      target = "examples/wire/quantum-eraser-open-phase-1_4.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-open-phase-1_4.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    open12Spec = {
+      name = "open phase 1/2";
+      target = "examples/wire/quantum-eraser-open-phase-1_2.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-open-phase-1_2.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    which0Spec = {
+      name = "which-path phase 0";
+      target = "examples/wire/quantum-eraser-which-path-phase-0.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-which-path-phase-0.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    which14Spec = {
+      name = "which-path phase 1/4";
+      target = "examples/wire/quantum-eraser-which-path-phase-1_4.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-which-path-phase-1_4.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    which12Spec = {
+      name = "which-path phase 1/2";
+      target = "examples/wire/quantum-eraser-which-path-phase-1_2.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-which-path-phase-1_2.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    eraser0Spec = {
+      name = "eraser phase 0";
+      target = "examples/wire/quantum-eraser-round.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-round.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    eraser14Spec = {
+      name = "eraser phase 1/4";
+      target = "examples/wire/quantum-eraser-eraser-phase-1_4.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-eraser-phase-1_4.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    eraser12Spec = {
+      name = "eraser phase 1/2";
+      target = "examples/wire/quantum-eraser-eraser-phase-1_2.wire";
+      argv = ["wire-quantum-qiskit", "examples/wire/quantum-eraser-eraser-phase-1_2.wire", "--shots", shots, "--seed", seed];
+      cwd = ".";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+  in
+  { inherit open0Spec open14Spec open12Spec which0Spec which14Spec which12Spec eraser0Spec eraser14Spec eraser12Spec; };
+
+node run_open_0
+  <- open0Spec: CommandSpec;
+  -> open0: CommandResult = @cortex.io.command {} (open0Spec);
+
+node run_open_14
+  <- open14Spec: CommandSpec;
+  <- open0: CommandResult;
+  -> open14: CommandResult = @cortex.io.command {} (open14Spec);
+
+node run_open_12
+  <- open12Spec: CommandSpec;
+  <- open14: CommandResult;
+  -> open12: CommandResult = @cortex.io.command {} (open12Spec);
+
+node run_which_0
+  <- which0Spec: CommandSpec;
+  <- open12: CommandResult;
+  -> which0: CommandResult = @cortex.io.command {} (which0Spec);
+
+node run_which_14
+  <- which14Spec: CommandSpec;
+  <- which0: CommandResult;
+  -> which14: CommandResult = @cortex.io.command {} (which14Spec);
+
+node run_which_12
+  <- which12Spec: CommandSpec;
+  <- which14: CommandResult;
+  -> which12: CommandResult = @cortex.io.command {} (which12Spec);
+
+node run_eraser_0
+  <- eraser0Spec: CommandSpec;
+  <- which12: CommandResult;
+  -> eraser0: CommandResult = @cortex.io.command {} (eraser0Spec);
+
+node run_eraser_14
+  <- eraser14Spec: CommandSpec;
+  <- eraser0: CommandResult;
+  -> eraser14: CommandResult = @cortex.io.command {} (eraser14Spec);
+
+node run_eraser_12
+  <- eraser12Spec: CommandSpec;
+  <- eraser14: CommandResult;
+  -> eraser12: CommandResult = @cortex.io.command {} (eraser12Spec);
+
+node summarize_experiment
+  <- open0: CommandResult;
+  <- open14: CommandResult;
+  <- open12: CommandResult;
+  <- which0: CommandResult;
+  <- which14: CommandResult;
+  <- which12: CommandResult;
+  <- eraser0: CommandResult;
+  <- eraser14: CommandResult;
+  <- eraser12: CommandResult;
+  -> summary: ExperimentReport = pure (summary);
+  where let
+    runs = [open0, open14, open12, which0, which14, which12, eraser0, eraser14, eraser12];
+    failures = runs |> filter (run: !run.ok);
+    statuses = runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
+    targets = runs |> map (run: run.target) |> joinWith "\n  ";
+    gate = if length failures == 0 then "experiment gate: complete" else "experiment gate: failed";
+    summary = "Wire delayed-choice quantum eraser experiment\nexecution: wire run + @cortex.io.command\nbackend: local Qiskit Aer via registered host command\nshots per circuit: 100\ncircuits: 9 checked-in Wire files\n\nFiles executed:\n  ${targets}\n\nEach command above compiled and ran one checked-in Wire circuit. Wire owned the experiment graph, sequencing, command specs, and final report; Qiskit was only the quantum executor leaf.\n\nResults: ${statuses}\n${gate}";
+  in
+  { inherit summary; };
+
+node print_report
+  <- summary: ExperimentReport;
+  = @cortex.io.stdout { newline = true; } (summary);
+
+(
+  start_experiment
+    => plan_experiment
+    => (
+      run_open_0
+      <> run_open_14
+      <> run_open_12
+      <> run_which_0
+      <> run_which_14
+      <> run_which_12
+      <> run_eraser_0
+      <> run_eraser_14
+      <> run_eraser_12
+    )
+)
+<>
+(
+  run_open_0
+    => run_open_14
+    => run_open_12
+    => run_which_0
+    => run_which_14
+    => run_which_12
+    => run_eraser_0
+    => run_eraser_14
+    => run_eraser_12
+)
+<>
+(
+  (
+    run_open_0
+    <> run_open_14
+    <> run_open_12
+    <> run_which_0
+    <> run_which_14
+    <> run_which_12
+    <> run_eraser_0
+    <> run_eraser_14
+    <> run_eraser_12
+  )
+    => summarize_experiment
+    => print_report
+)

@@ -336,6 +336,19 @@ spec = describe "Cortex.Wire.Compile" $ do
           , CircuitNodeRef "z_mark_post_rz_a"
           ]
 
+    it "compiles the full quantum eraser experiment scaffold" $ do
+      source <- TIO.readFile "examples/wire/quantum-eraser-experiment.wire"
+      compiled <- requireRight (compileWireText source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "start_experiment"]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "print_report"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_0")
+        `shouldBe` Set.fromList [CircuitNodeRef "run_open_14", CircuitNodeRef "summarize_experiment"]
+
+    it "compiles the quantum eraser sweep circuit examples with primitive executors" $
+      mapM_ compileQuantumEraserFixture quantumEraserSweepFixtures
+
     it "compiles the pure output equations fixture" $ do
       source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
       compileWireText source `shouldSatisfy` isRight
@@ -659,6 +672,23 @@ requireRight :: Show err => Either err a -> IO a
 requireRight = \case
   Left err -> expectationFailure ("expected Right, got Left: " <> show err) >> error "unreachable"
   Right ok -> pure ok
+
+compileQuantumEraserFixture :: FilePath -> Expectation
+compileQuantumEraserFixture path = do
+  source <- TIO.readFile path
+  compileWireTextWithEnv quantumExecutorEnv source `shouldSatisfy` isRight
+
+quantumEraserSweepFixtures :: [FilePath]
+quantumEraserSweepFixtures =
+  [ "examples/wire/quantum-eraser-open-phase-0.wire"
+  , "examples/wire/quantum-eraser-open-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-open-phase-1_2.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-0.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-1_2.wire"
+  , "examples/wire/quantum-eraser-eraser-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-eraser-phase-1_2.wire"
+  ]
 
 metadataConfigHasNumber :: Key.Key -> ScientificLiteral -> Aeson.Value -> Bool
 metadataConfigHasNumber fieldName expected = \case
