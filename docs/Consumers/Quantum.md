@@ -180,10 +180,10 @@ nix run .#wire-quantum-ipea -- --shots 100 --seed 7
 
 The default target phase is `5/8` with `3` measured bits, so an ideal run estimates bitstring `101`.
 The generated round shape is represented by
-[`../../examples/wire/quantum-ipea-round.wire`](../../examples/wire/quantum-ipea-round.wire). It
-uses primitive gates accepted by the IBM hardware runner: the Hadamard fragments are
-`rz(pi/2) => sx => rz(pi/2)`, and the controlled phase is decomposed into two `rz(theta/2)` nodes
-plus one `rzz(-theta/2)` node. The Wire file binds those fragments with graph-valued `let`s:
+[`../../examples/wire/quantum-ipea-round.wire`](../../examples/wire/quantum-ipea-round.wire). The
+Wire round uses `rz`, `sx`, `x`, and `rzz` executor nodes. For IBM Runtime REST, the OpenQASM
+lowerer expands `rzz` into `rz/sx/cz` operations because IBM's current standard QASM loaders do not
+define an `rzz` gate name. The Wire file binds the round fragments with graph-valued `let`s:
 
 ```wire
 let h_control =

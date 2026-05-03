@@ -33,6 +33,7 @@ IAM_API_KEY_GRANT = "urn:ibm:params:oauth:grant-type:apikey"
 PLACEHOLDER_MARKERS = ("REPLACE_WITH", "YOUR_", "<")
 BITSTRING_RE = re.compile(r"^[01][01 ]*$")
 USER_AGENT = "cortex-wire-quantum/0.1"
+HALF_PI = math.pi / 2
 PUBLIC_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 JOB_STATUS_LABELS = {
     "completed": "Completed",
@@ -406,9 +407,11 @@ def build_openqasm3(plan: JSON, quantum: Any) -> str:
         elif gate == "cz":
             lines.append(f"cz q[{operation['control']}], q[{operation['target']}];")
         elif gate == "rzz":
-            lines.append(
-                f"rzz({operation['angle']}) q[{operation['control']}], "
-                f"q[{operation['target']}];"
+            append_rzz_decomposition(
+                lines,
+                operation["angle"],
+                operation["control"],
+                operation["target"],
             )
         elif gate == "measure_z":
             lines.append(
@@ -417,6 +420,24 @@ def build_openqasm3(plan: JSON, quantum: Any) -> str:
         else:
             raise quantum.WireQuantumError(f"unsupported planned gate {gate}")
     return "\n".join(lines) + "\n"
+
+
+def append_rzz_decomposition(lines: list[str], angle: float, control: int, target: int) -> None:
+    append_cnot_decomposition(lines, control, target)
+    lines.append(f"rz({angle}) q[{target}];")
+    append_cnot_decomposition(lines, control, target)
+
+
+def append_cnot_decomposition(lines: list[str], control: int, target: int) -> None:
+    append_h_decomposition(lines, target)
+    lines.append(f"cz q[{control}], q[{target}];")
+    append_h_decomposition(lines, target)
+
+
+def append_h_decomposition(lines: list[str], wire: int) -> None:
+    lines.append(f"rz({HALF_PI}) q[{wire}];")
+    lines.append(f"sx q[{wire}];")
+    lines.append(f"rz({HALF_PI}) q[{wire}];")
 
 
 def build_sampler_payload(backend: str, qasm: str, shots: int) -> JSON:
