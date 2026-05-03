@@ -235,6 +235,39 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
         `shouldSatisfy` isParseFailure
 
+  describe "namespace use imports" $ do
+    it "lowers std.io aliases to canonical executor and contract IDs" $ do
+      compiled <- requireRight (compileWireText stdIoAliasSourceText)
+      case Map.lookup (CircuitNodeRef "run") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) -> do
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget "std.io.command"
+          taskNode.circuitTaskNodeMetadata
+            `shouldSatisfy` metadataHasInputContract "spec" "std.io.CommandSpec.v1"
+          taskNode.circuitTaskNodeMetadata
+            `shouldSatisfy` metadataHasOutputContract "result" "std.io.CommandResult.v1"
+        other ->
+          expectationFailure ("expected task node, got: " <> show other)
+
+    it "allows canonical std.io executor references after use" $
+      compileWireText stdIoCanonicalAfterUseSourceText
+        `shouldSatisfy` isRight
+
+    it "rejects bare std.io executor leaves without use" $
+      compileWireText stdIoBareWithoutUseSourceText
+        `shouldBe` Left (WireExecutorNotInScope "@command")
+
+    it "rejects canonical std.io executor references without use" $
+      compileWireText stdIoCanonicalWithoutUseSourceText
+        `shouldBe` Left (WireExecutorNotInScope "@std.io.command")
+
+    it "enforces standard stdout port shape" $
+      compileWireText stdIoStdoutBadShapeSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "bad_stdout")
+              "std.io.stdout expects exactly one input port and zero output ports."
+          )
+
   describe "fixtures" $ do
     it "compiles the interactive priority planner example" $ do
       source <- TIO.readFile "examples/wire/interactive-priority-planner.wire"
@@ -519,6 +552,50 @@ legacyPureExecutorSourceText =
     , "score"
     ]
 
+stdIoAliasSourceText :: T.Text
+stdIoAliasSourceText =
+  T.unlines
+    [ "use std.io.{@command as @shell, CommandSpec as Spec, CommandResult as Result};"
+    , "node run"
+    , "  <- spec: Spec ;"
+    , "  -> result: Result = @shell {} (spec) ;"
+    , "run"
+    ]
+
+stdIoCanonicalAfterUseSourceText :: T.Text
+stdIoCanonicalAfterUseSourceText =
+  T.unlines
+    [ "use std.io.{@command, CommandResult};"
+    , "node run"
+    , "  -> result: CommandResult = @std.io.command {} (null) ;"
+    , "run"
+    ]
+
+stdIoBareWithoutUseSourceText :: T.Text
+stdIoBareWithoutUseSourceText =
+  T.unlines
+    [ "node run"
+    , "  -> result: CommandResult = @command {} (null) ;"
+    , "run"
+    ]
+
+stdIoCanonicalWithoutUseSourceText :: T.Text
+stdIoCanonicalWithoutUseSourceText =
+  T.unlines
+    [ "node run"
+    , "  -> result: CommandResult = @std.io.command {} (null) ;"
+    , "run"
+    ]
+
+stdIoStdoutBadShapeSourceText :: T.Text
+stdIoStdoutBadShapeSourceText =
+  T.unlines
+    [ "use std.io.{@stdout};"
+    , "node bad_stdout"
+    , "  -> printed: Printed = @stdout {} (null) ;"
+    , "bad_stdout"
+    ]
+
 requireRight :: Show err => Either err a -> IO a
 requireRight = \case
   Left err -> expectationFailure ("expected Right, got Left: " <> show err) >> error "unreachable"
@@ -585,6 +662,53 @@ metadataHasInstructions expected = \case
   Aeson.Object obj ->
     KeyMap.lookup "instructions" obj == Just (Aeson.String expected)
   _ -> False
+
+metadataHasExecutorTarget :: T.Text -> Aeson.Value -> Bool
+metadataHasExecutorTarget expected = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "executor" obj of
+      Just (Aeson.Object executorObj) ->
+        KeyMap.lookup "target" executorObj == Just (Aeson.String expected)
+      _ -> False
+  _ -> False
+
+metadataHasInputContract :: T.Text -> T.Text -> Aeson.Value -> Bool
+metadataHasInputContract portName contractName = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "ports" obj of
+      Just (Aeson.Object portsObj) ->
+        case KeyMap.lookup "inputs" portsObj of
+          Just (Aeson.Array inputs) ->
+            any (inputHasContract portName contractName) inputs
+          _ -> False
+      _ -> False
+  _ -> False
+  where
+    inputHasContract expectedPort expectedContract = \case
+      Aeson.Object inputObj ->
+        KeyMap.lookup "name" inputObj == Just (Aeson.String expectedPort)
+          && case KeyMap.lookup "accepts" inputObj of
+            Just (Aeson.Array contracts) -> Aeson.String expectedContract `elem` contracts
+            _ -> False
+      _ -> False
+
+metadataHasOutputContract :: T.Text -> T.Text -> Aeson.Value -> Bool
+metadataHasOutputContract portName contractName = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "ports" obj of
+      Just (Aeson.Object portsObj) ->
+        case KeyMap.lookup "outputs" portsObj of
+          Just (Aeson.Array outputs) ->
+            any (outputHasContract portName contractName) outputs
+          _ -> False
+      _ -> False
+  _ -> False
+  where
+    outputHasContract expectedPort expectedContract = \case
+      Aeson.Object outputObj ->
+        KeyMap.lookup "name" outputObj == Just (Aeson.String expectedPort)
+          && KeyMap.lookup "contract" outputObj == Just (Aeson.String expectedContract)
+      _ -> False
 
 isRight :: Either err ok -> Bool
 isRight = \case

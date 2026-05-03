@@ -171,6 +171,7 @@ library
         Cortex.Wire.Executor
         Cortex.Wire.Parser
         Cortex.Wire.Pure
+        Cortex.Wire.Std
         Cortex.Wire.Syntax
         Cortex.Wire.Circuit
         Cortex.Wire.Circuit.Artifact

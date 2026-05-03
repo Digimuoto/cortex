@@ -38,14 +38,30 @@ file-return expression, the file is declaration-only.
 
 ## Imports
 
+Registry namespace imports use `use`:
+
+```wire
+use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+use std.io.{@command as @shell, CommandSpec as Spec};
+```
+
+`use` brings selected registry-catalog names into source scope. Executor selectors carry `@`;
+contract selectors do not. Imported aliases lower to canonical executor and contract IDs in compiled
+metadata.
+
+`use` is source-local and explicit. It does not propagate across file imports, and wildcard imports
+such as `use std.io.*;` are not part of v1.
+
+File imports use `import`:
+
 ```wire
 import pipeline from "./pipeline.wire";
 import { acceptedItem, analyst } from "./helpers.wire";
 ```
 
-The named import form imports another file's file-return value. The explicit import form imports
-named `let` bindings. `export let` marks the intended importable surface; until import visibility is
-fully enforced, it is documentation plus a forward-compatible commitment.
+The named file import form imports another file's file-return value. The explicit file import form
+imports named `let` bindings. `export let` marks the intended importable surface; until import
+visibility is fully enforced, it is documentation plus a forward-compatible commitment.
 
 Contracts are ambient once a file is loaded. Node declarations are not directly importable; expose a
 node by binding it:

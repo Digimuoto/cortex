@@ -202,6 +202,10 @@ data WireError
   | WireUnknownConditionRef !Text
   | WireDuplicateLetBinding !Text
   | WireUnknownLetBinding !Text
+  | WireUnknownUseNamespace !Text
+  | WireUnknownUseItem !Text !Text
+  | WireDuplicateUseBinding !Text
+  | WireExecutorNotInScope !Text
   | WireTypeMismatchInConcat !Text !Text
   | WireFieldTypeMismatch !Text !Text !Text
   deriving stock (Eq, Show, Generic)
@@ -308,6 +312,14 @@ renderWireError = \case
     "Module-level `let " <> name <> "` was declared more than once."
   WireUnknownLetBinding name ->
     "`let " <> name <> "` referenced but not declared in scope."
+  WireUnknownUseNamespace namespace ->
+    "`use` references unknown registry namespace " <> namespace <> "."
+  WireUnknownUseItem namespace itemName ->
+    "`use` references unknown item " <> itemName <> " in namespace " <> namespace <> "."
+  WireDuplicateUseBinding name ->
+    "`use` imports name " <> name <> " more than once in this file."
+  WireExecutorNotInScope executorName ->
+    "Executor " <> executorName <> " is not in Wire source scope; import it with `use` first."
   WireTypeMismatchInConcat left right ->
     "`++` requires both operands of the same kind; got "
       <> left

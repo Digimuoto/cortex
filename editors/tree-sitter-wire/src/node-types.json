@@ -2412,6 +2412,10 @@
         {
           "type": "node_decl",
           "named": true
+        },
+        {
+          "type": "use_stmt",
+          "named": true
         }
       ]
     }
@@ -2577,6 +2581,107 @@
     "fields": {}
   },
   {
+    "type": "use_contract_item",
+    "named": true,
+    "fields": {
+      "alias": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "use_executor_item",
+    "named": true,
+    "fields": {
+      "alias": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "use_item",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "use_contract_item",
+          "named": true
+        },
+        {
+          "type": "use_executor_item",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "use_stmt",
+    "named": true,
+    "fields": {
+      "items": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "use_item",
+            "named": true
+          }
+        ]
+      },
+      "namespace": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "use_namespace",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "where_clause",
     "named": true,
     "fields": {
@@ -2713,6 +2818,10 @@
     "named": false
   },
   {
+    "type": "as",
+    "named": false
+  },
+  {
     "type": "block_comment",
     "named": true,
     "extra": true
@@ -2805,6 +2914,14 @@
   {
     "type": "true",
     "named": false
+  },
+  {
+    "type": "use",
+    "named": false
+  },
+  {
+    "type": "use_namespace",
+    "named": true
   },
   {
     "type": "where",

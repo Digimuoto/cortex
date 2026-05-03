@@ -105,6 +105,15 @@ import Cortex.Wire.Pure
   , renderPureEvalError
   , validatePureTaskConfig
   )
+import Cortex.Wire.Std
+  ( stdIoCommandExecutorId
+  , stdIoContractIdForName
+  , stdIoExecutorIdForLeaf
+  , stdIoExecutorLeaves
+  , stdIoNamespace
+  , stdIoStdinExecutorId
+  , stdIoStdoutExecutorId
+  )
 import Cortex.Wire.Syntax
 
 compileWireText :: Text -> Either WireCore.WireError CompiledCircuit
@@ -205,6 +214,9 @@ data LoweringState = LoweringState
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
+  , lsExecutorUses :: !(Map Text Text)
+  , lsStdExecutorsInScope :: !(Set.Set Text)
+  , lsContractUses :: !(Map Text Text)
   }
 
 emptyLoweringState :: LoweringState
@@ -216,6 +228,9 @@ emptyLoweringState =
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
+    , lsExecutorUses = Map.empty
+    , lsStdExecutorsInScope = Set.empty
+    , lsContractUses = Map.empty
     }
 
 data EvalValue
@@ -230,7 +245,7 @@ data EvalValue
   deriving stock (Eq, Show)
 
 data ConfiguredExecutor = ConfiguredExecutor
-  { ceExecutor :: !QName
+  { ceExecutor :: !Text
   , ceFields :: !(Map (NonEmpty Text) EvalValue)
   }
   deriving stock (Eq, Show)
@@ -349,7 +364,11 @@ lowerTopForm
   :: WireCompileEnv -> LoweringState -> TopForm -> Either WireCore.WireError LoweringState
 lowerTopForm compileEnv st = \case
   TopContract contractId ->
-    Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
+    if Map.member contractId.unContractId st.lsContractUses
+      then Left (WireCore.WireDuplicateUseBinding contractId.unContractId)
+      else Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
+  TopUse useSpec ->
+    lowerUseSpec st useSpec
   TopImport _ ->
     Left (WireCore.WireParseError "Wire imports are not compiled yet.")
   TopLet _visibility name rhs -> do
@@ -384,7 +403,60 @@ lowerTopForm compileEnv st = \case
       Map.member name state.lsBindings
         || Map.member name state.lsGraphBindings
         || Map.member name state.lsNamedNodes
+        || Map.member name state.lsExecutorUses
+        || Map.member name state.lsContractUses
         || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
+
+lowerUseSpec :: LoweringState -> UseSpec -> Either WireCore.WireError LoweringState
+lowerUseSpec st useSpec = do
+  when (renderQName useSpec.useSpecNamespace /= stdIoNamespace) $
+    Left (WireCore.WireUnknownUseNamespace (renderQName useSpec.useSpecNamespace))
+  foldlM lowerUseItem st (NE.toList useSpec.useSpecItems)
+  where
+    lowerUseItem state = \case
+      UseExecutor itemName maybeAlias -> do
+        canonical <- stdIoExecutorId itemName
+        let localName = fromMaybe itemName maybeAlias
+        ensureUseNameFresh localName state
+        Right
+          state
+            { lsExecutorUses = Map.insert localName canonical state.lsExecutorUses
+            , lsStdExecutorsInScope = Set.insert canonical state.lsStdExecutorsInScope
+            }
+      UseContract itemName maybeAlias -> do
+        canonical <- stdIoContractId itemName
+        let localName = fromMaybe itemName maybeAlias
+        ensureUseNameFresh localName state
+        Right
+          state
+            { lsContractUses = Map.insert localName canonical state.lsContractUses
+            , lsDeclaredContracts = Set.insert canonical state.lsDeclaredContracts
+            }
+
+    ensureUseNameFresh localName state =
+      when
+        ( Map.member localName state.lsExecutorUses
+            || Map.member localName state.lsContractUses
+            || Map.member localName state.lsBindings
+            || Map.member localName state.lsGraphBindings
+            || Map.member localName state.lsNamedNodes
+            || Set.member localName state.lsDeclaredContracts
+        )
+        (Left (WireCore.WireDuplicateUseBinding localName))
+
+stdIoExecutorId :: Text -> Either WireCore.WireError Text
+stdIoExecutorId itemName =
+  maybe
+    (Left (WireCore.WireUnknownUseItem stdIoNamespace ("@" <> itemName)))
+    Right
+    (stdIoExecutorIdForLeaf itemName)
+
+stdIoContractId :: Text -> Either WireCore.WireError Text
+stdIoContractId itemName =
+  maybe
+    (Left (WireCore.WireUnknownUseItem stdIoNamespace itemName))
+    Right
+    (stdIoContractIdForName itemName)
 
 lowerWireLetBinding
   :: LoweringState
@@ -445,14 +517,14 @@ lowerNamedNode
   :: WireCompileEnv -> LoweringState -> NodeDecl -> Either WireCore.WireError LoweredNode
 lowerNamedNode compileEnv st nodeDecl = do
   let nodeRef = CircuitNodeRef nodeDecl.nodeDeclName
-  ports <- lowerPortSignature nodeRef nodeDecl.nodeDeclPortSig
+  ports <- lowerPortSignature st nodeRef nodeDecl.nodeDeclPortSig
   case nodeDecl.nodeDeclBody of
     NodeBodyExecutor whereExpr executorCallValue -> do
       validateWhereClause st nodeRef ports.lnpInputs whereExpr
       loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue
     NodeBodyPure pureBody -> do
       validateWhereClause st nodeRef ports.lnpInputs pureBody.nodePureBodyWhere
-      loweredPureNodeFromBody compileEnv nodeRef ports st.lsPureBindings pureBody
+      loweredPureNodeFromBody compileEnv st nodeRef ports st.lsPureBindings pureBody
 
 lowerFileReturn
   :: LoweringState
@@ -1189,10 +1261,11 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       label = lookupMaybeTextField "label" exactFields
       genericFields = genericConfigFields exactFields knownSimpleFields
       runtimePorts = taskWirePortsFromLowered ports
-      executorQName = configuredExecutor.ceExecutor
+      executorId = configuredExecutor.ceExecutor
       maybeSignal = lookupMaybeTextField "on" exactFields
       maybeKind = lookupMaybeTextField "kind" exactFields
       maybeTarget = lookupMaybeQNameField "to" exactFields
+  validateStdIoExecutorShape nodeRef executorId runtimePorts
   compiledNode <- case () of
     _
       | isJust maybeSignal -> do
@@ -1240,7 +1313,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                       (lookupMaybeInt32Field "timeout" exactFields)
                 }
       | otherwise -> do
-          let executor = qnameToExecutor executorQName
+          let executor = WireCore.WireExecutorNative executorId
           when (executor == WireCore.WireExecutorNative "pure") $
             Left
               ( WireCore.WireParseError
@@ -1317,8 +1390,9 @@ resolveExecutorCall
 resolveExecutorCall st = \case
   ExecutorCallInline executorQName recordExpr inputExpr ->
     do
+      executorId <- resolveExecutorQName st executorQName
       fields <- evalRecordFields st recordExpr
-      Right (ConfiguredExecutor executorQName fields, inputExpr)
+      Right (ConfiguredExecutor executorId fields, inputExpr)
   ExecutorCallConfigured name inputExpr ->
     case Map.lookup name st.lsBindings of
       Just (EvalConfiguredExecutor configuredExecutor) -> Right (configuredExecutor, inputExpr)
@@ -1357,13 +1431,14 @@ insertMaybeJson fieldName maybeValue object =
 
 loweredPureNodeFromBody
   :: WireCompileEnv
+  -> LoweringState
   -> CircuitNodeRef
   -> LoweredNodePorts
   -> [CorePureBinding]
   -> NodePureBody
   -> Either WireCore.WireError LoweredNode
-loweredPureNodeFromBody compileEnv nodeRef ports topLevelBindings pureBody = do
-  outputConfig <- pureOutputConfigMap nodeRef ports.lnpOutputs pureBody.nodePureBodyOutputs
+loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = do
+  outputConfig <- pureOutputConfigMap st nodeRef ports.lnpOutputs pureBody.nodePureBodyOutputs
   let runtimePorts = taskWirePortsFromLowered ports
       normalForm =
         pureNodeBoundaryNormalForm
@@ -1470,18 +1545,20 @@ renderStaticWhereError = \case
     renderPureEvalError err
 
 pureOutputConfigMap
-  :: CircuitNodeRef
+  :: LoweringState
+  -> CircuitNodeRef
   -> [LoweredPort]
   -> NonEmpty PureOutputEquation
   -> Either WireCore.WireError (Map Text CorePureExpr)
-pureOutputConfigMap nodeRef outputPorts outputEquations = do
+pureOutputConfigMap st nodeRef outputPorts outputEquations = do
   let outputEquationList = NE.toList outputEquations
   when (length outputPorts /= length outputEquationList) $
     Left (WireCore.WireInvalidPorts nodeRef "pure output equations do not match lowered output ports")
   Map.fromList <$> zipWithM matchOutput outputPorts outputEquationList
   where
     matchOutput port outputEquation = do
-      let ContractId contractName = outputEquation.pureOutputEquationContract
+      let ContractId rawContractName = outputEquation.pureOutputEquationContract
+          contractName = resolveContractId st rawContractName
       when (port.lpLabel /= outputEquation.pureOutputEquationLabel || port.lpContract /= contractName) $
         Left
           (WireCore.WireInvalidPorts nodeRef "pure output equation does not match its lowered output port")
@@ -1533,12 +1610,13 @@ evalMemoryStrategy = \case
     Left (WireCore.WireFieldTypeMismatch "memory" "memory strategy" (valueKind other))
 
 lowerPortSignature
-  :: CircuitNodeRef
+  :: LoweringState
+  -> CircuitNodeRef
   -> [PortDecl]
   -> Either WireCore.WireError LoweredNodePorts
-lowerPortSignature nodeRef portSig = do
+lowerPortSignature st nodeRef portSig = do
   let inputs =
-        [ (label, contractName, WireCore.WireInputCardinalityOne)
+        [ (label, resolveContractId st contractName, WireCore.WireInputCardinalityOne)
         | PortInputDecl label (ContractId contractName) <- portSig
         ]
       outputs =
@@ -1590,11 +1668,11 @@ lowerPortSignature nodeRef portSig = do
         foldl
           ( \(nextGroup, acc) -> \case
               PortOutputDecl label (ContractId contractName) ->
-                (nextGroup, acc <> [(Nothing, label, contractName)])
+                (nextGroup, acc <> [(Nothing, label, resolveContractId st contractName)])
               PortOutputSumDecl variants ->
                 ( nextGroup + 1
                 , acc
-                    <> [ (Just nextGroup, variant.svLabel, variant.svContract.unContractId)
+                    <> [ (Just nextGroup, variant.svLabel, resolveContractId st variant.svContract.unContractId)
                        | variant <- NE.toList variants
                        ]
                 )
@@ -1603,6 +1681,10 @@ lowerPortSignature nodeRef portSig = do
           )
           (0 :: Int, [])
           decls
+
+resolveContractId :: LoweringState -> Text -> Text
+resolveContractId st contractName =
+  Map.findWithDefault contractName contractName st.lsContractUses
 
 allocatedPortName :: Bool -> Int -> PortLabel -> Text -> Int -> Text
 allocatedPortName isInput idx portLabel contractName totalPorts =
@@ -1626,7 +1708,8 @@ duplicatePortNames portNames =
 evalValue :: LoweringState -> Expr -> Either WireCore.WireError EvalValue
 evalValue st = \case
   ExprConfiguredExecutor executorQName recordExpr ->
-    EvalConfiguredExecutor . ConfiguredExecutor executorQName <$> evalRecordFields st recordExpr
+    EvalConfiguredExecutor
+      <$> (ConfiguredExecutor <$> resolveExecutorQName st executorQName <*> evalRecordFields st recordExpr)
   ExprConstructor constructorQName recordExpr ->
     EvalConstructor constructorQName <$> evalRecordFields st recordExpr
   ExprRecord recordExpr ->
@@ -2153,9 +2236,25 @@ qnameToQualifiedRef (QName segments) =
     { qualifiedRefSegments = segments
     }
 
-qnameToExecutor :: QName -> WireCore.WireExecutor
-qnameToExecutor (QName segments) =
-  WireCore.WireExecutorNative (renderQName (QName segments))
+resolveExecutorQName :: LoweringState -> QName -> Either WireCore.WireError Text
+resolveExecutorQName st qname@(QName segments) =
+  case segments of
+    localName :| []
+      | Just canonical <- Map.lookup localName st.lsExecutorUses ->
+          Right canonical
+      | Set.member localName stdIoExecutorLeaves ->
+          Left (WireCore.WireExecutorNotInScope ("@" <> localName))
+      | otherwise ->
+          Right rendered
+    _
+      | "std.io." `T.isPrefixOf` rendered ->
+          if Set.member rendered st.lsStdExecutorsInScope
+            then Right rendered
+            else Left (WireCore.WireExecutorNotInScope ("@" <> rendered))
+      | otherwise ->
+          Right rendered
+  where
+    rendered = renderQName qname
 
 validateExecutorProjection
   :: WireCompileEnv
@@ -2179,6 +2278,29 @@ validateExecutorProjection compileEnv nodeRef executor ports =
                   Right ()
               | otherwise ->
                   Left (WireCore.WireExecutorPortsMismatch nodeRef (wireExecutorIdToText executorId))
+
+validateStdIoExecutorShape
+  :: CircuitNodeRef -> Text -> WireCore.WirePorts -> Either WireCore.WireError ()
+validateStdIoExecutorShape nodeRef executorId ports
+  | executorId == stdIoStdinExecutorId =
+      requireShape 0 1 "std.io.stdin expects zero input ports and exactly one output port."
+  | executorId == stdIoStdoutExecutorId =
+      requireShape 1 0 "std.io.stdout expects exactly one input port and zero output ports."
+  | executorId == stdIoCommandExecutorId =
+      requireAtMostOneEach "std.io.command expects zero or one input port and zero or one output port."
+  | otherwise =
+      Right ()
+  where
+    inputCount = Map.size ports.wirePortsInputs
+    outputCount = Map.size ports.wirePortsOutputs
+
+    requireShape expectedInputs expectedOutputs message =
+      unless (inputCount == expectedInputs && outputCount == expectedOutputs) $
+        Left (WireCore.WireInvalidPorts nodeRef message)
+
+    requireAtMostOneEach message =
+      unless (inputCount <= 1 && outputCount <= 1) $
+        Left (WireCore.WireInvalidPorts nodeRef message)
 
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f = \case

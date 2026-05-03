@@ -10,6 +10,8 @@
 "in"       @keyword
 "import"   @keyword
 "from"     @keyword
+"use"      @keyword
+"as"       @keyword
 "pure"     @keyword
 "if"       @keyword
 "then"     @keyword
@@ -74,6 +76,13 @@
 
 ; import <name> from "path";  |  import { a, b } from "path";
 (import_stmt binding: (identifier) @namespace)
+
+; use std.io.{@executor, Contract};
+(use_stmt namespace: (use_namespace) @namespace)
+(use_executor_item name: (identifier) @function.builtin)
+(use_executor_item alias: (identifier) @function.builtin)
+(use_contract_item name: (identifier) @type)
+(use_contract_item alias: (identifier) @type)
 
 ; ── Types and contracts ────────────────────────────────────────────────
 

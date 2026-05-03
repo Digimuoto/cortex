@@ -50,7 +50,7 @@ Identifiers match `[A-Za-z_][A-Za-z0-9_]*`. Qualified identifiers join identifie
 Reserved words:
 
 ```text
-contract else export false from if import in let node null pure select then true where
+as contract else export false from if import in let node null pure select then true use where
 ```
 
 Literal forms:
@@ -68,10 +68,12 @@ Literal forms:
 
 ```ebnf
 wire_file   ::= top_form* file_return?
-top_form    ::= contract_decl | let_binding | import_stmt | node_decl
+top_form    ::= contract_decl | use_stmt | let_binding | import_stmt | node_decl
 file_return ::= wire_expr
 
 contract_decl ::= "contract" Name ";"
+use_stmt      ::= "use" qualified_ident ".{" use_item ("," use_item)* ","? "}" ";"
+use_item      ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
 let_binding   ::= ("export")? "let" ident "=" let_rhs ";"
 let_rhs       ::= graph_expr | value_expr | corepure_helper_expr
 import_stmt   ::= "import" (ident | "{" ident ("," ident)* ","? "}") "from" string ";"
@@ -82,6 +84,23 @@ value.
 
 `export let` is accepted as the forward-compatible surface for imports. Until module imports grow a
 visibility check, `export` does not change runtime behavior.
+
+`use` imports selected names from a registry namespace into source scope. File imports and registry
+namespace imports are distinct: `import` loads another `.wire` file; `use` selects registered
+executor and contract names. The initial implemented namespace is `std.io`:
+
+```wire
+use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+```
+
+Executor selectors carry `@` at the leaf because they import executor authority names. Contract
+selectors do not. Aliases are allowed with the same marker discipline:
+
+```wire
+use std.io.{@command as @shell, CommandSpec as Spec};
+```
+
+Wildcard namespace imports are not part of v1.
 
 Module-level `let` is one syntax, not separate "ordinary" and "pure" declarations. The compiler
 classifies the right-hand side by phase:

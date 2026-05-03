@@ -168,8 +168,10 @@ Do not place `->` or `<-` on the `node` line, and do not combine multiple ports 
 Keep executor authority visible at the implementation boundary:
 
 ```wire
+use std.io.{@stdin};
+
 node read_mode
-  -> answer: UserInput = @cortex.io.stdin { prompt = "Planning mode (high/safe): "; } (null);
+  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
 ```
 
 Use `pure (...)` only for CorePure output equations:

@@ -22,6 +22,7 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0041-wire-cli-command-surface.md
   - docs/ADRs/0043-pulse-in-memory-runner.md
+  - docs/ADRs/0044-wire-namespace-use-imports.md
   - "GitHub #141"
   - "GitHub #142"
 ---
@@ -55,14 +56,16 @@ Cortex should provide a small standard executor pack for host-local effects. The
 effects are:
 
 ```wire
-@cortex.io.stdin
-@cortex.io.stdout
-@cortex.io.command
+use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+
+@stdin
+@stdout
+@command
 ```
 
 These are ordinary Wire executors:
 
-- they are referenced with `@`;
+- they are imported with `use std.io.{...};` and referenced with `@`;
 - they are admitted through the executor registry;
 - they have typed node boundaries;
 - they are classified as host-effecting, not pure;
@@ -73,17 +76,17 @@ that mentions them has explicitly named host IO authority.
 
 The initial shapes are:
 
-| Executor             | Boundary shape                        | Runtime behavior                                    |
-| -------------------- | ------------------------------------- | --------------------------------------------------- |
-| `@cortex.io.stdin`   | zero inputs, exactly one output port  | optionally prints a prompt, reads one line          |
-| `@cortex.io.stdout`  | exactly one input port, zero outputs  | prints the input payload, optionally with newline   |
-| `@cortex.io.command` | zero or one input, zero or one output | executes one argv vector and captures stdout/stderr |
+| Executor          | Boundary shape                        | Runtime behavior                                    |
+| ----------------- | ------------------------------------- | --------------------------------------------------- |
+| `@std.io.stdin`   | zero inputs, exactly one output port  | optionally prints a prompt, reads one line          |
+| `@std.io.stdout`  | exactly one input port, zero outputs  | prints the input payload, optionally with newline   |
+| `@std.io.command` | zero or one input, zero or one output | executes one argv vector and captures stdout/stderr |
 
 These executors should accept inert config records only. The initial stdin config may include
 `prompt`. The initial stdout config may include `newline`.
 
-`cortex.io.command` is argv-based, not shell-string-based. Its command spec may be supplied by
-CorePure as an input record or by inert executor config. The initial command spec includes:
+`std.io.command` is argv-based, not shell-string-based. Its command spec may be supplied by CorePure
+as an input record or by inert executor config. The initial command spec includes:
 
 - `name`;
 - `target`;
@@ -106,7 +109,7 @@ block per command rather than as interleaved live streaming.
 
 Additional terminal behavior, streaming, binary IO, files, shell expansion, TTY control, environment
 mutation, and interactive protocols are out of scope for v1. Shell semantics, if added later, should
-use a separate and visibly authority-bearing executor such as `cortex.io.shell`.
+use a separate and visibly authority-bearing executor such as `std.io.shell`.
 
 Because stdout has no output ports, it is a sink node. Because stdin has no input ports, it is a
 source node. Both still participate in the same node boundary normal form as every other executor:
@@ -137,8 +140,8 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 - Standard effects use the same registry and node-boundary machinery as all executor authority.
 - The standard pack creates a small test surface for port wrapping, contract validation, source
   nodes, and sink nodes.
-- `cortex.io.command` lets examples exercise real local build/test/doc/lint gates while still
-  reporting structured results through ordinary Wire ports.
+- `std.io.command` lets examples exercise real local build/test/doc/lint gates while still reporting
+  structured results through ordinary Wire ports.
 
 ### Negative
 
@@ -151,7 +154,8 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 ### Obligations
 
 - Mark standard-effect stages as irreversible or otherwise replay-unsafe in runtime metadata.
-- Keep their executor IDs stable: `cortex.io.stdin`, `cortex.io.stdout`, and `cortex.io.command`.
+- Keep their executor IDs stable: `std.io.stdin`, `std.io.stdout`, and `std.io.command`.
+- Keep the standard pack source-scoped through `use std.io.{...};` as defined by ADR 0044.
 - Enforce the structural port constraints at binding time even when the registry projection admits
   author-declared ports.
 - Document that std effects are for local/demo/test use unless a host explicitly chooses to expose
@@ -173,5 +177,6 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 - [ADR 0039 - Wire Node Boundary Transform Normal Form](0039-wire-node-boundary-transform-normal-form.md)
 - [ADR 0041 - Wire CLI Command Surface](0041-wire-cli-command-surface.md)
 - [ADR 0043 - Pulse In-Memory Runner](0043-pulse-in-memory-runner.md)
+- [ADR 0044 - Wire Namespace Use Imports](0044-wire-namespace-use-imports.md)
 - GitHub #141
 - GitHub #142

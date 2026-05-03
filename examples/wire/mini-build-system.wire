@@ -7,13 +7,13 @@
 # Type `release` for a full project gate, `docs` for a documentation-only
 # gate, or anything else for a smaller development gate.
 
+use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+
 contract BuildTarget;
-contract CommandSpec;
-contract CommandResult;
 contract BuildReport;
 
 node read_target
-  -> target: BuildTarget = @cortex.io.stdin { prompt = "Build target (release/docs/dev): "; } (null);
+  -> target: BuildTarget = @stdin { prompt = "Build target (release/docs/dev): "; } (null);
 
 node plan_build
   <- target: BuildTarget;
@@ -65,19 +65,19 @@ node plan_build
 
 node compile_check
   <- compileSpec: CommandSpec;
-  -> compile: CommandResult = @cortex.io.command {} (compileSpec);
+  -> compile: CommandResult = @command {} (compileSpec);
 
 node test_check
   <- testSpec: CommandSpec;
-  -> test: CommandResult = @cortex.io.command {} (testSpec);
+  -> test: CommandResult = @command {} (testSpec);
 
 node docs_check
   <- docsSpec: CommandSpec;
-  -> docs: CommandResult = @cortex.io.command {} (docsSpec);
+  -> docs: CommandResult = @command {} (docsSpec);
 
 node lint_check
   <- lintSpec: CommandSpec;
-  -> lint: CommandResult = @cortex.io.command {} (lintSpec);
+  -> lint: CommandResult = @command {} (lintSpec);
 
 node summarize_build
   <- compile: CommandResult;
@@ -105,7 +105,7 @@ node summarize_build
 
 node print_report
   <- summary: BuildReport;
-  = @cortex.io.stdout { newline = true; } (summary);
+  = @stdout { newline = true; } (summary);
 
 read_target
   => plan_build

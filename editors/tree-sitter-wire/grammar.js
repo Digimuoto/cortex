@@ -4,7 +4,7 @@
  * Source of truth: docs/Reference/Wire/grammar.md. Mirrors the Haskell parser
  * at src/Cortex/Wire/Parser.hs.
  *
- * Top-level forms: contract, node, let/export let, import, and optional
+ * Top-level forms: contract, use, node, let/export let, import, and optional
  * file-return expression.
  * Executor values: @qualified.name { config }
  * Executor calls:  @qualified.name { config } (input) | configured (input)
@@ -62,6 +62,7 @@ module.exports = grammar({
 
     _top_form: $ => choice(
       $.contract_decl,
+      $.use_stmt,
       $.node_decl,
       $.let_binding,
       $.import_stmt,
@@ -72,6 +73,45 @@ module.exports = grammar({
       field('name', $.contract_name),
       ';',
     ),
+
+    use_stmt: $ => seq(
+      'use',
+      field('namespace', $.use_namespace),
+      '.',
+      '{',
+      field('items', seq(
+        $.use_item,
+        repeat(seq(',', $.use_item)),
+        optional(','),
+      )),
+      '}',
+      ';',
+    ),
+
+    use_item: $ => choice(
+      $.use_executor_item,
+      $.use_contract_item,
+    ),
+
+    use_executor_item: $ => seq(
+      '@',
+      field('name', $.identifier),
+      optional(seq(
+        'as',
+        '@',
+        field('alias', $.identifier),
+      )),
+    ),
+
+    use_contract_item: $ => seq(
+      field('name', $.identifier),
+      optional(seq(
+        'as',
+        field('alias', $.identifier),
+      )),
+    ),
+
+    use_namespace: _ => token(/[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*/),
 
     let_binding: $ => seq(
       optional(field('visibility', 'export')),

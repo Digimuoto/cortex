@@ -49,6 +49,8 @@ module Cortex.Wire.Syntax
 
     -- * Top-level forms
   , ImportSpec (..)
+  , UseItem (..)
+  , UseSpec (..)
   , PureOutputEquation (..)
   , NodePureBody (..)
   , NodeBody (..)
@@ -292,6 +294,19 @@ data ImportSpec
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
+data UseItem
+  = UseExecutor !Text !(Maybe Text)
+  | UseContract !Text !(Maybe Text)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
+data UseSpec = UseSpec
+  { useSpecNamespace :: !QName
+  , useSpecItems :: !(NonEmpty UseItem)
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
 data PureOutputEquation = PureOutputEquation
   { pureOutputEquationLabel :: !PortLabel
   , pureOutputEquationContract :: !ContractId
@@ -332,6 +347,7 @@ data TopForm
   | TopNode !NodeDecl
   | -- | @let name = rhs;@ or @export let name = rhs;@.
     TopLet !LetVisibility !Text !LetRhs
+  | TopUse !UseSpec
   | TopImport !ImportSpec
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)

@@ -57,6 +57,10 @@ spec = describe "Cortex.Wire.Parser" $ do
       parseWireFile "test" "node score\n  -> score: Score = @pure ({}) ;"
         `shouldSatisfy` isParseFailure
 
+    it "rejects wildcard registry namespace use imports" $
+      parseWireFile "test" "use std.io.*;"
+        `shouldSatisfy` isParseFailure
+
     it "rejects unparenthesized mixed topology operators" $
       parseWireExpr "test" "a => b <> c"
         `shouldSatisfy` isParseFailure
@@ -106,6 +110,19 @@ spec = describe "Cortex.Wire.Parser" $ do
           ] ->
             length fields `shouldBe` 1
         other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "parses registry namespace use imports" $ do
+      let WireFile forms _ =
+            parseOrFail "use std.io.{@command as @shell, CommandSpec as Spec};"
+      forms
+        `shouldBe` [ TopUse
+                       UseSpec
+                         { useSpecNamespace = QName ("std" :| ["io"])
+                         , useSpecItems =
+                             UseExecutor "command" (Just "shell")
+                               :| [UseContract "CommandSpec" (Just "Spec")]
+                         }
+                   ]
 
     it "desugars ordinary record inherit fields" $ do
       let WireFile forms _ =

@@ -61,6 +61,8 @@ import Cortex.Wire
   , Record (..)
   , SumVariant (..)
   , TopForm (..)
+  , UseItem (..)
+  , UseSpec (..)
   , WireFile (..)
   , WireInputBundle (..)
   , WireInputCardinality (..)
@@ -77,6 +79,12 @@ import Cortex.Wire
   , renderPureEvalError
   , renderQName
   , renderWireError
+  , stdIoCommandExecutorId
+  , stdIoContractIdForName
+  , stdIoExecutorIdForLeaf
+  , stdIoNamespace
+  , stdIoStdinExecutorId
+  , stdIoStdoutExecutorId
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
   )
@@ -116,6 +124,12 @@ data BuiltinExecutor
   = BuiltinExecutorStdin
   | BuiltinExecutorStdout
   | BuiltinExecutorCommand
+  deriving stock (Eq, Show)
+
+data RunUseScope = RunUseScope
+  { runUseExecutors :: !(Map Text Text)
+  , runUseContracts :: !(Map Text Text)
+  }
   deriving stock (Eq, Show)
 
 data CommandSpec = CommandSpec
@@ -185,10 +199,11 @@ runWire :: FilePath -> IO ()
 runWire path = do
   wireFile <- readAndParseWireFile path
   compiled <- either (dieText . renderWireError) pure (compileWireFile wireFile)
+  useScope <- either dieText pure (useScopeFromWireFile wireFile)
   nodePlan <- either dieText pure (executionLevels compiled wireFile)
   outputLock <- newMVar ()
   let pureBindings = topLevelPureBindings wireFile
-  _finalState <- foldM (runNodeLevel outputLock pureBindings compiled) emptyRunState nodePlan
+  _finalState <- foldM (runNodeLevel outputLock useScope pureBindings compiled) emptyRunState nodePlan
   pure ()
 
 readAndParseWireFile :: FilePath -> IO WireFile
@@ -203,8 +218,14 @@ emptyRunState =
     }
 
 runNodeLevel
-  :: MVar () -> [CorePureBinding] -> CompiledCircuit -> RunState -> [NodeDecl] -> IO RunState
-runNodeLevel outputLock pureBindings compiled state nodeDecls = do
+  :: MVar ()
+  -> RunUseScope
+  -> [CorePureBinding]
+  -> CompiledCircuit
+  -> RunState
+  -> [NodeDecl]
+  -> IO RunState
+runNodeLevel outputLock useScope pureBindings compiled state nodeDecls = do
   levelOutputs <-
     mapConcurrently
       ( \nodeDecl -> do
@@ -213,7 +234,7 @@ runNodeLevel outputLock pureBindings compiled state nodeDecls = do
               directPredecessors =
                 Set.toAscList (predecessors compiled.compiledCircuitTopology nodeRef)
           nodeInputs <- either dieText pure (nodeInputsFromState state directPredecessors)
-          outputs <- runNode outputLock pureBindings nodeInputs nodeDecl
+          outputs <- runNode outputLock useScope pureBindings nodeInputs nodeDecl
           pure (nodeId, outputs)
       )
       nodeDecls
@@ -223,26 +244,31 @@ runNodeLevel outputLock pureBindings compiled state nodeDecls = do
           Map.union (Map.fromList levelOutputs) state.runStateOutputsByNode
       }
 
-runNode :: MVar () -> [CorePureBinding] -> NodeInputs -> NodeDecl -> IO (Map Text WireValue)
-runNode outputLock pureBindings nodeInputs nodeDecl = do
-  loweredPorts <- either dieText pure (lowerPortSignature nodeDecl.nodeDeclPortSig)
+runNode
+  :: MVar () -> RunUseScope -> [CorePureBinding] -> NodeInputs -> NodeDecl -> IO (Map Text WireValue)
+runNode outputLock useScope pureBindings nodeInputs nodeDecl = do
+  loweredPorts <- either dieText pure (lowerPortSignature useScope nodeDecl.nodeDeclPortSig)
   let ports = wirePortsFromLowered loweredPorts
   case nodeDecl.nodeDeclBody of
     NodeBodyPure pureBody ->
-      runPureNode pureBindings nodeInputs ports loweredPorts pureBody
+      runPureNode useScope pureBindings nodeInputs ports loweredPorts pureBody
     NodeBodyExecutor _whereExpr executorCall ->
-      runExecutorNode outputLock nodeDecl.nodeDeclName nodeInputs ports executorCall
+      runExecutorNode outputLock useScope nodeDecl.nodeDeclName nodeInputs ports executorCall
 
 runPureNode
-  :: [CorePureBinding]
+  :: RunUseScope
+  -> [CorePureBinding]
   -> NodeInputs
   -> WirePorts
   -> LoweredPorts
   -> NodePureBody
   -> IO (Map Text WireValue)
-runPureNode pureBindings nodeInputs ports loweredPorts pureBody = do
+runPureNode useScope pureBindings nodeInputs ports loweredPorts pureBody = do
   outputExprs <-
-    either dieText pure (pureOutputConfigMap loweredPorts.loweredOutputs pureBody.nodePureBodyOutputs)
+    either
+      dieText
+      pure
+      (pureOutputConfigMap useScope loweredPorts.loweredOutputs pureBody.nodePureBodyOutputs)
   outputValues <-
     either
       (dieText . renderPureEvalError)
@@ -257,10 +283,10 @@ runPureNode pureBindings nodeInputs ports loweredPorts pureBody = do
   pure (wrapOutputs Nothing ports outputValues)
 
 runExecutorNode
-  :: MVar () -> Text -> NodeInputs -> WirePorts -> ExecutorCall -> IO (Map Text WireValue)
-runExecutorNode outputLock nodeName nodeInputs ports = \case
+  :: MVar () -> RunUseScope -> Text -> NodeInputs -> WirePorts -> ExecutorCall -> IO (Map Text WireValue)
+runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
   ExecutorCallInline executorName record inputExpr ->
-    case builtinExecutorFromQName executorName of
+    case builtinExecutorFromQName useScope executorName of
       Just BuiltinExecutorStdin ->
         runStdinNode outputLock ports record
       Just BuiltinExecutorStdout ->
@@ -282,13 +308,24 @@ runExecutorNode outputLock nodeName nodeInputs ports = \case
         <> nodeName
         <> "."
 
-builtinExecutorFromQName :: QName -> Maybe BuiltinExecutor
-builtinExecutorFromQName (QName segments) =
-  case NE.toList segments of
-    ["cortex", "io", "stdin"] -> Just BuiltinExecutorStdin
-    ["cortex", "io", "stdout"] -> Just BuiltinExecutorStdout
-    ["cortex", "io", "command"] -> Just BuiltinExecutorCommand
+builtinExecutorFromQName :: RunUseScope -> QName -> Maybe BuiltinExecutor
+builtinExecutorFromQName useScope executorName =
+  case resolveRunExecutorQName useScope executorName of
+    Just executorId
+      | executorId == stdIoStdinExecutorId -> Just BuiltinExecutorStdin
+      | executorId == stdIoStdoutExecutorId -> Just BuiltinExecutorStdout
+      | executorId == stdIoCommandExecutorId -> Just BuiltinExecutorCommand
     _ -> Nothing
+
+resolveRunExecutorQName :: RunUseScope -> QName -> Maybe Text
+resolveRunExecutorQName useScope qname@(QName segments) =
+  case segments of
+    localName NE.:| [] ->
+      case Map.lookup localName useScope.runUseExecutors of
+        Just executorId -> Just executorId
+        Nothing -> Just (renderQName qname)
+    _ ->
+      Just (renderQName qname)
 
 runStdinNode :: MVar () -> WirePorts -> Record -> IO (Map Text WireValue)
 runStdinNode outputLock ports record = do
@@ -298,7 +335,7 @@ runStdinNode outputLock ports record = do
       TIO.putStr promptText
       hFlush stdout
   inputText <- TIO.getLine
-  wrapSingleOutput "cortex.io.stdin" ports (Aeson.String inputText)
+  wrapSingleOutput "std.io.stdin" ports (Aeson.String inputText)
 
 runStdoutNode :: MVar () -> NodeInputs -> Record -> CorePureExpr -> IO (Map Text WireValue)
 runStdoutNode outputLock nodeInputs record inputExpr = do
@@ -320,7 +357,7 @@ runCommandNode outputLock nodeInputs ports record inputExpr = do
   when commandSpec.commandSpecEcho $
     echoCommandResult outputLock commandSpec commandResult
   let result = commandResultValue commandSpec commandResult
-  wrapSingleOutput "cortex.io.command" ports result
+  wrapSingleOutput "std.io.command" ports result
 
 wrapSingleOutput :: Text -> WirePorts -> Aeson.Value -> IO (Map Text WireValue)
 wrapSingleOutput executorName ports value =
@@ -493,7 +530,7 @@ commandSpecFromInput config maybeInput = do
   echo <- fieldWithDefault (fromMaybe False (lookupBoolField "echo" config)) "echo" inputObject
   successExitCodes <- fieldWithDefault [0] "successExitCodes" inputObject
   when (not skip && null argv) $
-    Left "cortex.io.command requires argv unless skip is true."
+    Left "std.io.command requires argv unless skip is true."
   Right
     CommandSpec
       { commandSpecName = name
@@ -512,7 +549,7 @@ wireValueObject wireValue =
   case wireValue.wireValueValue of
     Aeson.Object objectValue -> Right objectValue
     value ->
-      Left ("cortex.io.command expected an object input, got " <> renderOutputValue value <> ".")
+      Left ("std.io.command expected an object input, got " <> renderOutputValue value <> ".")
 
 fieldWithDefault :: Aeson.FromJSON a => a -> Text -> Maybe Aeson.Object -> Either Text a
 fieldWithDefault fallback fieldName maybeObject =
@@ -523,7 +560,7 @@ fieldWithDefault fallback fieldName maybeObject =
       case Aeson.fromJSON value of
         Aeson.Success parsedValue -> Right parsedValue
         Aeson.Error err ->
-          Left ("cortex.io.command field " <> fieldName <> " is invalid: " <> T.pack err <> ".")
+          Left ("std.io.command field " <> fieldName <> " is invalid: " <> T.pack err <> ".")
 
 commandNameFromArgv :: [Text] -> Text
 commandNameFromArgv = \case
@@ -627,10 +664,60 @@ topLevelPureBindings wireFile =
   | TopLet _visibility name (LetRhsCorePure expr) <- wireFile.wireFileTopForms
   ]
 
-lowerPortSignature :: [PortDecl] -> Either Text LoweredPorts
-lowerPortSignature portSig = do
+emptyRunUseScope :: RunUseScope
+emptyRunUseScope =
+  RunUseScope
+    { runUseExecutors = Map.empty
+    , runUseContracts = Map.empty
+    }
+
+useScopeFromWireFile :: WireFile -> Either Text RunUseScope
+useScopeFromWireFile wireFile =
+  foldM
+    lowerUseSpec
+    emptyRunUseScope
+    [ useSpec
+    | TopUse useSpec <- wireFile.wireFileTopForms
+    ]
+
+lowerUseSpec :: RunUseScope -> UseSpec -> Either Text RunUseScope
+lowerUseSpec useScope useSpec = do
+  when (renderQName useSpec.useSpecNamespace /= stdIoNamespace) $
+    Left ("wire run does not know use namespace " <> renderQName useSpec.useSpecNamespace <> ".")
+  foldM lowerUseItem useScope (NE.toList useSpec.useSpecItems)
+  where
+    lowerUseItem state = \case
+      UseExecutor itemName maybeAlias -> do
+        executorId <-
+          maybe
+            (Left ("wire run does not know std.io executor @" <> itemName <> "."))
+            Right
+            (stdIoExecutorIdForLeaf itemName)
+        let localName = fromMaybe itemName maybeAlias
+        Right
+          state
+            { runUseExecutors = Map.insert localName executorId state.runUseExecutors
+            }
+      UseContract itemName maybeAlias -> do
+        contractId <-
+          maybe
+            (Left ("wire run does not know std.io contract " <> itemName <> "."))
+            Right
+            (stdIoContractIdForName itemName)
+        let localName = fromMaybe itemName maybeAlias
+        Right
+          state
+            { runUseContracts = Map.insert localName contractId state.runUseContracts
+            }
+
+resolveRunContract :: RunUseScope -> Text -> Text
+resolveRunContract useScope contractName =
+  Map.findWithDefault contractName contractName useScope.runUseContracts
+
+lowerPortSignature :: RunUseScope -> [PortDecl] -> Either Text LoweredPorts
+lowerPortSignature useScope portSig = do
   let inputs =
-        [ (label, contractName, WireInputCardinalityOne)
+        [ (label, resolveRunContract useScope contractName, WireInputCardinalityOne)
         | PortInputDecl label (ContractId contractName) <- portSig
         ]
       outputs =
@@ -673,9 +760,9 @@ lowerPortSignature portSig = do
       concatMap
         ( \case
             PortOutputDecl label (ContractId contractName) ->
-              [(label, contractName)]
+              [(label, resolveRunContract useScope contractName)]
             PortOutputSumDecl variants ->
-              [ (variant.svLabel, variant.svContract.unContractId)
+              [ (variant.svLabel, resolveRunContract useScope variant.svContract.unContractId)
               | variant <- NE.toList variants
               ]
             PortInputDecl {} ->
@@ -707,15 +794,16 @@ wirePortsFromLowered loweredPorts =
     }
 
 pureOutputConfigMap
-  :: [LoweredPort] -> NonEmpty PureOutputEquation -> Either Text (Map Text CorePureExpr)
-pureOutputConfigMap outputPorts outputEquations = do
+  :: RunUseScope -> [LoweredPort] -> NonEmpty PureOutputEquation -> Either Text (Map Text CorePureExpr)
+pureOutputConfigMap useScope outputPorts outputEquations = do
   let outputEquationList = NE.toList outputEquations
   when (length outputPorts /= length outputEquationList) $
     Left "pure output equations do not match lowered output ports."
   Map.fromList <$> zipWithM matchOutput outputPorts outputEquationList
   where
     matchOutput port outputEquation = do
-      let ContractId contractName = outputEquation.pureOutputEquationContract
+      let ContractId rawContractName = outputEquation.pureOutputEquationContract
+          contractName = resolveRunContract useScope rawContractName
       when
         ( port.loweredPortLabel /= outputEquation.pureOutputEquationLabel
             || port.loweredPortContract /= contractName

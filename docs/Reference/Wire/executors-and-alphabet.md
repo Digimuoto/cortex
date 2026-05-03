@@ -36,6 +36,18 @@ let analyst = @review.analyst {
 This does not run the executor and does not create a graph vertex. It creates a configured executor
 value that can be reused in explicit node implementation bodies.
 
+Standard-pack executors are source-scoped through `use`:
+
+```wire
+use std.io.{@stdin, @stdout, @command};
+
+node read_mode
+  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
+```
+
+The `use` form brings names into source scope; it does not bind host authority by itself. The host
+registry still admits and binds the canonical executor ID, such as `std.io.stdin`.
+
 ## Three Layers
 
 | Layer              | Owned by                                          | Contains                                                                                  |

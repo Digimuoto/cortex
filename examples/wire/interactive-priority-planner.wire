@@ -7,11 +7,13 @@
 # Type `high` at the prompt for a more aggressive plan; any other input
 # chooses the conservative threshold.
 
+use std.io.{@stdin, @stdout};
+
 contract UserInput;
 contract PlanSummary;
 
 node read_mode
-  -> answer: UserInput = @cortex.io.stdin { prompt = "Planning mode (high/safe): "; } (null);
+  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
 
 node build_plan
   <- answer: UserInput;
@@ -37,7 +39,7 @@ node build_plan
 
 node print_plan
   <- summary: PlanSummary;
-  = @cortex.io.stdout { newline = true; } (summary);
+  = @stdout { newline = true; } (summary);
 
 read_mode
   => build_plan

@@ -60,6 +60,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0041](0041-wire-cli-command-surface.md)                        | Wire CLI Command Surface                                            | proposed   |
 | [0042](0042-wire-standard-effect-executors.md)                  | Wire Standard Effect Executors                                      | proposed   |
 | [0043](0043-pulse-in-memory-runner.md)                          | Pulse In-Memory Runner                                              | proposed   |
+| [0044](0044-wire-namespace-use-imports.md)                      | Wire Namespace Use Imports                                          | proposed   |
 
 ## Writing a new ADR
 

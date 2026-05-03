@@ -43,6 +43,7 @@ import Text.Megaparsec
   , parse
   , satisfy
   , sepEndBy
+  , sepEndBy1
   , some
   , (<|>)
   )
@@ -108,7 +109,8 @@ keyword w = lexeme . try $ do
 
 reservedWords :: [Text]
 reservedWords =
-  [ "contract"
+  [ "as"
+  , "contract"
   , "else"
   , "export"
   , "false"
@@ -124,6 +126,7 @@ reservedWords =
   , "select"
   , "then"
   , "true"
+  , "use"
   , "where"
   ]
 
@@ -804,6 +807,7 @@ topForm :: Parser TopForm
 topForm =
   choice
     [ contractDecl
+    , useStmt
     , nodeDecl
     , letBinding
     , importStmt
@@ -815,6 +819,39 @@ contractDecl = do
   n <- identifier
   _ <- symbol ";"
   pure (TopContract (ContractId n))
+
+useStmt :: Parser TopForm
+useStmt = do
+  keyword "use"
+  namespace <- qualifiedIdent
+  _ <- symbol "."
+  _ <- symbol "{"
+  items <-
+    requireNonEmpty "use statements require at least one selected name"
+      =<< useItem `sepEndBy1` symbol ","
+  _ <- symbol "}"
+  _ <- symbol ";"
+  pure (TopUse (UseSpec namespace items))
+
+useItem :: Parser UseItem
+useItem =
+  try useExecutorItem <|> useContractItem
+  where
+    useExecutorItem = do
+      _ <- symbol "@"
+      name <- identifier
+      alias <- optional $ do
+        keyword "as"
+        _ <- symbol "@"
+        identifier
+      pure (UseExecutor name alias)
+
+    useContractItem = do
+      name <- identifier
+      alias <- optional $ do
+        keyword "as"
+        identifier
+      pure (UseContract name alias)
 
 nodeDecl :: Parser TopForm
 nodeDecl = do

@@ -36,7 +36,7 @@
         },
         {
           "name": "keyword.declaration.wire",
-          "match": "\\b(contract|node|let|export|import|from|pure|where)\\b"
+          "match": "\\b(contract|node|let|export|import|from|use|as|pure|where)\\b"
         },
         {
           "name": "keyword.other.wire",
