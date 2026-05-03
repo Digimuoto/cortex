@@ -207,6 +207,10 @@ Implemented expression forms:
 - `if ... then ... else ...`;
 - string interpolation: `"Score: ${item.score}"`.
 
+`/` uses finite `Float64` division over numeric values. It never constructs an exact rational or
+`Scientific` quotient, so quotients such as `1 / 3` round to a finite float instead of forcing
+non-terminating decimal construction.
+
 Disallowed:
 
 - `@` executor applications;
@@ -249,7 +253,7 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 
 - missing variables;
 - division by zero;
-- non-terminating decimal division;
+- non-finite float division;
 - unsupported pure input ports;
 - repeated same-contract input ports without explicit labels;
 - missing or ambiguous input values;

@@ -16,6 +16,7 @@ import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
+import Data.Scientific qualified as Scientific
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -126,14 +127,15 @@ spec = describe "Cortex.Wire.Pure" $ do
       (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
       `shouldBe` Left PureDivisionByZero
 
-  it "rejects non-terminating decimal division without crashing" $
+  it "evaluates division with finite Float64 semantics" $
     evaluatePureTaskOutputs
       scorePorts
       scoreInputs
       []
       Nothing
       (Map.singleton "score" (bin CorePureDivide (num 1) (num 3)))
-      `shouldBe` Left (PureNonTerminatingDecimalDivision "1" "3")
+      `shouldBe` Right
+        (Map.singleton "score" (Aeson.Number (Scientific.fromFloatDigits (1 / 3 :: Double))))
 
   it "rejects duplicate CorePure binding names in the same scope" $
     evaluatePureTaskOutputs

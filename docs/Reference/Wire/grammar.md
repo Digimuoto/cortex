@@ -380,6 +380,9 @@ usually `toJson`.
 string back into a structured CorePure value. Both are deterministic and intended for text/config
 construction, not host authority.
 
+Division uses finite `Float64` semantics rather than exact rational or `Scientific` quotient
+construction. Division by zero and non-finite float results are typed CorePure failures.
+
 ## 9. Imports And File Returns
 
 `import name from "path.wire" ;` imports the file-return value from another file.

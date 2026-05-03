@@ -45,7 +45,6 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Ratio (denominator)
 import Data.Scientific (Scientific, toBoundedInteger)
 import Data.Scientific qualified as Scientific
 import Data.Set (Set)
@@ -81,7 +80,7 @@ import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloa
 data PureEvalError
   = PureMissingVariable !Text
   | PureDivisionByZero
-  | PureNonTerminatingDecimalDivision !Text !Text
+  | PureNonFiniteFloatDivision !Text !Text
   | PureInputPortUnsupported !Text !Text
   | PureInputPortRequiresLabel !Text !Text
   | PureInputPortMissing !Text !Text
@@ -126,8 +125,8 @@ renderPureEvalError = \case
     "Pure expression references missing variable " <> variableName <> "."
   PureDivisionByZero ->
     "Pure expression attempted division by zero."
-  PureNonTerminatingDecimalDivision numeratorText denominatorText ->
-    "Pure expression attempted non-terminating decimal division "
+  PureNonFiniteFloatDivision numeratorText denominatorText ->
+    "Pure expression attempted finite Float64 division outside finite range: "
       <> numeratorText
       <> " / "
       <> denominatorText
@@ -651,10 +650,8 @@ evaluateCorePureBinary binaryOp lhs rhs =
     CorePureAdd -> numericBinary (+) lhs rhs
     CorePureSubtract -> numericBinary (-) lhs rhs
     CorePureMultiply -> numericBinary (*) lhs rhs
-    CorePureDivide -> do
-      lhsNumber <- corePureNumber lhs
-      rhsNumber <- corePureNumber rhs
-      CorePureJson . Aeson.Number <$> divideScientific lhsNumber rhsNumber
+    CorePureDivide ->
+      numericFloatDivide lhs rhs
     CorePureMerge -> do
       lhsObject <- corePureObject lhs
       rhsObject <- corePureObject rhs
@@ -684,22 +681,26 @@ numericBinary
 numericBinary op lhs rhs =
   CorePureJson . Aeson.Number <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
 
-divideScientific :: Scientific -> Scientific -> Either PureEvalError Scientific
-divideScientific lhs rhs
-  | rhs == 0 = Left PureDivisionByZero
-  | decimalTerminating (denominator quotient) = Right (fromRational quotient)
-  | otherwise =
-      Left (PureNonTerminatingDecimalDivision (canonicalNumber lhs) (canonicalNumber rhs))
-  where
-    quotient = toRational lhs / toRational rhs
+numericFloatDivide
+  :: CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
+numericFloatDivide lhs rhs = do
+  lhsNumber <- corePureNumber lhs
+  rhsNumber <- corePureNumber rhs
+  if rhsNumber == 0
+    then Left PureDivisionByZero
+    else do
+      let lhsFloat = Scientific.toRealFloat lhsNumber :: Double
+          rhsFloat = Scientific.toRealFloat rhsNumber :: Double
+          result = lhsFloat / rhsFloat
+      if finiteFloat lhsFloat && finiteFloat rhsFloat && finiteFloat result
+        then Right (CorePureJson (Aeson.Number (Scientific.fromFloatDigits result)))
+        else Left (PureNonFiniteFloatDivision (canonicalNumber lhsNumber) (canonicalNumber rhsNumber))
 
-decimalTerminating :: Integer -> Bool
-decimalTerminating value =
-  stripFactor 5 (stripFactor 2 value) == 1
-  where
-    stripFactor factor current
-      | current `mod` factor == 0 = stripFactor factor (current `div` factor)
-      | otherwise = current
+finiteFloat :: Double -> Bool
+finiteFloat value =
+  not (isNaN value || isInfinite value)
 
 numericCompare
   :: (Scientific -> Scientific -> Bool)
