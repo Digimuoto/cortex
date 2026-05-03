@@ -8,8 +8,8 @@
 # circuit file through the IBM Runtime REST bridge. The final analyzer is a
 # pure Wire node that parses JSON stdout with fromJson.
 
-contract CommandSpec;
-contract CommandResult;
+use std.io.{@stdout, @command, CommandSpec, CommandResult};
+
 contract ExperimentStart;
 contract ExperimentReport;
 
@@ -115,47 +115,79 @@ node plan_experiment
 
 node run_open_0
   <- open0Spec: CommandSpec;
-  -> open0: CommandResult = @cortex.io.command {} (open0Spec);
+  -> open0: CommandResult = @command {} (open0Spec);
 
-node run_open_14
+node gate_open_14
   <- open14Spec: CommandSpec;
   <- open0: CommandResult;
-  -> open14: CommandResult = @cortex.io.command {} (open14Spec);
+  -> open14Ready: CommandSpec = pure (open14Spec);
 
-node run_open_12
+node run_open_14
+  <- open14Ready: CommandSpec;
+  -> open14: CommandResult = @command {} (open14Ready);
+
+node gate_open_12
   <- open12Spec: CommandSpec;
   <- open14: CommandResult;
-  -> open12: CommandResult = @cortex.io.command {} (open12Spec);
+  -> open12Ready: CommandSpec = pure (open12Spec);
 
-node run_which_0
+node run_open_12
+  <- open12Ready: CommandSpec;
+  -> open12: CommandResult = @command {} (open12Ready);
+
+node gate_which_0
   <- which0Spec: CommandSpec;
   <- open12: CommandResult;
-  -> which0: CommandResult = @cortex.io.command {} (which0Spec);
+  -> which0Ready: CommandSpec = pure (which0Spec);
 
-node run_which_14
+node run_which_0
+  <- which0Ready: CommandSpec;
+  -> which0: CommandResult = @command {} (which0Ready);
+
+node gate_which_14
   <- which14Spec: CommandSpec;
   <- which0: CommandResult;
-  -> which14: CommandResult = @cortex.io.command {} (which14Spec);
+  -> which14Ready: CommandSpec = pure (which14Spec);
 
-node run_which_12
+node run_which_14
+  <- which14Ready: CommandSpec;
+  -> which14: CommandResult = @command {} (which14Ready);
+
+node gate_which_12
   <- which12Spec: CommandSpec;
   <- which14: CommandResult;
-  -> which12: CommandResult = @cortex.io.command {} (which12Spec);
+  -> which12Ready: CommandSpec = pure (which12Spec);
 
-node run_eraser_0
+node run_which_12
+  <- which12Ready: CommandSpec;
+  -> which12: CommandResult = @command {} (which12Ready);
+
+node gate_eraser_0
   <- eraser0Spec: CommandSpec;
   <- which12: CommandResult;
-  -> eraser0: CommandResult = @cortex.io.command {} (eraser0Spec);
+  -> eraser0Ready: CommandSpec = pure (eraser0Spec);
 
-node run_eraser_14
+node run_eraser_0
+  <- eraser0Ready: CommandSpec;
+  -> eraser0: CommandResult = @command {} (eraser0Ready);
+
+node gate_eraser_14
   <- eraser14Spec: CommandSpec;
   <- eraser0: CommandResult;
-  -> eraser14: CommandResult = @cortex.io.command {} (eraser14Spec);
+  -> eraser14Ready: CommandSpec = pure (eraser14Spec);
 
-node run_eraser_12
+node run_eraser_14
+  <- eraser14Ready: CommandSpec;
+  -> eraser14: CommandResult = @command {} (eraser14Ready);
+
+node gate_eraser_12
   <- eraser12Spec: CommandSpec;
   <- eraser14: CommandResult;
-  -> eraser12: CommandResult = @cortex.io.command {} (eraser12Spec);
+  -> eraser12Ready: CommandSpec = pure (eraser12Spec);
+
+node run_eraser_12
+  <- eraser12Ready: CommandSpec;
+  -> eraser12: CommandResult = @command {} (eraser12Ready);
 
 node summarize_experiment
   <- open0: CommandResult;
@@ -270,7 +302,7 @@ node summarize_experiment
           =============================================
 
           Run
-            execution: Wire graph + @cortex.io.command
+            execution: Wire graph + std.io.command
             backend: IBM Quantum Runtime REST hardware
             shots: 100 per circuit
             circuits: 9 checked-in Wire files
@@ -302,7 +334,7 @@ node summarize_experiment
           =============================================
 
           Run
-            execution: Wire graph + @cortex.io.command
+            execution: Wire graph + std.io.command
             backend: IBM Quantum Runtime REST hardware
             shots: 100 per circuit
             circuits: 9 checked-in Wire files
@@ -324,7 +356,7 @@ node summarize_experiment
         =============================================
 
         Run
-          execution: Wire graph + @cortex.io.command
+          execution: Wire graph + std.io.command
           backend: IBM Quantum Runtime REST hardware
           shots: 100 per circuit
           circuits: 9 checked-in Wire files
@@ -345,46 +377,70 @@ node summarize_experiment
 
 node print_report
   <- summary: ExperimentReport;
-  = @cortex.io.stdout { newline = true; } (summary);
+  = @stdout { newline = true; } (summary);
 
 (
   start_experiment
     => plan_experiment
     => (
       run_open_0
+      <> gate_open_14
       <> run_open_14
+      <> gate_open_12
       <> run_open_12
+      <> gate_which_0
       <> run_which_0
+      <> gate_which_14
       <> run_which_14
+      <> gate_which_12
       <> run_which_12
+      <> gate_eraser_0
       <> run_eraser_0
+      <> gate_eraser_14
       <> run_eraser_14
+      <> gate_eraser_12
       <> run_eraser_12
     )
 )
 <>
 (
   run_open_0
+    => gate_open_14
     => run_open_14
+    => gate_open_12
     => run_open_12
+    => gate_which_0
     => run_which_0
+    => gate_which_14
     => run_which_14
+    => gate_which_12
     => run_which_12
+    => gate_eraser_0
     => run_eraser_0
+    => gate_eraser_14
     => run_eraser_14
+    => gate_eraser_12
     => run_eraser_12
 )
 <>
 (
   (
     run_open_0
+    <> gate_open_14
     <> run_open_14
+    <> gate_open_12
     <> run_open_12
+    <> gate_which_0
     <> run_which_0
+    <> gate_which_14
     <> run_which_14
+    <> gate_which_12
     <> run_which_12
+    <> gate_eraser_0
     <> run_eraser_0
+    <> gate_eraser_14
     <> run_eraser_14
+    <> gate_eraser_12
     <> run_eraser_12
   )
     => summarize_experiment

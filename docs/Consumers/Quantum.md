@@ -222,7 +222,7 @@ bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
 [`../../examples/wire/quantum-eraser-experiment.wire`](../../examples/wire/quantum-eraser-experiment.wire)
 is the source of truth for the full delayed-choice quantum eraser sweep. It is an executable Wire
-scaffold: a pure planning node builds nine `@cortex.io.command` leaves, the topology sequences those
+scaffold: a pure planning node builds nine `std.io.command` leaves, the topology sequences those
 leaves, and a final pure node parses and summarizes the run with `fromJson`. Each command leaf
 submits a checked-in Wire circuit file through the IBM Runtime REST bridge.
 

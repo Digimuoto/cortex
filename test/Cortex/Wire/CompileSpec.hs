@@ -344,7 +344,9 @@ spec = describe "Cortex.Wire.Compile" $ do
       Set.fromList compiled.compiledCircuitExitNodes
         `shouldBe` Set.fromList [CircuitNodeRef "print_report"]
       successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_0")
-        `shouldBe` Set.fromList [CircuitNodeRef "run_open_14", CircuitNodeRef "summarize_experiment"]
+        `shouldBe` Set.fromList [CircuitNodeRef "gate_open_14", CircuitNodeRef "summarize_experiment"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "gate_open_14")
+        `shouldBe` Set.fromList [CircuitNodeRef "run_open_14"]
 
     it "compiles the quantum eraser sweep circuit examples with primitive executors" $
       mapM_ compileQuantumEraserFixture quantumEraserSweepFixtures
