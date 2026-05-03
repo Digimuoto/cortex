@@ -22,8 +22,10 @@ import Test.HUnit.Lang (assertFailure)
 import Test.Hspec
 
 import Cortex.Algebra.Graph
-  ( ValidationError (..)
+  ( Relation (..)
+  , ValidationError (..)
   , edge
+  , relVertices
   , successors
   , toRelation
   )
@@ -53,7 +55,14 @@ import Cortex.Pulse.Rewrite
   , BoundaryLaw (..)
   , BoundaryResourceUse (..)
   , BudgetContext (..)
+  , BudgetedBoundaryResourceUse (..)
+  , GraphRewrite (..)
   , PlannedRewriteDelta (..)
+  , RewriteCost (..)
+  , SubgraphSpec (..)
+  , admittedBoundaryResourceUse
+  , planGraphRewriteWithAdmissionWitness
+  , plannedGraphRewriteDelta
   )
 import Cortex.Pulse.Types (defaultRewriteBudget)
 import Cortex.Wire.Circuit
@@ -238,6 +247,66 @@ spec = do
                 `shouldBe` Set.fromList [NodeId "summary", NodeId "risks"]
         _ ->
           expectationFailure "Expected StageRewrite for selected then branch."
+
+    it "admits only the selected latent branch through the rewrite witness surface" $ do
+      compiled <- requireCompiled binaryConditionalCircuitIR
+      stagePlan <- requireLoweredStagePlan thenBranchBinder compiled
+      let conditionNodeId = NodeId "__cortex_workflow__/condition/1"
+          selectedNodeId = NodeId "then_work"
+          unselectedNodeId = NodeId "else_work"
+          selectedRuntimeNodeId = NodeId "__cortex_workflow__/condition/1:then_work"
+          unselectedRuntimeNodeId = NodeId "__cortex_workflow__/condition/1:else_work"
+      conditionStage <-
+        requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
+      stageResult <- conditionStage.sdAction nilStageCtx
+      case stageResult of
+        StageRewrite (Aeson.Bool True) rewrite@(AppendAfter anchor selectedSpec) -> do
+          anchor `shouldBe` conditionNodeId
+          Set.member selectedNodeId (relVertices selectedSpec.sgsTopology) `shouldBe` True
+          Set.member unselectedNodeId (relVertices selectedSpec.sgsTopology) `shouldBe` False
+          witness <-
+            requireRight
+              "Expected selected branch rewrite admission witness"
+              ( planGraphRewriteWithAdmissionWitness
+                  defaultRewriteBudget
+                  rewrite
+                  stagePlan.spTopology
+                  stagePlan.spDefinitions
+              )
+          let delta = plannedGraphRewriteDelta witness
+          delta.prdNewNodes `shouldBe` Set.singleton selectedRuntimeNodeId
+          Set.member unselectedRuntimeNodeId delta.prdNewNodes `shouldBe` False
+          delta.prdAddedEdges
+            `shouldBe` Set.fromList
+              [ (conditionNodeId, selectedRuntimeNodeId)
+              , (selectedRuntimeNodeId, NodeId "done")
+              ]
+          delta.prdCost
+            `shouldBe` RewriteCost
+              { rcAddedNodes = 1
+              , rcAddedEdges = 2
+              , rcAddedDepth = 1
+              , rcFrontierDelta = 0
+              , rcRewriteOps = 1
+              }
+          admittedBoundaryResourceUse witness
+            `shouldBe` BudgetedBoundaryResourceUse
+              { bbruUse =
+                  BoundaryResourceUse
+                    { bruLaw = AppendContinuation
+                    , bruSlotAnchor = conditionNodeId
+                    , bruAnchorBoundaryUse = AnchorBoundaryRetained
+                    }
+              , bbruCost = delta.prdCost
+              }
+        StageRewrite {} ->
+          expectationFailure "Expected selected branch append rewrite."
+        StageComplete {} ->
+          expectationFailure "Expected selected branch StageRewrite, got completion."
+        StageSuspend {} ->
+          expectationFailure "Expected selected branch StageRewrite, got suspension."
+        StageRejectRewrite {} ->
+          expectationFailure "Expected selected branch StageRewrite, got rewrite rejection."
 
     it "completes without a rewrite when the implicit else branch is selected" $ do
       compiled <- requireCompiled sampleCircuitIR
@@ -457,6 +526,24 @@ simpleLinearCircuitIR =
         CircuitSequence
           ( CircuitTask (taskNode "planner" "Planner")
               :| [CircuitTask (taskNode "reviewer" "Reviewer")]
+          )
+    , circuitIrMetadata = Aeson.object []
+    }
+
+binaryConditionalCircuitIR :: CircuitIR
+binaryConditionalCircuitIR =
+  CircuitIR
+    { circuitIrId = "binary-conditional"
+    , circuitIrLabel = "Binary conditional circuit"
+    , circuitIrRoot =
+        CircuitSequence
+          ( CircuitTask (taskNode "planner" "Planner")
+              :| [ CircuitConditional
+                     (CircuitConditionRef "needs_branch")
+                     (CircuitTask (taskNode "then_work" "Then Work"))
+                     (Just (CircuitTask (taskNode "else_work" "Else Work")))
+                 , CircuitTask (taskNode "done" "Done")
+                 ]
           )
     , circuitIrMetadata = Aeson.object []
     }

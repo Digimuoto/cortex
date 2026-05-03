@@ -51,7 +51,8 @@ lean_lib «Cortex» where
     `Cortex.Wire.Select,
     `Cortex.Wire.BoundaryResource,
     `Cortex.Wire.NodeBoundary,
-    `Cortex.Wire.PulseSafety
+    `Cortex.Wire.PulseSafety,
+    `Cortex.Wire.SelectRecovery
   ]
 
 -- Smoke-test executable. Prints a build banner; useful for confirming

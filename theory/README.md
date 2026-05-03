@@ -139,6 +139,8 @@ runtime-shaped planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Pla
 adds a proof-side planner construction: it realizes the relation-level final topology as a graph
 representative, computes delta diff sets and costs from that relation, and proves the constructed
 delta establishes the planner-construction bridge under the remaining runtime validation witnesses.
+`Cortex.Wire.SelectRecovery` models recovery of selected latent branches as replay of the admitted
+selected append rewrite, not as a new graph operator or a re-run of selector code.
 
 Mechanized results now include:
 
@@ -306,9 +308,11 @@ Mechanized results now include:
   constructed selected-arm delta cost, carries the namespaced selected subgraph into the admission
   checks, inherits constructed-delta registry-boundary preservation, and keeps unselected branch
   fragments outside the selected raw fragment through the family disjointness invariant.
-- `WireTopologyDAGBridge`, `MaterializedPulseState`, and `SafeWireRunState`: the Track 3 envelope
-  that connects Wire planning validity, registry boundary, rewrite budget bounds, and Pulse
-  `wellFormedGraphState` over the materialized DAG for the current Wire topology.
+- `WireTopologyDAGBridge`, `WireTopologyDAGBridge.ofAcyclic`, `MaterializedPulseState`, and
+  `SafeWireRunState`: the Track 3 envelope that connects Wire planning validity, registry boundary,
+  rewrite budget bounds, and Pulse `wellFormedGraphState` over the materialized DAG for the current
+  Wire topology. Accepted acyclic Wire topologies now admit a canonical `DAG.ofRelation` bridge
+  witness consumed by the envelope.
 - `wirePulseRecoveryStep_establishes_safeRunState`, `wirePulseRecoveryStep_preserves_safeRunState`,
   `wirePulseExecutionStep_preserves_safeRunState`,
   `wirePulseAdmittedRewrite_preserves_safeRunState`, and `selectActualize_preserves_safeRunState`:
@@ -316,6 +320,15 @@ Mechanized results now include:
   preconditions; recovery, admissible frontier facts, constructed rewrites, and selected-arm
   actualization then preserve the envelope when the runtime supplies the corresponding materialized
   Pulse DAG/state witness.
+- `SelectedBranchRecoveryRecord`, `SelectedBranchRecoveryRecord.Provenance`,
+  `PersistedSelectedBranchAdmission`, `replayedRewrite_eq_of_selected_eq`,
+  `selectedBranch_recovery_deterministic`, `selectedBranch_unselected_not_replayed`,
+  `selectedBranch_unselected_not_in_delta_topology`, and
+  `selectedBranch_recovery_preserves_safeRunState`: selected-branch recovery records loaded from the
+  same persisted admission replay the same selected append rewrite, constructed delta, and remaining
+  budget; unselected branch nodes stay out of the raw replayed fragment and, under namespace
+  freshness, the constructed selected-branch delta topology; the record then feeds the existing
+  Wire/Pulse safe-run preservation theorem.
 - `corePureExecutionStep_preserves_safeRunState`: successful admitted CorePure output evaluation can
   feed the Pulse success-fact surface while retaining output-port and proof-side value-contract
   evidence.
@@ -332,7 +345,9 @@ discovery, `corePureBuiltinAuthorityReport` for closed builtin-table review,
 private node-boundary normal-form IR with compiler validation hooks, shared runtime egress wrappers
 for single and multi-output Wire values, plus `planGraphRewriteWithAdmissionWitness`, which reruns
 the Lean-shaped planner and budget-admission equations around `planGraphRewrite` and
-`admitRewriteDelta`.
+`admitRewriteDelta`. Circuit lowering tests now check that selected latent branches lower through
+the same admitted `AppendAfter` witness surface, omit unselected branch nodes from the selected
+delta, and charge only the selected branch cost.
 
 The remaining Track 3 obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next proof slices are:
@@ -342,10 +357,9 @@ The remaining Track 3 obligations are now tracked in
   Wire output contract wrapping;
 - Haskell planner and budget-admission correspondence for full `RuntimeConstructionInputs` and
   added-node/added-edge registry admission;
-- graph-to-DAG bridge construction for `WireTopologyDAGBridge`, executable materialization witnesses
-  for `MaterializedPulseState`, retained-node status/output continuity across rewrites,
-  SelectActualize runtime/materialization correspondence tracked by GitHub #138, and later durable
-  selected-branch recovery determinism.
+- executable materialization witnesses for `MaterializedPulseState`, retained-node status/output
+  continuity across rewrites, and persisted rewrite-lineage hooks that produce
+  `SelectedBranchRecoveryRecord.Provenance` directly.
 
 This is the "sandbox by proof" story for dynamic graph rewriting. Rewrites may transform topology,
 but chain-level preservation requires them to stay inside the registry boundary documented in

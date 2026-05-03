@@ -16,12 +16,13 @@ fixed `DAG`. Runtime materialization is the boundary between those tracks: an
 accepted Wire topology must be viewed as the Pulse DAG that execution and
 recovery use.
 
-This module intentionally does not construct that DAG. The graph-to-DAG
-construction belongs to the graph/Pulse bridge track. Instead,
 `WireTopologyDAGBridge` names the witness Track 3 needs: the Pulse DAG has the
 same finite node set and direct-edge relation as the current Wire topology.
-`SafeWireRunState` then bundles the Wire and Pulse invariants that must move
-together across execution, recovery, and admitted rewrites.
+`WireTopologyDAGBridge.ofAcyclic` constructs one such bridge using
+`DAG.ofRelation`; it is an existence witness, not a requirement that the runtime
+materializer use that exact construction. `SafeWireRunState` then bundles the
+Wire and Pulse invariants that must move together across execution, recovery,
+and admitted rewrites.
 
 ## Theorem Split
 
@@ -29,6 +30,7 @@ The page proves preservation surfaces:
 
 * recovery establishes the bundled safe state from persisted recovery
   preconditions;
+* accepted acyclic Wire topologies yield a `DAG.ofRelation` bridge witness;
 * recovery preserves the bundled safe state for the same topology;
 * admissible frontier facts, followed by recovery normalization, preserve it;
 * successful CorePure output evaluation can feed that execution surface as a
@@ -57,8 +59,10 @@ variable [DecidableEq node]
 
 /-- `WireTopologyDAGBridge topology G` relates a Wire topology to the Pulse DAG used to execute it.
 
-The bridge is explicit because Track 3 consumes, but does not construct, the graph-to-DAG witness.
-Track 1 is responsible for deriving this record from relation endpoint closure and acyclicity. -/
+The bridge is explicit because safe-state preservation consumes a DAG witness
+instead of inferring one from every use site. `WireTopologyDAGBridge.ofAcyclic`
+provides the canonical relation-derived witness from accepted acyclic topology;
+runtime materialization may supply any witness satisfying this relation. -/
 structure WireTopologyDAGBridge
     (topology : Graph node)
     (G : DAG node) :
@@ -98,6 +102,31 @@ theorem topology_edge_pulse_edge
     (hEdge : (source, target) ∈ (denote topology).edges) :
     G.edge source target = true :=
   (hBridge.edge_iff source target).mpr hEdge
+
+/-- Build one Wire/Pulse bridge witness from an accepted acyclic Wire topology.
+
+The constructed Pulse DAG is `DAG.ofRelation (denote topology) ...`. Runtime
+materialization may supply any DAG that satisfies `WireTopologyDAGBridge`; this
+theorem only proves that the canonical relation-derived witness exists. -/
+theorem ofAcyclic
+    (topology : Graph node)
+    (hAcyclic : Acyclic topology) :
+    WireTopologyDAGBridge
+      topology
+      (DAG.ofRelation
+        (denote topology)
+        (denote_edgeEndpointsInVertices topology)
+        ((acyclic_iff_graphSafetyAcyclic topology).mp hAcyclic)) := by
+  constructor
+  · rfl
+  · intro source target
+    exact
+      DAG.ofRelation_edge_true_iff
+        (denote topology)
+        (denote_edgeEndpointsInVertices topology)
+        ((acyclic_iff_graphSafetyAcyclic topology).mp hAcyclic)
+        source
+        target
 
 end WireTopologyDAGBridge
 
