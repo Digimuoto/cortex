@@ -29,6 +29,7 @@ import Cortex.Wire.BoundaryResource
 import Cortex.Wire.NodeBoundary
 import Cortex.Wire.PulseSafety
 import Cortex.Wire.SelectRecovery
+import Cortex.Wire.RunTrace
 
 /-!
 ## Overview
