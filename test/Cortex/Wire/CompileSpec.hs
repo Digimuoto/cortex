@@ -79,6 +79,15 @@ spec = describe "Cortex.Wire.Compile" $ do
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
+  it "compiles node-body kind applications into ordinary nodes" $ do
+    compiled <- requireRight (compileWireText kindApplicationSourceText)
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "screen_h")
+    case Map.lookup (CircuitNodeRef "screen_h") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasNumber "angle" 1.25
+      other ->
+        expectationFailure ("expected task node, got: " <> show other)
+
   it "evaluates top-level pure-data lets in executor config" $ do
     compiled <- requireRight (compileWireText topLevelLetConfigSourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
@@ -435,6 +444,16 @@ configuredExecutorSourceText =
     , "  -> analysis: AnalysisFragment ;"
     , "  = analyst_base (plan) ;"
     , "planner => analyst"
+    ]
+
+kindApplicationSourceText :: T.Text
+kindApplicationSourceText =
+  T.unlines
+    [ "kind phase_gate(label: PortLabel, portContract: Contract, angle: Value) ="
+    , "  <- label: portContract ;"
+    , "  -> label: portContract = @quantum.rz { angle = angle ; } (label) ;"
+    , "node screen_h = phase_gate(screen, Qubit, 1.25);"
+    , "screen_h"
     ]
 
 topLevelLetConfigSourceText :: T.Text

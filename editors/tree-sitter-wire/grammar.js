@@ -4,7 +4,7 @@
  * Source of truth: docs/Reference/Wire/grammar.md. Mirrors the Haskell parser
  * at src/Cortex/Wire/Parser.hs.
  *
- * Top-level forms: contract, use, node, let/export let, import, and optional
+ * Top-level forms: contract, use, kind, node, let/export let, import, and optional
  * file-return expression.
  * Executor values: @qualified.name { config }
  * Executor calls:  @qualified.name { config } (input) | configured (input)
@@ -63,6 +63,7 @@ module.exports = grammar({
     _top_form: $ => choice(
       $.contract_decl,
       $.use_stmt,
+      $.kind_decl,
       $.node_decl,
       $.let_binding,
       $.import_stmt,
@@ -141,9 +142,17 @@ module.exports = grammar({
       ';',
     ),
 
-    node_decl: $ => seq(
-      'node',
+    kind_decl: $ => seq(
+      'kind',
       field('name', $.identifier),
+      '(',
+      optional(field('params', seq(
+        $.kind_param,
+        repeat(seq(',', $.kind_param)),
+        optional(','),
+      ))),
+      ')',
+      '=',
       field('inputs', repeat($.input_clause)),
       field('body', choice(
         $.pure_body,
@@ -151,6 +160,51 @@ module.exports = grammar({
         $.executor_body,
       )),
       optional(field('where', $.where_clause)),
+    ),
+
+    kind_param: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('class', $.kind_param_class),
+    ),
+
+    kind_param_class: _ => choice(
+      'PortLabel',
+      'Contract',
+      'Value',
+      'ConfiguredExecutor',
+    ),
+
+    node_decl: $ => seq(
+      'node',
+      field('name', $.identifier),
+      choice(
+        seq(
+          '=',
+          field('kind', $.kind_application),
+          ';',
+        ),
+        seq(
+          field('inputs', repeat($.input_clause)),
+          field('body', choice(
+            $.pure_body,
+            $.executor_single_output_body,
+            $.executor_body,
+          )),
+          optional(field('where', $.where_clause)),
+        ),
+      ),
+    ),
+
+    kind_application: $ => seq(
+      field('name', $.identifier),
+      '(',
+      optional(field('args', seq(
+        $.expression,
+        repeat(seq(',', $.expression)),
+        optional(','),
+      ))),
+      ')',
     ),
 
     input_clause: $ => seq(

@@ -16,6 +16,28 @@ contract IBMQuantumConfig;
 contract Qubit;
 contract Bit;
 
+let quantum_rz_zero = @quantum.rz { angle = 0.0; };
+let quantum_rz_quarter_turn = @quantum.rz { angle = 1.5707963267948966; };
+let quantum_rz_half_turn = @quantum.rz { angle = 3.141592653589793; };
+let quantum_sx = @quantum.sx {};
+let quantum_cz = @quantum.cz {};
+let quantum_measure_z = @quantum.measure_z {};
+
+kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit = gate (label);
+
+kind qubit_measure(input: PortLabel, output: PortLabel) =
+  <- input: Qubit;
+  -> output: Bit = quantum_measure_z (input);
+
+kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecutor) =
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = gate ({ inherit control; inherit target; });
+
 # Hardware circuit graph values for the eraser sweep.
 #
 # Each exported graph is selected with `wire build --return NAME` by the
@@ -28,30 +50,14 @@ node open0_ibm_runtime_config
 node open0_prepare_screen
   <- config: IBMQuantumConfig;
   -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
-node open0_split_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open0_split_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
-node open0_split_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open0_phase_screen
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 0.0; } (screen);
-node open0_recombine_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open0_recombine_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
-node open0_recombine_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open0_measure_screen
-  <- screen: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (screen);
+node open0_split_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
+node open0_split_sx = qubit_gate(screen, quantum_sx);
+node open0_split_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+node open0_phase_screen = qubit_gate(screen, quantum_rz_zero);
+node open0_recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
+node open0_recombine_sx = qubit_gate(screen, quantum_sx);
+node open0_recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+node open0_measure_screen = qubit_measure(screen, screen);
 let open0_split_path =
   open0_split_rz_a
     => open0_split_sx
@@ -76,30 +82,14 @@ node open14_ibm_runtime_config
 node open14_prepare_screen
   <- config: IBMQuantumConfig;
   -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
-node open14_split_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open14_split_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
-node open14_split_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open14_phase_screen
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open14_recombine_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open14_recombine_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
-node open14_recombine_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open14_measure_screen
-  <- screen: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (screen);
+node open14_split_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
+node open14_split_sx = qubit_gate(screen, quantum_sx);
+node open14_split_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+node open14_phase_screen = qubit_gate(screen, quantum_rz_quarter_turn);
+node open14_recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
+node open14_recombine_sx = qubit_gate(screen, quantum_sx);
+node open14_recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+node open14_measure_screen = qubit_measure(screen, screen);
 let open14_split_path =
   open14_split_rz_a
     => open14_split_sx
@@ -124,30 +114,14 @@ node open12_ibm_runtime_config
 node open12_prepare_screen
   <- config: IBMQuantumConfig;
   -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
-node open12_split_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open12_split_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
-node open12_split_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open12_phase_screen
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 3.141592653589793; } (screen);
-node open12_recombine_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open12_recombine_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
-node open12_recombine_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
-node open12_measure_screen
-  <- screen: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (screen);
+node open12_split_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
+node open12_split_sx = qubit_gate(screen, quantum_sx);
+node open12_split_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+node open12_phase_screen = qubit_gate(screen, quantum_rz_half_turn);
+node open12_recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
+node open12_recombine_sx = qubit_gate(screen, quantum_sx);
+node open12_recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+node open12_measure_screen = qubit_measure(screen, screen);
 let open12_split_path =
   open12_split_rz_a
     => open12_split_sx
@@ -174,57 +148,22 @@ node which0_prepare_screen
   -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
 node which0_prepare_marker
   -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-node which0_split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which0_split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node which0_split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which0_phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 0.0; } (control);
-node which0_mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which0_mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node which0_mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which0_mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
-node which0_z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which0_z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node which0_z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which0_recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which0_recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node which0_recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which0_measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
-node which0_z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+node which0_split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node which0_split_sx = qubit_gate(control, quantum_sx);
+node which0_split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node which0_phase_screen = qubit_gate(control, quantum_rz_zero);
+node which0_mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node which0_mark_pre_sx = qubit_gate(target, quantum_sx);
+node which0_mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node which0_mark_cz = two_qubit_gate(control, target, quantum_cz);
+node which0_z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node which0_z_mark_post_sx = qubit_gate(target, quantum_sx);
+node which0_z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node which0_recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node which0_recombine_sx = qubit_gate(control, quantum_sx);
+node which0_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node which0_measure_screen = qubit_measure(control, screen);
+node which0_z_measure_marker = qubit_measure(target, marker);
 let which0_split_path =
   which0_split_rz_a
     => which0_split_sx
@@ -274,57 +213,22 @@ node which14_prepare_screen
   -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
 node which14_prepare_marker
   -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-node which14_split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which14_split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node which14_split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which14_phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which14_mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which14_mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node which14_mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which14_mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
-node which14_z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which14_z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node which14_z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which14_recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which14_recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node which14_recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which14_measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
-node which14_z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+node which14_split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node which14_split_sx = qubit_gate(control, quantum_sx);
+node which14_split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node which14_phase_screen = qubit_gate(control, quantum_rz_quarter_turn);
+node which14_mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node which14_mark_pre_sx = qubit_gate(target, quantum_sx);
+node which14_mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node which14_mark_cz = two_qubit_gate(control, target, quantum_cz);
+node which14_z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node which14_z_mark_post_sx = qubit_gate(target, quantum_sx);
+node which14_z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node which14_recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node which14_recombine_sx = qubit_gate(control, quantum_sx);
+node which14_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node which14_measure_screen = qubit_measure(control, screen);
+node which14_z_measure_marker = qubit_measure(target, marker);
 let which14_split_path =
   which14_split_rz_a
     => which14_split_sx
@@ -374,57 +278,22 @@ node which12_prepare_screen
   -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
 node which12_prepare_marker
   -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-node which12_split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which12_split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node which12_split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which12_phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 3.141592653589793; } (control);
-node which12_mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which12_mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node which12_mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which12_mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
-node which12_z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which12_z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node which12_z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node which12_recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which12_recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node which12_recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node which12_measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
-node which12_z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+node which12_split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node which12_split_sx = qubit_gate(control, quantum_sx);
+node which12_split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node which12_phase_screen = qubit_gate(control, quantum_rz_half_turn);
+node which12_mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node which12_mark_pre_sx = qubit_gate(target, quantum_sx);
+node which12_mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node which12_mark_cz = two_qubit_gate(control, target, quantum_cz);
+node which12_z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node which12_z_mark_post_sx = qubit_gate(target, quantum_sx);
+node which12_z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node which12_recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node which12_recombine_sx = qubit_gate(control, quantum_sx);
+node which12_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node which12_measure_screen = qubit_measure(control, screen);
+node which12_z_measure_marker = qubit_measure(target, marker);
 let which12_split_path =
   which12_split_rz_a
     => which12_split_sx
@@ -474,66 +343,25 @@ node eraser0_prepare_screen
   -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
 node eraser0_prepare_marker
   -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-node eraser0_split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser0_split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node eraser0_split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser0_phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 0.0; } (control);
-node eraser0_mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser0_mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser0_mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser0_mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
-node eraser0_z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser0_z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser0_z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser0_recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser0_recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node eraser0_recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser0_measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
-node eraser0_z_marker_eraser_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser0_z_marker_eraser_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser0_z_marker_eraser_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser0_z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+node eraser0_split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser0_split_sx = qubit_gate(control, quantum_sx);
+node eraser0_split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser0_phase_screen = qubit_gate(control, quantum_rz_zero);
+node eraser0_mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser0_mark_pre_sx = qubit_gate(target, quantum_sx);
+node eraser0_mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser0_mark_cz = two_qubit_gate(control, target, quantum_cz);
+node eraser0_z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser0_z_mark_post_sx = qubit_gate(target, quantum_sx);
+node eraser0_z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser0_recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser0_recombine_sx = qubit_gate(control, quantum_sx);
+node eraser0_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser0_measure_screen = qubit_measure(control, screen);
+node eraser0_z_marker_eraser_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser0_z_marker_eraser_sx = qubit_gate(target, quantum_sx);
+node eraser0_z_marker_eraser_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser0_z_measure_marker = qubit_measure(target, marker);
 let eraser0_split_path =
   eraser0_split_rz_a
     => eraser0_split_sx
@@ -586,66 +414,25 @@ node eraser14_prepare_screen
   -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
 node eraser14_prepare_marker
   -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-node eraser14_split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser14_split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node eraser14_split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser14_phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser14_mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser14_mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser14_mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser14_mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
-node eraser14_z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser14_z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser14_z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser14_recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser14_recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node eraser14_recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser14_measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
-node eraser14_z_marker_eraser_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser14_z_marker_eraser_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser14_z_marker_eraser_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser14_z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+node eraser14_split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser14_split_sx = qubit_gate(control, quantum_sx);
+node eraser14_split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser14_phase_screen = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser14_mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser14_mark_pre_sx = qubit_gate(target, quantum_sx);
+node eraser14_mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser14_mark_cz = two_qubit_gate(control, target, quantum_cz);
+node eraser14_z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser14_z_mark_post_sx = qubit_gate(target, quantum_sx);
+node eraser14_z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser14_recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser14_recombine_sx = qubit_gate(control, quantum_sx);
+node eraser14_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser14_measure_screen = qubit_measure(control, screen);
+node eraser14_z_marker_eraser_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser14_z_marker_eraser_sx = qubit_gate(target, quantum_sx);
+node eraser14_z_marker_eraser_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser14_z_measure_marker = qubit_measure(target, marker);
 let eraser14_split_path =
   eraser14_split_rz_a
     => eraser14_split_sx
@@ -698,66 +485,25 @@ node eraser12_prepare_screen
   -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
 node eraser12_prepare_marker
   -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-node eraser12_split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser12_split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node eraser12_split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser12_phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 3.141592653589793; } (control);
-node eraser12_mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser12_mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser12_mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser12_mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
-node eraser12_z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser12_z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser12_z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser12_recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser12_recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
-node eraser12_recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
-node eraser12_measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
-node eraser12_z_marker_eraser_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser12_z_marker_eraser_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
-node eraser12_z_marker_eraser_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
-node eraser12_z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+node eraser12_split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser12_split_sx = qubit_gate(control, quantum_sx);
+node eraser12_split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser12_phase_screen = qubit_gate(control, quantum_rz_half_turn);
+node eraser12_mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser12_mark_pre_sx = qubit_gate(target, quantum_sx);
+node eraser12_mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser12_mark_cz = two_qubit_gate(control, target, quantum_cz);
+node eraser12_z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser12_z_mark_post_sx = qubit_gate(target, quantum_sx);
+node eraser12_z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser12_recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser12_recombine_sx = qubit_gate(control, quantum_sx);
+node eraser12_recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
+node eraser12_measure_screen = qubit_measure(control, screen);
+node eraser12_z_marker_eraser_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser12_z_marker_eraser_sx = qubit_gate(target, quantum_sx);
+node eraser12_z_marker_eraser_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+node eraser12_z_measure_marker = qubit_measure(target, marker);
 let eraser12_split_path =
   eraser12_split_rz_a
     => eraser12_split_sx

@@ -4,6 +4,7 @@
 ; ── Keywords ─────────────────────────────────────────────────────────────
 
 "contract" @keyword
+"kind"     @keyword
 "node"     @keyword
 "export"   @keyword
 "let"      @keyword
@@ -65,6 +66,11 @@
 
 ; node <name>
 (node_decl name: (identifier) @function)
+
+; kind <name>(...)
+(kind_decl name: (identifier) @type)
+(kind_param class: (kind_param_class) @type)
+(kind_application name: (identifier) @type)
 
 ; [export] let <name> = <expr>;
 (let_binding name: (identifier) @constant)

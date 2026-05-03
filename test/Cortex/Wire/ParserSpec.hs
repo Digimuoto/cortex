@@ -123,6 +123,18 @@ spec = describe "Cortex.Wire.Parser" $ do
         )
         `shouldSatisfy` isParseFailure
 
+    it "rejects bare kind applications outside node-instantiation position" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "kind pass(label: PortLabel) ="
+            , "  <- label: T ;"
+            , "  -> label: T = @review.pass (label) ;"
+            , "pass(value);"
+            ]
+        )
+        `shouldSatisfy` isParseFailure
+
   describe "top-level forms" $ do
     it "parses exported scalar bindings as ordinary module lets" $ do
       let WireFile forms _ = parseOrFail "export let threshold = 0.7 ;"
@@ -149,6 +161,30 @@ spec = describe "Cortex.Wire.Parser" $ do
             (LetRhsWire (ExprConfiguredExecutor (QName ("review" :| ["analyst"])) (Record fields)))
           ] ->
             length fields `shouldBe` 1
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "expands kind applications into ordinary node declarations" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "let h_gate = @quantum.h {} ;"
+                , "kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) ="
+                , "  <- label: Qubit ;"
+                , "  -> label: Qubit = gate (label) ;"
+                , "node screen_h = one_qubit_gate(screen, h_gate);"
+                , "screen_h"
+                ]
+      case forms of
+        [_, TopNode node] -> do
+          nodeDeclName node `shouldBe` "screen_h"
+          nodeDeclPortSig node
+            `shouldBe` [ PortInputDecl (Label "screen") (ContractId "Qubit")
+                       , PortOutputDecl (Label "screen") (ContractId "Qubit")
+                       ]
+          case nodeDeclBody node of
+            NodeBodyExecutor Nothing (ExecutorCallConfigured "h_gate" (CorePureIdent "screen")) ->
+              pure ()
+            other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "parses registry namespace use imports" $ do

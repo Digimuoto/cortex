@@ -21,10 +21,12 @@ module Cortex.Wire.Parser
   )
 where
 
-import Control.Monad (when)
+import Control.Monad (foldM, when)
 import Data.Char (isAlpha, isAlphaNum, isSpace)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Scientific (Scientific)
 import Data.Text (Text)
@@ -119,6 +121,7 @@ reservedWords =
   , "inherit"
   , "import"
   , "in"
+  , "kind"
   , "let"
   , "node"
   , "null"
@@ -260,6 +263,66 @@ boolLiteral = (True <$ keyword "true") <|> (False <$ keyword "false")
 
 data TopologyOperator = TopologyOverlay | TopologyConnect
   deriving stock (Eq)
+
+data ParsedTopForm
+  = ParsedTopContract !ContractId
+  | ParsedTopNode !ParsedNodeDecl
+  | ParsedTopKind !KindDecl
+  | ParsedTopLet !LetVisibility !Text !LetRhs
+  | ParsedTopUse !UseSpec
+  | ParsedTopImport !ImportSpec
+  deriving stock (Show)
+
+data ParsedNodeDecl
+  = ParsedNodeBody !Text ![PortDecl] !NodeBody
+  | ParsedNodeKindApplication !Text !KindApplication
+  deriving stock (Show)
+
+data KindDecl = KindDecl
+  { kindDeclName :: !Text
+  , kindDeclParams :: ![KindParam]
+  , kindDeclPortSig :: ![PortDecl]
+  , kindDeclBody :: !NodeBody
+  }
+  deriving stock (Show)
+
+data KindParam = KindParam
+  { kindParamName :: !Text
+  , kindParamClass :: !KindParamClass
+  }
+  deriving stock (Eq, Show)
+
+data KindParamClass
+  = KindParamPortLabel
+  | KindParamContract
+  | KindParamValue
+  | KindParamConfiguredExecutor
+  deriving stock (Eq, Show)
+
+data KindApplication = KindApplication
+  { kindApplicationName :: !Text
+  , kindApplicationArgs :: ![Expr]
+  }
+  deriving stock (Show)
+
+data KindSubstitution = KindSubstitution
+  { ksPortLabels :: !(Map Text Text)
+  , ksContracts :: !(Map Text Text)
+  , ksValues :: !(Map Text Expr)
+  , ksCoreValues :: !(Map Text CorePureExpr)
+  , ksConfiguredExecutors :: !(Map Text Text)
+  }
+  deriving stock (Show)
+
+emptyKindSubstitution :: KindSubstitution
+emptyKindSubstitution =
+  KindSubstitution
+    { ksPortLabels = Map.empty
+    , ksContracts = Map.empty
+    , ksValues = Map.empty
+    , ksCoreValues = Map.empty
+    , ksConfiguredExecutors = Map.empty
+    }
 
 {- | Top-level expression. Overlay and connect are both topology
 operators; the first implementation requires parentheses when they
@@ -798,29 +861,31 @@ wireFile = do
     e <- fileReturnExpr
     notFollowedBy (symbol ";")
     pure e
-  pure (WireFile forms ret)
+  expandedForms <- either fail pure (expandKindForms forms)
+  pure (WireFile expandedForms ret)
 
 fileReturnExpr :: Parser Expr
 fileReturnExpr = expr
 
-topForm :: Parser TopForm
+topForm :: Parser ParsedTopForm
 topForm =
   choice
     [ contractDecl
     , useStmt
+    , kindDecl
     , nodeDecl
     , letBinding
     , importStmt
     ]
 
-contractDecl :: Parser TopForm
+contractDecl :: Parser ParsedTopForm
 contractDecl = do
   keyword "contract"
   n <- identifier
   _ <- symbol ";"
-  pure (TopContract (ContractId n))
+  pure (ParsedTopContract (ContractId n))
 
-useStmt :: Parser TopForm
+useStmt :: Parser ParsedTopForm
 useStmt = do
   keyword "use"
   namespace <- qualifiedIdent
@@ -831,7 +896,7 @@ useStmt = do
       =<< useItem `sepEndBy1` symbol ","
   _ <- symbol "}"
   _ <- symbol ";"
-  pure (TopUse (UseSpec namespace items))
+  pure (ParsedTopUse (UseSpec namespace items))
 
 useItem :: Parser UseItem
 useItem =
@@ -853,14 +918,62 @@ useItem =
         identifier
       pure (UseContract name alias)
 
-nodeDecl :: Parser TopForm
-nodeDecl = do
-  keyword "node"
+kindDecl :: Parser ParsedTopForm
+kindDecl = do
+  keyword "kind"
   name <- identifier
+  _ <- symbol "("
+  params <- kindParam `sepEndBy` symbol ","
+  _ <- symbol ")"
+  _ <- symbol "="
   inputs <- many (try (inputPort <* symbol ";"))
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
-  pure (TopNode (NodeDecl name (inputs <> outputs) (mkBody whereExpr)))
+  pure (ParsedTopKind (KindDecl name params (inputs <> outputs) (mkBody whereExpr)))
+
+kindParam :: Parser KindParam
+kindParam = do
+  name <- identifier
+  _ <- symbol ":"
+  KindParam name <$> parseKindParamClass
+
+parseKindParamClass :: Parser KindParamClass
+parseKindParamClass = do
+  className <- identifier
+  case className of
+    "PortLabel" -> pure KindParamPortLabel
+    "Contract" -> pure KindParamContract
+    "Value" -> pure KindParamValue
+    "ConfiguredExecutor" -> pure KindParamConfiguredExecutor
+    other -> fail ("unknown kind parameter class: " <> T.unpack other)
+
+nodeDecl :: Parser ParsedTopForm
+nodeDecl = do
+  keyword "node"
+  name <- identifier
+  try (kindNodeDecl name) <|> ordinaryNodeDecl name
+
+kindNodeDecl :: Text -> Parser ParsedTopForm
+kindNodeDecl name = do
+  _ <- symbol "="
+  application <- kindApplication
+  _ <- symbol ";"
+  pure (ParsedTopNode (ParsedNodeKindApplication name application))
+
+kindApplication :: Parser KindApplication
+kindApplication = do
+  name <- identifier
+  _ <- symbol "("
+  args <- expr `sepEndBy` symbol ","
+  _ <- symbol ")"
+  pure (KindApplication name args)
+
+ordinaryNodeDecl :: Text -> Parser ParsedTopForm
+ordinaryNodeDecl name = do
+  inputs <- many (try (inputPort <* symbol ";"))
+  (outputs, mkBody) <- nodeImplementationBody
+  whereExpr <- optional (try whereClause)
+  pure (ParsedTopNode (ParsedNodeBody name (inputs <> outputs) (mkBody whereExpr)))
 
 nodeImplementationBody :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 nodeImplementationBody =
@@ -959,25 +1072,25 @@ pureOutputEquationPortDecl outputEquation =
     (pureOutputEquationLabel outputEquation)
     (pureOutputEquationContract outputEquation)
 
-letBinding :: Parser TopForm
+letBinding :: Parser ParsedTopForm
 letBinding = do
   visibility <- (LetExported <$ keyword "export") <|> pure LetPrivate
   keyword "let"
   name <- identifier
   _ <- symbol "="
-  TopLet visibility name <$> letRhs
+  ParsedTopLet visibility name <$> letRhs
 
 letRhs :: Parser LetRhs
 letRhs =
   try (LetRhsWire <$> expr <* symbol ";")
     <|> (LetRhsCorePure <$> corePureExpr <* symbol ";")
 
-importStmt :: Parser TopForm
+importStmt :: Parser ParsedTopForm
 importStmt = do
   keyword "import"
   spec <- namedForm <|> explicitForm
   _ <- symbol ";"
-  pure (TopImport spec)
+  pure (ParsedTopImport spec)
   where
     namedForm = do
       n <- identifier
@@ -990,3 +1103,308 @@ importStmt = do
       _ <- symbol "}"
       keyword "from"
       ImportExplicit names <$> stringLiteral
+
+expandKindForms :: [ParsedTopForm] -> Either String [TopForm]
+expandKindForms forms = do
+  (_kindScope, reversedForms) <- foldM step (Map.empty, []) forms
+  Right (reverse reversedForms)
+  where
+    step (kindScope, acc) = \case
+      ParsedTopContract contractId ->
+        Right (kindScope, TopContract contractId : acc)
+      ParsedTopUse useSpec ->
+        Right (kindScope, TopUse useSpec : acc)
+      ParsedTopLet visibility name rhs ->
+        Right (kindScope, TopLet visibility name rhs : acc)
+      ParsedTopImport importSpec ->
+        Right (kindScope, TopImport importSpec : acc)
+      ParsedTopKind kindDeclValue -> do
+        validateKindDecl kindDeclValue
+        when (Map.member kindDeclValue.kindDeclName kindScope) $
+          Left ("kind " <> T.unpack kindDeclValue.kindDeclName <> " was declared more than once")
+        Right (Map.insert kindDeclValue.kindDeclName kindDeclValue kindScope, acc)
+      ParsedTopNode parsedNode -> do
+        nodeDeclValue <- expandParsedNode kindScope parsedNode
+        Right (kindScope, TopNode nodeDeclValue : acc)
+
+validateKindDecl :: KindDecl -> Either String ()
+validateKindDecl kindDeclValue =
+  case duplicateText (fmap (.kindParamName) kindDeclValue.kindDeclParams) of
+    Nothing -> Right ()
+    Just duplicateName ->
+      Left
+        ( "kind "
+            <> T.unpack kindDeclValue.kindDeclName
+            <> " declares parameter "
+            <> T.unpack duplicateName
+            <> " more than once"
+        )
+
+duplicateText :: [Text] -> Maybe Text
+duplicateText =
+  go Map.empty
+  where
+    go _seen [] = Nothing
+    go seen (name : rest)
+      | Map.member name seen = Just name
+      | otherwise = go (Map.insert name () seen) rest
+
+expandParsedNode :: Map Text KindDecl -> ParsedNodeDecl -> Either String NodeDecl
+expandParsedNode _kindScope (ParsedNodeBody name portSig body) =
+  Right (NodeDecl name portSig body)
+expandParsedNode kindScope (ParsedNodeKindApplication nodeName application) = do
+  kindDeclValue <-
+    maybe
+      ( Left
+          ("node " <> T.unpack nodeName <> " applies unknown kind " <> T.unpack application.kindApplicationName)
+      )
+      Right
+      (Map.lookup application.kindApplicationName kindScope)
+  subst <- kindSubstitutionForApplication kindDeclValue application
+  NodeDecl nodeName
+    <$> traverse (substitutePortDecl subst) kindDeclValue.kindDeclPortSig
+    <*> substituteNodeBody subst kindDeclValue.kindDeclBody
+
+kindSubstitutionForApplication :: KindDecl -> KindApplication -> Either String KindSubstitution
+kindSubstitutionForApplication kindDeclValue application = do
+  let expectedCount = length kindDeclValue.kindDeclParams
+      actualCount = length application.kindApplicationArgs
+  when (expectedCount /= actualCount) $
+    Left
+      ( "kind "
+          <> T.unpack kindDeclValue.kindDeclName
+          <> " expects "
+          <> show expectedCount
+          <> " argument(s), got "
+          <> show actualCount
+      )
+  foldM bindKindArgument emptyKindSubstitution $
+    zip kindDeclValue.kindDeclParams application.kindApplicationArgs
+  where
+    bindKindArgument subst (param, arg) =
+      case param.kindParamClass of
+        KindParamPortLabel -> do
+          actual <- expectSimpleIdentifier kindDeclValue param "PortLabel" arg
+          Right subst {ksPortLabels = Map.insert param.kindParamName actual subst.ksPortLabels}
+        KindParamContract -> do
+          actual <- expectSimpleIdentifier kindDeclValue param "Contract" arg
+          Right subst {ksContracts = Map.insert param.kindParamName actual subst.ksContracts}
+        KindParamConfiguredExecutor -> do
+          actual <- expectSimpleIdentifier kindDeclValue param "ConfiguredExecutor" arg
+          Right
+            subst
+              { ksConfiguredExecutors =
+                  Map.insert param.kindParamName actual subst.ksConfiguredExecutors
+              }
+        KindParamValue -> do
+          coreValue <- exprToCorePureExpr arg
+          Right
+            subst
+              { ksValues = Map.insert param.kindParamName arg subst.ksValues
+              , ksCoreValues = Map.insert param.kindParamName coreValue subst.ksCoreValues
+              }
+
+expectSimpleIdentifier :: KindDecl -> KindParam -> String -> Expr -> Either String Text
+expectSimpleIdentifier kindDeclValue param expectedClass = \case
+  ExprIdent (QName (name :| [])) ->
+    Right name
+  other ->
+    Left
+      ( "kind "
+          <> T.unpack kindDeclValue.kindDeclName
+          <> " parameter "
+          <> T.unpack param.kindParamName
+          <> " expects "
+          <> expectedClass
+          <> " argument, got "
+          <> show other
+      )
+
+substitutePortDecl :: KindSubstitution -> PortDecl -> Either String PortDecl
+substitutePortDecl subst = \case
+  PortInputDecl label contractId ->
+    Right (PortInputDecl (substitutePortLabel subst label) (substituteContractId subst contractId))
+  PortOutputDecl label contractId ->
+    Right (PortOutputDecl (substitutePortLabel subst label) (substituteContractId subst contractId))
+  PortOutputSumDecl variants ->
+    PortOutputSumDecl <$> traverse (substituteSumVariant subst) variants
+
+substituteSumVariant :: KindSubstitution -> SumVariant -> Either String SumVariant
+substituteSumVariant subst (SumVariant label contractId) =
+  Right (SumVariant (substitutePortLabel subst label) (substituteContractId subst contractId))
+
+substitutePortLabel :: KindSubstitution -> PortLabel -> PortLabel
+substitutePortLabel subst = \case
+  NoLabel -> NoLabel
+  Label labelName -> Label (Map.findWithDefault labelName labelName subst.ksPortLabels)
+
+substituteContractId :: KindSubstitution -> ContractId -> ContractId
+substituteContractId subst (ContractId contractName) =
+  ContractId (Map.findWithDefault contractName contractName subst.ksContracts)
+
+substituteNodeBody :: KindSubstitution -> NodeBody -> Either String NodeBody
+substituteNodeBody subst = \case
+  NodeBodyExecutor whereExpr executorCallValue ->
+    NodeBodyExecutor
+      <$> traverse (substituteCorePureExpr subst) whereExpr
+      <*> substituteExecutorCall subst executorCallValue
+  NodeBodyPure pureBody ->
+    NodeBodyPure <$> substitutePureBody subst pureBody
+
+substitutePureBody :: KindSubstitution -> NodePureBody -> Either String NodePureBody
+substitutePureBody subst pureBody =
+  NodePureBody
+    <$> traverse (substituteCorePureExpr subst) pureBody.nodePureBodyWhere
+    <*> traverse (substitutePureOutputEquation subst) pureBody.nodePureBodyOutputs
+
+substitutePureOutputEquation
+  :: KindSubstitution -> PureOutputEquation -> Either String PureOutputEquation
+substitutePureOutputEquation subst outputEquation =
+  PureOutputEquation
+    (substitutePortLabel subst outputEquation.pureOutputEquationLabel)
+    (substituteContractId subst outputEquation.pureOutputEquationContract)
+    <$> substituteCorePureExpr subst outputEquation.pureOutputEquationExpr
+
+substituteExecutorCall :: KindSubstitution -> ExecutorCall -> Either String ExecutorCall
+substituteExecutorCall subst = \case
+  ExecutorCallInline executor config inputArg ->
+    ExecutorCallInline executor
+      <$> substituteRecord subst config
+      <*> substituteCorePureExpr subst inputArg
+  ExecutorCallConfigured name inputArg ->
+    ExecutorCallConfigured
+      (Map.findWithDefault name name subst.ksConfiguredExecutors)
+      <$> substituteCorePureExpr subst inputArg
+
+substituteRecord :: KindSubstitution -> Record -> Either String Record
+substituteRecord subst (Record fields) =
+  Record <$> traverse (substituteField subst) fields
+
+substituteField :: KindSubstitution -> Field -> Either String Field
+substituteField subst (Field path value) =
+  Field path <$> substituteExpr subst value
+
+substituteExpr :: KindSubstitution -> Expr -> Either String Expr
+substituteExpr subst = \case
+  ExprOverlay lhs rhs ->
+    ExprOverlay <$> substituteExpr subst lhs <*> substituteExpr subst rhs
+  ExprConnect lhs rhs ->
+    ExprConnect <$> substituteExpr subst lhs <*> substituteExpr subst rhs
+  ExprMerge lhs rhs ->
+    ExprMerge <$> substituteExpr subst lhs <*> substituteExpr subst rhs
+  ExprConcat lhs rhs ->
+    ExprConcat <$> substituteExpr subst lhs <*> substituteExpr subst rhs
+  ExprSelect base arms ->
+    ExprSelect <$> substituteExpr subst base <*> traverse (substituteSelectArm subst) arms
+  ExprConfiguredExecutor executor config ->
+    ExprConfiguredExecutor executor <$> substituteRecord subst config
+  ExprConstructor name recordValue ->
+    ExprConstructor name <$> substituteRecord subst recordValue
+  ExprRecord recordValue ->
+    ExprRecord <$> substituteRecord subst recordValue
+  ExprList items ->
+    ExprList <$> traverse (substituteExpr subst) items
+  ExprLit literalValue ->
+    Right (ExprLit literalValue)
+  ExprIdent (QName (name :| []))
+    | Just replacement <- Map.lookup name subst.ksValues ->
+        Right replacement
+  ExprIdent name ->
+    Right (ExprIdent name)
+
+substituteSelectArm :: KindSubstitution -> SelectArm -> Either String SelectArm
+substituteSelectArm subst (SelectArm key armExpr) =
+  SelectArm key <$> substituteExpr subst armExpr
+
+substituteCorePureExpr :: KindSubstitution -> CorePureExpr -> Either String CorePureExpr
+substituteCorePureExpr subst = \case
+  CorePureLit literalValue ->
+    Right (CorePureLit literalValue)
+  CorePureIdent name ->
+    Right $
+      case Map.lookup name subst.ksCoreValues of
+        Just replacement -> replacement
+        Nothing ->
+          CorePureIdent (Map.findWithDefault name name subst.ksPortLabels)
+  CorePureList items ->
+    CorePureList <$> traverse (substituteCorePureExpr subst) items
+  CorePureRecord fields ->
+    CorePureRecord <$> traverse (substituteCorePureField subst) fields
+  CorePureFieldAccess target fieldName ->
+    CorePureFieldAccess <$> substituteCorePureExpr subst target <*> pure fieldName
+  CorePureIndex target indexValue ->
+    CorePureIndex <$> substituteCorePureExpr subst target <*> substituteCorePureExpr subst indexValue
+  CorePureLambda params body ->
+    CorePureLambda params
+      <$> substituteCorePureExpr (withoutCorePureNames (NE.toList params) subst) body
+  CorePureCall function args ->
+    CorePureCall
+      <$> substituteCorePureExpr subst function
+      <*> traverse (substituteCorePureExpr subst) args
+  CorePureUnary op value ->
+    CorePureUnary op <$> substituteCorePureExpr subst value
+  CorePureBinary op lhs rhs ->
+    CorePureBinary op <$> substituteCorePureExpr subst lhs <*> substituteCorePureExpr subst rhs
+  CorePureLet bindings body ->
+    substituteCorePureLet subst bindings body
+  CorePureIf condition thenExpr elseExpr ->
+    CorePureIf
+      <$> substituteCorePureExpr subst condition
+      <*> substituteCorePureExpr subst thenExpr
+      <*> substituteCorePureExpr subst elseExpr
+
+substituteCorePureLet
+  :: KindSubstitution -> NonEmpty CorePureBinding -> CorePureExpr -> Either String CorePureExpr
+substituteCorePureLet subst bindings body = do
+  (substAfterBindings, reversedBindings) <-
+    foldM
+      ( \(currentSubst, acc) binding -> do
+          exprValue <- substituteCorePureExpr currentSubst binding.corePureBindingExpr
+          let currentSubst' = withoutCorePureNames [binding.corePureBindingName] currentSubst
+          pure
+            ( currentSubst'
+            , binding {corePureBindingExpr = exprValue} : acc
+            )
+      )
+      (subst, [])
+      (NE.toList bindings)
+  case NE.nonEmpty (reverse reversedBindings) of
+    Nothing ->
+      Left "internal error: CorePure let lost all bindings during kind expansion"
+    Just bindings' ->
+      CorePureLet bindings' <$> substituteCorePureExpr substAfterBindings body
+
+substituteCorePureField :: KindSubstitution -> CorePureField -> Either String CorePureField
+substituteCorePureField subst (CorePureField path value) =
+  CorePureField path <$> substituteCorePureExpr subst value
+
+withoutCorePureNames :: [Text] -> KindSubstitution -> KindSubstitution
+withoutCorePureNames names subst =
+  subst
+    { ksPortLabels = foldr Map.delete subst.ksPortLabels names
+    , ksCoreValues = foldr Map.delete subst.ksCoreValues names
+    }
+
+exprToCorePureExpr :: Expr -> Either String CorePureExpr
+exprToCorePureExpr = \case
+  ExprLit (LitString text) ->
+    Right (CorePureLit (CorePureString text))
+  ExprLit (LitMultilineString text) ->
+    Right (CorePureLit (CorePureString text))
+  ExprLit (LitNumber numberValue) ->
+    Right (CorePureLit (CorePureNumber numberValue))
+  ExprLit (LitBool boolValue) ->
+    Right (CorePureLit (CorePureBool boolValue))
+  ExprList items ->
+    CorePureList <$> traverse exprToCorePureExpr items
+  ExprRecord (Record fields) ->
+    CorePureRecord <$> traverse fieldToCorePure fields
+  ExprIdent (QName (name :| [])) ->
+    Right (CorePureIdent name)
+  ExprMerge lhs rhs ->
+    CorePureBinary CorePureMerge <$> exprToCorePureExpr lhs <*> exprToCorePureExpr rhs
+  other ->
+    Left ("kind Value argument must be CorePure-compatible, got " <> show other)
+  where
+    fieldToCorePure (Field path value) =
+      CorePureField path <$> exprToCorePureExpr value

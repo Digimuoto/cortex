@@ -29,8 +29,11 @@ test/
 **Top-level constructs**
 
 - contract assertions: `contract EvidenceBundle;`
+- node-body kind declarations:
+  `kind pass(label: PortLabel) = <- label: Contract ; -> label: Contract = @executor (label) ;`
 - executor node declarations with typed clauses:
   `node name <- input: Contract ; -> output: Contract ; = @executor (input) ;`
+- kind applications that still introduce vertices with `node`: `node concrete = pass(input);`
 - pure node output equations:
   `node name <- input: Contract ; -> output: Contract = pure (input.score) ;`
 - configured executor values: `let analyst = @llm.analyst { temperature = 0.2 ; } ;`

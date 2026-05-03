@@ -196,7 +196,7 @@ semantics.
 
 ### Obligations
 
-- Add parser and AST support for kind declarations and kind applications.
+- Add parser and static elaboration support for kind declarations and kind applications.
 - Reserve `kind` as a Wire keyword.
 - Add the `node <name> = <kind_application>;` node-declaration form.
 - Add a deterministic kind-expansion pass before ordinary graph lowering.

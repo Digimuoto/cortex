@@ -45,6 +45,56 @@ run
       (identifier))))
 
 ==================
+node-body kind application
+==================
+
+kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit = gate (label);
+
+node screen_h = one_qubit_gate(screen, h_gate);
+screen_h
+
+---
+
+(source_file
+  (kind_decl
+    name: (identifier)
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_name
+        (contract)))
+    body: (executor_single_output_body
+      output: (output_variant
+        label: (identifier)
+        contract: (contract_name
+          (contract)))
+      call: (executor_call
+        (configured_executor_call
+          name: (identifier)
+          input: (core_pure_expr
+            (core_pure_ident))))))
+  (node_decl
+    name: (identifier)
+    kind: (kind_application
+      name: (identifier)
+      args: (expression
+        (ident_ref
+          (identifier)))
+      args: (expression
+        (ident_ref
+          (identifier)))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
+
+==================
 node with sum output and file return
 ==================
 

@@ -1883,6 +1883,135 @@
     }
   },
   {
+    "type": "kind_application",
+    "named": true,
+    "fields": {
+      "args": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "expression",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "kind_decl",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "executor_body",
+            "named": true
+          },
+          {
+            "type": "executor_single_output_body",
+            "named": true
+          },
+          {
+            "type": "pure_body",
+            "named": true
+          }
+        ]
+      },
+      "inputs": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "input_clause",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "params": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "kind_param",
+            "named": true
+          }
+        ]
+      },
+      "where": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "where_clause",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "kind_param",
+    "named": true,
+    "fields": {
+      "class": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "kind_param_class",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "kind_param_class",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "let_binding",
     "named": true,
     "fields": {
@@ -2067,7 +2196,7 @@
     "fields": {
       "body": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "executor_body",
@@ -2089,6 +2218,16 @@
         "types": [
           {
             "type": "input_clause",
+            "named": true
+          }
+        ]
+      },
+      "kind": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "kind_application",
             "named": true
           }
         ]
@@ -2403,6 +2542,10 @@
         },
         {
           "type": "import_stmt",
+          "named": true
+        },
+        {
+          "type": "kind_decl",
           "named": true
         },
         {
@@ -2810,6 +2953,22 @@
     "named": false
   },
   {
+    "type": "ConfiguredExecutor",
+    "named": false
+  },
+  {
+    "type": "Contract",
+    "named": false
+  },
+  {
+    "type": "PortLabel",
+    "named": false
+  },
+  {
+    "type": "Value",
+    "named": false
+  },
+  {
     "type": "[",
     "named": false
   },
@@ -2876,6 +3035,10 @@
   },
   {
     "type": "inherit",
+    "named": false
+  },
+  {
+    "type": "kind",
     "named": false
   },
   {
