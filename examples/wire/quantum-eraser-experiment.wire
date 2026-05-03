@@ -16,9 +16,9 @@ contract IBMQuantumConfig;
 contract Qubit;
 contract Bit;
 
-let quantum_rz_zero = @quantum.rz { angle = 0.0; };
-let quantum_rz_quarter_turn = @quantum.rz { angle = 1.5707963267948966; };
-let quantum_rz_half_turn = @quantum.rz { angle = 3.141592653589793; };
+let phase_zero = 0.0;
+let phase_quarter = 1.5707963267948966;
+let phase_half = 3.141592653589793;
 let quantum_sx = @quantum.sx {};
 let quantum_cz = @quantum.cz {};
 let quantum_measure_z = @quantum.measure_z {};
@@ -26,6 +26,10 @@ let quantum_measure_z = @quantum.measure_z {};
 kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
   -> label: Qubit = gate (label);
+
+kind rz_gate(label: PortLabel, angle: Value) =
+  <- label: Qubit;
+  -> label: Qubit = @quantum.rz { inherit angle; } (label);
 
 kind qubit_measure(input: PortLabel, output: PortLabel) =
   <- input: Qubit;
@@ -38,37 +42,45 @@ kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecu
   -> target: Qubit;
   = gate ({ inherit control; inherit target; });
 
+kind run_command(spec: PortLabel, result: PortLabel) =
+  <- spec: CommandSpec;
+  -> result: CommandResult = @command {} (spec);
+
+kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
+  <- spec: CommandSpec;
+  <- previous: CommandResult;
+  -> ready: CommandSpec = pure (spec);
+
 # Hardware circuit graph forms for the eraser sweep.
 #
 # Each exported graph is selected with `wire build --return NAME` by the
 # IBM REST command leaves below. The default file-return at the bottom
 # remains the experiment orchestration graph.
 
-form open_circuit(phase_gate: ConfiguredExecutor) = {
+form quarter_turn(label: PortLabel) = {
+  node rz_a = rz_gate(label, phase_quarter);
+  node sx = qubit_gate(label, quantum_sx);
+  node rz_b = rz_gate(label, phase_quarter);
+
+  rz_a
+    => sx
+    => rz_b;
+};
+
+form open_circuit(phase_angle: Value) = {
   node ibm_runtime_config
     -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
   node prepare_screen
     <- config: IBMQuantumConfig;
     -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
-  node split_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
-  node split_sx = qubit_gate(screen, quantum_sx);
-  node split_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
-  node phase_screen = qubit_gate(screen, phase_gate);
-  node recombine_rz_a = qubit_gate(screen, quantum_rz_quarter_turn);
-  node recombine_sx = qubit_gate(screen, quantum_sx);
-  node recombine_rz_b = qubit_gate(screen, quantum_rz_quarter_turn);
+  node phase_screen = rz_gate(screen, phase_angle);
   node measure_screen = qubit_measure(screen, screen);
 
-  let split_path =
-    split_rz_a
-      => split_sx
-      => split_rz_b;
-
+  let split_path = quarter_turn(screen);
+  let recombine_turn = quarter_turn(screen);
   let recombine_path =
     phase_screen
-      => recombine_rz_a
-      => recombine_sx
-      => recombine_rz_b
+      => recombine_turn
       => measure_screen;
 
   ibm_runtime_config
@@ -77,7 +89,7 @@ form open_circuit(phase_gate: ConfiguredExecutor) = {
     => recombine_path;
 };
 
-form which_path_circuit(phase_gate: ConfiguredExecutor) = {
+form marked_circuit(phase_angle: Value, marker_readout: Graph) = {
   node ibm_runtime_config
     -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
   node prepare_screen
@@ -85,47 +97,20 @@ form which_path_circuit(phase_gate: ConfiguredExecutor) = {
     -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
   node prepare_marker
     -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-  node split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
-  node split_sx = qubit_gate(control, quantum_sx);
-  node split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
-  node phase_screen = qubit_gate(control, phase_gate);
-  node mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
-  node mark_pre_sx = qubit_gate(target, quantum_sx);
-  node mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+  node phase_screen = rz_gate(control, phase_angle);
   node mark_cz = two_qubit_gate(control, target, quantum_cz);
-  node z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
-  node z_mark_post_sx = qubit_gate(target, quantum_sx);
-  node z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
-  node recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
-  node recombine_sx = qubit_gate(control, quantum_sx);
-  node recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
   node measure_screen = qubit_measure(control, screen);
-  node z_measure_marker = qubit_measure(target, marker);
 
+  let split_turn = quarter_turn(control);
+  let mark_marker_pre = quarter_turn(target);
+  let mark_marker_post = quarter_turn(target);
+  let recombine_turn = quarter_turn(control);
   let split_path =
-    split_rz_a
-      => split_sx
-      => split_rz_b
+    split_turn
       => phase_screen;
-
-  let mark_marker_pre =
-    mark_pre_rz_a
-      => mark_pre_sx
-      => mark_pre_rz_b;
-
-  let mark_marker_post =
-    z_mark_post_rz_a
-      => z_mark_post_sx
-      => z_mark_post_rz_b;
-
   let recombine_screen =
-    recombine_rz_a
-      => recombine_sx
-      => recombine_rz_b
+    recombine_turn
       => measure_screen;
-
-  let marker_which_path_readout =
-    z_measure_marker;
 
   ibm_runtime_config
     => (
@@ -141,97 +126,43 @@ form which_path_circuit(phase_gate: ConfiguredExecutor) = {
           => mark_marker_pre
           => mark_cz
           => mark_marker_post
-          => marker_which_path_readout
+          => marker_readout
       )
   );
 };
 
-form eraser_circuit(phase_gate: ConfiguredExecutor) = {
-  node ibm_runtime_config
-    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
-  node prepare_screen
-    <- config: IBMQuantumConfig;
-    -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
-  node prepare_marker
-    -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
-  node split_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
-  node split_sx = qubit_gate(control, quantum_sx);
-  node split_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
-  node phase_screen = qubit_gate(control, phase_gate);
-  node mark_pre_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
-  node mark_pre_sx = qubit_gate(target, quantum_sx);
-  node mark_pre_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
-  node mark_cz = two_qubit_gate(control, target, quantum_cz);
-  node z_mark_post_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
-  node z_mark_post_sx = qubit_gate(target, quantum_sx);
-  node z_mark_post_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
-  node recombine_rz_a = qubit_gate(control, quantum_rz_quarter_turn);
-  node recombine_sx = qubit_gate(control, quantum_sx);
-  node recombine_rz_b = qubit_gate(control, quantum_rz_quarter_turn);
-  node measure_screen = qubit_measure(control, screen);
-  node z_marker_eraser_rz_a = qubit_gate(target, quantum_rz_quarter_turn);
-  node z_marker_eraser_sx = qubit_gate(target, quantum_sx);
-  node z_marker_eraser_rz_b = qubit_gate(target, quantum_rz_quarter_turn);
+form which_path_circuit(phase_angle: Value) = {
   node z_measure_marker = qubit_measure(target, marker);
 
-  let split_path =
-    split_rz_a
-      => split_sx
-      => split_rz_b
-      => phase_screen;
+  let marker_readout = z_measure_marker;
+  let circuit = marked_circuit(phase_angle, marker_readout);
 
-  let mark_marker_pre =
-    mark_pre_rz_a
-      => mark_pre_sx
-      => mark_pre_rz_b;
+  circuit;
+};
 
-  let mark_marker_post =
-    z_mark_post_rz_a
-      => z_mark_post_sx
-      => z_mark_post_rz_b;
+form eraser_circuit(phase_angle: Value) = {
+  node z_measure_marker = qubit_measure(target, marker);
 
-  let recombine_screen =
-    recombine_rz_a
-      => recombine_sx
-      => recombine_rz_b
-      => measure_screen;
-
+  let marker_eraser_basis = quarter_turn(target);
   let marker_eraser_readout =
-    z_marker_eraser_rz_a
-      => z_marker_eraser_sx
-      => z_marker_eraser_rz_b
+    marker_eraser_basis
       => z_measure_marker;
+  let circuit = marked_circuit(phase_angle, marker_eraser_readout);
 
-  ibm_runtime_config
-    => (
-      (
-        prepare_screen
-          => split_path
-          => mark_cz
-          => recombine_screen
-      )
-      <>
-      (
-        prepare_marker
-          => mark_marker_pre
-          => mark_cz
-          => mark_marker_post
-          => marker_eraser_readout
-      )
-  );
+  circuit;
 };
 
-export let open_phase_0 = open_circuit(quantum_rz_zero);
-export let open_phase_1_4 = open_circuit(quantum_rz_quarter_turn);
-export let open_phase_1_2 = open_circuit(quantum_rz_half_turn);
+export let open_phase_0 = open_circuit(phase_zero);
+export let open_phase_1_4 = open_circuit(phase_quarter);
+export let open_phase_1_2 = open_circuit(phase_half);
 
-export let which_path_phase_0 = which_path_circuit(quantum_rz_zero);
-export let which_path_phase_1_4 = which_path_circuit(quantum_rz_quarter_turn);
-export let which_path_phase_1_2 = which_path_circuit(quantum_rz_half_turn);
+export let which_path_phase_0 = which_path_circuit(phase_zero);
+export let which_path_phase_1_4 = which_path_circuit(phase_quarter);
+export let which_path_phase_1_2 = which_path_circuit(phase_half);
 
-export let eraser_phase_0 = eraser_circuit(quantum_rz_zero);
-export let eraser_phase_1_4 = eraser_circuit(quantum_rz_quarter_turn);
-export let eraser_phase_1_2 = eraser_circuit(quantum_rz_half_turn);
+export let eraser_phase_0 = eraser_circuit(phase_zero);
+export let eraser_phase_1_4 = eraser_circuit(phase_quarter);
+export let eraser_phase_1_2 = eraser_circuit(phase_half);
 
 node start_experiment
   -> start: ExperimentStart = pure ("start");
@@ -250,165 +181,53 @@ node plan_experiment
   where let
     shots = "100";
     source = "examples/wire/quantum-eraser-experiment.wire";
-    open0Spec = {
-      name = "open phase 0";
-      target = "examples/wire/quantum-eraser-experiment.wire#open_phase_0";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "open_phase_0", "--shots", shots, "--confirm-hardware", "--json"];
+    hardwareSpec = name: returnName: {
+      inherit name;
+      target = "${source}#${returnName}";
+      argv = [
+        "wire-quantum-ibm-rest",
+        source,
+        "--return",
+        returnName,
+        "--shots",
+        shots,
+        "--confirm-hardware",
+        "--json"
+      ];
       cwd = ".";
       required = true;
       skip = false;
       echo = false;
     };
-    open14Spec = {
-      name = "open phase 1/4";
-      target = "examples/wire/quantum-eraser-experiment.wire#open_phase_1_4";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "open_phase_1_4", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    open12Spec = {
-      name = "open phase 1/2";
-      target = "examples/wire/quantum-eraser-experiment.wire#open_phase_1_2";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "open_phase_1_2", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    which0Spec = {
-      name = "which-path phase 0";
-      target = "examples/wire/quantum-eraser-experiment.wire#which_path_phase_0";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "which_path_phase_0", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    which14Spec = {
-      name = "which-path phase 1/4";
-      target = "examples/wire/quantum-eraser-experiment.wire#which_path_phase_1_4";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "which_path_phase_1_4", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    which12Spec = {
-      name = "which-path phase 1/2";
-      target = "examples/wire/quantum-eraser-experiment.wire#which_path_phase_1_2";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "which_path_phase_1_2", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    eraser0Spec = {
-      name = "eraser phase 0";
-      target = "examples/wire/quantum-eraser-experiment.wire#eraser_phase_0";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "eraser_phase_0", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    eraser14Spec = {
-      name = "eraser phase 1/4";
-      target = "examples/wire/quantum-eraser-experiment.wire#eraser_phase_1_4";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "eraser_phase_1_4", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    eraser12Spec = {
-      name = "eraser phase 1/2";
-      target = "examples/wire/quantum-eraser-experiment.wire#eraser_phase_1_2";
-      argv = ["wire-quantum-ibm-rest", source, "--return", "eraser_phase_1_2", "--shots", shots, "--confirm-hardware", "--json"];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
+    open0Spec = hardwareSpec "open phase 0" "open_phase_0";
+    open14Spec = hardwareSpec "open phase 1/4" "open_phase_1_4";
+    open12Spec = hardwareSpec "open phase 1/2" "open_phase_1_2";
+    which0Spec = hardwareSpec "which-path phase 0" "which_path_phase_0";
+    which14Spec = hardwareSpec "which-path phase 1/4" "which_path_phase_1_4";
+    which12Spec = hardwareSpec "which-path phase 1/2" "which_path_phase_1_2";
+    eraser0Spec = hardwareSpec "eraser phase 0" "eraser_phase_0";
+    eraser14Spec = hardwareSpec "eraser phase 1/4" "eraser_phase_1_4";
+    eraser12Spec = hardwareSpec "eraser phase 1/2" "eraser_phase_1_2";
   in
   { inherit open0Spec open14Spec open12Spec which0Spec which14Spec which12Spec eraser0Spec eraser14Spec eraser12Spec; };
 
-node run_open_0
-  <- open0Spec: CommandSpec;
-  -> open0: CommandResult = @command {} (open0Spec);
-
-node gate_open_14
-  <- open14Spec: CommandSpec;
-  <- open0: CommandResult;
-  -> open14Ready: CommandSpec = pure (open14Spec);
-
-node run_open_14
-  <- open14Ready: CommandSpec;
-  -> open14: CommandResult = @command {} (open14Ready);
-
-node gate_open_12
-  <- open12Spec: CommandSpec;
-  <- open14: CommandResult;
-  -> open12Ready: CommandSpec = pure (open12Spec);
-
-node run_open_12
-  <- open12Ready: CommandSpec;
-  -> open12: CommandResult = @command {} (open12Ready);
-
-node gate_which_0
-  <- which0Spec: CommandSpec;
-  <- open12: CommandResult;
-  -> which0Ready: CommandSpec = pure (which0Spec);
-
-node run_which_0
-  <- which0Ready: CommandSpec;
-  -> which0: CommandResult = @command {} (which0Ready);
-
-node gate_which_14
-  <- which14Spec: CommandSpec;
-  <- which0: CommandResult;
-  -> which14Ready: CommandSpec = pure (which14Spec);
-
-node run_which_14
-  <- which14Ready: CommandSpec;
-  -> which14: CommandResult = @command {} (which14Ready);
-
-node gate_which_12
-  <- which12Spec: CommandSpec;
-  <- which14: CommandResult;
-  -> which12Ready: CommandSpec = pure (which12Spec);
-
-node run_which_12
-  <- which12Ready: CommandSpec;
-  -> which12: CommandResult = @command {} (which12Ready);
-
-node gate_eraser_0
-  <- eraser0Spec: CommandSpec;
-  <- which12: CommandResult;
-  -> eraser0Ready: CommandSpec = pure (eraser0Spec);
-
-node run_eraser_0
-  <- eraser0Ready: CommandSpec;
-  -> eraser0: CommandResult = @command {} (eraser0Ready);
-
-node gate_eraser_14
-  <- eraser14Spec: CommandSpec;
-  <- eraser0: CommandResult;
-  -> eraser14Ready: CommandSpec = pure (eraser14Spec);
-
-node run_eraser_14
-  <- eraser14Ready: CommandSpec;
-  -> eraser14: CommandResult = @command {} (eraser14Ready);
-
-node gate_eraser_12
-  <- eraser12Spec: CommandSpec;
-  <- eraser14: CommandResult;
-  -> eraser12Ready: CommandSpec = pure (eraser12Spec);
-
-node run_eraser_12
-  <- eraser12Ready: CommandSpec;
-  -> eraser12: CommandResult = @command {} (eraser12Ready);
+node run_open_0 = run_command(open0Spec, open0);
+node gate_open_14 = command_gate(open14Spec, open0, open14Ready);
+node run_open_14 = run_command(open14Ready, open14);
+node gate_open_12 = command_gate(open12Spec, open14, open12Ready);
+node run_open_12 = run_command(open12Ready, open12);
+node gate_which_0 = command_gate(which0Spec, open12, which0Ready);
+node run_which_0 = run_command(which0Ready, which0);
+node gate_which_14 = command_gate(which14Spec, which0, which14Ready);
+node run_which_14 = run_command(which14Ready, which14);
+node gate_which_12 = command_gate(which12Spec, which14, which12Ready);
+node run_which_12 = run_command(which12Ready, which12);
+node gate_eraser_0 = command_gate(eraser0Spec, which12, eraser0Ready);
+node run_eraser_0 = run_command(eraser0Ready, eraser0);
+node gate_eraser_14 = command_gate(eraser14Spec, eraser0, eraser14Ready);
+node run_eraser_14 = run_command(eraser14Ready, eraser14);
+node gate_eraser_12 = command_gate(eraser12Spec, eraser14, eraser12Ready);
+node run_eraser_12 = run_command(eraser12Ready, eraser12);
 
 node summarize_experiment
   <- open0: CommandResult;
@@ -444,25 +263,17 @@ node summarize_experiment
     success = length failures == 0;
     summary = if success then
       let
-        open0Json = fromJson(open0.stdout);
-        open14Json = fromJson(open14.stdout);
-        open12Json = fromJson(open12.stdout);
-        which0Json = fromJson(which0.stdout);
-        which14Json = fromJson(which14.stdout);
-        which12Json = fromJson(which12.stdout);
-        eraser0Json = fromJson(eraser0.stdout);
-        eraser14Json = fromJson(eraser14.stdout);
-        eraser12Json = fromJson(eraser12.stdout);
-        hasCounts =
-          open0Json.complete_counts != null
-          && open14Json.complete_counts != null
-          && open12Json.complete_counts != null
-          && which0Json.complete_counts != null
-          && which14Json.complete_counts != null
-          && which12Json.complete_counts != null
-          && eraser0Json.complete_counts != null
-          && eraser14Json.complete_counts != null
-          && eraser12Json.complete_counts != null;
+        decoded = runs |> map (run: fromJson(run.stdout));
+        open0Json = decoded[0];
+        open14Json = decoded[1];
+        open12Json = decoded[2];
+        which0Json = decoded[3];
+        which14Json = decoded[4];
+        which12Json = decoded[5];
+        eraser0Json = decoded[6];
+        eraser14Json = decoded[7];
+        eraser12Json = decoded[8];
+        hasCounts = decoded |> all (result: result.complete_counts != null);
       in
       if hasCounts then
         let
@@ -491,15 +302,18 @@ node summarize_experiment
             "  ${mode} | ${phase} | ${bit.c0}/${bit.shots} | ${expected} | - | - | 0:${bit.c0},1:${bit.c1}\n";
           twoRow = mode: phase: expected: bit:
             "  ${mode} | ${phase} | ${bit.screenZero}/${bit.shots} | ${expected} | ${bit.c00}/${bit.marker0Total} | ${bit.c10}/${bit.marker1Total} | 00:${bit.c00},01:${bit.c01},10:${bit.c10},11:${bit.c11}\n";
-          open0Bits = oneBit(open0Json);
-          open14Bits = oneBit(open14Json);
-          open12Bits = oneBit(open12Json);
-          which0Bits = twoBit(which0Json);
-          which14Bits = twoBit(which14Json);
-          which12Bits = twoBit(which12Json);
-          eraser0Bits = twoBit(eraser0Json);
-          eraser14Bits = twoBit(eraser14Json);
-          eraser12Bits = twoBit(eraser12Json);
+          openBits = [open0Json, open14Json, open12Json] |> map oneBit;
+          whichPathBits = [which0Json, which14Json, which12Json] |> map twoBit;
+          eraserBits = [eraser0Json, eraser14Json, eraser12Json] |> map twoBit;
+          open0Bits = openBits[0];
+          open14Bits = openBits[1];
+          open12Bits = openBits[2];
+          which0Bits = whichPathBits[0];
+          which14Bits = whichPathBits[1];
+          which12Bits = whichPathBits[2];
+          eraser0Bits = eraserBits[0];
+          eraser14Bits = eraserBits[1];
+          eraser12Bits = eraserBits[2];
           resultRows = [
             "  mode | phase | screen=0 | expected screen | marker=0 screen=0 | marker=1 screen=0 | raw counts\n",
             "  ---- | ----- | -------- | --------------- | ----------------- | ----------------- | ----------\n",
@@ -670,31 +484,26 @@ node write_report
   <- summary: ExperimentReport;
   = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (summary);
 
-(
-  start_experiment
-    => plan_experiment
-    => (
-      run_open_0
-      <> gate_open_14
-      <> run_open_14
-      <> gate_open_12
-      <> run_open_12
-      <> gate_which_0
-      <> run_which_0
-      <> gate_which_14
-      <> run_which_14
-      <> gate_which_12
-      <> run_which_12
-      <> gate_eraser_0
-      <> run_eraser_0
-      <> gate_eraser_14
-      <> run_eraser_14
-      <> gate_eraser_12
-      <> run_eraser_12
-    )
-)
-<>
-(
+let command_nodes =
+  run_open_0
+  <> gate_open_14
+  <> run_open_14
+  <> gate_open_12
+  <> run_open_12
+  <> gate_which_0
+  <> run_which_0
+  <> gate_which_14
+  <> run_which_14
+  <> gate_which_12
+  <> run_which_12
+  <> gate_eraser_0
+  <> run_eraser_0
+  <> gate_eraser_14
+  <> run_eraser_14
+  <> gate_eraser_12
+  <> run_eraser_12;
+
+let command_sequence =
   run_open_0
     => gate_open_14
     => run_open_14
@@ -711,29 +520,18 @@ node write_report
     => gate_eraser_14
     => run_eraser_14
     => gate_eraser_12
-    => run_eraser_12
+    => run_eraser_12;
+
+(
+  start_experiment
+    => plan_experiment
+    => command_nodes
 )
 <>
+command_sequence
+<>
 (
-  (
-    run_open_0
-    <> gate_open_14
-    <> run_open_14
-    <> gate_open_12
-    <> run_open_12
-    <> gate_which_0
-    <> run_which_0
-    <> gate_which_14
-    <> run_which_14
-    <> gate_which_12
-    <> run_which_12
-    <> gate_eraser_0
-    <> run_eraser_0
-    <> gate_eraser_14
-    <> run_eraser_14
-    <> gate_eraser_12
-    <> run_eraser_12
-  )
+  command_nodes
     => summarize_experiment
     => (print_report <> write_report)
 )
