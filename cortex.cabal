@@ -235,6 +235,24 @@ executable wire
         text >=2.0
     ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
+-- Criterion benchmarks for the CorePure evaluator.
+benchmark pure-wire-bench
+    import:           shared-properties
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   bench/pure-wire
+    main-is:          Main.hs
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        aeson >=2.1,
+        containers >=0.6,
+        criterion >=1.6 && <1.7,
+        deepseq >=1.4,
+        scientific >=0.3,
+        text >=2.0,
+        vector >=0.13
+    ghc-options:      -O2 -threaded -rtsopts -with-rtsopts=-N
+
 -- Cortex test suite (hspec-discover).
 test-suite cortex-test
     import:           shared-properties

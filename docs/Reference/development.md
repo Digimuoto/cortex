@@ -34,6 +34,38 @@ nix develop
 | `just check`       | Run `nix flake check`.                                   |
 | `just ci-check`    | Run the CI-aligned local check suite.                    |
 
+## Benchmarks
+
+`just bench-pure-wire` runs the opt-in Criterion benchmark suite for Wire pure evaluation. It
+compares several JSON-shaped pure workloads with direct Haskell implementations over the same
+pre-built inputs:
+
+- `wire-corepure-json` evaluates the CorePure AST over pre-built `Aeson.Value` Wire inputs and
+  builds the JSON output. It uses a prepared pure task, so static task validation is outside the
+  benchmark loop, and it does not parse JSON text inside the loop.
+- `wire-corepure-nodes` runs a small chain of prepared pure tasks, wrapping each intermediate JSON
+  value as a `WireValue` for the next node. This demonstrates pure node-boundary overhead without
+  adding Pulse scheduling, durable logging, or JSON text parsing.
+- `haskell-json` traverses the same pre-built `Aeson.Value` input shape directly in Haskell and
+  builds the same JSON output, without the CorePure interpreter.
+
+The benchmark component uses GHC `-O2`. The committed flake does not use `-march=native`, because
+the Nix build may happen on a remote builder and must not bake that builder's CPU into the benchmark
+binary.
+
+Treat benchmark timings as local observations, not reference semantics. The benchmark fixture checks
+that Wire and Haskell return the same JSON value before Criterion runs the timed groups. For
+ordinary benchmark runs, the executable prints a compact Wire/Haskell comparison summary to stdout
+before Criterion's detailed benchmark rows. `--list` remains metadata-only and prints only benchmark
+names.
+
+Pass Criterion arguments after Just's separator:
+
+```bash
+just bench-pure-wire -- -n 1 -L 1 --match prefix weighted-score
+just bench-pure-wire -- --list
+```
+
 ## Documentation
 
 | Command                                        | Purpose                                 |

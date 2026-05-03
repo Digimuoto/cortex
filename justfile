@@ -28,6 +28,11 @@ build-wire:
     @echo "🔨 Building wire..."
     nix build .#wire
 
+# Run opt-in Criterion benchmarks for Wire pure evaluation
+bench-pure-wire *ARGS:
+    @echo "📈 Running pure Wire benchmarks..."
+    nix run .#pure-wire-bench {{ ARGS }}
+
 # Run the cortex-test suite (hspec-discover)
 test:
     @echo "🧪 Running cortex tests..."

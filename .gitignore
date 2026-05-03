@@ -16,6 +16,8 @@
 !app/**
 !test/
 !test/**
+!bench/
+!bench/**
 
 # agents/ — slash-command skills for AI coding agents
 !agents/

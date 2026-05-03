@@ -6,6 +6,7 @@
         conduit.revision = import ./cabal-files/conduit.nix;
         singleton-bool.revision = import ./cabal-files/singleton-bool.nix;
         generics-sop.revision = import ./cabal-files/generics-sop.nix;
+        code-page.revision = import ./cabal-files/code-page.nix;
         configurator.revision = import ./cabal-files/configurator.nix;
         configurator.flags.developer = false;
         base16-bytestring.revision = import ./cabal-files/base16-bytestring.nix;
@@ -31,6 +32,7 @@
         yaml.flags.no-exe = true;
         yaml.flags.no-examples = true;
         base16.revision = import ./cabal-files/base16.nix;
+        binary-orphans.revision = import ./cabal-files/binary-orphans.nix;
         crypton-connection.revision = import ./cabal-files/crypton-connection.nix;
         base64-bytestring.revision = import ./cabal-files/base64-bytestring.nix;
         iproute.revision = import ./cabal-files/iproute.nix;
@@ -96,6 +98,7 @@
         directory.revision = hackage.directory."1.3.8.5".revisions.default;
         time-locale-compat.revision = import ./cabal-files/time-locale-compat.nix;
         time-locale-compat.flags.old-locale = false;
+        dense-linear-algebra.revision = import ./cabal-files/dense-linear-algebra.nix;
         serialise.revision = import ./cabal-files/serialise.nix;
         serialise.flags.newtime15 = true;
         text-builder-core.revision = import ./cabal-files/text-builder-core.nix;
@@ -181,6 +184,9 @@
         mtl-compat.flags.two-point-two = false;
         tls.revision = import ./cabal-files/tls.nix;
         tls.flags.devel = false;
+        criterion.revision = import ./cabal-files/criterion.nix;
+        criterion.flags.embed-data-files = false;
+        criterion.flags.fast = false;
         bifunctors.revision = import ./cabal-files/bifunctors.nix;
         bifunctors.flags.tagged = true;
         text.revision = hackage.text."2.1.3".revisions.default;
@@ -189,6 +195,7 @@
         network-byte-order.revision = import ./cabal-files/network-byte-order.nix;
         safe-exceptions.revision = import ./cabal-files/safe-exceptions.nix;
         time.revision = hackage.time."1.12.2".revisions.default;
+        js-chart.revision = import ./cabal-files/js-chart.nix;
         array.revision = hackage.array."0.5.8.0".revisions.default;
         data-default-class.revision = import ./cabal-files/data-default-class.nix;
         warp.revision = import ./cabal-files/warp.nix;
@@ -198,6 +205,8 @@
         warp.flags.network-bytestring = false;
         warp.flags.x509 = true;
         terminal-size.revision = import ./cabal-files/terminal-size.nix;
+        vector-th-unbox.revision = import ./cabal-files/vector-th-unbox.nix;
+        vector-binary-instances.revision = import ./cabal-files/vector-binary-instances.nix;
         vector-algorithms.revision = import ./cabal-files/vector-algorithms.nix;
         vector-algorithms.flags.bench = true;
         vector-algorithms.flags.internalchecks = false;
@@ -220,6 +229,9 @@
         semigroupoids.flags.contravariant = true;
         byteorder.revision = import ./cabal-files/byteorder.nix;
         servant-client-core.revision = import ./cabal-files/servant-client-core.nix;
+        statistics.revision = import ./cabal-files/statistics.nix;
+        statistics.flags.benchpapi = false;
+        microstache.revision = import ./cabal-files/microstache.nix;
         entropy.revision = import ./cabal-files/entropy.nix;
         entropy.flags.donotgetentropy = false;
         bsb-http-chunked.revision = import ./cabal-files/bsb-http-chunked.nix;
@@ -236,9 +248,14 @@
         crypton.flags.old_toolchain_inliner = false;
         crypton.flags.check_alignment = false;
         crypton.flags.support_deepseq = true;
+        math-functions.revision = import ./cabal-files/math-functions.nix;
+        math-functions.flags.system-expm1 = true;
+        math-functions.flags.system-erf = true;
         StateVar.revision = import ./cabal-files/StateVar.nix;
         network.revision = import ./cabal-files/network.nix;
         network.flags.devel = false;
+        criterion-measurement.revision = import ./cabal-files/criterion-measurement.nix;
+        criterion-measurement.flags.fast = false;
         megaparsec.revision = import ./cabal-files/megaparsec.nix;
         megaparsec.flags.dev = false;
         hspec-core.revision = import ./cabal-files/hspec-core.nix;
@@ -260,6 +277,7 @@
         void.flags.safe = false;
         mime-types.revision = import ./cabal-files/mime-types.nix;
         ghc-internal.revision = hackage.ghc-internal."9.1003.0".revisions.default;
+        cassava.revision = import ./cabal-files/cassava.nix;
         old-locale.revision = import ./cabal-files/old-locale.nix;
         asn1-parse.revision = import ./cabal-files/asn1-parse.nix;
         conduit-extra.revision = import ./cabal-files/conduit-extra.nix;
@@ -310,6 +328,7 @@
         ghc-boot-th.revision = hackage.ghc-boot-th."9.10.3".revisions.default;
         time-manager.revision = import ./cabal-files/time-manager.nix;
         safe.revision = import ./cabal-files/safe.nix;
+        Glob.revision = import ./cabal-files/Glob.nix;
         os-string.revision = hackage.os-string."2.0.7".revisions.default;
         data-default.revision = import ./cabal-files/data-default.nix;
         transformers-compat.revision = import ./cabal-files/transformers-compat.nix;
@@ -373,6 +392,8 @@
         dlist.revision = import ./cabal-files/dlist.nix;
         dlist.flags.werror = false;
         libyaml-clib.revision = import ./cabal-files/libyaml-clib.nix;
+        mwc-random.revision = import ./cabal-files/mwc-random.nix;
+        mwc-random.flags.benchpapi = false;
         concurrent-output.revision = import ./cabal-files/concurrent-output.nix;
         http-semantics.revision = import ./cabal-files/http-semantics.nix;
         hasql-pool.revision = import ./cabal-files/hasql-pool.nix;
@@ -471,6 +492,7 @@
           "data-fix".components.library.planned = lib.mkOverride 900 true;
           "Cabal-syntax".components.library.planned = lib.mkOverride 900 true;
           "adjunctions".components.library.planned = lib.mkOverride 900 true;
+          "criterion".components.exes."criterion-report".planned = lib.mkOverride 900 true;
           "product-profunctors".components.library.planned = lib.mkOverride 900 true;
           "integer-conversion".components.library.planned = lib.mkOverride 900 true;
           "pretty-show".components.library.planned = lib.mkOverride 900 true;
@@ -484,6 +506,7 @@
           "http-types".components.library.planned = lib.mkOverride 900 true;
           "iproute".components.library.planned = lib.mkOverride 900 true;
           "cortex".components.exes."cortex-pulse".planned = lib.mkOverride 900 true;
+          "code-page".components.library.planned = lib.mkOverride 900 true;
           "aeson-qq".components.library.planned = lib.mkOverride 900 true;
           "monad-logger".components.library.planned = lib.mkOverride 900 true;
           "transformers-base".components.library.planned = lib.mkOverride 900 true;
@@ -501,6 +524,7 @@
           "parser-combinators".components.library.planned = lib.mkOverride 900 true;
           "vault".components.library.planned = lib.mkOverride 900 true;
           "unordered-containers".components.library.planned = lib.mkOverride 900 true;
+          "criterion-measurement".components.library.planned = lib.mkOverride 900 true;
           "these".components.library.planned = lib.mkOverride 900 true;
           "QuickCheck".components.library.planned = lib.mkOverride 900 true;
           "generics-sop".components.library.planned = lib.mkOverride 900 true;
@@ -514,10 +538,12 @@
           "th-expand-syns".components.library.planned = lib.mkOverride 900 true;
           "servant-server".components.library.planned = lib.mkOverride 900 true;
           "postgresql-libpq".components.library.planned = lib.mkOverride 900 true;
+          "Glob".components.library.planned = lib.mkOverride 900 true;
           "network-byte-order".components.library.planned = lib.mkOverride 900 true;
           "scientific".components.library.planned = lib.mkOverride 900 true;
           "cortex".components.tests."cortex-test".planned = lib.mkOverride 900 true;
           "blaze-builder".components.library.planned = lib.mkOverride 900 true;
+          "microstache".components.library.planned = lib.mkOverride 900 true;
           "array".components.library.planned = lib.mkOverride 900 true;
           "opaleye".components.library.planned = lib.mkOverride 900 true;
           "happy-lib".components.sublibs."backend-glr".planned = lib.mkOverride 900 true;
@@ -551,6 +577,7 @@
           "some".components.library.planned = lib.mkOverride 900 true;
           "containers".components.library.planned = lib.mkOverride 900 true;
           "utf8-string".components.library.planned = lib.mkOverride 900 true;
+          "cassava".components.library.planned = lib.mkOverride 900 true;
           "servant-client-core".components.library.planned = lib.mkOverride 900 true;
           "constraints".components.library.planned = lib.mkOverride 900 true;
           "optics-extra".components.library.planned = lib.mkOverride 900 true;
@@ -638,11 +665,13 @@
           "colour".components.library.planned = lib.mkOverride 900 true;
           "integer-logarithms".components.library.planned = lib.mkOverride 900 true;
           "asn1-parse".components.library.planned = lib.mkOverride 900 true;
+          "vector-binary-instances".components.library.planned = lib.mkOverride 900 true;
           "postgresql-simple".components.library.planned = lib.mkOverride 900 true;
           "base-compat".components.library.planned = lib.mkOverride 900 true;
           "free".components.library.planned = lib.mkOverride 900 true;
           "deepseq".components.library.planned = lib.mkOverride 900 true;
           "pretty-show".components.exes."ppsh".planned = lib.mkOverride 900 true;
+          "js-chart".components.library.planned = lib.mkOverride 900 true;
           "haskell-src-meta".components.library.planned = lib.mkOverride 900 true;
           "entropy".components.setup.planned = lib.mkOverride 900 true;
           "uuid".components.library.planned = lib.mkOverride 900 true;
@@ -659,6 +688,7 @@
           "witherable".components.library.planned = lib.mkOverride 900 true;
           "happy".components.exes."happy".planned = lib.mkOverride 900 true;
           "http-semantics".components.library.planned = lib.mkOverride 900 true;
+          "statistics".components.library.planned = lib.mkOverride 900 true;
           "cryptohash-sha1".components.library.planned = lib.mkOverride 900 true;
           "network-control".components.library.planned = lib.mkOverride 900 true;
           "ghc-internal".components.library.planned = lib.mkOverride 900 true;
@@ -676,6 +706,9 @@
           "haskell-lexer".components.library.planned = lib.mkOverride 900 true;
           "th-orphans".components.library.planned = lib.mkOverride 900 true;
           "old-locale".components.library.planned = lib.mkOverride 900 true;
+          "mwc-random".components.library.planned = lib.mkOverride 900 true;
+          "dense-linear-algebra".components.library.planned = lib.mkOverride 900 true;
+          "criterion".components.library.planned = lib.mkOverride 900 true;
           "character-ps".components.library.planned = lib.mkOverride 900 true;
           "reflection".components.library.planned = lib.mkOverride 900 true;
           "os-string".components.library.planned = lib.mkOverride 900 true;
@@ -690,6 +723,7 @@
           "singleton-bool".components.library.planned = lib.mkOverride 900 true;
           "bytestring-strict-builder".components.library.planned = lib.mkOverride 900 true;
           "appar".components.library.planned = lib.mkOverride 900 true;
+          "cortex".components.benchmarks."pure-wire-bench".planned = lib.mkOverride 900 true;
           "safe".components.library.planned = lib.mkOverride 900 true;
           "mtl-compat".components.library.planned = lib.mkOverride 900 true;
           "fast-logger".components.library.planned = lib.mkOverride 900 true;
@@ -705,6 +739,7 @@
           "text-iso8601".components.library.planned = lib.mkOverride 900 true;
           "binary".components.library.planned = lib.mkOverride 900 true;
           "ansi-terminal-types".components.library.planned = lib.mkOverride 900 true;
+          "vector-th-unbox".components.library.planned = lib.mkOverride 900 true;
           "http-api-data".components.library.planned = lib.mkOverride 900 true;
           "ghc-boot-th".components.library.planned = lib.mkOverride 900 true;
           "data-default".components.library.planned = lib.mkOverride 900 true;
@@ -736,6 +771,7 @@
           "haskell-platform".components.tests."platform-test".planned = lib.mkOverride 900 true;
           "tls".components.library.planned = lib.mkOverride 900 true;
           "tasty".components.library.planned = lib.mkOverride 900 true;
+          "math-functions".components.library.planned = lib.mkOverride 900 true;
           "wl-pprint-annotated".components.library.planned = lib.mkOverride 900 true;
           "byteorder".components.library.planned = lib.mkOverride 900 true;
           "hasql".components.library.planned = lib.mkOverride 900 true;
@@ -747,6 +783,7 @@
           "libyaml".components.library.planned = lib.mkOverride 900 true;
           "ghc-prim".components.library.planned = lib.mkOverride 900 true;
           "async".components.library.planned = lib.mkOverride 900 true;
+          "binary-orphans".components.library.planned = lib.mkOverride 900 true;
           "optics-th".components.library.planned = lib.mkOverride 900 true;
           "hedgehog".components.library.planned = lib.mkOverride 900 true;
         };

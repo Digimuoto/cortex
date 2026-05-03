@@ -85,6 +85,8 @@
       cortex-pulse = projectFlake.packages."cortex:exe:cortex-pulse" or null;
       # Wire source CLI — local build/run workflows for .wire files.
       wire = projectFlake.packages."cortex:exe:wire" or null;
+      # Opt-in Criterion benchmark for Wire pure evaluation.
+      pure-wire-bench = projectFlake.packages."cortex:bench:pure-wire-bench" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).
       cortex-tests = projectFlake.packages."cortex:test:cortex-test" or null;
       # Locked upstream source snapshot for dependency visibility.
@@ -102,6 +104,7 @@
           v
           != null
           && name != "cortex:test:cortex-test"
+          && name != "cortex:bench:pure-wire-bench"
           && name != "haskell-platform:test:platform-test"
           && name != "haskell-platform:test:platform-integration-test"
       )
@@ -113,6 +116,11 @@
         type = "app";
         program = "${projectFlake.packages."cortex:exe:wire"}/bin/wire";
         meta.description = "Work with Wire source files";
+      };
+      pure-wire-bench = {
+        type = "app";
+        program = "${projectFlake.packages."cortex:bench:pure-wire-bench"}/bin/pure-wire-bench";
+        meta.description = "Run Criterion benchmarks for Wire pure evaluation";
       };
       update-materialized = {
         type = "app";

@@ -137,6 +137,7 @@
           "Cortex/Wire/Executor"
           "Cortex/Wire/Parser"
           "Cortex/Wire/Pure"
+          "Cortex/Wire/Std"
           "Cortex/Wire/Syntax"
           "Cortex/Wire/Circuit"
           "Cortex/Wire/Circuit/Artifact"
@@ -265,6 +266,23 @@
           ];
           hsSourceDirs = [ "test" ];
           mainPath = [ "Spec.hs" ];
+        };
+      };
+      benchmarks = {
+        "pure-wire-bench" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."criterion" or (errorHandler.buildDepError "criterion"))
+            (hsPkgs."deepseq" or (errorHandler.buildDepError "deepseq"))
+            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."vector" or (errorHandler.buildDepError "vector"))
+          ];
+          buildable = true;
+          hsSourceDirs = [ "bench/pure-wire" ];
         };
       };
     };

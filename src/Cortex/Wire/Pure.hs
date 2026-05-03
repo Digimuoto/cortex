@@ -18,13 +18,16 @@ module Cortex.Wire.Pure
   , CorePureBuiltinAuthority (..)
   , CorePureBuiltinAuthorityReport (..)
   , CorePureStaticContext (..)
+  , PreparedPureTask
   , renderPureEvalError
   , validatePurePorts
   , validatePureTaskConfig
+  , preparePureTaskOutputs
   , corePureStaticContextFromBindings
   , corePureWhereStaticFields
   , bindPureInputValues
   , evaluatePureTaskOutputs
+  , evaluatePreparedPureTaskOutputs
   , corePureBuiltinSignature
   , corePureBuiltinAuthorityReport
   , corePureBuiltinAuthorityFree
@@ -116,6 +119,22 @@ newtype CorePureStaticContext = CorePureStaticContext
   }
   deriving stock (Eq, Show, Generic)
 
+data PreparedPureTask = PreparedPureTask
+  { preparedPureTaskPorts :: !WirePorts
+  , preparedPureTaskInputs :: ![PreparedPureInput]
+  , preparedPureTaskBindings :: ![CorePureBinding]
+  , preparedPureTaskWhere :: !(Maybe CorePureExpr)
+  , preparedPureTaskOutputs :: !(Map Text CorePureExpr)
+  }
+  deriving stock (Eq, Show, Generic)
+
+data PreparedPureInput = PreparedPureInput
+  { preparedPureInputPortName :: !Text
+  , preparedPureInputContract :: !Text
+  , preparedPureInputDefaultPort :: !Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
 renderPureEvalError :: PureEvalError -> Text
 renderPureEvalError = \case
   PureMissingVariable variableName ->
@@ -199,7 +218,7 @@ renderPureEvalError = \case
 
 validatePurePorts :: WirePorts -> Map Text CorePureExpr -> Either PureEvalError ()
 validatePurePorts ports outputExprs =
-  validatePureInputPorts ports *> validatePureOutputPorts ports outputExprs
+  preparePureInputs ports *> validatePureOutputPorts ports outputExprs
 
 validatePureTaskConfig
   :: WirePorts
@@ -210,6 +229,25 @@ validatePureTaskConfig
 validatePureTaskConfig ports bindings whereExpr outputExprs =
   validatePurePorts ports outputExprs
     *> validateCorePureTaskExpressions bindings whereExpr outputExprs
+
+preparePureTaskOutputs
+  :: WirePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> Map Text CorePureExpr
+  -> Either PureEvalError PreparedPureTask
+preparePureTaskOutputs ports bindings whereExpr outputExprs = do
+  preparedInputs <- preparePureInputs ports
+  validatePureOutputPorts ports outputExprs
+  validateCorePureTaskExpressions bindings whereExpr outputExprs
+  Right
+    PreparedPureTask
+      { preparedPureTaskPorts = ports
+      , preparedPureTaskInputs = preparedInputs
+      , preparedPureTaskBindings = bindings
+      , preparedPureTaskWhere = whereExpr
+      , preparedPureTaskOutputs = outputExprs
+      }
 
 corePureStaticContextFromBindings
   :: [CorePureBinding] -> Either PureEvalError CorePureStaticContext
@@ -288,19 +326,26 @@ corePureStaticFieldsFromBindings bindings visited = \case
         bindingExpr : _ -> Just bindingExpr
         [] -> Nothing
 
-validatePureInputPorts :: WirePorts -> Either PureEvalError ()
-validatePureInputPorts ports =
-  traverse_
-    validateInputPort
+preparePureInputs :: WirePorts -> Either PureEvalError [PreparedPureInput]
+preparePureInputs ports =
+  traverse
+    prepareInputPort
     (Map.toAscList ports.wirePortsInputs)
   where
     inputContractCounts = pureInputContractCounts ports
 
-    validateInputPort (portName, inputPort) = do
+    prepareInputPort (portName, inputPort) = do
       contractId <- exactPureInputContract portName inputPort
       if repeatedGeneratedPurePortName inputContractCounts portName contractId
         then Left (PureInputPortRequiresLabel portName contractId)
-        else Right ()
+        else
+          Right
+            PreparedPureInput
+              { preparedPureInputPortName = portName
+              , preparedPureInputContract = contractId
+              , preparedPureInputDefaultPort =
+                  Map.size ports.wirePortsInputs == 1 && portName == defaultInputPortName
+              }
 
 validatePureOutputPorts :: WirePorts -> Map Text CorePureExpr -> Either PureEvalError ()
 validatePureOutputPorts ports outputExprs =
@@ -347,33 +392,46 @@ generatedPurePortName contractId portName =
 
 bindPureInputValues :: WirePorts -> WireInputBundle -> Either PureEvalError (Map Text Aeson.Value)
 bindPureInputValues ports inputBundle = do
-  validatePureInputPorts ports
-  Map.fromList <$> traverse bindInputPort (Map.toAscList ports.wirePortsInputs)
+  preparedInputs <- preparePureInputs ports
+  bindPreparedPureInputValues id preparedInputs inputBundle
+
+bindPreparedPureInputValues
+  :: (Aeson.Value -> value)
+  -> [PreparedPureInput]
+  -> WireInputBundle
+  -> Either PureEvalError (Map Text value)
+bindPreparedPureInputValues wrapValue preparedInputs inputBundle =
+  Map.fromList <$> traverse bindInputPort preparedInputs
   where
-    bindInputPort (portName, inputPort) = do
-      contractId <- exactPureInputContract portName inputPort
-      wireValue <- singleMatchedValue portName contractId
+    bindInputPort preparedInput = do
+      let portName = preparedInput.preparedPureInputPortName
+      wireValue <- singleMatchedValue preparedInput
       value <- wireValueJson portName wireValue
-      Right (portName, value)
+      Right (portName, wrapValue value)
 
-    singleMatchedValue portName contractId =
-      case matchedWireValues portName contractId of
+    singleMatchedValue preparedInput =
+      case matchedWireValues preparedInput of
         [wireValue] -> Right wireValue
-        [] -> Left (PureInputPortMissing portName contractId)
-        values -> Left (PureInputPortAmbiguous portName (length values))
+        [] ->
+          Left
+            ( PureInputPortMissing
+                preparedInput.preparedPureInputPortName
+                preparedInput.preparedPureInputContract
+            )
+        values -> Left (PureInputPortAmbiguous preparedInput.preparedPureInputPortName (length values))
 
-    matchedWireValues portName contractId =
+    matchedWireValues preparedInput =
       [ wireValue
       | wireValue <- inputBundle.wireInputBundleValues
-      , wireValue.wireValueContract == contractId
-      , inputValueMatchesPort portName wireValue
+      , wireValue.wireValueContract == preparedInput.preparedPureInputContract
+      , inputValueMatchesPort preparedInput wireValue
       ]
 
-    inputValueMatchesPort portName wireValue
-      | Map.size ports.wirePortsInputs == 1 && portName == defaultInputPortName =
+    inputValueMatchesPort preparedInput wireValue
+      | preparedInput.preparedPureInputDefaultPort =
           True
       | otherwise =
-          wireValue.wireValuePort == Just portName
+          wireValue.wireValuePort == Just preparedInput.preparedPureInputPortName
 
 wireValueJson :: Text -> WireValue -> Either PureEvalError Aeson.Value
 wireValueJson portName wireValue
@@ -390,18 +448,287 @@ evaluatePureTaskOutputs
   -> Map Text CorePureExpr
   -> Either PureEvalError (Map Text Aeson.Value)
 evaluatePureTaskOutputs ports inputBundle bindings whereExpr outputExprs = do
-  validatePureTaskConfig ports bindings whereExpr outputExprs
-  inputValues <- bindPureInputValues ports inputBundle
-  let inputEnv = Map.map CorePureJson inputValues
-  outerEnv <- bindCorePureBindings (corePureBuiltinEnv <> inputEnv) bindings
-  env <- bindCorePureWhere outerEnv whereExpr
-  traverse (evaluateOutput env) outputExprs
+  preparedTask <- preparePureTaskOutputs ports bindings whereExpr outputExprs
+  evaluatePreparedPureTaskOutputs preparedTask inputBundle
+
+evaluatePreparedPureTaskOutputs
+  :: PreparedPureTask
+  -> WireInputBundle
+  -> Either PureEvalError (Map Text Aeson.Value)
+evaluatePreparedPureTaskOutputs preparedTask inputBundle = do
+  inputEnv <- bindPreparedPureInputValues CorePureJson preparedTask.preparedPureTaskInputs inputBundle
+  let baseEnv = corePureEnvFromInputValues inputEnv
+  case evaluateCollectionSummaryFastPath baseEnv preparedTask of
+    Just result ->
+      result
+    Nothing -> do
+      case evaluateNumericMapSummaryFastPath baseEnv preparedTask of
+        Just result ->
+          result
+        Nothing -> do
+          outerEnv <- bindCorePureBindings baseEnv preparedTask.preparedPureTaskBindings
+          env <- bindCorePureWhere outerEnv preparedTask.preparedPureTaskWhere
+          traverse (evaluateOutput env) preparedTask.preparedPureTaskOutputs
   where
     evaluateOutput env outputExpr = do
       value <- evaluateCorePureExpr env outputExpr
       corePureValueToJson value
 
-type CorePureEnv = Map Text CorePureValue
+data CollectionSummarySpec = CollectionSummarySpec
+  { collectionSummaryOutputName :: !Text
+  , collectionSummarySourceExpr :: !CorePureExpr
+  , collectionSummaryPredicate :: !(Aeson.Value -> Either PureEvalError Bool)
+  , collectionSummaryProjectionField :: !Text
+  , collectionSummaryCountField :: !Text
+  , collectionSummaryTotalField :: !Text
+  }
+
+evaluateCollectionSummaryFastPath
+  :: CorePureEnv -> PreparedPureTask -> Maybe (Either PureEvalError (Map Text Aeson.Value))
+evaluateCollectionSummaryFastPath baseEnv preparedTask = do
+  spec <- collectionSummarySpec preparedTask
+  Just $ do
+    sourceValue <- evaluateCorePureExpr baseEnv spec.collectionSummarySourceExpr
+    values <- corePureArray sourceValue
+    (accepted, total) <-
+      Vector.foldM'
+        (accumulateCollectionSummary spec)
+        (0 :: Int, 0)
+        values
+    let output =
+          Aeson.Object $
+            KeyMap.fromList
+              [ (Key.fromText spec.collectionSummaryCountField, Aeson.Number (fromIntegral accepted))
+              , (Key.fromText spec.collectionSummaryTotalField, Aeson.Number total)
+              ]
+    Right (Map.singleton spec.collectionSummaryOutputName output)
+
+accumulateCollectionSummary
+  :: CollectionSummarySpec
+  -> (Int, Scientific)
+  -> Aeson.Value
+  -> Either PureEvalError (Int, Scientific)
+accumulateCollectionSummary spec (count, total) value = do
+  keep <- spec.collectionSummaryPredicate value
+  if keep
+    then do
+      projectedValue <- projectJsonField spec.collectionSummaryProjectionField value
+      number <- jsonNumber projectedValue
+      Right (count + 1, total + number)
+    else Right (count, total)
+
+collectionSummarySpec :: PreparedPureTask -> Maybe CollectionSummarySpec
+collectionSummarySpec preparedTask = do
+  (outputName, outputExpr) <- singleMapEntry preparedTask.preparedPureTaskOutputs
+  outputFields <- topLevelRecordFields outputExpr
+  (sourceExpr, predicate, projectionField, countField, totalField) <-
+    case preparedTask.preparedPureTaskBindings of
+      [filterBinding, mapBinding] -> do
+        (filteredName, sourceExpr, predicate) <- collectionFilterBinding filterBinding
+        (mappedName, projectionField) <- collectionMapBinding filteredName mapBinding
+        if collectionSummaryBindingsShadowBuiltins filteredName mappedName
+          then Nothing
+          else do
+            (countField, totalField) <-
+              collectionSummaryOutputFields filteredName mappedName outputFields
+            Just (sourceExpr, predicate, projectionField, countField, totalField)
+      _ ->
+        Nothing
+  case preparedTask.preparedPureTaskWhere of
+    Nothing ->
+      Just
+        CollectionSummarySpec
+          { collectionSummaryOutputName = outputName
+          , collectionSummarySourceExpr = sourceExpr
+          , collectionSummaryPredicate = predicate
+          , collectionSummaryProjectionField = projectionField
+          , collectionSummaryCountField = countField
+          , collectionSummaryTotalField = totalField
+          }
+    Just _whereExpr ->
+      Nothing
+
+collectionFilterBinding
+  :: CorePureBinding
+  -> Maybe (Text, CorePureExpr, Aeson.Value -> Either PureEvalError Bool)
+collectionFilterBinding binding =
+  case binding.corePureBindingExpr of
+    CorePureCall (CorePureIdent "filter") [CorePureLambda params predicateExpr, sourceExpr] -> do
+      predicate <- jsonFilterPredicate params predicateExpr
+      Just (binding.corePureBindingName, sourceExpr, predicate)
+    _ ->
+      Nothing
+
+collectionMapBinding :: Text -> CorePureBinding -> Maybe (Text, Text)
+collectionMapBinding filteredName binding =
+  case binding.corePureBindingExpr of
+    CorePureCall
+      (CorePureIdent "map")
+      [ CorePureLambda params (CorePureFieldAccess (CorePureIdent baseName) fieldName)
+        , CorePureIdent sourceName
+        ]
+        | [paramName] <- NE.toList params
+        , baseName == paramName
+        , sourceName == filteredName ->
+            Just (binding.corePureBindingName, fieldName)
+    _ ->
+      Nothing
+
+collectionSummaryOutputFields :: Text -> Text -> [(Text, CorePureExpr)] -> Maybe (Text, Text)
+collectionSummaryOutputFields filteredName mappedName outputFields =
+  case outputFields of
+    [_, _] -> do
+      countField <- collectionLengthField filteredName outputFields
+      totalField <- collectionSumField mappedName outputFields
+      Just (countField, totalField)
+    _ ->
+      Nothing
+
+collectionLengthField :: Text -> [(Text, CorePureExpr)] -> Maybe Text
+collectionLengthField filteredName =
+  fmap fst . List.find (isLengthOf filteredName . snd)
+
+collectionSumField :: Text -> [(Text, CorePureExpr)] -> Maybe Text
+collectionSumField mappedName =
+  fmap fst . List.find (isSumOf mappedName . snd)
+
+isLengthOf :: Text -> CorePureExpr -> Bool
+isLengthOf bindingName = \case
+  CorePureCall (CorePureIdent "length") [CorePureIdent name] ->
+    name == bindingName
+  _ ->
+    False
+
+isSumOf :: Text -> CorePureExpr -> Bool
+isSumOf bindingName = \case
+  CorePureCall (CorePureIdent "sum") [CorePureIdent name] ->
+    name == bindingName
+  _ ->
+    False
+
+collectionSummaryBindingsShadowBuiltins :: Text -> Text -> Bool
+collectionSummaryBindingsShadowBuiltins filteredName mappedName =
+  filteredName `elem` builtinNames || mappedName `elem` builtinNames
+  where
+    builtinNames = ["filter", "map", "sum", "length"]
+
+topLevelRecordFields :: CorePureExpr -> Maybe [(Text, CorePureExpr)]
+topLevelRecordFields = \case
+  CorePureRecord fields ->
+    traverse topLevelRecordField fields
+  _ ->
+    Nothing
+  where
+    topLevelRecordField field =
+      case NE.toList field.corePureFieldPath of
+        [fieldName] -> Just (fieldName, field.corePureFieldValue)
+        _nestedPath -> Nothing
+
+singleMapEntry :: Map Text value -> Maybe (Text, value)
+singleMapEntry values =
+  case Map.toAscList values of
+    [entry] -> Just entry
+    _ -> Nothing
+
+data NumericMapSummarySpec = NumericMapSummarySpec
+  { numericMapSummaryOutputName :: !Text
+  , numericMapSummarySourceExpr :: !CorePureExpr
+  , numericMapSummaryEvaluate :: !(Aeson.Value -> Either PureEvalError Scientific)
+  , numericMapSummaryCountField :: !Text
+  , numericMapSummaryTotalField :: !Text
+  }
+
+evaluateNumericMapSummaryFastPath
+  :: CorePureEnv -> PreparedPureTask -> Maybe (Either PureEvalError (Map Text Aeson.Value))
+evaluateNumericMapSummaryFastPath baseEnv preparedTask = do
+  spec <- numericMapSummarySpec baseEnv preparedTask
+  Just $ do
+    sourceValue <- evaluateCorePureExpr baseEnv spec.numericMapSummarySourceExpr
+    values <- corePureArray sourceValue
+    (count, total) <-
+      Vector.foldM'
+        (accumulateNumericMapSummary spec)
+        (0 :: Int, 0)
+        values
+    let output =
+          Aeson.Object $
+            KeyMap.fromList
+              [ (Key.fromText spec.numericMapSummaryCountField, Aeson.Number (fromIntegral count))
+              , (Key.fromText spec.numericMapSummaryTotalField, Aeson.Number total)
+              ]
+    Right (Map.singleton spec.numericMapSummaryOutputName output)
+
+accumulateNumericMapSummary
+  :: NumericMapSummarySpec
+  -> (Int, Scientific)
+  -> Aeson.Value
+  -> Either PureEvalError (Int, Scientific)
+accumulateNumericMapSummary spec (count, total) value = do
+  number <- spec.numericMapSummaryEvaluate value
+  Right (count + 1, total + number)
+
+numericMapSummarySpec :: CorePureEnv -> PreparedPureTask -> Maybe NumericMapSummarySpec
+numericMapSummarySpec baseEnv preparedTask = do
+  (outputName, outputExpr) <- singleMapEntry preparedTask.preparedPureTaskOutputs
+  outputFields <- topLevelRecordFields outputExpr
+  (mappedName, sourceExpr, evaluateNumber) <-
+    case preparedTask.preparedPureTaskBindings of
+      [mapBinding] ->
+        numericMapSummaryBinding baseEnv mapBinding
+      _ ->
+        Nothing
+  if collectionSummaryBindingsShadowBuiltins mappedName mappedName
+    then Nothing
+    else do
+      (countField, totalField) <-
+        collectionSummaryOutputFields mappedName mappedName outputFields
+      case preparedTask.preparedPureTaskWhere of
+        Nothing ->
+          Just
+            NumericMapSummarySpec
+              { numericMapSummaryOutputName = outputName
+              , numericMapSummarySourceExpr = sourceExpr
+              , numericMapSummaryEvaluate = evaluateNumber
+              , numericMapSummaryCountField = countField
+              , numericMapSummaryTotalField = totalField
+              }
+        Just _whereExpr ->
+          Nothing
+
+numericMapSummaryBinding
+  :: CorePureEnv
+  -> CorePureBinding
+  -> Maybe (Text, CorePureExpr, Aeson.Value -> Either PureEvalError Scientific)
+numericMapSummaryBinding baseEnv binding =
+  case binding.corePureBindingExpr of
+    CorePureCall (CorePureIdent "map") [CorePureLambda params body, sourceExpr] -> do
+      evaluateNumber <- numericJsonMapNumber params body baseEnv
+      Just (binding.corePureBindingName, sourceExpr, evaluateNumber)
+    _ ->
+      Nothing
+
+data CorePureEnv = CorePureEnv
+  { corePureEnvOverlay :: ![(Text, CorePureValue)]
+  , corePureEnvBase :: !(Map Text CorePureValue)
+  }
+
+corePureEnvFromInputValues :: Map Text CorePureValue -> CorePureEnv
+corePureEnvFromInputValues =
+  CorePureEnv corePureBuiltinValues
+
+corePureEnvLookup :: Text -> CorePureEnv -> Maybe CorePureValue
+corePureEnvLookup name env =
+  case List.lookup name env.corePureEnvOverlay of
+    Just value -> Just value
+    Nothing -> Map.lookup name env.corePureEnvBase
+
+corePureEnvInsert :: Text -> CorePureValue -> CorePureEnv -> CorePureEnv
+corePureEnvInsert name value env =
+  env {corePureEnvOverlay = (name, value) : env.corePureEnvOverlay}
+
+corePureEnvPrepend :: [(Text, CorePureValue)] -> CorePureEnv -> CorePureEnv
+corePureEnvPrepend bindings env =
+  env {corePureEnvOverlay = bindings <> env.corePureEnvOverlay}
 
 bindCorePureWhere :: CorePureEnv -> Maybe CorePureExpr -> Either PureEvalError CorePureEnv
 bindCorePureWhere env = \case
@@ -413,7 +740,7 @@ bindCorePureWhere env = \case
         Right $
           foldl
             ( \acc (key, value) ->
-                Map.insert (Key.toText key) (CorePureJson value) acc
+                corePureEnvInsert (Key.toText key) (CorePureJson value) acc
             )
             env
             (KeyMap.toList object)
@@ -501,7 +828,7 @@ evaluateCorePureExpr env = \case
   CorePureLit literal ->
     Right (CorePureJson (corePureLiteralToJson literal))
   CorePureIdent name ->
-    case Map.lookup name env of
+    case corePureEnvLookup name env of
       Just value -> Right value
       Nothing -> Left (PureMissingVariable name)
   CorePureList items -> do
@@ -516,13 +843,7 @@ evaluateCorePureExpr env = \case
         Right (mergeObjects object (objectForPath (foldr (:) [] path) value))
   CorePureFieldAccess baseExpr fieldName -> do
     baseValue <- evaluateCorePureExpr env baseExpr >>= corePureValueToJson
-    case baseValue of
-      Aeson.Object object ->
-        case KeyMap.lookup (Key.fromText fieldName) object of
-          Just value -> Right (CorePureJson value)
-          Nothing -> Left (PureFieldMissing fieldName)
-      other ->
-        Left (PureTypeMismatch "object" (jsonValueKind other))
+    CorePureJson <$> projectJsonField fieldName baseValue
   CorePureIndex baseExpr indexExpr -> do
     baseValue <- evaluateCorePureExpr env baseExpr >>= corePureValueToJson
     indexValue <- evaluateCorePureExpr env indexExpr >>= corePureValueToJson
@@ -567,7 +888,7 @@ bindCorePureBindings env bindings = do
   where
     bindCorePureBinding currentEnv binding = do
       value <- evaluateCorePureExpr currentEnv binding.corePureBindingExpr
-      Right (Map.insert binding.corePureBindingName value currentEnv)
+      Right (corePureEnvInsert binding.corePureBindingName value currentEnv)
 
 validateCorePureBindingNames :: [CorePureBinding] -> Either PureEvalError ()
 validateCorePureBindingNames bindings =
@@ -703,13 +1024,13 @@ applyCorePureValue functionValue argumentValues =
   case functionValue of
     CorePureClosure params body closureEnv
       | NE.length params == length argumentValues ->
-          validateCorePureParamNames params
-            *> evaluateCorePureExpr (Map.fromList (zip (NE.toList params) argumentValues) <> closureEnv) body
+          evaluateCorePureExpr
+            (corePureEnvPrepend (zip (NE.toList params) argumentValues) closureEnv)
+            body
       | length argumentValues < NE.length params -> do
-          validateCorePureParamNames params
           (appliedParams, remainingParams) <-
             partialClosureParams params (length argumentValues)
-          let closureEnv' = Map.fromList (zip appliedParams argumentValues) <> closureEnv
+          let closureEnv' = corePureEnvPrepend (zip appliedParams argumentValues) closureEnv
           Right (CorePureClosure remainingParams body closureEnv')
       | otherwise ->
           Left (PureFunctionArity "<lambda>" (NE.length params) (length argumentValues))
@@ -782,18 +1103,17 @@ corePureBuiltinAuthorityFree =
     (\report -> report.corePureBuiltinAuthority == CorePureBuiltinPureValue)
     corePureBuiltinAuthorityReport
 
-corePureBuiltinEnv :: CorePureEnv
-corePureBuiltinEnv =
-  Map.fromList
-    [ ( spec.corePureBuiltinName
-      , CorePureBuiltin
-          spec.corePureBuiltinName
-          spec.corePureBuiltinArity
-          []
-          spec.corePureBuiltinImplementation
-      )
-    | spec <- corePureBuiltinSpecs
-    ]
+corePureBuiltinValues :: [(Text, CorePureValue)]
+corePureBuiltinValues =
+  [ ( spec.corePureBuiltinName
+    , CorePureBuiltin
+        spec.corePureBuiltinName
+        spec.corePureBuiltinArity
+        []
+        spec.corePureBuiltinImplementation
+    )
+  | spec <- corePureBuiltinSpecs
+  ]
 
 partialClosureParams
   :: NonEmpty Text -> Int -> Either PureEvalError ([Text], NonEmpty Text)
@@ -805,6 +1125,28 @@ partialClosureParams params appliedCount =
       Left (PureFunctionArity "<lambda>" (NE.length params) appliedCount)
 
 corePureMap :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureMap
+  [ CorePureClosure params (CorePureFieldAccess (CorePureIdent baseName) fieldName) _closureEnv
+    , listValue
+    ]
+    | [param] <- NE.toList params
+    , baseName == param = do
+        values <- Vector.toList <$> corePureArray listValue
+        mapped <- traverse (projectJsonField fieldName) values
+        Right (CorePureJson (Aeson.Array (Vector.fromList mapped)))
+corePureMap [CorePureClosure params body closureEnv, listValue]
+  | Just applyMap <- numericJsonMapValue params body closureEnv = do
+      values <- Vector.toList <$> corePureArray listValue
+      mapped <- traverse applyMap values
+      Right (CorePureJson (Aeson.Array (Vector.fromList mapped)))
+corePureMap [CorePureClosure params body closureEnv, listValue]
+  | [param] <- NE.toList params = do
+      values <- Vector.toList <$> corePureArray listValue
+      mapped <-
+        traverse
+          (applyUnaryJsonClosure param body closureEnv >=> corePureValueToJson)
+          values
+      Right (CorePureJson (Aeson.Array (Vector.fromList mapped)))
 corePureMap [functionValue, listValue] = do
   values <- corePureArray listValue
   mapped <- traverse (applyJsonFunction functionValue) (Vector.toList values)
@@ -812,6 +1154,22 @@ corePureMap [functionValue, listValue] = do
 corePureMap args = impossibleBuiltinArity "map" 2 args
 
 corePureFilter :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFilter [CorePureClosure params body _closureEnv, listValue]
+  | Just predicate <- jsonFilterPredicate params body = do
+      values <- Vector.toList <$> corePureArray listValue
+      filtered <- filterMCore predicate values
+      Right (CorePureJson (Aeson.Array (Vector.fromList filtered)))
+corePureFilter [CorePureClosure params body closureEnv, listValue]
+  | [param] <- NE.toList params = do
+      values <- Vector.toList <$> corePureArray listValue
+      filtered <-
+        filterMCore
+          ( \value -> do
+              result <- applyUnaryJsonClosure param body closureEnv value
+              corePureBool result
+          )
+          values
+      Right (CorePureJson (Aeson.Array (Vector.fromList filtered)))
 corePureFilter [functionValue, listValue] = do
   values <- Vector.toList <$> corePureArray listValue
   filtered <-
@@ -836,6 +1194,27 @@ corePureZip [lhsValue, rhsValue] = do
 corePureZip args = impossibleBuiltinArity "zip" 2 args
 
 corePureZipWith :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureZipWith [CorePureClosure params body _closureEnv, lhsValue, rhsValue]
+  | Just applyBinary <- numericZipWithBinary params body = do
+      lhs <- Vector.toList <$> corePureArray lhsValue
+      rhs <- Vector.toList <$> corePureArray rhsValue
+      mapped <-
+        traverse
+          (uncurry applyBinary)
+          (zip lhs rhs)
+      Right (CorePureJson (Aeson.Array (Vector.fromList mapped)))
+corePureZipWith [CorePureClosure params body closureEnv, lhsValue, rhsValue]
+  | [lhsParam, rhsParam] <- NE.toList params = do
+      lhs <- Vector.toList <$> corePureArray lhsValue
+      rhs <- Vector.toList <$> corePureArray rhsValue
+      mapped <-
+        traverse
+          ( \(lhsItem, rhsItem) ->
+              applyBinaryJsonClosure lhsParam rhsParam body closureEnv lhsItem rhsItem
+                >>= corePureValueToJson
+          )
+          (zip lhs rhs)
+      Right (CorePureJson (Aeson.Array (Vector.fromList mapped)))
 corePureZipWith [functionValue, lhsValue, rhsValue] = do
   lhs <- Vector.toList <$> corePureArray lhsValue
   rhs <- Vector.toList <$> corePureArray rhsValue
@@ -862,12 +1241,21 @@ corePureLength args = impossibleBuiltinArity "length" 1 args
 
 corePureSum :: [CorePureValue] -> Either PureEvalError CorePureValue
 corePureSum [listValue] = do
-  values <- Vector.toList <$> corePureArray listValue
-  numbers <- traverse (corePureNumber . CorePureJson) values
-  Right (CorePureJson (Aeson.Number (sum numbers)))
+  values <- corePureArray listValue
+  total <- Vector.foldM' addJsonNumber 0 values
+  Right (CorePureJson (Aeson.Number total))
+  where
+    addJsonNumber acc = \case
+      Aeson.Number number -> Right $! acc + number
+      other -> Left (PureTypeMismatch "number" (jsonValueKind other))
 corePureSum args = impossibleBuiltinArity "sum" 1 args
 
 corePureAll :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureAll [CorePureClosure params body closureEnv, listValue]
+  | [param] <- NE.toList params = do
+      values <- Vector.toList <$> corePureArray listValue
+      results <- traverse (applyUnaryJsonClosure param body closureEnv >=> corePureBool) values
+      Right (CorePureJson (Aeson.Bool (and results)))
 corePureAll [functionValue, listValue] = do
   values <- Vector.toList <$> corePureArray listValue
   results <- traverse (applyJsonFunction functionValue >=> corePureBool) values
@@ -875,6 +1263,11 @@ corePureAll [functionValue, listValue] = do
 corePureAll args = impossibleBuiltinArity "all" 2 args
 
 corePureAny :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureAny [CorePureClosure params body closureEnv, listValue]
+  | [param] <- NE.toList params = do
+      values <- Vector.toList <$> corePureArray listValue
+      results <- traverse (applyUnaryJsonClosure param body closureEnv >=> corePureBool) values
+      Right (CorePureJson (Aeson.Bool (or results)))
 corePureAny [functionValue, listValue] = do
   values <- Vector.toList <$> corePureArray listValue
   results <- traverse (applyJsonFunction functionValue >=> corePureBool) values
@@ -933,6 +1326,259 @@ corePureToJson args = impossibleBuiltinArity "toJson" 1 args
 applyJsonFunction :: CorePureValue -> Aeson.Value -> Either PureEvalError CorePureValue
 applyJsonFunction functionValue value =
   applyCorePureValue functionValue [CorePureJson value]
+
+projectJsonField :: Text -> Aeson.Value -> Either PureEvalError Aeson.Value
+projectJsonField fieldName = \case
+  Aeson.Object object ->
+    case KeyMap.lookup (Key.fromText fieldName) object of
+      Just value -> Right value
+      Nothing -> Left (PureFieldMissing fieldName)
+  other ->
+    Left (PureTypeMismatch "object" (jsonValueKind other))
+
+applyUnaryJsonClosure
+  :: Text -> CorePureExpr -> CorePureEnv -> Aeson.Value -> Either PureEvalError CorePureValue
+applyUnaryJsonClosure param body closureEnv value =
+  evaluateCorePureExpr (corePureEnvInsert param (CorePureJson value) closureEnv) body
+
+numericJsonMapValue
+  :: NonEmpty Text
+  -> CorePureExpr
+  -> CorePureEnv
+  -> Maybe (Aeson.Value -> Either PureEvalError Aeson.Value)
+numericJsonMapValue params body closureEnv = do
+  evaluateNumber <- numericJsonMapNumber params body closureEnv
+  Just (fmap Aeson.Number . evaluateNumber)
+
+numericJsonMapNumber
+  :: NonEmpty Text
+  -> CorePureExpr
+  -> CorePureEnv
+  -> Maybe (Aeson.Value -> Either PureEvalError Scientific)
+numericJsonMapNumber params body closureEnv =
+  case NE.toList params of
+    [param] ->
+      numericJsonExpr closureEnv param body
+    _ ->
+      Nothing
+
+numericJsonExpr
+  :: CorePureEnv
+  -> Text
+  -> CorePureExpr
+  -> Maybe (Aeson.Value -> Either PureEvalError Scientific)
+numericJsonExpr closureEnv paramName = \case
+  CorePureLit (CorePureNumber number) ->
+    Just (\_value -> Right number)
+  fieldExpr@CorePureFieldAccess {} -> do
+    fieldName <- fieldAccessOnParam paramName fieldExpr
+    Just $ \value -> do
+      fieldValue <- projectJsonField fieldName value
+      jsonNumber fieldValue
+  CorePureUnary CorePureNegate operandExpr -> do
+    evaluateOperand <- numericJsonExpr closureEnv paramName operandExpr
+    Just (fmap negate . evaluateOperand)
+  CorePureBinary binaryOp lhsExpr rhsExpr -> do
+    evaluateBinary <- numericJsonBinaryNumbers binaryOp
+    evaluateLhs <- numericJsonExpr closureEnv paramName lhsExpr
+    evaluateRhs <- numericJsonExpr closureEnv paramName rhsExpr
+    Just $ \value -> do
+      lhs <- evaluateLhs value
+      rhs <- evaluateRhs value
+      evaluateBinary lhs rhs
+  CorePureCall (CorePureIdent "abs") [operandExpr] ->
+    if numericJsonBuiltinAvailable paramName "abs" closureEnv
+      then do
+        evaluateOperand <- numericJsonExpr closureEnv paramName operandExpr
+        Just (fmap abs . evaluateOperand)
+      else Nothing
+  CorePureCall (CorePureIdent "min") [lhsExpr, rhsExpr] ->
+    if numericJsonBuiltinAvailable paramName "min" closureEnv
+      then numericJsonCall2 min closureEnv paramName lhsExpr rhsExpr
+      else Nothing
+  CorePureCall (CorePureIdent "max") [lhsExpr, rhsExpr] ->
+    if numericJsonBuiltinAvailable paramName "max" closureEnv
+      then numericJsonCall2 max closureEnv paramName lhsExpr rhsExpr
+      else Nothing
+  CorePureCall (CorePureIdent "clamp") [minimumExpr, maximumExpr, valueExpr] ->
+    if numericJsonBuiltinAvailable paramName "clamp" closureEnv
+      then do
+        evaluateMinimum <- numericJsonExpr closureEnv paramName minimumExpr
+        evaluateMaximum <- numericJsonExpr closureEnv paramName maximumExpr
+        evaluateValue <- numericJsonExpr closureEnv paramName valueExpr
+        Just $ \value -> do
+          minimumValue <- evaluateMinimum value
+          maximumValue <- evaluateMaximum value
+          number <- evaluateValue value
+          Right (max minimumValue (min maximumValue number))
+      else Nothing
+  _ ->
+    Nothing
+
+numericJsonBuiltinAvailable :: Text -> Text -> CorePureEnv -> Bool
+numericJsonBuiltinAvailable paramName builtinName closureEnv =
+  paramName /= builtinName && corePureBuiltinAvailable builtinName closureEnv
+
+numericJsonCall2
+  :: (Scientific -> Scientific -> Scientific)
+  -> CorePureEnv
+  -> Text
+  -> CorePureExpr
+  -> CorePureExpr
+  -> Maybe (Aeson.Value -> Either PureEvalError Scientific)
+numericJsonCall2 op closureEnv paramName lhsExpr rhsExpr = do
+  evaluateLhs <- numericJsonExpr closureEnv paramName lhsExpr
+  evaluateRhs <- numericJsonExpr closureEnv paramName rhsExpr
+  Just $ \value -> do
+    lhs <- evaluateLhs value
+    rhs <- evaluateRhs value
+    Right (op lhs rhs)
+
+numericJsonBinaryNumbers
+  :: CorePureBinOp -> Maybe (Scientific -> Scientific -> Either PureEvalError Scientific)
+numericJsonBinaryNumbers = \case
+  CorePureAdd -> Just (\lhs rhs -> Right (lhs + rhs))
+  CorePureSubtract -> Just (\lhs rhs -> Right (lhs - rhs))
+  CorePureMultiply -> Just (\lhs rhs -> Right (lhs * rhs))
+  CorePureDivide -> Just divideScientific
+  _ -> Nothing
+
+divideScientific :: Scientific -> Scientific -> Either PureEvalError Scientific
+divideScientific lhs rhs =
+  if rhs == 0
+    then Left PureDivisionByZero
+    else Right (lhs / rhs)
+
+corePureBuiltinAvailable :: Text -> CorePureEnv -> Bool
+corePureBuiltinAvailable name env =
+  case corePureEnvLookup name env of
+    Just (CorePureBuiltin builtinName _arity [] _implementation) ->
+      builtinName == name
+    _ ->
+      False
+
+applyBinaryJsonClosure
+  :: Text
+  -> Text
+  -> CorePureExpr
+  -> CorePureEnv
+  -> Aeson.Value
+  -> Aeson.Value
+  -> Either PureEvalError CorePureValue
+applyBinaryJsonClosure lhsParam rhsParam body closureEnv lhsValue rhsValue =
+  evaluateCorePureExpr
+    ( corePureEnvPrepend
+        [ (lhsParam, CorePureJson lhsValue)
+        , (rhsParam, CorePureJson rhsValue)
+        ]
+        closureEnv
+    )
+    body
+
+numericZipWithBinary
+  :: NonEmpty Text
+  -> CorePureExpr
+  -> Maybe (Aeson.Value -> Aeson.Value -> Either PureEvalError Aeson.Value)
+numericZipWithBinary params = \case
+  CorePureBinary binaryOp (CorePureIdent lhsName) (CorePureIdent rhsName)
+    | [lhsParam, rhsParam] <- NE.toList params
+    , Just applyBinary <- numericJsonBinary binaryOp
+    , Just selectLhs <- selectParam lhsParam rhsParam lhsName
+    , Just selectRhs <- selectParam lhsParam rhsParam rhsName ->
+        Just $ \lhsValue rhsValue ->
+          applyBinary (selectLhs lhsValue rhsValue) (selectRhs lhsValue rhsValue)
+  _ ->
+    Nothing
+
+selectParam
+  :: Text -> Text -> Text -> Maybe (Aeson.Value -> Aeson.Value -> Aeson.Value)
+selectParam lhsParam rhsParam name
+  | name == lhsParam = Just const
+  | name == rhsParam = Just (\_lhsValue rhsValue -> rhsValue)
+  | otherwise = Nothing
+
+numericJsonBinary
+  :: CorePureBinOp -> Maybe (Aeson.Value -> Aeson.Value -> Either PureEvalError Aeson.Value)
+numericJsonBinary = \case
+  CorePureAdd -> Just (numericJsonBinaryOp (+))
+  CorePureSubtract -> Just (numericJsonBinaryOp (-))
+  CorePureMultiply -> Just (numericJsonBinaryOp (*))
+  CorePureDivide -> Just numericJsonDivide
+  _ -> Nothing
+
+numericJsonBinaryOp
+  :: (Scientific -> Scientific -> Scientific)
+  -> Aeson.Value
+  -> Aeson.Value
+  -> Either PureEvalError Aeson.Value
+numericJsonBinaryOp op lhs rhs =
+  Aeson.Number <$> (op <$> jsonNumber lhs <*> jsonNumber rhs)
+
+numericJsonDivide :: Aeson.Value -> Aeson.Value -> Either PureEvalError Aeson.Value
+numericJsonDivide lhs rhs = do
+  lhsNumber <- jsonNumber lhs
+  rhsNumber <- jsonNumber rhs
+  if rhsNumber == 0
+    then Left PureDivisionByZero
+    else Right (Aeson.Number (lhsNumber / rhsNumber))
+
+jsonNumber :: Aeson.Value -> Either PureEvalError Scientific
+jsonNumber = \case
+  Aeson.Number number -> Right number
+  other -> Left (PureTypeMismatch "number" (jsonValueKind other))
+
+jsonFilterPredicate
+  :: NonEmpty Text -> CorePureExpr -> Maybe (Aeson.Value -> Either PureEvalError Bool)
+jsonFilterPredicate params = \case
+  CorePureBinary CorePureAnd lhsExpr rhsExpr
+    | [param] <- NE.toList params
+    , Just lhsPredicate <- boolFieldPredicate param lhsExpr
+    , Just rhsPredicate <- numericFieldComparePredicate param rhsExpr ->
+        Just $ \value -> do
+          lhs <- lhsPredicate value
+          if lhs then rhsPredicate value else Right False
+  _ ->
+    Nothing
+
+boolFieldPredicate :: Text -> CorePureExpr -> Maybe (Aeson.Value -> Either PureEvalError Bool)
+boolFieldPredicate paramName expr = do
+  fieldName <- fieldAccessOnParam paramName expr
+  Just $ \value -> do
+    fieldValue <- projectJsonField fieldName value
+    jsonBool fieldValue
+
+fieldAccessOnParam :: Text -> CorePureExpr -> Maybe Text
+fieldAccessOnParam paramName = \case
+  CorePureFieldAccess (CorePureIdent baseName) fieldName
+    | baseName == paramName -> Just fieldName
+  _ ->
+    Nothing
+
+numericFieldComparePredicate
+  :: Text -> CorePureExpr -> Maybe (Aeson.Value -> Either PureEvalError Bool)
+numericFieldComparePredicate paramName = \case
+  CorePureBinary binaryOp fieldExpr (CorePureLit (CorePureNumber threshold)) -> do
+    fieldName <- fieldAccessOnParam paramName fieldExpr
+    compareNumbers <- numericJsonCompare binaryOp
+    Just $ \value -> do
+      fieldValue <- projectJsonField fieldName value
+      fieldNumber <- jsonNumber fieldValue
+      Right (compareNumbers fieldNumber threshold)
+  _ ->
+    Nothing
+
+numericJsonCompare :: CorePureBinOp -> Maybe (Scientific -> Scientific -> Bool)
+numericJsonCompare = \case
+  CorePureLessThan -> Just (<)
+  CorePureLessThanOrEqual -> Just (<=)
+  CorePureGreaterThan -> Just (>)
+  CorePureGreaterThanOrEqual -> Just (>=)
+  _ -> Nothing
+
+jsonBool :: Aeson.Value -> Either PureEvalError Bool
+jsonBool = \case
+  Aeson.Bool bool -> Right bool
+  other -> Left (PureTypeMismatch "boolean" (jsonValueKind other))
 
 filterMCore :: (a -> Either PureEvalError Bool) -> [a] -> Either PureEvalError [a]
 filterMCore predicate values =

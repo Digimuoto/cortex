@@ -267,6 +267,28 @@ checks catch malformed pure tasks where possible, such as authored `@pure`, dupl
 names, unsupported pure ports, output port mismatch, `where` field/input-port collisions, and
 where-expressions whose field set is not statically determinable.
 
+## Benchmarking
+
+The repository includes an opt-in Criterion benchmark for the implemented pure evaluator:
+
+```bash
+just bench-pure-wire
+```
+
+The benchmark is a scaffolding surface, not a normative language rule. It compares descriptive
+CorePure workloads, such as weighted scoring, eligibility filtering, risk adjustment, and label
+rollup, against direct Haskell implementations over the same pre-built JSON values. The Wire case
+does not parse JSON text inside the benchmark loop, but it does traverse JSON-shaped `Aeson.Value`s
+through the CorePure interpreter. Ordinary benchmark runs print a compact Wire/Haskell comparison
+summary to stdout before Criterion's detailed rows.
+
+Hosts that repeatedly evaluate the same lowered pure task may prepare it once and then evaluate the
+prepared task against different input bundles. Preparation performs the static task checks; prepared
+evaluation still binds and validates runtime Wire inputs. The evaluator may use semantics-preserving
+fast paths for common collection closures, such as field projection and simple numeric `zipWith`,
+but those paths must preserve the same JSON output equality and pure error taxonomy as generic
+CorePure evaluation.
+
 ## Boundary With Proofs
 
 CorePure stays inside Wire's deterministic expression layer. It preserves the executor authority
