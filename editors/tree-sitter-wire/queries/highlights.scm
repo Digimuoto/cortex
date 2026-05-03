@@ -4,6 +4,7 @@
 ; ── Keywords ─────────────────────────────────────────────────────────────
 
 "contract" @keyword
+"form"     @keyword
 "kind"     @keyword
 "node"     @keyword
 "export"   @keyword
@@ -72,8 +73,14 @@
 (kind_param class: (kind_param_class) @type)
 (kind_application name: (identifier) @type)
 
+; form <name>(...)
+(form_decl name: (identifier) @type)
+(form_param class: (form_param_class) @type)
+(form_application name: (identifier) @type)
+
 ; [export] let <name> = <expr>;
 (let_binding name: (identifier) @constant)
+(form_let_binding name: (identifier) @constant)
 
 ; contract <Name>;
 (contract_decl

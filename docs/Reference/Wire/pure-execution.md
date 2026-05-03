@@ -45,7 +45,7 @@ tasks, but that lowering is not source-level authority.
 
 ## Rule Sources
 
-- **[§5.2 Pure Output Equations](grammar.md#52-pure-output-equations)** - authored pure node syntax,
+- **[§5.3 Pure Output Equations](grammar.md#53-pure-output-equations)** - authored pure node syntax,
   local bindings, output equation rules, and CorePure surface.
 - **[§8 CorePure Expressions](grammar.md#8-corepure-expressions)** - compact expression grammar.
 - **[Executors and the Alphabet](executors-and-alphabet.md#native-pure-evaluator)** - relationship

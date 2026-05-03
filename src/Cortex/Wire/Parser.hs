@@ -117,6 +117,7 @@ reservedWords =
   , "export"
   , "false"
   , "from"
+  , "form"
   , "if"
   , "inherit"
   , "import"
@@ -268,7 +269,9 @@ data ParsedTopForm
   = ParsedTopContract !ContractId
   | ParsedTopNode !ParsedNodeDecl
   | ParsedTopKind !KindDecl
+  | ParsedTopForm !FormDecl
   | ParsedTopLet !LetVisibility !Text !LetRhs
+  | ParsedTopLetApplication !LetVisibility !Text !FormApplication
   | ParsedTopUse !UseSpec
   | ParsedTopImport !ImportSpec
   deriving stock (Show)
@@ -302,6 +305,45 @@ data KindParamClass
 data KindApplication = KindApplication
   { kindApplicationName :: !Text
   , kindApplicationArgs :: ![Expr]
+  }
+  deriving stock (Show)
+
+data FormDecl = FormDecl
+  { formDeclName :: !Text
+  , formDeclParams :: ![FormParam]
+  , formDeclItems :: ![FormItem]
+  , formDeclResult :: !Expr
+  }
+  deriving stock (Show)
+
+data FormParam = FormParam
+  { formParamName :: !Text
+  , formParamClass :: !FormParamClass
+  }
+  deriving stock (Eq, Show)
+
+data FormParamClass
+  = FormParamPortLabel
+  | FormParamContract
+  | FormParamValue
+  | FormParamGraph
+  | FormParamConfiguredExecutor
+  deriving stock (Eq, Show)
+
+data FormItem
+  = FormItemNode !ParsedNodeDecl
+  | FormItemLet !Text !FormLetRhs
+  deriving stock (Show)
+
+data FormLetRhs
+  = FormLetRhsWire !Expr
+  | FormLetRhsCorePure !CorePureExpr
+  | FormLetRhsApplication !FormApplication
+  deriving stock (Show)
+
+data FormApplication = FormApplication
+  { formApplicationName :: !Text
+  , formApplicationArgs :: ![Expr]
   }
   deriving stock (Show)
 
@@ -861,7 +903,7 @@ wireFile = do
     e <- fileReturnExpr
     notFollowedBy (symbol ";")
     pure e
-  expandedForms <- either fail pure (expandKindForms forms)
+  expandedForms <- either fail pure (expandStructuralForms forms)
   pure (WireFile expandedForms ret)
 
 fileReturnExpr :: Parser Expr
@@ -873,6 +915,7 @@ topForm =
     [ contractDecl
     , useStmt
     , kindDecl
+    , formDecl
     , nodeDecl
     , letBinding
     , importStmt
@@ -947,18 +990,77 @@ parseKindParamClass = do
     "ConfiguredExecutor" -> pure KindParamConfiguredExecutor
     other -> fail ("unknown kind parameter class: " <> T.unpack other)
 
+formDecl :: Parser ParsedTopForm
+formDecl = do
+  keyword "form"
+  name <- identifier
+  _ <- symbol "("
+  params <- formParam `sepEndBy` symbol ","
+  _ <- symbol ")"
+  _ <- symbol "="
+  _ <- symbol "{"
+  items <- many formItem
+  result <- expr
+  _ <- symbol ";"
+  _ <- symbol "}"
+  _ <- symbol ";"
+  pure (ParsedTopForm (FormDecl name params items result))
+
+formParam :: Parser FormParam
+formParam = do
+  name <- identifier
+  _ <- symbol ":"
+  FormParam name <$> parseFormParamClass
+
+parseFormParamClass :: Parser FormParamClass
+parseFormParamClass = do
+  className <- identifier
+  case className of
+    "PortLabel" -> pure FormParamPortLabel
+    "Contract" -> pure FormParamContract
+    "Value" -> pure FormParamValue
+    "Graph" -> pure FormParamGraph
+    "ConfiguredExecutor" -> pure FormParamConfiguredExecutor
+    other -> fail ("unknown form parameter class: " <> T.unpack other)
+
+formItem :: Parser FormItem
+formItem =
+  try formNodeItem <|> formLetItem
+
+formNodeItem :: Parser FormItem
+formNodeItem = do
+  keyword "node"
+  FormItemNode <$> nodeDeclAfterKeyword
+
+formLetItem :: Parser FormItem
+formLetItem = do
+  keyword "let"
+  name <- identifier
+  _ <- symbol "="
+  FormItemLet name <$> formLetRhs
+
+formLetRhs :: Parser FormLetRhs
+formLetRhs =
+  try (FormLetRhsApplication <$> formApplication <* symbol ";")
+    <|> try (FormLetRhsWire <$> expr <* symbol ";")
+    <|> (FormLetRhsCorePure <$> corePureExpr <* symbol ";")
+
 nodeDecl :: Parser ParsedTopForm
 nodeDecl = do
   keyword "node"
+  ParsedTopNode <$> nodeDeclAfterKeyword
+
+nodeDeclAfterKeyword :: Parser ParsedNodeDecl
+nodeDeclAfterKeyword = do
   name <- identifier
   try (kindNodeDecl name) <|> ordinaryNodeDecl name
 
-kindNodeDecl :: Text -> Parser ParsedTopForm
+kindNodeDecl :: Text -> Parser ParsedNodeDecl
 kindNodeDecl name = do
   _ <- symbol "="
   application <- kindApplication
   _ <- symbol ";"
-  pure (ParsedTopNode (ParsedNodeKindApplication name application))
+  pure (ParsedNodeKindApplication name application)
 
 kindApplication :: Parser KindApplication
 kindApplication = do
@@ -968,12 +1070,12 @@ kindApplication = do
   _ <- symbol ")"
   pure (KindApplication name args)
 
-ordinaryNodeDecl :: Text -> Parser ParsedTopForm
+ordinaryNodeDecl :: Text -> Parser ParsedNodeDecl
 ordinaryNodeDecl name = do
   inputs <- many (try (inputPort <* symbol ";"))
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
-  pure (ParsedTopNode (ParsedNodeBody name (inputs <> outputs) (mkBody whereExpr)))
+  pure (ParsedNodeBody name (inputs <> outputs) (mkBody whereExpr))
 
 nodeImplementationBody :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 nodeImplementationBody =
@@ -1078,12 +1180,21 @@ letBinding = do
   keyword "let"
   name <- identifier
   _ <- symbol "="
-  ParsedTopLet visibility name <$> letRhs
+  parsedLetRhs visibility name
 
-letRhs :: Parser LetRhs
-letRhs =
-  try (LetRhsWire <$> expr <* symbol ";")
-    <|> (LetRhsCorePure <$> corePureExpr <* symbol ";")
+parsedLetRhs :: LetVisibility -> Text -> Parser ParsedTopForm
+parsedLetRhs visibility name =
+  try (ParsedTopLetApplication visibility name <$> formApplication <* symbol ";")
+    <|> try (ParsedTopLet visibility name . LetRhsWire <$> expr <* symbol ";")
+    <|> (ParsedTopLet visibility name . LetRhsCorePure <$> corePureExpr <* symbol ";")
+
+formApplication :: Parser FormApplication
+formApplication = do
+  name <- identifier
+  _ <- symbol "("
+  args <- expr `sepEndBy` symbol ","
+  _ <- symbol ")"
+  pure (FormApplication name args)
 
 importStmt :: Parser ParsedTopForm
 importStmt = do
@@ -1104,28 +1215,54 @@ importStmt = do
       keyword "from"
       ImportExplicit names <$> stringLiteral
 
-expandKindForms :: [ParsedTopForm] -> Either String [TopForm]
-expandKindForms forms = do
-  (_kindScope, reversedForms) <- foldM step (Map.empty, []) forms
+expandStructuralForms :: [ParsedTopForm] -> Either String [TopForm]
+expandStructuralForms forms = do
+  (_scope, reversedForms) <- foldM step (emptyExpansionScope, []) forms
   Right (reverse reversedForms)
   where
-    step (kindScope, acc) = \case
+    step (scope, acc) = \case
       ParsedTopContract contractId ->
-        Right (kindScope, TopContract contractId : acc)
+        Right (scope, TopContract contractId : acc)
       ParsedTopUse useSpec ->
-        Right (kindScope, TopUse useSpec : acc)
+        Right (scope, TopUse useSpec : acc)
       ParsedTopLet visibility name rhs ->
-        Right (kindScope, TopLet visibility name rhs : acc)
+        Right (scope, TopLet visibility name rhs : acc)
+      ParsedTopLetApplication visibility name application ->
+        case Map.lookup application.formApplicationName scope.esForms of
+          Just formDeclValue -> do
+            expanded <- expandFormBinding scope visibility name formDeclValue application
+            Right (scope, reverse expanded <> acc)
+          Nothing -> do
+            rhs <- formApplicationToCorePureLetRhs application
+            Right (scope, TopLet visibility name rhs : acc)
       ParsedTopImport importSpec ->
-        Right (kindScope, TopImport importSpec : acc)
+        Right (scope, TopImport importSpec : acc)
       ParsedTopKind kindDeclValue -> do
         validateKindDecl kindDeclValue
-        when (Map.member kindDeclValue.kindDeclName kindScope) $
+        when (Map.member kindDeclValue.kindDeclName scope.esKinds) $
           Left ("kind " <> T.unpack kindDeclValue.kindDeclName <> " was declared more than once")
-        Right (Map.insert kindDeclValue.kindDeclName kindDeclValue kindScope, acc)
+        Right (scope {esKinds = Map.insert kindDeclValue.kindDeclName kindDeclValue scope.esKinds}, acc)
+      ParsedTopForm formDeclValue -> do
+        validateFormDecl formDeclValue
+        when (Map.member formDeclValue.formDeclName scope.esForms) $
+          Left ("form " <> T.unpack formDeclValue.formDeclName <> " was declared more than once")
+        Right (scope {esForms = Map.insert formDeclValue.formDeclName formDeclValue scope.esForms}, acc)
       ParsedTopNode parsedNode -> do
-        nodeDeclValue <- expandParsedNode kindScope parsedNode
-        Right (kindScope, TopNode nodeDeclValue : acc)
+        nodeDeclValue <- expandParsedNode scope.esKinds parsedNode
+        Right (scope, TopNode nodeDeclValue : acc)
+
+data ExpansionScope = ExpansionScope
+  { esKinds :: !(Map Text KindDecl)
+  , esForms :: !(Map Text FormDecl)
+  }
+  deriving stock (Show)
+
+emptyExpansionScope :: ExpansionScope
+emptyExpansionScope =
+  ExpansionScope
+    { esKinds = Map.empty
+    , esForms = Map.empty
+    }
 
 validateKindDecl :: KindDecl -> Either String ()
 validateKindDecl kindDeclValue =
@@ -1139,6 +1276,371 @@ validateKindDecl kindDeclValue =
             <> T.unpack duplicateName
             <> " more than once"
         )
+
+validateFormDecl :: FormDecl -> Either String ()
+validateFormDecl formDeclValue =
+  case duplicateText (fmap (.formParamName) formDeclValue.formDeclParams) of
+    Nothing -> Right ()
+    Just duplicateName ->
+      Left
+        ( "form "
+            <> T.unpack formDeclValue.formDeclName
+            <> " declares parameter "
+            <> T.unpack duplicateName
+            <> " more than once"
+        )
+
+data FormSubstitution = FormSubstitution
+  { fsKindSubstitution :: !KindSubstitution
+  , fsGraphs :: !(Map Text Expr)
+  }
+  deriving stock (Show)
+
+emptyFormSubstitution :: FormSubstitution
+emptyFormSubstitution =
+  FormSubstitution
+    { fsKindSubstitution = emptyKindSubstitution
+    , fsGraphs = Map.empty
+    }
+
+data FormExpansionState = FormExpansionState
+  { fesLocalNames :: !(Map Text Text)
+  , fesLocalLetNames :: !(Map Text Text)
+  , fesOutputForms :: ![TopForm]
+  }
+  deriving stock (Show)
+
+emptyFormExpansionState :: FormExpansionState
+emptyFormExpansionState =
+  FormExpansionState
+    { fesLocalNames = Map.empty
+    , fesLocalLetNames = Map.empty
+    , fesOutputForms = []
+    }
+
+expandFormBinding
+  :: ExpansionScope
+  -> LetVisibility
+  -> Text
+  -> FormDecl
+  -> FormApplication
+  -> Either String [TopForm]
+expandFormBinding scope visibility bindingName formDeclValue application = do
+  subst <- formSubstitutionForApplication formDeclValue application
+  expandedState <-
+    foldM
+      (expandFormItem scope subst bindingName)
+      emptyFormExpansionState
+      formDeclValue.formDeclItems
+  resultExpr <- substituteFormExpr subst expandedState.fesLocalNames formDeclValue.formDeclResult
+  Right $
+    expandedState.fesOutputForms
+      <> [TopLet visibility bindingName (LetRhsWire resultExpr)]
+
+expandFormItem
+  :: ExpansionScope
+  -> FormSubstitution
+  -> Text
+  -> FormExpansionState
+  -> FormItem
+  -> Either String FormExpansionState
+expandFormItem scope subst prefix state = \case
+  FormItemNode parsedNode -> do
+    let localName = parsedNodeName parsedNode
+    ensureFreshFormLocal subst state localName
+    nodeDeclValue <- expandParsedNode scope.esKinds parsedNode
+    substituted <- substituteFormNodeDecl subst state.fesLocalLetNames nodeDeclValue
+    let prefixedName = formScopedName prefix localName
+        prefixedNode = substituted {nodeDeclName = prefixedName}
+    Right
+      state
+        { fesLocalNames = Map.insert localName prefixedName state.fesLocalNames
+        , fesOutputForms = state.fesOutputForms <> [TopNode prefixedNode]
+        }
+  FormItemLet localName rhs -> do
+    ensureFreshFormLocal subst state localName
+    let prefixedName = formScopedName prefix localName
+        stateWithName =
+          state
+            { fesLocalNames = Map.insert localName prefixedName state.fesLocalNames
+            , fesLocalLetNames = Map.insert localName prefixedName state.fesLocalLetNames
+            }
+    case rhs of
+      FormLetRhsApplication application ->
+        case Map.lookup application.formApplicationName scope.esForms of
+          Just formDeclValue -> do
+            application' <- substituteFormApplication subst state.fesLocalNames application
+            expanded <- expandFormBinding scope LetPrivate prefixedName formDeclValue application'
+            Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
+          Nothing -> do
+            letRhsValue <-
+              formApplicationToCorePureLetRhs =<< substituteFormApplication subst state.fesLocalNames application
+            Right
+              stateWithName
+                { fesOutputForms =
+                    state.fesOutputForms <> [TopLet LetPrivate prefixedName letRhsValue]
+                }
+      FormLetRhsWire exprValue -> do
+        exprValue' <- substituteFormExpr subst state.fesLocalNames exprValue
+        Right
+          stateWithName
+            { fesOutputForms =
+                state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsWire exprValue')]
+            }
+      FormLetRhsCorePure exprValue -> do
+        exprValue' <- substituteFormCorePure subst state.fesLocalLetNames exprValue
+        Right
+          stateWithName
+            { fesOutputForms =
+                state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsCorePure exprValue')]
+            }
+
+parsedNodeName :: ParsedNodeDecl -> Text
+parsedNodeName = \case
+  ParsedNodeBody name _ _ -> name
+  ParsedNodeKindApplication name _ -> name
+
+ensureFreshFormLocal :: FormSubstitution -> FormExpansionState -> Text -> Either String ()
+ensureFreshFormLocal subst state localName =
+  when
+    ( Map.member localName state.fesLocalNames
+        || Map.member localName subst.fsKindSubstitution.ksPortLabels
+        || Map.member localName subst.fsKindSubstitution.ksContracts
+        || Map.member localName subst.fsKindSubstitution.ksValues
+        || Map.member localName subst.fsKindSubstitution.ksConfiguredExecutors
+        || Map.member localName subst.fsGraphs
+    )
+    (Left ("form local name " <> T.unpack localName <> " is already bound"))
+
+formScopedName :: Text -> Text -> Text
+formScopedName prefix localName =
+  prefix <> "/" <> localName
+
+formSubstitutionForApplication :: FormDecl -> FormApplication -> Either String FormSubstitution
+formSubstitutionForApplication formDeclValue application = do
+  let expectedCount = length formDeclValue.formDeclParams
+      actualCount = length application.formApplicationArgs
+  when (expectedCount /= actualCount) $
+    Left
+      ( "form "
+          <> T.unpack formDeclValue.formDeclName
+          <> " expects "
+          <> show expectedCount
+          <> " argument(s), got "
+          <> show actualCount
+      )
+  foldM bindFormArgument emptyFormSubstitution $
+    zip formDeclValue.formDeclParams application.formApplicationArgs
+  where
+    bindFormArgument subst (param, arg) =
+      case param.formParamClass of
+        FormParamPortLabel -> do
+          actual <- expectSimpleFormIdentifier formDeclValue param "PortLabel" arg
+          Right
+            subst
+              { fsKindSubstitution =
+                  subst.fsKindSubstitution
+                    { ksPortLabels =
+                        Map.insert param.formParamName actual subst.fsKindSubstitution.ksPortLabels
+                    }
+              }
+        FormParamContract -> do
+          actual <- expectSimpleFormIdentifier formDeclValue param "Contract" arg
+          Right
+            subst
+              { fsKindSubstitution =
+                  subst.fsKindSubstitution
+                    { ksContracts =
+                        Map.insert param.formParamName actual subst.fsKindSubstitution.ksContracts
+                    }
+              }
+        FormParamConfiguredExecutor -> do
+          actual <- expectSimpleFormIdentifier formDeclValue param "ConfiguredExecutor" arg
+          Right
+            subst
+              { fsKindSubstitution =
+                  subst.fsKindSubstitution
+                    { ksConfiguredExecutors =
+                        Map.insert
+                          param.formParamName
+                          actual
+                          subst.fsKindSubstitution.ksConfiguredExecutors
+                    }
+              }
+        FormParamValue -> do
+          coreValue <- exprToCorePureExpr arg
+          Right
+            subst
+              { fsKindSubstitution =
+                  subst.fsKindSubstitution
+                    { ksValues = Map.insert param.formParamName arg subst.fsKindSubstitution.ksValues
+                    , ksCoreValues =
+                        Map.insert param.formParamName coreValue subst.fsKindSubstitution.ksCoreValues
+                    }
+              }
+        FormParamGraph ->
+          Right subst {fsGraphs = Map.insert param.formParamName arg subst.fsGraphs}
+
+expectSimpleFormIdentifier :: FormDecl -> FormParam -> String -> Expr -> Either String Text
+expectSimpleFormIdentifier formDeclValue param expectedClass = \case
+  ExprIdent (QName (name :| [])) ->
+    Right name
+  other ->
+    Left
+      ( "form "
+          <> T.unpack formDeclValue.formDeclName
+          <> " parameter "
+          <> T.unpack param.formParamName
+          <> " expects "
+          <> expectedClass
+          <> " argument, got "
+          <> show other
+      )
+
+substituteFormApplication
+  :: FormSubstitution -> Map Text Text -> FormApplication -> Either String FormApplication
+substituteFormApplication subst localNames application =
+  FormApplication application.formApplicationName
+    <$> traverse (substituteFormExpr subst localNames) application.formApplicationArgs
+
+formApplicationToCorePureLetRhs :: FormApplication -> Either String LetRhs
+formApplicationToCorePureLetRhs application =
+  LetRhsCorePure . CorePureCall (CorePureIdent application.formApplicationName)
+    <$> traverse exprToCorePureExpr application.formApplicationArgs
+
+substituteFormNodeDecl
+  :: FormSubstitution -> Map Text Text -> NodeDecl -> Either String NodeDecl
+substituteFormNodeDecl subst localLetNames nodeDeclValue =
+  NodeDecl nodeDeclValue.nodeDeclName
+    <$> traverse (substitutePortDecl subst.fsKindSubstitution) nodeDeclValue.nodeDeclPortSig
+    <*> ( substituteNodeBody subst.fsKindSubstitution nodeDeclValue.nodeDeclBody
+            >>= rewriteNodeBodyLocalLets localLetNames
+        )
+
+substituteFormExpr :: FormSubstitution -> Map Text Text -> Expr -> Either String Expr
+substituteFormExpr subst localNames exprValue =
+  rewriteFormExpr subst.fsGraphs localNames <$> substituteExpr subst.fsKindSubstitution exprValue
+
+substituteFormCorePure
+  :: FormSubstitution -> Map Text Text -> CorePureExpr -> Either String CorePureExpr
+substituteFormCorePure subst localLetNames exprValue =
+  rewriteCorePureLocalLets localLetNames
+    <$> substituteCorePureExpr subst.fsKindSubstitution exprValue
+
+rewriteFormExpr :: Map Text Expr -> Map Text Text -> Expr -> Expr
+rewriteFormExpr graphParams localNames = go
+  where
+    go = \case
+      ExprOverlay lhs rhs ->
+        ExprOverlay (go lhs) (go rhs)
+      ExprConnect lhs rhs ->
+        ExprConnect (go lhs) (go rhs)
+      ExprMerge lhs rhs ->
+        ExprMerge (go lhs) (go rhs)
+      ExprConcat lhs rhs ->
+        ExprConcat (go lhs) (go rhs)
+      ExprSelect base arms ->
+        ExprSelect (go base) (fmap rewriteArm arms)
+      ExprConfiguredExecutor executor config ->
+        ExprConfiguredExecutor executor (rewriteRecord config)
+      ExprConstructor name recordValue ->
+        ExprConstructor name (rewriteRecord recordValue)
+      ExprRecord recordValue ->
+        ExprRecord (rewriteRecord recordValue)
+      ExprList items ->
+        ExprList (fmap go items)
+      ExprLit literalValue ->
+        ExprLit literalValue
+      ExprIdent (QName (name :| []))
+        | Just replacement <- Map.lookup name graphParams ->
+            go replacement
+        | Just replacement <- Map.lookup name localNames ->
+            ExprIdent (QName (replacement :| []))
+      ExprIdent name ->
+        ExprIdent name
+
+    rewriteArm (SelectArm key armExpr) =
+      SelectArm key (go armExpr)
+
+    rewriteRecord (Record fields) =
+      Record (fmap rewriteField fields)
+
+    rewriteField (Field path value) =
+      Field path (go value)
+
+rewriteNodeBodyLocalLets :: Map Text Text -> NodeBody -> Either String NodeBody
+rewriteNodeBodyLocalLets localLetNames = \case
+  NodeBodyExecutor whereExpr executorCallValue ->
+    Right $
+      NodeBodyExecutor
+        (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
+        (rewriteExecutorCallLocalLets localLetNames executorCallValue)
+  NodeBodyPure pureBody ->
+    Right . NodeBodyPure $
+      pureBody
+        { nodePureBodyWhere = fmap (rewriteCorePureLocalLets localLetNames) pureBody.nodePureBodyWhere
+        , nodePureBodyOutputs =
+            fmap (rewritePureOutputEquationLocalLets localLetNames) pureBody.nodePureBodyOutputs
+        }
+
+rewritePureOutputEquationLocalLets :: Map Text Text -> PureOutputEquation -> PureOutputEquation
+rewritePureOutputEquationLocalLets localLetNames outputEquation =
+  outputEquation
+    { pureOutputEquationExpr =
+        rewriteCorePureLocalLets localLetNames outputEquation.pureOutputEquationExpr
+    }
+
+rewriteExecutorCallLocalLets :: Map Text Text -> ExecutorCall -> ExecutorCall
+rewriteExecutorCallLocalLets localLetNames = \case
+  ExecutorCallInline executor config inputArg ->
+    ExecutorCallInline executor config (rewriteCorePureLocalLets localLetNames inputArg)
+  ExecutorCallConfigured name inputArg ->
+    ExecutorCallConfigured
+      (Map.findWithDefault name name localLetNames)
+      (rewriteCorePureLocalLets localLetNames inputArg)
+
+rewriteCorePureLocalLets :: Map Text Text -> CorePureExpr -> CorePureExpr
+rewriteCorePureLocalLets localLetNames = go
+  where
+    go = \case
+      CorePureLit literalValue ->
+        CorePureLit literalValue
+      CorePureIdent name ->
+        CorePureIdent (Map.findWithDefault name name localLetNames)
+      CorePureList items ->
+        CorePureList (fmap go items)
+      CorePureRecord fields ->
+        CorePureRecord (fmap rewriteField fields)
+      CorePureFieldAccess target fieldName ->
+        CorePureFieldAccess (go target) fieldName
+      CorePureIndex target indexValue ->
+        CorePureIndex (go target) (go indexValue)
+      CorePureLambda params body ->
+        CorePureLambda
+          params
+          (rewriteCorePureLocalLets (foldr Map.delete localLetNames (NE.toList params)) body)
+      CorePureCall function args ->
+        CorePureCall (go function) (fmap go args)
+      CorePureUnary op value ->
+        CorePureUnary op (go value)
+      CorePureBinary op lhs rhs ->
+        CorePureBinary op (go lhs) (go rhs)
+      CorePureLet bindings body ->
+        rewriteLet bindings body
+      CorePureIf condition thenExpr elseExpr ->
+        CorePureIf (go condition) (go thenExpr) (go elseExpr)
+
+    rewriteField (CorePureField path value) =
+      CorePureField path (go value)
+
+    rewriteLet bindings body =
+      let bindingNames = fmap (.corePureBindingName) (NE.toList bindings)
+          localLetNames' = foldr Map.delete localLetNames bindingNames
+          rewriteBinding binding =
+            binding {corePureBindingExpr = rewriteCorePureLocalLets localLetNames binding.corePureBindingExpr}
+       in CorePureLet
+            (fmap rewriteBinding bindings)
+            (rewriteCorePureLocalLets localLetNames' body)
 
 duplicateText :: [Text] -> Maybe Text
 duplicateText =

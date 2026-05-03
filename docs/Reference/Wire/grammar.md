@@ -23,6 +23,7 @@ related:
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0045-wire-compile-time-node-body-kinds.md
+  - docs/ADRs/0046-wire-compile-time-graph-forms.md
 ---
 
 # The Wire Language — Specification
@@ -51,7 +52,7 @@ Identifiers match `[A-Za-z_][A-Za-z0-9_]*`. Qualified identifiers join identifie
 Reserved words:
 
 ```text
-as contract else export false from if import in kind let node null pure select then true use where
+as contract else export false form from if import in kind let node null pure select then true use where
 ```
 
 Literal forms:
@@ -68,20 +69,26 @@ Literal forms:
 ## 2. File Shape
 
 ```ebnf
-wire_file   ::= top_form* file_return?
-top_form    ::= contract_decl | use_stmt | kind_decl | let_binding | import_stmt | node_decl
-file_return ::= wire_expr
+wire_file        ::= top_form* file_return?
+top_form         ::= contract_decl | use_stmt | kind_decl | form_decl | let_binding | import_stmt | node_decl
+file_return      ::= wire_expr
 
-contract_decl ::= "contract" Name ";"
-use_stmt      ::= "use" qualified_ident ".{" use_item ("," use_item)* ","? "}" ";"
-use_item      ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
-kind_decl     ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
+contract_decl    ::= "contract" Name ";"
+use_stmt         ::= "use" qualified_ident ".{" use_item ("," use_item)* ","? "}" ";"
+use_item         ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
+kind_decl        ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
 kind_param_list ::= kind_param ("," kind_param)* ","?
-kind_param    ::= ident ":" kind_param_class
+kind_param       ::= ident ":" kind_param_class
 kind_param_class ::= "PortLabel" | "Contract" | "Value" | "ConfiguredExecutor"
-let_binding   ::= ("export")? "let" ident "=" let_rhs ";"
-let_rhs       ::= graph_expr | value_expr | corepure_helper_expr
-import_stmt   ::= "import" (ident | "{" ident ("," ident)* ","? "}") "from" string ";"
+form_decl        ::= "form" ident "(" form_param_list? ")" "=" "{" form_item* graph_expr ";" "}" ";"
+form_param_list ::= form_param ("," form_param)* ","?
+form_param       ::= ident ":" form_param_class
+form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "ConfiguredExecutor"
+form_item        ::= node_decl | "let" ident "=" let_rhs ";"
+let_binding      ::= ("export")? "let" ident "=" let_rhs ";"
+let_rhs          ::= graph_expr | value_expr | corepure_helper_expr | form_application
+form_application ::= ident "(" (wire_expr ("," wire_expr)* ","?)? ")"
+import_stmt      ::= "import" (ident | "{" ident ("," ident)* ","? "}") "from" string ";"
 ```
 
 A file may end with one expression without a trailing semicolon. That expression is the file-return
@@ -115,6 +122,8 @@ classifies the right-hand side by phase:
   compile-time values;
 - CorePure helper functions, such as `let pred = item: item.score >= 0.7 ;`, bind delayed helpers
   for pure evaluation.
+- bound form applications, such as `let open_phase_0 = open_arm(0.0);`, elaborate at compile time to
+  graph values with scoped internal node identities.
 
 Authority-free compile-time data values are also available to delayed CorePure expressions as
 captured constants. Graph values and configured executor values are not.
@@ -232,7 +241,37 @@ Rules:
   `ConfiguredExecutor`;
 - `kind` declarations do not create graph values and cannot appear in file-return position.
 
-### 5.2 Pure Output Equations
+### 5.2 Graph Forms
+
+A `form` declaration is a compile-time graph abstraction. It may declare local nodes and local
+bindings, then returns one final graph expression:
+
+```wire
+form open_arm(phase: Value) = {
+  node split = qubit_gate(screen, quantum_h);
+  node phase_shift = phase_gate(screen, phase);
+  node recombine = qubit_gate(screen, quantum_h);
+
+  split
+    => phase_shift
+    => recombine;
+};
+
+let open_phase_0 = open_arm(0.0);
+```
+
+Rules:
+
+- form applications are valid only when bound by module-level `let` or `export let`;
+- the binding name supplies the stable identity prefix for local nodes;
+- local nodes and local bindings are fresh per instantiation;
+- names captured from surrounding source scope are shared;
+- forms are non-recursive in v1;
+- inline form applications in graph position are rejected.
+
+After expansion, a form instantiation is an ordinary graph value composed from ordinary nodes.
+
+### 5.3 Pure Output Equations
 
 Pure nodes compute deterministic JSON-shaped values:
 
@@ -268,7 +307,7 @@ The `where` expression must have a statically determinable record field set: rec
 `let ... in { ... }`, references to let-bound records, and right-biased record merges with `//` are
 admitted. Dynamic shapes such as conditionals are rejected at admission.
 
-### 5.3 Executor Bodies
+### 5.4 Executor Bodies
 
 Executor nodes have the same external shape as pure nodes: typed inputs and typed outputs. The body
 is an executor call:

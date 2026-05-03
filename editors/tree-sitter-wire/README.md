@@ -31,9 +31,11 @@ test/
 - contract assertions: `contract EvidenceBundle;`
 - node-body kind declarations:
   `kind pass(label: PortLabel) = <- label: Contract ; -> label: Contract = @executor (label) ;`
+- graph form declarations: `form pair() = { node a = pass(x); node b = pass(x); a => b; };`
 - executor node declarations with typed clauses:
   `node name <- input: Contract ; -> output: Contract ; = @executor (input) ;`
 - kind applications that still introduce vertices with `node`: `node concrete = pass(input);`
+- form applications that bind graph values with `let`: `let concrete = pair();`
 - pure node output equations:
   `node name <- input: Contract ; -> output: Contract = pure (input.score) ;`
 - configured executor values: `let analyst = @llm.analyst { temperature = 0.2 ; } ;`

@@ -34,6 +34,20 @@ parseWireFixture path = do
   source <- TIO.readFile path
   parseWireFile path source `shouldSatisfy` isRight
 
+topFormName :: TopForm -> Maybe Text
+topFormName topForm =
+  case topForm of
+    TopNode nodeDecl ->
+      Just nodeDecl.nodeDeclName
+    TopLet _ name _ ->
+      Just name
+    TopContract contractId ->
+      Just contractId.unContractId
+    TopUse {} ->
+      Nothing
+    TopImport {} ->
+      Nothing
+
 quantumEraserSweepFixtures :: [FilePath]
 quantumEraserSweepFixtures =
   [ "examples/wire/quantum-eraser-open-phase-0.wire"
@@ -45,6 +59,21 @@ quantumEraserSweepFixtures =
   , "examples/wire/quantum-eraser-eraser-phase-1_4.wire"
   , "examples/wire/quantum-eraser-eraser-phase-1_2.wire"
   ]
+
+graphFormSourceText :: Text
+graphFormSourceText =
+  T.unlines
+    [ "kind pass(label: PortLabel) ="
+    , "  <- label: T ;"
+    , "  -> label: T = @review.pass (label) ;"
+    , "form two_passes() = {"
+    , "  node first = pass(value);"
+    , "  node second = pass(value);"
+    , "  first => second;"
+    , "};"
+    , "let pipeline = two_passes();"
+    , "pipeline"
+    ]
 
 spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
@@ -128,6 +157,20 @@ spec = describe "Cortex.Wire.Parser" $ do
         )
         `shouldSatisfy` isParseFailure
 
+    it "rejects bare form applications outside bound let position" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "form pass() = {"
+            , "  node n"
+            , "    -> out: T = @review.pass ({}) ;"
+            , "  n;"
+            , "};"
+            , "pass();"
+            ]
+        )
+        `shouldSatisfy` isParseFailure
+
   describe "top-level forms" $ do
     it "parses exported scalar bindings as ordinary module lets" $ do
       let WireFile forms _ = parseOrFail "export let threshold = 0.7 ;"
@@ -137,6 +180,15 @@ spec = describe "Cortex.Wire.Parser" $ do
                        "threshold"
                        (LetRhsWire (ExprLit (LitNumber 0.7)))
                    ]
+
+    it "expands bound graph forms into scoped ordinary graph declarations" $ do
+      let WireFile forms fileReturn = parseOrFail graphFormSourceText
+      fmap topFormName forms
+        `shouldBe` [ Just "pipeline/first"
+                   , Just "pipeline/second"
+                   , Just "pipeline"
+                   ]
+      fileReturn `shouldBe` Just (ExprIdent (QName ("pipeline" :| [])))
 
     it "parses top-level lambdas as delayed CorePure helper bindings" $ do
       let WireFile forms _ = parseOrFail "let acceptedItem = item: item.score >= 0.7 ;"
