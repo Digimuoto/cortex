@@ -20,7 +20,8 @@ rules.
 
 ## File Shape
 
-A `.wire` file is a sequence of top-level forms:
+A `.wire` file is a sequence of top-level forms: `contract`, `use`, `kind`, `form`, `node`,
+`let`/`export let`, and `import`.
 
 ```wire
 contract EvidenceSet;
@@ -87,6 +88,7 @@ export let exported_planner = planner;
 Declaration-only files contribute:
 
 - ambient `contract` assertions;
+- source-local `kind` and `form` declarations used by bindings in the same file;
 - importable `let` bindings.
 
 They do not leak node names or ordinary local names into importing files.

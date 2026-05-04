@@ -114,7 +114,8 @@ first-class form parameters in the first slice.
 
 ### Application and identity
 
-In the first slice, a form application must be bound by a module-level graph binding:
+In the first slice, a form application must be bound by a graph binding. Module-level bindings are
+the exported/user-facing surface:
 
 ```wire
 let concrete_name = some_form(args);
@@ -144,7 +145,17 @@ open_phase_0 => measure;
 ```
 
 Nested form instantiations inherit a hierarchical prefix from their containing instantiation and
-local binding name. Recursion is rejected in v1.
+local binding name:
+
+```wire
+form outer(phase: Value) = {
+  let inner_graph = inner(phase);
+
+  inner_graph;
+};
+```
+
+Recursion is rejected in v1.
 
 ### Capture and sharing
 

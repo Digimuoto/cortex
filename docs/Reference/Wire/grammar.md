@@ -123,7 +123,8 @@ classifies the right-hand side by phase:
 - CorePure helper functions, such as `let pred = item: item.score >= 0.7 ;`, bind delayed helpers
   for pure evaluation.
 - bound form applications, such as `let open_phase_0 = open_arm(0.0);`, elaborate at compile time to
-  graph values with scoped internal node identities.
+  graph values with scoped internal node identities. Form-local `let` bindings may also bind nested
+  form applications.
 
 Authority-free compile-time data values are also available to delayed CorePure expressions as
 captured constants. Graph values and configured executor values are not.
@@ -262,8 +263,11 @@ let open_phase_0 = open_arm(0.0);
 
 Rules:
 
-- form applications are valid only when bound by module-level `let` or `export let`;
+- form applications are valid when bound by module-level `let`, module-level `export let`, or a
+  form-local `let` inside another form;
 - the binding name supplies the stable identity prefix for local nodes;
+- nested form applications inherit a hierarchical prefix from the containing form instantiation and
+  local binding name;
 - local nodes and local bindings are fresh per instantiation;
 - names captured from surrounding source scope are shared;
 - forms are non-recursive in v1;
