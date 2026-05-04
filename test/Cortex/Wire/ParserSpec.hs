@@ -29,16 +29,48 @@ parseOrFail src = case parseWireFile "test" src of
   Left err -> error ("parse failed: " <> show (renderParseError err))
   Right ok -> ok
 
+parseWireFixture :: FilePath -> Expectation
+parseWireFixture path = do
+  source <- TIO.readFile path
+  parseWireFile path source `shouldSatisfy` isRight
+
+topFormName :: TopForm -> Maybe Text
+topFormName topForm =
+  case topForm of
+    TopNode nodeDecl ->
+      Just nodeDecl.nodeDeclName
+    TopLet _ name _ ->
+      Just name
+    TopContract contractId ->
+      Just contractId.unContractId
+    TopUse {} ->
+      Nothing
+    TopImport {} ->
+      Nothing
+
+graphFormSourceText :: Text
+graphFormSourceText =
+  T.unlines
+    [ "kind pass(label: PortLabel) ="
+    , "  <- label: T ;"
+    , "  -> label: T = @review.pass (label) ;"
+    , "form two_passes() = {"
+    , "  node first = pass(value);"
+    , "  node second = pass(value);"
+    , "  first => second;"
+    , "};"
+    , "let pipeline = two_passes();"
+    , "pipeline"
+    ]
+
 spec :: Spec
 spec = describe "Cortex.Wire.Parser" $ do
   describe "examples" $ do
-    it "parses the interactive priority planner example" $ do
-      source <- TIO.readFile "examples/wire/interactive-priority-planner.wire"
-      parseWireFile "examples/wire/interactive-priority-planner.wire" source `shouldSatisfy` isRight
+    it "parses the interactive priority planner example" $
+      parseWireFixture "examples/wire/interactive-priority-planner.wire"
 
-    it "parses the mini build-system example" $ do
-      source <- TIO.readFile "examples/wire/mini-build-system.wire"
-      parseWireFile "examples/wire/mini-build-system.wire" source `shouldSatisfy` isRight
+    it "parses the mini build-system example" $
+      parseWireFixture "examples/wire/mini-build-system.wire"
 
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $
@@ -83,6 +115,32 @@ spec = describe "Cortex.Wire.Parser" $ do
         )
         `shouldSatisfy` isParseFailure
 
+    it "rejects bare kind applications outside node-instantiation position" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "kind pass(label: PortLabel) ="
+            , "  <- label: T ;"
+            , "  -> label: T = @review.pass (label) ;"
+            , "pass(value);"
+            ]
+        )
+        `shouldSatisfy` isParseFailure
+
+    it "rejects bare form applications outside bound let position" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "form pass() = {"
+            , "  node n"
+            , "    -> out: T = @review.pass ({}) ;"
+            , "  n;"
+            , "};"
+            , "pass();"
+            ]
+        )
+        `shouldSatisfy` isParseFailure
+
   describe "top-level forms" $ do
     it "parses exported scalar bindings as ordinary module lets" $ do
       let WireFile forms _ = parseOrFail "export let threshold = 0.7 ;"
@@ -92,6 +150,15 @@ spec = describe "Cortex.Wire.Parser" $ do
                        "threshold"
                        (LetRhsWire (ExprLit (LitNumber 0.7)))
                    ]
+
+    it "expands bound graph forms into scoped ordinary graph declarations" $ do
+      let WireFile forms fileReturn = parseOrFail graphFormSourceText
+      fmap topFormName forms
+        `shouldBe` [ Just "pipeline/first"
+                   , Just "pipeline/second"
+                   , Just "pipeline"
+                   ]
+      fileReturn `shouldBe` Just (ExprIdent (QName ("pipeline" :| [])))
 
     it "parses top-level lambdas as delayed CorePure helper bindings" $ do
       let WireFile forms _ = parseOrFail "let acceptedItem = item: item.score >= 0.7 ;"
@@ -109,6 +176,30 @@ spec = describe "Cortex.Wire.Parser" $ do
             (LetRhsWire (ExprConfiguredExecutor (QName ("review" :| ["analyst"])) (Record fields)))
           ] ->
             length fields `shouldBe` 1
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "expands kind applications into ordinary node declarations" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "let h_gate = @quantum.h {} ;"
+                , "kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) ="
+                , "  <- label: Qubit ;"
+                , "  -> label: Qubit = gate (label) ;"
+                , "node screen_h = one_qubit_gate(screen, h_gate);"
+                , "screen_h"
+                ]
+      case forms of
+        [_, TopNode node] -> do
+          nodeDeclName node `shouldBe` "screen_h"
+          nodeDeclPortSig node
+            `shouldBe` [ PortInputDecl (Label "screen") (ContractId "Qubit")
+                       , PortOutputDecl (Label "screen") (ContractId "Qubit")
+                       ]
+          case nodeDeclBody node of
+            NodeBodyExecutor Nothing (ExecutorCallConfigured "h_gate" (CorePureIdent "screen")) ->
+              pure ()
+            other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "parses registry namespace use imports" $ do

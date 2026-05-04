@@ -43,7 +43,8 @@ Helix looks for queries under `runtime/queries/<language>/`. The files must matc
 
 Open a `.wire` file and:
 
-- keywords (`contract`, `node`, `let`, `import`, `from`, `select`) should highlight
+- keywords (`contract`, `kind`, `form`, `node`, `let`, `import`, `from`, `inherit`, `select`) should
+  highlight
 - `{ ... }` blocks should fold with `zc` / `za`
 - indentation should follow `{`/`[`/`(`
 

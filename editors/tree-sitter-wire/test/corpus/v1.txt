@@ -45,6 +45,56 @@ run
       (identifier))))
 
 ==================
+node-body kind application
+==================
+
+kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit = gate (label);
+
+node screen_h = one_qubit_gate(screen, h_gate);
+screen_h
+
+---
+
+(source_file
+  (kind_decl
+    name: (identifier)
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_name
+        (contract)))
+    body: (executor_single_output_body
+      output: (output_variant
+        label: (identifier)
+        contract: (contract_name
+          (contract)))
+      call: (executor_call
+        (configured_executor_call
+          name: (identifier)
+          input: (core_pure_expr
+            (core_pure_ident))))))
+  (node_decl
+    name: (identifier)
+    kind: (kind_application
+      name: (identifier)
+      args: (expression
+        (ident_ref
+          (identifier)))
+      args: (expression
+        (ident_ref
+          (identifier)))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
+
+==================
 node with sum output and file return
 ==================
 
@@ -80,6 +130,158 @@ planner
             (identifier))
           input: (core_pure_expr
             (core_pure_record))))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
+
+==================
+graph forms, nested form lets, and inherit
+==================
+
+kind rz_gate(label: PortLabel, angle: Value) =
+  <- label: Qubit;
+  -> label: Qubit = @quantum.rz { inherit angle; } (label);
+
+form turn(label: PortLabel) = {
+  node rz = rz_gate(label, 1.5707963267948966);
+  node sx = qubit_gate(label, quantum_sx);
+  let path = rz => sx;
+
+  path;
+};
+
+form eraser(phase: Value, marker: Graph) = {
+  node phase_shift = rz_gate(q, phase);
+  let inner = turn(q);
+  let tagged = marker;
+
+  (inner => phase_shift) <> tagged;
+};
+
+export let run = eraser(0.0, marker_readout);
+run
+
+---
+
+(source_file
+  (kind_decl
+    name: (identifier)
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_name
+        (contract)))
+    body: (executor_single_output_body
+      output: (output_variant
+        label: (identifier)
+        contract: (contract_name
+          (contract)))
+      call: (executor_call
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier)
+            (identifier))
+          config: (record
+            (inherit_field
+              name: (identifier)))
+          input: (core_pure_expr
+            (core_pure_ident))))))
+  (form_decl
+    name: (identifier)
+    params: (form_param
+      name: (identifier)
+      class: (form_param_class))
+    items: (form_item
+      (node_decl
+        name: (identifier)
+        kind: (kind_application
+          name: (identifier)
+          args: (expression
+            (ident_ref
+              (identifier)))
+          args: (expression
+            (number)))))
+    items: (form_item
+      (node_decl
+        name: (identifier)
+        kind: (kind_application
+          name: (identifier)
+          args: (expression
+            (ident_ref
+              (identifier)))
+          args: (expression
+            (ident_ref
+              (identifier))))))
+    items: (form_item
+      (form_let_binding
+        name: (identifier)
+        value: (expression
+          (topology_expression
+            left: (ident_ref
+              (identifier))
+            right: (ident_ref
+              (identifier))))))
+    result: (expression
+      (ident_ref
+        (identifier))))
+  (form_decl
+    name: (identifier)
+    params: (form_param
+      name: (identifier)
+      class: (form_param_class))
+    params: (form_param
+      name: (identifier)
+      class: (form_param_class))
+    items: (form_item
+      (node_decl
+        name: (identifier)
+        kind: (kind_application
+          name: (identifier)
+          args: (expression
+            (ident_ref
+              (identifier)))
+          args: (expression
+            (ident_ref
+              (identifier))))))
+    items: (form_item
+      (form_let_binding
+        name: (identifier)
+        value: (form_application
+          name: (identifier)
+          args: (expression
+            (ident_ref
+              (identifier))))))
+    items: (form_item
+      (form_let_binding
+        name: (identifier)
+        value: (expression
+          (ident_ref
+            (identifier)))))
+    result: (expression
+      (topology_expression
+        left: (paren_expression
+          (expression
+            (topology_expression
+              left: (ident_ref
+                (identifier))
+              right: (ident_ref
+                (identifier)))))
+        right: (ident_ref
+          (identifier)))))
+  (let_binding
+    name: (identifier)
+    value: (form_application
+      name: (identifier)
+      args: (expression
+        (number))
+      args: (expression
+        (ident_ref
+          (identifier)))))
   file_return: (expression
     (ident_ref
       (identifier))))

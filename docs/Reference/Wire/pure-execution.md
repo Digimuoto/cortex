@@ -45,7 +45,7 @@ tasks, but that lowering is not source-level authority.
 
 ## Rule Sources
 
-- **[§5.1 Pure Output Equations](grammar.md#51-pure-output-equations)** - authored pure node syntax,
+- **[§5.3 Pure Output Equations](grammar.md#53-pure-output-equations)** - authored pure node syntax,
   local bindings, output equation rules, and CorePure surface.
 - **[§8 CorePure Expressions](grammar.md#8-corepure-expressions)** - compact expression grammar.
 - **[Executors and the Alphabet](executors-and-alphabet.md#native-pure-evaluator)** - relationship
@@ -265,7 +265,7 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 - calling a non-function;
 - function arity mismatches;
 - duplicate binding names within one scope;
-- duplicate lambda parameters.
+- duplicate lambda parameters;
 - invalid JSON passed to `fromJson`;
 - `where` expressions that do not evaluate to records.
 

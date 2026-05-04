@@ -81,6 +81,29 @@ spec = describe "Cortex.Wire.Compile" $ do
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
+  it "compiles node-body kind applications into ordinary nodes" $ do
+    compiled <- requireRight (compileWireText kindApplicationSourceText)
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "screen_h")
+    case Map.lookup (CircuitNodeRef "screen_h") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasNumber "angle" 1.25
+      other ->
+        expectationFailure ("expected task node, got: " <> show other)
+
+  it "compiles graph forms with fresh scoped node identities" $ do
+    compiled <- requireRight (compileWireText graphFormSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.fromList [CircuitNodeRef "pipeline/first", CircuitNodeRef "pipeline/second"]
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "pipeline/first")
+      `shouldBe` Set.singleton (CircuitNodeRef "pipeline/second")
+
+  it "passes graph values into graph forms without cloning captured nodes" $ do
+    compiled <- requireRight (compileWireText graphFormGraphParamSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.fromList [CircuitNodeRef "source", CircuitNodeRef "pipeline/tail"]
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+      `shouldBe` Set.singleton (CircuitNodeRef "pipeline/tail")
+
   it "evaluates top-level pure-data lets in executor config" $ do
     compiled <- requireRight (compileWireText topLevelLetConfigSourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
@@ -370,6 +393,47 @@ configuredExecutorSourceText =
     , "  -> analysis: AnalysisFragment ;"
     , "  = analyst_base (plan) ;"
     , "planner => analyst"
+    ]
+
+kindApplicationSourceText :: T.Text
+kindApplicationSourceText =
+  T.unlines
+    [ "kind phase_gate(label: PortLabel, portContract: Contract, angle: Value) ="
+    , "  <- label: portContract ;"
+    , "  -> label: portContract = @quantum.rz { angle = angle ; } (label) ;"
+    , "node screen_h = phase_gate(screen, Qubit, 1.25);"
+    , "screen_h"
+    ]
+
+graphFormSourceText :: T.Text
+graphFormSourceText =
+  T.unlines
+    [ "kind phase_gate(label: PortLabel, portContract: Contract, angle: Value) ="
+    , "  <- label: portContract ;"
+    , "  -> label: portContract = @quantum.rz { angle = angle ; } (label) ;"
+    , "form two_phases(angle: Value) = {"
+    , "  node first = phase_gate(screen, Qubit, angle);"
+    , "  node second = phase_gate(screen, Qubit, angle);"
+    , "  first => second;"
+    , "};"
+    , "let pipeline = two_phases(1.25);"
+    , "pipeline"
+    ]
+
+graphFormGraphParamSourceText :: T.Text
+graphFormGraphParamSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> out: T = @review.source ({}) ;"
+    , "form append_tail(head: Graph) = {"
+    , "  node tail"
+    , "    <- out: T ;"
+    , "    -> done: U = @review.tail (out) ;"
+    , "  head => tail;"
+    , "};"
+    , "let base = source;"
+    , "let pipeline = append_tail(base);"
+    , "pipeline"
     ]
 
 topLevelLetConfigSourceText :: T.Text

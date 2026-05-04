@@ -4,8 +4,8 @@
  * Source of truth: docs/Reference/Wire/grammar.md. Mirrors the Haskell parser
  * at src/Cortex/Wire/Parser.hs.
  *
- * Top-level forms: contract, use, node, let/export let, import, and optional
- * file-return expression.
+ * Top-level forms: contract, use, kind, form, node, let/export let, import,
+ * and optional file-return expression.
  * Executor values: @qualified.name { config }
  * Executor calls:  @qualified.name { config } (input) | configured (input)
  * Pure outputs:    -> label: Contract = pure (<CorePure expr>) ;
@@ -63,6 +63,8 @@ module.exports = grammar({
     _top_form: $ => choice(
       $.contract_decl,
       $.use_stmt,
+      $.kind_decl,
+      $.form_decl,
       $.node_decl,
       $.let_binding,
       $.import_stmt,
@@ -118,7 +120,7 @@ module.exports = grammar({
       'let',
       field('name', $.identifier),
       '=',
-      field('value', choice($.core_pure_expr, $.expression)),
+      field('value', choice($.form_application, $.core_pure_expr, $.expression)),
       ';',
     ),
 
@@ -141,9 +143,17 @@ module.exports = grammar({
       ';',
     ),
 
-    node_decl: $ => seq(
-      'node',
+    kind_decl: $ => seq(
+      'kind',
       field('name', $.identifier),
+      '(',
+      optional(field('params', seq(
+        $.kind_param,
+        repeat(seq(',', $.kind_param)),
+        optional(','),
+      ))),
+      ')',
+      '=',
       field('inputs', repeat($.input_clause)),
       field('body', choice(
         $.pure_body,
@@ -152,6 +162,108 @@ module.exports = grammar({
       )),
       optional(field('where', $.where_clause)),
     ),
+
+    kind_param: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('class', $.kind_param_class),
+    ),
+
+    kind_param_class: _ => choice(
+      'PortLabel',
+      'Contract',
+      'Value',
+      'ConfiguredExecutor',
+    ),
+
+    form_decl: $ => seq(
+      'form',
+      field('name', $.identifier),
+      '(',
+      optional(field('params', seq(
+        $.form_param,
+        repeat(seq(',', $.form_param)),
+        optional(','),
+      ))),
+      ')',
+      '=',
+      '{',
+      field('items', repeat($.form_item)),
+      field('result', $.expression),
+      ';',
+      '}',
+      ';',
+    ),
+
+    form_item: $ => choice(
+      $.node_decl,
+      $.form_let_binding,
+    ),
+
+    form_let_binding: $ => seq(
+      'let',
+      field('name', $.identifier),
+      '=',
+      field('value', choice($.form_application, $.core_pure_expr, $.expression)),
+      ';',
+    ),
+
+    form_param: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('class', $.form_param_class),
+    ),
+
+    form_param_class: _ => choice(
+      'PortLabel',
+      'Contract',
+      'Value',
+      'Graph',
+      'ConfiguredExecutor',
+    ),
+
+    node_decl: $ => seq(
+      'node',
+      field('name', $.identifier),
+      choice(
+        seq(
+          '=',
+          field('kind', $.kind_application),
+          ';',
+        ),
+        seq(
+          field('inputs', repeat($.input_clause)),
+          field('body', choice(
+            $.pure_body,
+            $.executor_single_output_body,
+            $.executor_body,
+          )),
+          optional(field('where', $.where_clause)),
+        ),
+      ),
+    ),
+
+    kind_application: $ => seq(
+      field('name', $.identifier),
+      '(',
+      optional(field('args', seq(
+        $.expression,
+        repeat(seq(',', $.expression)),
+        optional(','),
+      ))),
+      ')',
+    ),
+
+    form_application: $ => prec(PREC.core_call + 1, seq(
+      field('name', $.identifier),
+      '(',
+      optional(field('args', seq(
+        $.expression,
+        repeat(seq(',', $.expression)),
+        optional(','),
+      ))),
+      ')',
+    )),
 
     input_clause: $ => seq(
       '<-',

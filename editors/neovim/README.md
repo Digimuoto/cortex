@@ -97,7 +97,8 @@ cp editors/tree-sitter-wire/queries/*.scm ~/.config/nvim/queries/wire/
 Open a checked-in fixture such as `test/fixtures/wire/thesis-parallel-claim-branches.wire`, or any
 local `.wire` file:
 
-- Keywords highlight (`contract`, `node`, `let`, `import`, `from`, `select`)
+- Keywords highlight (`contract`, `kind`, `form`, `node`, `let`, `import`, `from`, `inherit`,
+  `select`)
 - Contract types (capitalized identifiers after `<-` / `->`) highlight distinctly
 - Strings, comments, numbers, operators all styled
 - `:InspectTree` shows a live parse tree
