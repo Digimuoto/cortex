@@ -45,10 +45,11 @@ deterministic serialization primitive.
 
 ## Decision
 
-CorePure should add one structured serialization primitive:
+CorePure should add two structured serialization primitives:
 
 ```text
 toJson : JsonSerializable -> String
+fromJson : String -> JsonValue
 ```
 
 `JsonSerializable` is the recursive subset of CorePure values that can be represented as JSON:
@@ -89,10 +90,14 @@ String interpolation remains scalar-only. Authors serialize structured values ex
 This is a serialization function, not a schema validator. It does not check that a value satisfies a
 Wire contract. Contract validation remains a Wire/runtime boundary concern.
 
+`fromJson` accepts standard JSON text and returns the corresponding CorePure JSON value. It is a
+parser, not a contract validator: malformed JSON is a typed pure failure, and valid JSON still needs
+any contract checks required by a later boundary.
+
 ### Budget And Failures
 
-Serialization is budgeted. Cost must account for traversal and emitted output size. Budget
-exhaustion is a typed CorePure failure under ADR 0026.
+Serialization and parsing are budgeted. Cost must account for traversal and emitted or consumed text
+size. Budget exhaustion is a typed CorePure failure under ADR 0026.
 
 Serializing a non-serializable value is a typed CorePure failure. Because `toJson` is ordinary
 CorePure, the failure occurs during elaboration when the argument is statically known and during
@@ -131,7 +136,7 @@ renderers can be proposed later as explicit closed stdlib additions.
 
 ### Obligations
 
-- Add `toJson` to the closed CorePure stdlib.
+- Add `toJson` and `fromJson` to the closed CorePure stdlib.
 - Add canonical JSON golden tests for key ordering, escaping, nesting, and numbers.
 - Add typed failure tests for lambdas and non-serializable future values.
 - Add budget tests based on traversal and output size.

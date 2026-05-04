@@ -359,7 +359,7 @@ The closed builtin environment is:
 
 ```text
 map filter fmap zip zipWith length sum min max abs clamp all any
-concat toString joinWith toJson
+concat toString joinWith toJson fromJson
 ```
 
 Stdlib functions intended for piping are data-last. `zip` and `zipWith` take the piped list as their
@@ -376,8 +376,12 @@ Interpolation desugars to `concat [...]` with `toString` on each interpolated ex
 (`String`, `Number`, `Bool`) stringify directly. Structured values require explicit serialization,
 usually `toJson`.
 
-`toJson` emits canonical compact JSON with lexicographic object keys. It is deterministic and
-intended for text/config construction, not host authority.
+`toJson` emits canonical compact JSON with lexicographic object keys. `fromJson` parses a JSON
+string back into a structured CorePure value. Both are deterministic and intended for text/config
+construction, not host authority.
+
+Division uses finite `Float64` semantics rather than exact rational or `Scientific` quotient
+construction. Division by zero and non-finite float results are typed CorePure failures.
 
 ## 9. Imports And File Returns
 

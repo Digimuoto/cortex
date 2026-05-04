@@ -16,8 +16,10 @@ import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
+import Data.Scientific qualified as Scientific
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as T
 import Test.Hspec
 
 import Cortex.Pulse.Node (NodeId (..))
@@ -151,6 +153,16 @@ spec = describe "Cortex.Wire.Pure" $ do
       Nothing
       (Map.singleton "score" (bin CorePureDivide (num 1) (num 0)))
       `shouldBe` Left PureDivisionByZero
+
+  it "evaluates division with finite Float64 semantics" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      (Map.singleton "score" (bin CorePureDivide (num 1) (num 3)))
+      `shouldBe` Right
+        (Map.singleton "score" (Aeson.Number (Scientific.fromFloatDigits (1 / 3 :: Double))))
 
   it "rejects duplicate CorePure binding names in the same scope" $
     evaluatePureTaskOutputs
@@ -872,6 +884,35 @@ spec = describe "Cortex.Wire.Pure" $ do
       )
       `shouldBe` Right (Map.singleton "score" (Aeson.toJSON [Aeson.Number 2]))
 
+  it "parses JSON strings through fromJson" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      (Map.singleton "score" (call (var "fromJson") [str "{\"b\":2,\"a\":[true,null]}"]))
+      `shouldBe` Right
+        ( Map.singleton
+            "score"
+            ( Aeson.object
+                [ "a" Aeson..= [Aeson.Bool True, Aeson.Null]
+                , "b" Aeson..= Aeson.Number 2
+                ]
+            )
+        )
+
+  it "reports invalid JSON strings from fromJson as typed pure failures" $
+    case evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      (Map.singleton "score" (call (var "fromJson") [str "{"])) of
+      Left (PureJsonParseError reason) ->
+        reason `shouldSatisfy` (not . T.null)
+      other ->
+        expectationFailure ("expected PureJsonParseError, got: " <> show other)
+
   it "keeps the CorePure builtin authority-review signature explicit" $
     corePureBuiltinSignature
       `shouldBe` [ ("map", 2)
@@ -891,6 +932,7 @@ spec = describe "Cortex.Wire.Pure" $ do
                  , ("toString", 1)
                  , ("joinWith", 2)
                  , ("toJson", 1)
+                 , ("fromJson", 1)
                  ]
 
   it "keeps the CorePure builtin authority report closed and authority-free" $ do
@@ -920,6 +962,7 @@ spec = describe "Cortex.Wire.Pure" $ do
                  , ("toString", 1, CorePureBuiltinPureValue)
                  , ("joinWith", 2, CorePureBuiltinPureValue)
                  , ("toJson", 1, CorePureBuiltinPureValue)
+                 , ("fromJson", 1, CorePureBuiltinPureValue)
                  ]
 
   it "establishes CorePure static context from top-level record bindings" $ do

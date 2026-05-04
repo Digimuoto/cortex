@@ -158,6 +158,7 @@ def closedBuiltinEnv : List BuiltinSpec :=
   , { name := "toString", arity := 1, authority := BuiltinAuthority.pureValue }
   , { name := "joinWith", arity := 2, authority := BuiltinAuthority.pureValue }
   , { name := "toJson", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "fromJson", arity := 1, authority := BuiltinAuthority.pureValue }
   ]
 
 /-- Name/arity projection of the proof-side closed builtin mirror. -/
@@ -184,6 +185,7 @@ theorem closedBuiltinSignature_eq :
       , ("toString", 1)
       , ("joinWith", 2)
       , ("toJson", 1)
+      , ("fromJson", 1)
       ] :=
   rfl
 
@@ -194,7 +196,9 @@ theorem closedBuiltinEnv_authorityFree :
   simp [closedBuiltinEnv] at hSpec
   rcases hSpec with
     hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec |
-      hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec
+      hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec
+  · cases hSpec
+    rfl
   · cases hSpec
     rfl
   · cases hSpec

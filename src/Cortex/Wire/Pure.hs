@@ -54,6 +54,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as Vector
 import GHC.Generics (Generic)
 
@@ -82,6 +83,7 @@ import Cortex.Wire.Value (WirePayloadKind (..), WireValue (..), renderWirePayloa
 data PureEvalError
   = PureMissingVariable !Text
   | PureDivisionByZero
+  | PureNonFiniteFloatDivision !PureNonFiniteFloatDivisionOperands
   | PureInputPortUnsupported !Text !Text
   | PureInputPortRequiresLabel !Text !Text
   | PureInputPortMissing !Text !Text
@@ -97,11 +99,18 @@ data PureEvalError
   | PureDuplicateBinding !Text
   | PureDuplicateLambdaParam !Text
   | PureDuplicateRecordFieldPath ![Text] ![Text]
+  | PureJsonParseError !Text
   | PureWhereExpectedRecord !Text
   | PureStaticFieldSetUndeterminable
   | PureStaticBindingCycle !Text
   | PureStaticLetShadowsStatic !Text
   deriving stock (Eq, Show, Generic)
+
+data PureNonFiniteFloatDivisionOperands = PureNonFiniteFloatDivisionOperands
+  { pnffNumerator :: !Text
+  , pnffDenominator :: !Text
+  }
+  deriving stock (Eq, Show)
 
 data CorePureBuiltinAuthority
   = CorePureBuiltinPureValue
@@ -141,6 +150,12 @@ renderPureEvalError = \case
     "Pure expression references missing variable " <> variableName <> "."
   PureDivisionByZero ->
     "Pure expression attempted division by zero."
+  PureNonFiniteFloatDivision PureNonFiniteFloatDivisionOperands {pnffNumerator, pnffDenominator} ->
+    "Pure expression attempted finite Float64 division outside finite range: "
+      <> pnffNumerator
+      <> " / "
+      <> pnffDenominator
+      <> "."
   PureInputPortUnsupported portName reason ->
     "Pure input port " <> portName <> " is unsupported: " <> reason <> "."
   PureInputPortRequiresLabel portName contractId ->
@@ -201,6 +216,8 @@ renderPureEvalError = \case
       <> " and "
       <> renderRecordPath rightPath
       <> "."
+  PureJsonParseError reason ->
+    "Pure expression could not parse JSON: " <> reason <> "."
   PureWhereExpectedRecord actual ->
     "Pure where-clause must evaluate to a record, but received " <> actual <> "."
   PureStaticFieldSetUndeterminable ->
@@ -458,6 +475,11 @@ evaluatePreparedPureTaskOutputs
 evaluatePreparedPureTaskOutputs preparedTask inputBundle = do
   inputEnv <- bindPreparedPureInputValues CorePureJson preparedTask.preparedPureTaskInputs inputBundle
   let baseEnv = corePureEnvFromInputValues inputEnv
+  -- Fast paths are optional specializations for common CorePure AST shapes.
+  -- Each recognizer must decline when user bindings shadow the builtin names it
+  -- depends on, then the generic evaluator below remains the source of truth.
+  -- Any matched path must preserve the same errors and output JSON shape as the
+  -- slow path; tests cover both shadowing and error-equivalence cases.
   case evaluateCollectionSummaryFastPath baseEnv preparedTask of
     Just result ->
       result
@@ -718,6 +740,8 @@ corePureEnvFromInputValues =
 
 corePureEnvLookup :: Text -> CorePureEnv -> Maybe CorePureValue
 corePureEnvLookup name env =
+  -- Overlay scopes are small and hot during lambda application; linear lookup
+  -- avoids rebuilding Map unions while preserving nearest-binding precedence.
   case List.lookup name env.corePureEnvOverlay of
     Just value -> Just value
     Nothing -> Map.lookup name env.corePureEnvBase
@@ -960,12 +984,8 @@ evaluateCorePureBinary binaryOp lhs rhs =
     CorePureAdd -> numericBinary (+) lhs rhs
     CorePureSubtract -> numericBinary (-) lhs rhs
     CorePureMultiply -> numericBinary (*) lhs rhs
-    CorePureDivide -> do
-      lhsNumber <- corePureNumber lhs
-      rhsNumber <- corePureNumber rhs
-      if rhsNumber == 0
-        then Left PureDivisionByZero
-        else Right (CorePureJson (Aeson.Number (lhsNumber / rhsNumber)))
+    CorePureDivide ->
+      numericFloatDivide lhs rhs
     CorePureMerge -> do
       lhsObject <- corePureObject lhs
       rhsObject <- corePureObject rhs
@@ -995,6 +1015,34 @@ numericBinary
 numericBinary op lhs rhs =
   CorePureJson . Aeson.Number <$> (op <$> corePureNumber lhs <*> corePureNumber rhs)
 
+numericFloatDivide
+  :: CorePureValue
+  -> CorePureValue
+  -> Either PureEvalError CorePureValue
+numericFloatDivide lhs rhs = do
+  lhsNumber <- corePureNumber lhs
+  rhsNumber <- corePureNumber rhs
+  if rhsNumber == 0
+    then Left PureDivisionByZero
+    else do
+      let lhsFloat = Scientific.toRealFloat lhsNumber :: Double
+          rhsFloat = Scientific.toRealFloat rhsNumber :: Double
+          result = lhsFloat / rhsFloat
+      if finiteFloat lhsFloat && finiteFloat rhsFloat && finiteFloat result
+        then Right (CorePureJson (Aeson.Number (Scientific.fromFloatDigits result)))
+        else
+          Left
+            ( PureNonFiniteFloatDivision
+                PureNonFiniteFloatDivisionOperands
+                  { pnffNumerator = canonicalNumber lhsNumber
+                  , pnffDenominator = canonicalNumber rhsNumber
+                  }
+            )
+
+finiteFloat :: Double -> Bool
+finiteFloat value =
+  not (isNaN value || isInfinite value)
+
 numericCompare
   :: (Scientific -> Scientific -> Bool)
   -> CorePureValue
@@ -1023,6 +1071,8 @@ applyCorePureValue :: CorePureValue -> [CorePureValue] -> Either PureEvalError C
 applyCorePureValue functionValue argumentValues =
   case functionValue of
     CorePureClosure params body closureEnv
+      -- Closure parameters were validated when the lambda expression was
+      -- admitted by validateCorePureExpr; apply only enforces arity.
       | NE.length params == length argumentValues ->
           evaluateCorePureExpr
             (corePureEnvPrepend (zip (NE.toList params) argumentValues) closureEnv)
@@ -1071,6 +1121,7 @@ corePureBuiltinSpecs =
   , builtin "toString" 1 corePureToString
   , builtin "joinWith" 2 corePureJoinWith
   , builtin "toJson" 1 corePureToJson
+  , builtin "fromJson" 1 corePureFromJson
   ]
   where
     builtin name arity implementation =
@@ -1322,6 +1373,14 @@ corePureToJson [value] = do
   jsonValue <- corePureValueToJson value
   Right (CorePureJson (Aeson.String (canonicalJson jsonValue)))
 corePureToJson args = impossibleBuiltinArity "toJson" 1 args
+
+corePureFromJson :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFromJson [value] = do
+  text <- corePureStringValue value
+  case Aeson.eitherDecodeStrict (TE.encodeUtf8 text) of
+    Right jsonValue -> Right (CorePureJson jsonValue)
+    Left reason -> Left (PureJsonParseError (T.pack reason))
+corePureFromJson args = impossibleBuiltinArity "fromJson" 1 args
 
 applyJsonFunction :: CorePureValue -> Aeson.Value -> Either PureEvalError CorePureValue
 applyJsonFunction functionValue value =
