@@ -1,0 +1,108 @@
+# Iterative phase estimation Wire round for the quantum consumer binding.
+#
+# This is the first 3-bit IPEA round for target phase 5/8. It measures bit
+# position 3 with controlled-U^4. The complete runner generates one such Wire
+# file per adaptive round and carries the previous measured bits classically.
+
+contract IBMQuantumConfig;
+contract Qubit;
+contract Bit;
+
+node ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+
+node prepare_control
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+
+node prepare_target
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+
+node target_x
+  <- target: Qubit;
+  -> target: Qubit = @quantum.x {} (target);
+
+node h_control_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node h_control_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+
+node h_control_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node phase_control_rz
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = -1.5707963267948966; } (control);
+
+node phase_target_rz
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = -1.5707963267948966; } (target);
+
+node phase_rzz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.rzz { angle = 1.5707963267948966; } ({ inherit control; inherit target; });
+
+node feedback_control_rz
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 0.0; } (control);
+
+node readout_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node readout_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+
+node readout_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node measure_phase
+  <- control: Qubit;
+  -> phase_bit: Bit = @quantum.measure_z {} (control);
+
+let prepare_eigenstate =
+  prepare_target
+    => target_x;
+
+let h_control =
+  h_control_rz_a
+    => h_control_sx
+    => h_control_rz_b;
+
+let controlled_phase =
+  (phase_control_rz <> phase_target_rz)
+    => phase_rzz;
+
+let readout_h =
+  readout_rz_a
+    => readout_sx
+    => readout_rz_b;
+
+let feedback_and_readout =
+  feedback_control_rz
+    => readout_h
+    => measure_phase;
+
+ibm_runtime_config
+  => (
+    (
+      prepare_control
+        => h_control
+        => controlled_phase
+        => feedback_and_readout
+    )
+    <>
+    (
+      prepare_eigenstate
+        => controlled_phase
+    )
+)

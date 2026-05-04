@@ -1,0 +1,10 @@
+{
+  "api_key_env": "QISKIT_IBM_API_KEY",
+  "instance_crn": "REPLACE_WITH_IBM_QUANTUM_RUNTIME_SERVICE_CRN",
+  "api_base_url": "https://quantum.cloud.ibm.com/api/v1",
+  "iam_token_url": "https://iam.cloud.ibm.com/identity/token",
+  "api_version": "2026-03-15",
+  "backend": "least_busy",
+  "poll_interval_seconds": 10,
+  "timeout_seconds": 900
+}

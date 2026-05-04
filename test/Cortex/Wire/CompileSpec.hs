@@ -44,8 +44,11 @@ import Cortex.Wire.Contract
   , wireContractRegistryFromList
   )
 import Cortex.Wire.Executor
-  ( WireExecutorEffect (..)
+  ( WireExecutorConfigShape (..)
+  , WireExecutorEffect (..)
   , WireExecutorId (..)
+  , WireExecutorPortPolicy (..)
+  , WireExecutorProjection (..)
   , wireExecutorProjectionFromPorts
   , wireExecutorRegistryFromList
   )
@@ -352,6 +355,46 @@ spec = describe "Cortex.Wire.Compile" $ do
     it "compiles the mini build-system example" $ do
       source <- TIO.readFile "examples/wire/mini-build-system.wire"
       compileWireText source `shouldSatisfy` isRight
+
+    it "compiles the quantum Bell-state example with consumer executor projections" $ do
+      source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
+      compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "prepare_control", CircuitNodeRef "prepare_target"]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_control", CircuitNodeRef "measure_target"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "entangle")
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_control", CircuitNodeRef "measure_target"]
+
+    it "compiles the IBM REST quantum Bell-state example with a config node" $ do
+      source <- TIO.readFile "examples/wire/quantum-bell-state-ibm-rest.wire"
+      compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "ibm_runtime_config"
+          , CircuitNodeRef "prepare_target"
+          ]
+      case Map.lookup (CircuitNodeRef "ibm_runtime_config") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata
+            `shouldSatisfy` metadataConfigHasString
+              "path"
+              "quantum-ibm-runtime.local.json"
+        other ->
+          expectationFailure ("expected task node, got: " <> show other)
+
+    it "compiles the quantum IPEA round example with primitive executors" $ do
+      source <- TIO.readFile "examples/wire/quantum-ipea-round.wire"
+      compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "ibm_runtime_config"
+          , CircuitNodeRef "prepare_target"
+          ]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "measure_phase"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "phase_rzz")
+        `shouldBe` Set.fromList [CircuitNodeRef "feedback_control_rz"]
 
     it "compiles the pure output equations fixture" $ do
       source <- TIO.readFile "test/fixtures/wire/pure-output-equations.wire"
@@ -778,6 +821,15 @@ metadataConfigHasNumber fieldName expected = \case
       _ -> False
   _ -> False
 
+metadataConfigHasString :: Key.Key -> T.Text -> Aeson.Value -> Bool
+metadataConfigHasString fieldName expected = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) ->
+        KeyMap.lookup fieldName configObj == Just (Aeson.String expected)
+      _ -> False
+  _ -> False
+
 metadataConfigHasKey :: Key.Key -> Aeson.Value -> Bool
 metadataConfigHasKey fieldName = \case
   Aeson.Object obj ->
@@ -915,6 +967,37 @@ strictExecutorEnv =
           , pureWireExecutorProjection
           ]
     , wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
+quantumExecutorEnv :: WireCompileEnv
+quantumExecutorEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvExecutorRegistry =
+        wireExecutorRegistryFromList
+          [ quantumExecutorProjection "quantum.prepare_zero"
+          , quantumExecutorProjection "quantum.h"
+          , quantumExecutorProjection "quantum.rz"
+          , quantumExecutorProjection "quantum.sx"
+          , quantumExecutorProjection "quantum.x"
+          , quantumExecutorProjection "quantum.cnot"
+          , quantumExecutorProjection "quantum.cz"
+          , quantumExecutorProjection "quantum.rzz"
+          , quantumExecutorProjection "quantum.measure_z"
+          , quantumExecutorProjection "quantum.ibm_runtime_config"
+          ]
+    , wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
+quantumExecutorProjection :: T.Text -> WireExecutorProjection
+quantumExecutorProjection executorId =
+  WireExecutorProjection
+    { wireExecutorProjectionId = WireExecutorId executorId
+    , wireExecutorProjectionPorts = WirePorts Map.empty Map.empty
+    , wireExecutorProjectionVocabulary =
+        Set.fromList ["Qubit", "Bit", "RotationAngle", "IBMQuantumConfig"]
+    , wireExecutorProjectionEffect = WireExecutorHostEffect
+    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 
 projectedExecutorPorts :: WirePorts

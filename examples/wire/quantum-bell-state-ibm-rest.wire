@@ -1,0 +1,101 @@
+# Quantum Wire example for IBM Quantum Runtime REST hardware execution.
+#
+# The first node carries the provider config file path. The config file should
+# be an ignored local JSON file, not a committed secret-bearing artifact.
+
+contract IBMQuantumConfig;
+contract Qubit;
+contract Bit;
+
+node ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+
+node prepare_control
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+
+node prepare_target
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+
+node h_control_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node h_control_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+
+node h_control_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node cnot_target_h_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node cnot_target_h_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+
+node cnot_target_h_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node entangle_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz ({ inherit control; inherit target; });
+
+node cnot_target_h_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node cnot_target_h_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+
+node cnot_target_h_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node measure_control
+  <- control: Qubit;
+  -> control: Bit = @quantum.measure_z {} (control);
+
+node measure_target
+  <- target: Qubit;
+  -> target: Bit = @quantum.measure_z {} (target);
+
+ibm_runtime_config
+  => (
+    (
+      prepare_control
+        => h_control_rz_a
+        => h_control_sx
+        => h_control_rz_b
+        => entangle_cz
+    )
+    <>
+    (
+      prepare_target
+        => cnot_target_h_pre_rz_a
+        => cnot_target_h_pre_sx
+        => cnot_target_h_pre_rz_b
+        => entangle_cz
+    )
+    <>
+    (
+      entangle_cz
+        => measure_control
+    )
+    <>
+    (
+      entangle_cz
+        => cnot_target_h_post_rz_a
+        => cnot_target_h_post_sx
+        => cnot_target_h_post_rz_b
+        => measure_target
+    )
+)

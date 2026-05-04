@@ -41,7 +41,7 @@ test:
 # Run tests matching a pattern
 test-match PATTERN:
     @echo "🧪 Running tests matching '{{ PATTERN }}'..."
-    nix develop -c cabal test cortex-test --test-option='-m' --test-option='{{ PATTERN }}'
+    nix run .#cortex-tests -- -m '{{ PATTERN }}'
 
 # Run flake checks (format + build + test)
 check:
