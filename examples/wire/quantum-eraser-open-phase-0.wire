@@ -1,0 +1,61 @@
+# Quantum eraser control circuit: open interferometer at phase 0.
+
+contract IBMQuantumConfig;
+contract Qubit;
+contract Bit;
+
+node ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+
+node prepare_screen
+  <- config: IBMQuantumConfig;
+  -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+
+node split_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+
+node split_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+
+node split_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+
+node phase_screen
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 0.0; } (screen);
+
+node recombine_rz_a
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+
+node recombine_sx
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.sx {} (screen);
+
+node recombine_rz_b
+  <- screen: Qubit;
+  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+
+node measure_screen
+  <- screen: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (screen);
+
+let split_path =
+  split_rz_a
+    => split_sx
+    => split_rz_b;
+
+let recombine_path =
+  phase_screen
+    => recombine_rz_a
+    => recombine_sx
+    => recombine_rz_b
+    => measure_screen;
+
+ibm_runtime_config
+  => prepare_screen
+  => split_path
+  => recombine_path

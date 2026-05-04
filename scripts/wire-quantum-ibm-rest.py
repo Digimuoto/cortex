@@ -63,6 +63,11 @@ def main() -> int:
         help="Wire CLI to use when the input is a .wire source file.",
     )
     parser.add_argument(
+        "--return",
+        dest="wire_return",
+        help="Compile the named Wire file-return or graph binding from a .wire source file.",
+    )
+    parser.add_argument(
         "--config",
         help="Override the config path carried by @quantum.ibm_runtime_config.",
     )
@@ -110,8 +115,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        compiled = quantum.load_compiled_circuit(args.input, args.wire_bin)
+        compiled = quantum.load_compiled_circuit(args.input, args.wire_bin, args.wire_return)
         plan = quantum.build_quantum_plan(compiled)
+        plan["backend_family"] = "ibm_quantum_runtime_rest"
         config_path = select_config_path(args.input, args.config, plan, quantum)
         will_submit = not args.dry_run and not args.emit_request
         if will_submit and not args.confirm_hardware:
@@ -195,6 +201,9 @@ def main() -> int:
         raw_result = fetch_job_results(config, token, job_id, quantum)
         metrics = fetch_job_metrics(config, token, job_id, quantum)
         counts = extract_counts(raw_result, plan["measurements"])
+        complete_counts = (
+            quantum.complete_counts(counts, len(plan["measurements"])) if counts else None
+        )
         result = {
             "execution": "hardware",
             "source": args.input,
@@ -206,8 +215,14 @@ def main() -> int:
             "shots": args.shots,
             "plan": plan,
             "counts": counts,
+            "complete_counts": complete_counts,
             "labeled_counts": (
                 quantum.labeled_counts(counts, plan["measurements"]) if counts else None
+            ),
+            "complete_labeled_counts": (
+                quantum.labeled_counts(complete_counts, plan["measurements"])
+                if complete_counts
+                else None
             ),
             "qpu_usage_seconds": qpu_usage_seconds(metrics),
         }
@@ -549,7 +564,11 @@ def poll_job(
         normalized = status.lower()
         if normalized in TERMINAL_JOB_STATUSES:
             if normalized != "completed":
-                raise quantum.WireQuantumError(f"IBM job {job_id} ended with status {status}")
+                detail = job_failure_detail(job)
+                suffix = f": {detail}" if detail else ""
+                raise quantum.WireQuantumError(
+                    f"IBM job {job_id} ended with status {status}{suffix}"
+                )
             return job
         if time.monotonic() >= deadline:
             raise quantum.WireQuantumError(
@@ -716,6 +735,40 @@ def job_status(job: Any) -> str:
 def public_job_status(job: Any) -> str:
     normalized = job_status(job).strip().lower()
     return JOB_STATUS_LABELS.get(normalized, "Unknown")
+
+
+def job_failure_detail(job: Any) -> str | None:
+    if not isinstance(job, dict):
+        return None
+    state = job.get("state")
+    if isinstance(state, dict):
+        detail = first_public_detail(
+            state,
+            ["reason", "message", "error_message", "status_message", "failure_reason"],
+        )
+        if detail is not None:
+            return detail
+    return first_public_detail(
+        job,
+        ["reason", "message", "error_message", "status_message", "failure_reason", "error"],
+    )
+
+
+def first_public_detail(value: JSON, fields: list[str]) -> str | None:
+    for field in fields:
+        detail = public_detail_text(value.get(field))
+        if detail is not None:
+            return detail
+    return None
+
+
+def public_detail_text(value: Any) -> str | None:
+    if isinstance(value, str):
+        detail = " ".join(value.split())
+        return detail[:500] if detail else None
+    if isinstance(value, dict):
+        return first_public_detail(value, ["message", "reason", "code", "name"])
+    return None
 
 
 def extract_counts(raw_result: Any, measurements: list[JSON]) -> dict[str, int] | None:

@@ -42,11 +42,26 @@
           "$@"
       '';
     };
+
+    wire-quantum-eraser = pkgs.writeShellApplication {
+      name = "wire-quantum-eraser";
+      text = ''
+        set -euo pipefail
+        if [ "$#" -ne 1 ] || [ "$1" != "--confirm-hardware" ]; then
+          echo "usage: wire-quantum-eraser --confirm-hardware" >&2
+          echo "runs nine selected circuit graphs from examples/wire/quantum-eraser-experiment.wire as IBM Runtime REST hardware jobs" >&2
+          exit 64
+        fi
+        export PATH="${wire-quantum-ibm-rest}/bin:$PATH"
+        exec ${config.packages.wire}/bin/wire run examples/wire/quantum-eraser-experiment.wire
+      '';
+    };
   in {
     packages = {
       wire-quantum-qiskit = wire-quantum-qiskit;
       wire-quantum-ibm-rest = wire-quantum-ibm-rest;
       wire-quantum-ipea = wire-quantum-ipea;
+      wire-quantum-eraser = wire-quantum-eraser;
     };
 
     apps = {
@@ -64,6 +79,11 @@
         type = "app";
         program = "${wire-quantum-ipea}/bin/wire-quantum-ipea";
         meta.description = "Run iterative phase estimation as composed Wire quantum rounds";
+      };
+      wire-quantum-eraser = {
+        type = "app";
+        program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
+        meta.description = "Run the delayed-choice quantum eraser Wire sweep on IBM Runtime REST hardware";
       };
     };
   };

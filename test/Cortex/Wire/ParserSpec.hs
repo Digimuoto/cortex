@@ -48,6 +48,18 @@ topFormName topForm =
     TopImport {} ->
       Nothing
 
+quantumEraserSweepFixtures :: [FilePath]
+quantumEraserSweepFixtures =
+  [ "examples/wire/quantum-eraser-open-phase-0.wire"
+  , "examples/wire/quantum-eraser-open-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-open-phase-1_2.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-0.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-which-path-phase-1_2.wire"
+  , "examples/wire/quantum-eraser-eraser-phase-1_4.wire"
+  , "examples/wire/quantum-eraser-eraser-phase-1_2.wire"
+  ]
+
 graphFormSourceText :: Text
 graphFormSourceText =
   T.unlines
@@ -72,17 +84,23 @@ spec = describe "Cortex.Wire.Parser" $ do
     it "parses the mini build-system example" $
       parseWireFixture "examples/wire/mini-build-system.wire"
 
-    it "parses the quantum Bell-state example" $ do
-      source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
-      parseWireFile "examples/wire/quantum-bell-state.wire" source `shouldSatisfy` isRight
+    it "parses the quantum Bell-state example" $
+      parseWireFixture "examples/wire/quantum-bell-state.wire"
 
-    it "parses the IBM REST quantum Bell-state example" $ do
-      source <- TIO.readFile "examples/wire/quantum-bell-state-ibm-rest.wire"
-      parseWireFile "examples/wire/quantum-bell-state-ibm-rest.wire" source `shouldSatisfy` isRight
+    it "parses the IBM REST quantum Bell-state example" $
+      parseWireFixture "examples/wire/quantum-bell-state-ibm-rest.wire"
 
-    it "parses the quantum IPEA round example" $ do
-      source <- TIO.readFile "examples/wire/quantum-ipea-round.wire"
-      parseWireFile "examples/wire/quantum-ipea-round.wire" source `shouldSatisfy` isRight
+    it "parses the quantum IPEA round example" $
+      parseWireFixture "examples/wire/quantum-ipea-round.wire"
+
+    it "parses the quantum eraser round example" $
+      parseWireFixture "examples/wire/quantum-eraser-round.wire"
+
+    it "parses the full quantum eraser experiment scaffold" $
+      parseWireFixture "examples/wire/quantum-eraser-experiment.wire"
+
+    it "parses the quantum eraser sweep circuit examples" $
+      mapM_ parseWireFixture quantumEraserSweepFixtures
 
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $

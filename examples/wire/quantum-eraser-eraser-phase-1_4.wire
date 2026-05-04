@@ -1,0 +1,143 @@
+# Quantum eraser Wire example: eraser-basis circuit at phase 1/4.
+#
+# The screen marginal is the no-signalling view. In eraser mode, interference
+# only appears after conditioning on the later marker-basis result.
+
+contract IBMQuantumConfig;
+contract Qubit;
+contract Bit;
+
+node ibm_runtime_config
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+
+node prepare_screen
+  <- config: IBMQuantumConfig;
+  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+
+node prepare_marker
+  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+
+node split_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node split_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+
+node split_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node phase_screen
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node mark_pre_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node mark_pre_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+
+node mark_pre_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node mark_cz
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = @quantum.cz {} ({ inherit control; inherit target; });
+
+node z_mark_post_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node z_mark_post_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+
+node z_mark_post_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node recombine_rz_a
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node recombine_sx
+  <- control: Qubit;
+  -> control: Qubit = @quantum.sx {} (control);
+
+node recombine_rz_b
+  <- control: Qubit;
+  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+
+node measure_screen
+  <- control: Qubit;
+  -> screen: Bit = @quantum.measure_z {} (control);
+
+node z_marker_eraser_rz_a
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node z_marker_eraser_sx
+  <- target: Qubit;
+  -> target: Qubit = @quantum.sx {} (target);
+
+node z_marker_eraser_rz_b
+  <- target: Qubit;
+  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+
+node z_measure_marker
+  <- target: Qubit;
+  -> marker: Bit = @quantum.measure_z {} (target);
+
+let split_path =
+  split_rz_a
+    => split_sx
+    => split_rz_b
+    => phase_screen;
+
+let mark_marker_pre =
+  mark_pre_rz_a
+    => mark_pre_sx
+    => mark_pre_rz_b;
+
+let mark_marker_post =
+  z_mark_post_rz_a
+    => z_mark_post_sx
+    => z_mark_post_rz_b;
+
+let recombine_screen =
+  recombine_rz_a
+    => recombine_sx
+    => recombine_rz_b
+    => measure_screen;
+
+let marker_eraser_readout =
+  z_marker_eraser_rz_a
+    => z_marker_eraser_sx
+    => z_marker_eraser_rz_b
+    => z_measure_marker;
+
+ibm_runtime_config
+  => (
+    (
+      prepare_screen
+        => split_path
+        => mark_cz
+        => recombine_screen
+    )
+    <>
+    (
+      prepare_marker
+        => mark_marker_pre
+        => mark_cz
+        => mark_marker_post
+        => marker_eraser_readout
+    )
+)
