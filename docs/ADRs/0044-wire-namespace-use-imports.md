@@ -45,7 +45,7 @@ should remain intact: runtime authority is admitted by the host registry, not by
 Wire gains a top-level registry-namespace import form:
 
 ```wire
-use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 ```
 
 Selectors are explicit. Executor leaves carry the `@` marker; contracts do not:
@@ -69,9 +69,10 @@ which standard-pack names are referenceable in a Wire file. The host still decid
 For v1:
 
 - `std.io` is the only implemented registry namespace.
-- `@std.io.stdin`, `@std.io.stdout`, and `@std.io.command` require an explicit `use std.io.{...};`
-  in the same file before they can be referenced.
-- Bare `@stdin`, `@stdout`, and `@command` resolve only when imported by `use`.
+- `@std.io.stdin`, `@std.io.stdout`, `@std.io.command`, `@std.io.readFile`, and `@std.io.writeFile`
+  require an explicit `use std.io.{...};` in the same file before they can be referenced.
+- Bare `@stdin`, `@stdout`, `@command`, `@readFile`, and `@writeFile` resolve only when imported by
+  `use`.
 - Imported aliases lower to canonical executor and contract IDs in compiled metadata.
 - `use` does not propagate across file imports; each source file declares its own registry namespace
   dependencies.

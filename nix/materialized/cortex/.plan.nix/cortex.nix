@@ -139,6 +139,7 @@
           "Cortex/Wire/Pure"
           "Cortex/Wire/Std"
           "Cortex/Wire/Syntax"
+          "Cortex/Wire/Use"
           "Cortex/Wire/Circuit"
           "Cortex/Wire/Circuit/Artifact"
           "Cortex/Wire/Circuit/Compile"

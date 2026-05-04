@@ -56,11 +56,13 @@ Cortex should provide a small standard executor pack for host-local effects. The
 effects are:
 
 ```wire
-use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 
 @stdin
 @stdout
 @command
+@readFile
+@writeFile
 ```
 
 These are ordinary Wire executors:
@@ -76,11 +78,13 @@ that mentions them has explicitly named host IO authority.
 
 The initial shapes are:
 
-| Executor          | Boundary shape                        | Runtime behavior                                    |
-| ----------------- | ------------------------------------- | --------------------------------------------------- |
-| `@std.io.stdin`   | zero inputs, exactly one output port  | optionally prints a prompt, reads one line          |
-| `@std.io.stdout`  | exactly one input port, zero outputs  | prints the input payload, optionally with newline   |
-| `@std.io.command` | zero or one input, zero or one output | executes one argv vector and captures stdout/stderr |
+| Executor            | Boundary shape                        | Runtime behavior                                    |
+| ------------------- | ------------------------------------- | --------------------------------------------------- |
+| `@std.io.stdin`     | zero inputs, exactly one output port  | optionally prints a prompt, reads one line          |
+| `@std.io.stdout`    | exactly one input port, zero outputs  | prints the input payload, optionally with newline   |
+| `@std.io.command`   | zero or one input, zero or one output | executes one argv vector and captures stdout/stderr |
+| `@std.io.readFile`  | zero or one input, exactly one output | reads UTF-8 text from a configured/input `path`     |
+| `@std.io.writeFile` | exactly one input port, zero outputs  | writes the input payload as UTF-8 text to `path`    |
 
 These executors should accept inert config records only. The initial stdin config may include
 `prompt`. The initial stdout config may include `newline`.
@@ -98,6 +102,9 @@ as an input record or by inert executor config. The initial command spec include
 - `echo`;
 - `successExitCodes`.
 
+`std.io.readFile` and `std.io.writeFile` are text-only file effects. They require an explicit `path`
+field, either in inert config for `readFile`/`writeFile` or as an input object for `readFile`.
+
 The command result includes the command name, target, argv, cwd, required/skipped markers, boolean
 success, status, exit code, stdout, stderr, and echo marker. A skipped command returns a structured
 result instead of executing. A failed command returns `ok = false`; the local runner does not throw
@@ -107,7 +114,7 @@ When `echo = true`, the local runner prints the captured stdout/stderr for that 
 process exits. Frontier commands may run concurrently, so echoed output is emitted as one atomic
 block per command rather than as interleaved live streaming.
 
-Additional terminal behavior, streaming, binary IO, files, shell expansion, TTY control, environment
+Additional terminal behavior, streaming, binary IO, shell expansion, TTY control, environment
 mutation, and interactive protocols are out of scope for v1. Shell semantics, if added later, should
 use a separate and visibly authority-bearing executor such as `std.io.shell`.
 
@@ -154,7 +161,8 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 ### Obligations
 
 - Mark standard-effect stages as irreversible or otherwise replay-unsafe in runtime metadata.
-- Keep their executor IDs stable: `std.io.stdin`, `std.io.stdout`, and `std.io.command`.
+- Keep their executor IDs stable: `std.io.stdin`, `std.io.stdout`, `std.io.command`,
+  `std.io.readFile`, and `std.io.writeFile`.
 - Keep the standard pack source-scoped through `use std.io.{...};` as defined by ADR 0044.
 - Enforce the structural port constraints at binding time even when the registry projection admits
   author-declared ports.

@@ -13,10 +13,14 @@ Wire modules own authoring and compilation mechanics while host authority stays 
 module Cortex.Wire.Compile
   ( compileWireFile
   , compileWireFileWithEnv
+  , compileWireFileWithReturn
+  , compileWireFileWithReturnAndEnv
   , compileWireFragmentFile
   , compileWireFragmentFileWithEnv
   , compileWireText
   , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  , compileWireTextWithReturnAndEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
   )
@@ -107,14 +111,26 @@ import Cortex.Wire.Pure
   )
 import Cortex.Wire.Std
   ( stdIoCommandExecutorId
-  , stdIoContractIdForName
-  , stdIoExecutorIdForLeaf
-  , stdIoExecutorLeaves
-  , stdIoNamespace
+  , stdIoCommandShapeMessage
+  , stdIoReadFileExecutorId
+  , stdIoReadFileShapeMessage
   , stdIoStdinExecutorId
+  , stdIoStdinShapeMessage
   , stdIoStdoutExecutorId
+  , stdIoStdoutShapeMessage
+  , stdIoWriteFileExecutorId
+  , stdIoWriteFileShapeMessage
   )
 import Cortex.Wire.Syntax
+import Cortex.Wire.Use
+  ( WireUseError (..)
+  , WireUseScope (..)
+  , applyWireUseSpec
+  , emptyWireUseScope
+  , resolveWireContract
+  , resolveWireExecutorQName
+  , wireUseDeclaredContracts
+  )
 
 compileWireText :: Text -> Either WireCore.WireError CompiledCircuit
 compileWireText =
@@ -127,6 +143,19 @@ compileWireTextWithEnv compileEnv sourceText = do
       (WireCore.WireParseError . renderParseError)
       (parseWireFile "wire" sourceText)
   compileWireFileWithEnv compileEnv wireFile
+
+compileWireTextWithReturn :: Text -> Text -> Either WireCore.WireError CompiledCircuit
+compileWireTextWithReturn =
+  compileWireTextWithReturnAndEnv emptyWireCompileEnv
+
+compileWireTextWithReturnAndEnv
+  :: WireCompileEnv -> Text -> Text -> Either WireCore.WireError CompiledCircuit
+compileWireTextWithReturnAndEnv compileEnv selectedReturn sourceText = do
+  wireFile <-
+    mapLeft
+      (WireCore.WireParseError . renderParseError)
+      (parseWireFile "wire" sourceText)
+  compileWireFileWithReturnAndEnv compileEnv selectedReturn wireFile
 
 compileWireFragmentText :: Text -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentText =
@@ -149,6 +178,21 @@ compileWireFileWithEnv :: WireCompileEnv -> WireFile -> Either WireCore.WireErro
 compileWireFileWithEnv compileEnv wireFile = do
   lowered <- lowerWireFile compileEnv wireFile
   compileLoweredWireFile compileEnv True wireFile lowered
+
+compileWireFileWithReturn :: Text -> WireFile -> Either WireCore.WireError CompiledCircuit
+compileWireFileWithReturn =
+  compileWireFileWithReturnAndEnv emptyWireCompileEnv
+
+compileWireFileWithReturnAndEnv
+  :: WireCompileEnv -> Text -> WireFile -> Either WireCore.WireError CompiledCircuit
+compileWireFileWithReturnAndEnv compileEnv selectedReturn wireFile =
+  let selectedWireFile =
+        wireFile
+          { wireFileReturn = Just (ExprIdent (QName (selectedReturn :| [])))
+          }
+   in do
+        lowered <- lowerWireFileWithUnusedPolicy compileEnv AllowUnusedDeclaredNodes selectedWireFile
+        compileLoweredWireFile compileEnv True selectedWireFile lowered
 
 compileWireFragmentFile :: WireFile -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentFile =
@@ -207,16 +251,20 @@ data LoweredWireFile = LoweredWireFile
   , lwfDeclaredContracts :: !(Set.Set Text)
   }
 
+data UnusedNodePolicy
+  = RequireAllDeclaredNodesUsed
+  | AllowUnusedDeclaredNodes
+  deriving stock (Eq, Show)
+
 data LoweringState = LoweringState
   { lsBindings :: !(Map Text EvalValue)
   , lsPureBindings :: ![CorePureBinding]
   , lsGraphBindings :: !(Map Text GraphFragment)
+  , lsExportedGraphNodeRefs :: !(Set.Set CircuitNodeRef)
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
-  , lsExecutorUses :: !(Map Text Text)
-  , lsStdExecutorsInScope :: !(Set.Set Text)
-  , lsContractUses :: !(Map Text Text)
+  , lsUseScope :: !WireUseScope
   }
 
 emptyLoweringState :: LoweringState
@@ -225,12 +273,11 @@ emptyLoweringState =
     { lsBindings = Map.empty
     , lsPureBindings = []
     , lsGraphBindings = Map.empty
+    , lsExportedGraphNodeRefs = Set.empty
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
-    , lsExecutorUses = Map.empty
-    , lsStdExecutorsInScope = Set.empty
-    , lsContractUses = Map.empty
+    , lsUseScope = emptyWireUseScope
     }
 
 data EvalValue
@@ -245,7 +292,7 @@ data EvalValue
   deriving stock (Eq, Show)
 
 data ConfiguredExecutor = ConfiguredExecutor
-  { ceExecutor :: !Text
+  { ceExecutorId :: !Text
   , ceFields :: !(Map (NonEmpty Text) EvalValue)
   }
   deriving stock (Eq, Show)
@@ -310,17 +357,32 @@ emptyFragment =
     }
 
 lowerWireFile :: WireCompileEnv -> WireFile -> Either WireCore.WireError LoweredWireFile
-lowerWireFile compileEnv wireFile = do
+lowerWireFile compileEnv =
+  lowerWireFileWithUnusedPolicy compileEnv RequireAllDeclaredNodesUsed
+
+lowerWireFileWithUnusedPolicy
+  :: WireCompileEnv -> UnusedNodePolicy -> WireFile -> Either WireCore.WireError LoweredWireFile
+lowerWireFileWithUnusedPolicy compileEnv unusedNodePolicy wireFile = do
   loweredState <-
     foldlM (lowerTopForm compileEnv) emptyLoweringState wireFile.wireFileTopForms
   fileReturn <- maybe (Left WireCore.WireMissingCircuit) Right wireFile.wireFileReturn
   (resultFragment, maybeMetadata, loweredState') <- lowerFileReturn loweredState fileReturn
-  let usedNodeRefs = foldMap loweredNodeRefs resultFragment.gfNodes
+  let usedNodeRefs =
+        foldMap loweredNodeRefs resultFragment.gfNodes
+          <> loweredState'.lsExportedGraphNodeRefs
       declaredNodeRefs = Set.fromList (fmap (.lnRef) (Map.elems loweredState'.lsNamedNodes))
       unusedNodeRefs = Set.toAscList (Set.difference declaredNodeRefs usedNodeRefs)
-  case unusedNodeRefs of
-    unusedRef : _ -> Left (WireCore.WireUnusedNodeRef unusedRef)
-    [] ->
+  case (unusedNodePolicy, unusedNodeRefs) of
+    (RequireAllDeclaredNodesUsed, unusedRef : _) -> Left (WireCore.WireUnusedNodeRef unusedRef)
+    (RequireAllDeclaredNodesUsed, []) ->
+      Right
+        LoweredWireFile
+          { lwfFragment = resultFragment
+          , lwfMetadata = maybeMetadata
+          , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
+          , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
+          }
+    (AllowUnusedDeclaredNodes, _) ->
       Right
         LoweredWireFile
           { lwfFragment = resultFragment
@@ -364,14 +426,14 @@ lowerTopForm
   :: WireCompileEnv -> LoweringState -> TopForm -> Either WireCore.WireError LoweringState
 lowerTopForm compileEnv st = \case
   TopContract contractId ->
-    if Map.member contractId.unContractId st.lsContractUses
-      then Left (WireCore.WireDuplicateUseBinding contractId.unContractId)
+    if topLevelBindingNameTaken st contractId.unContractId
+      then Left (WireCore.WireDuplicateBinding contractId.unContractId)
       else Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
   TopUse useSpec ->
     lowerUseSpec st useSpec
   TopImport _ ->
     Left (WireCore.WireParseError "Wire imports are not compiled yet.")
-  TopLet _visibility name rhs -> do
+  TopLet visibility name rhs -> do
     if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
       else case rhs of
@@ -387,7 +449,7 @@ lowerTopForm compileEnv st = \case
                        ]
               }
         LetRhsWire expr ->
-          lowerWireLetBinding st name expr
+          lowerWireLetBinding visibility st name expr
   TopNode nodeDecl -> do
     loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
@@ -398,75 +460,57 @@ lowerTopForm compileEnv st = \case
           st
             { lsNamedNodes = Map.insert nodeName loweredNode st.lsNamedNodes
             }
-  where
-    topLevelBindingNameTaken state name =
-      Map.member name state.lsBindings
-        || Map.member name state.lsGraphBindings
-        || Map.member name state.lsNamedNodes
-        || Map.member name state.lsExecutorUses
-        || Map.member name state.lsContractUses
-        || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
+
+topLevelBindingNameTaken :: LoweringState -> Text -> Bool
+topLevelBindingNameTaken state name =
+  Map.member name state.lsBindings
+    || Map.member name state.lsGraphBindings
+    || Map.member name state.lsNamedNodes
+    || Map.member name state.lsUseScope.wireUseExecutors
+    || Map.member name state.lsUseScope.wireUseContracts
+    || Set.member name state.lsDeclaredContracts
+    || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
 
 lowerUseSpec :: LoweringState -> UseSpec -> Either WireCore.WireError LoweringState
 lowerUseSpec st useSpec = do
-  when (renderQName useSpec.useSpecNamespace /= stdIoNamespace) $
-    Left (WireCore.WireUnknownUseNamespace (renderQName useSpec.useSpecNamespace))
-  foldlM lowerUseItem st (NE.toList useSpec.useSpecItems)
-  where
-    lowerUseItem state = \case
-      UseExecutor itemName maybeAlias -> do
-        canonical <- stdIoExecutorId itemName
-        let localName = fromMaybe itemName maybeAlias
-        ensureUseNameFresh localName state
-        Right
-          state
-            { lsExecutorUses = Map.insert localName canonical state.lsExecutorUses
-            , lsStdExecutorsInScope = Set.insert canonical state.lsStdExecutorsInScope
-            }
-      UseContract itemName maybeAlias -> do
-        canonical <- stdIoContractId itemName
-        let localName = fromMaybe itemName maybeAlias
-        ensureUseNameFresh localName state
-        Right
-          state
-            { lsContractUses = Map.insert localName canonical state.lsContractUses
-            , lsDeclaredContracts = Set.insert canonical state.lsDeclaredContracts
-            }
+  useScope <-
+    mapLeft wireUseErrorToWireError $
+      applyWireUseSpec (topLevelBindingNameTaken st) st.lsUseScope useSpec
+  Right
+    st
+      { lsUseScope = useScope
+      , lsDeclaredContracts = st.lsDeclaredContracts <> wireUseDeclaredContracts useScope
+      }
 
-    ensureUseNameFresh localName state =
-      when
-        ( Map.member localName state.lsExecutorUses
-            || Map.member localName state.lsContractUses
-            || Map.member localName state.lsBindings
-            || Map.member localName state.lsGraphBindings
-            || Map.member localName state.lsNamedNodes
-            || Set.member localName state.lsDeclaredContracts
-        )
-        (Left (WireCore.WireDuplicateUseBinding localName))
-
-stdIoExecutorId :: Text -> Either WireCore.WireError Text
-stdIoExecutorId itemName =
-  maybe
-    (Left (WireCore.WireUnknownUseItem stdIoNamespace ("@" <> itemName)))
-    Right
-    (stdIoExecutorIdForLeaf itemName)
-
-stdIoContractId :: Text -> Either WireCore.WireError Text
-stdIoContractId itemName =
-  maybe
-    (Left (WireCore.WireUnknownUseItem stdIoNamespace itemName))
-    Right
-    (stdIoContractIdForName itemName)
+wireUseErrorToWireError :: WireUseError -> WireCore.WireError
+wireUseErrorToWireError = \case
+  WireUseUnknownNamespace namespace ->
+    WireCore.WireUnknownUseNamespace namespace
+  WireUseUnknownItem namespace itemName ->
+    WireCore.WireUnknownUseItem namespace itemName
+  WireUseDuplicateBinding name ->
+    WireCore.WireDuplicateBinding name
 
 lowerWireLetBinding
-  :: LoweringState
+  :: LetVisibility
+  -> LoweringState
   -> Text
   -> Expr
   -> Either WireCore.WireError LoweringState
-lowerWireLetBinding st name expr
+lowerWireLetBinding visibility st name expr
   | isGraphLetExpr st expr = do
       graphValue <- lowerGraphExpr st expr
-      Right st {lsGraphBindings = Map.insert name graphValue st.lsGraphBindings}
+      let exportedNodeRefs =
+            case visibility of
+              LetExported ->
+                foldMap loweredNodeRefs graphValue.gfNodes
+              LetPrivate ->
+                Set.empty
+      Right
+        st
+          { lsGraphBindings = Map.insert name graphValue st.lsGraphBindings
+          , lsExportedGraphNodeRefs = st.lsExportedGraphNodeRefs <> exportedNodeRefs
+          }
   | otherwise = do
       value <- evalValue st expr
       let st' = st {lsBindings = Map.insert name value st.lsBindings}
@@ -1261,7 +1305,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       label = lookupMaybeTextField "label" exactFields
       genericFields = genericConfigFields exactFields knownSimpleFields
       runtimePorts = taskWirePortsFromLowered ports
-      executorId = configuredExecutor.ceExecutor
+      executorId = configuredExecutor.ceExecutorId
       maybeSignal = lookupMaybeTextField "on" exactFields
       maybeKind = lookupMaybeTextField "kind" exactFields
       maybeTarget = lookupMaybeQNameField "to" exactFields
@@ -1684,7 +1728,7 @@ lowerPortSignature st nodeRef portSig = do
 
 resolveContractId :: LoweringState -> Text -> Text
 resolveContractId st contractName =
-  Map.findWithDefault contractName contractName st.lsContractUses
+  resolveWireContract st.lsUseScope contractName
 
 allocatedPortName :: Bool -> Int -> PortLabel -> Text -> Int -> Text
 allocatedPortName isInput idx portLabel contractName totalPorts =
@@ -2237,24 +2281,9 @@ qnameToQualifiedRef (QName segments) =
     }
 
 resolveExecutorQName :: LoweringState -> QName -> Either WireCore.WireError Text
-resolveExecutorQName st qname@(QName segments) =
-  case segments of
-    localName :| []
-      | Just canonical <- Map.lookup localName st.lsExecutorUses ->
-          Right canonical
-      | Set.member localName stdIoExecutorLeaves ->
-          Left (WireCore.WireExecutorNotInScope ("@" <> localName))
-      | otherwise ->
-          Right rendered
-    _
-      | "std.io." `T.isPrefixOf` rendered ->
-          if Set.member rendered st.lsStdExecutorsInScope
-            then Right rendered
-            else Left (WireCore.WireExecutorNotInScope ("@" <> rendered))
-      | otherwise ->
-          Right rendered
-  where
-    rendered = renderQName qname
+resolveExecutorQName st qname =
+  mapLeft WireCore.WireExecutorNotInScope $
+    resolveWireExecutorQName st.lsUseScope qname
 
 validateExecutorProjection
   :: WireCompileEnv
@@ -2283,11 +2312,15 @@ validateStdIoExecutorShape
   :: CircuitNodeRef -> Text -> WireCore.WirePorts -> Either WireCore.WireError ()
 validateStdIoExecutorShape nodeRef executorId ports
   | executorId == stdIoStdinExecutorId =
-      requireShape 0 1 "std.io.stdin expects zero input ports and exactly one output port."
+      requireShape 0 1 stdIoStdinShapeMessage
   | executorId == stdIoStdoutExecutorId =
-      requireShape 1 0 "std.io.stdout expects exactly one input port and zero output ports."
+      requireShape 1 0 stdIoStdoutShapeMessage
   | executorId == stdIoCommandExecutorId =
-      requireAtMostOneEach "std.io.command expects zero or one input port and zero or one output port."
+      requireAtMostOneEach stdIoCommandShapeMessage
+  | executorId == stdIoReadFileExecutorId =
+      requireInputAtMostOutputExactOne stdIoReadFileShapeMessage
+  | executorId == stdIoWriteFileExecutorId =
+      requireShape 1 0 stdIoWriteFileShapeMessage
   | otherwise =
       Right ()
   where
@@ -2300,6 +2333,10 @@ validateStdIoExecutorShape nodeRef executorId ports
 
     requireAtMostOneEach message =
       unless (inputCount <= 1 && outputCount <= 1) $
+        Left (WireCore.WireInvalidPorts nodeRef message)
+
+    requireInputAtMostOutputExactOne message =
+      unless (inputCount <= 1 && outputCount == 1) $
         Left (WireCore.WireInvalidPorts nodeRef message)
 
 mapLeft :: (a -> b) -> Either a c -> Either b c

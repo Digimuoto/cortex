@@ -36,12 +36,21 @@ classify
 The last expression without a trailing semicolon is the file-return value. If there is no
 file-return expression, the file is declaration-only.
 
+The CLI can compile a named graph-valued binding instead of the default file-return:
+
+```sh
+wire build --return exported_planner ./pipeline.wire
+```
+
+This is useful for files that serve as a catalog of exported graph values while still having a
+default executable file-return.
+
 ## Imports
 
 Registry namespace imports use `use`:
 
 ```wire
-use std.io.{@stdin, @stdout, @command, CommandSpec, CommandResult};
+use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 use std.io.{@command as @shell, CommandSpec as Spec};
 ```
 

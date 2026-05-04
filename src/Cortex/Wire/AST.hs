@@ -204,7 +204,7 @@ data WireError
   | WireUnknownLetBinding !Text
   | WireUnknownUseNamespace !Text
   | WireUnknownUseItem !Text !Text
-  | WireDuplicateUseBinding !Text
+  | WireDuplicateBinding !Text
   | WireExecutorNotInScope !Text
   | WireTypeMismatchInConcat !Text !Text
   | WireFieldTypeMismatch !Text !Text !Text
@@ -316,8 +316,8 @@ renderWireError = \case
     "`use` references unknown registry namespace " <> namespace <> "."
   WireUnknownUseItem namespace itemName ->
     "`use` references unknown item " <> itemName <> " in namespace " <> namespace <> "."
-  WireDuplicateUseBinding name ->
-    "`use` imports name " <> name <> " more than once in this file."
+  WireDuplicateBinding name ->
+    "Wire file binds name " <> name <> " more than once."
   WireExecutorNotInScope executorName ->
     "Executor " <> executorName <> " is not in Wire source scope; import it with `use` first."
   WireTypeMismatchInConcat left right ->

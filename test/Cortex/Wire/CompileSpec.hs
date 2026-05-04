@@ -30,7 +30,12 @@ import Cortex.Wire.Circuit.Artifact
   , CompiledCircuitNode (..)
   )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
-import Cortex.Wire.Compile (compileWireFragmentText, compileWireText, compileWireTextWithEnv)
+import Cortex.Wire.Compile
+  ( compileWireFragmentText
+  , compileWireText
+  , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  )
 import Cortex.Wire.Contract
   ( WireCompileEnv (..)
   , WireContractSpec (..)
@@ -45,6 +50,11 @@ import Cortex.Wire.Executor
   , wireExecutorRegistryFromList
   )
 import Cortex.Wire.Pure (pureWireExecutorProjection)
+import Cortex.Wire.Std
+  ( stdIoReadFileShapeMessage
+  , stdIoStdoutShapeMessage
+  , stdIoWriteFileShapeMessage
+  )
 import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
 
 spec :: Spec
@@ -85,6 +95,16 @@ spec = describe "Cortex.Wire.Compile" $ do
     compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "analyst"]
     successors compiled.compiledCircuitTopology (CircuitNodeRef "planner")
       `shouldBe` Set.singleton (CircuitNodeRef "analyst")
+
+  it "allows exported graph libraries outside the default file return" $ do
+    compiled <- requireRight (compileWireText exportedGraphLibrarySourceText)
+    compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "main"]
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "main")
+
+  it "compiles a selected graph-valued return" $ do
+    compiled <- requireRight (compileWireTextWithReturn "library_graph" exportedGraphLibrarySourceText)
+    compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "library"]
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "library")
 
   it "lowers executor where records into executor config" $ do
     compiled <- requireRight (compileWireText executorWhereSourceText)
@@ -260,12 +280,45 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireText stdIoCanonicalWithoutUseSourceText
         `shouldBe` Left (WireExecutorNotInScope "@std.io.command")
 
+    it "rejects use names that collide with local contracts" $
+      compileWireText stdIoUseContractCollisionSourceText
+        `shouldBe` Left (WireDuplicateBinding "CommandSpec")
+
     it "enforces standard stdout port shape" $
       compileWireText stdIoStdoutBadShapeSourceText
         `shouldBe` Left
           ( WireInvalidPorts
               (CircuitNodeRef "bad_stdout")
-              "std.io.stdout expects exactly one input port and zero output ports."
+              stdIoStdoutShapeMessage
+          )
+
+    it "lowers std.io file executors" $ do
+      compiled <- requireRight (compileWireText stdIoFileExecutorsSourceText)
+      case Map.lookup (CircuitNodeRef "read_report") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget "std.io.readFile"
+        other ->
+          expectationFailure ("expected read_report task node, got: " <> show other)
+      case Map.lookup (CircuitNodeRef "write_report") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget "std.io.writeFile"
+        other ->
+          expectationFailure ("expected write_report task node, got: " <> show other)
+
+    it "enforces standard readFile port shape" $
+      compileWireText stdIoReadFileBadShapeSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "bad_read")
+              stdIoReadFileShapeMessage
+          )
+
+    it "enforces standard writeFile port shape" $
+      compileWireText stdIoWriteFileBadShapeSourceText
+        `shouldBe` Left
+          ( WireInvalidPorts
+              (CircuitNodeRef "bad_write")
+              stdIoWriteFileShapeMessage
           )
 
   describe "fixtures" $ do
@@ -345,6 +398,17 @@ graphLetSourceText =
     , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
     , "let pipeline = planner => analyst ;"
     , "pipeline"
+    ]
+
+exportedGraphLibrarySourceText :: T.Text
+exportedGraphLibrarySourceText =
+  T.unlines
+    [ "node library"
+    , "  -> out: LibraryOutput = @review.library ({}) ;"
+    , "node main"
+    , "  -> out: MainOutput = @review.main ({}) ;"
+    , "export let library_graph = library ;"
+    , "main"
     ]
 
 zeroOutputSourceText :: T.Text
@@ -587,6 +651,13 @@ stdIoCanonicalWithoutUseSourceText =
     , "run"
     ]
 
+stdIoUseContractCollisionSourceText :: T.Text
+stdIoUseContractCollisionSourceText =
+  T.unlines
+    [ "use std.io.{CommandSpec};"
+    , "contract CommandSpec;"
+    ]
+
 stdIoStdoutBadShapeSourceText :: T.Text
 stdIoStdoutBadShapeSourceText =
   T.unlines
@@ -594,6 +665,39 @@ stdIoStdoutBadShapeSourceText =
     , "node bad_stdout"
     , "  -> printed: Printed = @stdout {} (null) ;"
     , "bad_stdout"
+    ]
+
+stdIoFileExecutorsSourceText :: T.Text
+stdIoFileExecutorsSourceText =
+  T.unlines
+    [ "use std.io.{@readFile, @writeFile};"
+    , "contract Report;"
+    , "node read_report"
+    , "  -> report: Report = @readFile { path = \"/tmp/wire-report.txt\"; } (null) ;"
+    , "node write_report"
+    , "  <- report: Report;"
+    , "  = @writeFile { path = \"/tmp/wire-report-copy.txt\"; } (report) ;"
+    , "read_report => write_report"
+    ]
+
+stdIoReadFileBadShapeSourceText :: T.Text
+stdIoReadFileBadShapeSourceText =
+  T.unlines
+    [ "use std.io.{@readFile};"
+    , "node bad_read"
+    , "  = @readFile { path = \"/tmp/wire-report.txt\"; } (null) ;"
+    , "bad_read"
+    ]
+
+stdIoWriteFileBadShapeSourceText :: T.Text
+stdIoWriteFileBadShapeSourceText =
+  T.unlines
+    [ "use std.io.{@writeFile};"
+    , "contract Report;"
+    , "node bad_write"
+    , "  <- report: Report;"
+    , "  -> written: Report = @writeFile { path = \"/tmp/wire-report.txt\"; } (report) ;"
+    , "bad_write"
     ]
 
 requireRight :: Show err => Either err a -> IO a

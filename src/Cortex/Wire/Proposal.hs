@@ -82,6 +82,16 @@ wireProposalErrorCategory = \case
 wireCompileErrorCategory :: WireError -> Text
 wireCompileErrorCategory = \case
   WireParseError {} -> "wire_parse_rejected"
+  WireMissingCircuit {} -> "wire_lowering_rejected"
+  WireDuplicateNodeRef {} -> "wire_lowering_rejected"
+  WireMissingRequiredField {} -> "wire_lowering_rejected"
+  WireUnknownNodeRef {} -> "wire_lowering_rejected"
+  WireUnusedNodeRef {} -> "wire_lowering_rejected"
+  WireDisconnectedTopology {} -> "wire_lowering_rejected"
+  WireInvalidTopology {} -> "wire_lowering_rejected"
+  WireEmptyCircuit {} -> "wire_lowering_rejected"
+  WireInvalidPorts {} -> "wire_lowering_rejected"
+  WireMissingPortsForNode {} -> "wire_lowering_rejected"
   WireNoCompatiblePorts {} -> "wire_type_rejected"
   WirePortContractMismatch {} -> "wire_type_rejected"
   WireAmbiguousCompatiblePorts {} -> "wire_type_rejected"
@@ -89,7 +99,19 @@ wireCompileErrorCategory = \case
   WireMissingDefaultOutputPort {} -> "wire_type_rejected"
   WireUnknownPort {} -> "wire_type_rejected"
   WireUnknownContract {} -> "wire_type_rejected"
-  _ -> "wire_lowering_rejected"
+  WireMissingRequiredInputPort {} -> "wire_type_rejected"
+  WireInputPortCardinalityViolation {} -> "wire_type_rejected"
+  WireUnknownExecutor {} -> "wire_lowering_rejected"
+  WireExecutorPortsMismatch {} -> "wire_type_rejected"
+  WireUnknownConditionRef {} -> "wire_scope_rejected"
+  WireDuplicateLetBinding {} -> "wire_scope_rejected"
+  WireUnknownLetBinding {} -> "wire_scope_rejected"
+  WireUnknownUseNamespace {} -> "wire_scope_rejected"
+  WireUnknownUseItem {} -> "wire_scope_rejected"
+  WireDuplicateBinding {} -> "wire_scope_rejected"
+  WireExecutorNotInScope {} -> "wire_scope_rejected"
+  WireTypeMismatchInConcat {} -> "wire_type_rejected"
+  WireFieldTypeMismatch {} -> "wire_type_rejected"
 
 renderWireProposalError :: WireProposalError -> Text
 renderWireProposalError = \case

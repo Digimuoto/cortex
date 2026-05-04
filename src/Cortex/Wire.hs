@@ -16,6 +16,7 @@ module Cortex.Wire
   , module Cortex.Wire.Executor
   , module Cortex.Wire.Pure
   , module Cortex.Wire.Std
+  , module Cortex.Wire.Use
   , WireCompileEnv (..)
   , WireProjectionMode (..)
   , WireContractSpec (..)
@@ -63,10 +64,14 @@ module Cortex.Wire
   , renderParseError
   , compileWireFile
   , compileWireFileWithEnv
+  , compileWireFileWithReturn
+  , compileWireFileWithReturnAndEnv
   , compileWireFragmentFile
   , compileWireFragmentFileWithEnv
   , compileWireText
   , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  , compileWireTextWithReturnAndEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
   )
@@ -76,12 +81,16 @@ import Cortex.Wire.Circuit
 import Cortex.Wire.Compile
   ( compileWireFile
   , compileWireFileWithEnv
+  , compileWireFileWithReturn
+  , compileWireFileWithReturnAndEnv
   , compileWireFragmentFile
   , compileWireFragmentFileWithEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
   , compileWireText
   , compileWireTextWithEnv
+  , compileWireTextWithReturn
+  , compileWireTextWithReturnAndEnv
   )
 import Cortex.Wire.Contract
   ( WireCompileEnv (..)
@@ -130,6 +139,7 @@ import Cortex.Wire.Runtime
   )
 import Cortex.Wire.Std
 import Cortex.Wire.Syntax
+import Cortex.Wire.Use
 import Cortex.Wire.Value
   ( WirePayloadKind (..)
   , WireValue (..)
