@@ -265,7 +265,7 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 - calling a non-function;
 - function arity mismatches;
 - duplicate binding names within one scope;
-- duplicate lambda parameters.
+- duplicate lambda parameters;
 - invalid JSON passed to `fromJson`;
 - `where` expressions that do not evaluate to records.
 

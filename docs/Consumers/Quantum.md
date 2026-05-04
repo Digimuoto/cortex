@@ -109,10 +109,10 @@ Plan inspection without simulator execution is also available:
 nix run .#wire-quantum-qiskit -- examples/wire/quantum-bell-state.wire --emit-plan
 ```
 
-The runner intentionally supports only the local Aer simulator. It refuses non-local backend names
-so an account or provider credentials cannot accidentally queue hardware jobs. Hardware execution
-should be added as a separate explicit binding with provider, credential, queue, cost, and audit
-policy in its own config path.
+The runner supports only the local Aer simulator. It refuses non-local backend names so an account
+or provider credentials cannot accidentally queue hardware jobs. Hardware execution should be added
+as a separate explicit binding with provider, credential, queue, cost, and audit policy in its own
+config path.
 
 ## IBM Quantum Runtime REST Runner
 

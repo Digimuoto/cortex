@@ -30,7 +30,7 @@ related:
 
 ## Status
 
-Proposed - this ADR records the intended Wire metaprogramming boundary before implementation. The
+Proposed - this ADR defines the Wire metaprogramming boundary for hygienic node-body reuse. The
 initial motivating example is the repeated quantum-gate node shape in
 `examples/wire/quantum-eraser-experiment.wire`.
 

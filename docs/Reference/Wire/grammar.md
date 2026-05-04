@@ -74,7 +74,7 @@ top_form         ::= contract_decl | use_stmt | kind_decl | form_decl | let_bind
 file_return      ::= wire_expr
 
 contract_decl    ::= "contract" Name ";"
-use_stmt         ::= "use" qualified_ident ".{" use_item ("," use_item)* ","? "}" ";"
+use_stmt         ::= "use" qualified_ident "." "{" use_item ("," use_item)* ","? "}" ";"
 use_item         ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
 kind_decl        ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
 kind_param_list ::= kind_param ("," kind_param)* ","?
@@ -121,7 +121,7 @@ classifies the right-hand side by phase:
 - configured executor values and ordinary scalar, record, list, or string expressions bind
   compile-time values;
 - CorePure helper functions, such as `let pred = item: item.score >= 0.7 ;`, bind delayed helpers
-  for pure evaluation.
+  for pure evaluation;
 - bound form applications, such as `let open_phase_0 = open_arm(0.0);`, elaborate at compile time to
   graph values with scoped internal node identities. Form-local `let` bindings may also bind nested
   form applications.
@@ -248,10 +248,20 @@ A `form` declaration is a compile-time graph abstraction. It may declare local n
 bindings, then returns one final graph expression:
 
 ```wire
+let h_gate = @quantum.h {};
+
+kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit = gate (label);
+
+kind phase_gate(label: PortLabel, angle: Value) =
+  <- label: Qubit;
+  -> label: Qubit = @quantum.rz { inherit angle; } (label);
+
 form open_arm(phase: Value) = {
-  node split = qubit_gate(screen, quantum_h);
+  node split = one_qubit_gate(screen, h_gate);
   node phase_shift = phase_gate(screen, phase);
-  node recombine = qubit_gate(screen, quantum_h);
+  node recombine = one_qubit_gate(screen, h_gate);
 
   split
     => phase_shift
@@ -271,6 +281,7 @@ Rules:
 - local nodes and local bindings are fresh per instantiation;
 - names captured from surrounding source scope are shared;
 - forms are non-recursive in v1;
+- form applications are not valid inside `where` clauses or any other CorePure expression;
 - inline form applications in graph position are rejected.
 
 After expansion, a form instantiation is an ordinary graph value composed from ordinary nodes.

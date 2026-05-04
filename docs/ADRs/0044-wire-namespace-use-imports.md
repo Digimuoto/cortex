@@ -23,7 +23,8 @@ related:
 
 ## Status
 
-Proposed - implemented first for the `std.io` pack and kept intentionally narrow.
+Proposed - this ADR defines explicit namespace imports for registry-backed Wire packs, initially
+scoped to `std.io`.
 
 ## Context
 

@@ -29,8 +29,8 @@ related:
 
 ## Status
 
-Proposed - this ADR records the intended graph-fragment metaprogramming boundary after ADR 0045's
-node-body kind slice. The motivating example is the repeated nine-circuit structure in
+Proposed - this ADR defines the graph-fragment metaprogramming boundary that composes with ADR
+0045's node-body kind slice. The motivating example is the repeated nine-circuit structure in
 `examples/wire/quantum-eraser-experiment.wire`.
 
 ## Context
@@ -70,6 +70,8 @@ lowering, file-return selection, admission, Pulse execution, or rewrite material
 Illustrative syntax:
 
 ```wire
+let quantum_h = @quantum.h {};
+
 kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
   -> label: Qubit = gate(label);

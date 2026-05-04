@@ -30,7 +30,7 @@ test/
 
 - contract assertions: `contract EvidenceBundle;`
 - node-body kind declarations:
-  `kind pass(label: PortLabel) = <- label: Contract ; -> label: Contract = @executor (label) ;`
+  `kind pass(label: PortLabel) = <- label: Qubit ; -> label: Qubit = @executor (label) ;`
 - graph form declarations: `form pair() = { node a = pass(x); node b = pass(x); a => b; };`
 - executor node declarations with typed clauses:
   `node name <- input: Contract ; -> output: Contract ; = @executor (input) ;`
