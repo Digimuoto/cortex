@@ -750,11 +750,11 @@
         "tree-sitter-json": "tree-sitter-json"
       },
       "locked": {
-        "lastModified": 1777874563,
-        "narHash": "sha256-WulZrxZqeYCgAZhO7ByDa/ZvaMyI9dk+VoYomUS5wko=",
+        "lastModified": 1777658993,
+        "narHash": "sha256-eqCdEcutu2dneCez0wMIkhlyt2/Sery1A/Shlmdwoz8=",
         "owner": "Digimuoto",
         "repo": "repo-docs",
-        "rev": "72429489f259f939e0e94e49724a30348e028c78",
+        "rev": "50cefb4464772c47ae7fe5adaba294452856d6cf",
         "type": "github"
       },
       "original": {
