@@ -254,7 +254,7 @@ module.exports = grammar({
       ')',
     ),
 
-    form_application: $ => seq(
+    form_application: $ => prec(PREC.core_call + 1, seq(
       field('name', $.identifier),
       '(',
       optional(field('args', seq(
@@ -263,7 +263,7 @@ module.exports = grammar({
         optional(','),
       ))),
       ')',
-    ),
+    )),
 
     input_clause: $ => seq(
       '<-',

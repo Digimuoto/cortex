@@ -1749,6 +1749,170 @@
     }
   },
   {
+    "type": "form_application",
+    "named": true,
+    "fields": {
+      "args": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "expression",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "form_decl",
+    "named": true,
+    "fields": {
+      "items": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "form_item",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "params": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "form_param",
+            "named": true
+          }
+        ]
+      },
+      "result": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "form_item",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "form_let_binding",
+          "named": true
+        },
+        {
+          "type": "node_decl",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "form_let_binding",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "core_pure_expr",
+            "named": true
+          },
+          {
+            "type": "expression",
+            "named": true
+          },
+          {
+            "type": "form_application",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "form_param",
+    "named": true,
+    "fields": {
+      "class": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "form_param_class",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "form_param_class",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "ident_ref",
     "named": true,
     "fields": {},
@@ -2035,6 +2199,10 @@
           },
           {
             "type": "expression",
+            "named": true
+          },
+          {
+            "type": "form_application",
             "named": true
           }
         ]
@@ -2541,6 +2709,10 @@
           "named": true
         },
         {
+          "type": "form_decl",
+          "named": true
+        },
+        {
           "type": "import_stmt",
           "named": true
         },
@@ -2961,6 +3133,10 @@
     "named": false
   },
   {
+    "type": "Graph",
+    "named": false
+  },
+  {
     "type": "PortLabel",
     "named": false
   },
@@ -3011,6 +3187,10 @@
   },
   {
     "type": "false",
+    "named": false
+  },
+  {
+    "type": "form",
     "named": false
   },
   {

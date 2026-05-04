@@ -35,7 +35,8 @@ test/
 - executor node declarations with typed clauses:
   `node name <- input: Contract ; -> output: Contract ; = @executor (input) ;`
 - kind applications that still introduce vertices with `node`: `node concrete = pass(input);`
-- form applications that bind graph values with `let`: `let concrete = pair();`
+- form applications that bind graph values with `let` / `export let`, or as nested form-local
+  bindings: `let concrete = pair();`
 - pure node output equations:
   `node name <- input: Contract ; -> output: Contract = pure (input.score) ;`
 - configured executor values: `let analyst = @llm.analyst { temperature = 0.2 ; } ;`
@@ -52,8 +53,8 @@ test/
 
 **Values**
 
-- strings, integers, booleans (`true`/`false`), `null`
-- attribute sets `{ k = v; ... }` (nested)
+- strings, numbers, booleans (`true`/`false`), `null`
+- attribute sets `{ k = v; ... }` (nested), including `inherit name;` shorthand
 - lists `[item1, item2]`
 - qualified refs `a.b.c` and bare identifiers
 - configured executor values: `@qualified.name { config = value; }`
@@ -63,7 +64,7 @@ test/
 - CorePure expressions inside pure output equations and executor input arguments: field access,
   indexing, lambdas, application, `if ... then ... else ...`, pipes `|>`,
   arithmetic/comparison/boolean operators, records, lists, string interpolation, and builtins such
-  as `map`, `filter`, `zipWith`, `joinWith`, and `toJson`
+  as `map`, `filter`, `zipWith`, `joinWith`, `toJson`, and `fromJson`
 
 **Comments**
 
