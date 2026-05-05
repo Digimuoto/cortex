@@ -75,7 +75,8 @@ A port key is:
 (direction, contract, label)
 ```
 
-`=>` matches the contract and label, with direction reversed: output to input.
+`=>` matches the contract and label, with direction reversed: output to input. Each endpoint port
+may participate in at most one edge created by a connect expression.
 
 Boundary adaptation belongs to node ingress/egress adapters or to explicit pure nodes, not to the
 edge. `=>` only checks that an already-produced output port resource satisfies a consumer input
@@ -83,8 +84,10 @@ obligation.
 
 ## Cardinality
 
-All authored input ports are cardinality-one. A cardinality-one input may receive at most one edge.
-If `=>` would add two edges into the same input, the composition is rejected.
+All authored ports are cardinality-one at the graph boundary. An output may feed at most one input,
+and an input may receive at most one output. If `=>` would add two edges out of the same output or
+two edges into the same input, the composition is rejected. Implicit fan-out and implicit fan-in are
+never valid Wire topology.
 
 Wire no longer has `<- [Contract]` implicit list aggregation. To gather many values, author an
 explicit transformation node:

@@ -408,11 +408,21 @@ wire_expr ::= atom
             | wire_expr "select" "(" arm ("," arm)* ","? ")"
 ```
 
-`<>` overlays graph values. It is set union on nodes and edges.
+`<>` overlays graph values. It is set union on nodes and edges when the operands have disjoint node
+identities. Repeating the same node identity in both operands is a static topology error; overlay
+does not clone nodes.
 
-`=>` connects every matching output boundary port on the left to every matching input boundary port
-on the right. Matching is by `(contract, label)`. It does not choose one edge; it adds all matching
-edges. Multiple edges into the same cardinality-one input are a compile error.
+`=>` matches left-side output boundary ports against right-side input boundary ports by
+`(contract, label)`. For each compatible output/input pair:
+
+- if both endpoint ports have exactly one compatible counterpart across the boundary, `=>` creates
+  one edge;
+- if an endpoint port has no compatible counterpart, it remains exposed on the composed boundary;
+- if an output has several compatible inputs, the composition is a static topology error;
+- if an input has several compatible outputs, the composition is a static topology error.
+
+Every endpoint port is linear in graph composition: one output feeds at most one input, and one
+input receives at most one output. `=>` does not perform implicit fan-out or aggregation.
 
 The implementation requires parentheses when `<>` and `=>` are mixed in one expression:
 

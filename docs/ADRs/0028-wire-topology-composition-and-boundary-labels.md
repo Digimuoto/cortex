@@ -70,19 +70,24 @@ Pulse execution begins.
 - no new edges are added;
 - exposed boundaries are the union of both operands' unconnected boundaries;
 - node identity is preserved across references.
+- reject the composition if the operands contain the same node identity.
 
 Overlay is the way to express independent entry points, independent exits, and branches that should
-coexist before a later connect.
+coexist before a later connect. It is not a cloning operator. To make several nodes with the same
+shape, use node-body kinds, graph forms, or static generation; do not reference the same node twice
+in one graph expression.
 
 ### Connect
 
 `lhs => rhs` forms directional composition:
 
 - first overlay `lhs` and `rhs`;
-- then connect compatible exposed output ports from `lhs` to compatible exposed input ports on
-  `rhs`;
+- then connect each compatible exposed output/input pair only when both endpoint ports have exactly
+  one compatible counterpart across the boundary;
 - do not connect outputs from `rhs` back to inputs on `lhs`;
 - leave unmatched exposed ports on the composed boundary.
+- reject the composition if any output port on `lhs` has more than one compatible input on `rhs`;
+- reject the composition if any input port on `rhs` has more than one compatible output on `lhs`.
 
 Compatibility requires the same contract id and compatible payload kind. Labels are exact routing
 constraints:
@@ -91,10 +96,11 @@ constraints:
 - labeled ports match only ports with the identical label;
 - there is no wildcard label.
 
-One output port may feed several compatible input ports. One singular input port may receive at most
-one incoming edge. If a connect expression would send several outputs to the same singular input, it
-is a topology failure. Packing several values into one list value remains explicit `pure (...)`
-work; `=>` does not perform implicit aggregation.
+Every endpoint port is linear at the topology boundary. One output port may feed at most one input
+port, and one input port may receive at most one output port. Feeding the same output to multiple
+inputs or the same input from multiple outputs is a static topology failure. Packing several values
+into one aggregate remains explicit `pure (...)` work or an explicit structural adapter; `=>` does
+not perform implicit fan-out or aggregation.
 
 ### Associativity And Precedence
 
@@ -172,7 +178,8 @@ ports rather than to source variable names.
 ### Obligations
 
 - Add parser tests for overlay, connect, associativity, and required mixed-operator parentheses.
-- Add topology tests for label matching, unmatched boundaries, fan-out, and fan-in ambiguity.
+- Add topology tests for label matching, unmatched boundaries, repeated-node overlay rejection,
+  output fan-out rejection, and input fan-in rejection.
 - Add lowering tests that composition completes before runtime execution.
 - Update grammar docs to remove any implicit file-level output-label behavior.
 - Keep list construction and record packing as explicit pure nodes.
