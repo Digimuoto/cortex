@@ -1,8 +1,8 @@
 ---
 title: "Chapter 01 — Overview"
 description:
-  "Overview of Cortex as a durable runtime and Wire language substrate. Sets the Graph/Circuit/Wire
-  model, the downstream integration boundary, and where detailed subsystem docs live."
+  "Overview of Cortex as a runtime and Wire language substrate. Sets the Graph/Circuit/Wire model,
+  the downstream integration boundary, and where detailed subsystem docs live."
 sidebar:
   label: "01. Overview"
   order: 1
@@ -11,10 +11,11 @@ status: active
 
 # Chapter 01 — Overview
 
-Cortex is a standalone durable runtime and Wire language substrate. This chapter sets the core
-architectural frame: Graph, Circuit, and Wire are separate layers; Cortex owns reusable runtime and
-language concerns; downstream products own domain semantics and the operator edge. Use this page to
-orient yourself. Use the later chapters for subsystem detail and the ADRs for settled decisions.
+Cortex is a standalone runtime and Wire language substrate. This chapter sets the core architectural
+frame: Graph, Circuit, and Wire are separate layers; Cortex owns reusable runtime and language
+concerns; downstream products own domain semantics and the operator edge. Pulse can run Circuits in
+an ephemeral local profile or a durable service profile. Use this page to orient yourself. Use the
+later chapters for subsystem detail and the ADRs for settled decisions.
 
 ## Three Layers
 
@@ -40,8 +41,8 @@ For Wire-specific detail:
 
 The core architectural split is:
 
-- Cortex owns reusable substrate concerns: authoring and typing, topology and compilation, durable
-  execution, and executor-registration capability abstractions.
+- Cortex owns reusable substrate concerns: authoring and typing, topology and compilation, runtime
+  execution profiles, and executor-registration capability abstractions.
 - A downstream product owns domain semantics, product policy, operator surfaces, transport, and
   persistence.
 
@@ -68,8 +69,8 @@ flowchart LR
 
 Ownership rules:
 
-- if a concern should be reusable across host applications as durable runtime or language
-  infrastructure, it belongs in Cortex
+- if a concern should be reusable across host applications as runtime or language infrastructure, it
+  belongs in Cortex
 - if a concern encodes domain policy, artifact meaning, approval rules, or product-specific tools,
   it stays downstream
 - if a concern owns transport, auth, delivery, storage, or API translation, it stays at the host
@@ -84,8 +85,8 @@ Cortex is not a thin provider wrapper. It owns the reusable substrate end to end
   [Wire Grammar](../Reference/Wire/grammar.md).
 - **Topology and compilation** — Graph and Circuit as the formal and executable layers below Wire;
   see [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md).
-- **Durable execution** — Pulse as the runtime that executes compiled circuits; see
-  [Chapter 06 — Pulse runtime](06-pulse-runtime.md).
+- **Runtime execution** — Pulse as the runtime that executes compiled circuits in ephemeral or
+  durable profiles; see [Chapter 06 — Pulse runtime](06-pulse-runtime.md).
 - **Runtime evolution** — admitted rewrites, materialization, and graph-native execution; see
   [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md).
 - **Capability substrate** — executor registration and native pure-executor capability surfaces.
@@ -132,7 +133,7 @@ Read in order:
 4. [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md) — the topology and executable layers
    below Wire.
 5. [Chapter 05 — Wire language](05-wire-language.md) — source-language and rewrite architecture.
-6. [Chapter 06 — Pulse runtime](06-pulse-runtime.md) — durable execution.
+6. [Chapter 06 — Pulse runtime](06-pulse-runtime.md) — runtime execution profiles.
 7. [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md) — admitted
    runtime graph evolution.
 8. [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md) — reusable artifact and

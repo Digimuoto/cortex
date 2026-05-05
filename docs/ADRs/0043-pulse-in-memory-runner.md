@@ -36,8 +36,9 @@ contract.
 
 ## Context
 
-Pulse is the durable runtime for Cortex. The production executor owns persistence, checkpoints,
-leases, retries, resume, cancellation, observability, and durable rewrite materialization.
+Durable Pulse is the production service profile for Cortex. The production executor owns
+persistence, checkpoints, leases, retries, resume, cancellation, observability, and durable rewrite
+materialization.
 
 That service boundary is necessary for long-lived workflows, but it is too heavy for every use case.
 Local Wire authoring, tutorials, unit tests, benchmark baselines, and small demos need a runner that

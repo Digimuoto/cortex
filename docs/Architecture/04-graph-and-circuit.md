@@ -12,38 +12,41 @@ status: active
 # Chapter 04 — Graph and Circuit
 
 Chapter 03 establishes the algebraic basis. This chapter picks up one level later and defines the
-two artifacts that matter operationally: Graph as pure topology, and Circuit as validated executable
-topology. Graph keeps the formalism maximally reusable. Circuit is the point where a topology
-becomes an artifact that Pulse can execute, persist, and re-validate after admitted rewrites.
+artifacts that matter operationally: Graph as pure topology, the linear port graph as Wire's
+typed-frontier surface, and Circuit as validated executable topology. Graph keeps the formalism
+maximally reusable. Circuit is the point where a topology becomes an artifact that Pulse can execute
+in memory or through a durable runtime profile.
 
 ## Core Model
 
 The distinction is simple:
 
-| Layer       | Role                                                                                                | Excludes                                             |
-| ----------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Graph**   | Pure topology: vertices, edges, overlay, connect, traversal, decomposition.                         | Ports, contracts, executors, payloads, runtime state |
-| **Circuit** | Executable topology: stable nodes, compatible endpoints, boundary markers, runtime-facing metadata. | Scheduling, persistence policy, operator APIs        |
+| Layer                 | Role                                                                                                | Excludes                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Graph**             | Pure topology: vertices, edges, overlay, connect, traversal, decomposition.                         | Ports, contracts, executors, payloads, runtime state |
+| **Linear port graph** | Typed frontier: node identities, port instances, exposed boundaries, and one-use endpoint matching. | Executor behavior, payload meaning, scheduling       |
+| **Circuit**           | Executable topology: stable nodes, compatible endpoints, boundary markers, runtime-facing metadata. | Scheduling, persistence policy, operator APIs        |
 
-Wire authors topology using the Graph layer's composition laws. Pulse executes Circuits. The
-boundary looks like this:
+Wire authors topology through the linear port graph surface and lowers admitted topology to Graph
+relations. Pulse executes Circuits. The boundary looks like this:
 
 ```mermaid
 flowchart LR
-    W[Wire source] --> G[Graph]
-    G --> C[Circuit]
+    W[Wire source] --> L[Linear port graph]
+    L --> G[Graph relation]
+    L --> C[Circuit]
+    G --> C
     C --> P[Pulse]
-    P --> R[Run state]
 ```
 
 Each boundary narrows freedom:
 
 - Wire chooses names, composition, and endpoint intent.
+- The linear port graph checks one-use endpoint resources and exposes the frontier.
 - Graph carries only denotational topology.
 - Circuit checks that the topology is executable.
-- Pulse schedules and persists the resulting executable object over time.
-- Run state is the durable record of that execution, owned by Pulse and read by downstream artifact
-  and provenance surfaces.
+- Pulse executes the resulting object; the durable profile persists execution over time.
+- Durable run state is owned by Pulse and read by downstream artifact and provenance surfaces.
 
 ## Graph
 
@@ -73,6 +76,27 @@ In practice, topology algorithms often run over a lowered relation or adjacency 
 over the authoring expression itself. That does not add new semantics; it is just the executable
 denotation of the same topology.
 
+## Linear Port Graph
+
+The linear port graph is the typed source/Circuit seam. It records the information that pure Graph
+intentionally forgets:
+
+- node identities;
+- input and output port instances;
+- the exposed input and output frontier;
+- port-edge matches from one output instance to one input instance;
+- the `PortLinear` invariant: no endpoint port is consumed by more than one match.
+
+This layer is where Wire's "no implicit copy" rule lives. `a <> a` is rejected here because it
+repeats a node identity. `down => some <> things` is admitted only if `down` exposes distinct
+compatible outputs for both consumers. The forgetful lowering from this layer to Graph erases port
+identity and boundary resources, retaining the node relation that traversal, DAG checks, and rewrite
+topology operate on.
+
+At runtime, the same shape appears as an **actualized port graph**: the concrete port-instance view
+of the materialized Circuit or Pulse state. That projection is the natural place for the proof track
+to connect source frontier linearity to runtime well-formedness.
+
 ## Circuit
 
 Circuit is the executable topology artifact. It takes a graph-shaped structure and adds the facts
@@ -80,6 +104,7 @@ that execution needs but pure topology does not:
 
 - stable node identity
 - compatible endpoints between connected nodes
+- actualized port linearity
 - explicit boundaries such as signal, artifact, and rewrite boundaries
 - enough metadata for Pulse to lower and resume the topology safely
 - a compatibility witness that downstream durable state can key against
@@ -96,7 +121,8 @@ rewrites, or decide operator policy. It defines the object those mechanisms oper
 Wire contributes three things to the Circuit boundary:
 
 - a set of registered nodes and declared boundaries
-- a composed topology over those nodes
+- a linear port graph over those nodes
+- a lowered graph relation for topology algorithms
 - endpoint compatibility information already resolved at the authoring layer
 
 Circuit compilation does not re-interpret domain semantics. Its job is narrower and more mechanical:
@@ -105,10 +131,10 @@ artifact that Pulse can lower without re-parsing Wire.
 
 Stated as seam contracts:
 
-| Seam            | What comes in                                                        | What must come out                                                |
-| --------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Wire → Circuit  | Registered nodes, composed topology, endpoint-compatible connections | Executable topology with stable identity and preserved boundaries |
-| Circuit → Pulse | Executable topology plus compatibility witness                       | Runtime plan that preserves topology up to runtime naming         |
+| Seam            | What comes in                                                             | What must come out                                                     |
+| --------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Wire → Circuit  | Registered nodes, linear port graph, lowered relation, endpoint witnesses | Executable topology with stable identity and preserved boundaries      |
+| Circuit → Pulse | Executable topology plus compatibility witness                            | Runtime plan that preserves topology and port use up to runtime naming |
 
 ## Boundaries and Invariants
 
@@ -116,9 +142,13 @@ Stated as seam contracts:
 views, adjacency, and decomposition must agree with the underlying edge set. Graph updates are
 purely structural.
 
+**Linear port graph guarantees upward.** Source composition consumes endpoint resources at most
+once, keeps unmatched endpoints exposed on the frontier, and lowers to a plain graph relation only
+after port identity has served its purpose.
+
 **Circuit guarantees upward.** A Circuit carries executable topology rather than merely possible
-topology: acyclic structure, stable node identity, preserved boundaries, and a compatibility witness
-suitable for durable consumers.
+topology: acyclic structure, stable node identity, port linearity, preserved boundaries, and a
+compatibility witness suitable for durable consumers.
 
 **Circuit guarantees downward.** Lowering preserves topology up to runtime renaming. Rewrite,
 signal, and artifact boundaries remain explicit; Circuit does not collapse them into opaque generic
@@ -149,8 +179,8 @@ place for product policy.
 
 - [./03-formalism-stack.md](./03-formalism-stack.md) — the algebra, Mokhov's laws, proofs.
 - [./05-wire-language.md](./05-wire-language.md) — Wire as source language; contract registry.
-- [./06-pulse-runtime.md](./06-pulse-runtime.md) — durable scheduling and execution over a compiled
-  Circuit.
+- [./06-pulse-runtime.md](./06-pulse-runtime.md) — runtime execution profiles over compiled
+  Circuits.
 - [./07-rewrites-and-materialization.md](./07-rewrites-and-materialization.md) — dynamic rewrites
   admitted during execution.
 - [./08-artifacts-and-provenance.md](./08-artifacts-and-provenance.md) — envelopes and payload kinds

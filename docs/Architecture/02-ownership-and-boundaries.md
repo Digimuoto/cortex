@@ -11,8 +11,8 @@ status: active
 
 # Chapter 02 — Ownership and Boundaries
 
-Cortex is a generic durable runtime and Wire language substrate. A host application embeds Cortex
-and supplies domain semantics, transport, and persistence. The boundary described here is meant to
+Cortex is a generic runtime and Wire language substrate. A host application embeds Cortex and
+supplies domain semantics, transport, and persistence. The boundary described here is meant to
 survive any particular host.
 
 This chapter states which subsystems own which responsibilities, which direction dependencies run,
@@ -51,11 +51,10 @@ flowchart LR
     S --> D[Persistence<br/>schemas + storage]
 ```
 
-The placement rule: if a module would be reusable outside the host as durable runtime, Wire
-language, or executor-registration infrastructure, it belongs in the Cortex substrate, even when the
-product binding is currently the only caller. If it knows about host domain semantics, model
-providers, product-specific artifacts, truth policy, or host tool authority, it stays downstream or
-in Logos.
+The placement rule: if a module would be reusable outside the host as runtime, Wire language, or
+executor-registration infrastructure, it belongs in the Cortex substrate, even when the product
+binding is currently the only caller. If it knows about host domain semantics, model providers,
+product-specific artifacts, truth policy, or host tool authority, it stays downstream or in Logos.
 
 ## Public import boundary
 
@@ -86,9 +85,9 @@ layers:
   (`Empty | Vertex | Overlay | Connect`), DAG validation, the validated executable Circuit, and the
   Wire source language that authors circuits. Normative Wire grammar lives at
   [`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md).
-- **Runtime layer.** The Pulse runtime — durable stage execution, checkpointing, rewrite hydration,
-  and frontier scheduling — ships as its own service. Run lifecycle and stage events sit alongside
-  it.
+- **Runtime layer.** Pulse executes Circuits in an ephemeral local profile or a durable service
+  profile. Durable Pulse adds checkpointing, rewrite hydration, frontier scheduling, run lifecycle,
+  and stage events as service-owned state.
 - **Capability layer.** Executor registration and native pure-executor capability surfaces.
 
 ### Product binding

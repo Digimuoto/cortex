@@ -46,9 +46,11 @@ two commitments that subsequent design needs:
    0028 does not commit to a precedence between `<>` and `=>`. The result: every mixed expression
    takes parens that are not needed by the algebra.
 
-Mokhov's `Algebra.Graph` law `connect distributes over overlay` makes mixed composition unambiguous
-_given_ a precedence rule. Pinning one is purely a parser/style choice; it does not change the
-algebra.
+The source grammar can parse mixed composition unambiguously once a precedence rule is pinned.
+Whether the parsed expression is admitted is then decided by the linear endpoint rule below. This
+keeps parser grouping separate from Mokhov relation laws, which apply only after port identity is
+forgotten during lowering. Here, **lowering** means translating the accepted Wire/Circuit frontier
+object into the plain Graph relation used for topology algorithms.
 
 ADR 0048 (bounded node generation via `make`) and ADR 0049 (record↔ports adapter via `*`) both need
 this foundation in place: `make` produces multi-port frontiers that must compose linearly under
@@ -126,9 +128,9 @@ This is **inverted from Mokhov's `Algebra.Graph` Haskell library**, where connec
 `=>`) binds tighter than overlay. Wire chooses the inversion because Wire's authoring rhythm puts
 parallel branches at the end of a connect chain (`source => transform => a <> b <> c`), and the
 inverted ladder makes that natural without parens: the trailing overlay binds first as a single
-operand of the final `=>`. Connect's distributivity over overlay (Mokhov's law) does the rest. The
-connect still obeys the linear endpoint rule above; if `transform` exposes one output that would
-feed all three branches, the expression is rejected.
+operand of the final `=>`. The connect still obeys the linear endpoint rule above; if `transform`
+exposes one output that would feed all three branches, the expression is rejected rather than
+rewritten by source-level distributivity.
 
 ### 4. Retire ADR 0028's parens-when-mixing rule
 
@@ -204,7 +206,8 @@ contract; it does not decide whether `,` remains long-term.
 - Update the `wire-code-style` skill.
 - Add tests for: linear endpoint violations (`a <> a`, `a => a`, repeated reference inside form
   bodies), match-determinism violations (multiple compatible counterparts), unparenthesized mixed
-  expressions parsing per the new ladder, distributivity-driven fan-out in connect chains.
+  expressions parsing per the new ladder, and trailing-overlay connect chains that are admitted only
+  when each branch has a distinct compatible output.
 - Prove or document that admission preservation under the new rules is unchanged for existing
   programs that did not rely on retired allowances.
 

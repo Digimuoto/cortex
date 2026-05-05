@@ -1,8 +1,8 @@
 ---
 title: "Chapter 06 — Pulse Runtime"
 description:
-  "The durable runtime that executes Circuits. Service boundary, runtime model, Pulse-owned state,
-  stage execution mechanics, and the host-action contract consumers use to extend Pulse."
+  "Runtime profiles for executing Circuits: ephemeral in-memory execution and durable execution with
+  checkpoints, provenance, observability, and recovery."
 sidebar:
   label: "06. Pulse runtime"
   order: 6
@@ -11,12 +11,16 @@ status: active
 
 # Chapter 06 — Pulse Runtime
 
-Pulse is the durable runtime that executes Circuits. It is the mechanical realization of the Circuit
-semantics laid out in chapters 03 and 04: a standalone service that owns scheduling, stage
-execution, checkpoint persistence, cancellation, lease recovery, and rewrite materialization for
-long-lived Cortex runs. This chapter covers the runtime model, Pulse-owned state, stage execution,
-the memory surface, and the contract Pulse presents to downstream consumers. The contract is
-generic; consumer-specific bindings live outside the substrate.
+Pulse is the runtime that executes Circuits. It is the mechanical realization of the Circuit
+semantics laid out in chapters 03 and 04. The same admitted Circuit can run in two profiles:
+
+- **Ephemeral Pulse** runs in process memory, like a script runner. It needs no database,
+  observability stack, durable checkpoint table, or provenance store.
+- **Durable Pulse** runs the same transition model with persisted events, checkpoints, provenance,
+  observability, lease recovery, and rewrite materialization for long-lived Cortex runs.
+
+This chapter covers both profiles, then spells out the durable service boundary and memory surface.
+The contract is generic; consumer-specific bindings live outside the substrate.
 
 If you are evaluating Cortex rather than implementing against Pulse directly, the core model and
 service boundary are the key sections. The later sections spell out the runtime mechanics in detail.
@@ -28,27 +32,51 @@ Wire source examples on this page use the canonical grammar. The normative gramm
 ## Core model
 
 Pulse is a runtime, not an algebra. It interprets a compiled Circuit as a sequence of stage
-transitions and records each transition durably. Every stage boundary has a persisted checkpoint;
-every resume is a pure function of persisted state. The service owns six concerns:
+transitions. Durability is an execution policy layered on top of those transitions, not part of Wire
+semantics.
 
-| Concern                 | Role                                                                          |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| Scheduling              | Own due-task discovery, CAS claim, cron advancement, lease recovery.          |
-| Stage execution         | Drive a Circuit's stage plan forward, one admitted transition at a time.      |
-| Checkpoint persistence  | Write a versioned envelope at every stage boundary. Validate on resume.       |
-| Cancellation            | Propagate a cancel request to the executor and finalize at safe boundaries.   |
-| Rewrite materialization | Atomically admit, apply, and record structural rewrites during a run.         |
-| Observability           | Emit lifecycle and per-stage events; expose run detail through a service API. |
+| Profile       | Storage                  | Role                                                                   |
+| ------------- | ------------------------ | ---------------------------------------------------------------------- |
+| **Ephemeral** | Process memory           | Run an admitted Circuit locally with the same topology and port rules. |
+| **Durable**   | Persistent run substrate | Add checkpoints, resume, provenance, observability, and recovery.      |
+
+Both profiles own stage execution: drive a Circuit's stage plan forward, one admitted transition at
+a time. Durable Pulse additionally owns scheduling, checkpoint persistence, lease recovery,
+cancellation persistence, rewrite materialization lineage, and service-level observability.
 
 Pulse does not define task semantics. Consumers register task types and provide the stage actions;
 Pulse executes them. The generic contract is captured in
 [`../Reference/Pulse/`](../Reference/Pulse/). Consumer-specific bindings live under
 [`../Consumers/`](../Consumers/).
 
-## Service boundary
+## Execution profiles
 
-Pulse runs as its own service with its own DB schema. Consumers talk to Pulse through HTTP. When
-Pulse needs domain work, it calls the consumer back through a host-action API the consumer provides.
+### Ephemeral profile
+
+The ephemeral profile is the default mental model for local Wire execution: compile an admitted
+Wire/Circuit artifact and run it in one process. It is suitable for examples, tests, scripts,
+single-machine tools, and local development.
+
+Ephemeral execution still enforces the substrate semantics: topology validation, port linearity,
+executor authority, and rewrite admission where rewrites are enabled. It simply does not retain a
+durable event log or checkpoint lineage after the process exits.
+
+### Durable profile
+
+The durable profile is a refinement of the same transition system. It records each admitted
+transition as durable state, validates persisted versions on resume, and keeps provenance and
+observability available to operator and downstream surfaces.
+
+This split separates logical retention from physical residency. A node's identity, output envelope,
+and provenance may be retained durably, while its in-memory activation frame, input buffers, and
+temporary output buffers can be released after egress and materialization. Future computation reads
+through the runtime substrate, not through a live heap reference.
+
+## Durable service boundary
+
+Durable Pulse runs as its own service with its own DB schema. Consumers talk to Pulse through HTTP.
+When Pulse needs domain work, it calls the consumer back through a host-action API the consumer
+provides.
 
 ```mermaid
 flowchart LR
@@ -177,9 +205,9 @@ Per-stage `sdTimeoutSeconds` takes precedence over the task-level timeout when s
 
 ### Mandatory checkpoints
 
-The executor rejects a stage transition that does not include a checkpoint write. Every stage
-boundary has a persisted `CheckpointEnvelope`, even when the task completes successfully without
-needing resume. This enforces serialization discipline from day one.
+In the durable profile, the executor rejects a stage transition that does not include a checkpoint
+write. Every stage boundary has a persisted `CheckpointEnvelope`, even when the task completes
+successfully without needing resume. This enforces serialization discipline from day one.
 
 ### Resume
 
@@ -203,9 +231,10 @@ gas, admission policy, materialization, and structural provenance — belongs to
 
 ## Settled-State Queries
 
-Pulse owns the durable event/checkpoint substrate that makes settled-state queries deterministic.
+Durable Pulse owns the event/checkpoint substrate that makes settled-state queries deterministic.
 Logos and downstream libraries may shape that state into model or domain context, but Pulse itself
-remains the store of run events, frontier state, checkpoints, materialized outputs, and snapshots.
+remains the store of run events, frontier state, checkpoints, materialized outputs, and snapshots in
+durable mode.
 
 Memory is a query, not a store. A stage's view of upstream context is derived from the Pulse event
 substrate, scored by a composite of graph influence, wall-clock distance, and a pluggable semantic

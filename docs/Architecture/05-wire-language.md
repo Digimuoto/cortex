@@ -57,7 +57,7 @@ vocabulary into those artifacts.
 flowchart LR
     R[Registered authority<br/>executors, contracts, tools, constructors] --> W[Wire<br/>authoring and composition]
     W --> C[Circuit<br/>validated executable topology]
-    C --> P[Pulse<br/>durable execution]
+    C --> P[Pulse<br/>runtime execution]
     D[Downstream bindings<br/>domain policy and artifacts] --> R
 ```
 
@@ -99,6 +99,8 @@ its own domain vocabulary around Wire rather than by changing Wire semantics.
 
 Wire's graph vocabulary has three different objects that should not be collapsed into each other:
 
+- A **kind** is a reusable node-body shape. It is not live topology and does not have runtime
+  identity by itself.
 - A **node** is an addressable runtime and provenance object admitted into graph position.
 - A **port** is a labeled input or output slot on the node boundary, typed by a contract.
 - An **edge** connects one output port obligation to one compatible input port obligation.
@@ -139,9 +141,10 @@ analyze
   => summarize
 ```
 
-The node has identity and lifecycle. The ports carry the typed boundary obligations. The edge is
-only the structural connection that says a producer output port satisfies a consumer input port. It
-is not a place to hide computation, authority, projection, aggregation, or retry policy.
+The kind is the reusable shape. The node has identity and lifecycle. The ports carry the typed
+boundary obligations. The edge is only the structural connection that says a producer output port
+satisfies a consumer input port. It is not a place to hide computation, authority, projection,
+aggregation, or retry policy.
 
 This distinction matters for rewrites and recovery. A retained node can remain present for
 provenance while its exposed boundary obligation has been transformed or consumed. Conversely, a
@@ -172,6 +175,11 @@ an addressable runtime and provenance object, but the locally consumed resource 
 obligation it exposes. Rewrites, append continuations, and conditional actualization all have to
 state which boundary they consume and which boundary they return. Retaining a node for provenance is
 therefore not the same as keeping its original boundary obligation unspent.
+
+This distinction is also what makes bounded generation possible without copying. `make(N, K)`
+creates N fresh nodes from kind `K`; it does not clone one existing node or duplicate one output
+port. Similarly, the `*` topology operator is an explicit record↔ports adapter node, not a hidden
+fan-out rule on edges.
 
 ## Node boundary normal form
 
@@ -354,7 +362,7 @@ Cortex still owns the source language, composition rules, and substrate runtime.
 
 - [Chapter 01 — Overview](01-overview.md) — system overview and high-level boundary
 - [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md) — the structural layers Wire authors
-- [Chapter 06 — Pulse runtime](06-pulse-runtime.md) — durable execution over Circuits
+- [Chapter 06 — Pulse runtime](06-pulse-runtime.md) — runtime execution over Circuits
 - [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md) — runtime
   admission and realized topology
 - [Chapter 08 — Artifacts and provenance](08-artifacts-and-provenance.md) — payload, artifact, and

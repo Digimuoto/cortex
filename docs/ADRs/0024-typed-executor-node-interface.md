@@ -24,6 +24,7 @@ related:
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0022-wire-node-clause-grammar.md
   - docs/ADRs/0023-corepure-expression-surface.md
+  - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
 ---
 
 # ADR 0024 - Typed Executor Node Interface
@@ -125,13 +126,15 @@ node analyst
 The node declaration is the vertex. The executor RHS is the implementation body behind that typed
 signature.
 
-Fan-out is therefore topology, not executor-context behavior: one typed output may feed several
-downstream nodes. Fan-in is not implicit aggregation. A list-valued input receives one list-typed
-value, not a variadic set of incoming edges. If a shape needs projection, packing, filtering, prompt
-assembly, list construction, or record reshaping, that shape is expressed as a `pure (...)` node
-rather than as contextual interpretation by an executor or hidden edge semantics. Later Wire syntax
-may add sugar for common packing cases, but the admitted graph must still contain the explicit
-transformation vertex.
+Distribution is therefore topology, not executor-context behavior: one node may expose several
+distinct typed outputs for several downstream nodes, but one output port may not be implicitly
+copied to several inputs. Fan-in is not implicit aggregation. A list-valued input receives one
+list-typed value, not a variadic set of incoming edges. If a shape needs projection, packing,
+filtering, prompt assembly, list construction, record reshaping, or multi-consumer distribution,
+that shape is expressed as a `pure (...)` node or explicit structural adapter rather than as
+contextual interpretation by an executor or hidden edge semantics. Later Wire syntax may add sugar
+for common packing cases, but the admitted graph must still contain the explicit transformation
+vertex.
 
 ### LLM Executors
 
@@ -176,8 +179,9 @@ context capability with its own runtime contract and provenance obligations.
 
 ### Structural Work Belongs In Pure Nodes
 
-Projection, fan-in, fan-out, filtering, prompt-fragment construction, and record reshaping should be
-expressed as `pure (...)` work rather than hidden in LLM context concatenation.
+Projection, packing, filtering, prompt-fragment construction, record reshaping, and multi-output
+distribution should be expressed as `pure (...)` work rather than hidden in LLM context
+concatenation.
 
 For example, an LLM can produce one typed structured output, and a downstream pure node can expose
 fields as separate ports:
@@ -207,8 +211,9 @@ buried in a model prompt.
 
 ### Heterogeneous Models
 
-Heterogeneous model use is ordinary topology. A pure fan-out node can feed several typed LLM nodes,
-each with its own executor id, model policy, input contracts, and output contracts:
+Heterogeneous model use is ordinary topology. A pure distribution node can expose several distinct
+typed outputs for several typed LLM nodes, each with its own executor id, model policy, input
+contracts, and output contracts:
 
 ```wire
 node prepareReviews
@@ -238,7 +243,7 @@ For each representative downstream wire, audit every incoming edge to an LLM nod
 - move structural fan-in, projection, filtering, and prompt-fragment assembly into upstream
   `pure (...)` nodes;
 - define typed output contracts for the LLM result;
-- move fan-out and field projection into downstream `pure (...)` nodes;
+- move field projection and multi-consumer distribution into downstream `pure (...)` nodes;
 - simplify the LLM executor to typed inputs, prompt template, output schema, model policy, and
   validation.
 
@@ -303,7 +308,7 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
   collectors.
 - Update grammar and reference docs to remove source/sink as semantic node categories. Empty input
   and output boundaries should be described as port-boundary arity only.
-- Add examples that show LLM structured output followed by pure fan-out.
+- Add examples that show LLM structured output followed by pure distribution.
 - Move topological memory wording into executor/downstream-context docs and keep it outside the
   proven CorePure and graph-wiring semantics.
 - Audit current downstream LLM wires and classify each incoming edge as model input or structural

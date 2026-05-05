@@ -133,8 +133,9 @@ captured constants. Graph values and configured executor values are not.
 
 Wire has three relevant value classes.
 
-**Graph values** are nodes, composed graph expressions, and `()`. Only graph values may appear in
-file-return position or on either side of graph operators.
+**Graph values** are nodes, bound form applications, bound `make(...)` expansions, composed graph
+expressions, and `()`. Only graph values may appear in file-return position or on either side of
+graph operators.
 
 **Configured executor values** have the form:
 
@@ -286,6 +287,16 @@ Rules:
 
 After expansion, a form instantiation is an ordinary graph value composed from ordinary nodes.
 
+### Bounded Node Generation
+
+`make(N, K)` is a compile-time graph form that expands to N fresh nodes from kind `K`. It is valid
+only when bound by `let` / `export let` or by a form-local `let`; inline `make(...)` in graph
+position is rejected because there is no source name to derive stable identities from.
+
+`N` must be a static non-negative count. `K` is a kind reference, not a kind application and not a
+CorePure value. Generated nodes get deterministic identities from the binding name and expose the
+generated port labels specified by the kind.
+
 ### 5.3 Pure Output Equations
 
 Pure nodes compute deterministic JSON-shaped values:
@@ -402,15 +413,18 @@ Record fields support Nix-style `inherit name;` sugar, which desugars to `name =
 ## 7. Graph Composition
 
 ```wire
-wire_expr ::= atom
-            | wire_expr "=>" wire_expr
-            | wire_expr "<>" wire_expr
-            | wire_expr "select" "(" arm ("," arm)* ","? ")"
+wire_expr    ::= connect_expr
+               | connect_expr "select" "(" arm ("," arm)* ","? ")"
+connect_expr ::= overlay_expr (("=>" | "*") overlay_expr)*
+overlay_expr ::= atom (("<>" | ",") atom)*
 ```
 
 `<>` overlays graph values. It is set union on nodes and edges when the operands have disjoint node
 identities. Repeating the same node identity in both operands is a static topology error; overlay
 does not clone nodes.
+
+`,` is admitted in graph position as an alias for `<>` and follows the same precedence while the
+alias remains part of the language.
 
 `=>` matches left-side output boundary ports against right-side input boundary ports by
 `(contract, label)`. For each compatible output/input pair:
@@ -424,16 +438,26 @@ does not clone nodes.
 Every endpoint port is linear in graph composition: one output feeds at most one input, and one
 input receives at most one output. `=>` does not perform implicit fan-out or aggregation.
 
-The implementation requires parentheses when `<>` and `=>` are mixed in one expression:
+`*` inserts an explicit record↔ports adapter node between its operands. It is not an exception to
+the `=>` rule: both sides of the adapter connect through ordinary linear endpoint matching.
+
+Topology operators have fixed precedence:
+
+| Tightness | Operators  | Associativity |
+| --------- | ---------- | ------------- |
+| Tighter   | `<>` / `,` | left          |
+| Looser    | `=>` / `*` | left          |
+
+Tighter binds first, so:
 
 ```wire
-(a <> b)
-  => c
 a
-  => (b <> c)
+  => b
+  => c <> d
 ```
 
-Unparenthesized `a => b <> c` is rejected.
+parses as `a => b => (c <> d)`. The expression is still admitted only if the final connect obeys the
+linear endpoint rule.
 
 `()` is the empty graph value and identity for overlay/connect.
 

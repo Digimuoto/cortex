@@ -25,15 +25,15 @@ coherent under that surface.
 
 Three layers, each defined over the previous:
 
-| Layer   | Object                                                | Algebra                                                             |
-| ------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
-| Graph   | Pure topology: vertices and edges over a carrier set. | `Empty \| Vertex \| Overlay \| Connect`, per Mokhov.                |
-| Circuit | Validated executable topology: nodes plus wires.      | Graph plus DAG invariant plus port-contract compatibility.          |
-| Wire    | Source language that authors Circuits.                | `<>` (overlay) and `=>` (port-key-matched connect), plus value ops. |
+| Layer   | Object                                                | Algebra                                                               |
+| ------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
+| Graph   | Pure topology: vertices and edges over a carrier set. | `Empty \| Vertex \| Overlay \| Connect`, per Mokhov.                  |
+| Circuit | Validated executable topology: nodes plus ports.      | Graph plus DAG invariant, port linearity, and contract compatibility. |
+| Wire    | Source language that authors Circuits.                | Linear-port `<>` and `=>`, plus value and structural authoring forms. |
 
-Pulse is the durable runtime that executes Circuits. It is not a new algebra; it interprets the
-Circuit object and applies admitted rewrites at runtime. The algebraic stack itself ends at Circuit
-— Pulse is the mechanical realization of its semantics.
+Pulse is the runtime that executes Circuits. It is not a new algebra; it interprets the Circuit
+object and applies admitted rewrites at runtime. The algebraic stack itself ends at Circuit — Pulse
+is the mechanical realization of its semantics in either an ephemeral or durable execution profile.
 
 The load-bearing property across these layers is **composition closure**. A wire value composed with
 another wire value under `<>` or `=>` is itself a wire value. The class is closed under its own
@@ -45,6 +45,18 @@ obligations**: the input/output contract boundary that an operation consumes, pr
 transforms. Boundary resources sit above Mokhov graph equality. They say whether a rewrite,
 conditional, or planner certificate has accounted for the exposed contract boundary it promises,
 while the graph algebra still says what topology denotes.
+
+This gives Cortex two equational theories, not one:
+
+- **Wire source equality** is linear-port equality. Node identity and endpoint ports are resources:
+  a graph reference is not implicitly cloned, one output port feeds at most one input port, and one
+  input port receives at most one producer.
+- **Graph relation equality** is Mokhov equality. After an admitted lowering forgets port identity
+  and boundary resources, the resulting relation satisfies the ordinary graph laws.
+
+The lowering from Wire/Circuit to Graph is therefore forgetful. It preserves the denoted topology,
+but it does not make every Mokhov equation a valid source-level rewrite. The load-bearing failure is
+distributivity; the `down` example in "Wire's linear-port refinement" below shows why.
 
 ## Detailed structure
 
@@ -62,28 +74,41 @@ that denotation. The laws hold by construction because the interpretation is the
 their algebraic statement and the proof obligations they carry into the staged-execution setting,
 see [`paper 2`](../Publications/Paper-2-algebraic-foundations/manuscript.md).
 
-### Wire's `<>` and `=>` as refinements
+### Wire's linear-port refinement
 
-Wire's two graph operators correspond directly to Mokhov's primitives, but refine them:
+Wire's two graph operators refine Mokhov's primitives through a typed port frontier:
 
-- **`<>` (overlay)** is exactly Mokhov's Overlay. Set-union of vertices and edges across two wires.
-  It inherits the Mokhov laws unchanged: commutative monoid with `Empty` as identity, idempotent
-  when the operands share vertices.
+- **`<>` (overlay)** places independent graph values side by side only when their node identities
+  are disjoint. Repeating the same node reference is a source error, not an idempotent graph law.
 
 - **`=>` (connect)** is a _refinement_ of Mokhov's Connect, not an instance of it. Mokhov's Connect
   takes the cross product of left outputs against right inputs and unions the resulting edges.
   Wire's `=>` is **port-key-matched**: an edge is added between a left-hand boundary output and a
   right-hand boundary input only when their port keys agree on `(direction, contract, label)`. An
-  absent label is itself a key, not a wildcard. The result is a deterministic cross-product with a
-  filter: fewer edges than Mokhov's Connect for the same endpoints, never more.
+  absent label is itself a key, not a wildcard. Each endpoint may have zero or one compatible
+  counterpart; multiple counterparts are a static error.
 
 This refinement is why `=>` lands usable edges instead of a combinatorial mesh of unchecked
-connections. It also preserves the Mokhov laws where they matter: overlay's associativity and
-commutativity hold on Wire values; connect remains associative under port-key matching;
-`Empty <> w = w` and `Empty => w = w`. The laws that involve the cross-product shape of Connect
-(full distributivity over Overlay) hold only on the port-matched projection, which is the only form
-Wire ever exposes. See [`terminology.md`](../Reference/terminology.md) for the normative definitions
-of port key and the composition algebra.
+connections. It also means Wire source expressions do not inherit every Mokhov equation. For
+example, distributing a source expression across an overlay can duplicate the left operand.
+**Rejected source form:**
+
+```text
+# rejected: repeats `down`
+(down => some) <> (down => things)
+```
+
+That repeats `down` and is not a valid Wire source expression. The related expression:
+
+```wire
+down
+  => some <> things
+```
+
+is valid only when `down` exposes distinct compatible outputs for `some` and `things`. Once the
+accepted Wire/Circuit object is lowered to the relation layer, the ordinary Mokhov laws apply to the
+forgotten topology. See [`terminology.md`](../Reference/terminology.md) for the normative
+definitions of port key and the composition algebra.
 
 ### DAG semantics as a Circuit-layer invariant
 
@@ -103,12 +128,12 @@ attach at the Circuit boundary.
 
 ### Rewrite algebra
 
-A rewrite is a structural edit: a function from a Circuit to a Circuit whose effect is expressible
-as a composition of Mokhov operators applied at an anchor. In Wire terms, a rewrite fragment is
-itself a wire value, and admitting a rewrite is overlaying that fragment into the live topology and
-re-connecting endpoints under `=>`. Because the fragment and the target belong to the same algebraic
-class, admission is law-preserving by construction: the post-rewrite object satisfies exactly the
-same overlay and connect laws as the pre-rewrite object.
+A rewrite is a structural edit: a function from a Circuit to a Circuit whose lowered topology is
+expressible as a composition of graph operators applied at an anchor. In Wire terms, a rewrite
+fragment is itself a wire value, and admitting a rewrite means checking the same linear-port
+obligations as ordinary source composition before lowering to the relation layer. Admission must
+preserve both sides of the stack: the source-level boundary resources and the relation-level graph
+denotation.
 
 The rewrite algebra is stated as vertex-anchored substitution: a fragment is spliced at a designated
 vertex through a typed interface, preserving causal structure outside the interface. This is the
@@ -132,19 +157,19 @@ branches are a sealed family of graph possibilities, not live topology and not a
 in the graph algebra. Every branch can be checked against its variant boundary, but each
 branch-local obligation is guarded and affine until the selected arm is actualized.
 
-After selection, the chosen branch lowers to ordinary Wire graph composition and the usual overlay
-and connect laws apply to the materialized result. Unselected branches do not become graph fragments
-for the run. This is how Wire can represent structured runtime choice without treating conditionals
-as ordinary fan-out or hiding the choice inside executor code.
+After selection, the chosen branch lowers to ordinary Wire linear-port composition and then to the
+relation layer. Unselected branches do not become graph fragments for the run. This is how Wire can
+represent structured runtime choice without treating conditionals as ordinary fan-out or hiding the
+choice inside executor code.
 
 ## Boundaries and invariants
 
 What this stack enforces:
 
-- **Composition closure.** Wire graph values are closed under `<>` and `=>`. Authored topology and
-  rewrites share the same object class as finished circuits.
-- **Law preservation through refinement.** `<>` inherits Mokhov overlay laws. `=>` preserves those
-  laws on the port-key-matched projection.
+- **Composition closure.** Wire graph values are closed under admitted `<>` and `=>`. Authored
+  topology and rewrites share the same object class as finished circuits.
+- **Two law surfaces.** Wire source composition preserves linear port resources. Graph relation
+  lowering preserves Mokhov topology laws after port identity is forgotten.
 - **Layered invariants.** Acyclicity and port-contract compatibility attach at the Circuit boundary,
   not at Graph. Fragments remain algebraically first-class below that line.
 - **Boundary-resource accounting.** Structural operations consume, preserve, or transform declared
@@ -152,8 +177,8 @@ What this stack enforces:
   but not the same resource.
 - **Latent control lowers after resolution.** A latent branch family is checked before runtime, but
   only the selected branch enters the live graph and inherits the graph laws.
-- **Rewrites as algebraic operations.** Structural edits are expressible in the same algebra that
-  authored the topology; admission preserves the laws.
+- **Rewrites as algebraic operations.** Structural edits are authored in the same linear-port
+  surface as ordinary topology and lower to the same graph relation algebra after admission.
 
 What the stack does not enforce: executor semantics, payload-kind validation, runtime scheduling,
 provenance — all delegated to Circuit, Pulse, or the contract registry.

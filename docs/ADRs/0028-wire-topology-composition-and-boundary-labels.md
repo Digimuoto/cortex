@@ -20,6 +20,7 @@ related:
   - docs/ADRs/0022-wire-node-clause-grammar.md
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0025-configured-executor-values.md
+  - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
 ---
 
 # ADR 0028 - Wire Topology Composition and Boundary Labels
@@ -116,8 +117,9 @@ parses as:
 (a => b) => c
 ```
 
-The first implementation should require parentheses when `<>` and `=>` are mixed. This avoids
-encoding a precedence rule before examples prove which grouping authors expect.
+ADR 0047 amends this ADR's original caution around mixed operators. Current Wire gives `<>` / `,`
+tighter precedence than `=>` / `*`, so mixed expressions parse without mandatory parentheses.
+Endpoint linearity still decides whether the parsed expression is admitted.
 
 ### File-Level Values And Labels
 
@@ -155,8 +157,9 @@ ports rather than to source variable names.
   helper bindings create topology and gives binding names hidden port-label meaning.
 - **Let connect perform fan-in aggregation.** Rejected because aggregation is computation and should
   be expressed by an explicit pure node.
-- **Define precedence between `<>` and `=>` immediately.** Rejected because parentheses are cheaper
-  than committing a precedence rule before composition-heavy examples exist.
+- **Define precedence between `<>` and `=>` immediately.** Rejected in this first slice because
+  parentheses were cheaper than committing a precedence rule before composition-heavy examples
+  existed. ADR 0047 later amends this decision.
 
 ## Consequences
 
@@ -172,12 +175,13 @@ ports rather than to source variable names.
 
 - The parser and kind checker must distinguish ordinary pure-data, delayed CorePure helper,
   configured executor, and graph expression positions.
-- Mixed composition expressions require parentheses in the first slice.
+- Mixed composition expressions originally required parentheses in the first slice. ADR 0047 later
+  replaces that rule with a fixed precedence ladder.
 - Authors must write explicit constant nodes instead of relying on implicit literal circuits.
 
 ### Obligations
 
-- Add parser tests for overlay, connect, associativity, and required mixed-operator parentheses.
+- Add parser tests for overlay, connect, associativity, and ADR 0047 mixed-operator precedence.
 - Add topology tests for label matching, unmatched boundaries, repeated-node overlay rejection,
   output fan-out rejection, and input fan-in rejection.
 - Add lowering tests that composition completes before runtime execution.

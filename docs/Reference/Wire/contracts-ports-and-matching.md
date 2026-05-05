@@ -87,7 +87,7 @@ obligation.
 All authored ports are cardinality-one at the graph boundary. An output may feed at most one input,
 and an input may receive at most one output. If `=>` would add two edges out of the same output or
 two edges into the same input, the composition is rejected. Implicit fan-out and implicit fan-in are
-never valid Wire topology.
+never valid Wire topology; use fresh generated nodes or an explicit record↔ports adapter instead.
 
 Wire no longer has `<- [Contract]` implicit list aggregation. To gather many values, author an
 explicit transformation node:
