@@ -1,0 +1,195 @@
+# Build a small C calculator through Wire.
+#
+#   nix run .#wire -- run examples/wire/c-build/c-build.wire
+#
+# Source layout (under examples/wire/c-build/src/):
+#
+#   util.h / util.c       leaf utility (no internal deps)
+#   calc.h / calc.c       core calc (depends on util.h)
+#   format.h / format.c   output formatting (depends on util.h)
+#   main.c                driver (depends on calc.h and format.h)
+#
+# Build dependency tree (what feeds what at link/archive time):
+#
+#                       calculator
+#               ┌──────────┼─────────┐
+#            main.o     calc.o   format.o   libutil.a
+#                                             │
+#                                          util.o
+#
+# Why Wire is interesting compared to a Makefile:
+#
+#   * The graph below IS the build plan. Topology is explicit, not inferred
+#     from filename rules. Adding a node is one declaration, not a recipe
+#     spliced into pattern macros.
+#   * Independent compilations run in parallel by construction. The four
+#     compile_* nodes sit under a single `<>` overlay; the runtime executes
+#     them concurrently because they share no edge.
+#   * The `compile_util => archive_libutil` arm shows a real serial subgraph
+#     embedded in a wider parallel block. `ar` waits for util.o; the other
+#     three compiles do not wait for it. Make can express this, but only by
+#     entangling pattern rules with prerequisite lists.
+#   * Every edge is typed. compile_main produces `main_obj: CommandResult`,
+#     bundle_link consumes `main_obj: CommandResult`. A renamed port or a
+#     wrong contract is a compile-time error, not a silent missing rule.
+#   * `plan_build` is pure data. All compiler flags, source paths, and
+#     output paths live in one CorePure block; the executor nodes are tiny
+#     and identical (`@command {} (spec)`). Make's command-line construction
+#     is intermixed with shell quoting; here it's a record literal.
+#   * The graph is data, not text. Tools can read this file and reason
+#     about it: list every command, swap a compiler, slice off a subgraph
+#     for caching, or replay a single arm.
+
+use std.io.{@command, @stdout, CommandSpec, CommandResult};
+
+contract BuildReport;
+
+# ─── Setup ────────────────────────────────────────────────────────────
+
+node prepare_build_dir
+  -> dir_result: CommandResult = @command {
+    name = "prepare-build";
+    argv = ["mkdir", "-p", "build"];
+    cwd = "examples/wire/c-build";
+    required = true;
+    skip = false;
+    echo = false;
+  } (null);
+
+# ─── Plan ─────────────────────────────────────────────────────────────
+#
+# One pure node. All flags, paths, and command shapes live here. The
+# executor nodes below are pure plumbing; nothing decides anything.
+
+node plan_build
+  <- dir_result: CommandResult;
+  -> main_spec: CommandSpec = pure (main_spec);
+  -> calc_spec: CommandSpec = pure (calc_spec);
+  -> format_spec: CommandSpec = pure (format_spec);
+  -> util_spec: CommandSpec = pure (util_spec);
+  -> archive_spec: CommandSpec = pure (archive_spec);
+  -> link_spec: CommandSpec = pure (link_spec);
+  where let
+    mkCompileSpec = name: source: object: {
+      inherit name;
+      argv = ["cc", "-Wall", "-Wextra", "-O2", "-Isrc", "-c", "-o", object, source];
+      cwd = "examples/wire/c-build";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    main_spec = mkCompileSpec "compile-main" "src/main.c" "build/main.o";
+    calc_spec = mkCompileSpec "compile-calc" "src/calc.c" "build/calc.o";
+    format_spec = mkCompileSpec "compile-format" "src/format.c" "build/format.o";
+    util_spec = mkCompileSpec "compile-util" "src/util.c" "build/util.o";
+    archive_spec = {
+      name = "archive-libutil";
+      argv = ["ar", "rcs", "build/libutil.a", "build/util.o"];
+      cwd = "examples/wire/c-build";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    link_spec = {
+      name = "link-calculator";
+      argv = ["cc", "-o", "build/calculator",
+              "build/main.o", "build/calc.o", "build/format.o",
+              "build/libutil.a"];
+      cwd = "examples/wire/c-build";
+      required = true;
+      skip = false;
+      echo = true;
+    };
+  in
+  { inherit main_spec calc_spec format_spec util_spec archive_spec link_spec; };
+
+# ─── Compile (run in parallel) ────────────────────────────────────────
+
+node compile_main
+  <- main_spec: CommandSpec;
+  -> main_obj: CommandResult = @command {} (main_spec);
+
+node compile_calc
+  <- calc_spec: CommandSpec;
+  -> calc_obj: CommandResult = @command {} (calc_spec);
+
+node compile_format
+  <- format_spec: CommandSpec;
+  -> format_obj: CommandResult = @command {} (format_spec);
+
+node compile_util
+  <- util_spec: CommandSpec;
+  -> util_obj: CommandResult = @command {} (util_spec);
+
+# ─── Archive util.o into libutil.a ────────────────────────────────────
+#
+# bundle_archive is a pure passthrough: it carries archive_spec into
+# archive_libutil while declaring a typed dependency on util_obj. This is
+# how Wire spells "ar must wait for util.o" without giving the @command
+# node multiple input ports.
+
+node bundle_archive
+  <- archive_spec: CommandSpec;
+  <- util_obj: CommandResult;
+  -> archive_ready: CommandSpec = pure (archive_spec);
+
+node archive_libutil
+  <- archive_ready: CommandSpec;
+  -> libutil_archive: CommandResult = @command {} (archive_ready);
+
+# ─── Link the calculator binary ───────────────────────────────────────
+#
+# bundle_link gathers all four object/archive dependencies and the link
+# spec into a single typed record. link_calculator then runs `cc` against
+# that bundle. The pure bundle node makes the join point explicit in the
+# graph, so a reader sees exactly what the linker waits on.
+
+node bundle_link
+  <- link_spec: CommandSpec;
+  <- main_obj: CommandResult;
+  <- calc_obj: CommandResult;
+  <- format_obj: CommandResult;
+  <- libutil_archive: CommandResult;
+  -> link_ready: CommandSpec = pure (link_spec);
+
+node link_calculator
+  <- link_ready: CommandSpec;
+  -> link_result: CommandResult = @command {} (link_ready);
+
+# ─── Report ───────────────────────────────────────────────────────────
+
+node summarize_build
+  <- link_result: CommandResult;
+  -> summary: BuildReport = pure (summary);
+  where let
+    status = if link_result.ok then "passed" else "failed";
+    binary = "examples/wire/c-build/build/calculator";
+    summary = "Build ${status}: ${binary} (cc exit=${link_result.exitCode})";
+  in
+  { inherit summary; };
+
+node print_report
+  <- summary: BuildReport;
+  = @stdout { newline = true; } (summary);
+
+# ─── Topology ─────────────────────────────────────────────────────────
+#
+# Named the util→archive arm so the parallel frontier reads as four
+# peer arms instead of one of them collapsing into a mid-line `=>`.
+
+let util_archive_arm =
+  compile_util
+    => bundle_archive
+    => archive_libutil;
+
+prepare_build_dir
+  => plan_build
+  => ( compile_main
+     <> compile_calc
+     <> compile_format
+     <> util_archive_arm
+     )
+  => bundle_link
+  => link_calculator
+  => summarize_build
+  => print_report
