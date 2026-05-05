@@ -63,6 +63,9 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0044](0044-wire-namespace-use-imports.md)                      | Wire Namespace Use Imports                                          | proposed   |
 | [0045](0045-wire-compile-time-node-body-kinds.md)               | Wire Compile-Time Node-Body Kinds                                   | proposed   |
 | [0046](0046-wire-compile-time-graph-forms.md)                   | Wire Compile-Time Graph Forms                                       | proposed   |
+| [0047](0047-wire-frontier-linearity-and-precedence.md)          | Wire Frontier Linearity and Topology Operator Precedence            | proposed   |
+| [0048](0048-wire-make-bounded-node-generation.md)               | Wire Compile-Time Make for Bounded Node Generation                  | proposed   |
+| [0049](0049-wire-fan-phantom-adapter.md)                        | Wire Phantom Record↔Ports Adapter for Topology Fans                | proposed   |
 
 ## Writing a new ADR
 
