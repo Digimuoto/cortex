@@ -141,6 +141,12 @@ identities from.
 - Prove or document the preservation claim: after `make` expansion, the resulting Wire program
   admits unchanged under all existing graph, port, authority, and runtime invariants.
 
+Lean note: `LinearPortGraph.MakeWitness` models the source-linearity side of this obligation. A
+`make` expansion is a certified `LinearPortObject` built from open node ports, with generated nodes
+owned by a shared binding projection and generated ports exact against the kind-derived child port
+sets. Distinct binding namespaces supply the domain-disjointness witness needed for later overlay.
+The executable Haskell expander and diagnostics remain separate correspondence work.
+
 ## Open questions
 
 - **`make(1, K)` identity.** Keep the uniform `<binding>_0` suffix, or special-case to `<binding>`?

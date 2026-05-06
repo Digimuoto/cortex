@@ -170,9 +170,15 @@ Port clauses:
 Labels are required on authored ports. A port key is `(direction, contract, label)`. `=>` connects
 only matching keys. Labels are semantic routing identity, not documentation.
 
-All input ports are cardinality-one. Wire no longer has `<- [Contract]` list aggregation syntax.
-When many values must be gathered, author an explicit node that receives distinct typed inputs and
-constructs a list or record in its implementation body.
+All input ports are cardinality-one. Open fragments may expose unmatched input obligations; closed
+actualized graphs require every input port instance to have exactly one producer edge. Wire no
+longer has `<- [Contract]` list aggregation syntax. When many values must be gathered, author an
+explicit node that receives distinct typed inputs and constructs a list or record in its
+implementation body.
+
+Output port instances are linear in closed actualized graphs. One output port instance may feed at
+most one input edge; multi-consumer use must pass through an explicit fan-out, sharing, persistence,
+or broadcast node that produces fresh output port instances.
 
 Output sum groups use `|` and are output-only. A sum group means exactly one variant fires per
 evaluation. Each variant has its own label and contract.

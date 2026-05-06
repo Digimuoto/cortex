@@ -128,13 +128,15 @@ signature.
 
 Distribution is therefore topology, not executor-context behavior: one node may expose several
 distinct typed outputs for several downstream nodes, but one output port may not be implicitly
-copied to several inputs. Fan-in is not implicit aggregation. A list-valued input receives one
-list-typed value, not a variadic set of incoming edges. If a shape needs projection, packing,
-filtering, prompt assembly, list construction, record reshaping, or multi-consumer distribution,
-that shape is expressed as a `pure (...)` node or explicit structural adapter rather than as
-contextual interpretation by an executor or hidden edge semantics. Later Wire syntax may add sugar
-for common packing cases, but the admitted graph must still contain the explicit transformation
-vertex.
+copied to several inputs. One typed output intended for several consumers must pass through an
+explicit fan-out, sharing, persistence, broadcast, projection, or record↔ports adapter node that
+consumes the source once and produces fresh output ports. Fan-in is not implicit aggregation. A
+list-valued input receives one list-typed value, not a variadic set of incoming edges. If a shape
+needs projection, packing, filtering, prompt assembly, list construction, record reshaping, or
+multi-consumer distribution, that shape is expressed as a `pure (...)` node or explicit structural
+adapter rather than as contextual interpretation by an executor or hidden edge semantics. Later Wire
+syntax may add sugar for common packing cases, but the admitted graph must still contain the
+explicit transformation vertex.
 
 ### LLM Executors
 

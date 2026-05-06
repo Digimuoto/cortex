@@ -84,10 +84,25 @@ obligation.
 
 ## Cardinality
 
-All authored ports are cardinality-one at the graph boundary. An output may feed at most one input,
-and an input may receive at most one output. If `=>` would add two edges out of the same output or
-two edges into the same input, the composition is rejected. Implicit fan-out and implicit fan-in are
-never valid Wire topology; use fresh generated nodes or an explicit record↔ports adapter instead.
+All authored ports are cardinality-one at the graph boundary. During open composition, unmatched
+inputs and outputs remain exposed as boundary obligations. If `=>` would add two edges out of the
+same output or two edges into the same input, the composition is rejected. Implicit fan-out and
+implicit fan-in are never valid Wire topology.
+
+In a closed actualized graph, every actualized input port instance must have exactly one producer
+edge. Every actualized output port instance must be consumed exactly once: by one edge to a
+downstream input, or by an explicit terminal egress, sink, or exported boundary discharge.
+
+`=>` does not duplicate output resources. If one output must feed several consumers, author a fresh
+generated node family or an explicit fan-out, sharing, persistence, broadcast, projection, or
+record↔ports adapter node that consumes the source once and produces fresh output port instances:
+
+```wire
+node fan_out_score
+  <- score: Score;
+  -> for_audit: Score = pure (score);
+  -> for_decision: Score = pure (score);
+```
 
 Wire no longer has `<- [Contract]` implicit list aggregation. To gather many values, author an
 explicit transformation node:
@@ -126,4 +141,5 @@ node log_event
 ```
 
 Wire does not assign special source/sink semantics in syntax. Empty boundary sides are ordinary
-typed interface facts.
+typed interface facts. Terminal behavior comes from the registered executor or the explicit
+execution boundary that consumes or discharges the adjacent port instances.

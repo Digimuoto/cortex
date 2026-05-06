@@ -97,11 +97,19 @@ constraints:
 - labeled ports match only ports with the identical label;
 - there is no wildcard label.
 
-Every endpoint port is linear at the topology boundary. One output port may feed at most one input
-port, and one input port may receive at most one output port. Feeding the same output to multiple
-inputs or the same input from multiple outputs is a static topology failure. Packing several values
-into one aggregate remains explicit `pure (...)` work or an explicit structural adapter; `=>` does
-not perform implicit fan-out or aggregation.
+Each endpoint port instance is a linear resource. During open composition, unmatched inputs and
+outputs remain on the composed boundary. Once an output is connected, that concrete output port
+instance may feed exactly one compatible input, and an input may receive exactly one compatible
+output. Feeding the same output to multiple inputs or the same input from multiple outputs is a
+static topology failure.
+
+Closed actualized graphs must account for both directions exactly once: every input port instance
+has one producer edge, and every output port instance has one consumer, either one downstream edge
+or one explicit terminal egress, sink, or exported boundary discharge. Multi-consumer use is
+expressed by an explicit fan-out, sharing, persistence, broadcast, projection, or record↔ports
+adapter node that consumes the source output once and produces fresh output port instances. Packing
+several values into one aggregate remains explicit `pure (...)` work or an explicit structural
+adapter; `=>` does not perform implicit fan-out, implicit fan-in, aggregation, or duplication.
 
 ### Associativity And Precedence
 
@@ -157,6 +165,9 @@ ports rather than to source variable names.
   helper bindings create topology and gives binding names hidden port-label meaning.
 - **Let connect perform fan-in aggregation.** Rejected because aggregation is computation and should
   be expressed by an explicit pure node.
+- **Let connect duplicate output resources.** Rejected because it hides fan-out in topology matching
+  and breaks actualized port-instance linearity. Duplication must be expressed by an explicit
+  adapter or generated node family that consumes the source once and produces fresh output ports.
 - **Define precedence between `<>` and `=>` immediately.** Rejected in this first slice because
   parentheses were cheaper than committing a precedence rule before composition-heavy examples
   existed. ADR 0047 later amends this decision.
@@ -168,6 +179,7 @@ ports rather than to source variable names.
 - Multi-entry, multi-exit, branch, merge, and review graphs become ordinary topology expressions.
 - Composition lowers to existing graph/circuit operations before runtime.
 - Port labels remain explicit boundary facts.
+- Output-resource linearity aligns Wire composition with the Paper 5 actualized-port semantics.
 - File-level ordinary value bindings stay value-level unless their RHS is explicitly a graph
   expression.
 
@@ -178,12 +190,14 @@ ports rather than to source variable names.
 - Mixed composition expressions originally required parentheses in the first slice. ADR 0047 later
   replaces that rule with a fixed precedence ladder.
 - Authors must write explicit constant nodes instead of relying on implicit literal circuits.
+- Authors must write explicit fan-out nodes when one produced value is intended for multiple
+  consumers.
 
 ### Obligations
 
 - Add parser tests for overlay, connect, associativity, and ADR 0047 mixed-operator precedence.
 - Add topology tests for label matching, unmatched boundaries, repeated-node overlay rejection,
-  output fan-out rejection, and input fan-in rejection.
+  output fan-out rejection, input fan-in rejection, and explicit adapter/fresh-output cases.
 - Add lowering tests that composition completes before runtime execution.
 - Update grammar docs to remove any implicit file-level output-label behavior.
 - Keep list construction and record packing as explicit pure nodes.

@@ -139,8 +139,22 @@ runtime-shaped planner equations into `PlanGraphRewriteChecks`. `Cortex.Wire.Pla
 adds a proof-side planner construction: it realizes the relation-level final topology as a graph
 representative, computes delta diff sets and costs from that relation, and proves the constructed
 delta establishes the planner-construction bridge under the remaining runtime validation witnesses.
-`Cortex.Wire.SelectRecovery` models recovery of selected latent branches as replay of the admitted
-selected append rewrite, not as a new graph operator or a re-run of selector code.
+`Cortex.Wire.PortLinearity` models both ADR 0047's source linear port carrier and the closed
+actualized port-use witness layer. The source layer carries node identities, typed source port
+instances, exposed frontier endpoints, source `PortLinear`, and `forgetPorts` lowering into
+`Cortex.Graph.Relation`; overlay lowering and source linearity preservation are mechanized under
+node-and-endpoint-domain disjointness. `Cortex.Wire.Make` and `Cortex.Wire.PhantomAdapter` then
+exhibit ADR 0048's `make` and ADR 0049's `*` as constructions over those certified primitives.
+`Cortex.Wire.FrontierReclaim` states the in-memory lifetime consequence: once a linear source
+frontier is finished, no output or input endpoint has an open frontier obligation left. The source
+algebra is a certified proof-object layer, so raw syntax such as `=>` is not assumed linear by
+itself. The closed runtime-facing slice proves that every closed actualized input has exactly one
+producer, and every closed actualized output has exactly one edge consumer or terminal discharge.
+Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*` expansion, runtime reclaim
+hooks, and executable projection into actualized port use remain explicit correspondence obligations
+rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models recovery of selected latent
+branches as replay of the admitted selected append rewrite, not as a new graph operator or a re-run
+of selector code.
 
 Mechanized results now include:
 
@@ -192,6 +206,40 @@ Mechanized results now include:
 - `registry_contract_edge_sound`, `registry_edge_sound`, and `registryBoundary_edge_sound`:
   registry-admitted edges discharge ADR 0039's edge-compatibility obligation through the generic
   `EdgeSound` predicate.
+- `SourcePortInstance`, `LinearPortGraph`, `LinearPortGraph.PortLinear`,
+  `LinearPortGraph.forgetPorts`, `forgetPorts_edgeEndpointsInVertices`, `forgetPorts_overlay`,
+  `overlay_preserves_portLinear`, `contract_preserves_portLinear`, `forgetPorts_contract`,
+  `BulkContract`, `bulkContract_preserves_portLinear`, `forgetPorts_bulkContract`,
+  `LinearPortObject.nodePorts`, `LinearPortOperation.apply_result_portLinear`, and
+  `LinearPortSystem.certified_portLinear`: ADR 0047's source linear port carrier has a source
+  exact-once/open-frontier endpoint rule, endpoint-closed lowering into `Cortex.Graph.Relation`,
+  overlay preservation under node-and-endpoint-domain disjointness, certified single-pair and bulk
+  source contraction, contraction lowering, bulk-contraction lowering, and a certified
+  operation/node-port interface that exposes bundled source-linearity proofs.
+- `LinearPortGraph.MakeWitness`, `LinearPortGraph.MakeWitness.toObject`,
+  `LinearPortGraph.MakeWitness.make_disjoint_of_distinctBindings`,
+  `LinearPortGraph.PhantomDirection`, `LinearPortGraph.PhantomRecordShape`,
+  `LinearPortGraph.LinearPortObject.bulkContract`, `LinearPortGraph.PhantomAdapterWitness`, and
+  `LinearPortGraph.PhantomAdapterWitness.starInsertion`: ADR 0048's `make` elaboration and ADR
+  0049's `*` phantom adapter are represented as certified constructions over `nodePorts`, `overlay`,
+  and `BulkContract`. `MakeWitness` pins generated nodes to a shared binding projection and exact
+  kind-derived child port sets; `PhantomRecordShape` pins the generated adapter to one phantom node
+  with a declared multi/singular boundary. No separate `make` or `*` preservation theorem is needed;
+  the returned `LinearPortObject` carries source linearity by construction.
+- `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
+  `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
+  `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished
+  linear source frontiers have no remaining open producer or consumer obligations, so ephemeral
+  in-memory endpoint resources are structurally reclaimable. Durable provenance retention is a
+  runtime profile choice, not a contradiction of the source frontier theorem.
+- `ActualizedPortInstance`, `OutputPortUse`, `ActualizedPortGraph.ClosedPortLinear`,
+  `actualizedOutputPort_consumed_exactly_once`, `actualizedInputPort_produced_exactly_once`,
+  `compiledPortUseWitness_edge_input_uniqueProducer`, `portUseWitness_toGraph_closedPortLinear`, and
+  `selectActualize_preserves_closedPortLinearity`: closed actualized port-use witnesses establish
+  exact-once producer/consumer accounting for concrete port instances, and selected-branch
+  actualization preserves that accounting under namespace-freshness/domain-disjointness premises.
+  This does not yet mechanize exact selected-fragment projection or runtime `actualizedPortGraphOf`
+  projection.
 - `BoundaryLaw`, `AnchorBoundaryUse`, `RewriteSlot`, `BoundaryResourceUse`,
   `BudgetedBoundaryResourceUse`, `GraphRewrite.expandNode_resourceUse`,
   `GraphRewrite.appendAfter_resourceUse`, `ConstructedPlanningStep.boundaryResourceUse`,
@@ -417,15 +465,15 @@ The repo's pre-commit hook checks theory changes through the flake surface
 
 ## Status
 
-| Track                            | Statements                                                                                                                                    | Proved                                                                                                                                                                                                                                                                                                                                                                                                      | Axiomatized |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                                                                      | relation-level laws                                                                                                                                                                                                                                                                                                                                                                                         | none        |
-| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                                                                               | denotational law surface                                                                                                                                                                                                                                                                                                                                                                                    | none        |
-| 1c. Graph quotient laws          | lifted quotient equality laws                                                                                                                 | `AlgGraph` quotient carrier, lifted operations, quotient equality bridge, Mokhov laws as `=`                                                                                                                                                                                                                                                                                                                | none        |
-| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification/run-safety surface                                                       | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness, recovery/execution safe-state envelope, replay determinism modulo fixed outcomes                                                                            | none        |
-| 3. Rewrite soundness             | CorePure proof subset + registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge + closed Wire/Pulse run trace | pure evaluator determinism/static-field soundness/lowering preservation, CorePure success-fact bridge, node/edge registry predicates, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget, SelectActualize lowering, closed admitted-run trace preservation over materialized Pulse states | none        |
-| 4. Provider / sparks             | —                                                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                           | not started |
-| 5. Substrate / consumer boundary | —                                                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                           | not started |
+| Track                            | Statements                                                                                                                                    | Proved                                                                                                                                                                                                                                                                                                                                                                                                                                    | Axiomatized |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                                                                      | relation-level laws                                                                                                                                                                                                                                                                                                                                                                                                                       | none        |
+| 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                                                                               | denotational law surface                                                                                                                                                                                                                                                                                                                                                                                                                  | none        |
+| 1c. Graph quotient laws          | lifted quotient equality laws                                                                                                                 | `AlgGraph` quotient carrier, lifted operations, quotient equality bridge, Mokhov laws as `=`                                                                                                                                                                                                                                                                                                                                              | none        |
+| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification/run-safety surface                                                       | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness, recovery/execution safe-state envelope, replay determinism modulo fixed outcomes                                                                                                          | none        |
+| 3. Rewrite soundness             | CorePure proof subset + registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge + closed Wire/Pulse run trace | pure evaluator determinism/static-field soundness/lowering preservation, CorePure success-fact bridge, node/edge registry predicates, port-use linearity witnesses, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget, SelectActualize lowering, closed admitted-run trace preservation over materialized Pulse states | none        |
+| 4. Provider / sparks             | —                                                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                         | not started |
+| 5. Substrate / consumer boundary | —                                                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                         | not started |
 
 Discharging the remaining obligations is the actual work. The scaffold's job is to make the
 obligation graph compile and run end-to-end so that proof debt is visible and each abstract

@@ -143,7 +143,8 @@ It may:
 - compute derived output values when the computation is authority-free;
 - validate that each output satisfies its declared contract;
 - wrap runtime values in their contract/provenance envelope;
-- split, copy, move, or seal resources according to the declared resource mode.
+- split, copy, move, or seal resources according to the declared resource mode, producing fresh
+  output port instances when a value is intentionally fanned out.
 
 For current pure nodes, the egress adapter is visible as output equations:
 
@@ -183,6 +184,10 @@ to one of:
 - an explicit pure node between the producer and consumer.
 
 This preserves the existing invariant that edge meaning lives at endpoints, not on the edge itself.
+It also preserves actualized port linearity: one edge consumes one producer output port instance and
+produces one consumer input port instance. A closed actualized graph must account for every input
+port through exactly one producer edge and every output port through exactly one edge consumer or an
+explicit terminal egress, sink, or exported boundary discharge.
 
 ## Proof decomposition
 
@@ -204,6 +209,11 @@ egress_sound:
 edge_sound:
   valid producer output port environment
   -> successor input obligations are satisfied
+
+port_linearity_sound:
+  valid actualized port-use witness
+  -> every actualized input port has exactly one edge producer
+  -> every actualized output port has exactly one edge or terminal-discharge consumer
 ```
 
 For pure nodes, ingress/body/egress may be transparent enough to prove together. For registered
@@ -217,7 +227,7 @@ This ADR does not add:
 - arbitrary edge-local adapters;
 - downstream-aware executor bodies;
 - implicit fan-in, list aggregation, or context concatenation;
-- implicit fan-out from body internals;
+- implicit edge-level fan-out or hidden duplication of one output port instance;
 - new executor egress syntax;
 - a requirement that all compiler IR immediately use a new public `NodeCore` type.
 
@@ -244,7 +254,8 @@ future changes must preserve.
 
 - Gives Wire one normal form for pure nodes, executor nodes, zero-output nodes, and future verified
   bodies.
-- Explains fan-in as ingress adaptation and fan-out as egress adaptation plus port-resource rules.
+- Explains fan-in as ingress adaptation and explicit fan-out as egress adaptation plus port-resource
+  rules.
 - Keeps edges simple and mechanically checkable.
 - Gives Lean and Haskell correspondence work smaller obligations than "node correctness".
 - Clarifies that executor authority lives in the local body, while structural adaptation remains at
@@ -271,8 +282,8 @@ future changes must preserve.
 - Compiler IR may introduce a private record shaped like
   `input ports + ingress + body + egress + output ports` when implementation work needs the
   distinction.
-- ADR 0038 or a successor proof ledger should track theorem targets for ingress, egress, and edge
-  soundness once the Haskell IR exposes suitable witnesses.
+- ADR 0038 or a successor proof ledger should track theorem targets for ingress, egress, edge
+  soundness, and actualized port-use linearity once the Haskell IR exposes suitable witnesses.
 
 ## Related
 

@@ -51,6 +51,10 @@ lean_lib «Cortex» where
     `Cortex.Wire.Select,
     `Cortex.Wire.BoundaryResource,
     `Cortex.Wire.NodeBoundary,
+    `Cortex.Wire.PortLinearity,
+    `Cortex.Wire.Make,
+    `Cortex.Wire.PhantomAdapter,
+    `Cortex.Wire.FrontierReclaim,
     `Cortex.Wire.PulseSafety,
     `Cortex.Wire.SelectRecovery,
     `Cortex.Wire.RunTrace

@@ -31,9 +31,10 @@ two-layer correction; medium on the exact categorical presentation to use in pap
 Wire's source topology is not governed directly by Mokhov's graph laws. It is a finer **linear port
 graph** layer where node identity and endpoint ports are resources, so contraction and implicit
 copying are illegal. Mokhov's algebra remains the right relation-level substrate after a forgetful
-lowering erases port identity and boundary resources. The next proof move should be a typed
-`LinearPortGraph` / `ActualizedPortGraph` layer with `PortLinear`, a forgetful map to
-`Cortex.Graph.Relation`, and a Pulse-state projection that makes port linearity part of runtime
+lowering erases port identity and boundary resources. After PR #166, the closed
+`ActualizedPortGraph` witness slice exists; the next proof move should add the source
+`LinearPortGraph` layer with source `PortLinear`, a forgetful map to `Cortex.Graph.Relation`, and a
+Pulse-state projection that makes `ActualizedPortGraph.ClosedPortLinear` part of runtime
 well-formedness.
 
 The paper framing should give rhetorical weight to the upper layer: Cortex's contribution is not
@@ -42,15 +43,15 @@ Mokhov relation algebra.
 
 ## Archetype Synthesis
 
-| Lens     | One-line read                                                                                  |
-| -------- | ---------------------------------------------------------------------------------------------- |
-| Episteme | Track 1 proves Mokhov relation laws; ADR 0047 asserts a stricter Wire frontier-resource model. |
-| Logos    | Source Wire has linear-port laws; Mokhov laws apply only after forgetful relation lowering.    |
-| Kritikos | Mokhov distributivity repeats operands and therefore violates Wire source linearity.           |
-| Themis   | Port identity belongs at Wire/Circuit/Pulse safety, not in pure Graph topology.                |
-| Techne   | Add `LinearPortGraph`, `forgetPorts`, `PortLinear`, and runtime projection lemmas.             |
-| Poiesis  | Best external vocabulary: port graphs/open graphs; SMC/string diagrams are paper framing.      |
-| Sophia   | Refine the base theory by adding a layer, not by replacing Mokhov.                             |
+| Lens     | One-line read                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------ |
+| Episteme | Track 1 proves Mokhov relation laws; ADR 0047 asserts a stricter Wire frontier-resource model.   |
+| Logos    | Source Wire has linear-port laws; Mokhov laws apply only after forgetful relation lowering.      |
+| Kritikos | Mokhov distributivity repeats operands and therefore violates Wire source linearity.             |
+| Themis   | Port identity belongs at Wire/Circuit/Pulse safety, not in pure Graph topology.                  |
+| Techne   | Add source `LinearPortGraph`, `forgetPorts`, source `PortLinear`, and runtime projection lemmas. |
+| Poiesis  | Best external vocabulary: port graphs/open graphs; SMC/string diagrams are paper framing.        |
+| Sophia   | Refine the base theory by adding a layer, not by replacing Mokhov.                               |
 
 ## Key Findings
 
@@ -98,16 +99,19 @@ proposal for `actualizedPortGraphOf`; theory status table in `theory/README.md` 
 ADRs ↔ Lean proof track.
 
 ADR 0047 introduces the frontier-resource vocabulary, and ADR 0049 relies on it for `*`, but the
-Lean base currently has no carrier that makes this vocabulary a theorem object. The existing graph
-carrier is relational; it has vertices and edges, not port instances or exposed frontiers.
+Lean base currently has no source carrier that makes this vocabulary a theorem object. PR #166 adds
+the closed actualized port-use slice (`ActualizedPortGraph` and `ClosedPortLinear`), but the source
+`LinearPortGraph`, the `forgetPorts` lowering, and the runtime projection into the actualized view
+remain open. The existing graph carrier is relational; it has vertices and edges, not port instances
+or exposed frontiers.
 
 The missing layer should contain:
 
 - node identities;
-- actualized input and output port instances;
+- source input and output port instances;
 - a port-edge relation from output instance to input instance;
 - exposed input and output frontier sets;
-- `PortLinear`;
+- source `PortLinear`;
 - overlay with disjoint node identity;
 - connect with deterministic one-counterpart matching;
 - a forgetful map into `Cortex.Graph.Relation`.
@@ -118,10 +122,10 @@ This layer should sit above pure Graph and below runtime Pulse state.
 mechanized invariant. It also gives `make`, `*`, select actualization, and admitted rewrite
 materialization one shared target.
 
-**Next step:** Add a proof-track ADR or research-to-ADR follow-up for `LinearPortGraph`,
-`ActualizedPortGraph`, `forgetPorts`, and `PortLinear`.
+**Next step:** Add a proof-track ADR or research-to-ADR follow-up for source `LinearPortGraph`,
+`forgetPorts`, source `PortLinear`, and `actualizedPortGraphOf`.
 
-### [P3] `PortLinear` should be folded into runtime safe-state through projection
+### [P3] Closed actualized port linearity should be folded into runtime safe-state through projection
 
 **Category:** Correctness Gap **Status:** Inferred **Confidence:** High **Surfaced by:** Themis,
 Techne **Primary evidence:** Track 2 proposal; `SafePulseRunState` / `wellFormedGraphState` status
@@ -139,7 +143,7 @@ actualizedPortGraphOf : PulseState ... -> ActualizedPortGraph ...
 Then runtime safety can carry:
 
 ```lean
-(actualizedPortGraphOf state).PortLinear
+(actualizedPortGraphOf state).ClosedPortLinear
 ```
 
 either inside `wellFormedGraphState` or as a field of `SafePulseRunState`.
@@ -229,12 +233,12 @@ Wire source lowering preserves/forgets into Mokhov relation equality.
 
 ## Missed Abstractions
 
-| Multiple sites                                   | Shared shape                         | Proposed name         | Cost of unifying                    |
-| ------------------------------------------------ | ------------------------------------ | --------------------- | ----------------------------------- |
-| ADR 0047 frontier, ADR 0049 phantom, Track 2 WF  | port instances plus linear use       | `LinearPortGraph`     | medium Lean slice                   |
-| Runtime materialization, selected actualization  | concrete runtime port graph          | `ActualizedPortGraph` | medium-high projection proof        |
-| Compiler rejection and runtime preservation      | no duplicated endpoint consumption   | `PortLinear`          | medium per-constructor preservation |
-| Relation topology and port-resource source layer | erase ports and retain node relation | `forgetPorts`         | small definition, harder laws       |
+| Multiple sites                                   | Shared shape                         | Proposed name                                   | Cost of unifying                    |
+| ------------------------------------------------ | ------------------------------------ | ----------------------------------------------- | ----------------------------------- |
+| ADR 0047 frontier, ADR 0049 phantom, Track 2 WF  | port instances plus linear use       | `LinearPortGraph`                               | medium Lean slice                   |
+| Runtime materialization, selected actualization  | concrete runtime port graph          | `ActualizedPortGraph`                           | medium-high projection proof        |
+| Compiler rejection and runtime preservation      | no duplicated endpoint consumption   | source `PortLinear` / closed `ClosedPortLinear` | medium per-constructor preservation |
+| Relation topology and port-resource source layer | erase ports and retain node relation | `forgetPorts`                                   | small definition, harder laws       |
 
 ## Claim-to-Evidence Matrix
 
@@ -304,9 +308,8 @@ source model.
 
 ### Design next
 
-- [ ] Draft the proof/runtime ADR for `LinearPortGraph`, `ActualizedPortGraph`, `PortLinear`,
-      `forgetPorts`, and `actualizedPortGraphOf`. Owner: architecture + lean-theorem-attack. Cost:
-      M.
+- [ ] Draft the proof/runtime ADR for source `LinearPortGraph`, source `PortLinear`, `forgetPorts`,
+      and `actualizedPortGraphOf`. Owner: architecture + lean-theorem-attack. Cost: M.
 - [ ] Plan the Lean slice that first defines the carrier and forgetful map, before widening
       `SafePulseRunState`. Owner: lean-code-style / theorem track. Cost: M.
 
@@ -323,12 +326,12 @@ source model.
 
 ## Known Unknowns
 
-| Unknown                                                            | Why it matters                                         | Validation path                                     |
-| ------------------------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------- |
-| Whether existing record contracts are nominal enough for ADR 0049  | `*` depends on field labels from nominal record shapes | implement small contract-surface prototype          |
-| Whether runtime exposes total executor-port projection             | `actualizedPortGraphOf` needs port instances per node  | inspect compiler/runtime projection data structures |
-| Whether `PortLinear` belongs in `wellFormedGraphState` or wrapper  | affects proof churn and paper alignment                | draft both theorem signatures before implementation |
-| How much structured-cospan machinery is worth importing into prose | avoids overclaiming categorical novelty                | focused literature pass before Paper A              |
+| Unknown                                                                               | Why it matters                                         | Validation path                                     |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------- |
+| Whether existing record contracts are nominal enough for ADR 0049                     | `*` depends on field labels from nominal record shapes | implement small contract-surface prototype          |
+| Whether runtime exposes total executor-port projection                                | `actualizedPortGraphOf` needs port instances per node  | inspect compiler/runtime projection data structures |
+| Whether closed actualized port linearity belongs in `wellFormedGraphState` or wrapper | affects proof churn and paper alignment                | draft both theorem signatures before implementation |
+| How much structured-cospan machinery is worth importing into prose                    | avoids overclaiming categorical novelty                | focused literature pass before Paper A              |
 
 ## External Anchors
 

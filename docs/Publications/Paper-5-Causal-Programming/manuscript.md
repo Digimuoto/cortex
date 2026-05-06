@@ -656,12 +656,14 @@ every port boundary. The `fan_out` node makes the duplication a named causal act
 duplication structure visible in the source, the graph, and the execution trace.
 
 This is the substrate-level demonstration of the paradigm claim. The eight commitments give us
-actualized-port linearity in principle. Wire, a minimal substrate built on those commitments, gives
-us linearity in practice. In the current Pulse runtime mechanization, port linearity is tracked as
-part of the graph well-formedness predicate (clauses 3 and 4 of the formal core in Section 3.7)
-rather than as an isolated theorem. The closed admitted-step preservation theorems therefore
-preserve it whenever it is included in the well-formedness predicate supplied to the run. The user
-does not opt into linearity; it is the default discipline of the language.
+actualized-port linearity as a semantic discipline. Wire is being aligned to make that discipline
+the default source-level and admission-level rule: the intended admission rule rejects direct
+edge-level fan-out, and multi-consumer use is expressed by an explicit node that creates fresh
+output port instances. In the current Pulse runtime mechanization, closed admitted-step preservation
+keeps whatever graph well-formedness predicate is supplied to the run. The Lean port-use witness
+theorem now covers the proof-side input-producer and output-consumer exact-once claims;
+compiler-side witness production, direct fan-out rejection, and direct fan-in rejection remain
+implementation-correspondence work.
 
 ### 4.2 Session-typed structure is native
 
@@ -928,8 +930,8 @@ programs. Its architecture is structured as four layered components:
   admitted to the runtime, and the durable contract under which artifacts are produced and consumed.
 
 The greeting program from Section 3.6 is the simplest faithful Wire program. More elaborate examples
-in production use parametric forms (`kind`, `form`), let-bound graph fragments, and fan-in/fan-out
-composition operators (`<>` for parallel composition, `=>` for causal sequencing).
+in production use parametric forms (`kind`, `form`), let-bound graph fragments, explicit fan-out
+nodes, and composition operators (`<>` for parallel composition, `=>` for causal sequencing).
 
 Implementation-status note: the current artifact includes the `std.io` standard executor pack,
 registry `use` imports, selected file returns through `wire build --return`, and `kind`/`form`
@@ -991,10 +993,10 @@ proposals whose serialized form cannot denote the proof-side sets and natural nu
 ### 5.4 The verification surface
 
 The Cortex proof-status dashboard is conservative by design. It tracks human-level claims, not raw
-theorem counts. As of the most recent revision, the dashboard contains 24 such claims. All 24 are
-mechanized in Lean 4. Of the 24, 17 are connected to executable Haskell correspondence through
+theorem counts. As of the most recent revision, the dashboard contains 25 such claims. All 25 are
+mechanized in Lean 4. Of the 25, 17 are connected to executable Haskell correspondence through
 checks, witnesses, regression tests, or hooks; 2 are graph-vocabulary proof-only facts with no
-direct runtime analog; the remaining 5 have a Lean proof in place with executable correspondence
+direct runtime analog; the remaining 6 have a Lean proof in place with executable correspondence
 work in progress.
 
 The dashboard explicitly distinguishes Lean-side proof from runtime correspondence. A Lean proof is

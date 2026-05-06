@@ -27,6 +27,10 @@ import Cortex.Wire.Planner.Chain
 import Cortex.Wire.Select
 import Cortex.Wire.BoundaryResource
 import Cortex.Wire.NodeBoundary
+import Cortex.Wire.PortLinearity
+import Cortex.Wire.Make
+import Cortex.Wire.PhantomAdapter
+import Cortex.Wire.FrontierReclaim
 import Cortex.Wire.PulseSafety
 import Cortex.Wire.SelectRecovery
 import Cortex.Wire.RunTrace

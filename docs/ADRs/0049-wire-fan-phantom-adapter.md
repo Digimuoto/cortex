@@ -197,6 +197,13 @@ semantics, and no surface vocabulary for spokes.
 - Prove or document the preservation claim: after `*` expansion, the resulting Wire program admits
   unchanged under all existing graph, port, authority, and runtime invariants.
 
+Lean note: `LinearPortGraph.PhantomAdapterWitness` models the source-linearity side of this
+obligation. `LinearPortGraph.PhantomRecordShape` pins the generated adapter to one phantom node with
+a declared multi/singular boundary, and `*` is exhibited as that phantom object plus two certified
+bulk contractions. Linearity is inherited from the certified source primitives. The executable
+Haskell expander, record-discriminator diagnostics, and witness production remain separate
+correspondence work.
+
 ## Open questions
 
 - **Nominal-record contract surface.** This ADR commits to "the singular side's contract is a
