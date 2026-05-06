@@ -46,9 +46,9 @@ A single Wire value often wears multiple hats. The roles are:
 | **Runtime wrapper**           | A node whose role is to host a whole wire and provide runtime services.                    | `@cortex.report_run { title = ... ; }`                                               |
 
 The leading `@` marks the executor-authority boundary. It stages a registered executor with pure
-config data; it does not run the executor. Wire-authored CorePure output equations use `pure (...)`
-without `@`; they lower to the native pure evaluator inside the admitted Wire semantics. See
-[Reference/Wire/executors-and-alphabet.md](Reference/Wire/executors-and-alphabet.md).
+config data; it does not run the executor. Wire-authored CorePure output equations are written
+directly without `@`; they lower to the native pure evaluator inside the admitted Wire semantics.
+See [Reference/Wire/executors-and-alphabet.md](Reference/Wire/executors-and-alphabet.md).
 
 ## Artifacts a contract can carry
 

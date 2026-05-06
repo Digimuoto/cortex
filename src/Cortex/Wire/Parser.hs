@@ -1137,12 +1137,15 @@ pureOutputEquation = do
     <* symbol ";"
 
 pureOutputExpression :: Parser CorePureExpr
-pureOutputExpression = do
-  keyword "pure"
-  _ <- symbol "("
-  value <- corePureExpr
-  _ <- symbol ")"
-  pure value
+pureOutputExpression =
+  removedPureWrapper <|> corePureExpr
+  where
+    -- Do not wrap this branch in try: pure is reserved, so once it is consumed
+    -- the only useful outcome is the targeted legacy-wrapper diagnostic.
+    removedPureWrapper = do
+      keyword "pure"
+      _ <- symbol "("
+      fail "pure (...) output wrappers were removed; write the CorePure expression directly"
 
 executorCall :: Parser ExecutorCall
 executorCall =
@@ -1151,7 +1154,7 @@ executorCall =
     inlineExecutorCall = do
       executor <- executorRef
       when (renderQName executor == "pure") $
-        fail "pure nodes must be authored with pure (...) output equations"
+        fail "CorePure output equations are written directly; @pure is not an executor"
       config <- fromMaybe (Record []) <$> optional (try recordExpr)
       inputArg <- betweenCallParens corePureExpr
       pure (ExecutorCallInline executor config inputArg)

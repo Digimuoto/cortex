@@ -100,8 +100,8 @@ record↔ports adapter node that consumes the source once and produces fresh out
 ```wire
 node fan_out_score
   <- score: Score;
-  -> for_audit: Score = pure (score);
-  -> for_decision: Score = pure (score);
+  -> for_audit: Score = score;
+  -> for_decision: Score = score;
 ```
 
 Wire no longer has `<- [Contract]` implicit list aggregation. To gather many values, author an

@@ -279,15 +279,14 @@ Pure node bodies bind output labels directly:
 ```wire
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (accepted);
-  -> rejected: RejectedSet = pure (rejected);
-  where let
-    items = evidence.items;
-    accepted = items |> filter (x: x.score >= 0.7);
-    rejected = items |> filter (x: x.score < 0.7);
-  in
-  { inherit accepted rejected; };
+  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= 0.7);
+  -> rejected: RejectedSet = evidence.items |> filter (x: x.score < 0.7);
 ```
+
+If an expression is statically known, the compiler reduces it during elaboration. If it depends on
+input ports, the same CorePure expression is delayed and lowered to the native pure evaluator.
+General loops, host scripts, dynamic languages, IO, tools, and model calls belong behind explicit
+`@` executors.
 
 The binding story is deliberately split by surface:
 
@@ -371,6 +370,8 @@ Cortex still owns the source language, composition rules, and substrate runtime.
   — contract, port, executor, and binding separation
 - [ADR 0020 — Wire Pure Output Equations](../ADRs/0020-wire-pure-output-equations.md) —
   deterministic CorePure output equations
+- [ADR 0050 — Wire CorePure Output Residue](../ADRs/0050-wire-corepure-output-residue.md) — direct
+  output expressions and static/runtime residue split
 - [ADR 0034 — Pure Selectors and Restricted Actualization Authority](../ADRs/0034-wire-pure-select-actualization-authority.md)
   — pure branch choice without general rewrite authority
 - [Wire Grammar](../Reference/Wire/grammar.md) — normative grammar

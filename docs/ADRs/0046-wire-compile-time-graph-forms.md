@@ -74,7 +74,8 @@ let quantum_h = @quantum.h {};
 
 kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
-  -> label: Qubit = gate(label);
+  -> label: Qubit;
+  = gate(label);
 
 kind phase_gate(label: PortLabel, angle: Value) =
   <- label: Qubit;

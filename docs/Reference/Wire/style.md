@@ -135,7 +135,7 @@ Use two spaces inside node declarations, `where let` blocks, records, and lists:
 ```wire
 node summarize
   <- input: BuildReport;
-  -> summary: Text = pure (summary);
+  -> summary: Text = summary;
   where let
     ok = input.ok;
     summary = if ok then "ok" else "failed";
@@ -160,7 +160,7 @@ non-whitespace token on that line:
 ```wire
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (accepted);
+  -> accepted: AcceptedSet = accepted;
 ```
 
 Do not place `->` or `<-` on the `node` line, and do not combine multiple ports on one line.
@@ -174,19 +174,16 @@ node read_mode
   -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
 ```
 
-Use `pure (...)` only for CorePure output equations:
+Write CorePure output expressions directly:
 
 ```wire
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (accepted);
-  where let
-    accepted = evidence.items |> filter (item: item.score >= 0.7);
-  in
-  { inherit accepted; };
+  -> accepted: AcceptedSet = evidence.items |> filter (item: item.score >= 0.7);
 ```
 
-Do not write `@pure`; pure execution is not executor authority.
+Do not write `pure (...)` or `@pure`; CorePure output expressions are direct and are not executor
+authority.
 
 ## Comments And Strings
 

@@ -27,7 +27,7 @@ module Cortex.Wire.Compile
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (unless, when, zipWithM)
+import Control.Monad (guard, unless, when, zipWithM)
 import Crypto.Hash (Digest, SHA256, hashlazy)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -437,7 +437,8 @@ lowerTopForm compileEnv st = \case
     if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
       else case rhs of
-        LetRhsCorePure expr ->
+        LetRhsCorePure expr -> do
+          validateCorePureScope st (WireCore.WireParseError . corePureTopLevelScopeError name) expr
           Right
             st
               { lsPureBindings =
@@ -1301,6 +1302,7 @@ loweredNodeFromExecutorCall
   -> Either WireCore.WireError LoweredNode
 loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue = do
   (configuredExecutor, inputExpr) <- resolveExecutorCall st executorCallValue
+  validateCorePureNodeScope st nodeRef inputExpr
   let exactFields = configuredExecutor.ceFields
       label = lookupMaybeTextField "label" exactFields
       genericFields = genericConfigFields exactFields knownSimpleFields
@@ -1558,6 +1560,7 @@ validateWhereClause st nodeRef inputPorts whereExpr =
   case whereExpr of
     Nothing -> Right ()
     Just exprValue -> do
+      validateCorePureNodeScope st nodeRef exprValue
       staticContext <-
         mapLeft
           (WireCore.WireInvalidPorts nodeRef . renderStaticWhereError)
@@ -1606,7 +1609,112 @@ pureOutputConfigMap st nodeRef outputPorts outputEquations = do
       when (port.lpLabel /= outputEquation.pureOutputEquationLabel || port.lpContract /= contractName) $
         Left
           (WireCore.WireInvalidPorts nodeRef "pure output equation does not match its lowered output port")
+      validateCorePureNodeScope st nodeRef outputEquation.pureOutputEquationExpr
       Right (port.lpInternalName, outputEquation.pureOutputEquationExpr)
+
+validateCorePureNodeScope
+  :: LoweringState
+  -> CircuitNodeRef
+  -> CorePureExpr
+  -> Either WireCore.WireError ()
+validateCorePureNodeScope st nodeRef =
+  validateCorePureScope st (WireCore.WireInvalidPorts nodeRef . corePureNodeScopeError)
+
+validateCorePureScope
+  :: LoweringState
+  -> (Text -> WireCore.WireError)
+  -> CorePureExpr
+  -> Either WireCore.WireError ()
+validateCorePureScope st mkError =
+  mapLeft mkError . go Set.empty
+  where
+    -- Keep this match exhaustive: every CorePure constructor must classify its free identifiers.
+    go localNames = \case
+      CorePureLit {} ->
+        Right ()
+      CorePureIdent name ->
+        validateIdent localNames name
+      CorePureList items ->
+        traverse_ (go localNames) items
+      CorePureRecord fields ->
+        traverse_ (go localNames . (.corePureFieldValue)) fields
+      CorePureFieldAccess baseExpr _fieldName ->
+        go localNames baseExpr
+      CorePureIndex baseExpr indexExpr ->
+        go localNames baseExpr *> go localNames indexExpr
+      CorePureLambda params bodyExpr ->
+        go (localNames <> Set.fromList (NE.toList params)) bodyExpr
+      CorePureCall functionExpr argumentExprs ->
+        go localNames functionExpr *> traverse_ (go localNames) argumentExprs
+      CorePureUnary _unaryOp operandExpr ->
+        go localNames operandExpr
+      CorePureBinary _binaryOp lhsExpr rhsExpr ->
+        go localNames lhsExpr *> go localNames rhsExpr
+      CorePureLet bindings bodyExpr ->
+        goBindings localNames (NE.toList bindings) >>= \localNames' ->
+          go localNames' bodyExpr
+      CorePureIf conditionExpr thenExpr elseExpr ->
+        go localNames conditionExpr
+          *> go localNames thenExpr
+          *> go localNames elseExpr
+
+    goBindings =
+      foldlM $ \localNames binding -> do
+        go localNames binding.corePureBindingExpr
+        Right (Set.insert binding.corePureBindingName localNames)
+
+    validateIdent localNames name
+      | Set.member name localNames = Right ()
+      | otherwise =
+          case nonCorePureTopLevelBindingKind st name of
+            Just bindingKind -> Left (corePureScopeError name bindingKind)
+            Nothing -> Right ()
+
+nonCorePureTopLevelBindingKind :: LoweringState -> Text -> Maybe Text
+nonCorePureTopLevelBindingKind st name =
+  valueBindingKind
+    <|> graphBindingKind
+    <|> nodeBindingKind
+    <|> importedExecutorKind
+    <|> contractBindingKind
+  where
+    valueBindingKind =
+      Map.lookup name st.lsBindings >>= \value ->
+        case evalValueToCorePureExpr value of
+          Just _ -> Nothing
+          Nothing -> Just (valueKind value)
+
+    graphBindingKind =
+      "graph value" <$ Map.lookup name st.lsGraphBindings
+
+    nodeBindingKind =
+      "node value" <$ Map.lookup name st.lsNamedNodes
+
+    importedExecutorKind =
+      "imported executor" <$ Map.lookup name st.lsUseScope.wireUseExecutors
+
+    contractBindingKind =
+      "contract" <$ Map.lookup name st.lsUseScope.wireUseContracts
+        <|> "contract" <$ guard (Set.member name st.lsDeclaredContracts)
+
+corePureTopLevelScopeError :: Text -> Text -> Text
+corePureTopLevelScopeError bindingName message =
+  "CorePure let "
+    <> bindingName
+    <> " "
+    <> message
+
+corePureNodeScopeError :: Text -> Text
+corePureNodeScopeError message =
+  "CorePure expression " <> message
+
+corePureScopeError :: Text -> Text -> Text
+corePureScopeError bindingName bindingKind =
+  "cannot capture "
+    <> bindingKind
+    <> " "
+    <> bindingName
+    <> "; use executor values as node bodies and keep CorePure expressions authority-free."
 
 taskWirePortsFromLowered :: LoweredNodePorts -> WireCore.WirePorts
 taskWirePortsFromLowered ports =

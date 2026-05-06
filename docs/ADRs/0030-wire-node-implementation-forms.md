@@ -23,6 +23,7 @@ related:
   - docs/ADRs/0026-wire-failure-taxonomy.md
   - docs/ADRs/0027-typed-llm-output-binding.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
 
@@ -40,10 +41,10 @@ ADR 0022 defines the next node clause grammar around per-output RHS equations:
 ```wire
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
+  -> accepted: AcceptedSet = accepted ;
 ```
 
-That is the right shape for `pure (...)`, because each output port naturally owns the expression
+That is the right shape for CorePure residue, because each output port naturally owns the expression
 that computes its value.
 
 External executors have a different shape. An executor invocation is the implementation body behind
@@ -62,7 +63,7 @@ executors no single place to attach their implementation.
 
 Wire should distinguish two node implementation forms:
 
-1. **Output-equation nodes** for `pure (...)` computations.
+1. **Output-equation nodes** for CorePure computations.
 2. **Node-body executor nodes** for external executor invocations.
 
 The target grammar is:
@@ -77,7 +78,7 @@ input_clause    ::= <- <name> : <Type>
 
 pure_equations  ::= (pure_output_clause ;)+
 pure_output_clause
-                ::= -> <name> : <Type> = pure (<expr>)
+                ::= -> <name> : <Type> = <corepure-expr>
 
 executor_body   ::= (output_decl ;)* = <executor_call> ;
 output_decl     ::= -> <name> : <Type>
@@ -108,8 +109,8 @@ Pure computations remain per-output equations:
 ```wire
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
   where let
     accepted = evidence.items |> filter (x: x.score >= 0.7) ;
     rejected = evidence.items |> filter (x: x.score < 0.7) ;

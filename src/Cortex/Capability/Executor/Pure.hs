@@ -6,7 +6,7 @@ License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
-Wire source authors pure output equations without @. The compiler lowers
+Wire source authors CorePure output equations without @. The compiler lowers
 those equations to an internal native pure task, and this module turns that
 admitted task node into a runnable Pulse stage.
 

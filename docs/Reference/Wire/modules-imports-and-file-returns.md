@@ -29,7 +29,7 @@ export let acceptedItem = item: item.score >= 0.7;
 
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem);
+  -> accepted: AcceptedSet = evidence.items |> filter acceptedItem;
 
 classify
 ```

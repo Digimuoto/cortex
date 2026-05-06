@@ -18,6 +18,7 @@ related:
   - docs/ADRs/0019-executor-registration-and-binding.md
   - docs/ADRs/0022-wire-node-clause-grammar.md
   - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
 ---
 
@@ -97,8 +98,7 @@ and is equivalent to:
 ```
 
 Applying a configured executor value is valid only in the executor-call implementation positions
-defined by ADR 0030: a node-level executor body, or the single-output shorthand that desugars to
-that body.
+defined by ADR 0030: a node-level executor body after the output boundary has been declared.
 
 ```wire
 node analyze
@@ -107,20 +107,14 @@ node analyze
   = analyst (input) ;
 ```
 
-The single-output shorthand remains valid:
-
-```wire
-node analyze
-  <- input: AnalysisInput ;
-  -> output: AnalysisRecord = analyst (input) ;
-```
-
-This shorthand is an `executor_call`, not the reserved unmarked `<expr>` RHS from ADR 0022.
+The single-output inline shorthand is reserved for registered executor authority with `@`. It is not
+valid for configured executor values because `analyst (input)` is also ordinary CorePure function
+application syntax after ADR 0050.
 
 It is not valid inside CorePure, so this output equation is rejected:
 
 ```wire
--> output: T = pure (analyst input) ;
+-> output: T = analyst input ;
 ```
 
 ### Scoping And Export
@@ -183,14 +177,15 @@ calls use node-level executor bodies.
 
 - Wire needs kind checking for ordinary pure-data values, configured executor values, and graph
   values.
-- The parser must distinguish configured executor application from CorePure function application.
+- The parser distinguishes configured executor application by node-level executor-body position;
+  direct output equations are CorePure.
 - Configured executor application depends on the node implementation-form checks from ADR 0030.
 
 ### Obligations
 
-- Add parser and kind-checker tests for configured executor bindings, node-level body applications,
-  and single-output shorthand applications.
-- Reject configured executor calls inside `pure (...)`.
+- Add parser and kind-checker tests for configured executor bindings and node-level body
+  applications.
+- Reject configured executor calls inside CorePure output equations.
 - Reject input-dependent executor config.
 - Update executor reference docs to replace partial-node wording with configured executor values.
 - Ensure imported configured executor values still require host projection and Capability binding.

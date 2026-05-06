@@ -15,7 +15,6 @@
 "use"      @keyword
 "as"       @keyword
 "inherit"  @keyword
-"pure"     @keyword
 "select"   @keyword
 "if"       @keyword
 "then"     @keyword

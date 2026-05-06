@@ -149,14 +149,11 @@ CorePure is authored without `@`:
 node score
   <- evidence: EvidenceSet;
   <- weights: WeightSet;
-  let
-    weighted = zipWith (score: weight: score * weight) weights.values evidence.scores
-  in
-  -> total: Score = pure (sum weighted);
+  -> total: Score = evidence.scores |> zipWith (score: weight: score * weight) weights.values |> sum;
 ```
 
-`pure (...)` is inside Wire's deterministic expression layer. Authored `@pure` is rejected. The
-compiler lowers pure output equations to the native pure evaluator internally after parsing.
+The output expression is inside Wire's deterministic expression layer. Authored `@pure` is rejected.
+The compiler lowers CorePure output equations to the native pure evaluator internally after parsing.
 
 ## Runtime Evaluation
 
@@ -181,4 +178,4 @@ Cortex's guarantee is that this authority was explicit and admitted before runti
 - Output projection, validation, and wrapping are egress obligations, not edge-local behavior.
 - Every executor node has the same external shape: typed inputs, typed outputs, and deterministic
   failure on contract/config/output violations.
-- `pure (...)` is not an executor-authority boundary and is never spelled `@pure`.
+- CorePure output equations are not executor-authority boundaries and are never spelled `@pure`.

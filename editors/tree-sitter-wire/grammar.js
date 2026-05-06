@@ -8,7 +8,7 @@
  * and optional file-return expression.
  * Executor values: @qualified.name { config }
  * Executor calls:  @qualified.name { config } (input) | configured (input)
- * Pure outputs:    -> label: Contract = pure (<CorePure expr>) ;
+ * Pure outputs:    -> label: Contract = <CorePure expr> ;
  * Graph operators: <> (overlay), => (connect), explicit parentheses required
  *                  when both appear in one expression.
  * Value operators: // (record merge), ++ (string/list concat)
@@ -283,18 +283,13 @@ module.exports = grammar({
       ';',
     ),
 
-    pure_output_expr: $ => seq(
-      'pure',
-      '(',
-      field('expr', $.core_pure_expr),
-      ')',
-    ),
+    pure_output_expr: $ => field('expr', $.core_pure_expr),
 
     executor_single_output_body: $ => seq(
       '->',
       field('output', $.output_variant),
       '=',
-      field('call', $.executor_call),
+      field('call', $.inline_executor_call),
       ';',
     ),
 

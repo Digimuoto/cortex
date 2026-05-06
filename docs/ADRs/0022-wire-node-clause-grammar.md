@@ -23,6 +23,7 @@ related:
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0022 - Wire Node Clause Grammar
@@ -32,6 +33,9 @@ related:
 Proposed - this ADR replaces the historical colon-led node body and string-config pure examples with
 the clause grammar for the next Wire implementation phase. ADR 0020's decision on pure output
 equations remains in force.
+
+Forward note: ADR 0050 supersedes this ADR's explicit `pure (...)` output wrapper. CorePure output
+expressions are now written directly after `=`.
 
 Forward note: ADR 0030 extends this grammar with node-level executor bodies for zero-output and
 multi-output external executors. This ADR's per-output equation grammar remains the pure-node
@@ -52,9 +56,9 @@ compatibility:
 - port labels should be declared exactly where routing happens;
 - node-local shared work should have one obvious scope.
 
-The syntax also needs to preserve the authority boundary from ADR 0010 and ADR 0017. `pure (...)` is
-internal deterministic Wire evaluation. `@executor (...)` is the boundary to registered external
-authority.
+The syntax also needs to preserve the authority boundary from ADR 0010 and ADR 0017. Direct CorePure
+output expressions are internal deterministic Wire evaluation. `@executor (...)` is the boundary to
+registered external authority.
 
 ## Decision
 
@@ -71,16 +75,15 @@ node_decl   ::= node <name>
 
 input_clause  ::= <- <name> : <Type>
 output_clause ::= -> <name> : <Type> = <rhs>
-rhs           ::= pure (<expr>) | @<executor> (<expr>) | <expr>
+rhs           ::= <corepure-expr> | @<executor> (<expr>)
 ```
 
 The `where_clause` production and its scope rules are defined in
 [ADR 0031](./0031-wire-binding-forms-and-where-clauses.md). The earlier `let_block` production -
 `let <bindings> in` between input clauses and output clauses - is removed.
 
-The first implementation slice must accept explicit `pure (<expr>)` and `@executor (<expr>)` output
-RHS forms. The unmarked `<expr>` form is reserved for the elaborator model from ADR 0021 and should
-remain rejected until inference and diagnostics are specified.
+ADR 0050 chooses the unmarked CorePure expression form for deterministic output equations. Runtime
+external authority remains explicit through `@`.
 
 ### Node Clauses
 
@@ -127,8 +130,8 @@ composition use case needs them. Current style guidance is:
 Output equations bind routing labels directly:
 
 ```wire
--> accepted: AcceptedSet = pure (accepted) ;
--> rejected: RejectedSet = pure (rejected) ;
+-> accepted: AcceptedSet = accepted ;
+-> rejected: RejectedSet = rejected ;
 -> report: Report = @review.summarize (prompt) ;
 ```
 
@@ -143,15 +146,15 @@ Binding must enforce a bijection between declared output ports and output equati
 - missing equations are compile errors;
 - output payloads validate against their declared contract and payload kind.
 
-### Pure Versus `@`
+### CorePure Versus `@`
 
-`pure (...)` does not use `@`. In Wire syntax, `@` marks the boundary to registered external
-authority whose behavior is not defined by the Wire theorem layer. The pure evaluator is internal,
-deterministic, closed, and subject to the CorePure semantics from ADR 0023.
+CorePure output expressions do not use `@`. In Wire syntax, `@` marks the boundary to registered
+external authority whose behavior is not defined by the Wire theorem layer. The pure evaluator is
+internal, deterministic, closed, and subject to the CorePure semantics from ADR 0023.
 
-Lowering may still represent `pure (...)` as an internal executor task in the compiled circuit. That
-is an implementation detail of the runtime substrate, not an authoring claim that pure evaluation is
-unknown authority.
+Lowering may still represent CorePure residue as an internal executor task in the compiled circuit.
+That is an implementation detail of the runtime substrate, not an authoring claim that pure
+evaluation is unknown authority.
 
 ## Worked example
 
@@ -160,14 +163,14 @@ let scoreThreshold = 0.7 ;
 
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
-  -> summary:  Report      = pure (''
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
+  -> summary:  Report      = ''
     Classification complete.
     Accepted: ${length accepted} items
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
-  '') ;
+  '' ;
   where let
     items    = evidence.items ;
     accepted = items |> filter (x: x.score >= scoreThreshold) ;

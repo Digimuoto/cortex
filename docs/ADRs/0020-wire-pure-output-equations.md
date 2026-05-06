@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0019-executor-registration-and-binding.md
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
 ---
 
@@ -34,6 +35,9 @@ decision on pure output equations remains in force.
 Forward note: ADR 0031 supersedes this ADR's node-local `let ... in` block and `localBindings`
 lowering detail. Pure output equations remain the accepted decision; node-local shared work now uses
 the trailing `where <record-expr> ;` clause and lowers through the `where` config field.
+
+Forward note: ADR 0050 supersedes this ADR's required `pure (...)` source wrapper. CorePure output
+equations remain the accepted decision, but the expression is now written directly after `=`.
 
 ## Context
 

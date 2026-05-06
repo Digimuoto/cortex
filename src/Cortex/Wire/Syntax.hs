@@ -329,7 +329,7 @@ data NodeBody
   deriving anyclass (ToJSON)
 
 {- | A node declaration binds a name to a specific node value. The body
-contains an executor call or pure output equations that lower to the
+contains an executor call or CorePure output equations that lower to the
 native pure evaluator.
 -}
 data NodeDecl = NodeDecl

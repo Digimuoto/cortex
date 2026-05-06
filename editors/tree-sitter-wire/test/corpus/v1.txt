@@ -33,13 +33,12 @@ run
         label: (identifier)
         contract: (contract_name
           (contract)))
-      call: (executor_call
-        (inline_executor_call
-          name: (qualified_ident
-            (identifier))
-          config: (record)
-          input: (core_pure_expr
-            (core_pure_ident))))))
+      call: (inline_executor_call
+        name: (qualified_ident
+          (identifier))
+        config: (record)
+        input: (core_pure_expr
+          (core_pure_ident)))))
   file_return: (expression
     (ident_ref
       (identifier))))
@@ -50,7 +49,8 @@ node-body kind application
 
 kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
-  -> label: Qubit = gate (label);
+  -> label: Qubit;
+  = gate (label);
 
 node screen_h = one_qubit_gate(screen, h_gate);
 screen_h
@@ -70,11 +70,13 @@ screen_h
       label: (identifier)
       contract: (contract_name
         (contract)))
-    body: (executor_single_output_body
-      output: (output_variant
-        label: (identifier)
-        contract: (contract_name
-          (contract)))
+    body: (executor_body
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_name
+              (contract)))))
       call: (executor_call
         (configured_executor_call
           name: (identifier)
@@ -181,16 +183,15 @@ run
         label: (identifier)
         contract: (contract_name
           (contract)))
-      call: (executor_call
-        (inline_executor_call
-          name: (qualified_ident
-            (identifier)
-            (identifier))
-          config: (record
-            (inherit_field
-              name: (identifier)))
-          input: (core_pure_expr
-            (core_pure_ident))))))
+      call: (inline_executor_call
+        name: (qualified_ident
+          (identifier)
+          (identifier))
+        config: (record
+          (inherit_field
+            name: (identifier)))
+        input: (core_pure_expr
+          (core_pure_ident)))))
   (form_decl
     name: (identifier)
     params: (form_param
@@ -298,8 +299,8 @@ let acceptedItem = item: item.score >= 0.7;
 
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (acceptedItems) ;
-  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
+  -> accepted: AcceptedSet = acceptedItems ;
+  -> rejected: RejectedSet = filter (item: !(acceptedItem item)) items;
   where let
     items = evidence.items ;
     acceptedItems = items |> filter acceptedItem ;

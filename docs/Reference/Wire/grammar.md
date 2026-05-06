@@ -37,7 +37,7 @@ The current grammar is intentionally explicit:
 - every authored node has typed input and output clauses;
 - every authored port has a label;
 - `@` names registered executor authority, never CorePure;
-- `pure (...)` output equations are inside Wire's deterministic expression layer;
+- output equations are CorePure expressions inside Wire's deterministic expression layer;
 - configured executor values are reusable values, not graph vertices;
 - fan-in and fan-out transformations are authored as nodes, not implicit context concatenation or
   implicit list aggregation.
@@ -225,7 +225,8 @@ let h_gate = @quantum.h {};
 
 kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
-  -> label: Qubit = gate (label);
+  -> label: Qubit;
+  = gate (label);
 
 node screen_h = one_qubit_gate(screen, h_gate);
 ```
@@ -236,7 +237,8 @@ ordinary node declaration:
 ```wire
 node screen_h
   <- screen: Qubit;
-  -> screen: Qubit = h_gate (screen);
+  -> screen: Qubit;
+  = h_gate (screen);
 ```
 
 Rules:
@@ -259,7 +261,8 @@ let h_gate = @quantum.h {};
 
 kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
-  -> label: Qubit = gate (label);
+  -> label: Qubit;
+  = gate (label);
 
 kind phase_gate(label: PortLabel, angle: Value) =
   <- label: Qubit;
@@ -312,22 +315,14 @@ let scoreThreshold = 0.7;
 
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (accepted);
-  -> summary: Report = pure (''
-    Accepted: ${length accepted} items
-    Threshold: ${scoreThreshold}
-  '');
-  where let
-    items = evidence.items;
-    accepted = items |> filter (item: item.score >= scoreThreshold);
-  in
-  { inherit items accepted; };
+  -> accepted: AcceptedSet = evidence.items |> filter (item: item.score >= scoreThreshold);
+  -> rejected: RejectedSet = evidence.items |> filter (item: item.score < scoreThreshold);
 ```
 
 Rules:
 
-- pure output equations use `pure (...)` only;
-- `@pure`, `pure { ... }`, and string-valued `expr = ...` configs are rejected;
+- pure output equations write the CorePure expression directly after `=`;
+- `pure (...)`, `@pure`, `pure { ... }`, and string-valued `expr = ...` configs are rejected;
 - every pure equation declares exactly one output port;
 - pure equations do not declare sum groups;
 - an optional trailing `where <record-expr> ;` clause opens statically known record fields into all
@@ -472,11 +467,11 @@ semantics are specified in [conditionality.md](conditionality.md).
 
 ## 8. CorePure Expressions
 
-CorePure is the deterministic expression language used by `pure (...)` and executor input arguments.
-It has no IO, imports, recursion, host callbacks, model calls, tool calls, time, or randomness.
-CorePure expressions evaluate when the node input ports they reference are available. They may also
-reference module-level pure-data constants and CorePure helper functions declared earlier in the
-file.
+CorePure is the deterministic expression language used by output equations and executor input
+arguments. It has no IO, imports, recursion, host callbacks, model calls, tool calls, time, or
+randomness. CorePure expressions evaluate when the node input ports they reference are available.
+They may also reference module-level pure-data constants and CorePure helper functions declared
+earlier in the file.
 
 Expression forms:
 
@@ -576,14 +571,14 @@ node gather
 
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (accepted);
-  -> rejected: RejectedSet = pure (rejected);
-  -> summary: Report = pure (''
+  -> accepted: AcceptedSet = accepted;
+  -> rejected: RejectedSet = rejected;
+  -> summary: Report = ''
     Classification complete.
     Accepted: ${length accepted}
     Rejected: ${length rejected}
     Threshold: ${threshold}
-  '');
+  '';
   where let
     items = evidence.items;
     accepted = items |> filter (x: x.score >= threshold);
@@ -612,7 +607,7 @@ The implementation rejects the previous authoring surface:
 - unlabeled authored ports;
 - `<- [Contract]` implicit list aggregation;
 - `@executor { ... }` in graph position;
-- `@pure`, `@pure { expr = ... }`, and `pure { ... }`;
+- `pure (...)`, `@pure`, `@pure { expr = ... }`, and `pure { ... }`;
 - node-local `let ... in` blocks before node bodies;
 - configured-executor config merge with `//`;
 - comma overlay shorthand in file-return expressions.

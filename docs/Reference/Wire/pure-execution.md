@@ -13,6 +13,7 @@ related:
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0020-wire-pure-output-equations.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
 ---
@@ -30,18 +31,14 @@ let acceptedItem = item: item.score >= 0.7;
 
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (acceptedItems);
-  -> rejected: RejectedSet = pure (filter (item: !(acceptedItem item)) items);
-  where let
-    items = evidence.items;
-    acceptedItems = filter acceptedItem items;
-  in
-  { inherit items acceptedItems; };
+  -> accepted: AcceptedSet = evidence.items |> filter acceptedItem;
+  -> rejected: RejectedSet = evidence.items |> filter (item: !(acceptedItem item));
 ```
 
-`pure (...)` is not an `@` executor application. Authored `@pure { ... }` is rejected. The compiler
-lowers pure output equations to an internal native pure task because Pulse executes materialized
-tasks, but that lowering is not source-level authority.
+CorePure output equations are not `@` executor applications. Authored `@pure { ... }` and retired
+`pure (...)` wrappers are rejected. The compiler lowers CorePure output equations to an internal
+native pure task because Pulse executes materialized tasks, but that lowering is not source-level
+authority.
 
 ## Rule Sources
 
@@ -52,6 +49,8 @@ tasks, but that lowering is not source-level authority.
   between CorePure and the internal native pure evaluator.
 - **[ADR 0020](../../ADRs/0020-wire-pure-output-equations.md)** - design decision and proof
   obligations.
+- **[ADR 0050](../../ADRs/0050-wire-corepure-output-residue.md)** - removal of the source-level
+  `pure (...)` wrapper and the static/runtime residue split.
 - **[ADR 0031](../../ADRs/0031-wire-binding-forms-and-where-clauses.md)** - node-local
   `where <record-expr> ;` binding surface.
 
@@ -62,18 +61,18 @@ A pure node uses the clause form from the Wire grammar:
 ```text
 node <name>
   (<- <input-name> : <Contract>;)*
-  (-> <output-name> : <Contract> = pure (<corepure-expr>);)+
+  (-> <output-name> : <Contract> = <corepure-expr>;)+
   (where <corepure-record-expr>;)?
 ```
 
 A pure output equation declares one output port and its value:
 
 ```wire
--> label: Contract = pure (<corepure_expr>);
+-> label: Contract = <corepure_expr>;
 ```
 
 The output label is the Wire routing label. The expression result is implicit; there is no `return`,
-and there is no separate map from result names to ports in source.
+no `pure` wrapper, and no separate map from result names to ports in source.
 
 Rules:
 
@@ -87,7 +86,8 @@ Rules:
 - Sum-grouped outputs are not pure equation syntax.
 - A pure node must declare at least one output equation.
 - The equation set must match the declared output ports exactly.
-- `pure (...)` is the only accepted source form.
+- Dynamic loops, host scripts, JIT languages, model calls, tools, and IO belong behind `@`
+  executors, not inside CorePure.
 
 Top-level delayed helpers are written as ordinary module `let` bindings whose right-hand side is a
 CorePure helper expression:
@@ -156,9 +156,9 @@ For example:
 node score
   <- evidence: EvidenceSet;
   <- weights: WeightSet;
-  -> score: ScoreSet = pure ({
+  -> score: ScoreSet = {
     total = sum (zipWith (s: w: s * w) evidence.scores weights.values);
-  });
+  };
 ```
 
 Here `evidence` and `weights` are CorePure variables containing the JSON payload values from the
@@ -168,7 +168,7 @@ matching input ports.
 
 Each output equation key in the lowered config is the declared output port name:
 
-- `-> accepted: AcceptedSet = pure (...)` writes the `accepted` output.
+- `-> accepted: AcceptedSet = accepted` writes the `accepted` output.
 - every output equation writes the declared output label with the same name in the lowered config.
 
 CorePure produces JSON values. Runtime wrapping then validates and wraps each value through the

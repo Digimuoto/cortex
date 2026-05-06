@@ -28,7 +28,7 @@ node read_name
 
 node greet
   <- name: UserInput;
-  -> greeting: Greeting = pure ("Hello, ${name}.");
+  -> greeting: Greeting = "Hello, ${name}.";
 
 node print_greeting
   <- greeting: Greeting;

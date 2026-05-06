@@ -25,6 +25,7 @@ related:
   - docs/ADRs/0022-wire-node-clause-grammar.md
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0024 - Typed Executor Node Interface
@@ -42,8 +43,8 @@ was treated as "context" and the executor assembled that context into prose. Tha
 model-mediated nodes were the only interesting computation primitive: the inconsistency was hidden
 inside prompt construction.
 
-Pure nodes expose the inconsistency. Once `pure (...)` has declared input ports and declared output
-ports, the clean model is:
+CorePure output nodes expose the inconsistency. Once a deterministic node has declared input ports
+and declared output ports, the clean model is:
 
 - nodes are functions;
 - input ports are typed arguments;
@@ -68,9 +69,9 @@ Every executor node has the same external topology shape:
 - a registered executor implementation selected by the RHS;
 - typed failure on admission, decode, execution, or output-validation failure.
 
-The executor's internal mechanism may differ. `pure (...)` evaluates CorePure. `@review.* (...)`
-calls a model. `@http.* (...)` may make a network request. The topology layer does not get a
-separate shape for those cases.
+The executor's internal mechanism may differ. CorePure output equations evaluate through the native
+pure evaluator. `@review.* (...)` calls a model. `@http.* (...)` may make a network request. The
+topology layer does not get a separate shape for those cases.
 
 Edges carry typed values. They do not carry "context", prompt fragments, control flow, structural
 fan-out, or implicit argument order. Those are jobs for nodes and for executor configuration.
@@ -133,10 +134,10 @@ explicit fan-out, sharing, persistence, broadcast, projection, or record↔ports
 consumes the source once and produces fresh output ports. Fan-in is not implicit aggregation. A
 list-valued input receives one list-typed value, not a variadic set of incoming edges. If a shape
 needs projection, packing, filtering, prompt assembly, list construction, record reshaping, or
-multi-consumer distribution, that shape is expressed as a `pure (...)` node or explicit structural
-adapter rather than as contextual interpretation by an executor or hidden edge semantics. Later Wire
-syntax may add sugar for common packing cases, but the admitted graph must still contain the
-explicit transformation vertex.
+multi-consumer distribution, that shape is expressed as a CorePure output-equation node or explicit
+structural adapter rather than as contextual interpretation by an executor or hidden edge semantics.
+Later Wire syntax may add sugar for common packing cases, but the admitted graph must still contain
+the explicit transformation vertex.
 
 ### LLM Executors
 
@@ -179,14 +180,14 @@ The proof-facing core therefore remains the admitted graph: vertices, typed port
 predecessor hashes, and executor invocations. Native memory support is an executor/downstream
 context capability with its own runtime contract and provenance obligations.
 
-### Structural Work Belongs In Pure Nodes
+### Structural Work Belongs In CorePure Nodes
 
 Projection, packing, filtering, prompt-fragment construction, record reshaping, and multi-output
-distribution should be expressed as `pure (...)` work rather than hidden in LLM context
+distribution should be expressed as CorePure output-equation work rather than hidden in LLM context
 concatenation.
 
-For example, an LLM can produce one typed structured output, and a downstream pure node can expose
-fields as separate ports:
+For example, an LLM can produce one typed structured output, and a downstream CorePure node can
+expose fields as separate ports:
 
 ```wire
 node analyze
@@ -195,9 +196,9 @@ node analyze
 
 node distribute
   <- analysis: AnalysisRecord ;
-  -> summary: String = pure (analysis.summary) ;
-  -> recommendations: List String = pure (analysis.recommendations) ;
-  -> riskScore: Number = pure (analysis.riskScore) ;
+  -> summary: String = analysis.summary ;
+  -> recommendations: List String = analysis.recommendations ;
+  -> riskScore: Number = analysis.riskScore ;
 ```
 
 This keeps the topology auditable:
@@ -213,15 +214,15 @@ buried in a model prompt.
 
 ### Heterogeneous Models
 
-Heterogeneous model use is ordinary topology. A pure distribution node can expose several distinct
-typed outputs for several typed LLM nodes, each with its own executor id, model policy, input
-contracts, and output contracts:
+Heterogeneous model use is ordinary topology. A CorePure distribution node can expose several
+distinct typed outputs for several typed LLM nodes, each with its own executor id, model policy,
+input contracts, and output contracts:
 
 ```wire
 node prepareReviews
   <- report: DraftReport ;
-  -> valuationPrompt: ReviewInput = pure (makeReviewInput "valuation" report) ;
-  -> legalPrompt: ReviewInput = pure (makeReviewInput "legal" report) ;
+  -> valuationPrompt: ReviewInput = makeReviewInput "valuation" report ;
+  -> legalPrompt: ReviewInput = makeReviewInput "legal" report ;
 
 node valuationReview
   <- input: ReviewInput ;
@@ -242,10 +243,10 @@ Existing LLM nodes that "swallow all arrows" should be decomposed.
 For each representative downstream wire, audit every incoming edge to an LLM node:
 
 - keep values that are genuine model inputs as declared typed input ports;
-- move structural fan-in, projection, filtering, and prompt-fragment assembly into upstream
-  `pure (...)` nodes;
+- move structural fan-in, projection, filtering, and prompt-fragment assembly into upstream CorePure
+  output nodes;
 - define typed output contracts for the LLM result;
-- move field projection and multi-consumer distribution into downstream `pure (...)` nodes;
+- move field projection and multi-consumer distribution into downstream CorePure output nodes;
 - simplify the LLM executor to typed inputs, prompt template, output schema, model policy, and
   validation.
 
@@ -265,7 +266,7 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
   concrete typed ports.
 - **Allow list-valued inputs to aggregate multiple incoming edges.** Rejected because edge
   multiplicity would perform an implicit transformation. Packing values into a list is computation,
-  so it must be represented by an explicit `pure (...)` node.
+  so it must be represented by an explicit CorePure output node.
 - **Introduce explicit source and sink executor roles.** Rejected because those names describe
   incidental boundary shapes in some workflows, not a topology-level executor category. Multi-entry,
   multi-exit, and multi-to-multi graphs should be ordinary graph structure.

@@ -20,6 +20,7 @@ related:
   - docs/ADRs/0025-configured-executor-values.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0031 - Wire Binding Forms and Node Where Clauses
@@ -84,8 +85,8 @@ let y = let x = 1 in x + 1 in y * 2
 ```
 
 Legal positions are exactly the expression positions defined elsewhere: the right-hand side of any
-`=`, the argument of `pure (...)`, the argument of an executor call, the right-hand side of a
-`where` binding, and the body of another `let ... in`.
+CorePure output equation, the argument of an executor call, the right-hand side of a `where`
+binding, and the body of another `let ... in`.
 
 ### 2. Module-level `let X = e ;`
 
@@ -163,8 +164,8 @@ literal:
 ```wire
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (filtered_high) ;
-  -> rejected: RejectedSet = pure (filtered_low) ;
+  -> accepted: AcceptedSet = filtered_high ;
+  -> rejected: RejectedSet = filtered_low ;
   where {
     filtered_high = evidence.items |> filter (x: x.score >= 0.7) ;
     filtered_low  = evidence.items |> filter (x: x.score <  0.7) ;
@@ -179,8 +180,8 @@ record literal:
 ```wire
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
   where let
     items          = evidence.items ;
     accepted_items = items |> filter (x: x.score >= 0.7) ;
@@ -202,12 +203,12 @@ let defaults = { factor = 0.7 ; threshold = 100 ; } ;
 
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (evidence.items |> filter (x: x.score >= factor)) ;
+  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= factor) ;
   where defaults ;
 
 node strict
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (evidence.items |> filter (x: x.score >= factor + 0.1)) ;
+  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= factor + 0.1) ;
   where defaults ;
 ```
 
@@ -304,13 +305,13 @@ node score
     scores   = map (item: item.score) evidence.items ;
     weighted = zipWith (s: w: s * w) scores weights.values ;
   in
-  -> score: ScoreSet = pure ({ total = sum weighted ; count = length weighted ; }) ;
+  -> score: ScoreSet = { total = sum weighted ; count = length weighted ; } ;
 
 -- after
 node score
   <- evidence: EvidenceSet ;
   <- weights: WeightSet ;
-  -> score: ScoreSet = pure ({ total = sum weighted ; count = length weighted ; }) ;
+  -> score: ScoreSet = { total = sum weighted ; count = length weighted ; } ;
   where let
     scores   = map (item: item.score) evidence.items ;
     weighted = zipWith (s: w: s * w) scores weights.values ;

@@ -15,6 +15,7 @@ related:
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0026-wire-failure-taxonomy.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0029 - CorePure Structured Serialization
@@ -67,10 +68,10 @@ serializable unless a later ADR admits them.
 String interpolation remains scalar-only. Authors serialize structured values explicitly:
 
 ```wire
--> prompt: Prompt = pure (''
+-> prompt: Prompt = ''
   Analyze these items:
   ${toJson evidence.items}
-'') ;
+'' ;
 ```
 
 ### Canonical JSON

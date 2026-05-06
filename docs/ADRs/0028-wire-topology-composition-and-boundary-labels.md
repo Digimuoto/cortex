@@ -21,6 +21,7 @@ related:
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0025-configured-executor-values.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0028 - Wire Topology Composition and Boundary Labels
@@ -108,8 +109,8 @@ has one producer edge, and every output port instance has one consumer, either o
 or one explicit terminal egress, sink, or exported boundary discharge. Multi-consumer use is
 expressed by an explicit fan-out, sharing, persistence, broadcast, projection, or record↔ports
 adapter node that consumes the source output once and produces fresh output port instances. Packing
-several values into one aggregate remains explicit `pure (...)` work or an explicit structural
-adapter; `=>` does not perform implicit fan-out, implicit fan-in, aggregation, or duplication.
+several values into one aggregate remains explicit CorePure work or an explicit structural adapter;
+`=>` does not perform implicit fan-out, implicit fan-in, aggregation, or duplication.
 
 ### Associativity And Precedence
 
@@ -151,7 +152,7 @@ To create a constant circuit, authors use an explicit node with an explicit outp
 
 ```wire
 node greeting
-  -> text: String = pure ("Hello") ;
+  -> text: String = "Hello" ;
 ```
 
 The circuit's boundary label is `text`, not the file-level binding name. This keeps labels tied to

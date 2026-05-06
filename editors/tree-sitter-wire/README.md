@@ -37,8 +37,7 @@ test/
 - kind applications that still introduce vertices with `node`: `node concrete = pass(input);`
 - form applications that bind graph values with `let` / `export let`, or as nested form-local
   bindings: `let concrete = pair();`
-- pure node output equations:
-  `node name <- input: Contract ; -> output: Contract = pure (input.score) ;`
+- pure node output equations: `node name <- input: Contract ; -> output: Contract = input.score ;`
 - configured executor values: `let analyst = @llm.analyst { temperature = 0.2 ; } ;`
 - CorePure helper bindings: `export let acceptedItem = x: x.score >= 0.7 ;`
 - imports: `import { a, b } from "path";`
@@ -61,10 +60,10 @@ test/
 - executor calls in node bodies: `@qualified.name { config = value; } (input)` or `analyst (input)`
 - config constructors: `topological { preset = "analyst"; }`
 - operators: record merge `//` and string/list concat `++`
-- CorePure expressions inside pure output equations and executor input arguments: field access,
-  indexing, lambdas, application, `if ... then ... else ...`, pipes `|>`,
-  arithmetic/comparison/boolean operators, records, lists, string interpolation, and builtins such
-  as `map`, `filter`, `zipWith`, `joinWith`, `toJson`, and `fromJson`
+- CorePure expressions inside output equations and executor input arguments: field access, indexing,
+  lambdas, application, `if ... then ... else ...`, pipes `|>`, arithmetic/comparison/boolean
+  operators, records, lists, string interpolation, and builtins such as `map`, `filter`, `zipWith`,
+  `joinWith`, `toJson`, and `fromJson`
 
 **Comments**
 

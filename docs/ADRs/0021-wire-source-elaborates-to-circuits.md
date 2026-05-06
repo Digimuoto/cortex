@@ -22,6 +22,7 @@ related:
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0021 - Wire Source Elaborates to Circuits
@@ -98,17 +99,16 @@ Runtime pure execution may evaluate values, but it may not create new topology.
 
 ### Runtime Residue
 
-The first slice should require explicit runtime RHS markers:
+ADR 0050 resolves the runtime residue spelling: CorePure output expressions are written directly and
+are delayed only when they depend on input ports.
 
 ```wire
--> port: T = pure (<expr>)
+-> port: T = <corepure-expr>
 -> port: T = @executor (<expr>)
 ```
 
-An unmarked output RHS, such as `-> port: T = <expr>`, has a coherent meaning under the elaborator
-model, but it introduces inference questions that should be deferred. Initially, authors must state
-whether runtime residue is handled by the internal pure evaluator or by a registered external
-executor.
+The compiler still distinguishes internal native pure residue from registered executor authority:
+CorePure has no `@`; authority-bearing work uses `@`.
 
 ### Follow-On Composition Decision
 
@@ -121,9 +121,8 @@ operators defined there.
 
 - **Keep CorePure only inside `pure (...)`.** Rejected for the next phase because it preserves an
   artificial split between ordinary Wire constants and pure runtime programs.
-- **Infer all runtime pure execution immediately.** Rejected for the first slice because unmarked
-  input-dependent RHS forms need syntax, diagnostics, and proof obligations that are separable from
-  the explicit `pure (...)` surface.
+- **Defer unmarked runtime pure execution.** Rejected by ADR 0050. Direct CorePure equations are now
+  the source form; authority-bearing work remains explicit through `@`.
 - **Allow runtime topology creation.** Rejected because it would break the static graph property
   required by rewrite admission and predecessor hashing.
 
@@ -157,7 +156,7 @@ The immediate implementation slice is:
 1. Parse the node and output grammar from ADR 0022.
 2. Implement the CorePure expression surface from ADR 0023.
 3. Elaborate Wire AST into a post-elaboration circuit, including maximal static reduction.
-4. Route runtime `pure (...)` executor vertices through the existing pure executor path.
+4. Route runtime CorePure residue through the existing native pure executor path.
 5. Add the closed stdlib needed by the first pure examples.
 
 Topology composition primitives are specified separately by ADR 0028 and can be implemented after

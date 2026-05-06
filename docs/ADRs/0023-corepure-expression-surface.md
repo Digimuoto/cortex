@@ -16,6 +16,7 @@ related:
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0022-wire-node-clause-grammar.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0024-typed-executor-node-interface.md
 ---
 
@@ -24,7 +25,7 @@ related:
 ## Status
 
 Proposed - this ADR defines the initial CorePure authoring language for both elaboration-time
-reduction and runtime `pure (...)` execution.
+reduction and delayed runtime output execution.
 
 ## Context
 
@@ -40,7 +41,7 @@ not Nix. It is a closed expression language with a typed evaluator and determini
 ## Decision
 
 CorePure should use a closed Nix-like expression surface. The same AST and evaluator are used by the
-elaborator from ADR 0021 and by runtime `pure (...)` output equations from ADR 0022.
+elaborator from ADR 0021 and by delayed runtime output equations from ADR 0050.
 
 The initial language includes:
 
@@ -256,8 +257,8 @@ All other backslashes and single quotes inside indented strings are literal char
 ### Layer Boundary
 
 Interpolation is a CorePure feature, not a topology feature. A string such as `"${node.output}"`
-does not read a circuit port at elaboration time. Inside `pure (...)`, input ports are bound to
-runtime values, so interpolation works normally over those concrete values.
+does not read a circuit port at elaboration time. Inside an input-dependent output equation, input
+ports are bound to runtime values, so interpolation works normally over those concrete values.
 
 ## Worked example
 
@@ -266,14 +267,14 @@ let scoreThreshold = 0.7 ;
 
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
-  -> summary: Report = pure (''
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
+  -> summary: Report = ''
     Classification complete.
     Accepted: ${length accepted} items
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
-  '') ;
+  '' ;
   where let
     items = evidence.items ;
     accepted = items |> filter (x: x.score >= scoreThreshold) ;

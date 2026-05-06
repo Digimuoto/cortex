@@ -17,10 +17,10 @@ node read_target
 
 node plan_build
   <- target: BuildTarget;
-  -> compileSpec: CommandSpec = pure (compileSpec);
-  -> testSpec: CommandSpec = pure (testSpec);
-  -> docsSpec: CommandSpec = pure (docsSpec);
-  -> lintSpec: CommandSpec = pure (lintSpec);
+  -> compileSpec: CommandSpec = compileSpec;
+  -> testSpec: CommandSpec = testSpec;
+  -> docsSpec: CommandSpec = docsSpec;
+  -> lintSpec: CommandSpec = lintSpec;
   where let
     release = target == "release";
     docsOnly = target == "docs";
@@ -84,7 +84,7 @@ node summarize_build
   <- test: CommandResult;
   <- docs: CommandResult;
   <- lint: CommandResult;
-  -> summary: BuildReport = pure (summary);
+  -> summary: BuildReport = summary;
   where let
     checks = [compile, test, docs, lint];
     required = checks |> filter (check: check.required);

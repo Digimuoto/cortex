@@ -25,7 +25,8 @@ let quantum_measure_z = @quantum.measure_z {};
 
 kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
-  -> label: Qubit = gate (label);
+  -> label: Qubit;
+  = gate (label);
 
 kind rz_gate(label: PortLabel, angle: Value) =
   <- label: Qubit;
@@ -33,7 +34,8 @@ kind rz_gate(label: PortLabel, angle: Value) =
 
 kind qubit_measure(input: PortLabel, output: PortLabel) =
   <- input: Qubit;
-  -> output: Bit = quantum_measure_z (input);
+  -> output: Bit;
+  = quantum_measure_z (input);
 
 kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecutor) =
   <- control: Qubit;
@@ -49,7 +51,7 @@ kind run_command(spec: PortLabel, result: PortLabel) =
 kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
   <- spec: CommandSpec;
   <- previous: CommandResult;
-  -> ready: CommandSpec = pure (spec);
+  -> ready: CommandSpec = spec;
 
 # Hardware circuit graph forms for the eraser sweep.
 #
@@ -165,19 +167,19 @@ export let eraser_phase_1_4 = eraser_circuit(phase_quarter);
 export let eraser_phase_1_2 = eraser_circuit(phase_half);
 
 node start_experiment
-  -> start: ExperimentStart = pure ("start");
+  -> start: ExperimentStart = "start";
 
 node plan_experiment
   <- start: ExperimentStart;
-  -> open0Spec: CommandSpec = pure (open0Spec);
-  -> open14Spec: CommandSpec = pure (open14Spec);
-  -> open12Spec: CommandSpec = pure (open12Spec);
-  -> which0Spec: CommandSpec = pure (which0Spec);
-  -> which14Spec: CommandSpec = pure (which14Spec);
-  -> which12Spec: CommandSpec = pure (which12Spec);
-  -> eraser0Spec: CommandSpec = pure (eraser0Spec);
-  -> eraser14Spec: CommandSpec = pure (eraser14Spec);
-  -> eraser12Spec: CommandSpec = pure (eraser12Spec);
+  -> open0Spec: CommandSpec = open0Spec;
+  -> open14Spec: CommandSpec = open14Spec;
+  -> open12Spec: CommandSpec = open12Spec;
+  -> which0Spec: CommandSpec = which0Spec;
+  -> which14Spec: CommandSpec = which14Spec;
+  -> which12Spec: CommandSpec = which12Spec;
+  -> eraser0Spec: CommandSpec = eraser0Spec;
+  -> eraser14Spec: CommandSpec = eraser14Spec;
+  -> eraser12Spec: CommandSpec = eraser12Spec;
   where let
     shots = "100";
     source = "examples/wire/quantum-eraser-experiment.wire";
@@ -239,7 +241,7 @@ node summarize_experiment
   <- eraser0: CommandResult;
   <- eraser14: CommandResult;
   <- eraser12: CommandResult;
-  -> summary: ExperimentReport = pure (summary);
+  -> summary: ExperimentReport = summary;
   where let
     runs = [open0, open14, open12, which0, which14, which12, eraser0, eraser14, eraser12];
     failures = runs |> filter (run: !run.ok);

@@ -111,9 +111,9 @@ spec = describe "Cortex.Wire.Parser" $ do
       parseWireFile "test" "node sink\n  <- errors: [ExecutorError] ;\n  = @artifact.log (errors) ;"
         `shouldSatisfy` isParseFailure
 
-    it "rejects brace-form pure output equations" $
-      parseWireFile "test" "node score\n  -> score: Score = pure { 1 ; } ;"
-        `shouldSatisfy` isParseFailure
+    it "rejects removed pure output wrappers" $
+      parseWireFile "test" "node score\n  -> score: Score = pure (1) ;"
+        `shouldSatisfy` isParseFailureContaining "pure (...) output wrappers were removed"
 
     it "rejects authored @pure executor calls" $
       parseWireFile "test" "node score\n  -> score: Score = @pure ({}) ;"
@@ -140,7 +140,7 @@ spec = describe "Cortex.Wire.Parser" $ do
             , "  let"
             , "    items = evidence.items ;"
             , "  in"
-            , "  -> accepted: AcceptedSet = pure (items) ;"
+            , "  -> accepted: AcceptedSet = items ;"
             ]
         )
         `shouldSatisfy` isParseFailure
@@ -215,7 +215,8 @@ spec = describe "Cortex.Wire.Parser" $ do
                 [ "let h_gate = @quantum.h {} ;"
                 , "kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) ="
                 , "  <- label: Qubit ;"
-                , "  -> label: Qubit = gate (label) ;"
+                , "  -> label: Qubit ;"
+                , "  = gate (label) ;"
                 , "node screen_h = one_qubit_gate(screen, h_gate);"
                 , "screen_h"
                 ]
@@ -268,8 +269,8 @@ spec = describe "Cortex.Wire.Parser" $ do
               T.unlines
                 [ "node classify"
                 , "  <- evidence: EvidenceSet ;"
-                , "  -> accepted: AcceptedSet = pure (accepted) ;"
-                , "  -> rejected: RejectedSet = pure (rejected) ;"
+                , "  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= 0.7) ;"
+                , "  -> rejected: RejectedSet = evidence.items |> filter (x: x.score < 0.7) ;"
                 , "  where let"
                 , "    items = evidence.items ;"
                 , "    accepted = items |> filter (x: x.score >= 0.7) ;"
@@ -449,10 +450,15 @@ parseCorePureNodeOutput source =
     program =
       T.unlines
         [ "node value"
-        , "  -> out: T = pure (" <> source <> ") ;"
+        , "  -> out: T = " <> source <> " ;"
         ]
 
 isParseFailure :: Either ParseError a -> Bool
 isParseFailure result = case result of
   Left _ -> True
+  Right _ -> False
+
+isParseFailureContaining :: Text -> Either ParseError a -> Bool
+isParseFailureContaining expected result = case result of
+  Left err -> expected `T.isInfixOf` renderParseError err
   Right _ -> False

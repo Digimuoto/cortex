@@ -25,6 +25,7 @@ related:
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
   - docs/ADRs/0032-wire-boundary-contract-resources.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
+  - docs/ADRs/0050-wire-corepure-output-residue.md
 ---
 
 # ADR 0039 - Wire Node Boundary Transform Normal Form
@@ -151,8 +152,8 @@ For current pure nodes, the egress adapter is visible as output equations:
 ```wire
 node classify
   <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = pure (accepted) ;
-  -> rejected: RejectedSet = pure (rejected) ;
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
   where let
     items = evidence.items ;
     accepted = items |> filter (x: x.score >= 0.7) ;

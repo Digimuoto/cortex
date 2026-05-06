@@ -281,6 +281,30 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
         `shouldSatisfy` isParseFailure
 
+    it "rejects configured executor values inside CorePure output equations" $
+      compileWireText configuredExecutorInPureOutputSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "configured executor analyst_base"
+
+    it "rejects graph values inside CorePure output equations" $
+      compileWireText graphBindingInPureOutputSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "graph value workers"
+
+    it "rejects node values inside CorePure output equations" $
+      compileWireText nodeBindingInPureOutputSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "node value worker"
+
+    it "rejects imported executors inside CorePure output equations" $
+      compileWireText importedExecutorInPureOutputSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "imported executor command"
+
+    it "rejects contracts inside CorePure output equations" $
+      compileWireText contractInPureOutputSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "contract AcceptedSet"
+
+    it "rejects non-CorePure captures inside top-level CorePure lets" $
+      compileWireText graphBindingInTopLevelCorePureLetSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "graph value workers"
+
   describe "namespace use imports" $ do
     it "lowers std.io aliases to canonical executor and contract IDs" $ do
       compiled <- requireRight (compileWireText stdIoAliasSourceText)
@@ -633,7 +657,7 @@ pureExecutorSourceText =
     [ "node score"
     , "  <- evidence: Float ;"
     , "  <- recency: Float ;"
-    , "  -> out: Float = pure (evidence + recency) ;"
+    , "  -> out: Float = evidence + recency ;"
     , "score"
     ]
 
@@ -643,7 +667,7 @@ pureExecutorWithSharedHelperSourceText =
     [ "let acceptedItem = x: x.score >= 0.7 ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;"
+    , "  -> accepted: AcceptedSet = evidence.items |> filter acceptedItem ;"
     , "classify"
     ]
 
@@ -653,7 +677,7 @@ pureExecutorWithScalarLetSourceText =
     [ "let scoreThreshold = 0.7 ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (evidence.items |> filter (x: x.score >= scoreThreshold)) ;"
+    , "  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= scoreThreshold) ;"
     , "classify"
     ]
 
@@ -663,8 +687,8 @@ pureExecutorWithLocalBindingsSourceText =
     [ "let acceptedItem = x: x.score >= 0.7 ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (acceptedItems) ;"
-    , "  -> rejected: RejectedSet = pure (items |> filter (x: !(acceptedItem x))) ;"
+    , "  -> accepted: AcceptedSet = acceptedItems ;"
+    , "  -> rejected: RejectedSet = items |> filter (x: !(acceptedItem x)) ;"
     , "  where let"
     , "    items = evidence.items ;"
     , "    acceptedItems = items |> filter acceptedItem ;"
@@ -679,7 +703,7 @@ pureExecutorWithLetBoundWhereSourceText =
     [ "let defaults = { accepted = [] ; } ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  -> accepted: AcceptedSet = accepted ;"
     , "  where defaults ;"
     , "classify"
     ]
@@ -690,7 +714,7 @@ whereLocalLetShadowsStaticSourceText =
     [ "let defaults = { accepted = [] ; rejected = [] ; } ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  -> accepted: AcceptedSet = accepted ;"
     , "  where let"
     , "    defaults = { accepted = evidence.items ; } ;"
     , "  in"
@@ -703,7 +727,7 @@ whereInputCollisionSourceText =
   T.unlines
     [ "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  -> accepted: AcceptedSet = accepted ;"
     , "  where { evidence = evidence.items ; accepted = [] ; } ;"
     , "classify"
     ]
@@ -713,7 +737,7 @@ whereDynamicShapeSourceText =
   T.unlines
     [ "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (accepted) ;"
+    , "  -> accepted: AcceptedSet = accepted ;"
     , "  where if true then { accepted = [] ; } else { rejected = [] ; } ;"
     , "classify"
     ]
@@ -722,7 +746,7 @@ pureExecutorDuplicateRecordPathSourceText :: T.Text
 pureExecutorDuplicateRecordPathSourceText =
   T.unlines
     [ "node score"
-    , "  -> out: Float = pure (if false then { a = 1 ; a = 2 ; } else 0) ;"
+    , "  -> out: Float = if false then { a = 1 ; a = 2 ; } else 0 ;"
     , "score"
     ]
 
@@ -730,7 +754,7 @@ pureExecutorPrefixRecordPathSourceText :: T.Text
 pureExecutorPrefixRecordPathSourceText =
   T.unlines
     [ "node score"
-    , "  -> out: Float = pure (if false then { a.b = 1 ; a = 2 ; } else 0) ;"
+    , "  -> out: Float = if false then { a.b = 1 ; a = 2 ; } else 0 ;"
     , "score"
     ]
 
@@ -741,7 +765,7 @@ duplicatePureAndWireLetSourceText =
     , "let acceptedItem = @review.analyst { temperature = 0.2 ; } ;"
     , "node classify"
     , "  <- evidence: EvidenceSet ;"
-    , "  -> accepted: AcceptedSet = pure (evidence.items |> filter acceptedItem) ;"
+    , "  -> accepted: AcceptedSet = evidence.items |> filter acceptedItem ;"
     , "classify"
     ]
 
@@ -752,6 +776,67 @@ legacyPureExecutorSourceText =
     , "  <- evidence: Float ;"
     , "  -> out: Float = @pure (evidence) ;"
     , "score"
+    ]
+
+configuredExecutorInPureOutputSourceText :: T.Text
+configuredExecutorInPureOutputSourceText =
+  T.unlines
+    [ "let analyst_base = @review.analyst { temperature = 0.2 ; } ;"
+    , "node classify"
+    , "  <- evidence: EvidenceSet ;"
+    , "  -> accepted: AcceptedSet = analyst_base(evidence) ;"
+    , "classify"
+    ]
+
+graphBindingInPureOutputSourceText :: T.Text
+graphBindingInPureOutputSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> evidence: EvidenceSet = @review.source ({}) ;"
+    , "let workers = source ;"
+    , "node classify"
+    , "  -> accepted: AcceptedSet = workers ;"
+    , "classify"
+    ]
+
+nodeBindingInPureOutputSourceText :: T.Text
+nodeBindingInPureOutputSourceText =
+  T.unlines
+    [ "node worker"
+    , "  -> evidence: EvidenceSet = @review.source ({}) ;"
+    , "node classify"
+    , "  -> accepted: AcceptedSet = worker ;"
+    , "classify"
+    ]
+
+importedExecutorInPureOutputSourceText :: T.Text
+importedExecutorInPureOutputSourceText =
+  T.unlines
+    [ "use std.io.{@command};"
+    , "node classify"
+    , "  -> accepted: AcceptedSet = command({}) ;"
+    , "classify"
+    ]
+
+contractInPureOutputSourceText :: T.Text
+contractInPureOutputSourceText =
+  T.unlines
+    [ "contract AcceptedSet;"
+    , "node classify"
+    , "  -> accepted: AcceptedSet = AcceptedSet ;"
+    , "classify"
+    ]
+
+graphBindingInTopLevelCorePureLetSourceText :: T.Text
+graphBindingInTopLevelCorePureLetSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> evidence: EvidenceSet = @review.source ({}) ;"
+    , "let workers = source ;"
+    , "let accepted = x: workers ;"
+    , "node classify"
+    , "  -> accepted: AcceptedSet = accepted ;"
+    , "classify"
     ]
 
 stdIoAliasSourceText :: T.Text
@@ -987,6 +1072,15 @@ isParseFailure :: Either WireError ok -> Bool
 isParseFailure = \case
   Left WireParseError {} -> True
   _ -> False
+
+isCorePureScopeViolationOf :: T.Text -> Either WireError ok -> Bool
+isCorePureScopeViolationOf capturedBinding = \case
+  Left (WireInvalidPorts _ message) -> messageMatches message
+  Left (WireParseError message) -> messageMatches message
+  _ -> False
+  where
+    messageMatches message =
+      ("cannot capture " <> capturedBinding) `T.isInfixOf` message
 
 knownContractsEnv :: WireCompileEnv
 knownContractsEnv =

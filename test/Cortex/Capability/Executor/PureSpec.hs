@@ -281,7 +281,7 @@ pureSourceText =
     [ "node score"
     , "  <- evidence_score: Float ;"
     , "  <- recency_score: Float ;"
-    , "  -> out: Float = pure (evidence_score + recency_score) ;"
+    , "  -> out: Float = evidence_score + recency_score ;"
     , "score"
     ]
 

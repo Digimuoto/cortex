@@ -66,6 +66,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0047](0047-wire-frontier-linearity-and-precedence.md)          | Wire Frontier Linearity and Topology Operator Precedence            | proposed   |
 | [0048](0048-wire-make-bounded-node-generation.md)               | Wire Compile-Time Make for Bounded Node Generation                  | proposed   |
 | [0049](0049-wire-fan-phantom-adapter.md)                        | Wire Phantom Record↔Ports Adapter for Topology Fans                | proposed   |
+| [0050](0050-wire-corepure-output-residue.md)                    | Wire CorePure Output Residue                                        | proposed   |
 
 ## Writing a new ADR
 

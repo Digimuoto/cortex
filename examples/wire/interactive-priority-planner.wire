@@ -17,7 +17,7 @@ node read_mode
 
 node build_plan
   <- answer: UserInput;
-  -> summary: PlanSummary = pure (summary);
+  -> summary: PlanSummary = summary;
   where let
     highMode = answer == "high";
     threshold = if highMode then 0.6 else 0.8;

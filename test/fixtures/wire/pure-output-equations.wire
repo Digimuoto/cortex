@@ -7,14 +7,14 @@ let scoreThreshold = 0.7;
 
 node classify
   <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = pure (accepted);
-  -> rejected: RejectedSet = pure (rejected);
-  -> summary: Report = pure (''
+  -> accepted: AcceptedSet = accepted;
+  -> rejected: RejectedSet = rejected;
+  -> summary: Report = ''
     Classification complete.
     Accepted: ${length accepted} items
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
-  '');
+  '';
   where let
     items = evidence.items;
     accepted = items |> filter (item: item.score >= scoreThreshold);

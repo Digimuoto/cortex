@@ -99,7 +99,8 @@ let h_gate = @quantum.h {};
 
 kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
   <- label: Qubit;
-  -> label: Qubit = gate (label);
+  -> label: Qubit;
+  = gate (label);
 
 node eraser0_screen_h = one_qubit_gate(screen, h_gate);
 node eraser0_marker_h = one_qubit_gate(marker, h_gate);
