@@ -422,20 +422,26 @@ form marked_circuit(phase_angle: Value, marker_readout: Graph) = {
   let recombine_screen =
     recombine_turn
       => measure_screen;
+  let prepared_screen_path =
+    prepare_screen
+      => split_path;
+  let prepared_marker_path =
+    prepare_marker
+      => mark_marker_pre;
+  let prepared_paths =
+    prepared_screen_path
+    <> prepared_marker_path;
+  let measured_marker =
+    mark_marker_post
+      => marker_readout;
+  let measured_paths =
+    recombine_screen
+    <> measured_marker;
 
   ibm_runtime_config
-    => (
-      (prepare_screen
-        => split_path)
-      <> (prepare_marker
-        => mark_marker_pre)
-    )
+    => prepared_paths
     => mark_cz
-    => (
-      recombine_screen
-      <> (mark_marker_post
-        => marker_readout)
-    );
+    => measured_paths;
 };
 
 form which_path_circuit(phase_angle: Value) = {
@@ -528,9 +534,12 @@ let command_sequence =
     => run_eraser_14
     => run_eraser_12;
 
+let analyzed_sequence =
+  command_sequence
+    * analyze_experiment;
+
 start_experiment
   => plan_experiment
-  => (command_sequence
-    * analyze_experiment)
+  => analyzed_sequence
   => render_experiment_report
-  => (print_report <> write_report)
+  => print_report <> write_report
