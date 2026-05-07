@@ -2966,7 +2966,7 @@
               },
               {
                 "type": "SYMBOL",
-                "name": "_string_interpolation"
+                "name": "string_interpolation"
               },
               {
                 "type": "SYMBOL",
@@ -3001,7 +3001,7 @@
             "members": [
               {
                 "type": "SYMBOL",
-                "name": "_indented_string_interpolation"
+                "name": "indented_string_interpolation"
               },
               {
                 "type": "SYMBOL",
@@ -3010,6 +3010,10 @@
               {
                 "type": "SYMBOL",
                 "name": "_indented_string_single_quote"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_indented_string_lone_quote"
               }
             ]
           }
@@ -3039,7 +3043,7 @@
         ]
       }
     },
-    "_string_interpolation": {
+    "string_interpolation": {
       "type": "IMMEDIATE_TOKEN",
       "content": {
         "type": "PREC",
@@ -3047,6 +3051,17 @@
         "content": {
           "type": "PATTERN",
           "value": "\\$\\{[^}\\n\\r]*\\}"
+        }
+      }
+    },
+    "indented_string_interpolation": {
+      "type": "IMMEDIATE_TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 2,
+        "content": {
+          "type": "PATTERN",
+          "value": "\\$\\{[^}]*\\}"
         }
       }
     },
@@ -3061,17 +3076,6 @@
         }
       }
     },
-    "_indented_string_interpolation": {
-      "type": "IMMEDIATE_TOKEN",
-      "content": {
-        "type": "PREC",
-        "value": 2,
-        "content": {
-          "type": "PATTERN",
-          "value": "\\$\\{[^}]*\\}"
-        }
-      }
-    },
     "_indented_string_content": {
       "type": "IMMEDIATE_TOKEN",
       "content": {
@@ -3079,7 +3083,7 @@
         "value": 1,
         "content": {
           "type": "PATTERN",
-          "value": "[^']+"
+          "value": "([^'$]+|\\$)"
         }
       }
     },
@@ -3090,7 +3094,18 @@
         "value": 1,
         "content": {
           "type": "PATTERN",
-          "value": "'[^']"
+          "value": "'[^'$]"
+        }
+      }
+    },
+    "_indented_string_lone_quote": {
+      "type": "IMMEDIATE_TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 0,
+        "content": {
+          "type": "PATTERN",
+          "value": "'"
         }
       }
     },

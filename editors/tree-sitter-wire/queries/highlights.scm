@@ -147,6 +147,11 @@
 (string)          @string
 (indented_string) @string
 (escape_sequence) @string.escape
+
+; ${...} antiquotation inside "..." and ''...'' strings.
+(string_interpolation)          @string.special
+(indented_string_interpolation) @string.special
+
 (number)          @number
 
 ; ── Comments ───────────────────────────────────────────────────────────

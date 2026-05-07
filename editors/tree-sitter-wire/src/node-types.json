@@ -1970,7 +1970,17 @@
   {
     "type": "indented_string",
     "named": true,
-    "fields": {}
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "indented_string_interpolation",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "inherit_field",
@@ -2784,6 +2794,10 @@
         {
           "type": "escape_sequence",
           "named": true
+        },
+        {
+          "type": "string_interpolation",
+          "named": true
         }
       ]
     }
@@ -3268,6 +3282,10 @@
     "named": false
   },
   {
+    "type": "indented_string_interpolation",
+    "named": true
+  },
+  {
     "type": "inherit",
     "named": false
   },
@@ -3303,6 +3321,10 @@
   {
     "type": "select",
     "named": false
+  },
+  {
+    "type": "string_interpolation",
+    "named": true
   },
   {
     "type": "then",

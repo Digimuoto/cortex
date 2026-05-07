@@ -459,3 +459,55 @@ classify
   file_return: (expression
     (ident_ref
       (identifier))))
+
+==================
+string interpolation in single-line and indented strings
+==================
+
+let greeting = "Hello, ${name}!";
+let summary = ''
+  Score: ${score}
+  Items: ${count}
+'';
+
+greeting
+
+---
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (expression
+      (string
+        (string_interpolation))))
+  (let_binding
+    name: (identifier)
+    value: (expression
+      (indented_string
+        (indented_string_interpolation)
+        (indented_string_interpolation))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
+
+==================
+apostrophe immediately before indented-string interpolation
+==================
+
+let summary = ''
+  '${name}
+'';
+
+summary
+
+---
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (expression
+      (indented_string
+        (indented_string_interpolation))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
