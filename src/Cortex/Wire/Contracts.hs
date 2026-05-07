@@ -45,7 +45,7 @@ data WireContractSpec = WireContractSpec
   { wireContractSpecId :: !Text
   , wireContractSpecPayloadKind :: !WirePayloadKind
   , wireContractSpecDescription :: !Text
-  , wireContractSpecRecordFields :: !(Maybe (Map Text Text))
+  , wireContractSpecRecordFields :: !(Maybe (Map Text ContractId))
   , wireContractSpecSchema :: !(Maybe Aeson.Value)
   , wireContractSpecExamples :: ![Aeson.Value]
   }
@@ -57,7 +57,7 @@ instance ToJSON WireContractSpec where
       [ "id" .= spec.wireContractSpecId
       , "payloadKind" .= renderWirePayloadKind spec.wireContractSpecPayloadKind
       , "description" .= spec.wireContractSpecDescription
-      , "recordFields" .= spec.wireContractSpecRecordFields
+      , "recordFields" .= fmap (fmap (.unContractId)) spec.wireContractSpecRecordFields
       , "schema" .= spec.wireContractSpecSchema
       , "examples" .= spec.wireContractSpecExamples
       ]

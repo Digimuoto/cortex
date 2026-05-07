@@ -263,9 +263,6 @@ boolLiteral = (True <$ keyword "true") <|> (False <$ keyword "false")
 -- Expressions
 ------------------------------------------------------------------------
 
-data TopologyOperator = TopologyOverlay | TopologyConnect | TopologyStar
-  deriving stock (Eq)
-
 data ParsedTopForm
   = ParsedTopContract !ContractId
   | ParsedTopNode !ParsedNodeDecl
@@ -389,37 +386,18 @@ exprConnectLevel :: Parser Expr
 exprConnectLevel = do
   first <- exprOverlayLevel
   rest <- many topologyStep
-  pure (foldl' applyTopology first rest)
+  pure (foldl' (flip ($)) first rest)
   where
     topologyStep = do
-      op <-
-        (TopologyConnect <$ symbol "=>")
-          <|> (TopologyStar <$ symbol "*")
+      op <- (ExprConnect <$ symbol "=>") <|> (ExprStar <$ symbol "*")
       rhs <- exprOverlayLevel
-      pure (op, rhs)
-
-    applyTopology acc (op, rhs) =
-      case op of
-        TopologyConnect -> ExprConnect acc rhs
-        TopologyStar -> ExprStar acc rhs
-        TopologyOverlay -> ExprOverlay acc rhs
+      pure (`op` rhs)
 
 exprOverlayLevel :: Parser Expr
 exprOverlayLevel = do
   first <- exprSelectLevel
-  rest <- many topologyStep
-  pure (foldl' applyTopology first rest)
-  where
-    topologyStep = do
-      op <- TopologyOverlay <$ symbol "<>"
-      rhs <- exprSelectLevel
-      pure (op, rhs)
-
-    applyTopology acc (op, rhs) =
-      case op of
-        TopologyOverlay -> ExprOverlay acc rhs
-        TopologyConnect -> ExprConnect acc rhs
-        TopologyStar -> ExprStar acc rhs
+  rest <- many (symbol "<>" *> exprSelectLevel)
+  pure (foldl' ExprOverlay first rest)
 
 exprSelectLevel :: Parser Expr
 exprSelectLevel = do
@@ -1320,7 +1298,9 @@ recordStaticMakeCount name rhs scope =
 data ExpansionScope = ExpansionScope
   { esKinds :: !(Map Text KindDecl)
   , esForms :: !(Map Text FormDecl)
-  , esMakeCounts :: !(Map Text Scientific)
+  , -- Structural expansion happens during one top-form fold, so only preceding closed numeric lets
+    -- are visible as named make counts.
+    esMakeCounts :: !(Map Text Scientific)
   }
   deriving stock (Show)
 
@@ -1366,6 +1346,7 @@ expandMakeBinding scope visibility bindingName application = do
         overlayGeneratedChildren childNames
   nodes <- traverse childNode childNames
   Right (fmap TopNode nodes <> [TopLet visibility bindingName (LetRhsWire resultExpr)])
+
 makeKindLabelParam :: KindDecl -> Either String KindParam
 makeKindLabelParam kindDeclValue =
   case kindDeclValue.kindDeclParams of

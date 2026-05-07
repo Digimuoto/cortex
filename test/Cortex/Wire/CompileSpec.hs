@@ -58,7 +58,7 @@ import Cortex.Wire.Std
   , stdIoStdoutShapeMessage
   , stdIoWriteFileShapeMessage
   )
-import Cortex.Wire.Syntax (WireError (..), WireOutputPort (..), WirePorts (..))
+import Cortex.Wire.Syntax (ContractId (..), WireError (..), WireOutputPort (..), WirePorts (..))
 
 spec :: Spec
 spec = describe "Cortex.Wire.Compile" $ do
@@ -1353,5 +1353,6 @@ jsonContract contractId =
 recordContract :: T.Text -> [(T.Text, T.Text)] -> WireContractSpec
 recordContract contractId fields =
   (jsonContract contractId)
-    { wireContractSpecRecordFields = Just (Map.fromList fields)
+    { wireContractSpecRecordFields =
+        Just (Map.fromList [(label, ContractId fieldContract) | (label, fieldContract) <- fields])
     }

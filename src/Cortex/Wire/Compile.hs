@@ -759,51 +759,51 @@ linearBoundaryMatches leftExits rightEntries = do
   Right
     [ (leftBoundary, rightBoundary)
     | leftBoundary <- leftExits
-    , Just rightBoundary <- [uniqueMatch (matchesLeft leftBoundary)]
+    , [rightBoundary] <- [Map.findWithDefault [] (boundaryKey leftBoundary) rightByKey]
     ]
   where
+    leftByKey = boundariesByKey leftExits
+    rightByKey = boundariesByKey rightEntries
+
     validateLeft leftBoundary =
-      case matchesLeft leftBoundary of
-        _ : _ : _ ->
-          Left
-            ( WireCore.WireParseError
-                ( "Wire connect (=>) would copy output endpoint "
-                    <> renderBoundaryEndpoint leftBoundary
-                    <> " into multiple compatible input endpoints: "
-                    <> renderBoundaryList (matchesLeft leftBoundary)
-                    <> ". Insert an explicit adapter with `*` or rename ports."
+      let compatibleRights = Map.findWithDefault [] (boundaryKey leftBoundary) rightByKey
+       in case compatibleRights of
+            _ : _ : _ ->
+              Left
+                ( WireCore.WireParseError
+                    ( "Wire connect (=>) would copy output endpoint "
+                        <> renderBoundaryEndpoint leftBoundary
+                        <> " into multiple compatible input endpoints: "
+                        <> renderBoundaryList compatibleRights
+                        <> ". Insert an explicit adapter with `*` or rename ports."
+                    )
                 )
-            )
-        _ -> Right ()
+            _ -> Right ()
 
     validateRight rightBoundary =
-      case matchesRight rightBoundary of
-        _ : _ : _ ->
-          Left
-            ( WireCore.WireParseError
-                ( "Wire connect (=>) would merge multiple output endpoints into input endpoint "
-                    <> renderBoundaryEndpoint rightBoundary
-                    <> ": "
-                    <> renderBoundaryList (matchesRight rightBoundary)
-                    <> ". Insert an explicit adapter with `*` or rename ports."
+      let compatibleLefts = Map.findWithDefault [] (boundaryKey rightBoundary) leftByKey
+       in case compatibleLefts of
+            _ : _ : _ ->
+              Left
+                ( WireCore.WireParseError
+                    ( "Wire connect (=>) would merge multiple output endpoints into input endpoint "
+                        <> renderBoundaryEndpoint rightBoundary
+                        <> ": "
+                        <> renderBoundaryList compatibleLefts
+                        <> ". Insert an explicit adapter with `*` or rename ports."
+                    )
                 )
-            )
-        _ -> Right ()
+            _ -> Right ()
 
-    matchesLeft leftBoundary =
-      filter (boundariesMatch leftBoundary) rightEntries
+type BoundaryKey = (PortLabel, Text)
 
-    matchesRight rightBoundary =
-      filter (`boundariesMatch` rightBoundary) leftExits
+boundaryKey :: BoundaryPort -> BoundaryKey
+boundaryKey boundary =
+  (boundary.bpLabel, boundary.bpContract)
 
-    uniqueMatch = \case
-      [match] -> Just match
-      _ -> Nothing
-
-boundariesMatch :: BoundaryPort -> BoundaryPort -> Bool
-boundariesMatch leftBoundary rightBoundary =
-  leftBoundary.bpContract == rightBoundary.bpContract
-    && leftBoundary.bpLabel == rightBoundary.bpLabel
+boundariesByKey :: [BoundaryPort] -> Map BoundaryKey [BoundaryPort]
+boundariesByKey =
+  foldr (\boundary -> Map.insertWith (<>) (boundaryKey boundary) [boundary]) Map.empty
 
 data StarDirection = StarGather | StarScatter
   deriving stock (Eq, Show)
@@ -831,7 +831,7 @@ data StarPlan = StarPlan
   { starPlanDirection :: !StarDirection
   , starPlanSingular :: !BoundaryPort
   , starPlanMulti :: ![BoundaryPort]
-  , starPlanRecordFields :: !(Map Text Text)
+  , starPlanRecordFields :: !(Map Text ContractId)
   }
   deriving stock (Eq, Show)
 
@@ -885,7 +885,7 @@ resolveStarPlan compileEnv leftExits rightEntries =
           , starPlanRecordFields = fields
           }
 
-recordFieldsForStar :: WireCompileEnv -> Text -> Either WireCore.WireError (Map Text Text)
+recordFieldsForStar :: WireCompileEnv -> Text -> Either WireCore.WireError (Map Text ContractId)
 recordFieldsForStar compileEnv contractId =
   case compileEnv.wireCompileEnvContractRegistry of
     Nothing ->
@@ -914,7 +914,7 @@ recordFieldsForStar compileEnv contractId =
                 )
 
 validateStarMultiSide
-  :: Map Text Text -> [BoundaryPort] -> Either WireCore.WireError ()
+  :: Map Text ContractId -> [BoundaryPort] -> Either WireCore.WireError ()
 validateStarMultiSide fields multiBoundaries = do
   observed <- boundaryFieldMap multiBoundaries
   when (observed /= fields) $
@@ -928,14 +928,14 @@ validateStarMultiSide fields multiBoundaries = do
           )
       )
 
-boundaryFieldMap :: [BoundaryPort] -> Either WireCore.WireError (Map Text Text)
+boundaryFieldMap :: [BoundaryPort] -> Either WireCore.WireError (Map Text ContractId)
 boundaryFieldMap boundaries = do
   pairs <-
     traverse
       ( \boundary ->
           case boundary.bpLabel of
             Label labelText ->
-              Right (labelText, boundary.bpContract)
+              Right (labelText, ContractId boundary.bpContract)
             NoLabel ->
               Left
                 ( WireCore.WireParseError
@@ -958,14 +958,14 @@ boundaryFieldMap boundaries = do
     [] ->
       Right (Map.fromList pairs)
 
-renderFieldMap :: Map Text Text -> Text
+renderFieldMap :: Map Text ContractId -> Text
 renderFieldMap fields
   | Map.null fields = "{}"
   | otherwise =
       "{"
         <> T.intercalate
           ", "
-          [ label <> ": " <> contract
+          [ label <> ": " <> contract.unContractId
           | (label, contract) <- Map.toAscList fields
           ]
         <> "}"
@@ -980,7 +980,7 @@ buildStarPhantomNode compileEnv st plan = do
         case plan.starPlanDirection of
           StarGather ->
             [ PortInputDecl (Label label) (ContractId contract)
-            | (label, contract) <- fieldList
+            | (label, ContractId contract) <- fieldList
             ]
           StarScatter ->
             [PortInputDecl singular.bpLabel (ContractId singular.bpContract)]
@@ -990,31 +990,10 @@ buildStarPhantomNode compileEnv st plan = do
             [PortOutputDecl singular.bpLabel (ContractId singular.bpContract)]
           StarScatter ->
             [ PortOutputDecl (Label label) (ContractId contract)
-            | (label, contract) <- fieldList
-            ]
-      outputEquations =
-        case plan.starPlanDirection of
-          StarGather ->
-            [ PureOutputEquation
-                { pureOutputEquationLabel = singular.bpLabel
-                , pureOutputEquationContract = ContractId singular.bpContract
-                , pureOutputEquationExpr =
-                    CorePureRecord
-                      [ CorePureField (label :| []) (CorePureIdent label)
-                      | (label, _) <- fieldList
-                      ]
-                }
-            ]
-          StarScatter ->
-            [ PureOutputEquation
-                { pureOutputEquationLabel = Label label
-                , pureOutputEquationContract = ContractId contract
-                , pureOutputEquationExpr =
-                    CorePureFieldAccess (CorePureIdent (singularCorePureInputName singular)) label
-                }
-            | (label, contract) <- fieldList
+            | (label, ContractId contract) <- fieldList
             ]
   ports <- lowerPortSignature st nodeRef (inputDecls <> outputDecls)
+  outputEquations <- starPhantomOutputEquations plan ports
   outputConfig <-
     case NE.nonEmpty outputEquations of
       Nothing
@@ -1033,11 +1012,60 @@ buildStarPhantomNode compileEnv st plan = do
     Nothing
     outputConfig
 
-singularCorePureInputName :: BoundaryPort -> Text
-singularCorePureInputName singular =
-  case singular.bpLabel of
-    Label labelText -> labelText
-    NoLabel -> WireCore.defaultInputPortName
+starPhantomOutputEquations
+  :: StarPlan -> LoweredNodePorts -> Either WireCore.WireError [PureOutputEquation]
+starPhantomOutputEquations plan ports =
+  case plan.starPlanDirection of
+    StarGather ->
+      fmap
+        ( \fields ->
+            [ PureOutputEquation
+                { pureOutputEquationLabel = plan.starPlanSingular.bpLabel
+                , pureOutputEquationContract = ContractId plan.starPlanSingular.bpContract
+                , pureOutputEquationExpr = CorePureRecord fields
+                }
+            ]
+        )
+        (traverse gatherField (Map.toAscList plan.starPlanRecordFields))
+    StarScatter -> do
+      inputName <- starScatterInputName ports
+      Right
+        [ PureOutputEquation
+            { pureOutputEquationLabel = Label label
+            , pureOutputEquationContract = contract
+            , pureOutputEquationExpr = CorePureFieldAccess (CorePureIdent inputName) label
+            }
+        | (label, contract) <- Map.toAscList plan.starPlanRecordFields
+        ]
+  where
+    gatherField (label, contract) = do
+      inputName <- fieldInputName label contract
+      Right (CorePureField (label :| []) (CorePureIdent inputName))
+
+    fieldInputName label (ContractId contract) =
+      case [ input.lpInternalName
+           | input <- ports.lnpInputs
+           , input.lpLabel == Label label
+           , input.lpContract == contract
+           ] of
+        [inputName] -> Right inputName
+        _ ->
+          Left
+            ( WireCore.WireParseError
+                ( "internal `*` lowering error: missing phantom input for field "
+                    <> label
+                )
+            )
+
+starScatterInputName :: LoweredNodePorts -> Either WireCore.WireError Text
+starScatterInputName ports =
+  case ports.lnpInputs of
+    [input] -> Right input.lpInternalName
+    _ ->
+      Left
+        ( WireCore.WireParseError
+            "internal `*` lowering error: scatter phantom input is not singular"
+        )
 
 generatedStarPhantomNodeRef :: StarPlan -> CircuitNodeRef
 generatedStarPhantomNodeRef plan =
@@ -1053,7 +1081,7 @@ generatedStarPhantomNodeRef plan =
                       [ "direction" Aeson..= directionText
                       , "singular" Aeson..= renderBoundaryPort plan.starPlanSingular
                       , "multi" Aeson..= fmap renderBoundaryPort plan.starPlanMulti
-                      , "fields" Aeson..= plan.starPlanRecordFields
+                      , "fields" Aeson..= fmap (.unContractId) plan.starPlanRecordFields
                       ]
                   )
               )
