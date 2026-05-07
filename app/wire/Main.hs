@@ -38,10 +38,13 @@ import System.IO (hFlush, stderr, stdout)
 import System.Process (CreateProcess (cwd), proc, readCreateProcessWithExitCode)
 
 import Cortex.Algebra.Graph (Relation, predecessors, relVertices)
+import Cortex.Capability.Executor.Pure (PureTaskConfig (..), pureTaskConfigFromMetadata)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
   ( CircuitNodeRef (..)
+  , CircuitTaskNode (..)
   , CompiledCircuit (..)
+  , CompiledCircuitNode (..)
   , ContractId (..)
   , CorePureBinding (..)
   , CorePureExpr (..)
@@ -227,26 +230,50 @@ runNodeLevel
   -> [CorePureBinding]
   -> CompiledCircuit
   -> RunState
-  -> [NodeDecl]
+  -> [RunnableNode]
   -> IO RunState
-runNodeLevel outputLock useScope pureBindings compiled state nodeDecls = do
+runNodeLevel outputLock useScope pureBindings compiled state runnableNodes = do
   levelOutputs <-
     mapConcurrently
-      ( \nodeDecl -> do
-          let nodeRef = CircuitNodeRef nodeDecl.nodeDeclName
-              nodeId = NodeId nodeDecl.nodeDeclName
+      ( \runnableNode -> do
+          let nodeRef = runnableNodeRef runnableNode
+              nodeId = NodeId nodeRef.unCircuitNodeRef
               directPredecessors =
                 Set.toAscList (predecessors compiled.compiledCircuitTopology nodeRef)
           nodeInputs <- either (dieTextLocked outputLock) pure (nodeInputsFromState state directPredecessors)
-          outputs <- runNode outputLock useScope pureBindings nodeInputs nodeDecl
+          outputs <- runRunnableNode outputLock useScope pureBindings nodeInputs runnableNode
           pure (nodeId, outputs)
       )
-      nodeDecls
+      runnableNodes
   pure
     state
       { runStateOutputsByNode =
           Map.union (Map.fromList levelOutputs) state.runStateOutputsByNode
       }
+
+data RunnableNode
+  = RunnableSourceNode !NodeDecl
+  | RunnableCompiledPure !CircuitTaskNode !PureTaskConfig
+
+runnableNodeRef :: RunnableNode -> CircuitNodeRef
+runnableNodeRef = \case
+  RunnableSourceNode nodeDecl ->
+    CircuitNodeRef nodeDecl.nodeDeclName
+  RunnableCompiledPure taskNode _config ->
+    taskNode.circuitTaskNodeRef
+
+runRunnableNode
+  :: MVar ()
+  -> WireUseScope
+  -> [CorePureBinding]
+  -> NodeInputs
+  -> RunnableNode
+  -> IO (Map Text WireValue)
+runRunnableNode outputLock useScope pureBindings nodeInputs = \case
+  RunnableSourceNode nodeDecl ->
+    runNode outputLock useScope pureBindings nodeInputs nodeDecl
+  RunnableCompiledPure _taskNode config ->
+    runCompiledPureNode outputLock nodeInputs config
 
 runNode
   :: MVar () -> WireUseScope -> [CorePureBinding] -> NodeInputs -> NodeDecl -> IO (Map Text WireValue)
@@ -287,6 +314,22 @@ runPureNode outputLock useScope pureBindings nodeInputs ports loweredPorts pureB
           outputExprs
       )
   pure (wrapOutputs Nothing ports outputValues)
+
+runCompiledPureNode
+  :: MVar () -> NodeInputs -> PureTaskConfig -> IO (Map Text WireValue)
+runCompiledPureNode outputLock nodeInputs config = do
+  outputValues <-
+    either
+      (dieTextLocked outputLock . renderPureEvalError)
+      pure
+      ( evaluatePureTaskOutputs
+          config.pureTaskConfigPorts
+          (wireInputBundleFromNodeInputs nodeInputs)
+          config.pureTaskConfigBindings
+          config.pureTaskConfigWhere
+          config.pureTaskConfigOutputs
+      )
+  pure (wrapOutputs Nothing config.pureTaskConfigPorts outputValues)
 
 runExecutorNode
   :: MVar ()
@@ -692,7 +735,7 @@ renderOutputValue = \case
   Aeson.String text -> text
   value -> TE.decodeUtf8 (BSL.toStrict (AesonPretty.encodePretty value))
 
-executionLevels :: CompiledCircuit -> WireFile -> Either Text [[NodeDecl]]
+executionLevels :: CompiledCircuit -> WireFile -> Either Text [[RunnableNode]]
 executionLevels compiled wireFile = do
   let nodeMap =
         Map.fromList
@@ -703,13 +746,61 @@ executionLevels compiled wireFile = do
   traverse
     ( traverse
         ( \nodeRef ->
-            maybe
-              (Left ("wire run references unknown node " <> nodeRef.unCircuitNodeRef <> "."))
-              Right
-              (Map.lookup nodeRef.unCircuitNodeRef nodeMap)
+            case Map.lookup nodeRef.unCircuitNodeRef nodeMap of
+              Just nodeDecl ->
+                Right (sourceRunnableNode nodeRef nodeDecl)
+              Nothing ->
+                generatedRunnableNode nodeRef
         )
     )
     levels
+  where
+    sourceRunnableNode nodeRef nodeDecl =
+      case nodeDecl.nodeDeclBody of
+        NodeBodyPure {} ->
+          fromMaybe (RunnableSourceNode nodeDecl) (compiledPureNode nodeRef)
+        NodeBodyExecutor {} ->
+          RunnableSourceNode nodeDecl
+
+    compiledPureNode nodeRef =
+      case Map.lookup nodeRef compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          case pureTaskConfigFromMetadata taskNode of
+            Right config -> Just (RunnableCompiledPure taskNode config)
+            Left _err -> Nothing
+        Just _other -> Nothing
+        Nothing -> Nothing
+
+    generatedRunnableNode nodeRef =
+      case Map.lookup nodeRef compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          case pureTaskConfigFromMetadata taskNode of
+            Right config ->
+              Right (RunnableCompiledPure taskNode config)
+            Left _err ->
+              Left
+                ( "wire run references generated task node "
+                    <> nodeRef.unCircuitNodeRef
+                    <> ", but local wire run only supports generated native pure tasks."
+                )
+        Just compiledNode ->
+          Left
+            ( "wire run references generated "
+                <> compiledNodeKind compiledNode
+                <> " node "
+                <> nodeRef.unCircuitNodeRef
+                <> ", which local wire run does not yet support."
+            )
+        Nothing ->
+          Left ("wire run references unknown node " <> nodeRef.unCircuitNodeRef <> ".")
+
+compiledNodeKind :: CompiledCircuitNode -> Text
+compiledNodeKind = \case
+  CompiledCircuitTask {} -> "task"
+  CompiledCircuitSignal {} -> "signal"
+  CompiledCircuitArtifact {} -> "artifact"
+  CompiledCircuitRewriteBoundary {} -> "rewrite-boundary"
+  CompiledCircuitCondition {} -> "condition"
 
 topologyLevels :: Ord a => Relation a -> Either Text [[a]]
 topologyLevels relation =

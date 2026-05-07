@@ -521,7 +521,7 @@ node print_report
 
 node write_report
   <- write_summary: ExperimentReport;
-  = @writeFile { path = experiment_report_path; } (write_summary);
+  = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (write_summary);
 
 let command_sequence =
   run_open_0
