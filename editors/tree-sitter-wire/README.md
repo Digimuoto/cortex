@@ -51,6 +51,9 @@ test/
 - overlay: `a <> b`
 - overlay binds tighter than connect and star: `a => b <> c` parses as `a => (b <> c)`
 - endpoints: node and composed graph expressions
+- highlights: `=>` and `<>` capture as `@keyword.operator` so editors can theme topology apart from
+  value operators; node references on either side capture as `@function`, matching `node`
+  declarations rather than plain `@variable` references
 
 **Values**
 

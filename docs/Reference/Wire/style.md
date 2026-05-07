@@ -204,14 +204,24 @@ as a string.
 
 ## Formatter Direction
 
-Wire should grow an AST-driven formatter, exposed through the `wire` command:
+Wire formatting is exposed through the `wire` command:
 
 ```text
 wire fmt FILE
 wire fmt --check FILE
+wire fmt --stdout FILE
 ```
 
-The formatter should start with stable, low-risk layout rules:
+The formatter is topology-first for graph expressions. It parses Wire source, chooses whether the
+file can safely flow through the lowered production AST, renders graph composition by causal
+structure when it can, reparses the output, and rejects rewrites that would not round-trip through
+the production AST.
+
+When a declaration-bearing Wire file compiles far enough to expose a cyclic topology, `wire fmt`
+refuses to format it. Fix the graph first; formatting is only defined for source that can denote an
+acyclic Wire topology.
+
+The formatter starts with stable layout rules:
 
 - no whitespace before semicolon terminators;
 - one space after same-line semicolons;
@@ -226,9 +236,19 @@ The formatter should start with stable, low-risk layout rules:
 - explicit wrapping for mixed graph topology expressions;
 - conservative comment preservation.
 
-It should not be a regex-only pass. Regex cleanup can help with one-time migrations, but the
-canonical formatter should operate over parsed Wire syntax and be idempotent before it is added to
-`treefmt` or CI.
+It is not a regex-only pass. Regex cleanup can help with one-time migrations, but the canonical
+formatter operates over parsed Wire syntax and must be idempotent before it is added to `treefmt`.
+
+The parser desugars several surface forms during parsing: `kind` and `form` declarations expand into
+nodes and lets, source include calls expand before parsing, CorePure `${...}` string interpolation
+lowers to `concat`/`toString` calls, and comment trivia is dropped. Round-tripping through the AST
+cannot recover any of those, so `wire fmt` preserves files that contain them unchanged rather than
+silently rewriting source into the lowered shape. Those files should continue to rely on
+`just wire-style-check` and manual edits for now. A future concrete-syntax formatter can attach
+comments/trivia and format these forms with full surface fidelity.
+
+Because `wire fmt` validates include-bearing files through source elaboration, missing include
+targets still make formatting fail even when the authored include spelling is preserved unchanged.
 
 ## Validation
 

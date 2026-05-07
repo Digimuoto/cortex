@@ -45,6 +45,8 @@ Open a `.wire` file and:
 
 - keywords (`contract`, `kind`, `form`, `node`, `let`, `import`, `from`, `inherit`, `select`) should
   highlight
+- graph topology operators (`=>`, `<>`) and the node references on either side highlight distinctly
+  from value operators and plain variables
 - `{ ... }` blocks should fold with `zc` / `za`
 - indentation should follow `{`/`[`/`(`
 

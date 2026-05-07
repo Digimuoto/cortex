@@ -170,6 +170,7 @@ library
         Cortex.Wire.Contract
         Cortex.Wire.Executor
         Cortex.Wire.Include
+        Cortex.Wire.Format
         Cortex.Wire.Parser
         Cortex.Wire.Pure
         Cortex.Wire.Std
@@ -284,6 +285,7 @@ test-suite cortex-test
         Cortex.Wire.Circuit.CompilerSpec
         Cortex.Wire.Circuit.IRSpec
         Cortex.Wire.CompileSpec
+        Cortex.Wire.FormatSpec
         Cortex.Wire.ParserSpec
         Cortex.Wire.PureSpec
         Cortex.Wire.RuntimeSpec

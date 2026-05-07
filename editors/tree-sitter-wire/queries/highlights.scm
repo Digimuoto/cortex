@@ -27,8 +27,8 @@
 
 ; ── Operators ───────────────────────────────────────────────────────────
 
-"=>"   @operator  ; connect
-"<>"   @operator  ; overlay
+"=>"   @operator  ; connect (graph) — promoted to @keyword.operator below
+"<>"   @operator  ; overlay (graph) — promoted to @keyword.operator below
 "//"   @operator  ; right-biased record merge
 "++"   @operator  ; concatenation (strings, lists)
 "|>"   @operator  ; CorePure pipe
@@ -129,6 +129,18 @@
 
 (ident_ref) @variable
 (core_pure_ident) @variable
+
+; ── Graph topology ─────────────────────────────────────────────────────
+
+; Connect (=>) and overlay (<>) compose graphs — themed apart from
+; value operators so editors can style topology structure distinctly.
+(topology_expression op: _ @keyword.operator)
+
+; Endpoints on either side of a topology operator reference declared
+; nodes (or graph-valued bindings used as nodes); highlight them like
+; the node decls themselves rather than as plain variables.
+(topology_expression left: (ident_ref) @function)
+(topology_expression right: (ident_ref) @function)
 
 ; ── Literals ───────────────────────────────────────────────────────────
 

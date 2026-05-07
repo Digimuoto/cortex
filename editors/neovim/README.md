@@ -100,6 +100,8 @@ local `.wire` file:
 - Keywords highlight (`contract`, `kind`, `form`, `node`, `let`, `import`, `from`, `inherit`,
   `select`)
 - Contract types (capitalized identifiers after `<-` / `->`) highlight distinctly
+- Graph topology operators (`=>`, `<>`) and the node references on either side highlight distinctly
+  from value operators and plain variables
 - Strings, comments, numbers, operators all styled
 - `:InspectTree` shows a live parse tree
 - Folding with `zc` / `za` collapses `{ ... }` blocks

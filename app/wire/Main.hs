@@ -15,7 +15,7 @@ module Main (main) where
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (IOException, displayException, try, uninterruptibleMask_)
-import Control.Monad (foldM, unless, when, zipWithM)
+import Control.Monad (foldM, forM, unless, when, zipWithM)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Aeson.Key qualified as AesonKey
@@ -76,10 +76,12 @@ import Cortex.Wire
   , compileWireFile
   , compileWireFileWithReturn
   , evaluatePureTaskOutputs
+  , formatWireSourceWithExpanded
   , parseWireFile
   , renderParseError
   , renderPureEvalError
   , renderWireError
+  , renderWireFormatError
   , stdIoCommandExecutorId
   , stdIoReadFileExecutorId
   , stdIoStdinExecutorId
@@ -99,8 +101,15 @@ import Cortex.Wire.Use
 
 data Command
   = CommandBuild !(Maybe Text) !FilePath
+  | CommandFmt !FmtMode ![FilePath]
   | CommandRun !FilePath
   | CommandHelp
+  deriving stock (Eq, Show)
+
+data FmtMode
+  = FmtWrite
+  | FmtCheck
+  | FmtStdout
   deriving stock (Eq, Show)
 
 data RunState = RunState
@@ -165,6 +174,7 @@ main = do
     Left errText -> dieText errText
     Right CommandHelp -> TIO.putStr usageText
     Right (CommandBuild maybeSelectedReturn path) -> buildWire maybeSelectedReturn path
+    Right (CommandFmt mode paths) -> fmtWire mode paths
     Right (CommandRun path) -> runWire path
 
 parseCommand :: [String] -> Either Text Command
@@ -175,11 +185,33 @@ parseCommand = \case
   ["build", path] -> Right (CommandBuild Nothing path)
   ["build", "--return", selectedReturn, path] ->
     Right (CommandBuild (Just (T.pack selectedReturn)) path)
+  "fmt" : args -> parseFmtCommand args
   ["run", path] -> Right (CommandRun path)
   [path] -> Right (CommandRun path)
   "build" : _ -> Left "usage: wire build [--return NAME] FILE"
+  "fmt" : _ -> Left "usage: wire fmt [--check | --stdout] FILE..."
   "run" : _ -> Left "usage: wire run FILE"
   _ -> Left usageText
+
+parseFmtCommand :: [String] -> Either Text Command
+parseFmtCommand args = do
+  (mode, revFiles) <- foldM step (FmtWrite, []) args
+  let files = reverse revFiles
+  case (mode, files) of
+    (_, []) -> Left "usage: wire fmt [--check | --stdout] FILE..."
+    (FmtStdout, [_path]) -> Right (CommandFmt mode files)
+    (FmtStdout, _paths) -> Left "wire fmt --stdout expects exactly one FILE."
+    _ -> Right (CommandFmt mode files)
+  where
+    step (mode, files) = \case
+      "--check" -> setMode FmtCheck mode files
+      "--stdout" -> setMode FmtStdout mode files
+      path -> Right (mode, path : files)
+
+    setMode newMode oldMode files
+      | oldMode == FmtWrite = Right (newMode, files)
+      | oldMode == newMode = Right (newMode, files)
+      | otherwise = Left "wire fmt accepts only one of --check or --stdout."
 
 usageText :: Text
 usageText =
@@ -187,9 +219,10 @@ usageText =
     [ "wire - work with Wire source files"
     , ""
     , "usage:"
-    , "  wire FILE"
+    , "  wire FILE                        (alias for `wire run FILE`)"
     , "  wire run FILE"
     , "  wire build [--return NAME] FILE"
+    , "  wire fmt [--check | --stdout] FILE..."
     , ""
     , "The local runner currently supports stdin/stdout executors plus CorePure DAG frontiers."
     ]
@@ -202,6 +235,40 @@ buildWire maybeSelectedReturn path = do
   compiled <- either (dieText . renderWireError) pure (compile wireFile)
   BSL.putStr (AesonPretty.encodePretty compiled)
   BSL.putStr "\n"
+
+fmtWire :: FmtMode -> [FilePath] -> IO ()
+fmtWire mode paths = do
+  results <- forM paths (fmtWireFile mode)
+  unless (and results) exitFailure
+
+fmtWireFile :: FmtMode -> FilePath -> IO Bool
+fmtWireFile mode path = do
+  source <- TIO.readFile path
+  expandedResult <- expandWireSourceIncludes path source
+  case expandedResult of
+    Left err -> do
+      TIO.hPutStrLn stderr (T.pack path <> ": " <> err)
+      pure False
+    Right expanded ->
+      applyFmtResult source (formatWireSourceWithExpanded path source expanded)
+  where
+    applyFmtResult source = \case
+      Left err -> do
+        TIO.hPutStrLn stderr (T.pack path <> ": " <> renderWireFormatError err)
+        pure False
+      Right formatted ->
+        case mode of
+          FmtWrite -> do
+            when (formatted /= source) (TIO.writeFile path formatted)
+            pure True
+          FmtCheck -> do
+            let message =
+                  T.pack path <> ": Wire formatting differs; run `wire fmt " <> T.pack path <> "`."
+            when (formatted /= source) (TIO.hPutStrLn stderr message)
+            pure (formatted == source)
+          FmtStdout -> do
+            TIO.putStr formatted
+            pure True
 
 runWire :: FilePath -> IO ()
 runWire path = do

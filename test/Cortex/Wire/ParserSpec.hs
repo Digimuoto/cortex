@@ -541,6 +541,18 @@ spec = describe "Cortex.Wire.Parser" $ do
               ]
           ]
 
+    it "parses separated bracket lists as function arguments" $
+      parseCorePureNodeOutput "concat [toString score]"
+        `shouldBe` CorePureCall
+          (CorePureIdent "concat")
+          [CorePureList [CorePureCall (CorePureIdent "toString") [CorePureIdent "score"]]]
+
+    it "parses immediate brackets as index access" $
+      parseCorePureNodeOutput "items[0]"
+        `shouldBe` CorePureIndex
+          (CorePureIdent "items")
+          (CorePureLit (CorePureNumber 0))
+
   describe "file-return expressions" $ do
     it "parses a file with a parenthesized mixed topology expression" $ do
       let WireFile forms ret =

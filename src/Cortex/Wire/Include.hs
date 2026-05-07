@@ -13,6 +13,7 @@ CorePure literals.
 -}
 module Cortex.Wire.Include
   ( expandWireSourceIncludes
+  , wireSourceIncludeNames
   )
 where
 
@@ -39,6 +40,18 @@ data IncludeKind
   = IncludeString
   | IncludeDirectory
   deriving stock (Eq, Show)
+
+wireSourceIncludeNames :: [Text]
+wireSourceIncludeNames =
+  fmap fst wireSourceIncludeForms
+
+wireSourceIncludeForms :: [(Text, IncludeKind)]
+wireSourceIncludeForms =
+  [ ("include_str", IncludeString)
+  , ("includeStr", IncludeString)
+  , ("include_dir", IncludeDirectory)
+  , ("includeDir", IncludeDirectory)
+  ]
 
 expandWireSourceIncludes :: FilePath -> Text -> IO (Either Text Text)
 expandWireSourceIncludes sourcePath sourceText =
@@ -108,12 +121,7 @@ copyPrefixThrough marker baseDir sourceText =
 
 parseIncludeCall :: Text -> Maybe (IncludeKind, Text, Text)
 parseIncludeCall sourceText =
-  firstJust
-    [ parseNamedInclude "include_str" IncludeString
-    , parseNamedInclude "includeStr" IncludeString
-    , parseNamedInclude "include_dir" IncludeDirectory
-    , parseNamedInclude "includeDir" IncludeDirectory
-    ]
+  firstJust (fmap (uncurry parseNamedInclude) wireSourceIncludeForms)
   where
     parseNamedInclude name kind
       | name `T.isPrefixOf` sourceText

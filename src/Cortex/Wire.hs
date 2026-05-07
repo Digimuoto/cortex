@@ -15,6 +15,7 @@ module Cortex.Wire
   , module Cortex.Wire.Circuit
   , module Cortex.Wire.Executor
   , module Cortex.Wire.Include
+  , module Cortex.Wire.Format
   , module Cortex.Wire.Pure
   , module Cortex.Wire.Std
   , module Cortex.Wire.Use
@@ -107,6 +108,7 @@ import Cortex.Wire.Contract
   , wirePortsFromMetadataValue
   )
 import Cortex.Wire.Executor
+import Cortex.Wire.Format
 import Cortex.Wire.Include
 import Cortex.Wire.Parser
   ( ParseError

@@ -15,13 +15,18 @@ Wire modules own authoring and compilation mechanics while host authority stays 
 -}
 module Cortex.Wire.Parser
   ( parseWireFile
+  , parseWireFileWithInfo
   , parseWireExpr
+  , WireParseInfo (..)
   , ParseError
   , renderParseError
   )
 where
 
 import Control.Monad (foldM, when)
+import Control.Monad.State.Strict (State)
+import Control.Monad.State.Strict qualified as State
+import Control.Monad.Trans.Class (lift)
 import Data.Char (isAlpha, isAlphaNum, isSpace)
 import Data.Char qualified as Char
 import Data.List.NonEmpty (NonEmpty ((:|)))
@@ -35,7 +40,7 @@ import Data.Text qualified as T
 import Data.Void (Void)
 import Text.Megaparsec
   ( MonadParsec (notFollowedBy, takeWhileP, try)
-  , Parsec
+  , ParsecT
   , anySingle
   , choice
   , eof
@@ -43,7 +48,6 @@ import Text.Megaparsec
   , many
   , manyTill
   , optional
-  , parse
   , satisfy
   , sepEndBy
   , sepEndBy1
@@ -56,7 +60,18 @@ import Text.Megaparsec.Char.Lexer qualified as L
 
 import Cortex.Wire.Syntax
 
-type Parser = Parsec Void Text
+type Parser = ParsecT Void Text (State WireParseInfo)
+
+newtype WireParseInfo = WireParseInfo
+  { wireParseCorePureInterpolationLine :: Maybe Int
+  }
+  deriving stock (Eq, Show)
+
+emptyWireParseInfo :: WireParseInfo
+emptyWireParseInfo =
+  WireParseInfo
+    { wireParseCorePureInterpolationLine = Nothing
+    }
 
 newtype ParseError = ParseError (MP.ParseErrorBundle Text Void)
   deriving stock (Show)
@@ -70,18 +85,22 @@ renderParseError (ParseError bundle) = T.pack (errorBundlePretty bundle)
 
 parseWireFile :: FilePath -> Text -> Either ParseError WireFile
 parseWireFile name src =
-  case parse (spaceConsumer *> wireFile <* eof) name src of
-    Left bundle -> Left (ParseError bundle)
-    Right ok -> Right ok
+  snd <$> parseWireFileWithInfo name src
+
+parseWireFileWithInfo :: FilePath -> Text -> Either ParseError (WireParseInfo, WireFile)
+parseWireFileWithInfo name src =
+  case State.runState (MP.runParserT (spaceConsumer *> wireFile <* eof) name src) emptyWireParseInfo of
+    (Left bundle, _) -> Left (ParseError bundle)
+    (Right ok, info) -> Right (info, ok)
 
 {- | Parse a single expression (no file-return resolution). Useful for
 REPL-style consumption and tests.
 -}
 parseWireExpr :: FilePath -> Text -> Either ParseError Expr
 parseWireExpr name src =
-  case parse (spaceConsumer *> expr <* eof) name src of
-    Left bundle -> Left (ParseError bundle)
-    Right ok -> Right ok
+  case State.runState (MP.runParserT (spaceConsumer *> expr <* eof) name src) emptyWireParseInfo of
+    (Left bundle, _) -> Left (ParseError bundle)
+    (Right ok, _) -> Right ok
 
 ------------------------------------------------------------------------
 -- Lexer
@@ -654,22 +673,45 @@ corePureApplication = do
 
 corePurePostfix :: Parser CorePureExpr
 corePurePostfix = do
-  base <- corePureAtom
-  suffixes <- many corePureSuffix
-  pure (foldl' (\acc suffix -> suffix acc) base suffixes)
+  (base, spacedAfterBase) <- withTrailingSpace corePureAtom
+  go base spacedAfterBase
   where
-    corePureSuffix =
-      choice
-        [ do
-            _ <- symbol "."
-            fieldName <- identifier
-            pure (`CorePureFieldAccess` fieldName)
-        , do
-            _ <- symbol "["
-            indexExpr <- corePureExpr
-            _ <- symbol "]"
-            pure (`CorePureIndex` indexExpr)
-        ]
+    go base spacedBeforeNextToken = do
+      nextSuffix <- optional . try . withTrailingSpace $ corePureSuffix spacedBeforeNextToken
+      case nextSuffix of
+        Nothing -> pure base
+        Just (suffix, spacedAfterSuffix) ->
+          go (suffix base) spacedAfterSuffix
+
+    corePureSuffix spacedBeforeToken =
+      fieldSuffix <|> indexSuffix
+      where
+        fieldSuffix = do
+          _ <- symbol "."
+          fieldName <- identifier
+          pure (`CorePureFieldAccess` fieldName)
+
+        indexSuffix
+          | spacedBeforeToken = fail "index access requires an immediate ["
+          | otherwise = do
+              _ <- symbol "["
+              indexExpr <- corePureExpr
+              _ <- symbol "]"
+              pure (`CorePureIndex` indexExpr)
+
+withTrailingSpace :: Parser a -> Parser (a, Bool)
+withTrailingSpace parser = do
+  before <- MP.getInput
+  value <- parser
+  after <- MP.getInput
+  let consumed = T.take (T.length before - T.length after) before
+  pure (value, textEndsWithSpace consumed)
+
+textEndsWithSpace :: Text -> Bool
+textEndsWithSpace text =
+  case T.unsnoc text of
+    Nothing -> False
+    Just (_, lastChar) -> isSpace lastChar
 
 corePureAtom :: Parser CorePureExpr
 corePureAtom =
@@ -698,8 +740,9 @@ corePureString = do
 corePureSingleLineString :: Parser CorePureExpr
 corePureSingleLineString = lexeme $ do
   _ <- char '"'
+  startLine <- currentLineNumber
   raw <- T.pack <$> manyTill singleRawChar (char '"')
-  either fail pure (desugarStringSegments FormSingle raw)
+  desugarStringSegments FormSingle startLine raw
   where
     singleRawChar = do
       c <- anySingle
@@ -711,38 +754,40 @@ corePureSingleLineString = lexeme $ do
 corePureIndentedString :: Parser CorePureExpr
 corePureIndentedString = lexeme . try $ do
   _ <- string "''"
+  startLine <- currentLineNumber
   raw <- T.pack <$> manyTill anySingle (try (string "''"))
-  either fail pure (desugarStringSegments FormMulti (stripIndentedString raw))
+  desugarStringSegments FormMulti startLine (stripIndentedString raw)
 
 data StringSegment = StringText !Text | StringInterpolation !CorePureExpr
 
-desugarStringSegments :: StringForm -> Text -> Either String CorePureExpr
-desugarStringSegments form raw =
-  buildStringExpr <$> go raw []
+desugarStringSegments :: StringForm -> Int -> Text -> Parser CorePureExpr
+desugarStringSegments form startLine raw =
+  buildStringExpr <$> go startLine raw []
   where
-    go input acc
-      | T.null input = Right (reverse acc)
+    go line input acc
+      | T.null input = pure (reverse acc)
       | "${" `T.isPrefixOf` input = do
+          markCorePureInterpolation line
           (exprValue, rest) <- parseInterpolation (T.drop 2 input)
-          go rest (StringInterpolation exprValue : acc)
+          go line rest (StringInterpolation exprValue : acc)
       | form == FormSingle && "\\${" `T.isPrefixOf` input =
-          go (T.drop 3 input) (StringText "${" : acc)
+          go line (T.drop 3 input) (StringText "${" : acc)
       | form == FormSingle && "\\" `T.isPrefixOf` input = do
-          (escaped, rest) <- singleEscaped input
-          go rest (StringText escaped : acc)
+          (escaped, rest) <- either fail pure (singleEscaped input)
+          go (advanceLine line escaped) rest (StringText escaped : acc)
       | form == FormMulti && "''${" `T.isPrefixOf` input =
-          go (T.drop 4 input) (StringText "${" : acc)
+          go line (T.drop 4 input) (StringText "${" : acc)
       | form == FormMulti && "''' " `T.isPrefixOf` input =
-          go (T.drop 3 input) (StringText "'' " : acc)
+          go line (T.drop 3 input) (StringText "'' " : acc)
       | form == FormMulti && "''\\n" `T.isPrefixOf` input =
-          go (T.drop 4 input) (StringText "\n" : acc)
+          go (line + 1) (T.drop 4 input) (StringText "\n" : acc)
       | form == FormMulti && "''\\t" `T.isPrefixOf` input =
-          go (T.drop 4 input) (StringText "\t" : acc)
+          go line (T.drop 4 input) (StringText "\t" : acc)
       | form == FormMulti && "''\\r" `T.isPrefixOf` input =
-          go (T.drop 4 input) (StringText "\r" : acc)
+          go line (T.drop 4 input) (StringText "\r" : acc)
       | otherwise =
           let (prefix, rest) = breakOnNextSpecial form input
-           in go rest (StringText prefix : acc)
+           in go (advanceLine line prefix) rest (StringText prefix : acc)
 
     singleEscaped input =
       case T.unpack (T.take 2 input) of
@@ -754,11 +799,31 @@ desugarStringSegments form raw =
         ['\\', c] -> Left ("unknown escape: \\" <> [c])
         _ -> Left "unterminated escape"
 
-parseInterpolation :: Text -> Either String (CorePureExpr, Text)
+    advanceLine line text = line + T.count "\n" text
+
+currentLineNumber :: Parser Int
+currentLineNumber =
+  MP.unPos . MP.sourceLine <$> MP.getSourcePos
+
+markCorePureInterpolation :: Int -> Parser ()
+markCorePureInterpolation line =
+  lift . State.modify' $ \info ->
+    info
+      { wireParseCorePureInterpolationLine =
+          case wireParseCorePureInterpolationLine info of
+            Nothing -> Just line
+            Just existingLine -> Just existingLine
+      }
+
+parseInterpolation :: Text -> Parser (CorePureExpr, Text)
 parseInterpolation input =
-  case parse interpolationParser "string interpolation" input of
-    Left bundle -> Left (errorBundlePretty bundle)
-    Right value -> Right value
+  do
+    info <- lift State.get
+    case State.runState (MP.runParserT interpolationParser "string interpolation" input) info of
+      (Left bundle, _) -> fail (errorBundlePretty bundle)
+      (Right value, info') -> do
+        lift (State.put info')
+        pure value
   where
     interpolationParser = do
       value <- spaceConsumer *> corePureExpr <* spaceConsumer
