@@ -88,6 +88,7 @@ import Cortex.Wire
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
   )
+import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.Use
   ( WireUseError (..)
   , WireUseScope
@@ -216,7 +217,8 @@ runWire path = do
 readAndParseWireFile :: FilePath -> IO WireFile
 readAndParseWireFile path = do
   source <- TIO.readFile path
-  either (dieText . renderParseError) pure (parseWireFile path source)
+  expanded <- either dieText pure =<< expandWireSourceIncludes path source
+  either (dieText . renderParseError) pure (parseWireFile path expanded)
 
 emptyRunState :: RunState
 emptyRunState =
@@ -881,8 +883,9 @@ lowerPortSignature useScope portSig = do
           )
           [1 ..]
           outputs
-      duplicatePorts = duplicateNames (fmap (.loweredPortName) loweredInputs <> fmap (.loweredPortName) loweredOutputs)
-  case duplicatePorts of
+      duplicateInputs = duplicateNames (fmap (.loweredPortName) loweredInputs)
+      duplicateOutputs = duplicateNames (fmap (.loweredPortName) loweredOutputs)
+  case duplicateInputs <> duplicateOutputs of
     duplicatePort : _ -> Left ("duplicate lowered port name " <> duplicatePort <> ".")
     [] ->
       Right

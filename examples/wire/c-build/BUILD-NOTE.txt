@@ -1,0 +1,1 @@
+This note is embedded with include_str at Wire elaboration time.

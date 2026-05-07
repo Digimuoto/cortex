@@ -23,6 +23,7 @@ where
 
 import Control.Monad (foldM, when)
 import Data.Char (isAlpha, isAlphaNum, isSpace)
+import Data.Char qualified as Char
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
@@ -125,6 +126,7 @@ reservedWords =
   , "kind"
   , "let"
   , "make"
+  , "makeEach"
   , "node"
   , "null"
   , "pure"
@@ -348,14 +350,30 @@ data FormApplication = FormApplication
   deriving stock (Show)
 
 data MakeApplication = MakeApplication
-  { makeApplicationCount :: !MakeCount
+  { makeApplicationInput :: !MakeInput
   , makeApplicationKindName :: !Text
   }
+  deriving stock (Show)
+
+data MakeInput
+  = MakeInputCount !MakeCount
+  | MakeInputEach !MakeEach
   deriving stock (Show)
 
 data MakeCount
   = MakeCountLiteral !Scientific
   | MakeCountBinding !Text
+  deriving stock (Show)
+
+data MakeEach
+  = MakeEachLiteral ![MakeItem]
+  | MakeEachBinding !Text
+  deriving stock (Show)
+
+data MakeItem = MakeItem
+  { makeItemLabel :: !Text
+  , makeItemValue :: !CorePureExpr
+  }
   deriving stock (Show)
 
 data KindSubstitution = KindSubstitution
@@ -1069,7 +1087,7 @@ formLetItem = do
 
 formLetRhs :: Parser FormLetRhs
 formLetRhs =
-  try (FormLetRhsMake <$> makeApplication <* symbol ";")
+  try (FormLetRhsMake <$> (makeApplication <|> makeEachApplication) <* symbol ";")
     <|> try (FormLetRhsApplication <$> formApplication <* symbol ";")
     <|> try (FormLetRhsWire <$> expr <* symbol ";")
     <|> (FormLetRhsCorePure <$> corePureExpr <* symbol ";")
@@ -1216,7 +1234,7 @@ letBinding = do
 
 parsedLetRhs :: LetVisibility -> Text -> Parser ParsedTopForm
 parsedLetRhs visibility name =
-  try (ParsedTopLetMake visibility name <$> makeApplication <* symbol ";")
+  try (ParsedTopLetMake visibility name <$> (makeApplication <|> makeEachApplication) <* symbol ";")
     <|> try (ParsedTopLetApplication visibility name <$> formApplication <* symbol ";")
     <|> try (ParsedTopLet visibility name . LetRhsWire <$> expr <* symbol ";")
     <|> (ParsedTopLet visibility name . LetRhsCorePure <$> corePureExpr <* symbol ";")
@@ -1232,7 +1250,22 @@ makeApplication = do
   _ <- symbol ")"
   pure
     MakeApplication
-      { makeApplicationCount = countValue
+      { makeApplicationInput = MakeInputCount countValue
+      , makeApplicationKindName = kindName
+      }
+
+makeEachApplication :: Parser MakeApplication
+makeEachApplication = do
+  keyword "makeEach"
+  _ <- symbol "("
+  eachValue <- makeEach
+  _ <- symbol ","
+  kindName <- identifier
+  _ <- optional (symbol ",")
+  _ <- symbol ")"
+  pure
+    MakeApplication
+      { makeApplicationInput = MakeInputEach eachValue
       , makeApplicationKindName = kindName
       }
 
@@ -1240,6 +1273,11 @@ makeCount :: Parser MakeCount
 makeCount =
   (MakeCountLiteral <$> numberLiteral)
     <|> (MakeCountBinding <$> identifier)
+
+makeEach :: Parser MakeEach
+makeEach =
+  (MakeEachLiteral <$> (staticMakeItems =<< corePureList))
+    <|> (MakeEachBinding <$> identifier)
 
 formApplication :: Parser FormApplication
 formApplication = do
@@ -1279,7 +1317,7 @@ expandStructuralForms forms = do
       ParsedTopUse useSpec ->
         Right (scope, TopUse useSpec : acc)
       ParsedTopLet visibility name rhs ->
-        Right (recordStaticMakeCount name rhs scope, TopLet visibility name rhs : acc)
+        Right (recordStaticMakeData name rhs scope, TopLet visibility name rhs : acc)
       ParsedTopLetMake visibility name application -> do
         expanded <- expandMakeBinding scope visibility name application
         Right (scope, reverse expanded <> acc)
@@ -1307,22 +1345,29 @@ expandStructuralForms forms = do
         nodeDeclValue <- expandParsedNode scope.esKinds parsedNode
         Right (scope, TopNode nodeDeclValue : acc)
 
-recordStaticMakeCount :: Text -> LetRhs -> ExpansionScope -> ExpansionScope
-recordStaticMakeCount name rhs scope =
+recordStaticMakeData :: Text -> LetRhs -> ExpansionScope -> ExpansionScope
+recordStaticMakeData name rhs scope =
   case rhs of
     LetRhsWire (ExprLit (LitNumber countValue)) ->
       scope {esMakeCounts = Map.insert name countValue scope.esMakeCounts}
     LetRhsCorePure (CorePureLit (CorePureNumber countValue)) ->
       scope {esMakeCounts = Map.insert name countValue scope.esMakeCounts}
+    LetRhsWire (ExprList items)
+      | Just makeItems <- staticMakeItemsFromExprs items ->
+          scope {esMakeItems = Map.insert name makeItems scope.esMakeItems}
+    LetRhsCorePure (CorePureList items)
+      | Just makeItems <- staticMakeItemsFromCorePure items ->
+          scope {esMakeItems = Map.insert name makeItems scope.esMakeItems}
     _ ->
       scope
 
 data ExpansionScope = ExpansionScope
   { esKinds :: !(Map Text KindDecl)
   , esForms :: !(Map Text FormDecl)
-  , -- Structural expansion happens during one top-form fold, so only preceding closed numeric lets
-    -- are visible as named make counts.
+  , -- Structural expansion happens during one top-form fold, so only preceding closed static lets
+    -- are visible as make counts or makeEach item lists.
     esMakeCounts :: !(Map Text Scientific)
+  , esMakeItems :: !(Map Text [MakeItem])
   }
   deriving stock (Show)
 
@@ -1332,6 +1377,7 @@ emptyExpansionScope =
     { esKinds = Map.empty
     , esForms = Map.empty
     , esMakeCounts = Map.empty
+    , esMakeItems = Map.empty
     }
 
 expandMakeBinding
@@ -1348,26 +1394,46 @@ expandMakeBinding scope visibility bindingName application = do
       )
       Right
       (Map.lookup application.makeApplicationKindName scope.esKinds)
-  _ <- makeKindLabelParam kindDeclValue
-  count <- staticMakeCount scope bindingName application.makeApplicationCount
-  let childNames =
-        [ bindingName <> "_" <> T.pack (show idx)
-        | idx <- [0 .. count - 1]
-        ]
-      childNode name =
+  generated <- makeGeneratedChildren scope bindingName application kindDeclValue
+  let childNames = fmap fst generated
+      childNode (name, args) =
         expandParsedNode
           scope.esKinds
           ( ParsedNodeKindApplication
               name
               KindApplication
                 { kindApplicationName = application.makeApplicationKindName
-                , kindApplicationArgs = [ExprIdent (QName (name :| []))]
+                , kindApplicationArgs = args
                 }
           )
-      resultExpr =
-        overlayGeneratedChildren childNames
-  nodes <- traverse childNode childNames
+      resultExpr = overlayGeneratedChildren childNames
+  nodes <- traverse childNode generated
   Right (fmap TopNode nodes <> [TopLet visibility bindingName (LetRhsWire resultExpr)])
+
+makeGeneratedChildren
+  :: ExpansionScope
+  -> Text
+  -> MakeApplication
+  -> KindDecl
+  -> Either String [(Text, [Expr])]
+makeGeneratedChildren scope bindingName application kindDeclValue =
+  case application.makeApplicationInput of
+    MakeInputCount countInput -> do
+      _ <- makeKindLabelParam kindDeclValue
+      count <- staticMakeCount scope bindingName countInput
+      Right
+        [ let name = bindingName <> "_" <> T.pack (show idx)
+           in (name, [ExprIdent (QName (name :| []))])
+        | idx <- [0 .. count - 1]
+        ]
+    MakeInputEach eachInput -> do
+      (_labelParam, maybeValueParam) <- makeEachKindParams kindDeclValue
+      items <- staticMakeEachItems scope bindingName eachInput
+      let child item = do
+            let name = bindingName <> "_" <> item.makeItemLabel
+            valueArg <- traverse (\_ -> corePureExprToExpr item.makeItemValue) maybeValueParam
+            Right (name, ExprIdent (QName (name :| [])) : foldMap pure valueArg)
+      traverse child items
 
 makeKindLabelParam :: KindDecl -> Either String KindParam
 makeKindLabelParam kindDeclValue =
@@ -1380,6 +1446,23 @@ makeKindLabelParam kindDeclValue =
         ( "kind "
             <> T.unpack kindDeclValue.kindDeclName
             <> " used with make(...) must declare exactly one PortLabel parameter"
+        )
+
+makeEachKindParams :: KindDecl -> Either String (KindParam, Maybe KindParam)
+makeEachKindParams kindDeclValue =
+  case kindDeclValue.kindDeclParams of
+    [labelParam]
+      | labelParam.kindParamClass == KindParamPortLabel ->
+          Right (labelParam, Nothing)
+    [labelParam, valueParam]
+      | labelParam.kindParamClass == KindParamPortLabel
+      , valueParam.kindParamClass == KindParamValue ->
+          Right (labelParam, Just valueParam)
+    _ ->
+      Left
+        ( "kind "
+            <> T.unpack kindDeclValue.kindDeclName
+            <> " used with makeEach(...) must declare PortLabel or PortLabel, Value parameters"
         )
 
 staticMakeCount :: ExpansionScope -> Text -> MakeCount -> Either String Int
@@ -1411,6 +1494,134 @@ staticMakeScientificCount bindingName countValue =
           Left ("make count for " <> T.unpack bindingName <> " is too large")
       | otherwise ->
           Right (fromInteger integerValue)
+
+staticMakeEachItems :: ExpansionScope -> Text -> MakeEach -> Either String [MakeItem]
+staticMakeEachItems _scope bindingName (MakeEachLiteral items) =
+  validateStaticMakeEachItems bindingName items
+staticMakeEachItems scope bindingName (MakeEachBinding itemName) =
+  case Map.lookup itemName scope.esMakeItems of
+    Just items -> validateStaticMakeEachItems bindingName items
+    Nothing ->
+      Left
+        ( "makeEach items for "
+            <> T.unpack bindingName
+            <> " reference "
+            <> T.unpack itemName
+            <> ", but makeEach items must be a preceding static list with label fields"
+        )
+
+validateStaticMakeEachItems :: Text -> [MakeItem] -> Either String [MakeItem]
+validateStaticMakeEachItems bindingName items =
+  case duplicateMakeItemLabels items of
+    duplicateLabel : _ ->
+      Left
+        ( "makeEach items for "
+            <> T.unpack bindingName
+            <> " produce duplicate generated label "
+            <> T.unpack duplicateLabel
+        )
+    [] ->
+      Right items
+
+duplicateMakeItemLabels :: [MakeItem] -> [Text]
+duplicateMakeItemLabels items =
+  [ label
+  | (label, count) <-
+      Map.toAscList
+        (Map.fromListWith (+) [(item.makeItemLabel, 1 :: Int) | item <- items])
+  , count > 1
+  ]
+
+staticMakeItems :: CorePureExpr -> Parser [MakeItem]
+staticMakeItems = \case
+  CorePureList items ->
+    case staticMakeItemsFromCorePure items of
+      Just makeItems -> pure makeItems
+      Nothing -> fail "makeEach literal items must be strings or records with string label fields"
+  _ ->
+    fail "makeEach literal items must be a static CorePure list"
+
+staticMakeItemsFromExprs :: [Expr] -> Maybe [MakeItem]
+staticMakeItemsFromExprs =
+  traverse
+    ( \exprValue -> do
+        corePureValue <- either (const Nothing) Just (exprToCorePureExpr exprValue)
+        staticMakeItemFromCorePure corePureValue
+    )
+
+staticMakeItemsFromCorePure :: [CorePureExpr] -> Maybe [MakeItem]
+staticMakeItemsFromCorePure =
+  traverse staticMakeItemFromCorePure
+
+staticMakeItemFromCorePure :: CorePureExpr -> Maybe MakeItem
+staticMakeItemFromCorePure exprValue =
+  case exprValue of
+    CorePureLit (CorePureString labelText) ->
+      Just
+        MakeItem
+          { makeItemLabel = sanitizeMakeItemLabel labelText
+          , makeItemValue = exprValue
+          }
+    CorePureRecord fields -> do
+      labelText <- staticRecordStringField "label" fields
+      Just
+        MakeItem
+          { makeItemLabel = sanitizeMakeItemLabel labelText
+          , makeItemValue = exprValue
+          }
+    _ ->
+      Nothing
+
+staticRecordStringField :: Text -> [CorePureField] -> Maybe Text
+staticRecordStringField fieldName fields =
+  case [ text
+       | CorePureField (pathHead :| []) (CorePureLit (CorePureString text)) <- fields
+       , pathHead == fieldName
+       ] of
+    text : _ -> Just text
+    [] -> Nothing
+
+sanitizeMakeItemLabel :: Text -> Text
+sanitizeMakeItemLabel labelText =
+  let mapped =
+        T.map
+          ( \charValue ->
+              if Char.isAlphaNum charValue || charValue == '_'
+                then charValue
+                else '_'
+          )
+          labelText
+      stripped = T.dropWhile (== '_') mapped
+   in case T.uncons stripped of
+        Just (firstChar, _)
+          | Char.isAlpha firstChar || firstChar == '_' ->
+              stripped
+        _ ->
+          "item_" <> stripped
+
+corePureExprToExpr :: CorePureExpr -> Either String Expr
+corePureExprToExpr = \case
+  CorePureLit (CorePureString text) ->
+    Right (ExprLit (LitString text))
+  CorePureLit (CorePureNumber numberValue) ->
+    Right (ExprLit (LitNumber numberValue))
+  CorePureLit (CorePureBool boolValue) ->
+    Right (ExprLit (LitBool boolValue))
+  CorePureLit CorePureNull ->
+    Left "makeEach Value items cannot contain null because Wire graph values have no null literal"
+  CorePureList items ->
+    ExprList <$> traverse corePureExprToExpr items
+  CorePureRecord fields ->
+    ExprRecord . Record <$> traverse corePureFieldToField fields
+  CorePureIdent name ->
+    Right (ExprIdent (QName (name :| [])))
+  CorePureBinary CorePureMerge lhs rhs ->
+    ExprMerge <$> corePureExprToExpr lhs <*> corePureExprToExpr rhs
+  other ->
+    Left ("makeEach Value item must be a static literal/list/record, got " <> show other)
+  where
+    corePureFieldToField (CorePureField path value) =
+      Field path <$> corePureExprToExpr value
 
 overlayGeneratedChildren :: [Text] -> Expr
 overlayGeneratedChildren = \case
@@ -1466,6 +1677,7 @@ data FormExpansionState = FormExpansionState
   { fesLocalNames :: !(Map Text Text)
   , fesLocalLetNames :: !(Map Text Text)
   , fesMakeCounts :: !(Map Text Scientific)
+  , fesMakeItems :: !(Map Text [MakeItem])
   , fesOutputForms :: ![TopForm]
   }
   deriving stock (Show)
@@ -1476,6 +1688,7 @@ emptyFormExpansionState =
     { fesLocalNames = Map.empty
     , fesLocalLetNames = Map.empty
     , fesMakeCounts = Map.empty
+    , fesMakeItems = Map.empty
     , fesOutputForms = []
     }
 
@@ -1543,39 +1756,48 @@ expandFormItem scope subst prefix state = \case
                 }
       FormLetRhsMake application -> do
         application' <- substituteFormMakeApplication subst state.fesLocalNames application
-        expanded <- expandMakeBinding (scopeWithFormCounts scope state) LetPrivate prefixedName application'
+        expanded <- expandMakeBinding (scopeWithFormData scope state) LetPrivate prefixedName application'
         Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
       FormLetRhsWire exprValue -> do
         exprValue' <- substituteFormExpr subst state.fesLocalNames exprValue
-        let stateWithCount =
-              recordFormStaticMakeCount prefixedName (LetRhsWire exprValue') stateWithName
+        let stateWithData =
+              recordFormStaticMakeData prefixedName (LetRhsWire exprValue') stateWithName
         Right
-          stateWithCount
+          stateWithData
             { fesOutputForms =
                 state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsWire exprValue')]
             }
       FormLetRhsCorePure exprValue -> do
         exprValue' <- substituteFormCorePure subst state.fesLocalLetNames exprValue
-        let stateWithCount =
-              recordFormStaticMakeCount prefixedName (LetRhsCorePure exprValue') stateWithName
+        let stateWithData =
+              recordFormStaticMakeData prefixedName (LetRhsCorePure exprValue') stateWithName
         Right
-          stateWithCount
+          stateWithData
             { fesOutputForms =
                 state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsCorePure exprValue')]
             }
 
-scopeWithFormCounts :: ExpansionScope -> FormExpansionState -> ExpansionScope
-scopeWithFormCounts scope state =
-  scope {esMakeCounts = state.fesMakeCounts <> scope.esMakeCounts}
+scopeWithFormData :: ExpansionScope -> FormExpansionState -> ExpansionScope
+scopeWithFormData scope state =
+  scope
+    { esMakeCounts = state.fesMakeCounts <> scope.esMakeCounts
+    , esMakeItems = state.fesMakeItems <> scope.esMakeItems
+    }
 
-recordFormStaticMakeCount :: Text -> LetRhs -> FormExpansionState -> FormExpansionState
-recordFormStaticMakeCount name rhs state =
+recordFormStaticMakeData :: Text -> LetRhs -> FormExpansionState -> FormExpansionState
+recordFormStaticMakeData name rhs state =
   let scope =
-        recordStaticMakeCount
+        recordStaticMakeData
           name
           rhs
-          emptyExpansionScope {esMakeCounts = state.fesMakeCounts}
-   in state {fesMakeCounts = scope.esMakeCounts}
+          emptyExpansionScope
+            { esMakeCounts = state.fesMakeCounts
+            , esMakeItems = state.fesMakeItems
+            }
+   in state
+        { fesMakeCounts = scope.esMakeCounts
+        , fesMakeItems = scope.esMakeItems
+        }
 
 parsedNodeName :: ParsedNodeDecl -> Text
 parsedNodeName = \case
@@ -1688,8 +1910,16 @@ substituteFormApplication subst localNames application =
 substituteFormMakeApplication
   :: FormSubstitution -> Map Text Text -> MakeApplication -> Either String MakeApplication
 substituteFormMakeApplication subst localNames application =
-  (\countValue -> application {makeApplicationCount = countValue})
-    <$> substituteFormMakeCount subst localNames application.makeApplicationCount
+  (\inputValue -> application {makeApplicationInput = inputValue})
+    <$> substituteFormMakeInput subst localNames application.makeApplicationInput
+
+substituteFormMakeInput
+  :: FormSubstitution -> Map Text Text -> MakeInput -> Either String MakeInput
+substituteFormMakeInput subst localNames = \case
+  MakeInputCount countValue ->
+    MakeInputCount <$> substituteFormMakeCount subst localNames countValue
+  MakeInputEach eachValue ->
+    MakeInputEach <$> substituteFormMakeEach subst localNames eachValue
 
 substituteFormMakeCount
   :: FormSubstitution -> Map Text Text -> MakeCount -> Either String MakeCount
@@ -1711,6 +1941,25 @@ substituteFormMakeCount subst localNames = \case
           )
       Nothing ->
         Right (MakeCountBinding (Map.findWithDefault countName countName localNames))
+
+substituteFormMakeEach
+  :: FormSubstitution -> Map Text Text -> MakeEach -> Either String MakeEach
+substituteFormMakeEach subst localNames = \case
+  MakeEachLiteral items ->
+    Right (MakeEachLiteral items)
+  MakeEachBinding itemName ->
+    case Map.lookup itemName subst.fsKindSubstitution.ksValues of
+      Just (ExprIdent (QName (replacement :| []))) ->
+        Right (MakeEachBinding replacement)
+      Just other ->
+        Left
+          ( "makeEach items "
+              <> T.unpack itemName
+              <> " must resolve to a static item-list binding, got "
+              <> show other
+          )
+      Nothing ->
+        Right (MakeEachBinding (Map.findWithDefault itemName itemName localNames))
 
 formApplicationToCorePureLetRhs :: FormApplication -> Either String LetRhs
 formApplicationToCorePureLetRhs application =

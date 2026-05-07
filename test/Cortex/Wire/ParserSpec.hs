@@ -21,6 +21,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Test.Hspec
 
+import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.Parser
 import Cortex.Wire.Syntax
 
@@ -33,6 +34,18 @@ parseWireFixture :: FilePath -> Expectation
 parseWireFixture path = do
   source <- TIO.readFile path
   parseWireFile path source `shouldSatisfy` isRight
+
+parseIncludedWireFixture :: FilePath -> Expectation
+parseIncludedWireFixture path = do
+  source <- TIO.readFile path
+  expanded <- requireRightIO (expandWireSourceIncludes path source)
+  parseWireFile path expanded `shouldSatisfy` isRight
+
+requireRightIO :: Show err => IO (Either err a) -> IO a
+requireRightIO action =
+  action >>= \case
+    Left err -> expectationFailure ("expected Right, got Left " <> show err) >> error "unreachable"
+    Right value -> pure value
 
 topFormName :: TopForm -> Maybe Text
 topFormName topForm =
@@ -83,6 +96,9 @@ spec = describe "Cortex.Wire.Parser" $ do
 
     it "parses the mini build-system example" $
       parseWireFixture "examples/wire/mini-build-system.wire"
+
+    it "parses the C build example" $
+      parseIncludedWireFixture "examples/wire/c-build/c-build.wire"
 
     it "parses the quantum Bell-state example" $
       parseWireFixture "examples/wire/quantum-bell-state.wire"
@@ -183,6 +199,19 @@ spec = describe "Cortex.Wire.Parser" $ do
         )
         `shouldSatisfy` isParseFailure
 
+    it "rejects makeEach items with duplicate generated labels" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "kind sample(label: PortLabel) ="
+            , "  -> label: Sample = @review.sample ({}) ;"
+            , "let worker_names = [\"alpha\", \"alpha\"];"
+            , "let workers = makeEach(worker_names, sample);"
+            , "workers"
+            ]
+        )
+        `shouldSatisfy` isParseFailureContaining "duplicate generated label alpha"
+
   describe "top-level forms" $ do
     it "parses exported scalar bindings as ordinary module lets" $ do
       let WireFile forms _ = parseOrFail "export let threshold = 0.7 ;"
@@ -260,6 +289,27 @@ spec = describe "Cortex.Wire.Parser" $ do
                    , Just "batch"
                    ]
       fileReturn `shouldBe` Just (ExprIdent (QName ("batch" :| [])))
+
+    it "expands makeEach forms from static item records" $ do
+      let WireFile forms fileReturn =
+            parseOrFail $
+              T.unlines
+                [ "kind sample(label: PortLabel, item: Value) ="
+                , "  -> label: Sample = item ;"
+                , "let source_items = ["
+                , "  { label = \"alpha\"; path = \"src/alpha.c\"; },"
+                , "  { label = \"beta\"; path = \"src/beta.c\"; },"
+                , "];"
+                , "let workers = makeEach(source_items, sample);"
+                , "workers"
+                ]
+      fmap topFormName forms
+        `shouldBe` [ Just "source_items"
+                   , Just "workers_alpha"
+                   , Just "workers_beta"
+                   , Just "workers"
+                   ]
+      fileReturn `shouldBe` Just (ExprIdent (QName ("workers" :| [])))
 
     it "parses top-level lambdas as delayed CorePure helper bindings" $ do
       let WireFile forms _ = parseOrFail "let acceptedItem = item: item.score >= 0.7 ;"

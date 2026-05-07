@@ -181,6 +181,11 @@ creates N fresh nodes from kind `K`; it does not clone one existing node or dupl
 port. Similarly, the `*` topology operator is an explicit record↔ports adapter node, not a hidden
 fan-out rule on edges.
 
+Source-driven generation uses the same rule. `include_str` and `include_dir` are Rust-style
+source-elaboration includes: absent files or directories fail compilation, and runtime CorePure only
+receives embedded values. `makeEach(items, K)` can then turn a static included list into fresh
+nodes, one per item, without granting runtime filesystem authority or copying an existing node.
+
 ## Node boundary normal form
 
 Wire nodes have a semantic normal form even when source syntax stays compact:

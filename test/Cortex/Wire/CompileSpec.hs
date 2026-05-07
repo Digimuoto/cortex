@@ -52,6 +52,7 @@ import Cortex.Wire.Executor
   , wireExecutorProjectionFromPorts
   , wireExecutorRegistryFromList
   )
+import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.Pure (pureWireExecutorProjection)
 import Cortex.Wire.Std
   ( stdIoReadFileShapeMessage
@@ -111,6 +112,14 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Set.fromList
         [ CircuitNodeRef "batch/workers_0"
         , CircuitNodeRef "batch/workers_1"
+        ]
+
+  it "expands makeEach(items, K) into source-labeled generated nodes" $ do
+    compiled <- requireRight (compileWireFragmentText makeEachSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.fromList
+        [ CircuitNodeRef "workers_alpha"
+        , CircuitNodeRef "workers_beta"
         ]
 
   it "lowers record-form * gather through an explicit phantom adapter" $ do
@@ -456,6 +465,11 @@ spec = describe "Cortex.Wire.Compile" $ do
       source <- TIO.readFile "examples/wire/mini-build-system.wire"
       compileWireText source `shouldSatisfy` isRight
 
+    it "compiles the C build example" $ do
+      source <- TIO.readFile "examples/wire/c-build/c-build.wire"
+      expanded <- requireRight =<< expandWireSourceIncludes "examples/wire/c-build/c-build.wire" source
+      compileWireText expanded `shouldSatisfy` isRight
+
     it "compiles the quantum Bell-state example with consumer executor projections" $ do
       source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
       compiled <- requireRight (compileWireTextWithEnv quantumExecutorEnv source)
@@ -632,6 +646,16 @@ formLocalMakeStaticCountSourceText =
     , "};"
     , "let batch = batch_form();"
     , "batch"
+    ]
+
+makeEachSourceText :: T.Text
+makeEachSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "let worker_names = [\"alpha\", \"beta\"];"
+    , "let workers = makeEach(worker_names, sample);"
+    , "workers"
     ]
 
 starGatherSourceText :: T.Text

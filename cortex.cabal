@@ -169,6 +169,7 @@ library
         Cortex.Wire.Compile
         Cortex.Wire.Contract
         Cortex.Wire.Executor
+        Cortex.Wire.Include
         Cortex.Wire.Parser
         Cortex.Wire.Pure
         Cortex.Wire.Std

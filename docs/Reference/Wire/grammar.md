@@ -328,6 +328,21 @@ numeric `let`. `K` is a kind reference, not a kind application and not a CorePur
 nodes get deterministic identities from the binding name and expose the generated port labels
 specified by the kind.
 
+`makeEach(items, K)` is the itemized form. `items` must be a static list literal or preceding static
+list binding. Items may be strings or records with a string `label` field. Generated nodes use
+`<binding>_<label>` identities. `K` must declare either one `PortLabel` parameter, or
+`PortLabel, Value` when the full item record should be passed into the generated kind application.
+
+### Source Includes
+
+`include_str("path")` / `includeStr("path")` and `include_dir("path")` / `includeDir("path")` are
+source-elaboration forms, not runtime CorePure builtins. They are expanded before parsing the Wire
+file; missing paths are compile-time errors.
+
+Relative paths resolve against the containing Wire file. `include_str` embeds a UTF-8 file as a
+string literal. `include_dir` embeds a sorted list of direct directory-entry records with `name`,
+`path`, `stem`, `extension`, `label`, and `entryType` fields.
+
 ### 5.3 Pure Output Equations
 
 Pure nodes compute deterministic JSON-shaped values:

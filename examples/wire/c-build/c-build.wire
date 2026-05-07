@@ -1,0 +1,359 @@
+# Build a small C metrics tool through a typed Wire graph.
+#
+#   nix run .#wire -- run examples/wire/c-build/c-build.wire
+#
+# This file is an educational build example. It deliberately avoids the
+# Makefile habit of hiding the build graph inside shell recipes:
+#
+#   * include_dir discovers source files at Wire elaboration time.
+#   * makeEach expands one fresh command node for each discovered file.
+#   * `*` gathers generated frontiers into nominal record contracts.
+#   * serial dependency gates carry earlier command results forward so the
+#     final report can gather them structurally.
+#
+# include_dir/include_str are Rust-style source includes. They are evaluated
+# before parsing this file. Missing files or directories are compile errors,
+# and runtime CorePure receives ordinary embedded data with no filesystem
+# authority.
+
+use std.io.{@command, @stdout, CommandSpec, CommandResult};
+
+contract BuildReport;
+contract BuildStart;
+contract BuildSummary;
+
+# makeEach names generated nodes as <binding>_<item.label>. The record fields
+# below are therefore the generated frontier labels. If a source file is added
+# to a directory, makeEach generates another node and this contract becomes the
+# visible place where the build graph must be amended.
+contract LibObjectResults {
+  lib_objects_metrics: CommandResult;
+  lib_objects_parse: CommandResult;
+  lib_objects_render: CommandResult;
+};
+
+contract TestObjectResults {
+  test_objects_test_metrics: CommandResult;
+  test_objects_test_parse: CommandResult;
+};
+
+contract QualityResults {
+  quality_checks_syntax: CommandResult;
+  quality_checks_todo: CommandResult;
+  quality_checks_headers: CommandResult;
+};
+
+contract FinalResults {
+  libCompileReport: BuildSummary;
+  appCompileReport: BuildSummary;
+  testCompileReport: BuildSummary;
+  qualityReport: BuildSummary;
+  buildNote: BuildSummary;
+  archive: CommandResult;
+  linkApp: CommandResult;
+  linkMetricsTest: CommandResult;
+  linkParseTest: CommandResult;
+  runMetricsTest: CommandResult;
+  runParseTest: CommandResult;
+  smokeRun: CommandResult;
+  package: CommandResult;
+};
+
+kind run_command(spec: PortLabel, result: PortLabel) =
+  <- spec: CommandSpec;
+  -> result: CommandResult = @command {} (spec);
+
+# makeEach can pass a source metadata record into a kind as a Value parameter.
+# This command kind does not need the item value at runtime; the item already
+# shaped the generated node name. The command spec with the same label supplies
+# the actual executor payload.
+kind generated_command(label: PortLabel, item: Value) =
+  <- label: CommandSpec;
+  -> label: CommandResult = @command {} (label);
+
+# A dependency gate turns "previous command must have happened" into an
+# explicit port. It also re-emits the previous result so later report stages can
+# still observe it without implicit graph fan-out.
+kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
+  <- spec: CommandSpec;
+  <- previous: CommandResult;
+  -> previous: CommandResult = previous;
+  -> ready: CommandSpec = spec;
+
+form gated_command(spec: PortLabel, previous: PortLabel, ready: PortLabel, result: PortLabel) = {
+  node gate = command_gate(spec, previous, ready);
+  node run = run_command(ready, result);
+
+  gate
+    => run;
+};
+
+# Source discovery. These are compile-time includes, not runtime reads.
+let lib_sources = include_dir("src/lib");
+let app_sources = include_dir("src/app");
+let test_sources = include_dir("src/tests");
+
+let quality_units = [
+  { label = "syntax"; },
+  { label = "todo"; },
+  { label = "headers"; },
+];
+
+# Generated command frontiers. Each binding expands to one node per item.
+let lib_objects = makeEach(lib_sources, generated_command);
+let app_objects = makeEach(app_sources, generated_command);
+let test_objects = makeEach(test_sources, generated_command);
+let quality_checks = makeEach(quality_units, generated_command);
+
+node start_build
+  -> start: BuildStart = "build";
+
+# plan_build's where clause is source-elaboration/CorePure planning data. It
+# uses the same static includes as makeEach, so command specs and generated
+# node labels derive from one source directory snapshot. Shell strings remain
+# executor payloads; dependency shape lives in the graph below.
+node plan_build
+  <- start: BuildStart;
+  -> lib_objects_metrics: CommandSpec = libMetricsSpec;
+  -> lib_objects_parse: CommandSpec = libParseSpec;
+  -> lib_objects_render: CommandSpec = libRenderSpec;
+  -> app_objects_main: CommandSpec = appMainSpec;
+  -> test_objects_test_metrics: CommandSpec = testMetricsCompileSpec;
+  -> test_objects_test_parse: CommandSpec = testParseCompileSpec;
+  -> quality_checks_syntax: CommandSpec = syntaxCheckSpec;
+  -> quality_checks_todo: CommandSpec = todoCheckSpec;
+  -> quality_checks_headers: CommandSpec = headerCheckSpec;
+  -> archiveSpec: CommandSpec = archiveCommandSpec;
+  -> linkAppSpec: CommandSpec = linkAppCommandSpec;
+  -> linkMetricsTestSpec: CommandSpec = linkMetricsCommandSpec;
+  -> linkParseTestSpec: CommandSpec = linkParseCommandSpec;
+  -> runMetricsTestSpec: CommandSpec = runMetricsCommandSpec;
+  -> runParseTestSpec: CommandSpec = runParseCommandSpec;
+  -> smokeSpec: CommandSpec = smokeCommandSpec;
+  -> packageSpec: CommandSpec = packageCommandSpec;
+  -> buildNote: BuildSummary = buildNote;
+  where let
+    root = "examples/wire/c-build";
+    flags = "-std=c11 -Wall -Wextra -Werror -O2 -Iinclude";
+    libSources = include_dir("src/lib");
+    appSources = include_dir("src/app");
+    testSources = include_dir("src/tests");
+    buildNoteText = include_str("BUILD-NOTE.txt");
+    qualityUnits = [
+      { label = "syntax"; },
+      { label = "todo"; },
+      { label = "headers"; },
+    ];
+    objectPath = unit: "build/${unit.label}.o";
+    executablePath = unit: "build/${unit.label}";
+    shell = name: command: {
+      inherit name;
+      argv = ["sh", "-c", command];
+      cwd = root;
+      required = true;
+      skip = false;
+      echo = true;
+    };
+    compileSpec = unit:
+      shell "compile-${unit.label}"
+        "mkdir -p build dist && cc ${flags} -c ${unit.path} -o ${objectPath unit}";
+    qualitySpec = unit:
+      if unit.label == "syntax"
+      then shell "syntax-only" "cc -std=c11 -Wall -Wextra -Werror -Iinclude -fsyntax-only src/app/main.c src/lib/metrics.c src/lib/parse.c src/lib/render.c"
+      else
+        if unit.label == "todo"
+        then shell "todo-scan" "! grep -R TODO include src"
+        else shell "header-contracts" "test -f include/metrics.h && test -f include/parse.h && test -f include/render.h";
+    libObjectArgs = libSources |> map objectPath |> joinWith " ";
+    appObjectArgs = appSources |> map objectPath |> joinWith " ";
+    archiveCommandSpec =
+      shell "archive-libmetrics"
+        "ar rcs build/libmetrics.a ${libObjectArgs}";
+    linkAppCommandSpec =
+      shell "link-metrics-demo"
+        "cc ${flags} -o build/metrics-demo ${appObjectArgs} build/libmetrics.a";
+    linkTestSpec = unit:
+      shell "link-${unit.label}"
+        "cc ${flags} -o ${executablePath unit} ${objectPath unit} build/libmetrics.a";
+    runTestSpec = unit:
+      shell "run-${unit.label}"
+        "./${executablePath unit}";
+    smokeCommandSpec =
+      shell "run-smoke"
+        "./build/metrics-demo '12,18,7,23,15'";
+    packageCommandSpec =
+      shell "package-dist"
+        "mkdir -p dist && cp build/metrics-demo dist/metrics-demo && printf 'metrics-demo\n' > dist/manifest.txt";
+    libMetricsSpec = compileSpec libSources[0];
+    libParseSpec = compileSpec libSources[1];
+    libRenderSpec = compileSpec libSources[2];
+    appMainSpec = compileSpec appSources[0];
+    testMetricsCompileSpec = compileSpec testSources[0];
+    testParseCompileSpec = compileSpec testSources[1];
+    syntaxCheckSpec = qualitySpec qualityUnits[0];
+    todoCheckSpec = qualitySpec qualityUnits[1];
+    headerCheckSpec = qualitySpec qualityUnits[2];
+    linkMetricsCommandSpec = linkTestSpec testSources[0];
+    linkParseCommandSpec = linkTestSpec testSources[1];
+    runMetricsCommandSpec = runTestSpec testSources[0];
+    runParseCommandSpec = runTestSpec testSources[1];
+    buildNote = {
+      label = "source include";
+      ok = true;
+      summary = buildNoteText;
+    };
+  in
+  {
+    inherit
+      libMetricsSpec
+      libParseSpec
+      libRenderSpec
+      appMainSpec
+      testMetricsCompileSpec
+      testParseCompileSpec
+      syntaxCheckSpec
+      todoCheckSpec
+      headerCheckSpec
+      archiveCommandSpec
+      linkAppCommandSpec
+      linkMetricsCommandSpec
+      linkParseCommandSpec
+      runMetricsCommandSpec
+      runParseCommandSpec
+      smokeCommandSpec
+      packageCommandSpec
+      buildNote;
+  };
+
+let summarize = runs: label: {
+  inherit label;
+  ok = length (runs |> filter (run: !run.ok)) == 0;
+  summary = runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
+};
+
+node summarize_lib_objects
+  <- libObjects: LibObjectResults;
+  -> libCompileReport: BuildSummary = summarize ([libObjects.lib_objects_metrics, libObjects.lib_objects_parse, libObjects.lib_objects_render]) "library objects";
+
+node summarize_app_objects
+  <- app_objects_main: CommandResult;
+  -> appCompileReport: BuildSummary = summarize ([app_objects_main]) "app objects";
+
+node summarize_test_objects
+  <- testObjects: TestObjectResults;
+  -> testCompileReport: BuildSummary = summarize ([testObjects.test_objects_test_metrics, testObjects.test_objects_test_parse]) "test objects";
+
+node analyze_quality
+  <- quality: QualityResults;
+  -> qualityReport: BuildSummary = summarize ([quality.quality_checks_syntax, quality.quality_checks_todo, quality.quality_checks_headers]) "quality checks";
+
+# archive_gate is the point where all parallel source-generated frontiers must
+# be complete before artifact production starts.
+node archive_gate
+  <- libCompileReport: BuildSummary;
+  <- appCompileReport: BuildSummary;
+  <- testCompileReport: BuildSummary;
+  <- qualityReport: BuildSummary;
+  <- buildNote: BuildSummary;
+  <- archiveSpec: CommandSpec;
+  -> libCompileReport: BuildSummary = libCompileReport;
+  -> appCompileReport: BuildSummary = appCompileReport;
+  -> testCompileReport: BuildSummary = testCompileReport;
+  -> qualityReport: BuildSummary = qualityReport;
+  -> buildNote: BuildSummary = buildNote;
+  -> archiveReady: CommandSpec = archiveSpec;
+
+node archive_core = run_command(archiveReady, archive);
+
+let link_app = gated_command(linkAppSpec, archive, linkAppReady, linkApp);
+let link_metrics_test = gated_command(linkMetricsTestSpec, linkApp, linkMetricsTestReady, linkMetricsTest);
+let link_parse_test = gated_command(linkParseTestSpec, linkMetricsTest, linkParseTestReady, linkParseTest);
+let run_metrics_test = gated_command(runMetricsTestSpec, linkParseTest, runMetricsTestReady, runMetricsTest);
+let run_parse_test = gated_command(runParseTestSpec, runMetricsTest, runParseTestReady, runParseTest);
+let run_smoke = gated_command(smokeSpec, runParseTest, smokeReady, smokeRun);
+let package_dist = gated_command(packageSpec, smokeRun, packageReady, package);
+
+node render_build_report
+  <- final: FinalResults;
+  -> report: BuildReport = report;
+  where let
+    commands = [
+      final.archive,
+      final.linkApp,
+      final.linkMetricsTest,
+      final.linkParseTest,
+      final.runMetricsTest,
+      final.runParseTest,
+      final.smokeRun,
+      final.package,
+    ];
+    failures = commands |> filter (run: !run.ok);
+    commandLines =
+      commands
+        |> map (run: "  ${run.name}: ${run.status} exit=${run.exitCode}")
+        |> joinWith "\n";
+    gate =
+      if final.libCompileReport.ok && final.appCompileReport.ok && final.testCompileReport.ok && final.qualityReport.ok && length failures == 0
+      then "C build gate: open"
+      else "C build gate: blocked";
+    report =
+      [
+        gate,
+        "lib: ${final.libCompileReport.summary}",
+        "app: ${final.appCompileReport.summary}",
+        "tests: ${final.testCompileReport.summary}",
+        "quality: ${final.qualityReport.summary}",
+        "note: ${final.buildNote.summary}",
+        "commands:",
+        commandLines,
+        "artifact: examples/wire/c-build/dist/metrics-demo",
+      ] |> joinWith "\n";
+  in
+  { inherit report; };
+
+node print_report
+  <- report: BuildReport;
+  = @stdout { newline = true; } (report);
+
+let lib_object_stage =
+  lib_objects
+    * summarize_lib_objects;
+
+let app_object_stage =
+  app_objects
+    => summarize_app_objects;
+
+let test_object_stage =
+  test_objects
+    * summarize_test_objects;
+
+let quality_stage =
+  quality_checks
+    * analyze_quality;
+
+let source_frontiers =
+  lib_object_stage
+    <> app_object_stage
+    <> test_object_stage
+    <> quality_stage;
+
+let artifact_sequence =
+  archive_gate
+    => archive_core
+    => link_app
+    => link_metrics_test
+    => link_parse_test
+    => run_metrics_test
+    => run_parse_test
+    => run_smoke
+    => package_dist;
+
+let report_stage =
+  artifact_sequence
+    * render_build_report;
+
+start_build
+  => plan_build
+  => source_frontiers
+  => report_stage
+  => print_report
