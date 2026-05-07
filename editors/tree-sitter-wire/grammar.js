@@ -593,7 +593,7 @@ module.exports = grammar({
       )),
       prec.left(PREC.core_postfix, seq(
         field('target', $._core_pure_postfix),
-        '[',
+        token.immediate('['),
         field('index', $.core_pure_expr),
         ']',
       )),

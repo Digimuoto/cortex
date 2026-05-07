@@ -711,7 +711,8 @@ textEndsWithSpace :: Text -> Bool
 textEndsWithSpace text =
   case T.unsnoc text of
     Nothing -> False
-    Just (_, lastChar) -> isSpace lastChar
+    Just (_, lastChar) ->
+      isSpace lastChar || T.isSuffixOf "*/" (T.dropWhileEnd isSpace text)
 
 corePureAtom :: Parser CorePureExpr
 corePureAtom =

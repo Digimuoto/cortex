@@ -547,6 +547,12 @@ spec = describe "Cortex.Wire.Parser" $ do
           (CorePureIdent "concat")
           [CorePureList [CorePureCall (CorePureIdent "toString") [CorePureIdent "score"]]]
 
+    it "treats block comments as bracket argument separators" $
+      parseCorePureNodeOutput "concat/* explain */[toString score]"
+        `shouldBe` CorePureCall
+          (CorePureIdent "concat")
+          [CorePureList [CorePureCall (CorePureIdent "toString") [CorePureIdent "score"]]]
+
     it "parses immediate brackets as index access" $
       parseCorePureNodeOutput "items[0]"
         `shouldBe` CorePureIndex

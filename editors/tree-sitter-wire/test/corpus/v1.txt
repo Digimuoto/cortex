@@ -511,3 +511,44 @@ summary
   file_return: (expression
     (ident_ref
       (identifier))))
+
+==================
+CorePure spaced bracket call and immediate index
+==================
+
+node render
+  -> text: Text = concat [toString score];
+  -> item: Value = items[0];
+render
+
+---
+
+(source_file
+  (node_decl
+    name: (identifier)
+    body: (pure_body
+      (pure_output_equation
+        output: (output_variant
+          label: (identifier)
+          contract: (contract_name
+            (contract)))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            function: (core_pure_ident)
+            argument: (core_pure_list
+              (core_pure_expr
+                function: (core_pure_ident)
+                argument: (core_pure_ident))))))
+      (pure_output_equation
+        output: (output_variant
+          label: (identifier)
+          contract: (contract_name
+            (contract)))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            target: (core_pure_ident)
+            index: (core_pure_expr
+              (number)))))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))
