@@ -28,6 +28,7 @@ import Cortex.Wire.Select
 import Cortex.Wire.BoundaryResource
 import Cortex.Wire.NodeBoundary
 import Cortex.Wire.PortLinearity
+import Cortex.Wire.ElaborationIR
 import Cortex.Wire.Make
 import Cortex.Wire.PhantomAdapter
 import Cortex.Wire.FrontierReclaim

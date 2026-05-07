@@ -145,16 +145,28 @@ instances, exposed frontier endpoints, source `PortLinear`, and `forgetPorts` lo
 `Cortex.Graph.Relation`; overlay lowering and source linearity preservation are mechanized under
 node-and-endpoint-domain disjointness. `Cortex.Wire.Make` and `Cortex.Wire.PhantomAdapter` then
 exhibit ADR 0048's `make` and ADR 0049's `*` as constructions over those certified primitives.
-`Cortex.Wire.FrontierReclaim` states the in-memory lifetime consequence: once a linear source
-frontier is finished, no output or input endpoint has an open frontier obligation left. The source
-algebra is a certified proof-object layer, so raw syntax such as `=>` is not assumed linear by
-itself. The closed runtime-facing slice proves that every closed actualized input has exactly one
-producer, and every closed actualized output has exactly one edge consumer or terminal discharge.
-Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*` expansion, runtime reclaim
-hooks, and executable projection into actualized port use remain explicit correspondence obligations
-rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models recovery of selected latent
-branches as replay of the admitted selected append rewrite, not as a new graph operator or a re-run
-of selector code.
+`Cortex.Wire.ElaborationIR` adds the first Lean-owned post-parse, post-source-include Wire IR:
+nominal contracts, record fields, port signatures, opaque node-body boundaries, raw list-shaped
+declarations, accepted finite-frontier declarations, graph expressions for `()`, `<>`, `=>`, `*`,
+`select(...)`, `make`, and `makeEach`, and explicit static diagnostics. Isolated accepted node
+declarations project mechanically to the open `node_ports` source object; raw parsing, source
+includes, full identifier grammar validation, registry binding, graph admission, and executable
+elaboration certificates remain outside this module. The local accepted carriers do enforce
+non-empty nominal names, valid port signatures, per-direction label uniqueness, record-field label
+uniqueness, kind-parameter name uniqueness, module-level contract/kind/node/graph-binding name
+uniqueness, graph-binding name validity, select-arm nominal validity, and local reference closure
+for record-field contracts, frontier contracts, and graph-expression references. The `node_ports`
+projection keeps input and output port instances direction-distinct even when source labels match
+across directions. `Cortex.Wire.FrontierReclaim` states the in-memory lifetime consequence: once a
+linear source frontier is finished, no output or input endpoint has an open frontier obligation
+left. The source algebra is a certified proof-object layer, so raw syntax such as `=>` is not
+assumed linear by itself. The closed runtime-facing slice proves that every closed actualized input
+has exactly one producer, and every closed actualized output has exactly one edge consumer or
+terminal discharge. Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*` expansion,
+runtime reclaim hooks, and executable projection into actualized port use remain explicit
+correspondence obligations rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models
+recovery of selected latent branches as replay of the admitted selected append rewrite, not as a new
+graph operator or a re-run of selector code.
 
 Mechanized results now include:
 
@@ -226,6 +238,33 @@ Mechanized results now include:
   kind-derived child port sets; `PhantomRecordShape` pins the generated adapter to one phantom node
   with a declared multi/singular boundary. No separate `make` or `*` preservation theorem is needed;
   the returned `LinearPortObject` carries source linearity by construction.
+- `ElaborationIR.RawNodeDecl`, `ElaborationIR.AcceptedNodeDecl`, `ElaborationIR.GraphExpr`,
+  `ElaborationIR.GraphBinding`, `ElaborationIR.ElabDiagnostic`, `ElaborationIR.ElabResult`,
+  `ElaborationIR.RawModule`, `ElaborationIR.AcceptedModule`, `ElaborationIR.OutputPortSignature`,
+  `ElaborationIR.InputPortSignature`, `ElaborationIR.RawNodeDecl.LocallyAdmissible`,
+  `ElaborationIR.RawNodeDecl.toAccepted`,
+  `ElaborationIR.RawNodeDecl.toAccepted_toLinearPortObject_portLinear`,
+  `ElaborationIR.RecordContractDecl.LocallyAdmissible`,
+  `ElaborationIR.RecordContractDecl.toAccepted`, `ElaborationIR.AcceptedRecordContractDecl`,
+  `ElaborationIR.RecordContractDecl.FieldContractsClosed`,
+  `ElaborationIR.AcceptedRecordFieldContractsClosed`, `ElaborationIR.KindParamDecl`,
+  `ElaborationIR.KindParamClass`, `ElaborationIR.RawKindDecl.LocallyAdmissible`,
+  `ElaborationIR.RawKindDecl.toAccepted`, `ElaborationIR.RawModule.LocallyAdmissible`,
+  `ElaborationIR.GraphExpr.RawRefsClosed`, `ElaborationIR.GraphExpr.AcceptedRefsClosed`,
+  `ElaborationIR.GraphBinding.LocalValid`, `ElaborationIR.RawModule.acceptedContracts`,
+  `ElaborationIR.RawModule.acceptedKinds`, `ElaborationIR.RawModule.acceptedNodes`,
+  `ElaborationIR.RawModule.rawRefsClosed_toAccepted`, `ElaborationIR.RawModule.toAccepted`,
+  `ElaborationIR.PortLabelsUnique`, `ElaborationIR.AcceptedNodeDecl.toLinearPortObject`, and
+  `ElaborationIR.cBuildGraphShape`: the first Lean-owned Wire elaboration IR can represent raw
+  post-source-include syntax separately from accepted declarations, including empty graphs,
+  `select(...)`, shape-level `makeEach`, and `*`, while accepted records, nodes, and kinds carry
+  local non-empty-name, valid-field/port, per-direction label-uniqueness, and kind-parameter
+  witnesses. Accepted modules also carry contract/kind/node/graph-binding name uniqueness, graph
+  binding name validity, and local closure predicates for record-field contracts, frontier
+  contracts, node references, kind references, graph-binding references, and select-arm nominal
+  spelling. Locally admitted raw modules project to accepted module shells while preserving
+  declaration name lists and graph reference closure; locally admitted raw nodes have a named
+  theorem exposing their source-linear, direction-separated `node_ports` lift.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished
