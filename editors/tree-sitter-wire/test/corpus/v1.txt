@@ -294,7 +294,8 @@ make and star topology
 kind sample(label: PortLabel) =
   -> label: Sample = @review.sample ({});
 
-let workers = make(2, sample);
+let count = 2;
+let workers = make(count, sample);
 
 node sink
   <- pair: WorkerPair;
@@ -323,8 +324,12 @@ workers * sink
           (core_pure_record)))))
   (let_binding
     name: (identifier)
+    value: (expression
+      (number)))
+  (let_binding
+    name: (identifier)
     value: (make_application
-      count: (number)
+      count: (identifier)
       kind: (identifier)))
   (node_decl
     name: (identifier)

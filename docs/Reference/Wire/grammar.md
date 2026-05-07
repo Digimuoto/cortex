@@ -91,7 +91,8 @@ form_item        ::= node_decl | "let" ident "=" let_rhs ";"
 let_binding      ::= ("export")? "let" ident "=" let_rhs ";"
 let_rhs          ::= graph_expr | value_expr | corepure_helper_expr | form_application | make_application
 form_application ::= ident "(" (wire_expr ("," wire_expr)* ","?)? ")"
-make_application ::= "make" "(" integer "," ident ","? ")"
+make_application ::= "make" "(" make_count "," ident ","? ")"
+make_count       ::= integer | ident
 import_stmt      ::= "import" (ident | "{" ident ("," ident)* ","? "}") "from" string ";"
 ```
 
@@ -306,9 +307,10 @@ After expansion, a form instantiation is an ordinary graph value composed from o
 only when bound by `let` / `export let` or by a form-local `let`; inline `make(...)` in graph
 position is rejected because there is no source name to derive stable identities from.
 
-`N` must be a static non-negative count. `K` is a kind reference, not a kind application and not a
-CorePure value. Generated nodes get deterministic identities from the binding name and expose the
-generated port labels specified by the kind.
+`N` must be a static non-negative count: either an integer literal or the name of a preceding closed
+numeric `let`. `K` is a kind reference, not a kind application and not a CorePure value. Generated
+nodes get deterministic identities from the binding name and expose the generated port labels
+specified by the kind.
 
 ### 5.3 Pure Output Equations
 

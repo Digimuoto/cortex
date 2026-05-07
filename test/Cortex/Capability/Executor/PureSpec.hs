@@ -130,7 +130,7 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
     case bindPureTaskNode (Just floatContractRegistry) noOutputTaskNode of
       Left err ->
         err
-          `shouldBe` "Pure output ports are unsupported: pure output equations require at least one output port."
+          `shouldBe` "Pure output equations must match output ports exactly. Expected [], got [out]."
       Right _ ->
         expectationFailure "expected pure task binding to reject missing output ports"
 

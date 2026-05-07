@@ -351,9 +351,14 @@ data FormApplication = FormApplication
   deriving stock (Show)
 
 data MakeApplication = MakeApplication
-  { makeApplicationCount :: !Scientific
+  { makeApplicationCount :: !MakeCount
   , makeApplicationKindName :: !Text
   }
+  deriving stock (Show)
+
+data MakeCount
+  = MakeCountLiteral !Scientific
+  | MakeCountBinding !Text
   deriving stock (Show)
 
 data KindSubstitution = KindSubstitution
@@ -1220,7 +1225,7 @@ makeApplication :: Parser MakeApplication
 makeApplication = do
   keyword "make"
   _ <- symbol "("
-  countValue <- numberLiteral
+  countValue <- makeCount
   _ <- symbol ","
   kindName <- identifier
   _ <- optional (symbol ",")
@@ -1230,6 +1235,11 @@ makeApplication = do
       { makeApplicationCount = countValue
       , makeApplicationKindName = kindName
       }
+
+makeCount :: Parser MakeCount
+makeCount =
+  (MakeCountLiteral <$> numberLiteral)
+    <|> (MakeCountBinding <$> identifier)
 
 formApplication :: Parser FormApplication
 formApplication = do
@@ -1269,7 +1279,7 @@ expandStructuralForms forms = do
       ParsedTopUse useSpec ->
         Right (scope, TopUse useSpec : acc)
       ParsedTopLet visibility name rhs ->
-        Right (scope, TopLet visibility name rhs : acc)
+        Right (recordStaticMakeCount name rhs scope, TopLet visibility name rhs : acc)
       ParsedTopLetMake visibility name application -> do
         expanded <- expandMakeBinding scope visibility name application
         Right (scope, reverse expanded <> acc)
@@ -1297,9 +1307,20 @@ expandStructuralForms forms = do
         nodeDeclValue <- expandParsedNode scope.esKinds parsedNode
         Right (scope, TopNode nodeDeclValue : acc)
 
+recordStaticMakeCount :: Text -> LetRhs -> ExpansionScope -> ExpansionScope
+recordStaticMakeCount name rhs scope =
+  case rhs of
+    LetRhsWire (ExprLit (LitNumber countValue)) ->
+      scope {esMakeCounts = Map.insert name countValue scope.esMakeCounts}
+    LetRhsCorePure (CorePureLit (CorePureNumber countValue)) ->
+      scope {esMakeCounts = Map.insert name countValue scope.esMakeCounts}
+    _ ->
+      scope
+
 data ExpansionScope = ExpansionScope
   { esKinds :: !(Map Text KindDecl)
   , esForms :: !(Map Text FormDecl)
+  , esMakeCounts :: !(Map Text Scientific)
   }
   deriving stock (Show)
 
@@ -1308,6 +1329,7 @@ emptyExpansionScope =
   ExpansionScope
     { esKinds = Map.empty
     , esForms = Map.empty
+    , esMakeCounts = Map.empty
     }
 
 expandMakeBinding
@@ -1325,7 +1347,7 @@ expandMakeBinding scope visibility bindingName application = do
       Right
       (Map.lookup application.makeApplicationKindName scope.esKinds)
   _ <- makeKindLabelParam kindDeclValue
-  count <- staticMakeCount bindingName application.makeApplicationCount
+  count <- staticMakeCount scope bindingName application.makeApplicationCount
   let childNames =
         [ bindingName <> "_" <> T.pack (show idx)
         | idx <- [0 .. count - 1]
@@ -1357,8 +1379,25 @@ makeKindLabelParam kindDeclValue =
             <> " used with make(...) must declare exactly one PortLabel parameter"
         )
 
-staticMakeCount :: Text -> Scientific -> Either String Int
-staticMakeCount bindingName countValue =
+staticMakeCount :: ExpansionScope -> Text -> MakeCount -> Either String Int
+staticMakeCount scope bindingName = \case
+  MakeCountLiteral countValue ->
+    staticMakeScientificCount bindingName countValue
+  MakeCountBinding countName ->
+    case Map.lookup countName scope.esMakeCounts of
+      Just countValue ->
+        staticMakeScientificCount bindingName countValue
+      Nothing ->
+        Left
+          ( "make count for "
+              <> T.unpack bindingName
+              <> " references "
+              <> T.unpack countName
+              <> ", but make counts must be integer literals or preceding closed numeric lets"
+          )
+
+staticMakeScientificCount :: Text -> Scientific -> Either String Int
+staticMakeScientificCount bindingName countValue =
   case floatingOrInteger countValue :: Either Double Integer of
     Left _ ->
       Left ("make count for " <> T.unpack bindingName <> " must be an integer")
@@ -1498,7 +1537,8 @@ expandFormItem scope subst prefix state = \case
                     state.fesOutputForms <> [TopLet LetPrivate prefixedName letRhsValue]
                 }
       FormLetRhsMake application -> do
-        expanded <- expandMakeBinding scope LetPrivate prefixedName application
+        application' <- substituteFormMakeApplication subst state.fesLocalNames application
+        expanded <- expandMakeBinding scope LetPrivate prefixedName application'
         Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
       FormLetRhsWire exprValue -> do
         exprValue' <- substituteFormExpr subst state.fesLocalNames exprValue
@@ -1622,6 +1662,33 @@ substituteFormApplication
 substituteFormApplication subst localNames application =
   FormApplication application.formApplicationName
     <$> traverse (substituteFormExpr subst localNames) application.formApplicationArgs
+
+substituteFormMakeApplication
+  :: FormSubstitution -> Map Text Text -> MakeApplication -> Either String MakeApplication
+substituteFormMakeApplication subst localNames application =
+  (\countValue -> application {makeApplicationCount = countValue})
+    <$> substituteFormMakeCount subst localNames application.makeApplicationCount
+
+substituteFormMakeCount
+  :: FormSubstitution -> Map Text Text -> MakeCount -> Either String MakeCount
+substituteFormMakeCount subst localNames = \case
+  MakeCountLiteral countValue ->
+    Right (MakeCountLiteral countValue)
+  MakeCountBinding countName ->
+    case Map.lookup countName subst.fsKindSubstitution.ksValues of
+      Just (ExprLit (LitNumber countValue)) ->
+        Right (MakeCountLiteral countValue)
+      Just (ExprIdent (QName (replacement :| []))) ->
+        Right (MakeCountBinding replacement)
+      Just other ->
+        Left
+          ( "make count "
+              <> T.unpack countName
+              <> " must resolve to an integer literal or static count binding, got "
+              <> show other
+          )
+      Nothing ->
+        Right (MakeCountBinding (Map.findWithDefault countName countName localNames))
 
 formApplicationToCorePureLetRhs :: FormApplication -> Either String LetRhs
 formApplicationToCorePureLetRhs application =

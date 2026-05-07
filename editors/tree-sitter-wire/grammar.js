@@ -269,7 +269,7 @@ module.exports = grammar({
     make_application: $ => seq(
       'make',
       '(',
-      field('count', $.number),
+      field('count', choice($.number, $.identifier)),
       ',',
       field('kind', $.identifier),
       optional(','),

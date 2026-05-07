@@ -1123,8 +1123,7 @@ spec = describe "Cortex.Wire.Pure" $ do
 
   it "requires output equations to match declared output ports" $ do
     validatePurePorts (scorePorts {wirePortsOutputs = Map.empty}) Map.empty
-      `shouldBe` Left
-        (PureOutputPortsUnsupported "pure output equations require at least one output port")
+      `shouldBe` Right ()
     validatePurePorts scorePorts (Map.singleton "confidence" (num 1))
       `shouldBe` Left (PureOutputPortsMismatch ["score"] ["confidence"])
 

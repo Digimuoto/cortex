@@ -97,6 +97,14 @@ spec = describe "Cortex.Wire.Compile" $ do
         , CircuitNodeRef "workers_2"
         ]
 
+  it "expands make(N, K) with a preceding static count binding" $ do
+    compiled <- requireRight (compileWireFragmentText makeStaticCountSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.fromList
+        [ CircuitNodeRef "workers_0"
+        , CircuitNodeRef "workers_1"
+        ]
+
   it "lowers record-form * gather through an explicit phantom adapter" $ do
     compiled <- requireRight (compileWireTextWithEnv starContractEnv starGatherSourceText)
     let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
@@ -120,6 +128,17 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Set.singleton phantomRef
     successors compiled.compiledCircuitTopology phantomRef
       `shouldBe` Set.fromList [CircuitNodeRef "a", CircuitNodeRef "b"]
+
+  it "lowers empty record-form * scatter through a zero-output phantom adapter" $ do
+    compiled <- requireRight (compileWireTextWithEnv starContractEnv starEmptyScatterSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:scatter:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.empty
 
   it "rejects flat singleton * and directs authors to =>" $
     compileWireTextWithEnv starContractEnv flatSingletonStarSourceText
@@ -573,6 +592,16 @@ makeExpansionSourceText =
     , "workers"
     ]
 
+makeStaticCountSourceText :: T.Text
+makeStaticCountSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "let count = 2;"
+    , "let workers = make(count, sample);"
+    , "workers"
+    ]
+
 starGatherSourceText :: T.Text
 starGatherSourceText =
   T.unlines
@@ -598,6 +627,14 @@ starScatterSourceText =
     , "  <- b: B ;"
     , "  -> done_b: Done = @review.b (b) ;"
     , "source * (a <> b)"
+    ]
+
+starEmptyScatterSourceText :: T.Text
+starEmptyScatterSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> empty: EmptyRecord = @review.source ({}) ;"
+    , "source * ()"
     ]
 
 flatSingletonStarSourceText :: T.Text
@@ -1242,6 +1279,7 @@ starContractEnv =
             [ jsonContract "A"
             , jsonContract "B"
             , jsonContract "Done"
+            , recordContract "EmptyRecord" []
             , recordContract "Pair" [("a", "A"), ("b", "B")]
             ]
     }

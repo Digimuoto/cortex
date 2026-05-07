@@ -368,11 +368,9 @@ validatePureOutputPorts :: WirePorts -> Map Text CorePureExpr -> Either PureEval
 validatePureOutputPorts ports outputExprs =
   let expected = Map.keys ports.wirePortsOutputs
       actual = Map.keys outputExprs
-   in case expected of
-        [] ->
-          Left (PureOutputPortsUnsupported "pure output equations require at least one output port")
-        _ | expected == actual -> Right ()
-        _ -> Left (PureOutputPortsMismatch expected actual)
+   in if expected == actual
+        then Right ()
+        else Left (PureOutputPortsMismatch expected actual)
 
 pureInputContractCounts :: WirePorts -> Map Text Int
 pureInputContractCounts ports =

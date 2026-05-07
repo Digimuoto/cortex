@@ -1015,20 +1015,23 @@ buildStarPhantomNode compileEnv st plan = do
             | (label, contract) <- fieldList
             ]
   ports <- lowerPortSignature st nodeRef (inputDecls <> outputDecls)
-  case NE.nonEmpty outputEquations of
-    Nothing ->
-      Left (WireCore.WireParseError "internal `*` lowering error: phantom has no output equation")
-    Just outputs ->
-      loweredPureNodeFromBody
-        compileEnv
-        st
-        nodeRef
-        ports
-        []
-        NodePureBody
-          { nodePureBodyWhere = Nothing
-          , nodePureBodyOutputs = outputs
-          }
+  outputConfig <-
+    case NE.nonEmpty outputEquations of
+      Nothing
+        | null ports.lnpOutputs ->
+            Right Map.empty
+      Nothing ->
+        Left (WireCore.WireParseError "internal `*` lowering error: phantom has no output equation")
+      Just outputs ->
+        pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs outputs
+  loweredPureNodeFromOutputConfig
+    compileEnv
+    st
+    nodeRef
+    ports
+    []
+    Nothing
+    outputConfig
 
 singularCorePureInputName :: BoundaryPort -> Text
 singularCorePureInputName singular =
@@ -1833,13 +1836,32 @@ loweredPureNodeFromBody
 loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = do
   outputConfig <-
     pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs pureBody.nodePureBodyOutputs
+  loweredPureNodeFromOutputConfig
+    compileEnv
+    st
+    nodeRef
+    ports
+    topLevelBindings
+    pureBody.nodePureBodyWhere
+    outputConfig
+
+loweredPureNodeFromOutputConfig
+  :: WireCompileEnv
+  -> LoweringState
+  -> CircuitNodeRef
+  -> LoweredNodePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> Map Text CorePureExpr
+  -> Either WireCore.WireError LoweredNode
+loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports topLevelBindings whereExpr outputConfig = do
   let runtimePorts = taskWirePortsFromLowered ports
       normalForm =
         pureNodeBoundaryNormalForm
           nodeRef
           runtimePorts
           topLevelBindings
-          pureBody.nodePureBodyWhere
+          whereExpr
           outputConfig
       executor = WireCore.WireExecutorNative "pure"
   mapLeft (WireCore.WireInvalidPorts nodeRef) $
@@ -1848,7 +1870,7 @@ loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = 
     validatePureTaskConfig
       (normalFormPorts normalForm)
       topLevelBindings
-      pureBody.nodePureBodyWhere
+      whereExpr
       outputConfig
   validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
   pure
@@ -1866,7 +1888,7 @@ loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = 
                     executor
                     Nothing
                     Nothing
-                    (Just (nativePureTaskConfigValue topLevelBindings pureBody.nodePureBodyWhere outputConfig))
+                    (Just (nativePureTaskConfigValue topLevelBindings whereExpr outputConfig))
                     []
                     (normalFormPorts normalForm)
                     Nothing
