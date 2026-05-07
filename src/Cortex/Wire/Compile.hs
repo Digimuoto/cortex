@@ -265,6 +265,7 @@ data LoweringState = LoweringState
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
+  , lsDeclaredRecordContracts :: !(Map Text (Map Text ContractId))
   , lsUseScope :: !WireUseScope
   }
 
@@ -278,6 +279,7 @@ emptyLoweringState =
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
+    , lsDeclaredRecordContracts = Map.empty
     , lsUseScope = emptyWireUseScope
     }
 
@@ -426,10 +428,37 @@ compiledNodeRefs = \case
 lowerTopForm
   :: WireCompileEnv -> LoweringState -> TopForm -> Either WireCore.WireError LoweringState
 lowerTopForm compileEnv st = \case
-  TopContract contractId ->
-    if topLevelBindingNameTaken st contractId.unContractId
-      then Left (WireCore.WireDuplicateBinding contractId.unContractId)
-      else Right st {lsDeclaredContracts = Set.insert contractId.unContractId st.lsDeclaredContracts}
+  TopContract contractDeclValue -> do
+    let ContractId contractName = contractDeclValue.contractDeclId
+        recordFields = fromMaybe [] contractDeclValue.contractDeclRecordFields
+        resolvedFields =
+          Map.fromList
+            [ (fieldName, ContractId (resolveContractId st fieldContract.unContractId))
+            | (fieldName, fieldContract) <- recordFields
+            ]
+    case duplicatePortNames (fmap fst recordFields) of
+      duplicateField : _ ->
+        Left
+          ( WireCore.WireParseError
+              ( "contract "
+                  <> contractName
+                  <> " declares record field "
+                  <> duplicateField
+                  <> " more than once"
+              )
+          )
+      [] -> Right ()
+    if topLevelBindingNameTaken st contractName
+      then Left (WireCore.WireDuplicateBinding contractName)
+      else
+        Right
+          st
+            { lsDeclaredContracts = Set.insert contractName st.lsDeclaredContracts
+            , lsDeclaredRecordContracts =
+                case contractDeclValue.contractDeclRecordFields of
+                  Nothing -> st.lsDeclaredRecordContracts
+                  Just _ -> Map.insert contractName resolvedFields st.lsDeclaredRecordContracts
+            }
   TopUse useSpec ->
     lowerUseSpec st useSpec
   TopImport _ ->
@@ -815,7 +844,7 @@ lowerStarFragments
   -> GraphFragment
   -> Either WireCore.WireError GraphFragment
 lowerStarFragments compileEnv st lhs rhs = do
-  plan <- resolveStarPlan compileEnv lhs.gfExits rhs.gfEntries
+  plan <- resolveStarPlan compileEnv st lhs.gfExits rhs.gfEntries
   phantom <- buildStarPhantomNode compileEnv st plan
   let phantomFragment =
         GraphFragment
@@ -836,8 +865,12 @@ data StarPlan = StarPlan
   deriving stock (Eq, Show)
 
 resolveStarPlan
-  :: WireCompileEnv -> [BoundaryPort] -> [BoundaryPort] -> Either WireCore.WireError StarPlan
-resolveStarPlan compileEnv leftExits rightEntries =
+  :: WireCompileEnv
+  -> LoweringState
+  -> [BoundaryPort]
+  -> [BoundaryPort]
+  -> Either WireCore.WireError StarPlan
+resolveStarPlan compileEnv st leftExits rightEntries =
   case (leftExits, rightEntries) of
     ([], [singular]) ->
       gather singular []
@@ -864,7 +897,7 @@ resolveStarPlan compileEnv leftExits rightEntries =
         )
   where
     gather singular multi = do
-      fields <- recordFieldsForStar compileEnv singular.bpContract
+      fields <- recordFieldsForStar compileEnv st singular.bpContract
       validateStarMultiSide fields multi
       Right
         StarPlan
@@ -875,7 +908,7 @@ resolveStarPlan compileEnv leftExits rightEntries =
           }
 
     scatter singular multi = do
-      fields <- recordFieldsForStar compileEnv singular.bpContract
+      fields <- recordFieldsForStar compileEnv st singular.bpContract
       validateStarMultiSide fields multi
       Right
         StarPlan
@@ -885,33 +918,38 @@ resolveStarPlan compileEnv leftExits rightEntries =
           , starPlanRecordFields = fields
           }
 
-recordFieldsForStar :: WireCompileEnv -> Text -> Either WireCore.WireError (Map Text ContractId)
-recordFieldsForStar compileEnv contractId =
-  case compileEnv.wireCompileEnvContractRegistry of
+recordFieldsForStar
+  :: WireCompileEnv -> LoweringState -> Text -> Either WireCore.WireError (Map Text ContractId)
+recordFieldsForStar compileEnv st contractId =
+  case Map.lookup contractId st.lsDeclaredRecordContracts of
+    Just fields ->
+      Right fields
     Nothing ->
-      Left
-        ( WireCore.WireParseError
-            ( "`*` requires a contract registry with a nominal record shape for "
-                <> contractId
-                <> "."
-            )
-        )
-    Just registry ->
-      case Map.lookup contractId registry.wireContractRegistryContracts of
+      case compileEnv.wireCompileEnvContractRegistry of
         Nothing ->
-          Left (WireCore.WireUnknownContract "`*` singular side" contractId)
-        Just spec ->
-          case spec.wireContractSpecRecordFields of
-            Just fields ->
-              Right fields
-            Nothing ->
-              Left
-                ( WireCore.WireParseError
-                    ( "`*` singular side contract "
-                        <> contractId
-                        <> " is not a nominal record contract."
-                    )
+          Left
+            ( WireCore.WireParseError
+                ( "`*` requires a nominal record shape for "
+                    <> contractId
+                    <> "."
                 )
+            )
+        Just registry ->
+          case Map.lookup contractId registry.wireContractRegistryContracts of
+            Nothing ->
+              Left (WireCore.WireUnknownContract "`*` singular side" contractId)
+            Just spec ->
+              case spec.wireContractSpecRecordFields of
+                Just fields ->
+                  Right fields
+                Nothing ->
+                  Left
+                    ( WireCore.WireParseError
+                        ( "`*` singular side contract "
+                            <> contractId
+                            <> " is not a nominal record contract."
+                        )
+                    )
 
 validateStarMultiSide
   :: Map Text ContractId -> [BoundaryPort] -> Either WireCore.WireError ()

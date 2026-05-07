@@ -41,8 +41,8 @@ topFormName topForm =
       Just nodeDecl.nodeDeclName
     TopLet _ name _ ->
       Just name
-    TopContract contractId ->
-      Just contractId.unContractId
+    TopContract contractDeclValue ->
+      Just contractDeclValue.contractDeclId.unContractId
     TopUse {} ->
       Nothing
     TopImport {} ->

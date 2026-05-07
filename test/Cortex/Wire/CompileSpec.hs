@@ -511,10 +511,20 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldBe` Set.fromList [CircuitNodeRef "start_experiment"]
       Set.fromList compiled.compiledCircuitExitNodes
         `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
-      successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_0")
-        `shouldBe` Set.singleton (CircuitNodeRef "gate_open_14")
-      successors compiled.compiledCircuitTopology (CircuitNodeRef "gate_open_14")
-        `shouldBe` Set.fromList [CircuitNodeRef "run_open_14", CircuitNodeRef "summarize_experiment"]
+      let phantomRefs =
+            Set.filter
+              (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef))
+              (Map.keysSet compiled.compiledCircuitNodes)
+      Set.size phantomRefs `shouldBe` 1
+      let resultsPhantom = Set.findMin phantomRefs
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_0/run")
+        `shouldBe` Set.singleton (CircuitNodeRef "run_open_14/gate")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_14/gate")
+        `shouldBe` Set.fromList [resultsPhantom, CircuitNodeRef "run_open_14/run"]
+      successors compiled.compiledCircuitTopology resultsPhantom
+        `shouldBe` Set.singleton (CircuitNodeRef "analyze_experiment")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "render_experiment_report")
+        `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
 
     it "compiles the quantum eraser sweep circuit examples with primitive executors" $
       mapM_ compileQuantumEraserFixture quantumEraserSweepFixtures

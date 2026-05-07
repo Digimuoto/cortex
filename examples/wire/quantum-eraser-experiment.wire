@@ -6,11 +6,23 @@
 #
 # The experiment graph is Wire. Each command leaf selects one exported circuit
 # graph value from this file and submits it through the IBM Runtime REST bridge.
-# The final analyzer is a pure Wire node that parses JSON stdout with fromJson.
+# The final analyzer is a short pure Wire subgraph that parses JSON stdout with fromJson.
 
 use std.io.{@stdout, @command, @writeFile, CommandSpec, CommandResult};
 
 contract ExperimentStart;
+contract ExperimentResults {
+  open0: CommandResult;
+  open14: CommandResult;
+  open12: CommandResult;
+  which0: CommandResult;
+  which14: CommandResult;
+  which12: CommandResult;
+  eraser0: CommandResult;
+  eraser14: CommandResult;
+  eraser12: CommandResult;
+};
+contract ExperimentAnalysis;
 contract ExperimentReport;
 contract IBMQuantumConfig;
 contract Qubit;
@@ -53,6 +65,302 @@ kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
   <- previous: CommandResult;
   -> previous: CommandResult = previous;
   -> ready: CommandSpec = spec;
+
+form first_command(spec: PortLabel, result: PortLabel) = {
+  node run = run_command(spec, result);
+
+  run;
+};
+
+form gated_command(spec: PortLabel, previous: PortLabel, ready: PortLabel, result: PortLabel) = {
+  node gate = command_gate(spec, previous, ready);
+  node run = run_command(ready, result);
+
+  gate
+    => run;
+};
+
+let experiment_source = "examples/wire/quantum-eraser-experiment.wire";
+let experiment_report_path = "./wire-quantum-eraser-report.txt";
+let experiment_shots = "100";
+let emptyText = "";
+let spaceText = " ";
+let noneText = "none";
+let noStderrText = "(empty)";
+
+# Command-spec construction is CorePure; the command leaves remain ordinary
+# std.io.command graph nodes.
+let hardwareSpec = name: returnName: {
+  inherit name;
+  target = "${experiment_source}#${returnName}";
+  argv = [
+    "wire-quantum-ibm-rest",
+    experiment_source,
+    "--return",
+    returnName,
+    "--shots",
+    experiment_shots,
+    "--confirm-hardware",
+    "--json"
+  ];
+  cwd = ".";
+  required = true;
+  skip = false;
+  echo = false;
+};
+
+# Report helpers stay in CorePure so the analyzer nodes below only collect,
+# normalize, and render values.
+let commandRuns = results: [
+  results.open0,
+  results.open14,
+  results.open12,
+  results.which0,
+  results.which14,
+  results.which12,
+  results.eraser0,
+  results.eraser14,
+  results.eraser12
+];
+
+let runStatuses = runs:
+  runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
+
+let runTargets = runs:
+  runs |> map (run: run.target) |> joinWith "\n  ";
+
+let failureDetails = failures:
+  failures
+    |> map (run: ''
+      ${run.name}
+        exit: ${if run.exitCode == null then noneText else run.exitCode}
+        target: ${run.target}
+        argv: ${run.argv |> joinWith spaceText}
+        stderr: ${if run.stderr == emptyText then noStderrText else run.stderr}
+
+    '')
+    |> joinWith "";
+
+let oneBit = result:
+  let
+    counts = result.complete_counts;
+    c0 = counts["0"];
+    c1 = counts["1"];
+    shots = result.shots;
+  in
+  { inherit c0 c1 shots; };
+
+let twoBit = result:
+  let
+    counts = result.complete_counts;
+    c00 = counts["00"];
+    c01 = counts["01"];
+    c10 = counts["10"];
+    c11 = counts["11"];
+    shots = result.shots;
+    screenZero = c00 + c10;
+    marker0Total = c00 + c01;
+    marker1Total = c10 + c11;
+  in
+  { inherit c00 c01 c10 c11 shots screenZero marker0Total marker1Total; };
+
+let experimentBits = decoded:
+  let
+    openBits = [decoded[0], decoded[1], decoded[2]] |> map oneBit;
+    whichPathBits = [decoded[3], decoded[4], decoded[5]] |> map twoBit;
+    eraserBits = [decoded[6], decoded[7], decoded[8]] |> map twoBit;
+  in
+  {
+    open0 = openBits[0];
+    open14 = openBits[1];
+    open12 = openBits[2];
+    which0 = whichPathBits[0];
+    which14 = whichPathBits[1];
+    which12 = whichPathBits[2];
+    eraser0 = eraserBits[0];
+    eraser14 = eraserBits[1];
+    eraser12 = eraserBits[2];
+  };
+
+let analyzeExperiment = results:
+  let
+    runs = commandRuns results;
+    failures = runs |> filter (run: !run.ok);
+    success = length failures == 0;
+    statuses = runStatuses runs;
+    targets = runTargets runs;
+  in
+  if success then
+    let
+      decoded = runs |> map (run: fromJson(run.stdout));
+      hasCounts = decoded |> all (result: result.complete_counts != null);
+      bits = if hasCounts then experimentBits decoded else null;
+    in
+    { inherit runs failures success statuses targets decoded hasCounts bits; }
+  else
+    {
+      inherit runs failures success statuses targets;
+      decoded = [];
+      hasCounts = false;
+      bits = null;
+    };
+
+let oneRow = mode: phase: expected: bit:
+  "  ${mode} | ${phase} | ${bit.c0}/${bit.shots} | ${expected} | - | - | 0:${bit.c0},1:${bit.c1}\n";
+
+let twoRow = mode: phase: expected: bit:
+  "  ${mode} | ${phase} | ${bit.screenZero}/${bit.shots} | ${expected} | ${bit.c00}/${bit.marker0Total} | ${bit.c10}/${bit.marker1Total} | 00:${bit.c00},01:${bit.c01},10:${bit.c10},11:${bit.c11}\n";
+
+let resultRows = bits: [
+  "  mode | phase | screen=0 | expected screen | marker=0 screen=0 | marker=1 screen=0 | raw counts\n",
+  "  ---- | ----- | -------- | --------------- | ----------------- | ----------------- | ----------\n",
+  oneRow "open" "0" "bright" bits.open0,
+  oneRow "open" "1/4" "balanced" bits.open14,
+  oneRow "open" "1/2" "dark" bits.open12,
+  twoRow "which_path" "0" "balanced" bits.which0,
+  twoRow "which_path" "1/4" "balanced" bits.which14,
+  twoRow "which_path" "1/2" "balanced" bits.which12,
+  twoRow "eraser" "0" "balanced before sorting" bits.eraser0,
+  twoRow "eraser" "1/4" "balanced before sorting" bits.eraser14,
+  twoRow "eraser" "1/2" "balanced before sorting" bits.eraser12
+] |> joinWith "";
+
+let runBlock = targets: ''
+  Run
+    source: ${experiment_source}
+    execution: one Wire orchestration graph + std.io.command leaves
+    backend: IBM Quantum Runtime REST hardware
+    shots: ${experiment_shots} per circuit
+    circuits: 9 exported graph values selected from this same Wire file
+    report file: ${experiment_report_path}
+
+  Circuit graph values submitted
+    ${targets}
+
+'';
+
+let reportTitle = ''
+  Wire delayed-choice quantum eraser experiment
+  =============================================
+
+'';
+
+let openReading = bits: ''
+  Open graph: no middle circular tag
+    No path marker is inserted between the splitter and recombiner.
+    In the circular-polarizer picture, this is the reference stack:
+    the screen behaves like the final analyzer with no middle
+    which-path filter left in the beam.
+
+    Phase 0: screen=0 appeared ${bits.open0.c0}/${bits.open0.shots} times, the bright fringe.
+    Phase 1/4: screen=0 appeared ${bits.open14.c0}/${bits.open14.shots} times, the halfway setting.
+    Phase 1/2: screen=0 appeared ${bits.open12.c0}/${bits.open12.shots} times, the dark fringe.
+
+    Those three numbers are the reference interference fringe.
+
+'';
+
+let whichPathReading = bits: ''
+  Which-path graph: opposite circular tags left in place
+    The marker is the middle polarizer. It tags the two alternatives
+    as opposite circular polarizations, so the screen alone can no
+    longer combine them into a phase fringe.
+
+    Unsorted screen=0 counts:
+      phase 0: ${bits.which0.screenZero}/${bits.which0.shots}
+      phase 1/4: ${bits.which14.screenZero}/${bits.which14.shots}
+      phase 1/2: ${bits.which12.screenZero}/${bits.which12.shots}
+
+    Instead of following the open fringe ${bits.open0.c0}/${bits.open0.shots}
+    -> ${bits.open14.c0}/${bits.open14.shots} -> ${bits.open12.c0}/${bits.open12.shots},
+    all three which-path rows sit around half.
+
+    Sorting by the readable marker still does not recover the clean
+    fringe:
+      phase 0 marker=0: ${bits.which0.c00}/${bits.which0.marker0Total}
+      phase 0 marker=1: ${bits.which0.c10}/${bits.which0.marker1Total}
+      phase 1/2 marker=0: ${bits.which12.c00}/${bits.which12.marker0Total}
+      phase 1/2 marker=1: ${bits.which12.c10}/${bits.which12.marker1Total}
+
+    The circular path labels are still present, so the alternatives
+    remain distinguishable.
+
+'';
+
+let eraserReading = bits: ''
+  Eraser graph: final analyzer erases the circular tag
+    The eraser adds the third polarizer: a final marker analyzer that
+    projects the left/right circular tags into a common basis.
+
+    Before sorting by marker, the screen still respects no-signalling:
+      phase 0 screen=0: ${bits.eraser0.screenZero}/${bits.eraser0.shots}
+      phase 1/4 screen=0: ${bits.eraser14.screenZero}/${bits.eraser14.shots}
+      phase 1/2 screen=0: ${bits.eraser12.screenZero}/${bits.eraser12.shots}
+
+    Those unsorted numbers stay near half, so the later analyzer did
+    not rewrite the earlier screen distribution.
+
+    The interference returns only after conditioning on the marker.
+      phase 0 marker=0: ${bits.eraser0.c00}/${bits.eraser0.marker0Total}
+      phase 0 marker=1: ${bits.eraser0.c10}/${bits.eraser0.marker1Total}
+      phase 1/2 marker=0: ${bits.eraser12.c00}/${bits.eraser12.marker0Total}
+      phase 1/2 marker=1: ${bits.eraser12.c10}/${bits.eraser12.marker1Total}
+      phase 1/4 marker=0: ${bits.eraser14.c00}/${bits.eraser14.marker0Total}
+      phase 1/4 marker=1: ${bits.eraser14.c10}/${bits.eraser14.marker1Total}
+
+    Phase 0 is bright in marker=0 and dark in marker=1. Phase 1/2
+    trades those roles. Phase 1/4 crosses near the middle.
+
+    That is the quantum eraser in the polarized-filter picture: the
+    middle circular marker destroys the visible screen fringe, and
+    the final analyzer recovers two opposite fringes only when the
+    data is sorted by its marker result.
+
+'';
+
+let successReport = analysis:
+  let
+    bits = analysis.bits;
+  in
+  ''
+    ${reportTitle}${runBlock analysis.targets}What Wire did
+      Wire planned the sweep, sequenced nine hardware command leaves,
+      selected each circuit with wire build --return, parsed each REST
+      JSON result with fromJson, and rendered this analyzer report in a
+      pure Wire node. No Qiskit simulator path is used for the experiment.
+
+    Results
+    ${resultRows bits}
+
+    Reading the numbers through three circular polarizers
+    ${openReading bits}${whichPathReading bits}${eraserReading bits}Run gate: complete
+  '';
+
+let decodeWarningReport = analysis: ''
+  ${reportTitle}${runBlock analysis.targets}The IBM REST runner completed, but at least one result did not contain decoded counts.
+  Re-run the failed circuit directly with --json and inspect raw_result.
+
+  Results
+    ${analysis.statuses}
+
+  Run gate: result decoder needs attention
+'';
+
+let failureReport = analysis: ''
+  ${reportTitle}${runBlock analysis.targets}At least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.
+
+  Results
+    ${analysis.statuses}
+
+  Failed rows
+  ${failureDetails analysis.failures}Run gate: failed
+'';
+
+let renderExperimentReport = analysis:
+  if analysis.success then
+    if analysis.hasCounts then successReport analysis else decodeWarningReport analysis
+  else
+    failureReport analysis;
 
 # Hardware circuit graph forms for the eraser sweep.
 #
@@ -168,311 +476,36 @@ node start_experiment
 
 node plan_experiment
   <- start: ExperimentStart;
-  -> open0Spec: CommandSpec = open0Spec;
-  -> open14Spec: CommandSpec = open14Spec;
-  -> open12Spec: CommandSpec = open12Spec;
-  -> which0Spec: CommandSpec = which0Spec;
-  -> which14Spec: CommandSpec = which14Spec;
-  -> which12Spec: CommandSpec = which12Spec;
-  -> eraser0Spec: CommandSpec = eraser0Spec;
-  -> eraser14Spec: CommandSpec = eraser14Spec;
-  -> eraser12Spec: CommandSpec = eraser12Spec;
-  where let
-    shots = "100";
-    source = "examples/wire/quantum-eraser-experiment.wire";
-    hardwareSpec = name: returnName: {
-      inherit name;
-      target = "${source}#${returnName}";
-      argv = [
-        "wire-quantum-ibm-rest",
-        source,
-        "--return",
-        returnName,
-        "--shots",
-        shots,
-        "--confirm-hardware",
-        "--json"
-      ];
-      cwd = ".";
-      required = true;
-      skip = false;
-      echo = false;
-    };
-    open0Spec = hardwareSpec "open phase 0" "open_phase_0";
-    open14Spec = hardwareSpec "open phase 1/4" "open_phase_1_4";
-    open12Spec = hardwareSpec "open phase 1/2" "open_phase_1_2";
-    which0Spec = hardwareSpec "which-path phase 0" "which_path_phase_0";
-    which14Spec = hardwareSpec "which-path phase 1/4" "which_path_phase_1_4";
-    which12Spec = hardwareSpec "which-path phase 1/2" "which_path_phase_1_2";
-    eraser0Spec = hardwareSpec "eraser phase 0" "eraser_phase_0";
-    eraser14Spec = hardwareSpec "eraser phase 1/4" "eraser_phase_1_4";
-    eraser12Spec = hardwareSpec "eraser phase 1/2" "eraser_phase_1_2";
-  in
-  { inherit open0Spec open14Spec open12Spec which0Spec which14Spec which12Spec eraser0Spec eraser14Spec eraser12Spec; };
+  -> open0Spec: CommandSpec = hardwareSpec "open phase 0" "open_phase_0";
+  -> open14Spec: CommandSpec = hardwareSpec "open phase 1/4" "open_phase_1_4";
+  -> open12Spec: CommandSpec = hardwareSpec "open phase 1/2" "open_phase_1_2";
+  -> which0Spec: CommandSpec = hardwareSpec "which-path phase 0" "which_path_phase_0";
+  -> which14Spec: CommandSpec = hardwareSpec "which-path phase 1/4" "which_path_phase_1_4";
+  -> which12Spec: CommandSpec = hardwareSpec "which-path phase 1/2" "which_path_phase_1_2";
+  -> eraser0Spec: CommandSpec = hardwareSpec "eraser phase 0" "eraser_phase_0";
+  -> eraser14Spec: CommandSpec = hardwareSpec "eraser phase 1/4" "eraser_phase_1_4";
+  -> eraser12Spec: CommandSpec = hardwareSpec "eraser phase 1/2" "eraser_phase_1_2";
 
-node run_open_0 = run_command(open0Spec, open0);
-node gate_open_14 = command_gate(open14Spec, open0, open14Ready);
-node run_open_14 = run_command(open14Ready, open14);
-node gate_open_12 = command_gate(open12Spec, open14, open12Ready);
-node run_open_12 = run_command(open12Ready, open12);
-node gate_which_0 = command_gate(which0Spec, open12, which0Ready);
-node run_which_0 = run_command(which0Ready, which0);
-node gate_which_14 = command_gate(which14Spec, which0, which14Ready);
-node run_which_14 = run_command(which14Ready, which14);
-node gate_which_12 = command_gate(which12Spec, which14, which12Ready);
-node run_which_12 = run_command(which12Ready, which12);
-node gate_eraser_0 = command_gate(eraser0Spec, which12, eraser0Ready);
-node run_eraser_0 = run_command(eraser0Ready, eraser0);
-node gate_eraser_14 = command_gate(eraser14Spec, eraser0, eraser14Ready);
-node run_eraser_14 = run_command(eraser14Ready, eraser14);
-node gate_eraser_12 = command_gate(eraser12Spec, eraser14, eraser12Ready);
-node run_eraser_12 = run_command(eraser12Ready, eraser12);
+let run_open_0 = first_command(open0Spec, open0);
+let run_open_14 = gated_command(open14Spec, open0, open14Ready, open14);
+let run_open_12 = gated_command(open12Spec, open14, open12Ready, open12);
+let run_which_0 = gated_command(which0Spec, open12, which0Ready, which0);
+let run_which_14 = gated_command(which14Spec, which0, which14Ready, which14);
+let run_which_12 = gated_command(which12Spec, which14, which12Ready, which12);
+let run_eraser_0 = gated_command(eraser0Spec, which12, eraser0Ready, eraser0);
+let run_eraser_14 = gated_command(eraser14Spec, eraser0, eraser14Ready, eraser14);
+let run_eraser_12 = gated_command(eraser12Spec, eraser14, eraser12Ready, eraser12);
 
-node summarize_experiment
-  <- open0: CommandResult;
-  <- open14: CommandResult;
-  <- open12: CommandResult;
-  <- which0: CommandResult;
-  <- which14: CommandResult;
-  <- which12: CommandResult;
-  <- eraser0: CommandResult;
-  <- eraser14: CommandResult;
-  <- eraser12: CommandResult;
+node analyze_experiment
+  <- results: ExperimentResults;
+  -> analysis: ExperimentAnalysis = analyzeExperiment results;
+
+node render_experiment_report
+  <- analysis: ExperimentAnalysis;
   -> print_summary: ExperimentReport = summary;
   -> write_summary: ExperimentReport = summary;
   where let
-    runs = [open0, open14, open12, which0, which14, which12, eraser0, eraser14, eraser12];
-    failures = runs |> filter (run: !run.ok);
-    statuses = runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
-    targets = runs |> map (run: run.target) |> joinWith "\n  ";
-    empty = "";
-    space = " ";
-    noneText = "none";
-    noStderr = "(empty)";
-    failureDetails =
-      failures
-        |> map (run: ''
-          ${run.name}
-            exit: ${if run.exitCode == null then noneText else run.exitCode}
-            target: ${run.target}
-            argv: ${run.argv |> joinWith space}
-            stderr: ${if run.stderr == empty then noStderr else run.stderr}
-
-        '')
-        |> joinWith "";
-    success = length failures == 0;
-    summary = if success then
-      let
-        decoded = runs |> map (run: fromJson(run.stdout));
-        open0Json = decoded[0];
-        open14Json = decoded[1];
-        open12Json = decoded[2];
-        which0Json = decoded[3];
-        which14Json = decoded[4];
-        which12Json = decoded[5];
-        eraser0Json = decoded[6];
-        eraser14Json = decoded[7];
-        eraser12Json = decoded[8];
-        hasCounts = decoded |> all (result: result.complete_counts != null);
-      in
-      if hasCounts then
-        let
-          oneBit = result:
-            let
-              counts = result.complete_counts;
-              c0 = counts["0"];
-              c1 = counts["1"];
-              shots = result.shots;
-            in
-            { inherit c0 c1 shots; };
-          twoBit = result:
-            let
-              counts = result.complete_counts;
-              c00 = counts["00"];
-              c01 = counts["01"];
-              c10 = counts["10"];
-              c11 = counts["11"];
-              shots = result.shots;
-              screenZero = c00 + c10;
-              marker0Total = c00 + c01;
-              marker1Total = c10 + c11;
-            in
-            { inherit c00 c01 c10 c11 shots screenZero marker0Total marker1Total; };
-          oneRow = mode: phase: expected: bit:
-            "  ${mode} | ${phase} | ${bit.c0}/${bit.shots} | ${expected} | - | - | 0:${bit.c0},1:${bit.c1}\n";
-          twoRow = mode: phase: expected: bit:
-            "  ${mode} | ${phase} | ${bit.screenZero}/${bit.shots} | ${expected} | ${bit.c00}/${bit.marker0Total} | ${bit.c10}/${bit.marker1Total} | 00:${bit.c00},01:${bit.c01},10:${bit.c10},11:${bit.c11}\n";
-          openBits = [open0Json, open14Json, open12Json] |> map oneBit;
-          whichPathBits = [which0Json, which14Json, which12Json] |> map twoBit;
-          eraserBits = [eraser0Json, eraser14Json, eraser12Json] |> map twoBit;
-          open0Bits = openBits[0];
-          open14Bits = openBits[1];
-          open12Bits = openBits[2];
-          which0Bits = whichPathBits[0];
-          which14Bits = whichPathBits[1];
-          which12Bits = whichPathBits[2];
-          eraser0Bits = eraserBits[0];
-          eraser14Bits = eraserBits[1];
-          eraser12Bits = eraserBits[2];
-          resultRows = [
-            "  mode | phase | screen=0 | expected screen | marker=0 screen=0 | marker=1 screen=0 | raw counts\n",
-            "  ---- | ----- | -------- | --------------- | ----------------- | ----------------- | ----------\n",
-            oneRow "open" "0" "bright" open0Bits,
-            oneRow "open" "1/4" "balanced" open14Bits,
-            oneRow "open" "1/2" "dark" open12Bits,
-            twoRow "which_path" "0" "balanced" which0Bits,
-            twoRow "which_path" "1/4" "balanced" which14Bits,
-            twoRow "which_path" "1/2" "balanced" which12Bits,
-            twoRow "eraser" "0" "balanced before sorting" eraser0Bits,
-            twoRow "eraser" "1/4" "balanced before sorting" eraser14Bits,
-            twoRow "eraser" "1/2" "balanced before sorting" eraser12Bits
-          ] |> joinWith "";
-          openReading = ''
-            Open graph: no middle circular tag
-              No path marker is inserted between the splitter and recombiner.
-              In the circular-polarizer picture, this is the reference stack:
-              the screen behaves like the final analyzer with no middle
-              which-path filter left in the beam.
-
-              Phase 0: screen=0 appeared ${open0Bits.c0}/${open0Bits.shots} times, the bright fringe.
-              Phase 1/4: screen=0 appeared ${open14Bits.c0}/${open14Bits.shots} times, the halfway setting.
-              Phase 1/2: screen=0 appeared ${open12Bits.c0}/${open12Bits.shots} times, the dark fringe.
-
-              Those three numbers are the reference interference fringe.
-
-          '';
-          whichPathReading = ''
-            Which-path graph: opposite circular tags left in place
-              The marker is the middle polarizer. It tags the two alternatives
-              as opposite circular polarizations, so the screen alone can no
-              longer combine them into a phase fringe.
-
-              Unsorted screen=0 counts:
-                phase 0: ${which0Bits.screenZero}/${which0Bits.shots}
-                phase 1/4: ${which14Bits.screenZero}/${which14Bits.shots}
-                phase 1/2: ${which12Bits.screenZero}/${which12Bits.shots}
-
-              Instead of following the open fringe ${open0Bits.c0}/${open0Bits.shots}
-              -> ${open14Bits.c0}/${open14Bits.shots} -> ${open12Bits.c0}/${open12Bits.shots},
-              all three which-path rows sit around half.
-
-              Sorting by the readable marker still does not recover the clean
-              fringe:
-                phase 0 marker=0: ${which0Bits.c00}/${which0Bits.marker0Total}
-                phase 0 marker=1: ${which0Bits.c10}/${which0Bits.marker1Total}
-                phase 1/2 marker=0: ${which12Bits.c00}/${which12Bits.marker0Total}
-                phase 1/2 marker=1: ${which12Bits.c10}/${which12Bits.marker1Total}
-
-              The circular path labels are still present, so the alternatives
-              remain distinguishable.
-
-          '';
-          eraserReading = ''
-            Eraser graph: final analyzer erases the circular tag
-              The eraser adds the third polarizer: a final marker analyzer that
-              projects the left/right circular tags into a common basis.
-
-              Before sorting by marker, the screen still respects no-signalling:
-                phase 0 screen=0: ${eraser0Bits.screenZero}/${eraser0Bits.shots}
-                phase 1/4 screen=0: ${eraser14Bits.screenZero}/${eraser14Bits.shots}
-                phase 1/2 screen=0: ${eraser12Bits.screenZero}/${eraser12Bits.shots}
-
-              Those unsorted numbers stay near half, so the later analyzer did
-              not rewrite the earlier screen distribution.
-
-              The interference returns only after conditioning on the marker.
-                phase 0 marker=0: ${eraser0Bits.c00}/${eraser0Bits.marker0Total}
-                phase 0 marker=1: ${eraser0Bits.c10}/${eraser0Bits.marker1Total}
-                phase 1/2 marker=0: ${eraser12Bits.c00}/${eraser12Bits.marker0Total}
-                phase 1/2 marker=1: ${eraser12Bits.c10}/${eraser12Bits.marker1Total}
-                phase 1/4 marker=0: ${eraser14Bits.c00}/${eraser14Bits.marker0Total}
-                phase 1/4 marker=1: ${eraser14Bits.c10}/${eraser14Bits.marker1Total}
-
-              Phase 0 is bright in marker=0 and dark in marker=1. Phase 1/2
-              trades those roles. Phase 1/4 crosses near the middle.
-
-              That is the quantum eraser in the polarized-filter picture: the
-              middle circular marker destroys the visible screen fringe, and
-              the final analyzer recovers two opposite fringes only when the
-              data is sorted by its marker result.
-
-          '';
-        in
-        ''
-          Wire delayed-choice quantum eraser experiment
-          =============================================
-
-          Run
-            source: examples/wire/quantum-eraser-experiment.wire
-            execution: one Wire orchestration graph + std.io.command leaves
-            backend: IBM Quantum Runtime REST hardware
-            shots: 100 per circuit
-            circuits: 9 exported graph values selected from this same Wire file
-            report file: ./wire-quantum-eraser-report.txt
-
-          Circuit graph values submitted
-            ${targets}
-
-          What Wire did
-            Wire planned the sweep, sequenced nine hardware command leaves,
-            selected each circuit with wire build --return, parsed each REST
-            JSON result with fromJson, and rendered this analyzer report in a
-            pure Wire node. No Qiskit simulator path is used for the experiment.
-
-          Results
-          ${resultRows}
-
-          Reading the numbers through three circular polarizers
-          ${openReading}${whichPathReading}${eraserReading}Run gate: complete
-        ''
-      else
-        ''
-          Wire delayed-choice quantum eraser experiment
-          =============================================
-
-          Run
-            source: examples/wire/quantum-eraser-experiment.wire
-            execution: one Wire orchestration graph + std.io.command leaves
-            backend: IBM Quantum Runtime REST hardware
-            shots: 100 per circuit
-            circuits: 9 exported graph values selected from this same Wire file
-            report file: ./wire-quantum-eraser-report.txt
-
-          Circuit graph values submitted
-            ${targets}
-
-          The IBM REST runner completed, but at least one result did not contain decoded counts.
-          Re-run the failed circuit directly with --json and inspect raw_result.
-
-          Results
-            ${statuses}
-
-          Run gate: result decoder needs attention
-        ''
-    else
-      ''
-        Wire delayed-choice quantum eraser experiment
-        =============================================
-
-        Run
-          source: examples/wire/quantum-eraser-experiment.wire
-          execution: one Wire orchestration graph + std.io.command leaves
-          backend: IBM Quantum Runtime REST hardware
-          shots: 100 per circuit
-          circuits: 9 exported graph values selected from this same Wire file
-          report file: ./wire-quantum-eraser-report.txt
-
-        Circuit graph values submitted
-          ${targets}
-
-        At least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.
-
-        Results
-          ${statuses}
-
-        Failed rows
-        ${failureDetails}Run gate: failed
-      '';
+    summary = renderExperimentReport analysis;
   in
   { inherit summary; };
 
@@ -482,29 +515,22 @@ node print_report
 
 node write_report
   <- write_summary: ExperimentReport;
-  = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (write_summary);
+  = @writeFile { path = experiment_report_path; } (write_summary);
 
 let command_sequence =
   run_open_0
-    => gate_open_14
     => run_open_14
-    => gate_open_12
     => run_open_12
-    => gate_which_0
     => run_which_0
-    => gate_which_14
     => run_which_14
-    => gate_which_12
     => run_which_12
-    => gate_eraser_0
     => run_eraser_0
-    => gate_eraser_14
     => run_eraser_14
-    => gate_eraser_12
     => run_eraser_12;
 
 start_experiment
   => plan_experiment
-  => command_sequence
-  => summarize_experiment
+  => (command_sequence
+    * analyze_experiment)
+  => render_experiment_report
   => (print_report <> write_report)

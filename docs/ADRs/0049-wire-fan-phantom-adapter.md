@@ -204,12 +204,15 @@ bulk contractions. Linearity is inherited from the certified source primitives. 
 Haskell expander, record-discriminator diagnostics, and witness production remain separate
 correspondence work.
 
+## Resolved during implementation
+
+- **Nominal-record contract surface.** `*` reads nominal shapes from the host contract registry or
+  from source declarations of the form `contract Name { field: Contract; };`. Source fields resolve
+  through the `use` scope visible at the declaration point. This keeps the singular side nominal
+  without adding list-form aggregation or implicit topology copying.
+
 ## Open questions
 
-- **Nominal-record contract surface.** This ADR commits to "the singular side's contract is a
-  nominal record." Implementation may reveal that ADR 0024's existing record contracts are not
-  nominal enough for `*` to read field labels off the contract itself. If so, the implementation
-  must stop and add a small contract-surface ADR before elaborating `*`.
 - **Future aggregate shape.** Whether list-style aggregation ever lands is genuinely open, with
   three sub-options: a bounded list contract `[T; N]` (with positional projection `agg[i]` in
   CorePure), integer-keyed nominal records (no new contract surface, heterogeneous-record typing

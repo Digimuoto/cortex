@@ -51,6 +51,7 @@ module Cortex.Wire.Syntax
   , ImportSpec (..)
   , UseItem (..)
   , UseSpec (..)
+  , ContractDecl (..)
   , PureOutputEquation (..)
   , NodePureBody (..)
   , NodeBody (..)
@@ -342,10 +343,18 @@ data NodeDecl = NodeDecl
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
+-- | Contract declaration. A source contract may optionally carry a nominal record shape for `*`.
+data ContractDecl = ContractDecl
+  { contractDeclId :: !ContractId
+  , contractDeclRecordFields :: !(Maybe [(Text, ContractId)])
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
 -- | One top-level form in a @.wire@ file.
 data TopForm
-  = -- | @contract Name;@ — idempotent ambient assertion.
-    TopContract !ContractId
+  = -- | @contract Name;@ or @contract Name { field: Contract; };@.
+    TopContract !ContractDecl
   | TopNode !NodeDecl
   | -- | @let name = rhs;@ or @export let name = rhs;@.
     TopLet !LetVisibility !Text !LetRhs

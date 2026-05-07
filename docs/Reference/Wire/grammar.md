@@ -76,7 +76,9 @@ wire_file        ::= top_form* file_return?
 top_form         ::= contract_decl | use_stmt | kind_decl | form_decl | let_binding | import_stmt | node_decl
 file_return      ::= wire_expr
 
-contract_decl    ::= "contract" Name ";"
+contract_decl    ::= "contract" Name contract_record? ";"
+contract_record  ::= "{" contract_field* "}"
+contract_field   ::= ident ":" Name ";"
 use_stmt         ::= "use" qualified_ident "." "{" use_item ("," use_item)* ","? "}" ";"
 use_item         ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
 kind_decl        ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
@@ -109,6 +111,20 @@ executor and contract names. The initial implemented namespace is `std.io`:
 ```wire
 use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 ```
+
+A `contract` declaration may optionally define a nominal record shape for `*`:
+
+```wire
+contract ExperimentResults {
+  open0: CommandResult;
+  open14: CommandResult;
+  open12: CommandResult;
+};
+```
+
+Record field contracts resolve through the `use` scope visible at the declaration point. The fields
+do not create graph topology by themselves; they give `*` the nominal shape needed to synthesize a
+record↔ports phantom adapter.
 
 Executor selectors carry `@` at the leaf because they import executor authority names. Contract
 selectors do not. Aliases are allowed with the same marker discipline:

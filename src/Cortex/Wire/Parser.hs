@@ -264,7 +264,7 @@ boolLiteral = (True <$ keyword "true") <|> (False <$ keyword "false")
 ------------------------------------------------------------------------
 
 data ParsedTopForm
-  = ParsedTopContract !ContractId
+  = ParsedTopContract !ContractDecl
   | ParsedTopNode !ParsedNodeDecl
   | ParsedTopKind !KindDecl
   | ParsedTopForm !FormDecl
@@ -931,8 +931,30 @@ contractDecl :: Parser ParsedTopForm
 contractDecl = do
   keyword "contract"
   n <- identifier
+  fields <- optional contractRecordFields
   _ <- symbol ";"
-  pure (ParsedTopContract (ContractId n))
+  pure
+    ( ParsedTopContract
+        ContractDecl
+          { contractDeclId = ContractId n
+          , contractDeclRecordFields = fields
+          }
+    )
+
+contractRecordFields :: Parser [(Text, ContractId)]
+contractRecordFields = do
+  _ <- symbol "{"
+  fields <- many contractRecordField
+  _ <- symbol "}"
+  pure fields
+
+contractRecordField :: Parser (Text, ContractId)
+contractRecordField = do
+  fieldName <- identifier
+  _ <- symbol ":"
+  fieldContract <- ContractId <$> identifier
+  _ <- symbol ";"
+  pure (fieldName, fieldContract)
 
 useStmt :: Parser ParsedTopForm
 useStmt = do
@@ -1252,8 +1274,8 @@ expandStructuralForms forms = do
   Right (reverse reversedForms)
   where
     step (scope, acc) = \case
-      ParsedTopContract contractId ->
-        Right (scope, TopContract contractId : acc)
+      ParsedTopContract contractDeclValue ->
+        Right (scope, TopContract contractDeclValue : acc)
       ParsedTopUse useSpec ->
         Right (scope, TopUse useSpec : acc)
       ParsedTopLet visibility name rhs ->
