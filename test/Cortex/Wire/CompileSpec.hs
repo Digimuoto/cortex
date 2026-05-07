@@ -105,6 +105,14 @@ spec = describe "Cortex.Wire.Compile" $ do
         , CircuitNodeRef "workers_1"
         ]
 
+  it "expands form-local make(N, K) with a preceding static count binding" $ do
+    compiled <- requireRight (compileWireFragmentText formLocalMakeStaticCountSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.fromList
+        [ CircuitNodeRef "batch/workers_0"
+        , CircuitNodeRef "batch/workers_1"
+        ]
+
   it "lowers record-form * gather through an explicit phantom adapter" $ do
     compiled <- requireRight (compileWireTextWithEnv starContractEnv starGatherSourceText)
     let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
@@ -610,6 +618,20 @@ makeStaticCountSourceText =
     , "let count = 2;"
     , "let workers = make(count, sample);"
     , "workers"
+    ]
+
+formLocalMakeStaticCountSourceText :: T.Text
+formLocalMakeStaticCountSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "form batch_form() = {"
+    , "  let count = 2;"
+    , "  let workers = make(count, sample);"
+    , "  workers;"
+    , "};"
+    , "let batch = batch_form();"
+    , "batch"
     ]
 
 starGatherSourceText :: T.Text

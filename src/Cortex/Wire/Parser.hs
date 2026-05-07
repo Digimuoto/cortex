@@ -1465,6 +1465,7 @@ emptyFormSubstitution =
 data FormExpansionState = FormExpansionState
   { fesLocalNames :: !(Map Text Text)
   , fesLocalLetNames :: !(Map Text Text)
+  , fesMakeCounts :: !(Map Text Scientific)
   , fesOutputForms :: ![TopForm]
   }
   deriving stock (Show)
@@ -1474,6 +1475,7 @@ emptyFormExpansionState =
   FormExpansionState
     { fesLocalNames = Map.empty
     , fesLocalLetNames = Map.empty
+    , fesMakeCounts = Map.empty
     , fesOutputForms = []
     }
 
@@ -1541,22 +1543,39 @@ expandFormItem scope subst prefix state = \case
                 }
       FormLetRhsMake application -> do
         application' <- substituteFormMakeApplication subst state.fesLocalNames application
-        expanded <- expandMakeBinding scope LetPrivate prefixedName application'
+        expanded <- expandMakeBinding (scopeWithFormCounts scope state) LetPrivate prefixedName application'
         Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
       FormLetRhsWire exprValue -> do
         exprValue' <- substituteFormExpr subst state.fesLocalNames exprValue
+        let stateWithCount =
+              recordFormStaticMakeCount prefixedName (LetRhsWire exprValue') stateWithName
         Right
-          stateWithName
+          stateWithCount
             { fesOutputForms =
                 state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsWire exprValue')]
             }
       FormLetRhsCorePure exprValue -> do
         exprValue' <- substituteFormCorePure subst state.fesLocalLetNames exprValue
+        let stateWithCount =
+              recordFormStaticMakeCount prefixedName (LetRhsCorePure exprValue') stateWithName
         Right
-          stateWithName
+          stateWithCount
             { fesOutputForms =
                 state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsCorePure exprValue')]
             }
+
+scopeWithFormCounts :: ExpansionScope -> FormExpansionState -> ExpansionScope
+scopeWithFormCounts scope state =
+  scope {esMakeCounts = state.fesMakeCounts <> scope.esMakeCounts}
+
+recordFormStaticMakeCount :: Text -> LetRhs -> FormExpansionState -> FormExpansionState
+recordFormStaticMakeCount name rhs state =
+  let scope =
+        recordStaticMakeCount
+          name
+          rhs
+          emptyExpansionScope {esMakeCounts = state.fesMakeCounts}
+   in state {fesMakeCounts = scope.esMakeCounts}
 
 parsedNodeName :: ParsedNodeDecl -> Text
 parsedNodeName = \case

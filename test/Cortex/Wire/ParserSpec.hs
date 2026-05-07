@@ -238,6 +238,29 @@ spec = describe "Cortex.Wire.Parser" $ do
         `shouldBe` [Just "count", Just "workers_0", Just "workers_1", Just "workers"]
       fileReturn `shouldBe` Just (ExprIdent (QName ("workers" :| [])))
 
+    it "expands form-local make forms with a preceding static count binding" $ do
+      let WireFile forms fileReturn =
+            parseOrFail $
+              T.unlines
+                [ "kind sample(label: PortLabel) ="
+                , "  -> label: Sample = @review.sample ({}) ;"
+                , "form batch_form() = {"
+                , "  let count = 2;"
+                , "  let workers = make(count, sample);"
+                , "  workers;"
+                , "};"
+                , "let batch = batch_form();"
+                , "batch"
+                ]
+      fmap topFormName forms
+        `shouldBe` [ Just "batch/count"
+                   , Just "batch/workers_0"
+                   , Just "batch/workers_1"
+                   , Just "batch/workers"
+                   , Just "batch"
+                   ]
+      fileReturn `shouldBe` Just (ExprIdent (QName ("batch" :| [])))
+
     it "parses top-level lambdas as delayed CorePure helper bindings" $ do
       let WireFile forms _ = parseOrFail "let acceptedItem = item: item.score >= 0.7 ;"
       case forms of
