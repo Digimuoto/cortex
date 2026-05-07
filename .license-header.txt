@@ -3,7 +3,7 @@ Module      : {{MODULE}}
 Description : {{DESCRIPTION}}
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
-Maintainer  : julius@koskela.dev
+Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
 {{CONTEXT}}
