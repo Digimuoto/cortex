@@ -24,6 +24,9 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0045-wire-compile-time-node-body-kinds.md
   - docs/ADRs/0046-wire-compile-time-graph-forms.md
+  - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
+  - docs/ADRs/0048-wire-make-bounded-node-generation.md
+  - docs/ADRs/0049-wire-fan-phantom-adapter.md
 ---
 
 # The Wire Language — Specification
@@ -52,7 +55,7 @@ Identifiers match `[A-Za-z_][A-Za-z0-9_]*`. Qualified identifiers join identifie
 Reserved words:
 
 ```text
-as contract else export false form from if import in kind let node null pure select then true use where
+as contract else export false form from if import in kind let make node null pure select then true use where
 ```
 
 Literal forms:
@@ -86,8 +89,9 @@ form_param       ::= ident ":" form_param_class
 form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "ConfiguredExecutor"
 form_item        ::= node_decl | "let" ident "=" let_rhs ";"
 let_binding      ::= ("export")? "let" ident "=" let_rhs ";"
-let_rhs          ::= graph_expr | value_expr | corepure_helper_expr | form_application
+let_rhs          ::= graph_expr | value_expr | corepure_helper_expr | form_application | make_application
 form_application ::= ident "(" (wire_expr ("," wire_expr)* ","?)? ")"
+make_application ::= "make" "(" integer "," ident ","? ")"
 import_stmt      ::= "import" (ident | "{" ident ("," ident)* ","? "}") "from" string ";"
 ```
 
@@ -417,15 +421,14 @@ Record fields support Nix-style `inherit name;` sugar, which desugars to `name =
 wire_expr    ::= connect_expr
                | connect_expr "select" "(" arm ("," arm)* ","? ")"
 connect_expr ::= overlay_expr (("=>" | "*") overlay_expr)*
-overlay_expr ::= atom (("<>" | ",") atom)*
+overlay_expr ::= atom ("<>" atom)*
 ```
 
 `<>` overlays graph values. It is set union on nodes and edges when the operands have disjoint node
 identities. Repeating the same node identity in both operands is a static topology error; overlay
 does not clone nodes.
 
-`,` is admitted in graph position as an alias for `<>` and follows the same precedence while the
-alias remains part of the language.
+`,` is not a graph operator. Use `<>` for overlay.
 
 `=>` matches left-side output boundary ports against right-side input boundary ports by
 `(contract, label)`. For each compatible output/input pair:
@@ -446,7 +449,7 @@ Topology operators have fixed precedence:
 
 | Tightness | Operators  | Associativity |
 | --------- | ---------- | ------------- |
-| Tighter   | `<>` / `,` | left          |
+| Tighter   | `<>`       | left          |
 | Looser    | `=>` / `*` | left          |
 
 Tighter binds first, so:

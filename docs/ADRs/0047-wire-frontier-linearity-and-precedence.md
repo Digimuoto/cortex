@@ -150,11 +150,10 @@ operand of the final `=>`; the connect succeeds iff `down` exposes three distinc
 
 The Wire grammar reference must be updated accordingly.
 
-### Comma overlay alias precedence
+### Comma overlay shorthand
 
-While the comma overlay alias is admitted (its long-term survival is open), it inherits the
-precedence and semantics of `<>`. `a, b, c` parses identically to `a <> b <> c`. This ADR pins that
-contract; it does not decide whether `,` remains long-term.
+The comma overlay shorthand is not admitted in current Wire. Authors use `<>` for overlay so graph
+composition has one visible parallel operator and record/list comma syntax stays value-local.
 
 ## Alternatives considered
 
@@ -171,8 +170,8 @@ contract; it does not decide whether `,` remains long-term.
 - **Defer the linearity rule to the construct ADRs (0048, 0049).** Rejected because both constructs
   need linearity in place to define their semantics; pulling the rule into the foundation keeps each
   construct ADR self-contained.
-- **Drop the comma overlay alias.** Deferred. The alias exists in current Wire; this ADR pins its
-  precedence rather than decide its survival.
+- **Keep the comma overlay alias.** Rejected. The alias competed visually with value-level list and
+  record separators while adding no semantic power over `<>`.
 
 ## Consequences
 
@@ -202,7 +201,7 @@ contract; it does not decide whether `,` remains long-term.
   Mokhov's algebra (frontier as typed multiset, ports as linear resources).
 - Update the formatter to a conservative stance on parentheses: preserve authored parens until large
   examples settle the idiom.
-- Update the tree-sitter grammar to recognize the new precedence and the comma alias as overlay.
+- Update the tree-sitter grammar to recognize the new precedence and `*` topology operator.
 - Update the `wire-code-style` skill.
 - Add tests for: linear endpoint violations (`a <> a`, `a => a`, repeated reference inside form
   bodies), match-determinism violations (multiple compatible counterparts), unparenthesized mixed

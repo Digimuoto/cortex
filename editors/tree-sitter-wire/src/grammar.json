@@ -306,6 +306,10 @@
             "members": [
               {
                 "type": "SYMBOL",
+                "name": "make_application"
+              },
+              {
+                "type": "SYMBOL",
                 "name": "form_application"
               },
               {
@@ -746,6 +750,10 @@
             "members": [
               {
                 "type": "SYMBOL",
+                "name": "make_application"
+              },
+              {
+                "type": "SYMBOL",
                 "name": "form_application"
               },
               {
@@ -1054,6 +1062,55 @@
           }
         ]
       }
+    },
+    "make_application": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "make"
+        },
+        {
+          "type": "STRING",
+          "value": "("
+        },
+        {
+          "type": "FIELD",
+          "name": "count",
+          "content": {
+            "type": "SYMBOL",
+            "name": "number"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ","
+        },
+        {
+          "type": "FIELD",
+          "name": "kind",
+          "content": {
+            "type": "SYMBOL",
+            "name": "identifier"
+          }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "STRING",
+              "value": ","
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": ")"
+        }
+      ]
     },
     "input_clause": {
       "type": "SEQ",
@@ -1428,6 +1485,19 @@
       ]
     },
     "topology_expression": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "_connect_expression"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_overlay_expression"
+        }
+      ]
+    },
+    "_connect_expression": {
       "type": "PREC_LEFT",
       "value": 1,
       "content": {
@@ -1441,7 +1511,11 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "topology_expression"
+                  "name": "_connect_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "_overlay_expression"
                 },
                 {
                   "type": "SYMBOL",
@@ -1466,13 +1540,80 @@
               "members": [
                 {
                   "type": "STRING",
-                  "value": "<>"
+                  "value": "=>"
                 },
                 {
                   "type": "STRING",
-                  "value": "=>"
+                  "value": "*"
                 }
               ]
+            }
+          },
+          {
+            "type": "FIELD",
+            "name": "right",
+            "content": {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "_overlay_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "select_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "merge_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "_expr_atom"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "_overlay_expression": {
+      "type": "PREC_LEFT",
+      "value": 2,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "left",
+            "content": {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "_overlay_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "select_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "merge_expression"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "_expr_atom"
+                }
+              ]
+            }
+          },
+          {
+            "type": "FIELD",
+            "name": "op",
+            "content": {
+              "type": "STRING",
+              "value": "<>"
             }
           },
           {

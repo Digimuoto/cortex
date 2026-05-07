@@ -34,17 +34,9 @@ node measure_target
   -> target: Bit = @quantum.measure_z {} (target);
 
 (
-  prepare_control
-    => hadamard_control
-    => entangle
+  (prepare_control
+    => hadamard_control)
+  <> prepare_target
 )
-<>
-(
-  prepare_target
-    => entangle
-)
-<>
-(
-  entangle
-    => (measure_control <> measure_target)
-)
+  => entangle
+  => (measure_control <> measure_target)

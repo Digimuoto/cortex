@@ -9,8 +9,8 @@
  * Executor values: @qualified.name { config }
  * Executor calls:  @qualified.name { config } (input) | configured (input)
  * Pure outputs:    -> label: Contract = <CorePure expr> ;
- * Graph operators: <> (overlay), => (connect), explicit parentheses required
- *                  when both appear in one expression.
+ * Graph operators: <> (overlay), => (connect), * (record↔ports adapter).
+ *                  Overlay binds tighter than connect and star.
  * Value operators: // (record merge), ++ (string/list concat)
  * Port clauses:    <- label: Contract ; | -> label: Contract ;
  * Literals:        "..." single-line, ''...'' indented multi-line,
@@ -20,7 +20,8 @@
  */
 
 const PREC = {
-  topology: 1,
+  topology_connect: 1,
+  topology_overlay: 2,
   select: 4,
   merge: 5,
   core_lambda: 1,
@@ -120,7 +121,7 @@ module.exports = grammar({
       'let',
       field('name', $.identifier),
       '=',
-      field('value', choice($.form_application, $.core_pure_expr, $.expression)),
+      field('value', choice($.make_application, $.form_application, $.core_pure_expr, $.expression)),
       ';',
     ),
 
@@ -204,7 +205,7 @@ module.exports = grammar({
       'let',
       field('name', $.identifier),
       '=',
-      field('value', choice($.form_application, $.core_pure_expr, $.expression)),
+      field('value', choice($.make_application, $.form_application, $.core_pure_expr, $.expression)),
       ';',
     ),
 
@@ -264,6 +265,16 @@ module.exports = grammar({
       ))),
       ')',
     )),
+
+    make_application: $ => seq(
+      'make',
+      '(',
+      field('count', $.number),
+      ',',
+      field('kind', $.identifier),
+      optional(','),
+      ')',
+    ),
 
     input_clause: $ => seq(
       '<-',
@@ -356,9 +367,20 @@ module.exports = grammar({
       $._expr_atom,
     ),
 
-    topology_expression: $ => prec.left(PREC.topology, seq(
-      field('left', choice($.topology_expression, $.select_expression, $.merge_expression, $._expr_atom)),
-      field('op', choice('<>', '=>')),
+    topology_expression: $ => choice(
+      $._connect_expression,
+      $._overlay_expression,
+    ),
+
+    _connect_expression: $ => prec.left(PREC.topology_connect, seq(
+      field('left', choice($._connect_expression, $._overlay_expression, $.select_expression, $.merge_expression, $._expr_atom)),
+      field('op', choice('=>', '*')),
+      field('right', choice($._overlay_expression, $.select_expression, $.merge_expression, $._expr_atom)),
+    )),
+
+    _overlay_expression: $ => prec.left(PREC.topology_overlay, seq(
+      field('left', choice($._overlay_expression, $.select_expression, $.merge_expression, $._expr_atom)),
+      field('op', '<>'),
       field('right', choice($.select_expression, $.merge_expression, $._expr_atom)),
     )),
 

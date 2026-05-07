@@ -126,18 +126,14 @@ let marker_eraser_readout =
 
 ibm_runtime_config
   => (
-    (
-      prepare_screen
-        => split_path
-        => mark_cz
-        => recombine_screen
-    )
-    <>
-    (
-      prepare_marker
-        => mark_marker_pre
-        => mark_cz
-        => mark_marker_post
-        => marker_eraser_readout
-    )
-)
+    (prepare_screen
+      => split_path)
+    <> (prepare_marker
+      => mark_marker_pre)
+  )
+  => mark_cz
+  => (
+    recombine_screen
+    <> (mark_marker_post
+      => marker_eraser_readout)
+  )

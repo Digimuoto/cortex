@@ -28,7 +28,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Scientific (Scientific)
+import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void (Void)
@@ -124,6 +124,7 @@ reservedWords =
   , "in"
   , "kind"
   , "let"
+  , "make"
   , "node"
   , "null"
   , "pure"
@@ -262,7 +263,7 @@ boolLiteral = (True <$ keyword "true") <|> (False <$ keyword "false")
 -- Expressions
 ------------------------------------------------------------------------
 
-data TopologyOperator = TopologyOverlay | TopologyConnect
+data TopologyOperator = TopologyOverlay | TopologyConnect | TopologyStar
   deriving stock (Eq)
 
 data ParsedTopForm
@@ -271,6 +272,7 @@ data ParsedTopForm
   | ParsedTopKind !KindDecl
   | ParsedTopForm !FormDecl
   | ParsedTopLet !LetVisibility !Text !LetRhs
+  | ParsedTopLetMake !LetVisibility !Text !MakeApplication
   | ParsedTopLetApplication !LetVisibility !Text !FormApplication
   | ParsedTopUse !UseSpec
   | ParsedTopImport !ImportSpec
@@ -338,12 +340,19 @@ data FormItem
 data FormLetRhs
   = FormLetRhsWire !Expr
   | FormLetRhsCorePure !CorePureExpr
+  | FormLetRhsMake !MakeApplication
   | FormLetRhsApplication !FormApplication
   deriving stock (Show)
 
 data FormApplication = FormApplication
   { formApplicationName :: !Text
   , formApplicationArgs :: ![Expr]
+  }
+  deriving stock (Show)
+
+data MakeApplication = MakeApplication
+  { makeApplicationCount :: !Scientific
+  , makeApplicationKindName :: !Text
   }
   deriving stock (Show)
 
@@ -366,25 +375,38 @@ emptyKindSubstitution =
     , ksConfiguredExecutors = Map.empty
     }
 
-{- | Top-level expression. Overlay and connect are both topology
-operators; the first implementation requires parentheses when they
-are mixed.
--}
+-- | Top-level expression. Overlay binds tighter than connect/star.
 expr :: Parser Expr
-expr = do
-  first <- exprSelectLevel
+expr =
+  exprConnectLevel
+
+exprConnectLevel :: Parser Expr
+exprConnectLevel = do
+  first <- exprOverlayLevel
   rest <- many topologyStep
-  case rest of
-    [] -> pure first
-    (firstOp, _) : _ -> do
-      when (any ((/= firstOp) . fst) rest) $
-        fail "mixing <> and => requires parentheses"
-      pure (foldl' applyTopology first rest)
+  pure (foldl' applyTopology first rest)
   where
     topologyStep = do
       op <-
-        (TopologyOverlay <$ symbol "<>")
-          <|> (TopologyConnect <$ symbol "=>")
+        (TopologyConnect <$ symbol "=>")
+          <|> (TopologyStar <$ symbol "*")
+      rhs <- exprOverlayLevel
+      pure (op, rhs)
+
+    applyTopology acc (op, rhs) =
+      case op of
+        TopologyConnect -> ExprConnect acc rhs
+        TopologyStar -> ExprStar acc rhs
+        TopologyOverlay -> ExprOverlay acc rhs
+
+exprOverlayLevel :: Parser Expr
+exprOverlayLevel = do
+  first <- exprSelectLevel
+  rest <- many topologyStep
+  pure (foldl' applyTopology first rest)
+  where
+    topologyStep = do
+      op <- TopologyOverlay <$ symbol "<>"
       rhs <- exprSelectLevel
       pure (op, rhs)
 
@@ -392,6 +414,7 @@ expr = do
       case op of
         TopologyOverlay -> ExprOverlay acc rhs
         TopologyConnect -> ExprConnect acc rhs
+        TopologyStar -> ExprStar acc rhs
 
 exprSelectLevel :: Parser Expr
 exprSelectLevel = do
@@ -1041,7 +1064,8 @@ formLetItem = do
 
 formLetRhs :: Parser FormLetRhs
 formLetRhs =
-  try (FormLetRhsApplication <$> formApplication <* symbol ";")
+  try (FormLetRhsMake <$> makeApplication <* symbol ";")
+    <|> try (FormLetRhsApplication <$> formApplication <* symbol ";")
     <|> try (FormLetRhsWire <$> expr <* symbol ";")
     <|> (FormLetRhsCorePure <$> corePureExpr <* symbol ";")
 
@@ -1187,9 +1211,25 @@ letBinding = do
 
 parsedLetRhs :: LetVisibility -> Text -> Parser ParsedTopForm
 parsedLetRhs visibility name =
-  try (ParsedTopLetApplication visibility name <$> formApplication <* symbol ";")
+  try (ParsedTopLetMake visibility name <$> makeApplication <* symbol ";")
+    <|> try (ParsedTopLetApplication visibility name <$> formApplication <* symbol ";")
     <|> try (ParsedTopLet visibility name . LetRhsWire <$> expr <* symbol ";")
     <|> (ParsedTopLet visibility name . LetRhsCorePure <$> corePureExpr <* symbol ";")
+
+makeApplication :: Parser MakeApplication
+makeApplication = do
+  keyword "make"
+  _ <- symbol "("
+  countValue <- numberLiteral
+  _ <- symbol ","
+  kindName <- identifier
+  _ <- optional (symbol ",")
+  _ <- symbol ")"
+  pure
+    MakeApplication
+      { makeApplicationCount = countValue
+      , makeApplicationKindName = kindName
+      }
 
 formApplication :: Parser FormApplication
 formApplication = do
@@ -1230,6 +1270,9 @@ expandStructuralForms forms = do
         Right (scope, TopUse useSpec : acc)
       ParsedTopLet visibility name rhs ->
         Right (scope, TopLet visibility name rhs : acc)
+      ParsedTopLetMake visibility name application -> do
+        expanded <- expandMakeBinding scope visibility name application
+        Right (scope, reverse expanded <> acc)
       ParsedTopLetApplication visibility name application ->
         case Map.lookup application.formApplicationName scope.esForms of
           Just formDeclValue -> do
@@ -1266,6 +1309,77 @@ emptyExpansionScope =
     { esKinds = Map.empty
     , esForms = Map.empty
     }
+
+expandMakeBinding
+  :: ExpansionScope -> LetVisibility -> Text -> MakeApplication -> Either String [TopForm]
+expandMakeBinding scope visibility bindingName application = do
+  kindDeclValue <-
+    maybe
+      ( Left
+          ( "make("
+              <> T.unpack bindingName
+              <> ") references unknown kind "
+              <> T.unpack application.makeApplicationKindName
+          )
+      )
+      Right
+      (Map.lookup application.makeApplicationKindName scope.esKinds)
+  _ <- makeKindLabelParam kindDeclValue
+  count <- staticMakeCount bindingName application.makeApplicationCount
+  let childNames =
+        [ bindingName <> "_" <> T.pack (show idx)
+        | idx <- [0 .. count - 1]
+        ]
+      childNode name =
+        expandParsedNode
+          scope.esKinds
+          ( ParsedNodeKindApplication
+              name
+              KindApplication
+                { kindApplicationName = application.makeApplicationKindName
+                , kindApplicationArgs = [ExprIdent (QName (name :| []))]
+                }
+          )
+      resultExpr =
+        overlayGeneratedChildren childNames
+  nodes <- traverse childNode childNames
+  Right (fmap TopNode nodes <> [TopLet visibility bindingName (LetRhsWire resultExpr)])
+makeKindLabelParam :: KindDecl -> Either String KindParam
+makeKindLabelParam kindDeclValue =
+  case kindDeclValue.kindDeclParams of
+    [param]
+      | param.kindParamClass == KindParamPortLabel ->
+          Right param
+    _ ->
+      Left
+        ( "kind "
+            <> T.unpack kindDeclValue.kindDeclName
+            <> " used with make(...) must declare exactly one PortLabel parameter"
+        )
+
+staticMakeCount :: Text -> Scientific -> Either String Int
+staticMakeCount bindingName countValue =
+  case floatingOrInteger countValue :: Either Double Integer of
+    Left _ ->
+      Left ("make count for " <> T.unpack bindingName <> " must be an integer")
+    Right integerValue
+      | integerValue < 0 ->
+          Left ("make count for " <> T.unpack bindingName <> " must be non-negative")
+      | integerValue > toInteger (maxBound :: Int) ->
+          Left ("make count for " <> T.unpack bindingName <> " is too large")
+      | otherwise ->
+          Right (fromInteger integerValue)
+
+overlayGeneratedChildren :: [Text] -> Expr
+overlayGeneratedChildren = \case
+  [] -> ExprLit LitUnit
+  firstName : restNames ->
+    foldl'
+      ExprOverlay
+      (ExprIdent (QName (firstName :| [])))
+      [ ExprIdent (QName (name :| []))
+      | name <- restNames
+      ]
 
 validateKindDecl :: KindDecl -> Either String ()
 validateKindDecl kindDeclValue =
@@ -1383,6 +1497,9 @@ expandFormItem scope subst prefix state = \case
                 { fesOutputForms =
                     state.fesOutputForms <> [TopLet LetPrivate prefixedName letRhsValue]
                 }
+      FormLetRhsMake application -> do
+        expanded <- expandMakeBinding scope LetPrivate prefixedName application
+        Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
       FormLetRhsWire exprValue -> do
         exprValue' <- substituteFormExpr subst state.fesLocalNames exprValue
         Right
@@ -1538,6 +1655,8 @@ rewriteFormExpr graphParams localNames = go
         ExprOverlay (go lhs) (go rhs)
       ExprConnect lhs rhs ->
         ExprConnect (go lhs) (go rhs)
+      ExprStar lhs rhs ->
+        ExprStar (go lhs) (go rhs)
       ExprMerge lhs rhs ->
         ExprMerge (go lhs) (go rhs)
       ExprConcat lhs rhs ->
@@ -1795,6 +1914,8 @@ substituteExpr subst = \case
     ExprOverlay <$> substituteExpr subst lhs <*> substituteExpr subst rhs
   ExprConnect lhs rhs ->
     ExprConnect <$> substituteExpr subst lhs <*> substituteExpr subst rhs
+  ExprStar lhs rhs ->
+    ExprStar <$> substituteExpr subst lhs <*> substituteExpr subst rhs
   ExprMerge lhs rhs ->
     ExprMerge <$> substituteExpr subst lhs <*> substituteExpr subst rhs
   ExprConcat lhs rhs ->

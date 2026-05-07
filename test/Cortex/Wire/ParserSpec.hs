@@ -123,9 +123,21 @@ spec = describe "Cortex.Wire.Parser" $ do
       parseWireFile "test" "use std.io.*;"
         `shouldSatisfy` isParseFailure
 
-    it "rejects unparenthesized mixed topology operators" $
+    it "parses mixed topology operators with overlay binding tighter than connect" $
       parseWireExpr "test" "a => b <> c"
-        `shouldSatisfy` isParseFailure
+        `shouldSatisfy` isRight
+
+    it "parses star adapters at connect precedence" $
+      case parseWireExpr "test" "(a <> b) * sink" of
+        Right parsed ->
+          parsed
+            `shouldBe` ExprStar
+              ( ExprOverlay
+                  (ExprIdent (QName ("a" :| [])))
+                  (ExprIdent (QName ("b" :| [])))
+              )
+              (ExprIdent (QName ("sink" :| [])))
+        Left err -> expectationFailure ("parse failed: " <> T.unpack (renderParseError err))
 
     it "rejects comma overlay tuple shorthand" $
       parseWireExpr "test" "(a, b)"
@@ -189,6 +201,28 @@ spec = describe "Cortex.Wire.Parser" $ do
                    , Just "pipeline"
                    ]
       fileReturn `shouldBe` Just (ExprIdent (QName ("pipeline" :| [])))
+
+    it "expands bound make forms into generated nodes and a graph binding" $ do
+      let WireFile forms fileReturn =
+            parseOrFail $
+              T.unlines
+                [ "kind sample(label: PortLabel) ="
+                , "  -> label: Sample = @review.sample ({}) ;"
+                , "let workers = make(2, sample);"
+                , "workers"
+                ]
+      fmap topFormName forms
+        `shouldBe` [Just "workers_0", Just "workers_1", Just "workers"]
+      fileReturn `shouldBe` Just (ExprIdent (QName ("workers" :| [])))
+      case forms of
+        [TopNode first, TopNode second, TopLet LetPrivate "workers" (LetRhsWire graphExpr)] -> do
+          nodeDeclName first `shouldBe` "workers_0"
+          nodeDeclName second `shouldBe` "workers_1"
+          graphExpr
+            `shouldBe` ExprOverlay
+              (ExprIdent (QName ("workers_0" :| [])))
+              (ExprIdent (QName ("workers_1" :| [])))
+        other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "parses top-level lambdas as delayed CorePure helper bindings" $ do
       let WireFile forms _ = parseOrFail "let acceptedItem = item: item.score >= 0.7 ;"

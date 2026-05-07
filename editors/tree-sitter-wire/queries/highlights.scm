@@ -6,6 +6,7 @@
 "contract" @keyword
 "form"     @keyword
 "kind"     @keyword
+"make"     @keyword
 "node"     @keyword
 "export"   @keyword
 "let"      @keyword
@@ -78,6 +79,7 @@
 (form_decl name: (identifier) @type)
 (form_param class: (form_param_class) @type)
 (form_application name: (identifier) @type)
+(make_application kind: (identifier) @type)
 
 ; [export] let <name> = <expr>;
 (let_binding name: (identifier) @constant)

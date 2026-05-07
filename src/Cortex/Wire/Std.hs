@@ -148,6 +148,7 @@ stdIoContractSpecs =
       { wireContractSpecId = stdIoCommandSpecContractId
       , wireContractSpecPayloadKind = WirePayloadJson
       , wireContractSpecDescription = "Standard argv-based local command request."
+      , wireContractSpecRecordFields = Nothing
       , wireContractSpecSchema = Nothing
       , wireContractSpecExamples = []
       }
@@ -155,6 +156,7 @@ stdIoContractSpecs =
       { wireContractSpecId = stdIoCommandResultContractId
       , wireContractSpecPayloadKind = WirePayloadJson
       , wireContractSpecDescription = "Standard argv-based local command result."
+      , wireContractSpecRecordFields = Nothing
       , wireContractSpecSchema = Nothing
       , wireContractSpecExamples = []
       }

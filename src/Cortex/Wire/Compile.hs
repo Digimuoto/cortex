@@ -81,6 +81,7 @@ import Cortex.Wire.Circuit.Node (CircuitNodeKind (Act))
 import Cortex.Wire.Contract
   ( WireCompileEnv (..)
   , WireContractRegistry (..)
+  , WireContractSpec (..)
   , WireProjectionMode (..)
   , emptyWireCompileEnv
   , portsMetadataValue
@@ -366,7 +367,7 @@ lowerWireFileWithUnusedPolicy compileEnv unusedNodePolicy wireFile = do
   loweredState <-
     foldlM (lowerTopForm compileEnv) emptyLoweringState wireFile.wireFileTopForms
   fileReturn <- maybe (Left WireCore.WireMissingCircuit) Right wireFile.wireFileReturn
-  (resultFragment, maybeMetadata, loweredState') <- lowerFileReturn loweredState fileReturn
+  (resultFragment, maybeMetadata, loweredState') <- lowerFileReturn compileEnv loweredState fileReturn
   let usedNodeRefs =
         foldMap loweredNodeRefs resultFragment.gfNodes
           <> loweredState'.lsExportedGraphNodeRefs
@@ -438,7 +439,7 @@ lowerTopForm compileEnv st = \case
       then Left (WireCore.WireDuplicateLetBinding name)
       else case rhs of
         LetRhsCorePure expr -> do
-          validateCorePureScope st (WireCore.WireParseError . corePureTopLevelScopeError name) expr
+          validateCorePureScope st (WireCore.WireParseError . corePureTopLevelScopeError name) Set.empty expr
           Right
             st
               { lsPureBindings =
@@ -450,7 +451,7 @@ lowerTopForm compileEnv st = \case
                        ]
               }
         LetRhsWire expr ->
-          lowerWireLetBinding visibility st name expr
+          lowerWireLetBinding compileEnv visibility st name expr
   TopNode nodeDecl -> do
     loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
@@ -493,14 +494,15 @@ wireUseErrorToWireError = \case
     WireCore.WireDuplicateBinding name
 
 lowerWireLetBinding
-  :: LetVisibility
+  :: WireCompileEnv
+  -> LetVisibility
   -> LoweringState
   -> Text
   -> Expr
   -> Either WireCore.WireError LoweringState
-lowerWireLetBinding visibility st name expr
+lowerWireLetBinding compileEnv visibility st name expr
   | isGraphLetExpr st expr = do
-      graphValue <- lowerGraphExpr st expr
+      graphValue <- lowerGraphExpr compileEnv st expr
       let exportedNodeRefs =
             case visibility of
               LetExported ->
@@ -521,6 +523,7 @@ isGraphLetExpr :: LoweringState -> Expr -> Bool
 isGraphLetExpr st = \case
   ExprOverlay {} -> True
   ExprConnect {} -> True
+  ExprStar {} -> True
   ExprSelect {} -> True
   ExprLit LitUnit -> True
   ExprIdent (QName (name :| [])) ->
@@ -572,20 +575,21 @@ lowerNamedNode compileEnv st nodeDecl = do
       loweredPureNodeFromBody compileEnv st nodeRef ports st.lsPureBindings pureBody
 
 lowerFileReturn
-  :: LoweringState
+  :: WireCompileEnv
+  -> LoweringState
   -> Expr
   -> Either WireCore.WireError (GraphFragment, Maybe Aeson.Value, LoweringState)
-lowerFileReturn st expr = do
-  fragment <- lowerGraphExpr st expr
+lowerFileReturn compileEnv st expr = do
+  fragment <- lowerGraphExpr compileEnv st expr
   Right (fragment, Nothing, st)
 
-lowerGraphExpr :: LoweringState -> Expr -> Either WireCore.WireError GraphFragment
-lowerGraphExpr st expr =
+lowerGraphExpr :: WireCompileEnv -> LoweringState -> Expr -> Either WireCore.WireError GraphFragment
+lowerGraphExpr compileEnv st expr =
   case flattenConnectChain expr of
     [singleExpr] ->
-      lowerGraphTerm st singleExpr
+      lowerGraphTerm compileEnv st singleExpr
     chainItems ->
-      lowerConnectChain st chainItems
+      lowerConnectChain compileEnv st chainItems
 
 data ConnectItem = ConnectItem
   { ciBaseExpr :: !Expr
@@ -611,53 +615,61 @@ isIdentityConnectItem item =
       ExprLit LitUnit -> True
       _ -> False
 
-lowerConnectChain :: LoweringState -> [Expr] -> Either WireCore.WireError GraphFragment
-lowerConnectChain st exprs = do
+lowerConnectChain
+  :: WireCompileEnv -> LoweringState -> [Expr] -> Either WireCore.WireError GraphFragment
+lowerConnectChain compileEnv st exprs = do
   items <- filter (not . isIdentityConnectItem) <$> traverse connectItem exprs
   case items of
     [] ->
       Right emptyFragment
     firstItem : restItems -> do
-      initial <- lowerGraphBase st firstItem.ciBaseExpr
-      stepConnectChain st initial firstItem restItems
+      initial <- lowerGraphBase compileEnv st firstItem.ciBaseExpr
+      stepConnectChain compileEnv st initial firstItem restItems
 
 stepConnectChain
-  :: LoweringState
+  :: WireCompileEnv
+  -> LoweringState
   -> GraphFragment
   -> ConnectItem
   -> [ConnectItem]
   -> Either WireCore.WireError GraphFragment
-stepConnectChain _st current currentItem [] =
+stepConnectChain compileEnv st current currentItem [] =
   case currentItem.ciSelectArms of
     Nothing ->
       Right current
     Just arms ->
-      lowerSelectStep _st current arms Nothing
-stepConnectChain st current currentItem (nextItem : restItems) =
+      lowerSelectStep compileEnv st current arms Nothing
+stepConnectChain compileEnv st current currentItem (nextItem : restItems) =
   case currentItem.ciSelectArms of
     Just arms -> do
-      nextBase <- lowerGraphBase st nextItem.ciBaseExpr
-      selectReduced <- lowerSelectStep st current arms (Just nextBase)
-      stepConnectChain st selectReduced nextItem restItems
+      nextBase <- lowerGraphBase compileEnv st nextItem.ciBaseExpr
+      selectReduced <- lowerSelectStep compileEnv st current arms (Just nextBase)
+      stepConnectChain compileEnv st selectReduced nextItem restItems
     Nothing -> do
-      nextBase <- lowerGraphBase st nextItem.ciBaseExpr
-      let connected = connectFragments current nextBase
-      stepConnectChain st connected nextItem restItems
+      nextBase <- lowerGraphBase compileEnv st nextItem.ciBaseExpr
+      connected <- connectFragments current nextBase
+      stepConnectChain compileEnv st connected nextItem restItems
 
-lowerGraphTerm :: LoweringState -> Expr -> Either WireCore.WireError GraphFragment
-lowerGraphTerm st = \case
+lowerGraphTerm :: WireCompileEnv -> LoweringState -> Expr -> Either WireCore.WireError GraphFragment
+lowerGraphTerm compileEnv st = \case
   ExprSelect baseExpr arms -> do
-    baseFragment <- lowerGraphBase st baseExpr
-    lowerSelectStep st baseFragment arms Nothing
+    baseFragment <- lowerGraphBase compileEnv st baseExpr
+    lowerSelectStep compileEnv st baseFragment arms Nothing
   other ->
-    lowerGraphBase st other
+    lowerGraphBase compileEnv st other
 
-lowerGraphBase :: LoweringState -> Expr -> Either WireCore.WireError GraphFragment
-lowerGraphBase st = \case
+lowerGraphBase :: WireCompileEnv -> LoweringState -> Expr -> Either WireCore.WireError GraphFragment
+lowerGraphBase compileEnv st = \case
   ExprLit LitUnit ->
     Right emptyFragment
-  ExprOverlay lhs rhs ->
-    overlayFragments <$> lowerGraphExpr st lhs <*> lowerGraphExpr st rhs
+  ExprOverlay lhs rhs -> do
+    lhsFragment <- lowerGraphExpr compileEnv st lhs
+    rhsFragment <- lowerGraphExpr compileEnv st rhs
+    joinGraphFragments "overlay (<>)" lhsFragment rhsFragment
+  ExprStar lhs rhs -> do
+    lhsFragment <- lowerGraphExpr compileEnv st lhs
+    rhsFragment <- lowerGraphExpr compileEnv st rhs
+    lowerStarFragments compileEnv st lhsFragment rhsFragment
   ExprIdent (QName (name :| [])) ->
     case Map.lookup name st.lsGraphBindings of
       Just fragment ->
@@ -665,10 +677,10 @@ lowerGraphBase st = \case
       Nothing ->
         lowerNamedGraphRef name
   ExprSelect baseExpr arms -> do
-    baseFragment <- lowerGraphBase st baseExpr
-    lowerSelectStep st baseFragment arms Nothing
+    baseFragment <- lowerGraphBase compileEnv st baseExpr
+    lowerSelectStep compileEnv st baseFragment arms Nothing
   ExprConnect lhs rhs ->
-    lowerGraphExpr st (ExprConnect lhs rhs)
+    lowerGraphExpr compileEnv st (ExprConnect lhs rhs)
   other ->
     Left
       ( WireCore.WireParseError
@@ -690,19 +702,23 @@ lowerGraphBase st = \case
         Nothing ->
           Left (WireCore.WireUnknownNodeRef (CircuitNodeRef name))
 
-overlayFragments :: GraphFragment -> GraphFragment -> GraphFragment
-overlayFragments lhs rhs =
-  GraphFragment
-    { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
-    , gfEntries = dedupeBoundaries (lhs.gfEntries <> rhs.gfEntries)
-    , gfExits = dedupeBoundaries (lhs.gfExits <> rhs.gfExits)
-    , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections)
-    }
+joinGraphFragments
+  :: Text -> GraphFragment -> GraphFragment -> Either WireCore.WireError GraphFragment
+joinGraphFragments context lhs rhs = do
+  ensureDisjointGraphDomains context lhs rhs
+  Right
+    GraphFragment
+      { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
+      , gfEntries = dedupeBoundaries (lhs.gfEntries <> rhs.gfEntries)
+      , gfExits = dedupeBoundaries (lhs.gfExits <> rhs.gfExits)
+      , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections)
+      }
 
-connectFragments :: GraphFragment -> GraphFragment -> GraphFragment
-connectFragments lhs rhs =
-  let matchedPairs = matchedBoundaryPairs lhs.gfExits rhs.gfEntries
-      matchedLeft = Set.fromList (fmap fst matchedPairs)
+connectFragments :: GraphFragment -> GraphFragment -> Either WireCore.WireError GraphFragment
+connectFragments lhs rhs = do
+  ensureDisjointGraphDomains "connect (=>)" lhs rhs
+  matchedPairs <- linearBoundaryMatches lhs.gfExits rhs.gfEntries
+  let matchedLeft = Set.fromList (fmap fst matchedPairs)
       matchedRight = Set.fromList (fmap snd matchedPairs)
       bridgeConnections =
         fmap
@@ -712,26 +728,354 @@ connectFragments lhs rhs =
                 (boundaryEndpoint rightBoundary)
           )
           matchedPairs
-   in GraphFragment
-        { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
-        , gfEntries = dedupeBoundaries (lhs.gfEntries <> filter (`Set.notMember` matchedRight) rhs.gfEntries)
-        , gfExits = dedupeBoundaries (filter (`Set.notMember` matchedLeft) lhs.gfExits <> rhs.gfExits)
-        , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections <> bridgeConnections)
-        }
+  Right
+    GraphFragment
+      { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
+      , gfEntries = dedupeBoundaries (lhs.gfEntries <> filter (`Set.notMember` matchedRight) rhs.gfEntries)
+      , gfExits = dedupeBoundaries (filter (`Set.notMember` matchedLeft) lhs.gfExits <> rhs.gfExits)
+      , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections <> bridgeConnections)
+      }
+
+ensureDisjointGraphDomains
+  :: Text -> GraphFragment -> GraphFragment -> Either WireCore.WireError ()
+ensureDisjointGraphDomains context lhs rhs =
+  case Set.toAscList (Map.keysSet lhs.gfNodes `Set.intersection` Map.keysSet rhs.gfNodes) of
+    [] -> Right ()
+    duplicateRefs ->
+      Left
+        ( WireCore.WireParseError
+            ( context
+                <> " cannot reuse graph node(s): "
+                <> T.intercalate ", " (fmap (.unCircuitNodeRef) duplicateRefs)
+                <> ". Bind fresh nodes or use make(...) to generate a fresh family."
+            )
+        )
+
+linearBoundaryMatches
+  :: [BoundaryPort] -> [BoundaryPort] -> Either WireCore.WireError [(BoundaryPort, BoundaryPort)]
+linearBoundaryMatches leftExits rightEntries = do
+  traverse_ validateLeft leftExits
+  traverse_ validateRight rightEntries
+  Right
+    [ (leftBoundary, rightBoundary)
+    | leftBoundary <- leftExits
+    , Just rightBoundary <- [uniqueMatch (matchesLeft leftBoundary)]
+    ]
+  where
+    validateLeft leftBoundary =
+      case matchesLeft leftBoundary of
+        _ : _ : _ ->
+          Left
+            ( WireCore.WireParseError
+                ( "Wire connect (=>) would copy output endpoint "
+                    <> renderBoundaryEndpoint leftBoundary
+                    <> " into multiple compatible input endpoints: "
+                    <> renderBoundaryList (matchesLeft leftBoundary)
+                    <> ". Insert an explicit adapter with `*` or rename ports."
+                )
+            )
+        _ -> Right ()
+
+    validateRight rightBoundary =
+      case matchesRight rightBoundary of
+        _ : _ : _ ->
+          Left
+            ( WireCore.WireParseError
+                ( "Wire connect (=>) would merge multiple output endpoints into input endpoint "
+                    <> renderBoundaryEndpoint rightBoundary
+                    <> ": "
+                    <> renderBoundaryList (matchesRight rightBoundary)
+                    <> ". Insert an explicit adapter with `*` or rename ports."
+                )
+            )
+        _ -> Right ()
+
+    matchesLeft leftBoundary =
+      filter (boundariesMatch leftBoundary) rightEntries
+
+    matchesRight rightBoundary =
+      filter (`boundariesMatch` rightBoundary) leftExits
+
+    uniqueMatch = \case
+      [match] -> Just match
+      _ -> Nothing
+
+boundariesMatch :: BoundaryPort -> BoundaryPort -> Bool
+boundariesMatch leftBoundary rightBoundary =
+  leftBoundary.bpContract == rightBoundary.bpContract
+    && leftBoundary.bpLabel == rightBoundary.bpLabel
+
+data StarDirection = StarGather | StarScatter
+  deriving stock (Eq, Show)
+
+lowerStarFragments
+  :: WireCompileEnv
+  -> LoweringState
+  -> GraphFragment
+  -> GraphFragment
+  -> Either WireCore.WireError GraphFragment
+lowerStarFragments compileEnv st lhs rhs = do
+  plan <- resolveStarPlan compileEnv lhs.gfExits rhs.gfEntries
+  phantom <- buildStarPhantomNode compileEnv st plan
+  let phantomFragment =
+        GraphFragment
+          { gfNodes = Map.singleton phantom.lnRef phantom
+          , gfEntries = fmap boundaryFromPort phantom.lnInputs
+          , gfExits = fmap boundaryFromPort phantom.lnOutputs
+          , gfConnections = []
+          }
+  leftToPhantom <- connectFragments lhs phantomFragment
+  connectFragments leftToPhantom rhs
+
+data StarPlan = StarPlan
+  { starPlanDirection :: !StarDirection
+  , starPlanSingular :: !BoundaryPort
+  , starPlanMulti :: ![BoundaryPort]
+  , starPlanRecordFields :: !(Map Text Text)
+  }
+  deriving stock (Eq, Show)
+
+resolveStarPlan
+  :: WireCompileEnv -> [BoundaryPort] -> [BoundaryPort] -> Either WireCore.WireError StarPlan
+resolveStarPlan compileEnv leftExits rightEntries =
+  case (leftExits, rightEntries) of
+    ([], [singular]) ->
+      gather singular []
+    ([singular], []) ->
+      scatter singular []
+    ([_], [_]) ->
+      Left
+        ( WireCore.WireParseError
+            "`*` requires a multi-element frontier on one side; use `=>` for one-to-one wiring."
+        )
+    (_ : _ : _, [singular]) ->
+      gather singular leftExits
+    ([singular], _ : _ : _) ->
+      scatter singular rightEntries
+    (_ : _ : _, _ : _ : _) ->
+      Left
+        ( WireCore.WireParseError
+            "`*` requires exactly one singular side; both operands expose multi-element frontiers."
+        )
+    _ ->
+      Left
+        ( WireCore.WireParseError
+            "`*` requires one singular record frontier and one multi-port frontier."
+        )
+  where
+    gather singular multi = do
+      fields <- recordFieldsForStar compileEnv singular.bpContract
+      validateStarMultiSide fields multi
+      Right
+        StarPlan
+          { starPlanDirection = StarGather
+          , starPlanSingular = singular
+          , starPlanMulti = multi
+          , starPlanRecordFields = fields
+          }
+
+    scatter singular multi = do
+      fields <- recordFieldsForStar compileEnv singular.bpContract
+      validateStarMultiSide fields multi
+      Right
+        StarPlan
+          { starPlanDirection = StarScatter
+          , starPlanSingular = singular
+          , starPlanMulti = multi
+          , starPlanRecordFields = fields
+          }
+
+recordFieldsForStar :: WireCompileEnv -> Text -> Either WireCore.WireError (Map Text Text)
+recordFieldsForStar compileEnv contractId =
+  case compileEnv.wireCompileEnvContractRegistry of
+    Nothing ->
+      Left
+        ( WireCore.WireParseError
+            ( "`*` requires a contract registry with a nominal record shape for "
+                <> contractId
+                <> "."
+            )
+        )
+    Just registry ->
+      case Map.lookup contractId registry.wireContractRegistryContracts of
+        Nothing ->
+          Left (WireCore.WireUnknownContract "`*` singular side" contractId)
+        Just spec ->
+          case spec.wireContractSpecRecordFields of
+            Just fields ->
+              Right fields
+            Nothing ->
+              Left
+                ( WireCore.WireParseError
+                    ( "`*` singular side contract "
+                        <> contractId
+                        <> " is not a nominal record contract."
+                    )
+                )
+
+validateStarMultiSide
+  :: Map Text Text -> [BoundaryPort] -> Either WireCore.WireError ()
+validateStarMultiSide fields multiBoundaries = do
+  observed <- boundaryFieldMap multiBoundaries
+  when (observed /= fields) $
+    Left
+      ( WireCore.WireParseError
+          ( "`*` multi-side frontier does not match nominal record fields. Expected "
+              <> renderFieldMap fields
+              <> "; observed "
+              <> renderFieldMap observed
+              <> "."
+          )
+      )
+
+boundaryFieldMap :: [BoundaryPort] -> Either WireCore.WireError (Map Text Text)
+boundaryFieldMap boundaries = do
+  pairs <-
+    traverse
+      ( \boundary ->
+          case boundary.bpLabel of
+            Label labelText ->
+              Right (labelText, boundary.bpContract)
+            NoLabel ->
+              Left
+                ( WireCore.WireParseError
+                    ( "`*` multi-side endpoint "
+                        <> renderBoundaryEndpoint boundary
+                        <> " must have a label matching a record field."
+                    )
+                )
+      )
+      boundaries
+  case duplicatePortNames (fmap fst pairs) of
+    duplicateLabel : _ ->
+      Left
+        ( WireCore.WireParseError
+            ( "`*` multi-side frontier repeats record field label "
+                <> duplicateLabel
+                <> "."
+            )
+        )
+    [] ->
+      Right (Map.fromList pairs)
+
+renderFieldMap :: Map Text Text -> Text
+renderFieldMap fields
+  | Map.null fields = "{}"
+  | otherwise =
+      "{"
+        <> T.intercalate
+          ", "
+          [ label <> ": " <> contract
+          | (label, contract) <- Map.toAscList fields
+          ]
+        <> "}"
+
+buildStarPhantomNode
+  :: WireCompileEnv -> LoweringState -> StarPlan -> Either WireCore.WireError LoweredNode
+buildStarPhantomNode compileEnv st plan = do
+  let nodeRef = generatedStarPhantomNodeRef plan
+      fieldList = Map.toAscList plan.starPlanRecordFields
+      singular = plan.starPlanSingular
+      inputDecls =
+        case plan.starPlanDirection of
+          StarGather ->
+            [ PortInputDecl (Label label) (ContractId contract)
+            | (label, contract) <- fieldList
+            ]
+          StarScatter ->
+            [PortInputDecl singular.bpLabel (ContractId singular.bpContract)]
+      outputDecls =
+        case plan.starPlanDirection of
+          StarGather ->
+            [PortOutputDecl singular.bpLabel (ContractId singular.bpContract)]
+          StarScatter ->
+            [ PortOutputDecl (Label label) (ContractId contract)
+            | (label, contract) <- fieldList
+            ]
+      outputEquations =
+        case plan.starPlanDirection of
+          StarGather ->
+            [ PureOutputEquation
+                { pureOutputEquationLabel = singular.bpLabel
+                , pureOutputEquationContract = ContractId singular.bpContract
+                , pureOutputEquationExpr =
+                    CorePureRecord
+                      [ CorePureField (label :| []) (CorePureIdent label)
+                      | (label, _) <- fieldList
+                      ]
+                }
+            ]
+          StarScatter ->
+            [ PureOutputEquation
+                { pureOutputEquationLabel = Label label
+                , pureOutputEquationContract = ContractId contract
+                , pureOutputEquationExpr =
+                    CorePureFieldAccess (CorePureIdent (singularCorePureInputName singular)) label
+                }
+            | (label, contract) <- fieldList
+            ]
+  ports <- lowerPortSignature st nodeRef (inputDecls <> outputDecls)
+  case NE.nonEmpty outputEquations of
+    Nothing ->
+      Left (WireCore.WireParseError "internal `*` lowering error: phantom has no output equation")
+    Just outputs ->
+      loweredPureNodeFromBody
+        compileEnv
+        st
+        nodeRef
+        ports
+        []
+        NodePureBody
+          { nodePureBodyWhere = Nothing
+          , nodePureBodyOutputs = outputs
+          }
+
+singularCorePureInputName :: BoundaryPort -> Text
+singularCorePureInputName singular =
+  case singular.bpLabel of
+    Label labelText -> labelText
+    NoLabel -> WireCore.defaultInputPortName
+
+generatedStarPhantomNodeRef :: StarPlan -> CircuitNodeRef
+generatedStarPhantomNodeRef plan =
+  CircuitNodeRef
+    ( "__star:"
+        <> directionText
+        <> ":"
+        <> T.take
+          12
+          ( digestText
+              ( Aeson.encode
+                  ( Aeson.object
+                      [ "direction" Aeson..= directionText
+                      , "singular" Aeson..= renderBoundaryPort plan.starPlanSingular
+                      , "multi" Aeson..= fmap renderBoundaryPort plan.starPlanMulti
+                      , "fields" Aeson..= plan.starPlanRecordFields
+                      ]
+                  )
+              )
+          )
+    )
+  where
+    directionText =
+      case plan.starPlanDirection of
+        StarGather -> "gather"
+        StarScatter -> "scatter"
 
 lowerSelectStep
-  :: LoweringState
+  :: WireCompileEnv
+  -> LoweringState
   -> GraphFragment
   -> NonEmpty SelectArm
   -> Maybe GraphFragment
   -> Either WireCore.WireError GraphFragment
-lowerSelectStep st current arms maybeDownstream = do
+lowerSelectStep compileEnv st current arms maybeDownstream = do
   selectorVariants <- resolveExclusiveBoundary current.gfExits
   resolvedArms <- resolveSelectArms selectorVariants arms
   preparedArms <-
     traverse
       ( \(variant, resolvedArm) -> do
-          armFragment <- lowerGraphExpr st resolvedArm.selectArmResolvedExpr
+          armFragment <- lowerGraphExpr compileEnv st resolvedArm.selectArmResolvedExpr
           armOutputBoundary <-
             inferSelectArmOutputBoundary variant resolvedArm.selectArmResolvedKey armFragment
           pure
@@ -747,11 +1091,7 @@ lowerSelectStep st current arms maybeDownstream = do
   traverse_ (validatePreparedSelectArm commonBoundary) preparedArms
   if all (isIdentityFragment . psaFragment) preparedArms
     then
-      pure $
-        maybe
-          current
-          (connectFragments current)
-          maybeDownstream
+      maybe (pure current) (connectFragments current) maybeDownstream
     else do
       conditionNode <- buildSelectConditionTree selectorVariants commonBoundary preparedArms
       let conditionFragment =
@@ -761,12 +1101,8 @@ lowerSelectStep st current arms maybeDownstream = do
               , gfExits = fmap boundaryFromPort (bridgeOutputPorts conditionNode)
               , gfConnections = []
               }
-          currentToCondition = connectFragments current conditionFragment
-      pure $
-        maybe
-          currentToCondition
-          (connectFragments currentToCondition)
-          maybeDownstream
+      currentToCondition <- connectFragments current conditionFragment
+      maybe (pure currentToCondition) (connectFragments currentToCondition) maybeDownstream
 
 data PreparedSelectArm = PreparedSelectArm
   { psaVariant :: !BoundaryPort
@@ -885,7 +1221,7 @@ inferSelectArmOutputBoundary selectorVariant armKey armFragment =
             }
         ]
     else do
-      let rooted = connectFragments (fragmentFromBoundaryOutputs [selectorVariant]) armFragment
+      rooted <- connectFragments (fragmentFromBoundaryOutputs [selectorVariant]) armFragment
       unless (null rooted.gfEntries) $
         Left
           ( WireCore.WireParseError
@@ -1159,6 +1495,26 @@ renderBoundaryPort boundary =
     , "label" Aeson..= renderPortLabel boundary.bpLabel
     ]
 
+renderBoundaryEndpoint :: BoundaryPort -> Text
+renderBoundaryEndpoint boundary =
+  boundary.bpNodeRef.unCircuitNodeRef
+    <> "."
+    <> boundary.bpPortName
+    <> " ("
+    <> renderBoundaryLabel boundary.bpLabel
+    <> ": "
+    <> boundary.bpContract
+    <> ")"
+
+renderBoundaryList :: [BoundaryPort] -> Text
+renderBoundaryList =
+  T.intercalate ", " . fmap renderBoundaryEndpoint
+
+renderBoundaryLabel :: PortLabel -> Text
+renderBoundaryLabel = \case
+  NoLabel -> "_"
+  Label labelText -> labelText
+
 renderPortLabel :: PortLabel -> Aeson.Value
 renderPortLabel = \case
   NoLabel -> Aeson.Null
@@ -1258,15 +1614,6 @@ fragmentToCompiledFragment fragment = do
       , compiledCircuitFragmentNodes = Map.map (.lnCompiledNode) fragment.gfNodes
       }
 
-matchedBoundaryPairs :: [BoundaryPort] -> [BoundaryPort] -> [(BoundaryPort, BoundaryPort)]
-matchedBoundaryPairs leftExits rightEntries =
-  [ (leftBoundary, rightBoundary)
-  | leftBoundary <- leftExits
-  , rightBoundary <- rightEntries
-  , leftBoundary.bpContract == rightBoundary.bpContract
-  , leftBoundary.bpLabel == rightBoundary.bpLabel
-  ]
-
 dedupeBoundaries :: [BoundaryPort] -> [BoundaryPort]
 dedupeBoundaries =
   nub
@@ -1302,7 +1649,7 @@ loweredNodeFromExecutorCall
   -> Either WireCore.WireError LoweredNode
 loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue = do
   (configuredExecutor, inputExpr) <- resolveExecutorCall st executorCallValue
-  validateCorePureNodeScope st nodeRef inputExpr
+  validateCorePureNodeScopeWithLocals st nodeRef (inputPortLocalNames ports.lnpInputs) inputExpr
   let exactFields = configuredExecutor.ceFields
       label = lookupMaybeTextField "label" exactFields
       genericFields = genericConfigFields exactFields knownSimpleFields
@@ -1484,7 +1831,8 @@ loweredPureNodeFromBody
   -> NodePureBody
   -> Either WireCore.WireError LoweredNode
 loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = do
-  outputConfig <- pureOutputConfigMap st nodeRef ports.lnpOutputs pureBody.nodePureBodyOutputs
+  outputConfig <-
+    pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs pureBody.nodePureBodyOutputs
   let runtimePorts = taskWirePortsFromLowered ports
       normalForm =
         pureNodeBoundaryNormalForm
@@ -1560,7 +1908,7 @@ validateWhereClause st nodeRef inputPorts whereExpr =
   case whereExpr of
     Nothing -> Right ()
     Just exprValue -> do
-      validateCorePureNodeScope st nodeRef exprValue
+      validateCorePureNodeScopeWithLocals st nodeRef (inputPortLocalNames inputPorts) exprValue
       staticContext <-
         mapLeft
           (WireCore.WireInvalidPorts nodeRef . renderStaticWhereError)
@@ -1595,38 +1943,43 @@ pureOutputConfigMap
   :: LoweringState
   -> CircuitNodeRef
   -> [LoweredPort]
+  -> [LoweredPort]
   -> NonEmpty PureOutputEquation
   -> Either WireCore.WireError (Map Text CorePureExpr)
-pureOutputConfigMap st nodeRef outputPorts outputEquations = do
+pureOutputConfigMap st nodeRef inputPorts outputPorts outputEquations = do
   let outputEquationList = NE.toList outputEquations
   when (length outputPorts /= length outputEquationList) $
     Left (WireCore.WireInvalidPorts nodeRef "pure output equations do not match lowered output ports")
   Map.fromList <$> zipWithM matchOutput outputPorts outputEquationList
   where
+    localNames = inputPortLocalNames inputPorts
+
     matchOutput port outputEquation = do
       let ContractId rawContractName = outputEquation.pureOutputEquationContract
           contractName = resolveContractId st rawContractName
       when (port.lpLabel /= outputEquation.pureOutputEquationLabel || port.lpContract /= contractName) $
         Left
           (WireCore.WireInvalidPorts nodeRef "pure output equation does not match its lowered output port")
-      validateCorePureNodeScope st nodeRef outputEquation.pureOutputEquationExpr
+      validateCorePureNodeScopeWithLocals st nodeRef localNames outputEquation.pureOutputEquationExpr
       Right (port.lpInternalName, outputEquation.pureOutputEquationExpr)
 
-validateCorePureNodeScope
+validateCorePureNodeScopeWithLocals
   :: LoweringState
   -> CircuitNodeRef
+  -> Set.Set Text
   -> CorePureExpr
   -> Either WireCore.WireError ()
-validateCorePureNodeScope st nodeRef =
+validateCorePureNodeScopeWithLocals st nodeRef =
   validateCorePureScope st (WireCore.WireInvalidPorts nodeRef . corePureNodeScopeError)
 
 validateCorePureScope
   :: LoweringState
   -> (Text -> WireCore.WireError)
+  -> Set.Set Text
   -> CorePureExpr
   -> Either WireCore.WireError ()
-validateCorePureScope st mkError =
-  mapLeft mkError . go Set.empty
+validateCorePureScope st mkError initialLocalNames =
+  mapLeft mkError . go initialLocalNames
   where
     -- Keep this match exhaustive: every CorePure constructor must classify its free identifiers.
     go localNames = \case
@@ -1669,6 +2022,10 @@ validateCorePureScope st mkError =
           case nonCorePureTopLevelBindingKind st name of
             Just bindingKind -> Left (corePureScopeError name bindingKind)
             Nothing -> Right ()
+
+inputPortLocalNames :: [LoweredPort] -> Set.Set Text
+inputPortLocalNames =
+  Set.fromList . fmap (.lpInternalName)
 
 nonCorePureTopLevelBindingKind :: LoweringState -> Text -> Maybe Text
 nonCorePureTopLevelBindingKind st name =
@@ -1900,6 +2257,8 @@ evalValue st = \case
     Left (WireCore.WireParseError "Graph overlay cannot appear in an ordinary-value position.")
   ExprConnect {} ->
     Left (WireCore.WireParseError "Graph connect cannot appear in an ordinary-value position.")
+  ExprStar {} ->
+    Left (WireCore.WireParseError "Graph star adapter cannot appear in an ordinary-value position.")
   ExprSelect {} ->
     Left (WireCore.WireParseError "select(...) is only supported in graph position.")
 

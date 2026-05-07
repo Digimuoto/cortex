@@ -94,15 +94,9 @@ let feedback_and_readout =
 
 ibm_runtime_config
   => (
-    (
-      prepare_control
-        => h_control
-        => controlled_phase
-        => feedback_and_readout
-    )
-    <>
-    (
-      prepare_eigenstate
-        => controlled_phase
-    )
-)
+    (prepare_control
+      => h_control)
+    <> prepare_eigenstate
+  )
+  => controlled_phase
+  => feedback_and_readout

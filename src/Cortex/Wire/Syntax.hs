@@ -176,6 +176,8 @@ data Expr
     ExprOverlay !Expr !Expr
   | -- | @a => b@ — port-key-matched connect (infixl 3).
     ExprConnect !Expr !Expr
+  | -- | @a * b@ — explicit phantom record↔ports adapter (infixl 3).
+    ExprStar !Expr !Expr
   | -- | @a // b@ — right-biased shallow merge on records (infixl 5).
     ExprMerge !Expr !Expr
   | -- | @a ++ b@ — string or list concatenation (infixl 5).

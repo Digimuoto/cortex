@@ -76,6 +76,55 @@ spec = describe "Cortex.Wire.Compile" $ do
     Set.fromList compiled.compiledCircuitExitNodes
       `shouldBe` Set.fromList [CircuitNodeRef "stress_alpha", CircuitNodeRef "stress_beta"]
 
+  it "rejects repeated graph references in overlay" $
+    compileWireFragmentText repeatedGraphReferenceSourceText
+      `shouldSatisfy` isWireParseFailureContaining "cannot reuse graph node(s): source"
+
+  it "rejects implicit output fan-out through connect" $
+    compileWireFragmentText implicitFanOutSourceText
+      `shouldSatisfy` isWireParseFailureContaining "would copy output endpoint"
+
+  it "rejects implicit input fan-in through connect" $
+    compileWireFragmentText implicitFanInSourceText
+      `shouldSatisfy` isWireParseFailureContaining "would merge multiple output endpoints"
+
+  it "expands make(N, K) into source-stable generated nodes" $ do
+    compiled <- requireRight (compileWireFragmentText makeExpansionSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.fromList
+        [ CircuitNodeRef "workers_0"
+        , CircuitNodeRef "workers_1"
+        , CircuitNodeRef "workers_2"
+        ]
+
+  it "lowers record-form * gather through an explicit phantom adapter" $ do
+    compiled <- requireRight (compileWireTextWithEnv starContractEnv starGatherSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "a")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "b")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.singleton (CircuitNodeRef "sink")
+
+  it "lowers record-form * scatter through an explicit phantom adapter" $ do
+    compiled <- requireRight (compileWireTextWithEnv starContractEnv starScatterSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:scatter:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.fromList [CircuitNodeRef "a", CircuitNodeRef "b"]
+
+  it "rejects flat singleton * and directs authors to =>" $
+    compileWireTextWithEnv starContractEnv flatSingletonStarSourceText
+      `shouldSatisfy` isWireParseFailureContaining "use `=>`"
+
   it "compiles a configured executor value applied in a node body" $ do
     compiled <- requireRight (compileWireText configuredExecutorSourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
@@ -444,9 +493,9 @@ spec = describe "Cortex.Wire.Compile" $ do
       Set.fromList compiled.compiledCircuitExitNodes
         `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
       successors compiled.compiledCircuitTopology (CircuitNodeRef "run_open_0")
-        `shouldBe` Set.fromList [CircuitNodeRef "gate_open_14", CircuitNodeRef "summarize_experiment"]
+        `shouldBe` Set.singleton (CircuitNodeRef "gate_open_14")
       successors compiled.compiledCircuitTopology (CircuitNodeRef "gate_open_14")
-        `shouldBe` Set.fromList [CircuitNodeRef "run_open_14"]
+        `shouldBe` Set.fromList [CircuitNodeRef "run_open_14", CircuitNodeRef "summarize_experiment"]
 
     it "compiles the quantum eraser sweep circuit examples with primitive executors" $
       mapM_ compileQuantumEraserFixture quantumEraserSweepFixtures
@@ -478,6 +527,88 @@ overlayFragmentSourceText =
     , "node stress_beta"
     , "  -> fragment: AnalysisFragment = @review.beta ({}) ;"
     , "(stress_alpha) <> (stress_beta)"
+    ]
+
+repeatedGraphReferenceSourceText :: T.Text
+repeatedGraphReferenceSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> out: T = @review.source ({}) ;"
+    , "source <> source"
+    ]
+
+implicitFanOutSourceText :: T.Text
+implicitFanOutSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> plan: T = @review.source ({}) ;"
+    , "node audit"
+    , "  <- plan: T ;"
+    , "  -> audit: U = @review.audit (plan) ;"
+    , "node decide"
+    , "  <- plan: T ;"
+    , "  -> decision: U = @review.decide (plan) ;"
+    , "source => (audit <> decide)"
+    ]
+
+implicitFanInSourceText :: T.Text
+implicitFanInSourceText =
+  T.unlines
+    [ "node left"
+    , "  -> value: T = @review.left ({}) ;"
+    , "node right"
+    , "  -> value: T = @review.right ({}) ;"
+    , "node sink"
+    , "  <- value: T ;"
+    , "  -> done: U = @review.sink (value) ;"
+    , "(left <> right) => sink"
+    ]
+
+makeExpansionSourceText :: T.Text
+makeExpansionSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "let workers = make(3, sample);"
+    , "workers"
+    ]
+
+starGatherSourceText :: T.Text
+starGatherSourceText =
+  T.unlines
+    [ "node a"
+    , "  -> a: A = @review.a ({}) ;"
+    , "node b"
+    , "  -> b: B = @review.b ({}) ;"
+    , "node sink"
+    , "  <- pair: Pair ;"
+    , "  -> done: Done = @review.sink (pair) ;"
+    , "(a <> b) * sink"
+    ]
+
+starScatterSourceText :: T.Text
+starScatterSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> pair: Pair = @review.source ({}) ;"
+    , "node a"
+    , "  <- a: A ;"
+    , "  -> done_a: Done = @review.a (a) ;"
+    , "node b"
+    , "  <- b: B ;"
+    , "  -> done_b: Done = @review.b (b) ;"
+    , "source * (a <> b)"
+    ]
+
+flatSingletonStarSourceText :: T.Text
+flatSingletonStarSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> pair: Pair = @review.source ({}) ;"
+    , "node sink"
+    , "  <- pair: Pair ;"
+    , "  -> done: Done = @review.sink (pair) ;"
+    , "source * sink"
     ]
 
 configuredExecutorSourceText :: T.Text
@@ -1073,6 +1204,11 @@ isParseFailure = \case
   Left WireParseError {} -> True
   _ -> False
 
+isWireParseFailureContaining :: T.Text -> Either WireError ok -> Bool
+isWireParseFailureContaining expected = \case
+  Left (WireParseError message) -> expected `T.isInfixOf` message
+  _ -> False
+
 isCorePureScopeViolationOf :: T.Text -> Either WireError ok -> Bool
 isCorePureScopeViolationOf capturedBinding = \case
   Left (WireInvalidPorts _ message) -> messageMatches message
@@ -1094,6 +1230,19 @@ knownContractsEnv =
             , jsonContract "PlanIssue"
             , jsonContract "DraftPlan"
             , jsonContract "ReportArtifactRef"
+            ]
+    }
+
+starContractEnv :: WireCompileEnv
+starContractEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvContractRegistry =
+        Just $
+          wireContractRegistryFromList
+            [ jsonContract "A"
+            , jsonContract "B"
+            , jsonContract "Done"
+            , recordContract "Pair" [("a", "A"), ("b", "B")]
             ]
     }
 
@@ -1158,6 +1307,13 @@ jsonContract contractId =
     { wireContractSpecId = contractId
     , wireContractSpecPayloadKind = WirePayloadJson
     , wireContractSpecDescription = contractId
+    , wireContractSpecRecordFields = Nothing
     , wireContractSpecSchema = Nothing
     , wireContractSpecExamples = []
+    }
+
+recordContract :: T.Text -> [(T.Text, T.Text)] -> WireContractSpec
+recordContract contractId fields =
+  (jsonContract contractId)
+    { wireContractSpecRecordFields = Just (Map.fromList fields)
     }

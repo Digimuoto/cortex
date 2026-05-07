@@ -37,6 +37,7 @@ test/
 - kind applications that still introduce vertices with `node`: `node concrete = pass(input);`
 - form applications that bind graph values with `let` / `export let`, or as nested form-local
   bindings: `let concrete = pair();`
+- bounded node generation with `make(N, K)` in bound graph lets
 - pure node output equations: `node name <- input: Contract ; -> output: Contract = input.score ;`
 - configured executor values: `let analyst = @llm.analyst { temperature = 0.2 ; } ;`
 - CorePure helper bindings: `export let acceptedItem = x: x.score >= 0.7 ;`
@@ -46,8 +47,9 @@ test/
 **Graph expressions**
 
 - connect: `a => b => c`
+- record↔ports adapter: `(a <> b) * sink`
 - overlay: `a <> b`
-- grouping is required when connect and overlay are mixed: `(a <> b) => c`
+- overlay binds tighter than connect and star: `a => b <> c` parses as `a => (b <> c)`
 - endpoints: node and composed graph expressions
 
 **Values**
@@ -107,7 +109,7 @@ parser and compiler:
 - **Semantic checks are out of scope.** Tree-sitter accepts syntactically valid records, lists,
   configured executors, executor calls, and graph expressions even when the compiler would reject
   unknown contracts, unknown executors, bad port contracts, invalid runtime config, `@pure`, or
-  unparenthesized mixed topology operators.
+  topology expressions that violate linear endpoint rules.
 
 Regression coverage lives in `test/corpus/v1.txt` and `test/parse-fixtures.sh`.
 

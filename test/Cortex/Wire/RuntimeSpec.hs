@@ -129,6 +129,7 @@ scoreRegistry =
         { wireContractSpecId = "Score"
         , wireContractSpecPayloadKind = WirePayloadJson
         , wireContractSpecDescription = "Score payload."
+        , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
         , wireContractSpecExamples = []
         }
@@ -136,6 +137,7 @@ scoreRegistry =
         { wireContractSpecId = "Other"
         , wireContractSpecPayloadKind = WirePayloadJson
         , wireContractSpecDescription = "Other payload."
+        , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
         , wireContractSpecExamples = []
         }
@@ -148,6 +150,7 @@ textRegistry =
         { wireContractSpecId = "Message"
         , wireContractSpecPayloadKind = WirePayloadText
         , wireContractSpecDescription = "Text payload."
+        , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
         , wireContractSpecExamples = []
         }

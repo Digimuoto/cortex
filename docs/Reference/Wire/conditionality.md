@@ -451,10 +451,9 @@ validate_plan select(
 )
 ```
 
-Parenthesize the overlay because the grammar rejects unparenthesized mixed `<>` / `=>` expressions.
-
-because the shared continuation should not be duplicated inside the branch alternatives unless it
-genuinely differs by branch.
+This keeps the shared continuation outside the branch-specific arms; it should not be duplicated
+inside branch alternatives unless it genuinely differs by branch. The expression relies on Wire's
+topology precedence: `<>` binds tighter than `=>`.
 
 Keeping shared continuation outside `select(...)`:
 

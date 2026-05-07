@@ -55,23 +55,23 @@ let analyst_beneficiaries_exec = @review.analyst {
 # ---- nodes ----
 
 node planner
-  -> plan: PlannerOutput | planner_error: ExecutorError;
+  -> mechanism_plan: PlannerOutput | timing_plan: PlannerOutput | beneficiaries_plan: PlannerOutput | planner_error: ExecutorError;
   = @review.planner ({});
 
 node gatherer_mechanism
-  <- plan: PlannerOutput;
+  <- mechanism_plan: PlannerOutput;
   -> mechanism: EvidenceBundle | gatherer_mechanism_error: ExecutorError;
-  = gatherer_mechanism_exec (plan);
+  = gatherer_mechanism_exec (mechanism_plan);
 
 node gatherer_timing
-  <- plan: PlannerOutput;
+  <- timing_plan: PlannerOutput;
   -> timing: EvidenceBundle | gatherer_timing_error: ExecutorError;
-  = gatherer_timing_exec (plan);
+  = gatherer_timing_exec (timing_plan);
 
 node gatherer_beneficiaries
-  <- plan: PlannerOutput;
+  <- beneficiaries_plan: PlannerOutput;
   -> beneficiaries: EvidenceBundle | gatherer_beneficiaries_error: ExecutorError;
-  = gatherer_beneficiaries_exec (plan);
+  = gatherer_beneficiaries_exec (beneficiaries_plan);
 
 node analyst_mechanism
   <- mechanism: EvidenceBundle;
@@ -171,7 +171,5 @@ let thesis =
     => review
     => rewriter;
 
-(thesis
-  => report)
-<> (thesis
-  => error_sink)
+thesis
+  => (report <> error_sink)

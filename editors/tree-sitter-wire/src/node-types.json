@@ -1876,6 +1876,10 @@
           {
             "type": "form_application",
             "named": true
+          },
+          {
+            "type": "make_application",
+            "named": true
           }
         ]
       }
@@ -2204,6 +2208,10 @@
           {
             "type": "form_application",
             "named": true
+          },
+          {
+            "type": "make_application",
+            "named": true
           }
         ]
       },
@@ -2232,6 +2240,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "make_application",
+    "named": true,
+    "fields": {
+      "count": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "number",
+            "named": true
+          }
+        ]
+      },
+      "kind": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -2755,9 +2789,21 @@
     "named": true,
     "fields": {
       "left": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
+          {
+            "type": "*",
+            "named": false
+          },
+          {
+            "type": "<>",
+            "named": false
+          },
+          {
+            "type": "=>",
+            "named": false
+          },
           {
             "type": "boolean",
             "named": true
@@ -2807,19 +2853,19 @@
             "named": true
           },
           {
-            "type": "topology_expression",
-            "named": true
-          },
-          {
             "type": "unit",
             "named": true
           }
         ]
       },
       "op": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
+          {
+            "type": "*",
+            "named": false
+          },
           {
             "type": "<>",
             "named": false
@@ -2831,9 +2877,13 @@
         ]
       },
       "right": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
+          {
+            "type": "<>",
+            "named": false
+          },
           {
             "type": "boolean",
             "named": true
@@ -3229,6 +3279,10 @@
     "type": "line_comment",
     "named": true,
     "extra": true
+  },
+  {
+    "type": "make",
+    "named": false
   },
   {
     "type": "node",

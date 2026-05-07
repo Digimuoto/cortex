@@ -51,6 +51,7 @@ kind run_command(spec: PortLabel, result: PortLabel) =
 kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
   <- spec: CommandSpec;
   <- previous: CommandResult;
+  -> previous: CommandResult = previous;
   -> ready: CommandSpec = spec;
 
 # Hardware circuit graph forms for the eraser sweep.
@@ -116,21 +117,17 @@ form marked_circuit(phase_angle: Value, marker_readout: Graph) = {
 
   ibm_runtime_config
     => (
-      (
-        prepare_screen
-          => split_path
-          => mark_cz
-          => recombine_screen
-      )
-      <>
-      (
-        prepare_marker
-          => mark_marker_pre
-          => mark_cz
-          => mark_marker_post
-          => marker_readout
-      )
-  );
+      (prepare_screen
+        => split_path)
+      <> (prepare_marker
+        => mark_marker_pre)
+    )
+    => mark_cz
+    => (
+      recombine_screen
+      <> (mark_marker_post
+        => marker_readout)
+    );
 };
 
 form which_path_circuit(phase_angle: Value) = {
@@ -241,7 +238,8 @@ node summarize_experiment
   <- eraser0: CommandResult;
   <- eraser14: CommandResult;
   <- eraser12: CommandResult;
-  -> summary: ExperimentReport = summary;
+  -> print_summary: ExperimentReport = summary;
+  -> write_summary: ExperimentReport = summary;
   where let
     runs = [open0, open14, open12, which0, which14, which12, eraser0, eraser14, eraser12];
     failures = runs |> filter (run: !run.ok);
@@ -479,31 +477,12 @@ node summarize_experiment
   { inherit summary; };
 
 node print_report
-  <- summary: ExperimentReport;
-  = @stdout { newline = true; } (summary);
+  <- print_summary: ExperimentReport;
+  = @stdout { newline = true; } (print_summary);
 
 node write_report
-  <- summary: ExperimentReport;
-  = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (summary);
-
-let command_nodes =
-  run_open_0
-  <> gate_open_14
-  <> run_open_14
-  <> gate_open_12
-  <> run_open_12
-  <> gate_which_0
-  <> run_which_0
-  <> gate_which_14
-  <> run_which_14
-  <> gate_which_12
-  <> run_which_12
-  <> gate_eraser_0
-  <> run_eraser_0
-  <> gate_eraser_14
-  <> run_eraser_14
-  <> gate_eraser_12
-  <> run_eraser_12;
+  <- write_summary: ExperimentReport;
+  = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (write_summary);
 
 let command_sequence =
   run_open_0
@@ -524,16 +503,8 @@ let command_sequence =
     => gate_eraser_12
     => run_eraser_12;
 
-(
-  start_experiment
-    => plan_experiment
-    => command_nodes
-)
-<>
-command_sequence
-<>
-(
-  command_nodes
-    => summarize_experiment
-    => (print_report <> write_report)
-)
+start_experiment
+  => plan_experiment
+  => command_sequence
+  => summarize_experiment
+  => (print_report <> write_report)

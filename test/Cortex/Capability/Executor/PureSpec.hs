@@ -299,6 +299,7 @@ contractSpec payloadKind =
     { wireContractSpecId = "Float"
     , wireContractSpecPayloadKind = payloadKind
     , wireContractSpecDescription = "Float"
+    , wireContractSpecRecordFields = Nothing
     , wireContractSpecSchema = Nothing
     , wireContractSpecExamples = []
     }

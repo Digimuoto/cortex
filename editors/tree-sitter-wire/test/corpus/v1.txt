@@ -288,6 +288,69 @@ run
       (identifier))))
 
 ==================
+make and star topology
+==================
+
+kind sample(label: PortLabel) =
+  -> label: Sample = @review.sample ({});
+
+let workers = make(2, sample);
+
+node sink
+  <- pair: WorkerPair;
+  -> done: Done = @review.sink (pair);
+
+workers * sink
+
+---
+
+(source_file
+  (kind_decl
+    name: (identifier)
+    params: (kind_param
+      name: (identifier)
+      class: (kind_param_class))
+    body: (executor_single_output_body
+      output: (output_variant
+        label: (identifier)
+        contract: (contract_name
+          (contract)))
+      call: (inline_executor_call
+        name: (qualified_ident
+          (identifier)
+          (identifier))
+        input: (core_pure_expr
+          (core_pure_record)))))
+  (let_binding
+    name: (identifier)
+    value: (make_application
+      count: (number)
+      kind: (identifier)))
+  (node_decl
+    name: (identifier)
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_name
+        (contract)))
+    body: (executor_single_output_body
+      output: (output_variant
+        label: (identifier)
+        contract: (contract_name
+          (contract)))
+      call: (inline_executor_call
+        name: (qualified_ident
+          (identifier)
+          (identifier))
+        input: (core_pure_expr
+          (core_pure_ident)))))
+  file_return: (expression
+    (topology_expression
+      left: (ident_ref
+        (identifier))
+      right: (ident_ref
+        (identifier)))))
+
+==================
 pure output equations
 ==================
 

@@ -55,7 +55,7 @@ Each layer owns a specific set of terms. This page groups them by layer.
 | Term               | Definition                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | **`<>` overlay**   | Set union of nodes and edges across two wires. The primitive of the algebra.                                                          |
-| **`=>` connect**   | Port-key-matched edge addition between boundary ports of two wires. Deterministic cross-product with filter.                          |
+| **`=>` connect**   | Linear boundary contraction: each compatible output/input endpoint pair is consumed at most once; no implicit copy or aggregation.    |
 | **Mokhov algebra** | The algebraic basis for Wire's graph expressions: `Empty \| Vertex \| Overlay \| Connect` per Mokhov's _Algebraic Graphs with Class_. |
 
 ### Value operators
