@@ -250,13 +250,15 @@ Mechanized results now include:
   `ElaborationIR.AcceptedRecordFieldContractsClosed`, `ElaborationIR.KindParamDecl`,
   `ElaborationIR.KindParamClass`, `ElaborationIR.RawKindDecl.LocallyAdmissible`,
   `ElaborationIR.RawKindDecl.toAccepted`, `ElaborationIR.RawModule.LocallyAdmissible`,
-  `ElaborationIR.GraphExpr.RawRefsClosed`, `ElaborationIR.GraphExpr.AcceptedRefsClosed`,
-  `ElaborationIR.GraphBinding.LocalValid`, `ElaborationIR.RawModule.acceptedContracts`,
-  `ElaborationIR.RawModule.acceptedKinds`, `ElaborationIR.RawModule.acceptedNodes`,
-  `ElaborationIR.RawModule.rawRefsClosed_toAccepted`, `ElaborationIR.RawModule.toAccepted`,
-  `ElaborationIR.PortLabelsUnique`, `ElaborationIR.AcceptedNodeDecl.toLinearPortObject`, and
-  `ElaborationIR.cBuildGraphShape`: the first Lean-owned Wire elaboration IR can represent raw
-  post-source-include syntax separately from accepted declarations, including empty graphs,
+  `ElaborationIR.GraphExpr.BindingRefIn`, `ElaborationIR.GraphExpr.RawRefsClosed`,
+  `ElaborationIR.GraphExpr.AcceptedRefsClosed`, `ElaborationIR.GraphBinding.LocalValid`,
+  `ElaborationIR.GraphBinding.BindingRefEdge`, `ElaborationIR.GraphBinding.BindingRefAcyclic`,
+  `ElaborationIR.RawModule.acceptedContracts`, `ElaborationIR.RawModule.acceptedKinds`,
+  `ElaborationIR.RawModule.acceptedNodes`, `ElaborationIR.RawModule.rawRefsClosed_toAccepted`,
+  `ElaborationIR.RawModule.toAccepted`, `ElaborationIR.PortLabelsUnique`,
+  `ElaborationIR.AcceptedNodeDecl.toLinearPortObject`, and
+  `ElaborationIR.Examples.cBuildGraphShape`: the first Lean-owned Wire elaboration IR can represent
+  raw post-source-include syntax separately from accepted declarations, including empty graphs,
   `select(...)`, shape-level `makeEach`, and `*`, while accepted records, nodes, and kinds carry
   local non-empty-name, valid-field/port, per-direction label-uniqueness, and kind-parameter
   witnesses. Accepted modules also carry contract/kind/node/graph-binding name uniqueness, graph

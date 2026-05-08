@@ -28,12 +28,16 @@ import Cortex.Wire.Select
 import Cortex.Wire.BoundaryResource
 import Cortex.Wire.NodeBoundary
 import Cortex.Wire.PortLinearity
+import Cortex.Wire.ActualizedBridge
 import Cortex.Wire.ElaborationIR
+import Cortex.Wire.GraphElaboration
 import Cortex.Wire.Make
 import Cortex.Wire.PhantomAdapter
+import Cortex.Wire.GeneratedForms
 import Cortex.Wire.FrontierReclaim
 import Cortex.Wire.PulseSafety
 import Cortex.Wire.SelectRecovery
+import Cortex.Wire.SelectAdmission
 import Cortex.Wire.RunTrace
 
 /-!

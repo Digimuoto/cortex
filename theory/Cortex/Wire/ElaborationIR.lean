@@ -165,6 +165,107 @@ instance validDecidable (executor : ExecutorRef) : Decidable executor.Valid :=
 
 end ExecutorRef
 
+/-! ## Node Provenance
+
+The kernel keeps the final graph-vertex namespace flat: every admitted vertex
+is identified by a single `NodeId` that authored and generated nodes share.
+`NodeOrigin` records *how* a vertex entered the graph alongside its `NodeId`,
+so a future admission layer can reject rendered name collisions structurally
+without ever splitting the identity type. The current carrier is provenance
+vocabulary only: source-linearity witnesses in this slice do not consume
+`NodeOrigin`.
+
+The constructors carry exactly the source-derivation data needed to reproduce
+the rendered name deterministically:
+
+- `authored` for nodes named by source.
+- `makeIndex (binding, index)` for `make(N, K)`'s i-th child.
+- `makeEachItem (binding, label)` for `makeEach(items, K)`'s per-item child.
+- `starPhantom (binding, siteIndex)` for the phantom adapter inserted at the
+  `siteIndex`-th `*` site under `binding`. The site index disambiguates
+  multiple `*` operators inside one bound graph expression.
+- `selectCondition (binding, siteIndex, key)` for the synthetic anchor of a
+  `select(...)` arm. The site index disambiguates multiple `select(...)`
+  clauses under one binding; `key` distinguishes arms within a site.
+
+The default name renderer below pins a deterministic human-readable convention.
+It is not a freshness proof: certified generated-form admission must still carry
+a `GeneratedNamePolicy` or equivalent renderer/freshness witness that discharges
+collision-freedom for the concrete generated nodes it admits. -/
+
+/-- Provenance of a graph vertex within an admitted module. -/
+inductive NodeOrigin where
+  | authored
+  | makeIndex (binding : BindingName) (index : Nat)
+  | makeEachItem (binding : BindingName) (label : FieldLabel)
+  | starPhantom (binding : BindingName) (siteIndex : Nat)
+  | selectCondition (binding : BindingName) (siteIndex : Nat) (key : SelectArmKey)
+  deriving DecidableEq, Repr
+
+namespace NodeOrigin
+
+/-- An origin is *generated* when its rendered name comes from elaboration data
+rather than source text. Authored origins reuse the source-supplied node name. -/
+def IsGenerated : NodeOrigin → Prop
+  | .authored => False
+  | .makeIndex _ _ => True
+  | .makeEachItem _ _ => True
+  | .starPhantom _ _ => True
+  | .selectCondition _ _ _ => True
+
+instance isGeneratedDecidable (origin : NodeOrigin) : Decidable origin.IsGenerated :=
+  match origin with
+  | .authored => isFalse (fun h => h)
+  | .makeIndex _ _ => isTrue trivial
+  | .makeEachItem _ _ => isTrue trivial
+  | .starPhantom _ _ => isTrue trivial
+  | .selectCondition _ _ _ => isTrue trivial
+
+/-- Default deterministic name renderer for generated origins.
+
+`authored` returns `none` because the source supplies the name. The four
+generated constructors render to `<prefix>_<discriminator>` with prefixes
+(`__make_`, `__makeEach_`, `__star_`, `__select_`) chosen so:
+
+- generated names cannot collide *between* generated families;
+- collision with an authored name requires the author to write a `__make_…`,
+  `__makeEach_…`, `__star_…`, or `__select_…` identifier — which the source
+  grammar permits (the lexical prefix is not reserved at the parser layer)
+  and admission must therefore detect structurally rather than syntactically.
+
+Future `GeneratedNamePolicy` instances can supply alternative renderers; this
+default is for provenance display and debugging. Kernel-level generated-name
+freshness is supplied by `GeneratedNamePolicy` and the accepted module's
+uniqueness witnesses, not by an injectivity theorem for this raw `String`
+renderer. -/
+def defaultRender : NodeOrigin → Option NodeId
+  | .authored => none
+  | .makeIndex binding index =>
+      some ⟨"__make_" ++ binding.name ++ "_" ++ toString index⟩
+  | .makeEachItem binding label =>
+      some ⟨"__makeEach_" ++ binding.name ++ "_" ++ label.name⟩
+  | .starPhantom binding siteIndex =>
+      some ⟨"__star_" ++ binding.name ++ "_" ++ toString siteIndex⟩
+  | .selectCondition binding siteIndex key =>
+      some ⟨"__select_" ++ binding.name ++ "_" ++ toString siteIndex ++ "_" ++ key.name⟩
+
+/-- Authored origins do not render to a synthetic name. -/
+theorem defaultRender_authored : defaultRender .authored = none := rfl
+
+/-- Generated origins always render to some synthetic name. -/
+theorem defaultRender_generated_isSome
+    {origin : NodeOrigin}
+    (h : origin.IsGenerated) :
+    origin.defaultRender.isSome = true := by
+  cases origin with
+  | authored => exact absurd h (fun h' => h')
+  | makeIndex _ _ => rfl
+  | makeEachItem _ _ => rfl
+  | starPhantom _ _ => rfl
+  | selectCondition _ _ _ => rfl
+
+end NodeOrigin
+
 /-! ## Ports, Contracts, And Static Values -/
 
 /-- One typed port in a Wire node frontier. -/
@@ -180,6 +281,9 @@ namespace PortSignature
 /-- Locally accepted port signatures have non-empty labels and contract names. -/
 def Valid (port : PortSignature) : Prop :=
   port.label.Valid ∧ port.contract.Valid
+
+instance validDecidable (port : PortSignature) : Decidable port.Valid :=
+  inferInstanceAs (Decidable (port.label.Valid ∧ port.contract.Valid))
 
 end PortSignature
 
@@ -388,10 +492,10 @@ does not read files. By the time a value reaches this carrier, any
 `include_str`/`include_dir`-style source inclusion has already been resolved by
 the external front end.
 
-This layer intentionally does not provide decidable equality for static values.
-Downstream modules that need equality over resolved values should first supply a
-structural instance for this recursive carrier, then derive equality for the
-larger IR types built from it. -/
+A structural `DecidableEq` instance is provided below via `StaticValue.decEq`.
+Auto-derive does not handle this recursive shape because `List StaticValue`
+and `List (FieldLabel × StaticValue)` reach back into the value itself; the
+manual instance walks each constructor pair explicitly. -/
 inductive StaticValue where
   | string (value : String)
   | bool (value : Bool)
@@ -402,6 +506,99 @@ inductive StaticValue where
   projecting fields by name. -/
   | record (fields : List (FieldLabel × StaticValue))
   deriving Repr
+
+namespace StaticValue
+
+/-! Structural decidable equality for `StaticValue`.
+
+`deriving DecidableEq` does not handle this recursive shape because `List
+StaticValue` and `List (FieldLabel × StaticValue)` reach back into the value
+itself. The mutual block walks each constructor pair explicitly and recurses
+through helpers for the two list payloads. The cross-constructor branches use
+the structural `nomatch` discharge — no `Classical` choice and no proof debt. -/
+
+mutual
+
+protected def decEq : (a b : StaticValue) → Decidable (a = b)
+  | .string s, .string t =>
+      if h : s = t then .isTrue (h ▸ rfl)
+      else .isFalse (fun heq => h (StaticValue.string.inj heq))
+  | .bool x, .bool y =>
+      if h : x = y then .isTrue (h ▸ rfl)
+      else .isFalse (fun heq => h (StaticValue.bool.inj heq))
+  | .nat n, .nat m =>
+      if h : n = m then .isTrue (h ▸ rfl)
+      else .isFalse (fun heq => h (StaticValue.nat.inj heq))
+  | .list xs, .list ys =>
+      match StaticValue.decEqList xs ys with
+      | .isTrue h => .isTrue (h ▸ rfl)
+      | .isFalse h => .isFalse (fun heq => h (StaticValue.list.inj heq))
+  | .record xs, .record ys =>
+      match StaticValue.decEqFields xs ys with
+      | .isTrue h => .isTrue (h ▸ rfl)
+      | .isFalse h => .isFalse (fun heq => h (StaticValue.record.inj heq))
+  | .string _, .bool _ => .isFalse (fun heq => nomatch heq)
+  | .string _, .nat _ => .isFalse (fun heq => nomatch heq)
+  | .string _, .list _ => .isFalse (fun heq => nomatch heq)
+  | .string _, .record _ => .isFalse (fun heq => nomatch heq)
+  | .bool _, .string _ => .isFalse (fun heq => nomatch heq)
+  | .bool _, .nat _ => .isFalse (fun heq => nomatch heq)
+  | .bool _, .list _ => .isFalse (fun heq => nomatch heq)
+  | .bool _, .record _ => .isFalse (fun heq => nomatch heq)
+  | .nat _, .string _ => .isFalse (fun heq => nomatch heq)
+  | .nat _, .bool _ => .isFalse (fun heq => nomatch heq)
+  | .nat _, .list _ => .isFalse (fun heq => nomatch heq)
+  | .nat _, .record _ => .isFalse (fun heq => nomatch heq)
+  | .list _, .string _ => .isFalse (fun heq => nomatch heq)
+  | .list _, .bool _ => .isFalse (fun heq => nomatch heq)
+  | .list _, .nat _ => .isFalse (fun heq => nomatch heq)
+  | .list _, .record _ => .isFalse (fun heq => nomatch heq)
+  | .record _, .string _ => .isFalse (fun heq => nomatch heq)
+  | .record _, .bool _ => .isFalse (fun heq => nomatch heq)
+  | .record _, .nat _ => .isFalse (fun heq => nomatch heq)
+  | .record _, .list _ => .isFalse (fun heq => nomatch heq)
+
+protected def decEqList :
+    (xs ys : List StaticValue) → Decidable (xs = ys)
+  | [], [] => .isTrue rfl
+  | [], _ :: _ => .isFalse (fun heq => nomatch heq)
+  | _ :: _, [] => .isFalse (fun heq => nomatch heq)
+  | x :: xs, y :: ys =>
+      match StaticValue.decEq x y with
+      | .isFalse h =>
+          .isFalse (fun heq => h (List.cons.inj heq).left)
+      | .isTrue hHead =>
+          match StaticValue.decEqList xs ys with
+          | .isFalse h =>
+              .isFalse (fun heq => h (List.cons.inj heq).right)
+          | .isTrue hTail => .isTrue (hHead ▸ hTail ▸ rfl)
+
+protected def decEqFields :
+    (xs ys : List (FieldLabel × StaticValue)) → Decidable (xs = ys)
+  | [], [] => .isTrue rfl
+  | [], _ :: _ => .isFalse (fun heq => nomatch heq)
+  | _ :: _, [] => .isFalse (fun heq => nomatch heq)
+  | (xLabel, xVal) :: xs, (yLabel, yVal) :: ys =>
+      if hLabel : xLabel = yLabel then
+        match StaticValue.decEq xVal yVal with
+        | .isFalse h =>
+            .isFalse (fun heq =>
+              h (Prod.mk.inj (List.cons.inj heq).left).right)
+        | .isTrue hVal =>
+            match StaticValue.decEqFields xs ys with
+            | .isFalse h =>
+                .isFalse (fun heq => h (List.cons.inj heq).right)
+            | .isTrue hTail =>
+                .isTrue (by rw [hLabel, hVal, hTail])
+      else
+        .isFalse (fun heq =>
+          hLabel (Prod.mk.inj (List.cons.inj heq).left).left)
+
+end
+
+instance : DecidableEq StaticValue := StaticValue.decEq
+
+end StaticValue
 
 /-! ## Node And Kind Declarations -/
 
@@ -465,6 +662,18 @@ def Valid (param : KindParamDecl) : Prop :=
 instance validDecidable (param : KindParamDecl) : Decidable param.Valid :=
   inferInstanceAs (Decidable param.name.Valid)
 
+/-- A `PortLabel` formal parameter as the frontier field label it denotes. -/
+def asFieldLabel (param : KindParamDecl) : FieldLabel :=
+  ⟨param.name.name⟩
+
+/-- Translating a kind `PortLabel` parameter into a field label preserves the
+local non-empty-name invariant. -/
+theorem asFieldLabel_valid
+    (param : KindParamDecl)
+    (hValid : param.Valid) :
+    param.asFieldLabel.Valid :=
+  hValid
+
 end KindParamDecl
 
 /-- Every kind parameter in a source-order list is locally valid. -/
@@ -475,38 +684,203 @@ def KindParamListValid (params : List KindParamDecl) : Prop :=
 def KindParamNamesUnique (params : List KindParamDecl) : Prop :=
   (params.map KindParamDecl.name).Nodup
 
+/-! ### Output Shapes
+
+The Wire output frontier admits two authored shapes: an ordinary single output
+port and an exclusive output sum group, written `select { armA: A; armB: B }`
+in source. Both lower to the same flattened port frontier consumed by
+`LinearPortGraph`, but downstream admission for `select(...)` graph expressions
+needs to discriminate them. The `OutputShape` carrier preserves the authored
+distinction at this IR layer; the flattened projection `outputPorts` recovers
+the existing `Finset PortSignature` view used by the source-linearity lift. -/
+
+/-- One arm of an exclusive output sum group declared on a node or kind. -/
+structure OutputArmDecl where
+  /-- Source-stable selector arm key. -/
+  armKey : SelectArmKey
+  /-- Port produced when this arm fires. -/
+  port : PortSignature
+  deriving DecidableEq, Repr
+
+namespace OutputArmDecl
+
+/-- Locally accepted output arms have non-empty arm keys and a valid port. -/
+def Valid (arm : OutputArmDecl) : Prop :=
+  arm.armKey.Valid ∧ arm.port.Valid
+
+instance validDecidable (arm : OutputArmDecl) : Decidable arm.Valid :=
+  inferInstanceAs (Decidable (arm.armKey.Valid ∧ arm.port.Valid))
+
+end OutputArmDecl
+
+/-- Authored output frontier shape on a node or kind output declaration.
+
+`single` is the common one-port output. `sumGroup` is the exclusive output sum
+group authored as `-> select { armA: A; armB: B };`. The arm list is kept in
+source order so admission can surface duplicates without losing them through
+canonicalization. Source admission requires at least two arms, matching the
+executable `PortOutputSumDecl` invariant that a one-arm variant is represented
+as `single`, not as an exclusive sum. The carrier itself does not enforce this
+so raw declarations can still report malformed-group countermodels. -/
+inductive OutputShape where
+  | single (port : PortSignature)
+  | sumGroup (arms : List OutputArmDecl)
+  deriving DecidableEq, Repr
+
+namespace OutputShape
+
+/-- Flatten one authored output shape to its declared ports in source order. -/
+def ports : OutputShape → List PortSignature
+  | single port => [port]
+  | sumGroup arms => arms.map OutputArmDecl.port
+
+/-- Locally admissible authored output shape.
+
+`single` only requires its port to be valid. `sumGroup` requires at least two
+arms, valid arm keys and ports, unique arm keys, and unique port labels inside
+the group. Repeated contracts across arms are allowed because the sum group is
+exclusive over labels. -/
+inductive LocallyAdmissible : OutputShape → Prop where
+  | single {port : PortSignature} :
+      port.Valid →
+      LocallyAdmissible (OutputShape.single port)
+  | sumGroup {arms : List OutputArmDecl} :
+      2 ≤ arms.length →
+      (∀ arm, arm ∈ arms → arm.Valid) →
+      (arms.map OutputArmDecl.armKey).Nodup →
+      (arms.map (fun arm => arm.port.label)).Nodup →
+      LocallyAdmissible (OutputShape.sumGroup arms)
+
+/-- Every flattened port of a locally admissible shape has valid label and contract. -/
+theorem ports_valid_of_locallyAdmissible
+    {shape : OutputShape}
+    (hAdmissible : shape.LocallyAdmissible) :
+    PortSignatureListValid shape.ports := by
+  intro port hPort
+  match shape, hAdmissible with
+  | OutputShape.single declared, LocallyAdmissible.single hPort' =>
+      simp only [ports, List.mem_singleton] at hPort
+      subst hPort
+      exact hPort'
+  | OutputShape.sumGroup arms,
+    LocallyAdmissible.sumGroup _hAtLeastTwo hValid _hKeyNodup _hLabelNodup =>
+      simp only [ports, List.mem_map] at hPort
+      rcases hPort with ⟨arm, hArmMem, hEq⟩
+      subst hEq
+      exact (hValid arm hArmMem).right
+
+/-- Source-order flattened ports of a locally admissible shape are unique by label. -/
+theorem ports_labels_nodup_of_locallyAdmissible
+    {shape : OutputShape}
+    (hAdmissible : shape.LocallyAdmissible) :
+    PortLabelListUnique shape.ports := by
+  match shape, hAdmissible with
+  | OutputShape.single _declared, LocallyAdmissible.single _hPort =>
+      simp [PortLabelListUnique, ports]
+  | OutputShape.sumGroup arms,
+    LocallyAdmissible.sumGroup _hAtLeastTwo _hValid _hKeyNodup hLabelNodup =>
+      have hMap :
+          (OutputShape.sumGroup arms).ports.map PortSignature.label =
+            arms.map (fun arm => arm.port.label) := by
+        simp [ports, List.map_map, Function.comp]
+      unfold PortLabelListUnique
+      rw [hMap]
+      exact hLabelNodup
+
+/-- A one-arm output sum group is not locally admissible.
+
+Executable Wire parses a single output variant as `OutputShape.single`; the
+exclusive-sum carrier starts at two arms. -/
+theorem oneArmSumGroup_not_locallyAdmissible
+    (arm : OutputArmDecl) :
+    ¬ LocallyAdmissible (OutputShape.sumGroup [arm]) := by
+  intro hAdmissible
+  cases hAdmissible with
+  | sumGroup hAtLeastTwo _hValid _hKeyNodup _hLabelNodup =>
+      simp at hAtLeastTwo
+
+/-- Two-arm output sum groups remain admissible when their local witnesses hold. -/
+theorem twoArmSumGroup_locallyAdmissible
+    {left right : OutputArmDecl}
+    (hLeft : left.Valid)
+    (hRight : right.Valid)
+    (hKeys : left.armKey ≠ right.armKey)
+    (hLabels : left.port.label ≠ right.port.label) :
+    LocallyAdmissible (OutputShape.sumGroup [left, right]) := by
+  exact
+    LocallyAdmissible.sumGroup
+      (by simp)
+      (by
+        intro arm hArm
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hArm
+        rcases hArm with hArm | hArm
+        · rw [hArm]
+          exact hLeft
+        · rw [hArm]
+          exact hRight)
+      (by simp [hKeys])
+      (by simp [hLabels])
+
+end OutputShape
+
+/-- Source-order flattened ports of a list of authored output shapes. -/
+def OutputShapeListPorts (shapes : List OutputShape) : List PortSignature :=
+  shapes.flatMap OutputShape.ports
+
+/-- Every authored output shape in a list is locally admissible. -/
+def OutputShapeListAdmissible (shapes : List OutputShape) : Prop :=
+  ∀ shape, shape ∈ shapes → shape.LocallyAdmissible
+
+/-- A list of locally admissible output shapes flattens to valid port signatures. -/
+theorem outputShapeListPorts_valid
+    {shapes : List OutputShape}
+    (hAdmissible : OutputShapeListAdmissible shapes) :
+    PortSignatureListValid (OutputShapeListPorts shapes) := by
+  intro port hPort
+  rcases List.mem_flatMap.mp hPort with ⟨shape, hShape, hPortShape⟩
+  exact OutputShape.ports_valid_of_locallyAdmissible (hAdmissible shape hShape) port hPortShape
+
 /-- Raw node declaration after parsing/source inclusion but before admission.
 
 Lists preserve source multiplicity so future admission can report duplicate
-ports instead of losing them through `Finset` normalization. -/
+ports instead of losing them through `Finset` normalization. The `outputs`
+field carries authored output shapes so an exclusive output sum group remains
+distinguishable from independent single outputs after parsing. -/
 structure RawNodeDecl where
   /-- Declared node name. -/
   node : NodeId
   /-- Input frontier in source order. -/
   inputs : List PortSignature
-  /-- Output frontier in source order. -/
-  outputs : List PortSignature
+  /-- Output frontier in source order, preserving authored sum-group shape. -/
+  outputs : List OutputShape
   /-- Opaque body/effect boundary. -/
   body : NodeBodyBoundary
   deriving DecidableEq, Repr
 
 namespace RawNodeDecl
 
+/-- Source-order flattened output ports of a raw node declaration. -/
+def outputPortsList (decl : RawNodeDecl) : List PortSignature :=
+  OutputShapeListPorts decl.outputs
+
 /-- Local admission witness for a raw node declaration.
 
 This is still not graph admission: it covers only local name validity, port
-validity, port-label uniqueness, and executor-reference spelling. -/
+validity, port-label uniqueness, output-shape admission, and executor-reference
+spelling. -/
 structure LocallyAdmissible (decl : RawNodeDecl) : Prop where
   /-- The node identifier is non-empty at the local carrier layer. -/
   nodeValid : decl.node.Valid
   /-- Every input port has locally valid label and contract names. -/
   inputPortsValid : PortSignatureListValid decl.inputs
-  /-- Every output port has locally valid label and contract names. -/
-  outputPortsValid : PortSignatureListValid decl.outputs
+  /-- Every authored output shape is locally admissible. -/
+  outputShapesAdmissible : OutputShapeListAdmissible decl.outputs
+  /-- Every flattened output port has locally valid label and contract names. -/
+  outputPortsValid : PortSignatureListValid decl.outputPortsList
   /-- Source-order inputs are unique by label. -/
   inputLabelsUnique : PortLabelListUnique decl.inputs
-  /-- Source-order outputs are unique by label. -/
-  outputLabelsUnique : PortLabelListUnique decl.outputs
+  /-- Source-order flattened outputs are unique by label across the whole frontier. -/
+  outputLabelsUnique : PortLabelListUnique decl.outputPortsList
   /-- The body boundary is locally valid. -/
   bodyLocalValid : decl.body.LocalValid
 
@@ -514,9 +888,11 @@ end RawNodeDecl
 
 /-- Accepted node declaration after local port-shape admission.
 
-Accepted nodes use finite sets for canonical frontier membership and carry
-explicit label-uniqueness proofs so equal labels with different contracts cannot
-enter the accepted layer. -/
+Accepted nodes carry the authored output-shape list so an exclusive output sum
+group remains discriminable from independent single outputs. The flattened
+output frontier `outputPorts` projects to the same `Finset PortSignature` view
+consumed by the source-linearity lift, with explicit label-uniqueness proofs so
+equal labels with different contracts cannot enter the accepted layer. -/
 structure AcceptedNodeDecl where
   /-- Accepted node name. -/
   node : NodeId
@@ -524,16 +900,16 @@ structure AcceptedNodeDecl where
   nodeValid : node.Valid
   /-- Accepted input frontier. -/
   inputs : Finset PortSignature
-  /-- Accepted output frontier. -/
-  outputs : Finset PortSignature
+  /-- Accepted authored output shapes in source order. -/
+  outputs : List OutputShape
   /-- Accepted inputs have locally valid labels and contracts. -/
   inputPortsValid : PortSignaturesValid inputs
-  /-- Accepted outputs have locally valid labels and contracts. -/
-  outputPortsValid : PortSignaturesValid outputs
+  /-- Accepted authored output shapes are locally admissible. -/
+  outputShapesAdmissible : OutputShapeListAdmissible outputs
+  /-- Source-order flattened outputs are unique by label across the whole frontier. -/
+  outputPortsListLabelsUnique : PortLabelListUnique (OutputShapeListPorts outputs)
   /-- Accepted inputs are unique by source label. -/
   inputLabelsUnique : PortLabelsUnique inputs
-  /-- Accepted outputs are unique by source label. -/
-  outputLabelsUnique : PortLabelsUnique outputs
   /-- Opaque body/effect boundary. -/
   body : NodeBodyBoundary
   /-- Accepted body boundaries have locally valid executor references. -/
@@ -546,11 +922,45 @@ namespace AcceptedNodeDecl
 def nodeSet (decl : AcceptedNodeDecl) : Finset NodeId :=
   {decl.node}
 
+/-- Source-order flattened output ports of an accepted node declaration. -/
+def outputPortsList (decl : AcceptedNodeDecl) : List PortSignature :=
+  OutputShapeListPorts decl.outputs
+
+/-- Flattened accepted output frontier as a finite set of port signatures. -/
+def outputPorts (decl : AcceptedNodeDecl) : Finset PortSignature :=
+  decl.outputPortsList.toFinset
+
+/-- Flattening an authored output-shape list to a finset agrees with the named projection. -/
+theorem outputPorts_eq_toFinset (decl : AcceptedNodeDecl) :
+    decl.outputPorts = (OutputShapeListPorts decl.outputs).toFinset := rfl
+
+/-- Accepted flattened outputs have locally valid labels and contracts. -/
+theorem outputPorts_valid (decl : AcceptedNodeDecl) :
+    PortSignaturesValid decl.outputPorts :=
+  portSignatureListValid_toFinset
+    (outputShapeListPorts_valid decl.outputShapesAdmissible)
+
+/-- Accepted flattened outputs are unique by source label. -/
+theorem outputPorts_labelsUnique (decl : AcceptedNodeDecl) :
+    PortLabelsUnique decl.outputPorts :=
+  portLabelListUnique_toFinset decl.outputPortsListLabelsUnique
+
+/-- Gluing theorem: the authored output-shape list flattens definitionally to the projected
+port list. Slice 4 select admission consumes this equation when discriminating between
+`single` and `sumGroup` shapes inside the same flattened frontier. -/
+theorem outputPortsList_eq_flatMap (decl : AcceptedNodeDecl) :
+    decl.outputPortsList = decl.outputs.flatMap OutputShape.ports := rfl
+
+/-- Gluing theorem: the flattened output frontier of an accepted node equals the finset
+canonicalization of the authored output-shape list. -/
+theorem outputPorts_eq_flatMap_toFinset (decl : AcceptedNodeDecl) :
+    decl.outputPorts = (decl.outputs.flatMap OutputShape.ports).toFinset := rfl
+
 /-- Output source-port instances exposed by an accepted node. -/
 def outputInstances
     (decl : AcceptedNodeDecl) :
     Finset (SourcePortInstance NodeId OutputPortSignature) :=
-  decl.outputs.image (fun port => { node := decl.node, port := { signature := port } })
+  decl.outputPorts.image (fun port => { node := decl.node, port := { signature := port } })
 
 /-- Input source-port instances exposed by an accepted node. -/
 def inputInstances
@@ -615,13 +1025,19 @@ def toAccepted
   { node := decl.node
     nodeValid := hAdmissible.nodeValid
     inputs := decl.inputs.toFinset
-    outputs := decl.outputs.toFinset
+    outputs := decl.outputs
     inputPortsValid := portSignatureListValid_toFinset hAdmissible.inputPortsValid
-    outputPortsValid := portSignatureListValid_toFinset hAdmissible.outputPortsValid
+    outputShapesAdmissible := hAdmissible.outputShapesAdmissible
+    outputPortsListLabelsUnique := hAdmissible.outputLabelsUnique
     inputLabelsUnique := portLabelListUnique_toFinset hAdmissible.inputLabelsUnique
-    outputLabelsUnique := portLabelListUnique_toFinset hAdmissible.outputLabelsUnique
     body := decl.body
     bodyLocalValid := hAdmissible.bodyLocalValid }
+
+/-- Raw-to-accepted projection preserves the authored output-shape list. -/
+theorem toAccepted_outputs
+    (decl : RawNodeDecl)
+    (hAdmissible : decl.LocallyAdmissible) :
+    (decl.toAccepted hAdmissible).outputs = decl.outputs := rfl
 
 /-- Locally admitted raw nodes have an open source-linear lift. -/
 theorem toAccepted_toLinearPortObject_portLinear
@@ -632,7 +1048,11 @@ theorem toAccepted_toLinearPortObject_portLinear
 
 end RawNodeDecl
 
-/-- Raw kind declaration. Its body remains a source-template object, not a live graph. -/
+/-- Raw kind declaration. Its body remains a source-template object, not a live graph.
+
+Like `RawNodeDecl.outputs`, the template `outputs` field carries authored output
+shapes so an exclusive output sum group on a kind template stays distinguishable
+from independent single outputs. -/
 structure RawKindDecl where
   /-- Kind name. -/
   kind : KindName
@@ -640,13 +1060,17 @@ structure RawKindDecl where
   params : List KindParamDecl
   /-- Template input frontier. -/
   inputs : List PortSignature
-  /-- Template output frontier. -/
-  outputs : List PortSignature
+  /-- Template output frontier in source order, preserving authored sum-group shape. -/
+  outputs : List OutputShape
   /-- Opaque body/effect boundary for nodes produced from this kind. -/
   body : NodeBodyBoundary
   deriving DecidableEq, Repr
 
 namespace RawKindDecl
+
+/-- Source-order flattened output ports of a raw kind template declaration. -/
+def outputPortsList (decl : RawKindDecl) : List PortSignature :=
+  OutputShapeListPorts decl.outputs
 
 /-- Local admission witness for a raw kind declaration. -/
 structure LocallyAdmissible (decl : RawKindDecl) : Prop where
@@ -658,12 +1082,14 @@ structure LocallyAdmissible (decl : RawKindDecl) : Prop where
   paramNamesUnique : KindParamNamesUnique decl.params
   /-- Every template input port has locally valid label and contract names. -/
   inputPortsValid : PortSignatureListValid decl.inputs
-  /-- Every template output port has locally valid label and contract names. -/
-  outputPortsValid : PortSignatureListValid decl.outputs
+  /-- Every authored template output shape is locally admissible. -/
+  outputShapesAdmissible : OutputShapeListAdmissible decl.outputs
+  /-- Every flattened template output port has locally valid label and contract names. -/
+  outputPortsValid : PortSignatureListValid decl.outputPortsList
   /-- Source-order template inputs are unique by label. -/
   inputLabelsUnique : PortLabelListUnique decl.inputs
-  /-- Source-order template outputs are unique by label. -/
-  outputLabelsUnique : PortLabelListUnique decl.outputs
+  /-- Source-order flattened template outputs are unique by label. -/
+  outputLabelsUnique : PortLabelListUnique decl.outputPortsList
   /-- The kind body boundary is locally valid. -/
   bodyLocalValid : decl.body.LocalValid
 
@@ -671,8 +1097,10 @@ end RawKindDecl
 
 /-- Accepted kind declaration after local template admission.
 
-The template frontier mirrors accepted node frontiers: membership is canonicalized
-with finite sets, and label uniqueness remains an explicit accepted-layer
+The template frontier mirrors accepted node frontiers: input membership is
+canonicalized with finite sets, the authored output-shape list is preserved so
+exclusive sum groups remain discriminable, and label uniqueness over the
+flattened template output frontier remains an explicit accepted-layer
 obligation. -/
 structure AcceptedKindDecl where
   /-- Kind name. -/
@@ -687,21 +1115,58 @@ structure AcceptedKindDecl where
   paramNamesUnique : KindParamNamesUnique params
   /-- Accepted template input frontier. -/
   inputs : Finset PortSignature
-  /-- Accepted template output frontier. -/
-  outputs : Finset PortSignature
+  /-- Accepted authored template output shapes in source order. -/
+  outputs : List OutputShape
   /-- Accepted template inputs have locally valid labels and contracts. -/
   inputPortsValid : PortSignaturesValid inputs
-  /-- Accepted template outputs have locally valid labels and contracts. -/
-  outputPortsValid : PortSignaturesValid outputs
+  /-- Accepted authored template output shapes are locally admissible. -/
+  outputShapesAdmissible : OutputShapeListAdmissible outputs
+  /-- Source-order flattened template outputs are unique by label across the whole frontier. -/
+  outputPortsListLabelsUnique : PortLabelListUnique (OutputShapeListPorts outputs)
   /-- Accepted template inputs are unique by source label. -/
   inputLabelsUnique : PortLabelsUnique inputs
-  /-- Accepted template outputs are unique by source label. -/
-  outputLabelsUnique : PortLabelsUnique outputs
   /-- Opaque body/effect boundary for nodes produced from this kind. -/
   body : NodeBodyBoundary
   /-- Accepted kind body boundaries have locally valid executor references. -/
   bodyLocalValid : body.LocalValid
   deriving DecidableEq
+
+namespace AcceptedKindDecl
+
+/-- Source-order flattened output ports of an accepted kind template. -/
+def outputPortsList (decl : AcceptedKindDecl) : List PortSignature :=
+  OutputShapeListPorts decl.outputs
+
+/-- Flattened accepted template output frontier as a finite set of port signatures. -/
+def outputPorts (decl : AcceptedKindDecl) : Finset PortSignature :=
+  decl.outputPortsList.toFinset
+
+/-- Flattening an authored kind output-shape list to a finset agrees with the named projection. -/
+theorem outputPorts_eq_toFinset (decl : AcceptedKindDecl) :
+    decl.outputPorts = (OutputShapeListPorts decl.outputs).toFinset := rfl
+
+/-- Accepted flattened template outputs have locally valid labels and contracts. -/
+theorem outputPorts_valid (decl : AcceptedKindDecl) :
+    PortSignaturesValid decl.outputPorts :=
+  portSignatureListValid_toFinset
+    (outputShapeListPorts_valid decl.outputShapesAdmissible)
+
+/-- Accepted flattened template outputs are unique by source label. -/
+theorem outputPorts_labelsUnique (decl : AcceptedKindDecl) :
+    PortLabelsUnique decl.outputPorts :=
+  portLabelListUnique_toFinset decl.outputPortsListLabelsUnique
+
+/-- Gluing theorem for kind templates: the authored output-shape list flattens definitionally
+to the projected port list. Slice 2 graph-expression admission consumes this equation. -/
+theorem outputPortsList_eq_flatMap (decl : AcceptedKindDecl) :
+    decl.outputPortsList = decl.outputs.flatMap OutputShape.ports := rfl
+
+/-- Gluing theorem for kind templates: the flattened output frontier equals the finset
+canonicalization of the authored output-shape list. -/
+theorem outputPorts_eq_flatMap_toFinset (decl : AcceptedKindDecl) :
+    decl.outputPorts = (decl.outputs.flatMap OutputShape.ports).toFinset := rfl
+
+end AcceptedKindDecl
 
 namespace RawKindDecl
 
@@ -716,13 +1181,19 @@ def toAccepted
     paramsValid := hAdmissible.paramsValid
     paramNamesUnique := hAdmissible.paramNamesUnique
     inputs := decl.inputs.toFinset
-    outputs := decl.outputs.toFinset
+    outputs := decl.outputs
     inputPortsValid := portSignatureListValid_toFinset hAdmissible.inputPortsValid
-    outputPortsValid := portSignatureListValid_toFinset hAdmissible.outputPortsValid
+    outputShapesAdmissible := hAdmissible.outputShapesAdmissible
+    outputPortsListLabelsUnique := hAdmissible.outputLabelsUnique
     inputLabelsUnique := portLabelListUnique_toFinset hAdmissible.inputLabelsUnique
-    outputLabelsUnique := portLabelListUnique_toFinset hAdmissible.outputLabelsUnique
     body := decl.body
     bodyLocalValid := hAdmissible.bodyLocalValid }
+
+/-- Raw-to-accepted projection preserves the authored kind template output-shape list. -/
+theorem toAccepted_outputs
+    (decl : RawKindDecl)
+    (hAdmissible : decl.LocallyAdmissible) :
+    (decl.toAccepted hAdmissible).outputs = decl.outputs := rfl
 
 end RawKindDecl
 
@@ -733,9 +1204,9 @@ end RawKindDecl
 This is still syntax: `connect`, `star`, `make`, and `makeEach` are not accepted
 operations until future admission constructs the corresponding certificates.
 `empty` is the algebra identity for synthesized graph shapes such as zero-count
-expansion, not a user-authored Wire token. Because this expression language can
-contain `StaticValue`, it stays on the printable-only side of the equality
-boundary for now. -/
+expansion, not a user-authored Wire token. `StaticValue` now carries structural
+`DecidableEq`, but `GraphExpr`'s own auto-derive still fails through
+`List (SelectArmKey × GraphExpr)`; a manual mutual instance is a follow-up. -/
 inductive GraphExpr where
   | empty
   | node (node : NodeId)
@@ -747,6 +1218,81 @@ inductive GraphExpr where
   | make (binding : BindingName) (count : Nat) (kind : KindName)
   | makeEach (binding : BindingName) (kind : KindName) (items : List StaticValue)
   deriving Repr
+
+namespace GraphExpr
+
+/-- Graph-binding reference membership for a graph expression.
+
+This deliberately tracks only `GraphExpr.binding` leaves. The `binding`
+argument of `make`/`makeEach` is the owner used to generate child node names,
+not a graph-reference edge. -/
+inductive BindingRefIn : GraphExpr → BindingName → Prop where
+  | binding {target : BindingName} :
+      BindingRefIn (GraphExpr.binding target) target
+  | overlay_left {left right : GraphExpr} {target : BindingName} :
+      BindingRefIn left target →
+      BindingRefIn (GraphExpr.overlay left right) target
+  | overlay_right {left right : GraphExpr} {target : BindingName} :
+      BindingRefIn right target →
+      BindingRefIn (GraphExpr.overlay left right) target
+  | connect_left {left right : GraphExpr} {target : BindingName} :
+      BindingRefIn left target →
+      BindingRefIn (GraphExpr.connect left right) target
+  | connect_right {left right : GraphExpr} {target : BindingName} :
+      BindingRefIn right target →
+      BindingRefIn (GraphExpr.connect left right) target
+  | star_left {left right : GraphExpr} {target : BindingName} :
+      BindingRefIn left target →
+      BindingRefIn (GraphExpr.star left right) target
+  | star_right {left right : GraphExpr} {target : BindingName} :
+      BindingRefIn right target →
+      BindingRefIn (GraphExpr.star left right) target
+  | select_base {base : GraphExpr} {arms : List (SelectArmKey × GraphExpr)}
+      {target : BindingName} :
+      BindingRefIn base target →
+      BindingRefIn (GraphExpr.select base arms) target
+  | select_arm {base : GraphExpr} {arms : List (SelectArmKey × GraphExpr)}
+      {arm : SelectArmKey × GraphExpr} {target : BindingName} :
+      arm ∈ arms →
+      BindingRefIn arm.snd target →
+      BindingRefIn (GraphExpr.select base arms) target
+
+/-- Generated graph forms inside a binding must derive their generated names
+from that binding.
+
+The parser rejects unbound inline `make`/`makeEach`; this predicate captures the
+proof-side owner check for the post-parse carrier. It rules out impossible
+states such as a graph binding `workers` whose expression contains
+`make(other, ..., K)`. -/
+inductive GeneratedFormsOwnedBy (owner : BindingName) : GraphExpr → Prop where
+  | empty :
+      GeneratedFormsOwnedBy owner GraphExpr.empty
+  | node {target : NodeId} :
+      GeneratedFormsOwnedBy owner (GraphExpr.node target)
+  | binding {target : BindingName} :
+      GeneratedFormsOwnedBy owner (GraphExpr.binding target)
+  | overlay {left right : GraphExpr} :
+      GeneratedFormsOwnedBy owner left →
+      GeneratedFormsOwnedBy owner right →
+      GeneratedFormsOwnedBy owner (GraphExpr.overlay left right)
+  | connect {left right : GraphExpr} :
+      GeneratedFormsOwnedBy owner left →
+      GeneratedFormsOwnedBy owner right →
+      GeneratedFormsOwnedBy owner (GraphExpr.connect left right)
+  | star {left right : GraphExpr} :
+      GeneratedFormsOwnedBy owner left →
+      GeneratedFormsOwnedBy owner right →
+      GeneratedFormsOwnedBy owner (GraphExpr.star left right)
+  | select {base : GraphExpr} {arms : List (SelectArmKey × GraphExpr)} :
+      GeneratedFormsOwnedBy owner base →
+      (∀ arm, arm ∈ arms → GeneratedFormsOwnedBy owner arm.snd) →
+      GeneratedFormsOwnedBy owner (GraphExpr.select base arms)
+  | make {count : Nat} {kind : KindName} :
+      GeneratedFormsOwnedBy owner (GraphExpr.make owner count kind)
+  | makeEach {kind : KindName} {items : List StaticValue} :
+      GeneratedFormsOwnedBy owner (GraphExpr.makeEach owner kind items)
+
+end GraphExpr
 
 /-- Graph binding expression before certified topology admission.
 
@@ -762,9 +1308,37 @@ structure GraphBinding where
 
 namespace GraphBinding
 
-/-- Local graph-binding validity checks only the binding name. -/
+/-- Local graph-binding validity checks the binding name and generated-form ownership. -/
 def LocalValid (binding : GraphBinding) : Prop :=
-  binding.name.Valid
+  binding.name.Valid ∧
+    binding.expr.GeneratedFormsOwnedBy binding.name
+
+/-- Directed graph-binding reference edge inside a module's graph-binding list.
+
+`BindingRefEdge graphs source target` means the binding named `source` mentions
+`binding target` somewhere in its expression. -/
+def BindingRefEdge
+    (graphs : List GraphBinding)
+    (source target : BindingName) :
+    Prop :=
+  ∃ graph,
+    graph ∈ graphs ∧
+      graph.name = source ∧
+        graph.expr.BindingRefIn target
+
+/-- Placeholder acyclicity predicate for graph-binding references.
+
+`AdmittedModuleShell` intentionally does not require this yet: the current shell
+checks local validity and reference closure, while recursive binding unfolding is
+left to a later certified graph-admission slice. Future admission of binding
+right-hand sides should require this predicate or a stronger executable
+topological-order witness. -/
+def BindingRefAcyclic (graphs : List GraphBinding) : Prop :=
+  ∀ graph,
+    graph ∈ graphs →
+      Acc
+        (fun child parent => BindingRefEdge graphs parent child)
+        graph.name
 
 end GraphBinding
 
@@ -778,7 +1352,9 @@ def ContractsClosed
     (contracts : List RecordContractDecl) :
     Prop :=
   (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map RecordContractDecl.contract) ∧
-    ∀ port, port ∈ decl.outputs → port.contract ∈ contracts.map RecordContractDecl.contract
+    ∀ port,
+      port ∈ decl.outputPortsList →
+        port.contract ∈ contracts.map RecordContractDecl.contract
 
 end RawNodeDecl
 
@@ -791,7 +1367,8 @@ def ContractsClosed
     Prop :=
   (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map AcceptedRecordContractDecl.contract) ∧
     ∀ port,
-      port ∈ decl.outputs → port.contract ∈ contracts.map AcceptedRecordContractDecl.contract
+      port ∈ decl.outputPorts →
+        port.contract ∈ contracts.map AcceptedRecordContractDecl.contract
 
 end AcceptedNodeDecl
 
@@ -803,7 +1380,9 @@ def ContractsClosed
     (contracts : List RecordContractDecl) :
     Prop :=
   (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map RecordContractDecl.contract) ∧
-    ∀ port, port ∈ decl.outputs → port.contract ∈ contracts.map RecordContractDecl.contract
+    ∀ port,
+      port ∈ decl.outputPortsList →
+        port.contract ∈ contracts.map RecordContractDecl.contract
 
 end RawKindDecl
 
@@ -816,7 +1395,152 @@ def ContractsClosed
     Prop :=
   (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map AcceptedRecordContractDecl.contract) ∧
     ∀ port,
-      port ∈ decl.outputs → port.contract ∈ contracts.map AcceptedRecordContractDecl.contract
+      port ∈ decl.outputPorts →
+        port.contract ∈ contracts.map AcceptedRecordContractDecl.contract
+
+/-- The accepted kind's template frontier uses the given `PortLabel` parameter
+at every input/output label position.
+
+This is a helper for the public `KindSupportsMake` predicate: it says that
+generated child labels substitute the kind's formal label instead of overwriting
+authored literal frontier labels. -/
+def FrontierUsesLabelParam (decl : AcceptedKindDecl) (param : KindParamDecl) : Prop :=
+  (∀ port, port ∈ decl.inputs → port.label = param.asFieldLabel) ∧
+    ∀ port,
+      port ∈ decl.outputPortsList →
+        port.label = param.asFieldLabel
+
+/-- `FrontierUsesLabelParam` is decidable because accepted kind frontiers are finite. -/
+instance frontierUsesLabelParamDecidable
+    (decl : AcceptedKindDecl)
+    (param : KindParamDecl) :
+    Decidable (decl.FrontierUsesLabelParam param) :=
+  inferInstanceAs
+    (Decidable
+      ((∀ port, port ∈ decl.inputs → port.label = param.asFieldLabel) ∧
+        ∀ port,
+          port ∈ decl.outputPortsList →
+            port.label = param.asFieldLabel))
+
+/-- Kind parameter shape compatible with `make(N, K)` (ADR 0048).
+
+`make` supplies one generated `PortLabel` per child, so the kind must expose
+exactly one parameter and that parameter must be `KindParamClass.portLabel`.
+Kinds that take additional `Contract`, `Value`, or `ConfiguredExecutor`
+parameters are out of scope for `make` until a general parameter-binding design
+exists (ADR 0048 Alternatives). The template frontier must also use that
+parameter as every input/output label; otherwise generated child labels would
+overwrite authored literal labels rather than substitute the `PortLabel` formal. -/
+def KindSupportsMake (decl : AcceptedKindDecl) : Prop :=
+  match decl.params with
+  | [] => False
+  | [param] =>
+      param.paramClass = KindParamClass.portLabel ∧
+        decl.FrontierUsesLabelParam param
+  | _first :: _second :: _rest => False
+
+instance kindSupportsMakeDecidable (decl : AcceptedKindDecl) :
+    Decidable decl.KindSupportsMake := by
+  unfold KindSupportsMake
+  match decl.params with
+  | [] => exact inferInstanceAs (Decidable False)
+  | [_param] => exact inferInstanceAs (Decidable (_ ∧ _))
+  | _first :: _second :: _rest => exact inferInstanceAs (Decidable False)
+
+/-- Kind parameter shape compatible with `makeEach(items, K)`.
+
+`makeEach` supplies one generated `PortLabel` per item, and may additionally
+bind a static `Value` per item when the kind exposes one. The accepted shapes
+are therefore: a sole `portLabel` parameter, or a `portLabel` parameter
+followed by a single `value` parameter in source order. Other parameter
+classes (`contract`, `configuredExecutor`) and longer parameter lists are
+rejected at admission. As with `make`, the template frontier must use the
+`PortLabel` formal at every input/output label position. -/
+def KindSupportsMakeEach (decl : AcceptedKindDecl) : Prop :=
+  match decl.params with
+  | [] => False
+  | [param] =>
+      param.paramClass = KindParamClass.portLabel ∧
+        decl.FrontierUsesLabelParam param
+  | [first, second] =>
+      first.paramClass = KindParamClass.portLabel ∧
+        second.paramClass = KindParamClass.value ∧
+          decl.FrontierUsesLabelParam first
+  | _ :: _ :: _ :: _ => False
+
+instance kindSupportsMakeEachDecidable (decl : AcceptedKindDecl) :
+    Decidable decl.KindSupportsMakeEach := by
+  unfold KindSupportsMakeEach
+  match decl.params with
+  | [] => exact inferInstanceAs (Decidable False)
+  | [_param] => exact inferInstanceAs (Decidable (_ ∧ _))
+  | [_first, _second] => exact inferInstanceAs (Decidable (_ ∧ _ ∧ _))
+  | _ :: _ :: _ :: _ => exact inferInstanceAs (Decidable False)
+
+/-- A kind compatible with `make` is also compatible with `makeEach`: the
+generated `PortLabel` slot is the same, and the optional static `Value` slot is
+allowed to be absent. -/
+theorem kindSupportsMake_imp_kindSupportsMakeEach
+    {decl : AcceptedKindDecl}
+    (h : decl.KindSupportsMake) :
+    decl.KindSupportsMakeEach := by
+  unfold KindSupportsMake at h
+  unfold KindSupportsMakeEach
+  match hMatch : decl.params with
+  | [] =>
+      rw [hMatch] at h
+      exact False.elim h
+  | [param] =>
+      rw [hMatch] at h
+      exact h
+  | _first :: _second :: _rest =>
+      rw [hMatch] at h
+      exact False.elim h
+
+/-- A `make`-compatible kind has at most one flattened output port.
+
+`KindSupportsMake` forces every template output label to be the sole
+`PortLabel` parameter, while accepted kind declarations already require
+flattened output labels to be unique. Together those invariants make
+multi-output same-direction make templates impossible in this narrowed ADR 0048
+slice. -/
+theorem kindSupportsMake_outputPortsList_length_le_one
+    {decl : AcceptedKindDecl}
+    (h : decl.KindSupportsMake) :
+    decl.outputPortsList.length ≤ 1 := by
+  unfold KindSupportsMake at h
+  match hParams : decl.params with
+  | [] =>
+      rw [hParams] at h
+      exact False.elim h
+  | [param] =>
+      rw [hParams] at h
+      rcases h with ⟨_hClass, hFrontier⟩
+      cases hPorts : OutputShapeListPorts decl.outputs with
+      | nil =>
+          simp [AcceptedKindDecl.outputPortsList, hPorts]
+      | cons head tail =>
+          cases hTail : tail with
+          | nil =>
+              simp [AcceptedKindDecl.outputPortsList, hPorts, hTail]
+          | cons second rest =>
+              have hUniqueLabels :
+                  (head.label :: second.label :: rest.map PortSignature.label).Nodup := by
+                simpa [PortLabelListUnique, hPorts, hTail]
+                  using decl.outputPortsListLabelsUnique
+              simp only [List.nodup_cons, List.mem_cons] at hUniqueLabels
+              rcases hUniqueLabels with ⟨hHeadFresh, _hTailUnique⟩
+              have hHeadLabel : head.label = param.asFieldLabel := by
+                exact hFrontier.right head (by simp [AcceptedKindDecl.outputPortsList, hPorts])
+              have hSecondLabel : second.label = param.asFieldLabel := by
+                exact hFrontier.right second
+                  (by simp [AcceptedKindDecl.outputPortsList, hPorts, hTail])
+              have hSameLabel : head.label = second.label := by
+                rw [hHeadLabel, hSecondLabel]
+              exact False.elim (hHeadFresh (Or.inl hSameLabel))
+  | _first :: _second :: _rest =>
+      rw [hParams] at h
+      exact False.elim h
 
 end AcceptedKindDecl
 
@@ -912,10 +1636,11 @@ end GraphExpr
 /-- Static elaboration diagnostics for the future Wire admission path.
 
 Diagnostics that quote static values or graph expressions inherit the same
-equality boundary: this module keeps them printable, but does not expose
-decidable equality until a structural `StaticValue` equality exists. These
-constructors seed the future admission vocabulary; the list will grow with the
-admission functions that produce `ElabResult`. -/
+equality boundary as `GraphExpr`: this module keeps them printable, but does
+not yet expose `DecidableEq` because `GraphExpr` itself still needs a manual
+mutual instance through `List (SelectArmKey × GraphExpr)`. These constructors
+seed the future admission vocabulary; the list will grow with the admission
+functions that produce `ElabResult`. -/
 inductive ElabDiagnostic where
   | duplicateNode (target : NodeId)
   | duplicateKind (target : KindName)
@@ -1107,8 +1832,11 @@ expose decidable equality until graph expressions do.
 
 The uniqueness fields are per represented namespace. Full Wire source-scope
 collision checks across contracts, nodes, graph/value lets, imports, executors,
-and future kinds belong to module admission rather than this local carrier. -/
-structure AcceptedModule where
+and future kinds belong to module admission rather than this local carrier.
+Graph-binding reference cycles are also admissible at this shell layer; later
+binding-body admission should require `GraphBinding.BindingRefAcyclic graphs`
+or a stronger executable unfolding-order witness. -/
+structure AdmittedModuleShell where
   /-- Accepted record contracts. -/
   contracts : List AcceptedRecordContractDecl
   /-- Accepted record contract identifiers are unique inside the module shell. -/
@@ -1141,6 +1869,22 @@ structure AcceptedModule where
   graphRefsClosed :
     ∀ graph, graph ∈ graphs → graph.expr.AcceptedRefsClosed nodes kinds graphs
 
+namespace AdmittedModuleShell
+
+/-- Every graph binding in an admitted module shell owns the generated forms it contains.
+
+This is the transitive enforcement point for `GeneratedFormsOwnedBy`: individual
+`GraphBinding.LocalValid` carries the local owner proof, and the shell requires
+that local validity for every binding in `graphs`. -/
+theorem graph_generatedFormsOwnedBy
+    (mod : AdmittedModuleShell)
+    {graph : GraphBinding}
+    (hGraph : graph ∈ mod.graphs) :
+    graph.expr.GeneratedFormsOwnedBy graph.name :=
+  (mod.graphsValid graph hGraph).right
+
+end AdmittedModuleShell
+
 namespace RawModule
 
 /-- Locally admissible raw module shells project to accepted module shells.
@@ -1151,7 +1895,7 @@ the accepted carrier. -/
 def toAccepted
     (decl : RawModule)
     (hAdmissible : decl.LocallyAdmissible) :
-    AcceptedModule :=
+    AdmittedModuleShell :=
   { contracts := decl.acceptedContracts hAdmissible
     contractsUnique := by
       rw [acceptedContracts_contracts]
@@ -1187,7 +1931,7 @@ def toAccepted
       intro node hNode
       rcases List.mem_map.mp hNode with ⟨rawNode, _hRawNodeMem, hEq⟩
       subst hEq
-      constructor
+      refine ⟨?_, ?_⟩
       · intro port hPort
         have hRawPort : port ∈ rawNode.val.inputs := by
           simpa [RawNodeDecl.toAccepted] using List.mem_toFinset.mp hPort
@@ -1199,20 +1943,28 @@ def toAccepted
         rw [← acceptedContracts_contracts decl hAdmissible] at hKnown
         exact hKnown
       · intro port hPort
-        have hRawPort : port ∈ rawNode.val.outputs := by
-          simpa [RawNodeDecl.toAccepted] using List.mem_toFinset.mp hPort
+        have hPortList : port ∈ rawNode.val.outputPortsList := by
+          have hMem :
+              port ∈ (OutputShapeListPorts (rawNode.val.toAccepted
+                (hAdmissible.nodesAdmissible rawNode.val rawNode.property)).outputs).toFinset := by
+            simpa [AcceptedNodeDecl.outputPorts, AcceptedNodeDecl.outputPortsList] using hPort
+          have hList :
+              port ∈ OutputShapeListPorts (rawNode.val.toAccepted
+                (hAdmissible.nodesAdmissible rawNode.val rawNode.property)).outputs :=
+            List.mem_toFinset.mp hMem
+          simpa [RawNodeDecl.toAccepted, RawNodeDecl.outputPortsList] using hList
         have hKnown :
             port.contract ∈ decl.contracts.map RecordContractDecl.contract :=
           (hAdmissible.nodeContractsClosed rawNode.val rawNode.property).right
             port
-            hRawPort
+            hPortList
         rw [← acceptedContracts_contracts decl hAdmissible] at hKnown
         exact hKnown
     kindContractsClosed := by
       intro kind hKind
       rcases List.mem_map.mp hKind with ⟨rawKind, _hRawKindMem, hEq⟩
       subst hEq
-      constructor
+      refine ⟨?_, ?_⟩
       · intro port hPort
         have hRawPort : port ∈ rawKind.val.inputs := by
           simpa [RawKindDecl.toAccepted] using List.mem_toFinset.mp hPort
@@ -1224,13 +1976,21 @@ def toAccepted
         rw [← acceptedContracts_contracts decl hAdmissible] at hKnown
         exact hKnown
       · intro port hPort
-        have hRawPort : port ∈ rawKind.val.outputs := by
-          simpa [RawKindDecl.toAccepted] using List.mem_toFinset.mp hPort
+        have hPortList : port ∈ rawKind.val.outputPortsList := by
+          have hMem :
+              port ∈ (OutputShapeListPorts (rawKind.val.toAccepted
+                (hAdmissible.kindsAdmissible rawKind.val rawKind.property)).outputs).toFinset := by
+            simpa [AcceptedKindDecl.outputPorts, AcceptedKindDecl.outputPortsList] using hPort
+          have hList :
+              port ∈ OutputShapeListPorts (rawKind.val.toAccepted
+                (hAdmissible.kindsAdmissible rawKind.val rawKind.property)).outputs :=
+            List.mem_toFinset.mp hMem
+          simpa [RawKindDecl.toAccepted, RawKindDecl.outputPortsList] using hList
         have hKnown :
             port.contract ∈ decl.contracts.map RecordContractDecl.contract :=
           (hAdmissible.kindContractsClosed rawKind.val rawKind.property).right
             port
-            hRawPort
+            hPortList
         rw [← acceptedContracts_contracts decl hAdmissible] at hKnown
         exact hKnown
     graphRefsClosed := by
@@ -1244,6 +2004,8 @@ def toAccepted
 end RawModule
 
 /-! ## Shape Examples -/
+
+namespace Examples
 
 /-- Example contract used by the C-build shape example. -/
 def commandSpecContract : ContractId :=
@@ -1269,16 +2031,47 @@ def artifactPort : PortSignature :=
 theorem artifactPort_valid : artifactPort.Valid := by
   constructor <;> decide
 
+/-- Accepted single output shape produced by a `cBuild`-shaped artifact node. -/
+def artifactSingleShape : OutputShape :=
+  OutputShape.single artifactPort
+
+/-- The example artifact single-output shape is locally admissible. -/
+theorem artifactSingleShape_admissible : artifactSingleShape.LocallyAdmissible :=
+  OutputShape.LocallyAdmissible.single artifactPort_valid
+
+/-- Accepted single output shape that re-exposes the spec port on the output side. -/
+def specSingleShape : OutputShape :=
+  OutputShape.single specPort
+
+/-- The example spec single-output shape is locally admissible. -/
+theorem specSingleShape_admissible : specSingleShape.LocallyAdmissible :=
+  OutputShape.LocallyAdmissible.single specPort_valid
+
+/-- Singleton authored output shape lists are locally admissible when the shape itself is. -/
+theorem singleton_outputShapeListAdmissible
+    {shape : OutputShape}
+    (hShape : shape.LocallyAdmissible) :
+    OutputShapeListAdmissible [shape] := by
+  intro candidate hCandidate
+  rcases List.mem_singleton.mp hCandidate with hEq
+  exact hEq ▸ hShape
+
+/-- A single-port output shape produces a length-one flattened port list. -/
+theorem singleton_outputShapeListPortsLabelsUnique
+    (port : PortSignature) :
+    PortLabelListUnique (OutputShapeListPorts [OutputShape.single port]) := by
+  simp [PortLabelListUnique, OutputShapeListPorts, OutputShape.ports]
+
 /-- Accepted shape of one compile node in the C-build example family. -/
 def cBuildCompileNode : AcceptedNodeDecl where
   node := ⟨"compile_metrics"⟩
   nodeValid := by decide
   inputs := {specPort}
-  outputs := {artifactPort}
+  outputs := [artifactSingleShape]
   inputPortsValid := singleton_portSignaturesValid specPort_valid
-  outputPortsValid := singleton_portSignaturesValid artifactPort_valid
+  outputShapesAdmissible := singleton_outputShapeListAdmissible artifactSingleShape_admissible
+  outputPortsListLabelsUnique := singleton_outputShapeListPortsLabelsUnique artifactPort
   inputLabelsUnique := singleton_portLabelsUnique specPort
-  outputLabelsUnique := singleton_portLabelsUnique artifactPort
   body := NodeBodyBoundary.executor ⟨"shell"⟩
   bodyLocalValid := by decide
 
@@ -1287,18 +2080,18 @@ def cBuildPassThroughNode : AcceptedNodeDecl where
   node := ⟨"pass_spec"⟩
   nodeValid := by decide
   inputs := {specPort}
-  outputs := {specPort}
+  outputs := [specSingleShape]
   inputPortsValid := singleton_portSignaturesValid specPort_valid
-  outputPortsValid := singleton_portSignaturesValid specPort_valid
+  outputShapesAdmissible := singleton_outputShapeListAdmissible specSingleShape_admissible
+  outputPortsListLabelsUnique := singleton_outputShapeListPortsLabelsUnique specPort
   inputLabelsUnique := singleton_portLabelsUnique specPort
-  outputLabelsUnique := singleton_portLabelsUnique specPort
   body := NodeBodyBoundary.corePure
   bodyLocalValid := trivial
 
 /-- C-build-shaped graph expression using both `makeEach` and `*`.
 
 This only demonstrates representability of post-source-include syntax. Future
-modules must still admit the expression and produce the linear certificates. -/
+modules must still certify the expression and produce the linear certificates. -/
 def cBuildGraphShape : GraphExpr :=
   GraphExpr.connect
     (GraphExpr.makeEach
@@ -1311,6 +2104,8 @@ def cBuildGraphShape : GraphExpr :=
     (GraphExpr.star
       (GraphExpr.node ⟨"archive_lib"⟩)
       (GraphExpr.node ⟨"link_app"⟩))
+
+end Examples
 
 end ElaborationIR
 end Cortex.Wire

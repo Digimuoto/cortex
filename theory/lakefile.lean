@@ -52,12 +52,16 @@ lean_lib «Cortex» where
     `Cortex.Wire.BoundaryResource,
     `Cortex.Wire.NodeBoundary,
     `Cortex.Wire.PortLinearity,
+    `Cortex.Wire.ActualizedBridge,
     `Cortex.Wire.ElaborationIR,
+    `Cortex.Wire.GraphElaboration,
     `Cortex.Wire.Make,
     `Cortex.Wire.PhantomAdapter,
+    `Cortex.Wire.GeneratedForms,
     `Cortex.Wire.FrontierReclaim,
     `Cortex.Wire.PulseSafety,
     `Cortex.Wire.SelectRecovery,
+    `Cortex.Wire.SelectAdmission,
     `Cortex.Wire.RunTrace
   ]
 
