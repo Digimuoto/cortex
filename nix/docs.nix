@@ -15,7 +15,7 @@
         theme = "cortex-light";
         themeModes = {
           light = "cortex-light";
-          dark = "cortex-slate";
+          dark = "cortex-slate-darker";
         };
 
         # Templates are authoring skeletons with placeholder frontmatter
