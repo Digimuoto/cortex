@@ -24,6 +24,9 @@ module Cortex.Wire.Syntax
   , QName (..)
   , renderQName
   , ContractId (..)
+  , boundedIndexedContractName
+  , parseBoundedIndexedContractName
+  , renderContractId
   , PortLabel (..)
 
     -- * Port signatures
@@ -61,6 +64,7 @@ module Cortex.Wire.Syntax
   )
 where
 
+import Control.Monad (guard)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
@@ -68,6 +72,7 @@ import Data.Scientific (Scientific)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Text.Read (readMaybe)
 
 import Cortex.Wire.AST
 
@@ -88,6 +93,36 @@ renderQName (QName segs) = T.intercalate "." (NE.toList segs)
 newtype ContractId = ContractId {unContractId :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON)
+
+{- | Canonical compact storage form for bounded indexed products; use 'renderContractId' for
+user-facing output with spacing.
+-}
+boundedIndexedContractName :: Text -> Int -> Text
+boundedIndexedContractName elementContract count =
+  "[" <> elementContract <> ";" <> T.pack (show count) <> "]"
+
+parseBoundedIndexedContractName :: Text -> Maybe (Text, Int)
+parseBoundedIndexedContractName rawName = do
+  -- Accept the human-rendered form "[T; N]" as well as canonical storage "[T;N]".
+  inner <- T.stripSuffix "]" =<< T.stripPrefix "[" (T.strip rawName)
+  case T.splitOn ";" inner of
+    [rawElement, rawCount] -> do
+      let elementContract = T.strip rawElement
+      guard (not (T.null elementContract))
+      count <- readMaybe (T.unpack (T.strip rawCount))
+      if count < (0 :: Int)
+        then Nothing
+        else Just (elementContract, count)
+    _ ->
+      Nothing
+
+renderContractId :: ContractId -> Text
+renderContractId (ContractId contractName) =
+  case parseBoundedIndexedContractName contractName of
+    Just (elementContract, count) ->
+      "[" <> elementContract <> "; " <> T.pack (show count) <> "]"
+    Nothing ->
+      contractName
 
 {- | Optional port label. 'NoLabel' is a distinct port key from @Label _@ —
 not a wildcard (grammar §6.2).
@@ -187,6 +222,8 @@ data Expr
     exclusive output boundary (postfix 4).
     -}
     ExprSelect !Expr !(NonEmpty SelectArm)
+  | -- | @family[0]@ — source projection from an indexed @make@ family.
+    ExprFamilyProjection !Text !Int
   | -- | @\@qual.name { config }@ — inert configured executor value.
     ExprConfiguredExecutor !QName !Record
   | {- | @qual.name { field = ... }@ — tagged-record config constructor;

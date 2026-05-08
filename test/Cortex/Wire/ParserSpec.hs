@@ -212,6 +212,19 @@ spec = describe "Cortex.Wire.Parser" $ do
         )
         `shouldSatisfy` isParseFailureContaining "duplicate generated label alpha"
 
+    it "rejects leading zeros in indexed syntax" $ do
+      parseWireExpr "test" "workers[01]"
+        `shouldSatisfy` isParseFailureContaining "must not contain leading zeros"
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "contract SampleBatch {"
+            , "  samples: [Sample; 03];"
+            , "};"
+            ]
+        )
+        `shouldSatisfy` isParseFailureContaining "must not contain leading zeros"
+
   describe "top-level forms" $ do
     it "parses exported scalar bindings as ordinary module lets" $ do
       let WireFile forms _ = parseOrFail "export let threshold = 0.7 ;"
@@ -251,6 +264,79 @@ spec = describe "Cortex.Wire.Parser" $ do
             `shouldBe` ExprOverlay
               (ExprIdent (QName ("workers_0" :| [])))
               (ExprIdent (QName ("workers_1" :| [])))
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "expands indexed make bindings and resolves static family projections" $ do
+      let WireFile forms fileReturn =
+            parseOrFail $
+              T.unlines
+                [ "kind sample(label: PortLabel) ="
+                , "  -> label: Sample = @review.sample ({}) ;"
+                , "let workers[] = make(2, sample);"
+                , "workers[1]"
+                ]
+      fmap topFormName forms
+        `shouldBe` [Just "workers_0", Just "workers_1", Just "workers"]
+      fileReturn `shouldBe` Just (ExprIdent (QName ("workers_1" :| [])))
+
+    it "rejects out-of-range indexed make projections" $
+      parseWireFile
+        "test"
+        ( T.unlines
+            [ "kind sample(label: PortLabel) ="
+            , "  -> label: Sample = @review.sample ({}) ;"
+            , "let workers[] = make(2, sample);"
+            , "workers[2]"
+            ]
+        )
+        `shouldSatisfy` isParseFailureContaining "out of range for family of size 2"
+
+    it "keeps ordinary CorePure index syntax in value lets" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "let item = items[0];"
+                ]
+      case forms of
+        [TopLet LetPrivate "item" (LetRhsCorePure coreExpr)] ->
+          coreExpr
+            `shouldBe` CorePureIndex
+              (CorePureIdent "items")
+              (CorePureLit (CorePureNumber 0))
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "keeps spaced CorePure list calls in value lets" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "let item = f [0];"
+                ]
+      case forms of
+        [TopLet LetPrivate "item" (LetRhsCorePure coreExpr)] ->
+          coreExpr
+            `shouldBe` CorePureCall
+              (CorePureIdent "f")
+              [CorePureList [CorePureLit (CorePureNumber 0)]]
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "keeps form-local CorePure index lets as CorePure" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "form select_first(items: Value) = {"
+                , "  let item = items[0];"
+                , "  item;"
+                , "};"
+                , "let selected = select_first([10]);"
+                ]
+      case forms of
+        [ TopLet LetPrivate "selected/item" (LetRhsCorePure coreExpr)
+          , TopLet LetPrivate "selected" (LetRhsWire (ExprIdent (QName ("selected/item" :| []))))
+          ] ->
+            coreExpr
+              `shouldBe` CorePureIndex
+                (CorePureList [CorePureLit (CorePureNumber 10)])
+                (CorePureLit (CorePureNumber 0))
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "expands bound make forms with a preceding static count binding" $ do
@@ -327,6 +413,22 @@ spec = describe "Cortex.Wire.Parser" $ do
             (LetRhsWire (ExprConfiguredExecutor (QName ("review" :| ["analyst"])) (Record fields)))
           ] ->
             length fields `shouldBe` 1
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "parses bounded indexed product contracts in port positions" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node sink"
+                , "  <- samples: [Sample; 3] ;"
+                , "  -> done: Done = @review.sink (samples) ;"
+                ]
+      case forms of
+        [TopNode node] ->
+          nodeDeclPortSig node
+            `shouldBe` [ PortInputDecl (Label "samples") (ContractId "[Sample;3]")
+                       , PortOutputDecl (Label "done") (ContractId "Done")
+                       ]
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "expands kind applications into ordinary node declarations" $ do

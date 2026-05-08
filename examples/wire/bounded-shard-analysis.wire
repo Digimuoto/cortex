@@ -1,0 +1,37 @@
+# Bounded indexed product example.
+#
+# This models a fixed-width shard analysis pass. The planner emits one bounded
+# product of four shard plans, `*` scatters those plans into four generated
+# homogeneous workers, and the second `*` gathers the four findings back into
+# one bounded product for the reducer.
+#
+# Without indexed boundary products, this would need either hand-written worker
+# nodes with bespoke labels or an implicit fan-out/fan-in operation. The point of
+# this example is that the fan structure is finite, explicit, and linear.
+
+contract CorpusSlice;
+contract ShardPlan;
+contract ShardFinding;
+contract AuditReport;
+
+node slice_corpus
+  -> corpus: CorpusSlice = @review.slice_corpus ({});
+
+node plan_shards
+  <- corpus: CorpusSlice;
+  -> plans: [ShardPlan; 4] = @review.plan_shards (corpus);
+
+kind analyze_shard(label: PortLabel) =
+  <- label: ShardPlan;
+  -> label: ShardFinding = @review.analyze_shard (label);
+
+node reduce_findings
+  <- findings: [ShardFinding; 4];
+  -> report: AuditReport = @review.reduce_findings (findings);
+
+let workers[] = make(4, analyze_shard);
+
+slice_corpus
+  => plan_shards
+  * workers
+  * reduce_findings

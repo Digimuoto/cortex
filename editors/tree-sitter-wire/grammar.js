@@ -74,6 +74,20 @@ module.exports = grammar({
     contract_decl: $ => seq(
       'contract',
       field('name', $.contract_name),
+      optional(field('record', $.contract_record)),
+      ';',
+    ),
+
+    contract_record: $ => seq(
+      '{',
+      repeat($.contract_field),
+      '}',
+    ),
+
+    contract_field: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('contract', $.contract_ref),
       ';',
     ),
 
@@ -119,10 +133,15 @@ module.exports = grammar({
     let_binding: $ => seq(
       optional(field('visibility', 'export')),
       'let',
-      field('name', $.identifier),
+      field('target', $.let_target),
       '=',
       field('value', choice($.make_application, $.form_application, $.core_pure_expr, $.expression)),
       ';',
+    ),
+
+    let_target: $ => seq(
+      field('name', $.identifier),
+      optional(seq('[', ']')),
     ),
 
     import_stmt: $ => seq(
@@ -203,7 +222,7 @@ module.exports = grammar({
 
     form_let_binding: $ => seq(
       'let',
-      field('name', $.identifier),
+      field('target', $.let_target),
       '=',
       field('value', choice($.make_application, $.form_application, $.core_pure_expr, $.expression)),
       ';',
@@ -280,7 +299,7 @@ module.exports = grammar({
       '<-',
       field('label', $.identifier),
       ':',
-      field('contract', $.contract_name),
+      field('contract', $.contract_ref),
       ';',
     ),
 
@@ -328,7 +347,7 @@ module.exports = grammar({
     output_variant: $ => seq(
       field('label', $.identifier),
       ':',
-      field('contract', $.contract_name),
+      field('contract', $.contract_ref),
     ),
 
     executor_call: $ => choice(
@@ -356,6 +375,19 @@ module.exports = grammar({
       'where',
       field('expr', $.core_pure_expr),
       ';',
+    ),
+
+    contract_ref: $ => choice(
+      $.bounded_indexed_contract,
+      $.contract_name,
+    ),
+
+    bounded_indexed_contract: $ => seq(
+      '[',
+      field('element', $.contract_name),
+      ';',
+      field('count', $.number),
+      ']',
     ),
 
     contract_name: $ => alias($.identifier, $.contract),
@@ -421,8 +453,16 @@ module.exports = grammar({
       $.boolean,
       $.unit,
       $.paren_expression,
+      $.family_projection,
       alias($.qualified_ident, $.ident_ref),
     ),
+
+    family_projection: $ => prec(PREC.core_postfix + 1, seq(
+      field('family', $.identifier),
+      token.immediate('['),
+      field('index', $.number),
+      ']',
+    )),
 
     configured_executor_value: $ => seq(
       '@',

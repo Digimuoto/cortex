@@ -5,6 +5,32 @@
     "fields": {}
   },
   {
+    "type": "bounded_indexed_contract",
+    "named": true,
+    "fields": {
+      "count": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "number",
+            "named": true
+          }
+        ]
+      },
+      "element": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "contract_name",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "configured_executor_call",
     "named": true,
     "fields": {
@@ -95,6 +121,42 @@
             "named": true
           }
         ]
+      },
+      "record": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "contract_record",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "contract_field",
+    "named": true,
+    "fields": {
+      "contract": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "contract_ref",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
       }
     }
   },
@@ -108,6 +170,40 @@
       "types": [
         {
           "type": "contract",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "contract_record",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "contract_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "contract_ref",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "bounded_indexed_contract",
+          "named": true
+        },
+        {
+          "type": "contract_name",
           "named": true
         }
       ]
@@ -1661,6 +1757,10 @@
           "named": true
         },
         {
+          "type": "family_projection",
+          "named": true
+        },
+        {
           "type": "ident_ref",
           "named": true
         },
@@ -1705,6 +1805,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "family_projection",
+    "named": true,
+    "fields": {
+      "family": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "index": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "number",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -1851,12 +1977,12 @@
     "type": "form_let_binding",
     "named": true,
     "fields": {
-      "name": {
+      "target": {
         "multiple": false,
         "required": true,
         "types": [
           {
-            "type": "identifier",
+            "type": "let_target",
             "named": true
           }
         ]
@@ -2043,7 +2169,7 @@
         "required": true,
         "types": [
           {
-            "type": "contract_name",
+            "type": "contract_ref",
             "named": true
           }
         ]
@@ -2193,12 +2319,12 @@
     "type": "let_binding",
     "named": true,
     "fields": {
-      "name": {
+      "target": {
         "multiple": false,
         "required": true,
         "types": [
           {
-            "type": "identifier",
+            "type": "let_target",
             "named": true
           }
         ]
@@ -2232,6 +2358,22 @@
           {
             "type": "export",
             "named": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "let_target",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
           }
         ]
       }
@@ -2303,6 +2445,10 @@
             "named": true
           },
           {
+            "type": "family_projection",
+            "named": true
+          },
+          {
             "type": "ident_ref",
             "named": true
           },
@@ -2368,6 +2514,10 @@
           },
           {
             "type": "constructor_expr",
+            "named": true
+          },
+          {
+            "type": "family_projection",
             "named": true
           },
           {
@@ -2494,7 +2644,7 @@
         "required": true,
         "types": [
           {
-            "type": "contract_name",
+            "type": "contract_ref",
             "named": true
           }
         ]
@@ -2661,6 +2811,10 @@
           },
           {
             "type": "constructor_expr",
+            "named": true
+          },
+          {
+            "type": "family_projection",
             "named": true
           },
           {
@@ -2835,6 +2989,10 @@
             "named": true
           },
           {
+            "type": "family_projection",
+            "named": true
+          },
+          {
             "type": "ident_ref",
             "named": true
           },
@@ -2912,6 +3070,10 @@
           },
           {
             "type": "constructor_expr",
+            "named": true
+          },
+          {
+            "type": "family_projection",
             "named": true
           },
           {

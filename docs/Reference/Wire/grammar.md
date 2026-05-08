@@ -76,9 +76,10 @@ wire_file        ::= top_form* file_return?
 top_form         ::= contract_decl | use_stmt | kind_decl | form_decl | let_binding | import_stmt | node_decl
 file_return      ::= wire_expr
 
+contract_ref     ::= Name | "[" Name ";" integer "]"
 contract_decl    ::= "contract" Name contract_record? ";"
 contract_record  ::= "{" contract_field* "}"
-contract_field   ::= ident ":" Name ";"
+contract_field   ::= ident ":" contract_ref ";"
 use_stmt         ::= "use" qualified_ident "." "{" use_item ("," use_item)* ","? "}" ";"
 use_item         ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
 kind_decl        ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
@@ -89,8 +90,9 @@ form_decl        ::= "form" ident "(" form_param_list? ")" "=" "{" form_item* gr
 form_param_list ::= form_param ("," form_param)* ","?
 form_param       ::= ident ":" form_param_class
 form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "ConfiguredExecutor"
-form_item        ::= node_decl | "let" ident "=" let_rhs ";"
-let_binding      ::= ("export")? "let" ident "=" let_rhs ";"
+form_item        ::= node_decl | "let" let_target "=" let_rhs ";"
+let_binding      ::= ("export")? "let" let_target "=" let_rhs ";"
+let_target       ::= ident "[]"?
 let_rhs          ::= graph_expr | value_expr | corepure_helper_expr | form_application | make_application
 form_application ::= ident "(" (wire_expr ("," wire_expr)* ","?)? ")"
 make_application ::= "make" "(" make_count "," ident ","? ")"
@@ -179,6 +181,8 @@ executors.
 
 Contracts are named typed interfaces. Contract names are equal iff their names are equal. A contract
 is known if an executor registry declares it or the program asserts it with `contract Name ;`.
+`[T; N]` is a bounded indexed product contract with static count `N`; it is a topology-shaping
+contract only when an explicit `*` adapter folds or unfolds it.
 
 Port clauses:
 
@@ -219,7 +223,7 @@ kind_arg_list ::= wire_expr ("," wire_expr)* ","?
 
 kind_body ::= input_clause* node_body where_clause?
 
-input_clause ::= "<-" ident ":" Contract ";"
+input_clause ::= "<-" ident ":" contract_ref ";"
 where_clause ::= "where" corepure_expr ";"
 
 node_body ::=
@@ -230,7 +234,7 @@ node_body ::=
 pure_output_equation ::= "->" output_variant "=" "pure" "(" corepure_expr ")" ";"
 executor_output_clause ::= "->" output_body ";"
 output_body ::= output_variant ("|" output_variant)*
-output_variant ::= ident ":" Contract
+output_variant ::= ident ":" contract_ref
 ```
 
 There is no colon after `node name`.
@@ -327,6 +331,20 @@ position is rejected because there is no source name to derive stable identities
 numeric `let`. `K` is a kind reference, not a kind application and not a CorePure value. Generated
 nodes get deterministic identities from the binding name and expose the generated port labels
 specified by the kind.
+
+An indexed binding marks the generated family as addressable by static source projection:
+
+```wire
+let workers[] = make(3, sample);
+
+workers[0]
+workers[1]
+workers[2]
+```
+
+The whole family name still denotes the overlay of all generated children in graph position.
+Projection indices must be integer literals in range. Lowered node identities remain the stable
+`<binding>_<i>` form.
 
 `makeEach(items, K)` is the itemized form. `items` must be a static list literal or preceding static
 list binding. Items may be strings or records with a string `label` field. Generated nodes use
@@ -475,8 +493,10 @@ does not clone nodes.
 Every endpoint port is linear in graph composition: one output feeds at most one input, and one
 input receives at most one output. `=>` does not perform implicit fan-out or aggregation.
 
-`*` inserts an explicit record↔ports adapter node between its operands. It is not an exception to
-the `=>` rule: both sides of the adapter connect through ordinary linear endpoint matching.
+`*` inserts an explicit finite-product adapter node between its operands. It is not an exception to
+the `=>` rule: both sides of the adapter connect through ordinary linear endpoint matching. Record
+contracts fold/unfold by field label; bounded indexed contracts such as `[Sample; 3]` fold/unfold a
+static ordered frontier without allowing unbounded list-shaped topology.
 
 Topology operators have fixed precedence:
 

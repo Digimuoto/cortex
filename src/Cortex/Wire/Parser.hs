@@ -33,7 +33,7 @@ import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, isJust, listToMaybe, mapMaybe)
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -162,7 +162,10 @@ identCont c = isAlphaNum c || c == '_'
 
 -- | Unqualified identifier (grammar §2.2).
 identifier :: Parser Text
-identifier = lexeme . try $ do
+identifier = lexeme (try bareIdentifier)
+
+bareIdentifier :: Parser Text
+bareIdentifier = do
   c <- satisfy (\x -> isAlpha x || x == '_')
   rest <- takeWhileP Nothing identCont
   let w = T.cons c rest
@@ -181,14 +184,7 @@ qualifiedIdent = lexeme . try $ do
   where
     -- Bare (non-lexemed) identifier — dots consume immediately, so we
     -- must not swallow trailing whitespace between segments.
-    bareIdent :: Parser Text
-    bareIdent = do
-      c <- satisfy (\x -> isAlpha x || x == '_')
-      rest <- takeWhileP Nothing identCont
-      let w = T.cons c rest
-      when (w `elem` reservedWords) . fail $
-        "reserved word: " <> T.unpack w
-      pure w
+    bareIdent = bareIdentifier
 
 -- | @\@qualified.name@ in executor-application position.
 executorRef :: Parser QName
@@ -290,11 +286,17 @@ data ParsedTopForm
   | ParsedTopKind !KindDecl
   | ParsedTopForm !FormDecl
   | ParsedTopLet !LetVisibility !Text !LetRhs
-  | ParsedTopLetMake !LetVisibility !Text !MakeApplication
+  | ParsedTopLetMake !LetVisibility !LetTarget !MakeApplication
   | ParsedTopLetApplication !LetVisibility !Text !FormApplication
   | ParsedTopUse !UseSpec
   | ParsedTopImport !ImportSpec
   deriving stock (Show)
+
+data LetTarget = LetTarget
+  { letTargetName :: !Text
+  , letTargetIndexed :: !Bool
+  }
+  deriving stock (Eq, Show)
 
 data ParsedNodeDecl
   = ParsedNodeBody !Text ![PortDecl] !NodeBody
@@ -352,7 +354,7 @@ data FormParamClass
 
 data FormItem
   = FormItemNode !ParsedNodeDecl
-  | FormItemLet !Text !FormLetRhs
+  | FormItemLet !LetTarget !FormLetRhs
   deriving stock (Show)
 
 data FormLetRhs
@@ -491,6 +493,8 @@ exprAtom :: Parser Expr
 exprAtom =
   choice
     [ ExprConfiguredExecutor <$> executorRef <*> recordExpr
+    , -- Immediate @name[index]@ is graph-family projection; spaced @name [index]@ is CorePure.
+      familyProjectionExpr
     , try constructorExpr
     , ExprRecord <$> recordExpr
     , listExpr
@@ -500,6 +504,15 @@ exprAtom =
     , parenOrUnit
     , ExprIdent <$> qualifiedIdent
     ]
+
+familyProjectionExpr :: Parser Expr
+familyProjectionExpr = lexeme $ do
+  familyName <- try (bareIdentifier <* MP.lookAhead (char '['))
+  _ <- char '['
+  spaceConsumer
+  indexValue <- nonNegativeIntLiteral "indexed family projection"
+  _ <- symbol "]"
+  pure (ExprFamilyProjection familyName indexValue)
 
 {- | Tagged-record constructor: a qualified identifier followed
 immediately by a record body, with no @\@@ prefix. Value-position only
@@ -954,7 +967,7 @@ inputPort :: Parser PortDecl
 inputPort = do
   _ <- symbol "<-"
   lbl <- requiredLabel
-  PortInputDecl lbl . ContractId <$> identifier
+  PortInputDecl lbl <$> contractRef
 
 outputPort :: Parser PortDecl
 outputPort = do
@@ -973,7 +986,7 @@ outputPort = do
 outputVariant :: Parser SumVariant
 outputVariant = do
   lbl <- requiredLabel
-  SumVariant lbl . ContractId <$> identifier
+  SumVariant lbl <$> contractRef
 
 requiredLabel :: Parser PortLabel
 requiredLabel = do
@@ -993,8 +1006,9 @@ wireFile = do
     e <- fileReturnExpr
     notFollowedBy (symbol ";")
     pure e
-  expandedForms <- either fail pure (expandStructuralForms forms)
-  pure (WireFile expandedForms ret)
+  (scope, expandedForms) <- either fail pure (expandStructuralForms forms)
+  ret' <- either fail pure (traverse (resolveFamilyProjections scope.esIndexedFamilies) ret)
+  pure (WireFile expandedForms ret')
 
 fileReturnExpr :: Parser Expr
 fileReturnExpr = expr
@@ -1036,9 +1050,37 @@ contractRecordField :: Parser (Text, ContractId)
 contractRecordField = do
   fieldName <- identifier
   _ <- symbol ":"
-  fieldContract <- ContractId <$> identifier
+  fieldContract <- contractRef
   _ <- symbol ";"
   pure (fieldName, fieldContract)
+
+contractRef :: Parser ContractId
+contractRef =
+  try boundedIndexedContract <|> (ContractId <$> identifier)
+
+boundedIndexedContract :: Parser ContractId
+boundedIndexedContract = do
+  _ <- symbol "["
+  elementContract <- identifier
+  _ <- symbol ";"
+  count <- nonNegativeIntLiteral "bounded indexed contract"
+  _ <- symbol "]"
+  pure (ContractId (boundedIndexedContractName elementContract count))
+
+nonNegativeIntLiteral :: String -> Parser Int
+nonNegativeIntLiteral context = lexeme $ do
+  digits <- some digitChar
+  case digits of
+    '0' : _ : _ ->
+      fail (context <> " index must not contain leading zeros")
+    _ ->
+      pure ()
+  case reads digits :: [(Integer, String)] of
+    [(integerValue, "")]
+      | integerValue <= toInteger (maxBound :: Int) ->
+          pure (fromInteger integerValue)
+    _ ->
+      fail (context <> " index is too large")
 
 useStmt :: Parser ParsedTopForm
 useStmt = do
@@ -1147,16 +1189,30 @@ formNodeItem = do
 formLetItem :: Parser FormItem
 formLetItem = do
   keyword "let"
-  name <- identifier
+  target <- letTarget
   _ <- symbol "="
-  FormItemLet name <$> formLetRhs
+  FormItemLet target <$> formLetRhs target
 
-formLetRhs :: Parser FormLetRhs
-formLetRhs =
-  try (FormLetRhsMake <$> (makeApplication <|> makeEachApplication) <* symbol ";")
-    <|> try (FormLetRhsApplication <$> formApplication <* symbol ";")
-    <|> try (FormLetRhsWire <$> expr <* symbol ";")
-    <|> (FormLetRhsCorePure <$> corePureExpr <* symbol ";")
+letTarget :: Parser LetTarget
+letTarget = do
+  name <- identifier
+  indexed <- optional (try (symbol "[" *> symbol "]"))
+  pure
+    LetTarget
+      { letTargetName = name
+      , letTargetIndexed = isJust indexed
+      }
+
+formLetRhs :: LetTarget -> Parser FormLetRhs
+formLetRhs target
+  | target.letTargetIndexed =
+      try (FormLetRhsMake <$> makeApplication <* symbol ";")
+        <|> fail indexedLetRequiresMakeMessage
+  | otherwise =
+      try (FormLetRhsMake <$> (makeApplication <|> makeEachApplication) <* symbol ";")
+        <|> try (FormLetRhsApplication <$> formApplication <* symbol ";")
+        <|> try (FormLetRhsWire <$> expr <* symbol ";")
+        <|> (FormLetRhsCorePure <$> corePureExpr <* symbol ";")
 
 nodeDecl :: Parser ParsedTopForm
 nodeDecl = do
@@ -1294,16 +1350,24 @@ letBinding :: Parser ParsedTopForm
 letBinding = do
   visibility <- (LetExported <$ keyword "export") <|> pure LetPrivate
   keyword "let"
-  name <- identifier
+  target <- letTarget
   _ <- symbol "="
-  parsedLetRhs visibility name
+  parsedLetRhs visibility target
 
-parsedLetRhs :: LetVisibility -> Text -> Parser ParsedTopForm
-parsedLetRhs visibility name =
-  try (ParsedTopLetMake visibility name <$> (makeApplication <|> makeEachApplication) <* symbol ";")
-    <|> try (ParsedTopLetApplication visibility name <$> formApplication <* symbol ";")
-    <|> try (ParsedTopLet visibility name . LetRhsWire <$> expr <* symbol ";")
-    <|> (ParsedTopLet visibility name . LetRhsCorePure <$> corePureExpr <* symbol ";")
+parsedLetRhs :: LetVisibility -> LetTarget -> Parser ParsedTopForm
+parsedLetRhs visibility target
+  | target.letTargetIndexed =
+      try (ParsedTopLetMake visibility target <$> makeApplication <* symbol ";")
+        <|> fail indexedLetRequiresMakeMessage
+  | otherwise =
+      try (ParsedTopLetMake visibility target <$> (makeApplication <|> makeEachApplication) <* symbol ";")
+        <|> try (ParsedTopLetApplication visibility target.letTargetName <$> formApplication <* symbol ";")
+        <|> try (ParsedTopLet visibility target.letTargetName . LetRhsWire <$> expr <* symbol ";")
+        <|> (ParsedTopLet visibility target.letTargetName . LetRhsCorePure <$> corePureExpr <* symbol ";")
+
+indexedLetRequiresMakeMessage :: String
+indexedLetRequiresMakeMessage =
+  "indexed let bindings require a make(count, kind) right-hand side"
 
 makeApplication :: Parser MakeApplication
 makeApplication = do
@@ -1372,28 +1436,34 @@ importStmt = do
       keyword "from"
       ImportExplicit names <$> stringLiteral
 
-expandStructuralForms :: [ParsedTopForm] -> Either String [TopForm]
+expandStructuralForms :: [ParsedTopForm] -> Either String (ExpansionScope, [TopForm])
 expandStructuralForms forms = do
-  (_scope, reversedForms) <- foldM step (emptyExpansionScope, []) forms
-  Right (reverse reversedForms)
+  (scope, reversedForms) <- foldM step (emptyExpansionScope, []) forms
+  Right (scope, reverse reversedForms)
   where
     step (scope, acc) = \case
       ParsedTopContract contractDeclValue ->
         Right (scope, TopContract contractDeclValue : acc)
       ParsedTopUse useSpec ->
         Right (scope, TopUse useSpec : acc)
-      ParsedTopLet visibility name rhs ->
-        Right (recordStaticMakeData name rhs scope, TopLet visibility name rhs : acc)
-      ParsedTopLetMake visibility name application -> do
-        expanded <- expandMakeBinding scope visibility name application
-        Right (scope, reverse expanded <> acc)
-      ParsedTopLetApplication visibility name application ->
-        case Map.lookup application.formApplicationName scope.esForms of
+      ParsedTopLet visibility name rhs -> do
+        resolved <- resolveLetRhsFamilyProjections scope.esIndexedFamilies rhs
+        Right (recordStaticMakeData name resolved scope, TopLet visibility name resolved : acc)
+      ParsedTopLetMake visibility target application -> do
+        expanded <- expandMakeBinding scope visibility target.letTargetName application
+        let scope' =
+              if target.letTargetIndexed
+                then recordIndexedFamily target.letTargetName expanded.embGeneratedChildNames scope
+                else scope
+        Right (scope', reverse expanded.embForms <> acc)
+      ParsedTopLetApplication visibility name application -> do
+        application' <- resolveFormApplicationFamilyProjections scope.esIndexedFamilies application
+        case Map.lookup application'.formApplicationName scope.esForms of
           Just formDeclValue -> do
-            expanded <- expandFormBinding scope visibility name formDeclValue application
+            expanded <- expandFormBinding scope visibility name formDeclValue application'
             Right (scope, reverse expanded <> acc)
           Nothing -> do
-            rhs <- formApplicationToCorePureLetRhs application
+            rhs <- formApplicationToCorePureLetRhs application'
             Right (scope, TopLet visibility name rhs : acc)
       ParsedTopImport importSpec ->
         Right (scope, TopImport importSpec : acc)
@@ -1434,6 +1504,7 @@ data ExpansionScope = ExpansionScope
     -- are visible as make counts or makeEach item lists.
     esMakeCounts :: !(Map Text Scientific)
   , esMakeItems :: !(Map Text [MakeItem])
+  , esIndexedFamilies :: !(Map Text [Text])
   }
   deriving stock (Show)
 
@@ -1444,10 +1515,17 @@ emptyExpansionScope =
     , esForms = Map.empty
     , esMakeCounts = Map.empty
     , esMakeItems = Map.empty
+    , esIndexedFamilies = Map.empty
     }
 
+data ExpandedMakeBinding = ExpandedMakeBinding
+  { embForms :: ![TopForm]
+  , embGeneratedChildNames :: ![Text]
+  }
+  deriving stock (Show)
+
 expandMakeBinding
-  :: ExpansionScope -> LetVisibility -> Text -> MakeApplication -> Either String [TopForm]
+  :: ExpansionScope -> LetVisibility -> Text -> MakeApplication -> Either String ExpandedMakeBinding
 expandMakeBinding scope visibility bindingName application = do
   kindDeclValue <-
     maybe
@@ -1474,7 +1552,168 @@ expandMakeBinding scope visibility bindingName application = do
           )
       resultExpr = overlayGeneratedChildren childNames
   nodes <- traverse childNode generated
-  Right (fmap TopNode nodes <> [TopLet visibility bindingName (LetRhsWire resultExpr)])
+  Right
+    ExpandedMakeBinding
+      { embForms = fmap TopNode nodes <> [TopLet visibility bindingName (LetRhsWire resultExpr)]
+      , embGeneratedChildNames = childNames
+      }
+
+recordIndexedFamily :: Text -> [Text] -> ExpansionScope -> ExpansionScope
+recordIndexedFamily familyName childNames scope =
+  scope {esIndexedFamilies = Map.insert familyName childNames scope.esIndexedFamilies}
+
+resolveLetRhsFamilyProjections :: Map Text [Text] -> LetRhs -> Either String LetRhs
+resolveLetRhsFamilyProjections families = \case
+  LetRhsWire exprValue -> do
+    resolved <- resolveFamilyProjectionsWithStatus families exprValue
+    -- The surface form @name[index]@ is both a graph-family projection and CorePure index syntax.
+    -- Unknown families in value-compatible lets must round back into CorePure instead of becoming
+    -- graph lets that fail later during lowering.
+    -- If the whole expression is not CorePure-compatible, the unresolved projection stays in graph
+    -- form so graph lowering can report it with graph-domain context.
+    if resolved.rfrContainsProjection
+      then case exprToCorePureExpr resolved.rfrExpr of
+        Right coreExpr ->
+          Right (LetRhsCorePure coreExpr)
+        Left _ ->
+          Right (LetRhsWire resolved.rfrExpr)
+      else Right (LetRhsWire resolved.rfrExpr)
+  rhs@LetRhsCorePure {} ->
+    Right rhs
+
+resolveFormApplicationFamilyProjections
+  :: Map Text [Text] -> FormApplication -> Either String FormApplication
+resolveFormApplicationFamilyProjections families application =
+  (\args -> application {formApplicationArgs = args})
+    <$> traverse (resolveFamilyProjections families) application.formApplicationArgs
+
+resolveFamilyProjections :: Map Text [Text] -> Expr -> Either String Expr
+resolveFamilyProjections families exprValue =
+  (.rfrExpr) <$> resolveFamilyProjectionsWithStatus families exprValue
+
+data ResolvedFamilyExpr = ResolvedFamilyExpr
+  { rfrExpr :: !Expr
+  , rfrContainsProjection :: !Bool
+  }
+  deriving stock (Eq, Show)
+
+data ResolvedFamilyRecord = ResolvedFamilyRecord
+  { rfrRecord :: !Record
+  , rfrRecordContainsProjection :: !Bool
+  }
+  deriving stock (Eq, Show)
+
+resolvedExpr :: Expr -> ResolvedFamilyExpr
+resolvedExpr exprValue =
+  ResolvedFamilyExpr
+    { rfrExpr = exprValue
+    , rfrContainsProjection = False
+    }
+
+unresolvedProjectionExpr :: Text -> Int -> ResolvedFamilyExpr
+unresolvedProjectionExpr familyName indexValue =
+  ResolvedFamilyExpr
+    { rfrExpr = ExprFamilyProjection familyName indexValue
+    , rfrContainsProjection = True
+    }
+
+mapResolvedRecord :: (Record -> Expr) -> ResolvedFamilyRecord -> ResolvedFamilyExpr
+mapResolvedRecord f resolved =
+  ResolvedFamilyExpr
+    { rfrExpr = f resolved.rfrRecord
+    , rfrContainsProjection = resolved.rfrRecordContainsProjection
+    }
+
+combineResolved2
+  :: (Expr -> Expr -> Expr) -> ResolvedFamilyExpr -> ResolvedFamilyExpr -> ResolvedFamilyExpr
+combineResolved2 f lhs rhs =
+  ResolvedFamilyExpr
+    { rfrExpr = f lhs.rfrExpr rhs.rfrExpr
+    , rfrContainsProjection = lhs.rfrContainsProjection || rhs.rfrContainsProjection
+    }
+
+combineResolvedList :: ([Expr] -> Expr) -> [ResolvedFamilyExpr] -> ResolvedFamilyExpr
+combineResolvedList f resolvedItems =
+  ResolvedFamilyExpr
+    { rfrExpr = f (fmap (.rfrExpr) resolvedItems)
+    , rfrContainsProjection = any (.rfrContainsProjection) resolvedItems
+    }
+
+resolveFamilyProjectionsWithStatus :: Map Text [Text] -> Expr -> Either String ResolvedFamilyExpr
+resolveFamilyProjectionsWithStatus families = go
+  where
+    go = \case
+      ExprOverlay lhs rhs ->
+        combineResolved2 ExprOverlay <$> go lhs <*> go rhs
+      ExprConnect lhs rhs ->
+        combineResolved2 ExprConnect <$> go lhs <*> go rhs
+      ExprStar lhs rhs ->
+        combineResolved2 ExprStar <$> go lhs <*> go rhs
+      ExprMerge lhs rhs ->
+        combineResolved2 ExprMerge <$> go lhs <*> go rhs
+      ExprConcat lhs rhs ->
+        combineResolved2 ExprConcat <$> go lhs <*> go rhs
+      ExprSelect base arms ->
+        combineSelect <$> go base <*> traverse resolveArm arms
+      ExprFamilyProjection familyName indexValue ->
+        resolveProjection familyName indexValue
+      ExprConfiguredExecutor executor config ->
+        mapResolvedRecord (ExprConfiguredExecutor executor) <$> resolveRecord config
+      ExprConstructor name recordValue ->
+        mapResolvedRecord (ExprConstructor name) <$> resolveRecord recordValue
+      ExprRecord recordValue ->
+        mapResolvedRecord ExprRecord <$> resolveRecord recordValue
+      ExprList items ->
+        combineResolvedList ExprList <$> traverse go items
+      ExprLit literalValue ->
+        Right (resolvedExpr (ExprLit literalValue))
+      ExprIdent name ->
+        Right (resolvedExpr (ExprIdent name))
+
+    resolveArm (SelectArm key armExpr) = do
+      resolvedArm <- go armExpr
+      Right (SelectArm key resolvedArm.rfrExpr, resolvedArm.rfrContainsProjection)
+
+    combineSelect base arms =
+      ResolvedFamilyExpr
+        { rfrExpr = ExprSelect base.rfrExpr (fmap fst arms)
+        , rfrContainsProjection =
+            base.rfrContainsProjection || any snd arms
+        }
+
+    resolveRecord (Record fields) = do
+      resolvedFields <- traverse resolveField fields
+      Right
+        ResolvedFamilyRecord
+          { rfrRecord = Record (fmap fst resolvedFields)
+          , rfrRecordContainsProjection = any snd resolvedFields
+          }
+
+    resolveField (Field path value) = do
+      resolvedValue <- go value
+      Right (Field path resolvedValue.rfrExpr, resolvedValue.rfrContainsProjection)
+
+    resolveProjection familyName indexValue =
+      case Map.lookup familyName families of
+        Nothing ->
+          Right (unresolvedProjectionExpr familyName indexValue)
+        Just childNames
+          | Just childName <- familyChildAt indexValue childNames ->
+              Right (resolvedExpr (ExprIdent (QName (childName :| []))))
+          | otherwise ->
+              Left
+                ( "indexed family projection "
+                    <> T.unpack familyName
+                    <> "["
+                    <> show indexValue
+                    <> "] is out of range for family of size "
+                    <> show (length childNames)
+                )
+
+familyChildAt :: Int -> [Text] -> Maybe Text
+familyChildAt indexValue childNames
+  | indexValue < 0 = Nothing
+  | otherwise = listToMaybe (drop indexValue childNames)
 
 makeGeneratedChildren
   :: ExpansionScope
@@ -1742,6 +1981,7 @@ emptyFormSubstitution =
 data FormExpansionState = FormExpansionState
   { fesLocalNames :: !(Map Text Text)
   , fesLocalLetNames :: !(Map Text Text)
+  , fesIndexedFamilies :: !(Map Text [Text])
   , fesMakeCounts :: !(Map Text Scientific)
   , fesMakeItems :: !(Map Text [MakeItem])
   , fesOutputForms :: ![TopForm]
@@ -1753,6 +1993,7 @@ emptyFormExpansionState =
   FormExpansionState
     { fesLocalNames = Map.empty
     , fesLocalLetNames = Map.empty
+    , fesIndexedFamilies = Map.empty
     , fesMakeCounts = Map.empty
     , fesMakeItems = Map.empty
     , fesOutputForms = []
@@ -1772,7 +2013,12 @@ expandFormBinding scope visibility bindingName formDeclValue application = do
       (expandFormItem scope subst bindingName)
       emptyFormExpansionState
       formDeclValue.formDeclItems
-  resultExpr <- substituteFormExpr subst expandedState.fesLocalNames formDeclValue.formDeclResult
+  resultExpr <-
+    substituteFormExpr
+      subst
+      expandedState.fesLocalNames
+      expandedState.fesIndexedFamilies
+      formDeclValue.formDeclResult
   Right $
     expandedState.fesOutputForms
       <> [TopLet visibility bindingName (LetRhsWire resultExpr)]
@@ -1797,7 +2043,8 @@ expandFormItem scope subst prefix state = \case
         { fesLocalNames = Map.insert localName prefixedName state.fesLocalNames
         , fesOutputForms = state.fesOutputForms <> [TopNode prefixedNode]
         }
-  FormItemLet localName rhs -> do
+  FormItemLet target rhs -> do
+    let localName = target.letTargetName
     ensureFreshFormLocal subst state localName
     let prefixedName = formScopedName prefix localName
         stateWithName =
@@ -1809,12 +2056,22 @@ expandFormItem scope subst prefix state = \case
       FormLetRhsApplication application ->
         case Map.lookup application.formApplicationName scope.esForms of
           Just formDeclValue -> do
-            application' <- substituteFormApplication subst state.fesLocalNames application
+            application' <-
+              substituteFormApplication
+                subst
+                state.fesLocalNames
+                state.fesIndexedFamilies
+                application
             expanded <- expandFormBinding scope LetPrivate prefixedName formDeclValue application'
             Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
           Nothing -> do
             letRhsValue <-
-              formApplicationToCorePureLetRhs =<< substituteFormApplication subst state.fesLocalNames application
+              formApplicationToCorePureLetRhs
+                =<< substituteFormApplication
+                  subst
+                  state.fesLocalNames
+                  state.fesIndexedFamilies
+                  application
             Right
               stateWithName
                 { fesOutputForms =
@@ -1823,15 +2080,29 @@ expandFormItem scope subst prefix state = \case
       FormLetRhsMake application -> do
         application' <- substituteFormMakeApplication subst state.fesLocalNames application
         expanded <- expandMakeBinding (scopeWithFormData scope state) LetPrivate prefixedName application'
-        Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
+        let stateWithFamily =
+              if target.letTargetIndexed
+                then
+                  stateWithName
+                    { fesIndexedFamilies =
+                        Map.insert localName expanded.embGeneratedChildNames stateWithName.fesIndexedFamilies
+                    }
+                else stateWithName
+        Right stateWithFamily {fesOutputForms = state.fesOutputForms <> expanded.embForms}
       FormLetRhsWire exprValue -> do
-        exprValue' <- substituteFormExpr subst state.fesLocalNames exprValue
+        letRhsValue <-
+          substituteFormWireLetRhs
+            subst
+            state.fesLocalNames
+            state.fesLocalLetNames
+            state.fesIndexedFamilies
+            exprValue
         let stateWithData =
-              recordFormStaticMakeData prefixedName (LetRhsWire exprValue') stateWithName
+              recordFormStaticMakeData prefixedName letRhsValue stateWithName
         Right
           stateWithData
             { fesOutputForms =
-                state.fesOutputForms <> [TopLet LetPrivate prefixedName (LetRhsWire exprValue')]
+                state.fesOutputForms <> [TopLet LetPrivate prefixedName letRhsValue]
             }
       FormLetRhsCorePure exprValue -> do
         exprValue' <- substituteFormCorePure subst state.fesLocalLetNames exprValue
@@ -1968,10 +2239,14 @@ expectSimpleFormIdentifier formDeclValue param expectedClass = \case
       )
 
 substituteFormApplication
-  :: FormSubstitution -> Map Text Text -> FormApplication -> Either String FormApplication
-substituteFormApplication subst localNames application =
+  :: FormSubstitution
+  -> Map Text Text
+  -> Map Text [Text]
+  -> FormApplication
+  -> Either String FormApplication
+substituteFormApplication subst localNames indexedFamilies application =
   FormApplication application.formApplicationName
-    <$> traverse (substituteFormExpr subst localNames) application.formApplicationArgs
+    <$> traverse (substituteFormExpr subst localNames indexedFamilies) application.formApplicationArgs
 
 substituteFormMakeApplication
   :: FormSubstitution -> Map Text Text -> MakeApplication -> Either String MakeApplication
@@ -2041,9 +2316,29 @@ substituteFormNodeDecl subst localLetNames nodeDeclValue =
             >>= rewriteNodeBodyLocalLets localLetNames
         )
 
-substituteFormExpr :: FormSubstitution -> Map Text Text -> Expr -> Either String Expr
-substituteFormExpr subst localNames exprValue =
-  rewriteFormExpr subst.fsGraphs localNames <$> substituteExpr subst.fsKindSubstitution exprValue
+substituteFormExpr
+  :: FormSubstitution -> Map Text Text -> Map Text [Text] -> Expr -> Either String Expr
+substituteFormExpr subst localNames indexedFamilies exprValue = do
+  substituted <- substituteExpr subst.fsKindSubstitution exprValue
+  rewritten <- rewriteFormExpr subst.fsGraphs localNames substituted
+  resolveFamilyProjections indexedFamilies rewritten
+
+substituteFormWireLetRhs
+  :: FormSubstitution
+  -> Map Text Text
+  -> Map Text Text
+  -> Map Text [Text]
+  -> Expr
+  -> Either String LetRhs
+substituteFormWireLetRhs subst localNames localLetNames indexedFamilies exprValue = do
+  substituted <- substituteExpr subst.fsKindSubstitution exprValue
+  rewritten <- rewriteFormExpr subst.fsGraphs localNames substituted
+  resolved <- resolveLetRhsFamilyProjections indexedFamilies (LetRhsWire rewritten)
+  case resolved of
+    LetRhsCorePure coreExpr ->
+      LetRhsCorePure <$> substituteFormCorePure subst localLetNames coreExpr
+    LetRhsWire wireExpr ->
+      Right (LetRhsWire wireExpr)
 
 substituteFormCorePure
   :: FormSubstitution -> Map Text Text -> CorePureExpr -> Either String CorePureExpr
@@ -2051,48 +2346,50 @@ substituteFormCorePure subst localLetNames exprValue =
   rewriteCorePureLocalLets localLetNames
     <$> substituteCorePureExpr subst.fsKindSubstitution exprValue
 
-rewriteFormExpr :: Map Text Expr -> Map Text Text -> Expr -> Expr
+rewriteFormExpr :: Map Text Expr -> Map Text Text -> Expr -> Either String Expr
 rewriteFormExpr graphParams localNames = go
   where
     go = \case
       ExprOverlay lhs rhs ->
-        ExprOverlay (go lhs) (go rhs)
+        ExprOverlay <$> go lhs <*> go rhs
       ExprConnect lhs rhs ->
-        ExprConnect (go lhs) (go rhs)
+        ExprConnect <$> go lhs <*> go rhs
       ExprStar lhs rhs ->
-        ExprStar (go lhs) (go rhs)
+        ExprStar <$> go lhs <*> go rhs
       ExprMerge lhs rhs ->
-        ExprMerge (go lhs) (go rhs)
+        ExprMerge <$> go lhs <*> go rhs
       ExprConcat lhs rhs ->
-        ExprConcat (go lhs) (go rhs)
+        ExprConcat <$> go lhs <*> go rhs
       ExprSelect base arms ->
-        ExprSelect (go base) (fmap rewriteArm arms)
+        ExprSelect <$> go base <*> traverse rewriteArm arms
+      ExprFamilyProjection familyName indexValue ->
+        Right (ExprFamilyProjection familyName indexValue)
       ExprConfiguredExecutor executor config ->
-        ExprConfiguredExecutor executor (rewriteRecord config)
+        ExprConfiguredExecutor executor <$> rewriteRecord config
       ExprConstructor name recordValue ->
-        ExprConstructor name (rewriteRecord recordValue)
+        ExprConstructor name <$> rewriteRecord recordValue
       ExprRecord recordValue ->
-        ExprRecord (rewriteRecord recordValue)
+        ExprRecord <$> rewriteRecord recordValue
       ExprList items ->
-        ExprList (fmap go items)
+        ExprList <$> traverse go items
       ExprLit literalValue ->
-        ExprLit literalValue
+        Right (ExprLit literalValue)
       ExprIdent (QName (name :| []))
         | Just replacement <- Map.lookup name graphParams ->
             go replacement
         | Just replacement <- Map.lookup name localNames ->
-            ExprIdent (QName (replacement :| []))
+            Right (ExprIdent (QName (replacement :| [])))
       ExprIdent name ->
-        ExprIdent name
+        Right (ExprIdent name)
 
     rewriteArm (SelectArm key armExpr) =
-      SelectArm key (go armExpr)
+      SelectArm key <$> go armExpr
 
     rewriteRecord (Record fields) =
-      Record (fmap rewriteField fields)
+      Record <$> traverse rewriteField fields
 
     rewriteField (Field path value) =
-      Field path (go value)
+      Field path <$> go value
 
 rewriteNodeBodyLocalLets :: Map Text Text -> NodeBody -> Either String NodeBody
 rewriteNodeBodyLocalLets localLetNames = \case
@@ -2268,7 +2565,14 @@ substitutePortLabel subst = \case
 
 substituteContractId :: KindSubstitution -> ContractId -> ContractId
 substituteContractId subst (ContractId contractName) =
-  ContractId (Map.findWithDefault contractName contractName subst.ksContracts)
+  ContractId $
+    case parseBoundedIndexedContractName contractName of
+      Just (elementContract, count) ->
+        boundedIndexedContractName
+          (Map.findWithDefault elementContract elementContract subst.ksContracts)
+          count
+      Nothing ->
+        Map.findWithDefault contractName contractName subst.ksContracts
 
 substituteNodeBody :: KindSubstitution -> NodeBody -> Either String NodeBody
 substituteNodeBody subst = \case
@@ -2326,6 +2630,8 @@ substituteExpr subst = \case
     ExprConcat <$> substituteExpr subst lhs <*> substituteExpr subst rhs
   ExprSelect base arms ->
     ExprSelect <$> substituteExpr subst base <*> traverse (substituteSelectArm subst) arms
+  ExprFamilyProjection familyName indexValue ->
+    Right (ExprFamilyProjection familyName indexValue)
   ExprConfiguredExecutor executor config ->
     ExprConfiguredExecutor executor <$> substituteRecord subst config
   ExprConstructor name recordValue ->
@@ -2433,6 +2739,12 @@ exprToCorePureExpr = \case
     Right (CorePureIdent name)
   ExprMerge lhs rhs ->
     CorePureBinary CorePureMerge <$> exprToCorePureExpr lhs <*> exprToCorePureExpr rhs
+  ExprFamilyProjection familyName indexValue ->
+    Right
+      ( CorePureIndex
+          (CorePureIdent familyName)
+          (CorePureLit (CorePureNumber (fromIntegral indexValue)))
+      )
   other ->
     Left ("kind Value argument must be CorePure-compatible, got " <> show other)
   where

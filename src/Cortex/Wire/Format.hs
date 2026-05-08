@@ -219,7 +219,7 @@ formatContractDecl contractDecl =
 
 formatContractRecordField :: (Text, ContractId) -> Text
 formatContractRecordField (fieldName, fieldContract) =
-  "  " <> fieldName <> ": " <> fieldContract.unContractId <> ";"
+  "  " <> fieldName <> ": " <> renderContractId fieldContract <> ";"
 
 formatUseItems :: NonEmpty UseItem -> Text
 formatUseItems =
@@ -337,15 +337,15 @@ formatPureOutputEquation outputEquation =
 formatPortDecl :: PortDecl -> Text
 formatPortDecl = \case
   PortInputDecl label contract ->
-    "<- " <> formatPortLabel label <> ": " <> contract.unContractId <> ";"
+    "<- " <> formatPortLabel label <> ": " <> renderContractId contract <> ";"
   PortOutputDecl label contract ->
-    "-> " <> formatPortLabel label <> ": " <> contract.unContractId <> ";"
+    "-> " <> formatPortLabel label <> ": " <> renderContractId contract <> ";"
   PortOutputSumDecl variants ->
     "-> " <> T.intercalate " | " (fmap formatSumVariant (toList variants)) <> ";"
 
 formatSumVariant :: SumVariant -> Text
 formatSumVariant variant =
-  formatPortLabel variant.svLabel <> ": " <> variant.svContract.unContractId
+  formatPortLabel variant.svLabel <> ": " <> renderContractId variant.svContract
 
 formatPortLabel :: PortLabel -> Text
 formatPortLabel = \case
@@ -502,6 +502,7 @@ isInlineGraphAtom = \case
   ExprLit LitUnit -> True
   ExprSelect base arms ->
     isInlineGraphAtom base && all (isInlineGraphAtom . (.selectArmExpr)) arms
+  ExprFamilyProjection {} -> True
   ExprOverlay lhs rhs -> isInlineGraphAtom lhs && isInlineGraphAtom rhs
   ExprConnect lhs rhs -> isInlineGraphAtom lhs && isInlineGraphAtom rhs
   ExprStar lhs rhs -> isInlineGraphAtom lhs && isInlineGraphAtom rhs
@@ -518,6 +519,7 @@ isExprAtom = \case
   ExprList {} -> True
   ExprLit {} -> True
   ExprIdent {} -> True
+  ExprFamilyProjection {} -> True
   _ -> False
 
 formatMergeOperandLeft :: Expr -> Text
@@ -547,6 +549,8 @@ formatExprInline expr =
       formatMergeOperandLeft lhs <> " ++ " <> formatMergeOperandRight rhs
     ExprSelect base arms ->
       formatExprInline base <> formatSelectSuffix arms
+    ExprFamilyProjection familyName indexValue ->
+      familyName <> "[" <> T.pack (show indexValue) <> "]"
     ExprConfiguredExecutor name record ->
       "@" <> renderQName name <> " " <> formatRecordInline record
     ExprConstructor name record ->

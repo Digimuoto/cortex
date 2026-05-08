@@ -82,8 +82,8 @@
 (make_application kind: (identifier) @type)
 
 ; [export] let <name> = <expr>;
-(let_binding name: (identifier) @constant)
-(form_let_binding name: (identifier) @constant)
+(let_binding target: (let_target name: (identifier) @constant))
+(form_let_binding target: (let_target name: (identifier) @constant))
 
 ; contract <Name>;
 (contract_decl
@@ -124,11 +124,13 @@
 
 (input_clause label: (identifier) @tag)
 (output_variant label: (identifier) @tag)
+(contract_field name: (identifier) @property)
 
 ; ── Identifier references ──────────────────────────────────────────────
 
 (ident_ref) @variable
 (core_pure_ident) @variable
+(family_projection family: (identifier) @variable)
 
 ; ── Graph topology ─────────────────────────────────────────────────────
 

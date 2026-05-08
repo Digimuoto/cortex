@@ -60,6 +60,7 @@ import Cortex.Wire.Std
   , stdIoWriteFileShapeMessage
   )
 import Cortex.Wire.Syntax (ContractId (..), WireError (..), WireOutputPort (..), WirePorts (..))
+import Cortex.Wire.Syntax qualified as Syntax
 
 spec :: Spec
 spec = describe "Cortex.Wire.Compile" $ do
@@ -135,6 +136,53 @@ spec = describe "Cortex.Wire.Compile" $ do
     successors compiled.compiledCircuitTopology phantomRef
       `shouldBe` Set.singleton (CircuitNodeRef "sink")
 
+  it "lowers indexed make-family * gather through an explicit product adapter" $ do
+    compiled <- requireRight (compileWireText indexedProductGatherSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "workers_0")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "workers_1")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "workers_2")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.singleton (CircuitNodeRef "sink")
+    case Map.lookup phantomRef compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata
+          `shouldSatisfy` metadataPureOutputEquals
+            "samples"
+            ( Syntax.CorePureList
+                [ Syntax.CorePureIdent "workers_0"
+                , Syntax.CorePureIdent "workers_1"
+                , Syntax.CorePureIdent "workers_2"
+                ]
+            )
+      other ->
+        expectationFailure ("expected indexed gather phantom node, got: " <> show other)
+
+  it "lowers singleton indexed make-family * gather through an explicit product adapter" $ do
+    compiled <- requireRight (compileWireText singletonIndexedProductGatherSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "workers_0")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.singleton (CircuitNodeRef "sink")
+    case Map.lookup phantomRef compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata
+          `shouldSatisfy` metadataPureOutputEquals
+            "samples"
+            (Syntax.CorePureList [Syntax.CorePureIdent "workers_0"])
+      other ->
+        expectationFailure ("expected singleton indexed gather phantom node, got: " <> show other)
+
   it "lowers record-form * scatter through an explicit phantom adapter" $ do
     compiled <- requireRight (compileWireTextWithEnv starContractEnv starScatterSourceText)
     let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
@@ -145,6 +193,48 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Set.singleton phantomRef
     successors compiled.compiledCircuitTopology phantomRef
       `shouldBe` Set.fromList [CircuitNodeRef "a", CircuitNodeRef "b"]
+
+  it "lowers indexed product * scatter into an indexed make family" $ do
+    compiled <- requireRight (compileWireText indexedProductScatterSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:scatter:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.fromList
+        [ CircuitNodeRef "workers_0"
+        , CircuitNodeRef "workers_1"
+        , CircuitNodeRef "workers_2"
+        ]
+    case Map.lookup phantomRef compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) -> do
+        taskNode.circuitTaskNodeMetadata
+          `shouldSatisfy` metadataPureOutputEquals "workers_0" (indexedPureExpr "samples" 0)
+        taskNode.circuitTaskNodeMetadata
+          `shouldSatisfy` metadataPureOutputEquals "workers_1" (indexedPureExpr "samples" 1)
+        taskNode.circuitTaskNodeMetadata
+          `shouldSatisfy` metadataPureOutputEquals "workers_2" (indexedPureExpr "samples" 2)
+      other ->
+        expectationFailure ("expected indexed scatter phantom node, got: " <> show other)
+
+  it "lowers singleton indexed product * scatter through an explicit product adapter" $ do
+    compiled <- requireRight (compileWireText singletonIndexedProductScatterSourceText)
+    let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        phantomRefs = Set.filter (("__star:scatter:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+    Set.size phantomRefs `shouldBe` 1
+    let phantomRef = Set.findMin phantomRefs
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+      `shouldBe` Set.singleton phantomRef
+    successors compiled.compiledCircuitTopology phantomRef
+      `shouldBe` Set.singleton (CircuitNodeRef "workers_0")
+    case Map.lookup phantomRef compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeMetadata
+          `shouldSatisfy` metadataPureOutputEquals "workers_0" (indexedPureExpr "samples" 0)
+      other ->
+        expectationFailure ("expected singleton indexed scatter phantom node, got: " <> show other)
 
   it "lowers empty record-form * scatter through a zero-output phantom adapter" $ do
     compiled <- requireRight (compileWireTextWithEnv starContractEnv starEmptyScatterSourceText)
@@ -160,6 +250,10 @@ spec = describe "Cortex.Wire.Compile" $ do
   it "rejects flat singleton * and directs authors to =>" $
     compileWireTextWithEnv starContractEnv flatSingletonStarSourceText
       `shouldSatisfy` isWireParseFailureContaining "use `=>`"
+
+  it "rejects indexed product * when arity does not match the generated frontier" $
+    compileWireText indexedProductArityMismatchSourceText
+      `shouldSatisfy` isWireParseFailureContaining "Expected [Sample; 3]"
 
   it "compiles a configured executor value applied in a node body" $ do
     compiled <- requireRight (compileWireText configuredExecutorSourceText)
@@ -465,6 +559,28 @@ spec = describe "Cortex.Wire.Compile" $ do
       source <- TIO.readFile "examples/wire/mini-build-system.wire"
       compileWireText source `shouldSatisfy` isRight
 
+    it "compiles the bounded shard analysis example" $ do
+      source <- TIO.readFile "examples/wire/bounded-shard-analysis.wire"
+      compiled <- requireRight (compileWireText source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.singleton (CircuitNodeRef "slice_corpus")
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.singleton (CircuitNodeRef "reduce_findings")
+      let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+          scatterPhantoms = Set.filter (("__star:scatter:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+          gatherPhantoms = Set.filter (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
+      Set.size scatterPhantoms `shouldBe` 1
+      Set.size gatherPhantoms `shouldBe` 1
+      successors compiled.compiledCircuitTopology (Set.findMin scatterPhantoms)
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "workers_0"
+          , CircuitNodeRef "workers_1"
+          , CircuitNodeRef "workers_2"
+          , CircuitNodeRef "workers_3"
+          ]
+      successors compiled.compiledCircuitTopology (Set.findMin gatherPhantoms)
+        `shouldBe` Set.singleton (CircuitNodeRef "reduce_findings")
+
     it "compiles the C build example" $ do
       source <- TIO.readFile "examples/wire/c-build/c-build.wire"
       expanded <- requireRight =<< expandWireSourceIncludes "examples/wire/c-build/c-build.wire" source
@@ -671,6 +787,30 @@ starGatherSourceText =
     , "(a <> b) * sink"
     ]
 
+indexedProductGatherSourceText :: T.Text
+indexedProductGatherSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "node sink"
+    , "  <- samples: [Sample; 3] ;"
+    , "  -> done: Done = @review.sink (samples) ;"
+    , "let workers[] = make(3, sample);"
+    , "workers * sink"
+    ]
+
+singletonIndexedProductGatherSourceText :: T.Text
+singletonIndexedProductGatherSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "node sink"
+    , "  <- samples: [Sample; 1] ;"
+    , "  -> done: Done = @review.sink (samples) ;"
+    , "let workers[] = make(1, sample);"
+    , "workers * sink"
+    ]
+
 starScatterSourceText :: T.Text
 starScatterSourceText =
   T.unlines
@@ -683,6 +823,30 @@ starScatterSourceText =
     , "  <- b: B ;"
     , "  -> done_b: Done = @review.b (b) ;"
     , "source * (a <> b)"
+    ]
+
+indexedProductScatterSourceText :: T.Text
+indexedProductScatterSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> samples: [Sample; 3] = @review.source ({}) ;"
+    , "kind consume(label: PortLabel) ="
+    , "  <- label: Sample ;"
+    , "  -> label: Done = @review.consume (label) ;"
+    , "let workers[] = make(3, consume);"
+    , "source * workers"
+    ]
+
+singletonIndexedProductScatterSourceText :: T.Text
+singletonIndexedProductScatterSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> samples: [Sample; 1] = @review.source ({}) ;"
+    , "kind consume(label: PortLabel) ="
+    , "  <- label: Sample ;"
+    , "  -> label: Done = @review.consume (label) ;"
+    , "let workers[] = make(1, consume);"
+    , "source * workers"
     ]
 
 starEmptyScatterSourceText :: T.Text
@@ -702,6 +866,18 @@ flatSingletonStarSourceText =
     , "  <- pair: Pair ;"
     , "  -> done: Done = @review.sink (pair) ;"
     , "source * sink"
+    ]
+
+indexedProductArityMismatchSourceText :: T.Text
+indexedProductArityMismatchSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "node sink"
+    , "  <- samples: [Sample; 3] ;"
+    , "  -> done: Done = @review.sink (samples) ;"
+    , "let workers[] = make(2, sample);"
+    , "workers * sink"
     ]
 
 configuredExecutorSourceText :: T.Text
@@ -1233,6 +1409,24 @@ metadataHasPureOutput outputName = \case
           _ -> False
       _ -> False
   _ -> False
+
+metadataPureOutputEquals :: T.Text -> Syntax.CorePureExpr -> Aeson.Value -> Bool
+metadataPureOutputEquals outputName expected = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) ->
+        case KeyMap.lookup "outputs" configObj of
+          Just (Aeson.Object outputsObj) ->
+            KeyMap.lookup (Key.fromText outputName) outputsObj == Just (Aeson.toJSON expected)
+          _ -> False
+      _ -> False
+  _ -> False
+
+indexedPureExpr :: T.Text -> Scientific -> Syntax.CorePureExpr
+indexedPureExpr inputName indexValue =
+  Syntax.CorePureIndex
+    (Syntax.CorePureIdent inputName)
+    (Syntax.CorePureLit (Syntax.CorePureNumber indexValue))
 
 metadataHasInstructions :: T.Text -> Aeson.Value -> Bool
 metadataHasInstructions expected = \case

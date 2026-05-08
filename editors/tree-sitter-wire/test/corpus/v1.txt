@@ -26,13 +26,15 @@ run
     name: (identifier)
     inputs: (input_clause
       label: (identifier)
-      contract: (contract_name
-        (contract)))
+      contract: (contract_ref
+        (contract_name
+          (contract))))
     body: (executor_single_output_body
       output: (output_variant
         label: (identifier)
-        contract: (contract_name
-          (contract)))
+        contract: (contract_ref
+          (contract_name
+            (contract))))
       call: (inline_executor_call
         name: (qualified_ident
           (identifier))
@@ -68,15 +70,17 @@ screen_h
       class: (kind_param_class))
     inputs: (input_clause
       label: (identifier)
-      contract: (contract_name
-        (contract)))
+      contract: (contract_ref
+        (contract_name
+          (contract))))
     body: (executor_body
       outputs: (executor_output_clause
         output: (output_body
           (output_variant
             label: (identifier)
-            contract: (contract_name
-              (contract)))))
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
       call: (executor_call
         (configured_executor_call
           name: (identifier)
@@ -119,12 +123,14 @@ planner
         output: (output_body
           (output_variant
             label: (identifier)
-            contract: (contract_name
-              (contract)))
+            contract: (contract_ref
+              (contract_name
+                (contract))))
           (output_variant
             label: (identifier)
-            contract: (contract_name
-              (contract)))))
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
       call: (executor_call
         (inline_executor_call
           name: (qualified_ident
@@ -176,13 +182,15 @@ run
       class: (kind_param_class))
     inputs: (input_clause
       label: (identifier)
-      contract: (contract_name
-        (contract)))
+      contract: (contract_ref
+        (contract_name
+          (contract))))
     body: (executor_single_output_body
       output: (output_variant
         label: (identifier)
-        contract: (contract_name
-          (contract)))
+        contract: (contract_ref
+          (contract_name
+            (contract))))
       call: (inline_executor_call
         name: (qualified_ident
           (identifier)
@@ -220,7 +228,8 @@ run
               (identifier))))))
     items: (form_item
       (form_let_binding
-        name: (identifier)
+        target: (let_target
+          name: (identifier))
         value: (expression
           (topology_expression
             left: (ident_ref
@@ -251,7 +260,8 @@ run
               (identifier))))))
     items: (form_item
       (form_let_binding
-        name: (identifier)
+        target: (let_target
+          name: (identifier))
         value: (form_application
           name: (identifier)
           args: (expression
@@ -259,7 +269,8 @@ run
               (identifier))))))
     items: (form_item
       (form_let_binding
-        name: (identifier)
+        target: (let_target
+          name: (identifier))
         value: (expression
           (ident_ref
             (identifier)))))
@@ -275,7 +286,8 @@ run
         right: (ident_ref
           (identifier)))))
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (form_application
       name: (identifier)
       args: (expression
@@ -314,8 +326,9 @@ workers * sink
     body: (executor_single_output_body
       output: (output_variant
         label: (identifier)
-        contract: (contract_name
-          (contract)))
+        contract: (contract_ref
+          (contract_name
+            (contract))))
       call: (inline_executor_call
         name: (qualified_ident
           (identifier)
@@ -323,11 +336,13 @@ workers * sink
         input: (core_pure_expr
           (core_pure_record)))))
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (expression
       (number)))
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (make_application
       count: (identifier)
       kind: (identifier)))
@@ -335,13 +350,15 @@ workers * sink
     name: (identifier)
     inputs: (input_clause
       label: (identifier)
-      contract: (contract_name
-        (contract)))
+      contract: (contract_ref
+        (contract_name
+          (contract))))
     body: (executor_single_output_body
       output: (output_variant
         label: (identifier)
-        contract: (contract_name
-          (contract)))
+        contract: (contract_ref
+          (contract_name
+            (contract))))
       call: (inline_executor_call
         name: (qualified_ident
           (identifier)
@@ -390,7 +407,8 @@ classify
     name: (contract_name
       (contract)))
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (core_pure_expr
       (core_pure_lambda
         param: (identifier)
@@ -402,22 +420,25 @@ classify
     name: (identifier)
     inputs: (input_clause
       label: (identifier)
-      contract: (contract_name
-        (contract)))
+      contract: (contract_ref
+        (contract_name
+          (contract))))
     body: (pure_body
       (pure_output_equation
         output: (output_variant
           label: (identifier)
-          contract: (contract_name
-            (contract)))
+          contract: (contract_ref
+            (contract_name
+              (contract))))
         body: (pure_output_expr
           expr: (core_pure_expr
             (core_pure_ident))))
       (pure_output_equation
         output: (output_variant
           label: (identifier)
-          contract: (contract_name
-            (contract)))
+          contract: (contract_ref
+            (contract_name
+              (contract))))
         body: (pure_output_expr
           expr: (core_pure_expr
             function: (core_pure_ident)
@@ -476,12 +497,14 @@ greeting
 
 (source_file
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (expression
       (string
         (string_interpolation))))
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (expression
       (indented_string
         (indented_string_interpolation)
@@ -504,7 +527,8 @@ summary
 
 (source_file
   (let_binding
-    name: (identifier)
+    target: (let_target
+      name: (identifier))
     value: (expression
       (indented_string
         (indented_string_interpolation))))
@@ -530,8 +554,9 @@ render
       (pure_output_equation
         output: (output_variant
           label: (identifier)
-          contract: (contract_name
-            (contract)))
+          contract: (contract_ref
+            (contract_name
+              (contract))))
         body: (pure_output_expr
           expr: (core_pure_expr
             function: (core_pure_ident)
@@ -542,8 +567,9 @@ render
       (pure_output_equation
         output: (output_variant
           label: (identifier)
-          contract: (contract_name
-            (contract)))
+          contract: (contract_ref
+            (contract_name
+              (contract))))
         body: (pure_output_expr
           expr: (core_pure_expr
             target: (core_pure_ident)

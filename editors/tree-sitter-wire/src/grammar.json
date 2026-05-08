@@ -80,6 +80,71 @@
           }
         },
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "record",
+              "content": {
+                "type": "SYMBOL",
+                "name": "contract_record"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": ";"
+        }
+      ]
+    },
+    "contract_record": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "{"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "contract_field"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
+    },
+    "contract_field": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "identifier"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ":"
+        },
+        {
+          "type": "FIELD",
+          "name": "contract",
+          "content": {
+            "type": "SYMBOL",
+            "name": "contract_ref"
+          }
+        },
+        {
           "type": "STRING",
           "value": ";"
         }
@@ -288,10 +353,10 @@
         },
         {
           "type": "FIELD",
-          "name": "name",
+          "name": "target",
           "content": {
             "type": "SYMBOL",
-            "name": "identifier"
+            "name": "let_target"
           }
         },
         {
@@ -326,6 +391,40 @@
         {
           "type": "STRING",
           "value": ";"
+        }
+      ]
+    },
+    "let_target": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "identifier"
+          }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "["
+                },
+                {
+                  "type": "STRING",
+                  "value": "]"
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         }
       ]
     },
@@ -732,10 +831,10 @@
         },
         {
           "type": "FIELD",
-          "name": "name",
+          "name": "target",
           "content": {
             "type": "SYMBOL",
-            "name": "identifier"
+            "name": "let_target"
           }
         },
         {
@@ -1145,7 +1244,7 @@
           "name": "contract",
           "content": {
             "type": "SYMBOL",
-            "name": "contract_name"
+            "name": "contract_ref"
           }
         },
         {
@@ -1346,7 +1445,7 @@
           "name": "contract",
           "content": {
             "type": "SYMBOL",
-            "name": "contract_name"
+            "name": "contract_ref"
           }
         }
       ]
@@ -1460,6 +1559,52 @@
         {
           "type": "STRING",
           "value": ";"
+        }
+      ]
+    },
+    "contract_ref": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "bounded_indexed_contract"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "contract_name"
+        }
+      ]
+    },
+    "bounded_indexed_contract": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "["
+        },
+        {
+          "type": "FIELD",
+          "name": "element",
+          "content": {
+            "type": "SYMBOL",
+            "name": "contract_name"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ";"
+        },
+        {
+          "type": "FIELD",
+          "name": "count",
+          "content": {
+            "type": "SYMBOL",
+            "name": "number"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "]"
         }
       ]
     },
@@ -1856,6 +2001,10 @@
           "name": "paren_expression"
         },
         {
+          "type": "SYMBOL",
+          "name": "family_projection"
+        },
+        {
           "type": "ALIAS",
           "content": {
             "type": "SYMBOL",
@@ -1865,6 +2014,42 @@
           "value": "ident_ref"
         }
       ]
+    },
+    "family_projection": {
+      "type": "PREC",
+      "value": 12,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "family",
+            "content": {
+              "type": "SYMBOL",
+              "name": "identifier"
+            }
+          },
+          {
+            "type": "IMMEDIATE_TOKEN",
+            "content": {
+              "type": "STRING",
+              "value": "["
+            }
+          },
+          {
+            "type": "FIELD",
+            "name": "index",
+            "content": {
+              "type": "SYMBOL",
+              "name": "number"
+            }
+          },
+          {
+            "type": "STRING",
+            "value": "]"
+          }
+        ]
+      }
     },
     "configured_executor_value": {
       "type": "SEQ",

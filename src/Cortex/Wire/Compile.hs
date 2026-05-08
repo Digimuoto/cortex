@@ -557,6 +557,7 @@ isGraphLetExpr st = \case
   ExprLit LitUnit -> True
   ExprIdent (QName (name :| [])) ->
     Map.member name st.lsNamedNodes || Map.member name st.lsGraphBindings
+  ExprFamilyProjection {} -> True
   _ -> False
 
 appendPureBindingIfCapturable :: Text -> EvalValue -> LoweringState -> LoweringState
@@ -708,6 +709,16 @@ lowerGraphBase compileEnv st = \case
   ExprSelect baseExpr arms -> do
     baseFragment <- lowerGraphBase compileEnv st baseExpr
     lowerSelectStep compileEnv st baseFragment arms Nothing
+  ExprFamilyProjection familyName indexValue ->
+    Left
+      ( WireCore.WireParseError
+          ( "Unexpanded indexed family projection "
+              <> familyName
+              <> "["
+              <> T.pack (show indexValue)
+              <> "] reached graph lowering."
+          )
+      )
   ExprConnect lhs rhs ->
     lowerGraphExpr compileEnv st (ExprConnect lhs rhs)
   other ->
@@ -860,8 +871,16 @@ data StarPlan = StarPlan
   { starPlanDirection :: !StarDirection
   , starPlanSingular :: !BoundaryPort
   , starPlanMulti :: ![BoundaryPort]
-  , starPlanRecordFields :: !(Map Text ContractId)
+  , starPlanProductShape :: !StarProductShape
   }
+  deriving stock (Eq, Show)
+
+data StarProductShape
+  = StarRecordShape !(Map Text ContractId)
+  | StarIndexedShape !Text !Int
+  deriving stock (Eq, Show)
+
+data StarPortSide = StarInputSide | StarOutputSide
   deriving stock (Eq, Show)
 
 resolveStarPlan
@@ -876,11 +895,8 @@ resolveStarPlan compileEnv st leftExits rightEntries =
       gather singular []
     ([singular], []) ->
       scatter singular []
-    ([_], [_]) ->
-      Left
-        ( WireCore.WireParseError
-            "`*` requires a multi-element frontier on one side; use `=>` for one-to-one wiring."
-        )
+    ([left], [right]) ->
+      resolveSingletonStarPlan left right
     (_ : _ : _, [singular]) ->
       gather singular leftExits
     ([singular], _ : _ : _) ->
@@ -897,26 +913,73 @@ resolveStarPlan compileEnv st leftExits rightEntries =
         )
   where
     gather singular multi = do
-      fields <- recordFieldsForStar compileEnv st singular.bpContract
-      validateStarMultiSide fields multi
+      productShape <- productShapeForStar compileEnv st singular.bpContract
+      validateStarMultiSide productShape multi
       Right
         StarPlan
           { starPlanDirection = StarGather
           , starPlanSingular = singular
           , starPlanMulti = multi
-          , starPlanRecordFields = fields
+          , starPlanProductShape = productShape
           }
 
     scatter singular multi = do
-      fields <- recordFieldsForStar compileEnv st singular.bpContract
-      validateStarMultiSide fields multi
+      productShape <- productShapeForStar compileEnv st singular.bpContract
+      validateStarMultiSide productShape multi
       Right
         StarPlan
           { starPlanDirection = StarScatter
           , starPlanSingular = singular
           , starPlanMulti = multi
-          , starPlanRecordFields = fields
+          , starPlanProductShape = productShape
           }
+
+    resolveSingletonStarPlan left right = do
+      let leftShape = productShapeForStarMaybe compileEnv st left.bpContract
+          rightShape = productShapeForStarMaybe compileEnv st right.bpContract
+      case (leftShape, rightShape) of
+        (Nothing, Just _) ->
+          gather right [left]
+        (Just _, Nothing) ->
+          scatter left [right]
+        _ ->
+          Left
+            ( WireCore.WireParseError
+                "`*` requires a product boundary on one side and its scalar leaf frontier on the other; use `=>` for one-to-one aggregate wiring."
+            )
+
+productShapeForStar
+  :: WireCompileEnv -> LoweringState -> Text -> Either WireCore.WireError StarProductShape
+productShapeForStar compileEnv st contractId =
+  case parseBoundedIndexedContractName contractId of
+    Just (elementContract, count) ->
+      Right (StarIndexedShape elementContract count)
+    Nothing ->
+      StarRecordShape <$> recordFieldsForStar compileEnv st contractId
+
+productShapeForStarMaybe :: WireCompileEnv -> LoweringState -> Text -> Maybe StarProductShape
+productShapeForStarMaybe compileEnv st contractId =
+  case parseBoundedIndexedContractName contractId of
+    Just (elementContract, count) ->
+      Just (StarIndexedShape elementContract count)
+    Nothing ->
+      StarRecordShape <$> recordFieldsForStarMaybe compileEnv st contractId
+
+recordFieldsForStarMaybe :: WireCompileEnv -> LoweringState -> Text -> Maybe (Map Text ContractId)
+recordFieldsForStarMaybe compileEnv st contractId =
+  case Map.lookup contractId st.lsDeclaredRecordContracts of
+    Just fields ->
+      Just fields
+    Nothing ->
+      case compileEnv.wireCompileEnvContractRegistry of
+        Nothing ->
+          Nothing
+        Just registry ->
+          case Map.lookup contractId registry.wireContractRegistryContracts of
+            Nothing ->
+              Nothing
+            Just spec ->
+              spec.wireContractSpecRecordFields
 
 recordFieldsForStar
   :: WireCompileEnv -> LoweringState -> Text -> Either WireCore.WireError (Map Text ContractId)
@@ -929,9 +992,9 @@ recordFieldsForStar compileEnv st contractId =
         Nothing ->
           Left
             ( WireCore.WireParseError
-                ( "`*` requires a nominal record shape for "
+                ( "`*` requires either [T; N] syntax or a nominal record contract; no record registry was available for "
                     <> contractId
-                    <> "."
+                    <> ". Use [T; N] syntax for indexed products or provide a nominal record registry."
                 )
             )
         Just registry ->
@@ -947,24 +1010,76 @@ recordFieldsForStar compileEnv st contractId =
                     ( WireCore.WireParseError
                         ( "`*` singular side contract "
                             <> contractId
-                            <> " is not a nominal record contract."
+                            <> " is not a nominal record contract. Use [T; N] syntax for bounded indexed products."
                         )
                     )
 
 validateStarMultiSide
-  :: Map Text ContractId -> [BoundaryPort] -> Either WireCore.WireError ()
-validateStarMultiSide fields multiBoundaries = do
-  observed <- boundaryFieldMap multiBoundaries
-  when (observed /= fields) $
+  :: StarProductShape -> [BoundaryPort] -> Either WireCore.WireError ()
+validateStarMultiSide productShape multiBoundaries =
+  case productShape of
+    StarRecordShape fields -> do
+      observed <- boundaryFieldMap multiBoundaries
+      when (observed /= fields) $
+        Left
+          ( WireCore.WireParseError
+              ( "`*` multi-side frontier does not match nominal record fields. Expected "
+                  <> renderFieldMap fields
+                  <> "; observed "
+                  <> renderFieldMap observed
+                  <> "."
+              )
+          )
+    StarIndexedShape elementContract count -> do
+      validateIndexedStarArity elementContract count multiBoundaries
+      traverse_ (validateIndexedBoundary elementContract) multiBoundaries
+      validateIndexedBoundaryKeys multiBoundaries
+
+validateIndexedStarArity :: Text -> Int -> [BoundaryPort] -> Either WireCore.WireError ()
+validateIndexedStarArity elementContract count multiBoundaries =
+  when (length multiBoundaries /= count) $
     Left
       ( WireCore.WireParseError
-          ( "`*` multi-side frontier does not match nominal record fields. Expected "
-              <> renderFieldMap fields
-              <> "; observed "
-              <> renderFieldMap observed
+          ( "`*` multi-side frontier does not match bounded indexed product. Expected "
+              <> renderContractId (ContractId (boundedIndexedContractName elementContract count))
+              <> " with "
+              <> T.pack (show count)
+              <> " endpoint(s); observed "
+              <> T.pack (show (length multiBoundaries))
               <> "."
           )
       )
+
+validateIndexedBoundary :: Text -> BoundaryPort -> Either WireCore.WireError ()
+validateIndexedBoundary elementContract boundary =
+  when (boundary.bpContract /= elementContract) $
+    Left
+      ( WireCore.WireParseError
+          ( "`*` indexed multi-side endpoint "
+              <> renderBoundaryEndpoint boundary
+              <> " has contract "
+              <> renderContractId (ContractId boundary.bpContract)
+              <> ", expected "
+              <> renderContractId (ContractId elementContract)
+              <> "."
+          )
+      )
+
+validateIndexedBoundaryKeys :: [BoundaryPort] -> Either WireCore.WireError ()
+validateIndexedBoundaryKeys multiBoundaries =
+  case firstBoundaryInDuplicateKeyGroups multiBoundaries of
+    duplicateBoundary : _ ->
+      Left
+        ( WireCore.WireParseError
+            ( "`*` indexed multi-side frontier repeats endpoint key "
+                <> renderBoundaryLabel duplicateBoundary.bpLabel
+                <> ": "
+                <> duplicateBoundary.bpContract
+                <> ". Generated families need distinct labels before they can be gathered."
+            )
+        )
+    [] ->
+      Right ()
 
 boundaryFieldMap :: [BoundaryPort] -> Either WireCore.WireError (Map Text ContractId)
 boundaryFieldMap boundaries = do
@@ -996,6 +1111,14 @@ boundaryFieldMap boundaries = do
     [] ->
       Right (Map.fromList pairs)
 
+firstBoundaryInDuplicateKeyGroups :: [BoundaryPort] -> [BoundaryPort]
+firstBoundaryInDuplicateKeyGroups boundaries =
+  [ boundary
+  | boundaryGroup <- Map.elems (boundariesByKey boundaries)
+  , length boundaryGroup > 1
+  , boundary <- take 1 boundaryGroup
+  ]
+
 renderFieldMap :: Map Text ContractId -> Text
 renderFieldMap fields
   | Map.null fields = "{}"
@@ -1003,7 +1126,7 @@ renderFieldMap fields
       "{"
         <> T.intercalate
           ", "
-          [ label <> ": " <> contract.unContractId
+          [ label <> ": " <> renderContractId contract
           | (label, contract) <- Map.toAscList fields
           ]
         <> "}"
@@ -1012,14 +1135,11 @@ buildStarPhantomNode
   :: WireCompileEnv -> LoweringState -> StarPlan -> Either WireCore.WireError LoweredNode
 buildStarPhantomNode compileEnv st plan = do
   let nodeRef = generatedStarPhantomNodeRef plan
-      fieldList = Map.toAscList plan.starPlanRecordFields
       singular = plan.starPlanSingular
       inputDecls =
         case plan.starPlanDirection of
           StarGather ->
-            [ PortInputDecl (Label label) (ContractId contract)
-            | (label, ContractId contract) <- fieldList
-            ]
+            productMultiPortDecls StarInputSide plan.starPlanProductShape plan.starPlanMulti
           StarScatter ->
             [PortInputDecl singular.bpLabel (ContractId singular.bpContract)]
       outputDecls =
@@ -1027,9 +1147,7 @@ buildStarPhantomNode compileEnv st plan = do
           StarGather ->
             [PortOutputDecl singular.bpLabel (ContractId singular.bpContract)]
           StarScatter ->
-            [ PortOutputDecl (Label label) (ContractId contract)
-            | (label, ContractId contract) <- fieldList
-            ]
+            productMultiPortDecls StarOutputSide plan.starPlanProductShape plan.starPlanMulti
   ports <- lowerPortSignature st nodeRef (inputDecls <> outputDecls)
   outputEquations <- starPhantomOutputEquations plan ports
   outputConfig <-
@@ -1050,22 +1168,50 @@ buildStarPhantomNode compileEnv st plan = do
     Nothing
     outputConfig
 
+productMultiPortDecls
+  :: StarPortSide -> StarProductShape -> [BoundaryPort] -> [PortDecl]
+productMultiPortDecls side productShape multiBoundaries =
+  case productShape of
+    StarRecordShape fields ->
+      [ starPortDecl side (Label label) contract
+      | (label, contract) <- Map.toAscList fields
+      ]
+    StarIndexedShape {} ->
+      [ starPortDecl side boundary.bpLabel (ContractId boundary.bpContract)
+      | boundary <- multiBoundaries
+      ]
+
+starPortDecl :: StarPortSide -> PortLabel -> ContractId -> PortDecl
+starPortDecl side label contract =
+  case side of
+    StarInputSide ->
+      PortInputDecl label contract
+    StarOutputSide ->
+      PortOutputDecl label contract
+
 starPhantomOutputEquations
   :: StarPlan -> LoweredNodePorts -> Either WireCore.WireError [PureOutputEquation]
 starPhantomOutputEquations plan ports =
-  case plan.starPlanDirection of
-    StarGather ->
-      fmap
-        ( \fields ->
-            [ PureOutputEquation
-                { pureOutputEquationLabel = plan.starPlanSingular.bpLabel
-                , pureOutputEquationContract = ContractId plan.starPlanSingular.bpContract
-                , pureOutputEquationExpr = CorePureRecord fields
-                }
-            ]
-        )
-        (traverse gatherField (Map.toAscList plan.starPlanRecordFields))
-    StarScatter -> do
+  case (plan.starPlanDirection, plan.starPlanProductShape) of
+    (StarGather, StarRecordShape fields) -> do
+      gatheredFields <- traverse gatherRecordField (Map.toAscList fields)
+      Right
+        [ PureOutputEquation
+            { pureOutputEquationLabel = plan.starPlanSingular.bpLabel
+            , pureOutputEquationContract = ContractId plan.starPlanSingular.bpContract
+            , pureOutputEquationExpr = CorePureRecord gatheredFields
+            }
+        ]
+    (StarGather, StarIndexedShape {}) -> do
+      items <- traverse gatherIndexedItem plan.starPlanMulti
+      Right
+        [ PureOutputEquation
+            { pureOutputEquationLabel = plan.starPlanSingular.bpLabel
+            , pureOutputEquationContract = ContractId plan.starPlanSingular.bpContract
+            , pureOutputEquationExpr = CorePureList items
+            }
+        ]
+    (StarScatter, StarRecordShape fields) -> do
       inputName <- starScatterInputName ports
       Right
         [ PureOutputEquation
@@ -1073,12 +1219,28 @@ starPhantomOutputEquations plan ports =
             , pureOutputEquationContract = contract
             , pureOutputEquationExpr = CorePureFieldAccess (CorePureIdent inputName) label
             }
-        | (label, contract) <- Map.toAscList plan.starPlanRecordFields
+        | (label, contract) <- Map.toAscList fields
+        ]
+    (StarScatter, StarIndexedShape {}) -> do
+      inputName <- starScatterInputName ports
+      Right
+        [ PureOutputEquation
+            { pureOutputEquationLabel = boundary.bpLabel
+            , pureOutputEquationContract = ContractId boundary.bpContract
+            , pureOutputEquationExpr =
+                CorePureIndex
+                  (CorePureIdent inputName)
+                  (CorePureLit (CorePureNumber (fromIntegral indexValue)))
+            }
+        | (indexValue, boundary) <- zip [0 :: Int ..] plan.starPlanMulti
         ]
   where
-    gatherField (label, contract) = do
+    gatherRecordField (label, contract) = do
       inputName <- fieldInputName label contract
       Right (CorePureField (label :| []) (CorePureIdent inputName))
+
+    gatherIndexedItem boundary =
+      CorePureIdent <$> boundaryInputName boundary
 
     fieldInputName label (ContractId contract) =
       case [ input.lpInternalName
@@ -1092,6 +1254,21 @@ starPhantomOutputEquations plan ports =
             ( WireCore.WireParseError
                 ( "internal `*` lowering error: missing phantom input for field "
                     <> label
+                )
+            )
+
+    boundaryInputName boundary =
+      case [ input.lpInternalName
+           | input <- ports.lnpInputs
+           , input.lpLabel == boundary.bpLabel
+           , input.lpContract == boundary.bpContract
+           ] of
+        [inputName] -> Right inputName
+        _ ->
+          Left
+            ( WireCore.WireParseError
+                ( "internal `*` lowering error: missing phantom input for indexed endpoint "
+                    <> renderBoundaryEndpoint boundary
                 )
             )
 
@@ -1119,7 +1296,7 @@ generatedStarPhantomNodeRef plan =
                       [ "direction" Aeson..= directionText
                       , "singular" Aeson..= renderBoundaryPort plan.starPlanSingular
                       , "multi" Aeson..= fmap renderBoundaryPort plan.starPlanMulti
-                      , "fields" Aeson..= fmap (.unContractId) plan.starPlanRecordFields
+                      , "shape" Aeson..= renderStarProductShape plan.starPlanProductShape
                       ]
                   )
               )
@@ -1130,6 +1307,20 @@ generatedStarPhantomNodeRef plan =
       case plan.starPlanDirection of
         StarGather -> "gather"
         StarScatter -> "scatter"
+
+renderStarProductShape :: StarProductShape -> Aeson.Value
+renderStarProductShape = \case
+  StarRecordShape fields ->
+    Aeson.object
+      [ "kind" Aeson..= ("record" :: Text)
+      , "fields" Aeson..= fmap (.unContractId) fields
+      ]
+  StarIndexedShape elementContract count ->
+    Aeson.object
+      [ "kind" Aeson..= ("indexed" :: Text)
+      , "element" Aeson..= elementContract
+      , "count" Aeson..= count
+      ]
 
 lowerSelectStep
   :: WireCompileEnv
@@ -2281,7 +2472,11 @@ lowerPortSignature st nodeRef portSig = do
 
 resolveContractId :: LoweringState -> Text -> Text
 resolveContractId st contractName =
-  resolveWireContract st.lsUseScope contractName
+  case parseBoundedIndexedContractName contractName of
+    Just (elementContract, count) ->
+      boundedIndexedContractName (resolveWireContract st.lsUseScope elementContract) count
+    Nothing ->
+      resolveWireContract st.lsUseScope contractName
 
 allocatedPortName :: Bool -> Int -> PortLabel -> Text -> Int -> Text
 allocatedPortName isInput idx portLabel contractName totalPorts =
@@ -2349,6 +2544,16 @@ evalValue st = \case
     Left (WireCore.WireParseError "Graph star adapter cannot appear in an ordinary-value position.")
   ExprSelect {} ->
     Left (WireCore.WireParseError "select(...) is only supported in graph position.")
+  ExprFamilyProjection familyName indexValue ->
+    Left
+      ( WireCore.WireParseError
+          ( "Indexed family projection "
+              <> familyName
+              <> "["
+              <> T.pack (show indexValue)
+              <> "] is graph-only and cannot appear in an ordinary-value position."
+          )
+      )
 
 evalRecordFields
   :: LoweringState
@@ -2604,8 +2809,10 @@ validateKnownContracts compileEnv declaredContracts portsCatalog =
     [ contractName
     | ports <- Map.elems portsCatalog
     , contractName <-
-        concatMap (.wireInputPortAccepts) (Map.elems ports.wirePortsInputs)
-          <> fmap (.wireOutputPortContract) (Map.elems ports.wirePortsOutputs)
+        concatMap
+          (concatMap contractValidationLeaves . (.wireInputPortAccepts))
+          (Map.elems ports.wirePortsInputs)
+          <> concatMap (contractValidationLeaves . (.wireOutputPortContract)) (Map.elems ports.wirePortsOutputs)
     ]
   where
     knownContracts registry =
@@ -2620,6 +2827,12 @@ validateKnownContracts compileEnv declaredContracts portsCatalog =
           if Set.member contractName (knownContracts registry)
             then Right ()
             else Left (WireCore.WireUnknownContract "node ports" contractName)
+
+contractValidationLeaves :: Text -> [Text]
+contractValidationLeaves contractName =
+  case parseBoundedIndexedContractName contractName of
+    Just (elementContract, _) -> [elementContract]
+    Nothing -> [contractName]
 
 validateFragmentContracts
   :: Map CircuitNodeRef WireCore.WirePorts
