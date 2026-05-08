@@ -19,6 +19,11 @@ Isolated accepted node declarations project mechanically to the
 source-linearity layer's open `nodePorts` object. Non-trivial source linearity,
 raw graph admission, executor-registry correspondence, and identifier-shape
 validation are intentionally later obligations.
+
+ADR 0052 indexed family projection, such as `workers[i]`, is parser/expander
+syntax over generated `make` children. By the time source reaches this IR, the
+projection has already resolved to the selected child node reference, so
+`GraphExpr` intentionally has no family-projection constructor.
 -/
 
 namespace Cortex.Wire
@@ -60,6 +65,34 @@ def Valid (contract : ContractId) : Prop :=
 
 instance validDecidable (contract : ContractId) : Decidable contract.Valid :=
   inferInstanceAs (Decidable (NominalNameValid contract.name))
+
+/-- Canonical proof-side spelling for a bounded indexed product contract `[T; N]`.
+
+The Haskell parser stores bounded products in the same compact string shape. The
+Lean carrier keeps them as ordinary contract identifiers, but this constructor
+gives closure predicates a structured way to recognize that `[T; N]` is closed
+whenever `T` is declared directly. -/
+def boundedIndexed (element : ContractId) (count : Nat) : ContractId :=
+  { name := "[" ++ element.name ++ ";" ++ toString count ++ "]" }
+
+/-- Contract-shape closure against a declared contract namespace.
+
+A contract is closed when it is declared directly, or when it is a bounded
+indexed product whose element contract is declared directly. This mirrors
+executable Wire's `[T; N]` validation rule: `[T; 0]` is the empty finite product,
+but closure does not recursively synthesize nested products such as `[[T;3];4]`.
+
+The source grammar only parses a nominal identifier as the element position of
+`[T; N]`; this proof-side predicate follows that non-recursive shape. -/
+inductive ClosedBy (declared : List ContractId) : ContractId → Prop where
+  /-- Declared scalar or nominal record contract. -/
+  | declared {contract : ContractId} :
+      contract ∈ declared →
+      ClosedBy declared contract
+  /-- Bounded indexed product over a directly declared element contract. -/
+  | boundedIndexed {element : ContractId} (count : Nat) :
+      element ∈ declared →
+      ClosedBy declared (ContractId.boundedIndexed element count)
 
 end ContractId
 
@@ -474,7 +507,9 @@ def FieldContractsClosed
     (decl : RecordContractDecl)
     (contracts : List RecordContractDecl) :
     Prop :=
-  ∀ field, field ∈ decl.fields → field.contract ∈ contracts.map RecordContractDecl.contract
+  ∀ field,
+    field ∈ decl.fields →
+      ContractId.ClosedBy (contracts.map RecordContractDecl.contract) field.contract
 
 end RecordContractDecl
 
@@ -483,7 +518,9 @@ def AcceptedRecordFieldContractsClosed
     (decl : AcceptedRecordContractDecl)
     (contracts : List AcceptedRecordContractDecl) :
     Prop :=
-  ∀ field, field ∈ decl.fields → field.contract ∈ contracts.map AcceptedRecordContractDecl.contract
+  ∀ field,
+    field ∈ decl.fields →
+      ContractId.ClosedBy (contracts.map AcceptedRecordContractDecl.contract) field.contract
 
 /-- Static value fragment visible to Lean elaboration after source inclusion.
 
@@ -1351,10 +1388,12 @@ def ContractsClosed
     (decl : RawNodeDecl)
     (contracts : List RecordContractDecl) :
     Prop :=
-  (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map RecordContractDecl.contract) ∧
+  (∀ port,
+      port ∈ decl.inputs →
+        ContractId.ClosedBy (contracts.map RecordContractDecl.contract) port.contract) ∧
     ∀ port,
       port ∈ decl.outputPortsList →
-        port.contract ∈ contracts.map RecordContractDecl.contract
+        ContractId.ClosedBy (contracts.map RecordContractDecl.contract) port.contract
 
 end RawNodeDecl
 
@@ -1365,10 +1404,12 @@ def ContractsClosed
     (decl : AcceptedNodeDecl)
     (contracts : List AcceptedRecordContractDecl) :
     Prop :=
-  (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map AcceptedRecordContractDecl.contract) ∧
+  (∀ port,
+      port ∈ decl.inputs →
+        ContractId.ClosedBy (contracts.map AcceptedRecordContractDecl.contract) port.contract) ∧
     ∀ port,
       port ∈ decl.outputPorts →
-        port.contract ∈ contracts.map AcceptedRecordContractDecl.contract
+        ContractId.ClosedBy (contracts.map AcceptedRecordContractDecl.contract) port.contract
 
 end AcceptedNodeDecl
 
@@ -1379,10 +1420,12 @@ def ContractsClosed
     (decl : RawKindDecl)
     (contracts : List RecordContractDecl) :
     Prop :=
-  (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map RecordContractDecl.contract) ∧
+  (∀ port,
+      port ∈ decl.inputs →
+        ContractId.ClosedBy (contracts.map RecordContractDecl.contract) port.contract) ∧
     ∀ port,
       port ∈ decl.outputPortsList →
-        port.contract ∈ contracts.map RecordContractDecl.contract
+        ContractId.ClosedBy (contracts.map RecordContractDecl.contract) port.contract
 
 end RawKindDecl
 
@@ -1393,10 +1436,12 @@ def ContractsClosed
     (decl : AcceptedKindDecl)
     (contracts : List AcceptedRecordContractDecl) :
     Prop :=
-  (∀ port, port ∈ decl.inputs → port.contract ∈ contracts.map AcceptedRecordContractDecl.contract) ∧
+  (∀ port,
+      port ∈ decl.inputs →
+        ContractId.ClosedBy (contracts.map AcceptedRecordContractDecl.contract) port.contract) ∧
     ∀ port,
       port ∈ decl.outputPorts →
-        port.contract ∈ contracts.map AcceptedRecordContractDecl.contract
+        ContractId.ClosedBy (contracts.map AcceptedRecordContractDecl.contract) port.contract
 
 /-- The accepted kind's template frontier uses the given `PortLabel` parameter
 at every input/output label position.
@@ -1707,13 +1752,13 @@ structure LocallyAdmissible (decl : RawModule) : Prop where
   nodesUnique : (decl.nodes.map RawNodeDecl.node).Nodup
   /-- Raw graph bindings are unique by binding name. -/
   graphsUnique : (decl.graphs.map GraphBinding.name).Nodup
-  /-- Raw record-field contracts refer to declared contracts. -/
+  /-- Raw record-field contracts are declared or bounded products over declared contracts. -/
   recordFieldContractsClosed :
     ∀ contract, contract ∈ decl.contracts → contract.FieldContractsClosed decl.contracts
-  /-- Raw node port contracts refer to declared contracts. -/
+  /-- Raw node port contracts are declared or bounded products over declared contracts. -/
   nodeContractsClosed :
     ∀ node, node ∈ decl.nodes → node.ContractsClosed decl.contracts
-  /-- Raw kind port contracts refer to declared contracts. -/
+  /-- Raw kind port contracts are declared or bounded products over declared contracts. -/
   kindContractsClosed :
     ∀ kind, kind ∈ decl.kinds → kind.ContractsClosed decl.contracts
   /-- Raw graph expressions reference declared nodes, kinds, and graph bindings. -/
@@ -1856,13 +1901,13 @@ structure AdmittedModuleShell where
   /-- Accepted graph bindings have locally valid binding names. -/
   graphsValid :
     ∀ graph, graph ∈ graphs → graph.LocalValid
-  /-- Accepted record-field contracts refer to declared accepted contracts. -/
+  /-- Accepted record-field contracts are declared or bounded products over declared contracts. -/
   recordFieldContractsClosed :
     ∀ contract, contract ∈ contracts → AcceptedRecordFieldContractsClosed contract contracts
-  /-- Accepted node port contracts refer to declared accepted contracts. -/
+  /-- Accepted node port contracts are declared or bounded products over declared contracts. -/
   nodeContractsClosed :
     ∀ node, node ∈ nodes → node.ContractsClosed contracts
-  /-- Accepted kind port contracts refer to declared accepted contracts. -/
+  /-- Accepted kind port contracts are declared or bounded products over declared contracts. -/
   kindContractsClosed :
     ∀ kind, kind ∈ kinds → kind.ContractsClosed contracts
   /-- Accepted graph expressions reference declared nodes, kinds, and graph bindings. -/
@@ -1919,7 +1964,9 @@ def toAccepted
       have hRawField : field ∈ rawContract.val.fields := by
         simpa [RecordContractDecl.toAccepted] using hField
       have hKnown :
-          field.contract ∈ decl.contracts.map RecordContractDecl.contract :=
+          ContractId.ClosedBy
+            (decl.contracts.map RecordContractDecl.contract)
+            field.contract :=
         hAdmissible.recordFieldContractsClosed
           rawContract.val
           rawContract.property
@@ -1936,7 +1983,9 @@ def toAccepted
         have hRawPort : port ∈ rawNode.val.inputs := by
           simpa [RawNodeDecl.toAccepted] using List.mem_toFinset.mp hPort
         have hKnown :
-            port.contract ∈ decl.contracts.map RecordContractDecl.contract :=
+            ContractId.ClosedBy
+              (decl.contracts.map RecordContractDecl.contract)
+              port.contract :=
           (hAdmissible.nodeContractsClosed rawNode.val rawNode.property).left
             port
             hRawPort
@@ -1954,7 +2003,9 @@ def toAccepted
             List.mem_toFinset.mp hMem
           simpa [RawNodeDecl.toAccepted, RawNodeDecl.outputPortsList] using hList
         have hKnown :
-            port.contract ∈ decl.contracts.map RecordContractDecl.contract :=
+            ContractId.ClosedBy
+              (decl.contracts.map RecordContractDecl.contract)
+              port.contract :=
           (hAdmissible.nodeContractsClosed rawNode.val rawNode.property).right
             port
             hPortList
@@ -1969,7 +2020,9 @@ def toAccepted
         have hRawPort : port ∈ rawKind.val.inputs := by
           simpa [RawKindDecl.toAccepted] using List.mem_toFinset.mp hPort
         have hKnown :
-            port.contract ∈ decl.contracts.map RecordContractDecl.contract :=
+            ContractId.ClosedBy
+              (decl.contracts.map RecordContractDecl.contract)
+              port.contract :=
           (hAdmissible.kindContractsClosed rawKind.val rawKind.property).left
             port
             hRawPort
@@ -1987,7 +2040,9 @@ def toAccepted
             List.mem_toFinset.mp hMem
           simpa [RawKindDecl.toAccepted, RawKindDecl.outputPortsList] using hList
         have hKnown :
-            port.contract ∈ decl.contracts.map RecordContractDecl.contract :=
+            ContractId.ClosedBy
+              (decl.contracts.map RecordContractDecl.contract)
+              port.contract :=
           (hAdmissible.kindContractsClosed rawKind.val rawKind.property).right
             port
             hPortList
@@ -2010,6 +2065,29 @@ namespace Examples
 /-- Example contract used by the C-build shape example. -/
 def commandSpecContract : ContractId :=
   ⟨"CommandSpec"⟩
+
+/-- Declared scalar contracts are closed against their declaration namespace. -/
+theorem commandSpecContract_closed :
+    ContractId.ClosedBy [commandSpecContract] commandSpecContract :=
+  ContractId.ClosedBy.declared (by simp)
+
+/-- Example bounded indexed product contract over command specs. -/
+def commandSpecBatchContract : ContractId :=
+  ContractId.boundedIndexed commandSpecContract 3
+
+/-- Bounded indexed products are closed when their element contract is closed. -/
+theorem commandSpecBatchContract_closed :
+    ContractId.ClosedBy [commandSpecContract] commandSpecBatchContract :=
+  ContractId.ClosedBy.boundedIndexed 3 (by simp)
+
+/-- Zero-count indexed products are intentionally admitted as empty finite products. -/
+def commandSpecEmptyBatchContract : ContractId :=
+  ContractId.boundedIndexed commandSpecContract 0
+
+/-- Empty indexed products still close over a directly declared element contract. -/
+theorem commandSpecEmptyBatchContract_closed :
+    ContractId.ClosedBy [commandSpecContract] commandSpecEmptyBatchContract :=
+  ContractId.ClosedBy.boundedIndexed 0 (by simp)
 
 /-- Example contract for a compiled object artifact. -/
 def objectArtifactContract : ContractId :=

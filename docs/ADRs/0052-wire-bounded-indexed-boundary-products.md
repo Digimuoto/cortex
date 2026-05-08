@@ -71,6 +71,10 @@ A boundary shape is one of:
 - a bounded indexed product `[T; N]`, whose immediate children form the finite index set
   `0 .. N - 1`, each with element contract `T`.
 
+`N = 0` is valid and denotes the empty finite product. It exposes no `T` leaves. It is not a graph
+operator identity; it is an aggregate boundary shape that can be folded or unfolded only by an
+explicit `*` adapter.
+
 Linearity is checked on the leaves, not on the aggregate handle. A port carrying `[T; 3]` may be
 unfolded into three leaf endpoints only by an explicit adapter. Each leaf endpoint is then consumed
 at most once by ordinary one-to-one `=>` contractions.

@@ -181,8 +181,9 @@ executors.
 
 Contracts are named typed interfaces. Contract names are equal iff their names are equal. A contract
 is known if an executor registry declares it or the program asserts it with `contract Name ;`.
-`[T; N]` is a bounded indexed product contract with static count `N`; it is a topology-shaping
-contract only when an explicit `*` adapter folds or unfolds it.
+`[T; N]` is a bounded indexed product contract with static non-negative count `N`; it is a
+topology-shaping contract only when an explicit `*` adapter folds or unfolds it. `N = 0` is the
+empty finite product and exposes no indexed leaves.
 
 Port clauses:
 

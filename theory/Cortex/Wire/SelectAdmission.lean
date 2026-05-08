@@ -591,7 +591,9 @@ This is the minimal evidence the integrator must discharge to lift a
 `LatentSelectAdmission (SubgraphSpec node)` into the downstream branch family.
 The bridge is intentionally not derivable inside this admission layer:
 fragment validity and pairwise node disjointness depend on lower planner
-machinery that is outside the source-admission scope. -/
+machinery that is outside the source-admission scope. The owner obligation keeps
+the retained rewrite anchor out of every latent fragment body before the runtime
+namespacing policy qualifies those body-local nodes. -/
 structure FragmentEvidence
     {node : Type}
     [DecidableEq node]
@@ -600,6 +602,11 @@ structure FragmentEvidence
   /-- Every entry's body is a valid inserted subgraph. -/
   fragmentsValid :
     ∀ entry, entry ∈ admission.entries → entry.snd.Valid
+  /-- The retained select owner is not one of the latent fragment's local nodes. -/
+  ownerNotInFragments :
+    ∀ entry,
+      entry ∈ admission.entries →
+        owner ∉ (Cortex.Graph.denote entry.snd.topology).vertices
   /-- Distinct admitted entries expose disjoint compiler-qualified fragment
   nodes. -/
   fragmentsPairwiseDisjoint :
@@ -711,8 +718,7 @@ The arm-key set is `admission.entries.map Prod.fst |>.toFinset`, which equals
 `admission.shape.armKeys.toFinset` by `keys_eq_shape_keys`. The fragment lookup
 falls back to the empty `SubgraphSpec` when the arm key is not admitted; this
 fallback is unreachable on admitted keys and is unobservable through the
-`fragmentsValid` and `fragmentsPairwiseDisjoint` obligations, which only quote
-admitted entries. -/
+`FragmentEvidence` obligations, which only quote admitted entries. -/
 def toLatentBranchFamily
     {admission : LatentSelectAdmission (Cortex.Wire.SubgraphSpec node)}
     (owner : node)
@@ -753,6 +759,16 @@ def toLatentBranchFamily
           nodeId
           hLeftRaw
           hRightRaw }
+
+/-- Fragment evidence pins the retained owner outside every admitted fragment body. -/
+theorem owner_not_in_admitted_fragment
+    {admission : LatentSelectAdmission (Cortex.Wire.SubgraphSpec node)}
+    {owner : node}
+    (hEvidence : FragmentEvidence admission owner)
+    {entry : SelectArmKey × Cortex.Wire.SubgraphSpec node}
+    (hEntry : entry ∈ admission.entries) :
+    owner ∉ (Cortex.Graph.denote entry.snd.topology).vertices :=
+  hEvidence.ownerNotInFragments entry hEntry
 
 end LatentSelectAdmission
 

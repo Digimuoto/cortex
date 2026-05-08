@@ -11,10 +11,11 @@ Source-linearity admission for Wire's three generated graph forms.
 
 ## Context
 
-ADR 0048 introduces `make(N, K)`, ADR 0051 introduces `makeEach(items, K)`, and
-ADR 0049 introduces `*`. None of the three forms is admitted as a runtime
-operator: each elaborates at compile time to ordinary structure inside the
-closed source linear-port algebra of `Cortex.Wire.PortLinearity`.
+ADR 0048 introduces `make(N, K)`, ADR 0051 introduces `makeEach(items, K)`,
+ADR 0049 introduces record-form `*`, and ADR 0052 generalizes `*` to finite
+product adapters. None of the three forms is admitted as a runtime operator:
+each elaborates at compile time to ordinary structure inside the closed source
+linear-port algebra of `Cortex.Wire.PortLinearity`.
 
 This module is the integration point that turns the carriers in
 `Cortex.Wire.Make` and `Cortex.Wire.PhantomAdapter` into named admission
@@ -43,7 +44,7 @@ namespace LinearPortGraph
 
 open Cortex.Wire.ElaborationIR
 
-variable {binding node outputPort inputPort : Type}
+variable {binding node outputPort inputPort productContract label : Type}
 variable [DecidableEq node]
 variable [DecidableEq outputPort]
 variable [DecidableEq inputPort]
@@ -178,13 +179,24 @@ inductive MakeEachError where
 
 /-- Reasons a `*` admission can be rejected at the source-linearity layer. -/
 inductive StarError where
-  /-- The singular side did not expose a nominal record contract. -/
-  | nonRecordSingularSide (contract : ElaborationIR.ContractId)
-  /-- The multi-side label set did not match the record's field labels. -/
-  | recordFieldMismatch
+  /-- The singular side did not expose a finite product contract. -/
+  | nonProductSingularSide (contract : ElaborationIR.ContractId)
+  /-- The multi-side label set did not match a nominal record's field labels. -/
+  | nominalRecordFieldMismatch
       (contract : ElaborationIR.ContractId)
       (recordFields : List ElaborationIR.FieldLabel)
       (multiLabels : List ElaborationIR.FieldLabel)
+  /-- The multi-side arity did not match the bounded indexed product count. -/
+  | indexedArityMismatch
+      (contract : ElaborationIR.ContractId)
+      (expected observed : Nat)
+  /-- One indexed multi-side endpoint carried the wrong element contract. -/
+  | indexedContractMismatch
+      (expected observed : ElaborationIR.ContractId)
+  /-- The indexed multi-side repeated a label/contract endpoint key. -/
+  | duplicateIndexedEndpoint
+      (label : ElaborationIR.FieldLabel)
+      (contract : ElaborationIR.ContractId)
   /-- Phantom synthesis would produce a port clash with one of the operands. -/
   | phantomPortClash
   deriving DecidableEq, Repr
@@ -964,25 +976,25 @@ namespace Star
 
 /-- `*` admission at the source-linearity layer.
 
-ADR 0049's `*` elaborates to `multi-side => phantom => singular-side`. The phantom synthesis,
-record-form discriminator, and bulk-contraction pairing are mechanized in
-`PhantomAdapterWitness`. This entry point therefore consumes a fully constructed witness and
-returns the resulting `LinearPortObject`. The integrator slice constructs the witness from a
-record-contract, the multi-side `LinearPortObject`, and the singular-side `LinearPortObject`; this
-file does not re-derive that machinery.
+ADR 0049's record-form `*` and ADR 0052's bounded indexed-product `*` both elaborate to
+`multi-side => phantom => singular-side`. The phantom synthesis, finite-product discriminator, and
+phantom-boundary contraction exactness are mechanized in `PhantomAdapterWitness`. This entry point
+therefore consumes a fully constructed witness and returns the resulting `LinearPortObject`. The
+integrator slice constructs the witness from a product contract, the multi-side `LinearPortObject`,
+and the singular-side `LinearPortObject`; this file does not re-derive that machinery.
 
 Returning `Except StarError` keeps the signature uniform with the other two admission entry
 points. The first-sketch implementation never produces an error, because witness construction has
 already discharged the structural obligations; the named diagnostics are reserved for slice 7's
 front-end before it builds the witness. -/
 def accept
-    (witness : PhantomAdapterWitness node outputPort inputPort) :
+    (witness : PhantomAdapterWitness node outputPort inputPort productContract label) :
     Except StarError (LinearPortObject node outputPort inputPort) :=
   Except.ok witness.starInsertion
 
 /-- Successful `*` admission returns exactly the supplied phantom-adapter insertion. -/
 theorem accept_ok_eq
-    (witness : PhantomAdapterWitness node outputPort inputPort)
+    (witness : PhantomAdapterWitness node outputPort inputPort productContract label)
     (object : LinearPortObject node outputPort inputPort)
     (hAccept : accept witness = Except.ok object) :
     object = witness.starInsertion := by
@@ -994,7 +1006,7 @@ theorem accept_ok_eq
 
 /-- The witnessed `*` admission preserves source linearity. -/
 theorem accept_portLinear
-    (witness : PhantomAdapterWitness node outputPort inputPort)
+    (witness : PhantomAdapterWitness node outputPort inputPort productContract label)
     (object : LinearPortObject node outputPort inputPort)
     (hAccept : accept witness = Except.ok object) :
     object.graph.PortLinear := by

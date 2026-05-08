@@ -238,14 +238,19 @@ Mechanized results now include:
   operation/node-port interface that exposes bundled source-linearity proofs.
 - `LinearPortGraph.MakeWitness`, `LinearPortGraph.MakeWitness.toObject`,
   `LinearPortGraph.MakeWitness.make_disjoint_of_distinctBindings`,
-  `LinearPortGraph.PhantomDirection`, `LinearPortGraph.PhantomRecordShape`,
-  `LinearPortGraph.LinearPortObject.bulkContract`, `LinearPortGraph.PhantomAdapterWitness`, and
+  `LinearPortGraph.PhantomDirection`, `LinearPortGraph.ProductAdapterKind`,
+  `LinearPortGraph.PhantomProductShape`, `LinearPortGraph.LinearPortObject.bulkContract`,
+  `LinearPortGraph.PhantomAdapterWitness`, and
   `LinearPortGraph.PhantomAdapterWitness.starInsertion`: ADR 0048's `make` elaboration and ADR
-  0049's `*` phantom adapter are represented as certified constructions over `nodePorts`, `overlay`,
-  and `BulkContract`. `MakeWitness` pins generated nodes to a shared binding projection and exact
-  kind-derived child port sets; `PhantomRecordShape` pins the generated adapter to one phantom node
-  with a declared multi/singular boundary. No separate `make` or `*` preservation theorem is needed;
-  the returned `LinearPortObject` carries source linearity by construction.
+  0049/0052's finite-product `*` phantom adapter are represented as certified constructions over
+  `nodePorts`, `overlay`, and `BulkContract`. `MakeWitness` pins generated nodes to a shared binding
+  projection and exact kind-derived child port sets; `PhantomProductShape` pins the generated
+  adapter to one phantom node with a declared multi/singular boundary, bounded-indexed arity,
+  element-contract uniformity, singular aggregate contract exactness, label uniqueness, and
+  source-order enumeration when the product is `[T; N]`. `PhantomAdapterWitness` also records exact
+  phantom-side boundary coverage for the two bulk contractions. The case `[T; 0]` is the empty
+  finite product. No separate `make` or `*` preservation theorem is needed; the returned
+  `LinearPortObject` carries source linearity by construction.
 - `LinearPortGraph.GeneratedNamePolicy`, `LinearPortGraph.GeneratedNamePolicy.childIndex`,
   `LinearPortGraph.GeneratedNamePolicy.childIndex_injective`, `LinearPortGraph.prefixedIndexNodeId`,
   `LinearPortGraph.PrefixedIndexCarrier`, `LinearPortGraph.prefixedIndexPolicy`,
@@ -278,8 +283,10 @@ Mechanized results now include:
   template contracts under the generated child labels. `Make.accept` and `MakeEach.accept` turn that
   exact frontier evidence into a `MakeWitness` over Wire's direction-tagged port wrappers, while
   `Star.accept` reuses `PhantomAdapterWitness.starInsertion`. The returned `LinearPortObject`
-  carries source linearity by construction. Executable production of the exact generated-form
-  witnesses remains the Haskell correspondence obligation.
+  carries source linearity by construction. ADR 0052 `workers[i]` projection is parser/expander
+  syntax resolved before this post-expansion IR; Lean receives the selected child as an ordinary
+  graph node reference. Executable production of the exact generated-form witnesses remains the
+  Haskell correspondence obligation.
 - `ElaborationIR.RawNodeDecl`, `ElaborationIR.AcceptedNodeDecl`, `ElaborationIR.GraphExpr`,
   `ElaborationIR.GraphBinding`, `ElaborationIR.ElabDiagnostic`, `ElaborationIR.ElabResult`,
   `ElaborationIR.RawModule`, `ElaborationIR.AdmittedModuleShell`,
