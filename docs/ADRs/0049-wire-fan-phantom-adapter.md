@@ -20,6 +20,7 @@ related:
   - docs/ADRs/0046-wire-compile-time-graph-forms.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
   - docs/ADRs/0048-wire-make-bounded-node-generation.md
+  - docs/ADRs/0052-wire-bounded-indexed-boundary-products.md
 ---
 
 # ADR 0049 - Wire Phantom Record↔Ports Adapter for Topology Fans
@@ -28,7 +29,8 @@ related:
 
 Proposed - this ADR introduces the `*` topology operator. It depends on ADR 0047 for the linear
 endpoint rule, match determinism, and the precedence slot reserved for `*`. ADR 0048 supplies the
-typical multi-port frontier (`make(N, K)`) that `*` consumes.
+typical multi-port frontier (`make(N, K)`) that `*` consumes. ADR 0052 proposes the finite-product
+generalization; this ADR remains the nominal-record first slice until that lands.
 
 ## Context
 
@@ -42,6 +44,9 @@ authoring shape is an explicit adapter that converts the multi-port frontier int
 aggregate-typed port (gather) or one aggregate-typed port into a multi-port frontier (scatter).
 
 This ADR adds that adapter and the operator that surfaces it.
+
+The v1 adapter shape is nominal record↔ports. ADR 0052 proposes the broader finite-product reading
+that also covers bounded indexed products.
 
 ## Decision
 
@@ -83,9 +88,9 @@ record contract**:
   same contracts. A mismatch is a static error.
 - A singular side whose contract is not a nominal record is a static error.
 
-List-style aggregation (a homogeneous N-ary list contract) is not part of v1. Future work may
-introduce a bounded list contract, repurpose integer-keyed nominal records, or stay with record-form
-only; that decision is out of scope here.
+List-style aggregation (a homogeneous N-ary list contract) is not part of this ADR's v1. ADR 0052
+proposes bounded indexed products such as `[T; N]`; unbounded list-shaped topology remains out of
+scope.
 
 ### No mixed forms
 
@@ -154,7 +159,8 @@ semantics, and no surface vocabulary for spokes.
   rule that the elaborated program is fully readable as Wire source.
 - **List-form aggregation in v1.** Rejected. A bounded homogeneous list adapter would need `[T; N]`
   contracts and positional projection in CorePure before it can type-check. Record-form `*` is the
-  smaller first slice because it pairs existing labeled ports to nominal record fields by name.
+  smaller first slice because it pairs existing labeled ports to nominal record fields by name. ADR
+  0052 later proposes the finite-product version of that extension.
 - **Unnamed ports for list-form aggregation.** Considered and rejected with list-form v1. List-form
   `*` feels like it wants nameless homogeneous multi-side ports, since they are all the same
   contract. That would introduce a second port flavor and weaken the label discipline. If bounded
@@ -213,10 +219,8 @@ correspondence work.
 
 ## Open questions
 
-- **Future aggregate shape.** Whether list-style aggregation ever lands is genuinely open, with
-  three sub-options: a bounded list contract `[T; N]` (with positional projection `agg[i]` in
-  CorePure), integer-keyed nominal records (no new contract surface, heterogeneous-record typing
-  does more work), or no list-style topology aggregation at all.
+- **Unbounded aggregate shape.** ADR 0052 proposes bounded indexed products for static topology.
+  Runtime-length aggregates remain open and must not infer topology without a separate decision.
 
 ## Related
 
@@ -226,6 +230,7 @@ correspondence work.
 - [ADR 0046 - Wire Compile-Time Graph Forms](./0046-wire-compile-time-graph-forms.md)
 - [ADR 0047 - Wire Frontier Linearity and Topology Operator Precedence](./0047-wire-frontier-linearity-and-precedence.md)
 - [ADR 0048 - Wire Compile-Time Make for Bounded Node Generation](./0048-wire-make-bounded-node-generation.md)
+- [ADR 0052 - Wire Bounded Indexed Boundary Products](./0052-wire-bounded-indexed-boundary-products.md)
 - [Chapter 04 - Graph and Circuit](../Architecture/04-graph-and-circuit.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)
 - [Wire Grammar Reference](../Reference/Wire/grammar.md)

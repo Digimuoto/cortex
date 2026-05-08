@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0046-wire-compile-time-graph-forms.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
   - docs/ADRs/0049-wire-fan-phantom-adapter.md
+  - docs/ADRs/0052-wire-bounded-indexed-boundary-products.md
 ---
 
 # ADR 0048 - Wire Compile-Time Make for Bounded Node Generation
@@ -26,7 +27,9 @@ related:
 Proposed - the iteration successor that ADR 0046 explicitly deferred. Forms (ADR 0046) and node-body
 kinds (ADR 0045) have landed; this ADR adds the bounded-N node generator that authors a fresh family
 of vertices from one kind reference. It depends on ADR 0047 for the frontier linearity rules that
-govern how generated families compose.
+govern how generated families compose. ADR 0052 proposes an indexed source view and finite-product
+adapter over this generated family; this ADR's lowered identity scheme remains the source of stable
+generated node identity.
 
 ## Context
 
@@ -82,6 +85,9 @@ For each generated child, `make` supplies the same `<binding>_<i>` token as the 
 label. This makes the children's exposed boundaries align naturally with record-form `*` (ADR 0049),
 which pairs by label.
 
+ADR 0052 later admits `workers[i]` as source projection over these generated children. That
+projection is a source view, not the lowered node identity.
+
 ### Empty and singleton
 
 `make(0, K)` is legal and produces an empty graph. `make(1, K)` is legal and produces a single
@@ -103,8 +109,9 @@ identities from.
 - **Multi-port generated label per child (kinds expose more than one parameterized label).**
   Deferred. v1 supports one generated label per child; multi-label generation is a future extension
   if real workloads need it.
-- **Variant naming schemes (`<binding>[i]`, `<binding>(i)`, etc.).** Rejected. `<binding>_<i>`
-  matches ADR 0046's prefix convention and is unambiguous in source text.
+- **Variant naming schemes (`<binding>[i]`, `<binding>(i)`, etc.).** Rejected for lowered identity.
+  `<binding>_<i>` matches ADR 0046's prefix convention and is unambiguous in source text. ADR 0052
+  later admits `binding[i]` as source projection over the same stable lowered identities.
 
 ## Consequences
 
@@ -120,10 +127,10 @@ identities from.
 - **`make(N, K) => sink` is rejected for N > 1 unless every generated child exposes a distinct
   output matching a distinct sink input.** Under ADR 0047's linear endpoint rule, several generated
   children all exposing `out: T` cannot all feed one cardinality-one input port, and one output
-  cannot be implicitly copied. Authors hitting this surprise compose with `*` (ADR 0049) instead,
-  which inserts the phantom that aggregates the children's outputs into one nominal record port the
-  sink can consume. The language tour and `wire-code-style` skill must call this out prominently; it
-  is the first surprise authors will hit.
+  cannot be implicitly copied. Authors hitting this surprise compose with `*` (ADR 0049, generalized
+  by ADR 0052) instead, which inserts the adapter that aggregates the children's outputs into one
+  product-shaped port the sink can consume. The language tour and `wire-code-style` skill must call
+  this out prominently; it is the first surprise authors will hit.
 
 ### Obligations
 
@@ -134,7 +141,8 @@ identities from.
   `docs/Reference/Wire/grammar.md`.
 - Update the tree-sitter grammar to recognize `make` as a built-in form.
 - Update the `wire-code-style` skill: kinds intended for `make` should expose the generated port
-  label that `make` supplies, so record-form `*` (ADR 0049) pairs children's outputs by label.
+  label that `make` supplies, so `*` can pair generated families with the corresponding finite
+  product shape.
 - Add expansion tests for: `make(0, K)`, `make(1, K)`, large-N, nested `make` inside form bodies,
   `make` inside `make`, unbound-inline rejection, `make(N, K) => sink` rejection for N > 1 when
   generated outputs collide with the sink's cardinality-one inputs.
@@ -161,5 +169,6 @@ The executable Haskell expander and diagnostics remain separate correspondence w
 - [ADR 0046 - Wire Compile-Time Graph Forms](./0046-wire-compile-time-graph-forms.md)
 - [ADR 0047 - Wire Frontier Linearity and Topology Operator Precedence](./0047-wire-frontier-linearity-and-precedence.md)
 - [ADR 0049 - Wire Phantom Record↔Ports Adapter for Topology Fans](./0049-wire-fan-phantom-adapter.md)
+- [ADR 0052 - Wire Bounded Indexed Boundary Products](./0052-wire-bounded-indexed-boundary-products.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)
 - [Wire Grammar Reference](../Reference/Wire/grammar.md)
