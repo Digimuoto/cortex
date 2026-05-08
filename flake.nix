@@ -45,9 +45,11 @@
     ...
   }:
     flake-parts.lib.mkFlake {inherit inputs;} {
-      # Initial scaffold targets only x86_64-linux. Additional systems can
-      # be added once the Haskell layer is exercised there too.
-      systems = ["x86_64-linux"];
+      systems = [
+        "x86_64-linux"
+        "aarch64-darwin"
+        "x86_64-darwin"
+      ];
 
       imports = [
         inputs.treefmt-nix.flakeModule

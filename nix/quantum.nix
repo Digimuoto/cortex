@@ -1,14 +1,17 @@
-{...}: {
+{lib, ...}: {
   perSystem = {
     config,
     pkgs,
     ...
   }: let
+    qiskitAer = pkgs.python313Packages.qiskit-aer;
+    qiskitSupported = !(qiskitAer.meta.broken or false);
+
     qiskitPython =
       pkgs.python313.withPackages
       (ps: [
         ps.qiskit
-        ps.qiskit-aer
+        qiskitAer
       ]);
 
     wire-quantum-qiskit = pkgs.writeShellApplication {
@@ -57,34 +60,40 @@
       '';
     };
   in {
-    packages = {
-      wire-quantum-qiskit = wire-quantum-qiskit;
-      wire-quantum-ibm-rest = wire-quantum-ibm-rest;
-      wire-quantum-ipea = wire-quantum-ipea;
-      wire-quantum-eraser = wire-quantum-eraser;
-    };
+    packages =
+      {
+        wire-quantum-ibm-rest = wire-quantum-ibm-rest;
+        wire-quantum-eraser = wire-quantum-eraser;
+      }
+      // lib.optionalAttrs qiskitSupported {
+        wire-quantum-qiskit = wire-quantum-qiskit;
+        wire-quantum-ipea = wire-quantum-ipea;
+      };
 
-    apps = {
-      wire-quantum-qiskit = {
-        type = "app";
-        program = "${wire-quantum-qiskit}/bin/wire-quantum-qiskit";
-        meta.description = "Run Wire quantum examples through a local Qiskit Aer simulator";
+    apps =
+      {
+        wire-quantum-ibm-rest = {
+          type = "app";
+          program = "${wire-quantum-ibm-rest}/bin/wire-quantum-ibm-rest";
+          meta.description = "Submit Wire quantum examples to IBM Quantum Runtime REST";
+        };
+        wire-quantum-eraser = {
+          type = "app";
+          program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
+          meta.description = "Run the delayed-choice quantum eraser Wire sweep on IBM Runtime REST hardware";
+        };
+      }
+      // lib.optionalAttrs qiskitSupported {
+        wire-quantum-qiskit = {
+          type = "app";
+          program = "${wire-quantum-qiskit}/bin/wire-quantum-qiskit";
+          meta.description = "Run Wire quantum examples through a local Qiskit Aer simulator";
+        };
+        wire-quantum-ipea = {
+          type = "app";
+          program = "${wire-quantum-ipea}/bin/wire-quantum-ipea";
+          meta.description = "Run iterative phase estimation as composed Wire quantum rounds";
+        };
       };
-      wire-quantum-ibm-rest = {
-        type = "app";
-        program = "${wire-quantum-ibm-rest}/bin/wire-quantum-ibm-rest";
-        meta.description = "Submit Wire quantum examples to IBM Quantum Runtime REST";
-      };
-      wire-quantum-ipea = {
-        type = "app";
-        program = "${wire-quantum-ipea}/bin/wire-quantum-ipea";
-        meta.description = "Run iterative phase estimation as composed Wire quantum rounds";
-      };
-      wire-quantum-eraser = {
-        type = "app";
-        program = "${wire-quantum-eraser}/bin/wire-quantum-eraser";
-        meta.description = "Run the delayed-choice quantum eraser Wire sweep on IBM Runtime REST hardware";
-      };
-    };
   };
 }
