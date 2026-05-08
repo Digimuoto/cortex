@@ -1014,6 +1014,47 @@ spec = describe "Cortex.Wire.Pure" $ do
       (Map.singleton "score" (var "shared"))
       `shouldBe` Right (Map.singleton "score" (Aeson.Number 2))
 
+  -- Lean correspondence: mirrors `whereStaticFields_sound` and
+  -- `pureNode_evalWhereEnv_localEnv_match` in `theory/Cortex/Wire/Pure.lean`,
+  -- which prove that opening `where` fields into the local environment shadows
+  -- ambient bindings on a name-by-name basis. The test exercises three layered
+  -- bindings of `shared` (top-level delayed, inner `where`, and an unrelated
+  -- name) and asserts the inner `where` binding wins for `shared` while the
+  -- unrelated outer binding remains visible.
+  it "binds where fields name-by-name over outer top-level bindings" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      [ binding "shared" (num 1)
+      , binding "untouched" (num 7)
+      ]
+      ( Just
+          ( CorePureRecord
+              [ CorePureField ("shared" :| []) (num 2)
+              ]
+          )
+      )
+      ( Map.singleton
+          "score"
+          (bin CorePureAdd (var "shared") (var "untouched"))
+      )
+      `shouldBe` Right (Map.singleton "score" (Aeson.Number 9))
+
+  -- Lean correspondence: mirrors the closed-builtin authority report in
+  -- `theory/Cortex/Wire/Pure.lean` (`closedBuiltinSignature_eq`,
+  -- `closedBuiltinEnv_authorityFree`). The CorePure builtin table is closed,
+  -- so a CorePure expression that calls an unknown identifier as a function
+  -- must surface the same `PureMissingVariable` error path used for any other
+  -- unbound name; there is no implicit registry escape hatch.
+  it "rejects calls to unknown CorePure builtins as missing variables" $
+    evaluatePureTaskOutputs
+      scorePorts
+      scoreInputs
+      []
+      Nothing
+      (Map.singleton "score" (call (var "unknownBuiltin") [num 1]))
+      `shouldBe` Left (PureMissingVariable "unknownBuiltin")
+
   it "opens merged where records into output scope" $
     evaluatePureTaskOutputs
       scorePorts

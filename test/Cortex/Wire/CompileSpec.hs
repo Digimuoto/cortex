@@ -27,6 +27,7 @@ import Cortex.Wire (WirePayloadKind (..))
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
   , CompiledCircuit (..)
+  , CompiledCircuitFragment (..)
   , CompiledCircuitNode (..)
   )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
@@ -344,6 +345,65 @@ spec = describe "Cortex.Wire.Compile" $ do
         successors compiled.compiledCircuitTopology (CircuitNodeRef "validate_plan")
           `shouldBe` Set.singleton selectRef
         conditionNode.circuitConditionNodeElseFragment `shouldBe` Nothing
+      other ->
+        expectationFailure ("expected one condition node, got: " <> show other)
+
+  -- Lean correspondence: mirrors `selectActualize_lowers_to_appendAfter` and
+  -- `selectActualize_unselected_not_in_selectedFragment` in
+  -- `theory/Cortex/Wire/Select.lean`. Compilation places non-empty branch
+  -- bodies inside the condition node's latent fragment; only the anchor
+  -- condition node and the ambient pipeline are exposed in the outer node
+  -- map. This pins the structural exclusion of unselected branches: a branch
+  -- that was never selected has zero outer side effects on the compiled
+  -- topology, mirroring the proof-side claim that unselected nodes do not
+  -- appear in the constructed delta.
+  it "keeps select(...) branch bodies confined to the condition fragment" $ do
+    compiled <- requireRight (compileWireText selectSourceText)
+    let outerNodeRefs = Map.keysSet compiled.compiledCircuitNodes
+        ambientRefs =
+          Set.fromList
+            [ CircuitNodeRef "draft_plan"
+            , CircuitNodeRef "validate_plan"
+            , CircuitNodeRef "publish_report"
+            ]
+        conditionEntries =
+          [ (ref, conditionNode)
+          | (ref, CompiledCircuitCondition conditionNode) <-
+              Map.toList compiled.compiledCircuitNodes
+          ]
+    case conditionEntries of
+      [(selectRef, conditionNode)] -> do
+        -- Only the ambient stages and the latent select anchor surface in
+        -- the outer node map. The branch bodies (`gather_missing_constraints`,
+        -- `repair_plan`) must never appear at this level; they live
+        -- exclusively inside the latent condition fragment.
+        outerNodeRefs `shouldBe` Set.insert selectRef ambientRefs
+        outerNodeRefs `shouldSatisfy` Set.notMember (CircuitNodeRef "gather_missing_constraints")
+        outerNodeRefs `shouldSatisfy` Set.notMember (CircuitNodeRef "repair_plan")
+        let thenFragment = conditionNode.circuitConditionNodeThenFragment
+            thenNodeRefs = Map.keysSet thenFragment.compiledCircuitFragmentNodes
+        -- The non-empty branch ("issue") lowers its body into the latent
+        -- "then" fragment; those node refs are the unselected-branch nodes
+        -- whose materialization is gated on a runtime branch decision.
+        thenNodeRefs
+          `shouldBe` Set.fromList
+            [ CircuitNodeRef "gather_missing_constraints"
+            , CircuitNodeRef "repair_plan"
+            ]
+        -- And those branch nodes must not overlap the ambient pipeline,
+        -- so unselected-arm execution is structurally excluded from the
+        -- ambient run.
+        Set.intersection thenNodeRefs ambientRefs `shouldBe` Set.empty
+        -- The empty "ok" branch is encoded as `Nothing` in this fixture;
+        -- if a future representation materializes it explicitly, the inner
+        -- nodes must still stay outside the ambient pipeline.
+        case conditionNode.circuitConditionNodeElseFragment of
+          Nothing -> pure ()
+          Just elseFragment ->
+            Set.intersection
+              (Map.keysSet elseFragment.compiledCircuitFragmentNodes)
+              ambientRefs
+              `shouldBe` Set.empty
       other ->
         expectationFailure ("expected one condition node, got: " <> show other)
 

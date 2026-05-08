@@ -91,6 +91,53 @@ spec = describe "Cortex.Wire runtime egress" $ do
       (Aeson.Number 1)
       `shouldBeLeftContaining` "value shape is invalid; expected a JSON string"
 
+  -- Lean correspondence: mirrors `pureNode_evalOutputs_values_satisfy_outputContracts`
+  -- and `pureNode_evalOutputs_values_satisfy_valueContracts` in
+  -- `theory/Cortex/Wire/Pure.lean`. The runtime egress wraps a raw output in
+  -- a `WireValue` whose declared contract matches the port. The unwrap path
+  -- consumed by downstream stages must recover that payload byte-for-byte
+  -- without dropping the contract identity, so a wrap-then-unwrap round-trip
+  -- pins the contract envelope against accidental drift in either direction.
+  it "round-trips wrapped pure outputs through the unwrap path" $ do
+    let payload = Aeson.object ["score" Aeson..= (7 :: Int)]
+    wrapped <-
+      requireRight $
+        wrapWireStageOutput
+          (Just scoreRegistry)
+          producer
+          runId
+          scorePorts
+          payload
+    wireValue <- requireAesonSuccess (Aeson.fromJSON wrapped :: Aeson.Result WireValue)
+    wireValue.wireValueContract `shouldBe` "Score"
+    wireValue.wireValuePort `shouldBe` Just "score"
+    wireValue.wireValuePayloadKind `shouldBe` WirePayloadJson
+    -- The unwrap path used by downstream stages must recover the raw payload
+    -- without leaking the WireValue envelope.
+    unwrapWireStageValue wrapped `shouldBe` payload
+
+  it "round-trips wrapped pure output sets through the unwrap path" $ do
+    let payloads = Map.fromList [("accepted", Aeson.Number 1), ("rejected", Aeson.Number 0)]
+    wrapped <-
+      requireRight $
+        wrapWireStageOutputs
+          (Just scoreRegistry)
+          producer
+          runId
+          dualScorePorts
+          payloads
+    WireValueSet values <- requireAesonSuccess (Aeson.fromJSON wrapped :: Aeson.Result WireValueSet)
+    fmap (.wireValuePort) values `shouldBe` [Just "accepted", Just "rejected"]
+    fmap (.wireValueContract) values `shouldBe` ["Score", "Score"]
+    -- Reconstructing a stage-input map and unwrapping it must recover the
+    -- aggregate payload list without dropping ports or contracts.
+    let stageInputs = Map.singleton producer wrapped
+        bundle = wireInputBundleFromStageInputs stageInputs
+    fmap (.wireValuePort) bundle.wireInputBundleValues
+      `shouldBe` [Just "accepted", Just "rejected"]
+    fmap (.wireValueContract) bundle.wireInputBundleValues
+      `shouldBe` ["Score", "Score"]
+
 producer :: NodeId
 producer = NodeId "classifier"
 

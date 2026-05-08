@@ -145,28 +145,36 @@ instances, exposed frontier endpoints, source `PortLinear`, and `forgetPorts` lo
 `Cortex.Graph.Relation`; overlay lowering and source linearity preservation are mechanized under
 node-and-endpoint-domain disjointness. `Cortex.Wire.Make` and `Cortex.Wire.PhantomAdapter` then
 exhibit ADR 0048's `make` and ADR 0049's `*` as constructions over those certified primitives.
-`Cortex.Wire.ElaborationIR` adds the first Lean-owned post-parse, post-source-include Wire IR:
-nominal contracts, record fields, port signatures, opaque node-body boundaries, raw list-shaped
-declarations, accepted finite-frontier declarations, graph expressions for `()`, `<>`, `=>`, `*`,
-`select(...)`, `make`, and `makeEach`, and explicit static diagnostics. Isolated accepted node
-declarations project mechanically to the open `node_ports` source object; raw parsing, source
-includes, full identifier grammar validation, registry binding, graph admission, and executable
-elaboration certificates remain outside this module. The local accepted carriers do enforce
-non-empty nominal names, valid port signatures, per-direction label uniqueness, record-field label
-uniqueness, kind-parameter name uniqueness, module-level contract/kind/node/graph-binding name
-uniqueness, graph-binding name validity, select-arm nominal validity, and local reference closure
-for record-field contracts, frontier contracts, and graph-expression references. The `node_ports`
-projection keeps input and output port instances direction-distinct even when source labels match
-across directions. `Cortex.Wire.FrontierReclaim` states the in-memory lifetime consequence: once a
-linear source frontier is finished, no output or input endpoint has an open frontier obligation
-left. The source algebra is a certified proof-object layer, so raw syntax such as `=>` is not
-assumed linear by itself. The closed runtime-facing slice proves that every closed actualized input
-has exactly one producer, and every closed actualized output has exactly one edge consumer or
-terminal discharge. Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*` expansion,
-runtime reclaim hooks, and executable projection into actualized port use remain explicit
-correspondence obligations rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models
-recovery of selected latent branches as replay of the admitted selected append rewrite, not as a new
-graph operator or a re-run of selector code.
+`Cortex.Wire.GeneratedForms` is the admission seam: it abstracts the per-binding identity scheme as
+a `GeneratedNamePolicy`, supplies the ADR 0048 `<binding>_<index>` default through
+`prefixedIndexPolicy`, carries `KindInstantiatedFrontiers` as the handoff from kind substitution to
+exact child port sets indexed by the accepted kind being instantiated, and requires the accepted
+kind to use its generated `PortLabel` formal at every frontier label position before `make` or
+`makeEach` admission can replace labels. It exposes named admission entry points `Make.accept`,
+`MakeEach.accept`, and `Star.accept` that return either a certified `LinearPortObject` or a small
+named diagnostic. `Cortex.Wire.ElaborationIR` adds the first Lean-owned post-parse,
+post-source-include Wire IR: nominal contracts, record fields, port signatures, opaque node-body
+boundaries, raw list-shaped declarations, accepted finite-frontier declarations, graph expressions
+for `()`, `<>`, `=>`, `*`, `select(...)`, `make`, and `makeEach`, and explicit static diagnostics.
+Isolated accepted node declarations project mechanically to the open `node_ports` source object; raw
+parsing, source includes, full identifier grammar validation, registry binding, graph admission, and
+executable elaboration certificates remain outside this module. The local accepted carriers do
+enforce non-empty nominal names, valid port signatures, per-direction label uniqueness, record-field
+label uniqueness, kind-parameter name uniqueness, module-level contract/kind/node/graph-binding name
+uniqueness, graph-binding name validity, generated-form ownership by the containing graph binding,
+select-arm nominal validity, and local reference closure for record-field contracts, frontier
+contracts, and graph-expression references. The `node_ports` projection keeps input and output port
+instances direction-distinct even when source labels match across directions.
+`Cortex.Wire.FrontierReclaim` states the in-memory lifetime consequence: once a linear source
+frontier is finished, no output or input endpoint has an open frontier obligation left. The source
+algebra is a certified proof-object layer, so raw syntax such as `=>` is not assumed linear by
+itself. The closed runtime-facing slice proves that every closed actualized input has exactly one
+producer, and every closed actualized output has exactly one edge consumer or terminal discharge.
+Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*` expansion, runtime reclaim
+hooks, and executable projection into actualized port use remain explicit correspondence obligations
+rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models recovery of selected latent
+branches as replay of the admitted selected append rewrite, not as a new graph operator or a re-run
+of selector code.
 
 Mechanized results now include:
 
@@ -238,11 +246,45 @@ Mechanized results now include:
   kind-derived child port sets; `PhantomRecordShape` pins the generated adapter to one phantom node
   with a declared multi/singular boundary. No separate `make` or `*` preservation theorem is needed;
   the returned `LinearPortObject` carries source linearity by construction.
+- `LinearPortGraph.GeneratedNamePolicy`, `LinearPortGraph.GeneratedNamePolicy.childIndex`,
+  `LinearPortGraph.GeneratedNamePolicy.childIndex_injective`, `LinearPortGraph.prefixedIndexNodeId`,
+  `LinearPortGraph.PrefixedIndexCarrier`, `LinearPortGraph.prefixedIndexPolicy`,
+  `LinearPortGraph.MakeError`, `LinearPortGraph.MakeEachError`, `LinearPortGraph.StarError`,
+  `LinearPortGraph.MakeItem`, `LinearPortGraph.MakeItem.LabelsUnique`,
+  `LinearPortGraph.generatedNodes`, `LinearPortGraph.KindInstantiatedFrontiers`,
+  `LinearPortGraph.KindInstantiatedFrontiers.toMakeWitness`,
+  `LinearPortGraph.KindInstantiatedFrontiers.toMakeWitness_portLinear`,
+  `LinearPortGraph.Make.accept`, `LinearPortGraph.Make.accept_ok_eq`,
+  `LinearPortGraph.Make.accept_childLabel_eq`, `LinearPortGraph.Make.accept_childOutputPorts_exact`,
+  `LinearPortGraph.Make.accept_childInputPorts_exact`, `LinearPortGraph.Make.accept_outputs_exact`,
+  `LinearPortGraph.Make.accept_inputs_exact`, `LinearPortGraph.Make.accept_portLinear`,
+  `LinearPortGraph.MakeEach.acceptItems`, `LinearPortGraph.MakeEach.accept`,
+  `LinearPortGraph.MakeEach.accept_ok_eq`, `LinearPortGraph.MakeEach.accept_childLabel_eq`,
+  `LinearPortGraph.MakeEach.accept_childOutputPorts_exact`,
+  `LinearPortGraph.MakeEach.accept_childInputPorts_exact`,
+  `LinearPortGraph.MakeEach.accept_outputs_exact`, `LinearPortGraph.MakeEach.accept_inputs_exact`,
+  `LinearPortGraph.MakeEach.accept_portLinear`, `LinearPortGraph.Star.accept`,
+  `LinearPortGraph.Star.accept_ok_eq`, and `LinearPortGraph.Star.accept_portLinear`: the
+  source-linearity admission seam for Wire's three generated forms. `GeneratedNamePolicy` abstracts
+  the per-binding identity scheme as an opaque injective indexing function plus a binding-projection
+  witness; `PrefixedIndexCarrier` and `prefixedIndexPolicy` realize ADR 0048's `<binding>_<index>`
+  default with the encoder kept parametric so the Haskell elaborator can pick its own deterministic
+  suffix. `KindInstantiatedFrontiers` is the proof-side result of substituting each generated
+  `PortLabel` and any static `Value` parameter into the reusable kind frontier. Its accepted-kind
+  type index prevents callers from pairing `KindSupportsMake` evidence for one kind with frontiers
+  produced for another kind, and `KindSupportsMake`/`KindSupportsMakeEach` now require every
+  template frontier label to be the declared `PortLabel` formal before generated child labels can
+  replace it. Its exactness fields require every generated child frontier to preserve the kind
+  template contracts under the generated child labels. `Make.accept` and `MakeEach.accept` turn that
+  exact frontier evidence into a `MakeWitness` over Wire's direction-tagged port wrappers, while
+  `Star.accept` reuses `PhantomAdapterWitness.starInsertion`. The returned `LinearPortObject`
+  carries source linearity by construction. Executable production of the exact generated-form
+  witnesses remains the Haskell correspondence obligation.
 - `ElaborationIR.RawNodeDecl`, `ElaborationIR.AcceptedNodeDecl`, `ElaborationIR.GraphExpr`,
   `ElaborationIR.GraphBinding`, `ElaborationIR.ElabDiagnostic`, `ElaborationIR.ElabResult`,
-  `ElaborationIR.RawModule`, `ElaborationIR.AcceptedModule`, `ElaborationIR.OutputPortSignature`,
-  `ElaborationIR.InputPortSignature`, `ElaborationIR.RawNodeDecl.LocallyAdmissible`,
-  `ElaborationIR.RawNodeDecl.toAccepted`,
+  `ElaborationIR.RawModule`, `ElaborationIR.AdmittedModuleShell`,
+  `ElaborationIR.OutputPortSignature`, `ElaborationIR.InputPortSignature`,
+  `ElaborationIR.RawNodeDecl.LocallyAdmissible`, `ElaborationIR.RawNodeDecl.toAccepted`,
   `ElaborationIR.RawNodeDecl.toAccepted_toLinearPortObject_portLinear`,
   `ElaborationIR.RecordContractDecl.LocallyAdmissible`,
   `ElaborationIR.RecordContractDecl.toAccepted`, `ElaborationIR.AcceptedRecordContractDecl`,
@@ -267,6 +309,63 @@ Mechanized results now include:
   spelling. Locally admitted raw modules project to accepted module shells while preserving
   declaration name lists and graph reference closure; locally admitted raw nodes have a named
   theorem exposing their source-linear, direction-separated `node_ports` lift.
+- `ElaborationIR.OutputArmDecl`, `ElaborationIR.OutputArmDecl.Valid`, `ElaborationIR.OutputShape`,
+  `ElaborationIR.OutputShape.ports`, `ElaborationIR.OutputShape.LocallyAdmissible`,
+  `ElaborationIR.OutputShape.ports_valid_of_locallyAdmissible`,
+  `ElaborationIR.OutputShape.ports_labels_nodup_of_locallyAdmissible`,
+  `ElaborationIR.OutputShapeListPorts`, `ElaborationIR.OutputShapeListAdmissible`,
+  `ElaborationIR.outputShapeListPorts_valid`, `ElaborationIR.RawNodeDecl.outputPortsList`,
+  `ElaborationIR.RawKindDecl.outputPortsList`, `ElaborationIR.AcceptedNodeDecl.outputPortsList`,
+  `ElaborationIR.AcceptedNodeDecl.outputPorts`,
+  `ElaborationIR.AcceptedNodeDecl.outputPorts_eq_toFinset`,
+  `ElaborationIR.AcceptedNodeDecl.outputPorts_valid`,
+  `ElaborationIR.AcceptedNodeDecl.outputPorts_labelsUnique`,
+  `ElaborationIR.AcceptedNodeDecl.outputPortsList_eq_flatMap`,
+  `ElaborationIR.AcceptedNodeDecl.outputPorts_eq_flatMap_toFinset`,
+  `ElaborationIR.AcceptedKindDecl.outputPortsList`, `ElaborationIR.AcceptedKindDecl.outputPorts`,
+  `ElaborationIR.AcceptedKindDecl.outputPorts_eq_toFinset`,
+  `ElaborationIR.AcceptedKindDecl.outputPorts_valid`,
+  `ElaborationIR.AcceptedKindDecl.outputPorts_labelsUnique`,
+  `ElaborationIR.AcceptedKindDecl.outputPortsList_eq_flatMap`,
+  `ElaborationIR.AcceptedKindDecl.outputPorts_eq_flatMap_toFinset`,
+  `ElaborationIR.AcceptedKindDecl.kindSupportsMake_outputPortsList_length_le_one`,
+  `ElaborationIR.RawNodeDecl.toAccepted_outputs`, `ElaborationIR.RawKindDecl.toAccepted_outputs`,
+  `ElaborationIR.Examples.artifactSingleShape`,
+  `ElaborationIR.Examples.artifactSingleShape_admissible`, `ElaborationIR.Examples.specSingleShape`,
+  `ElaborationIR.Examples.specSingleShape_admissible`,
+  `ElaborationIR.Examples.singleton_outputShapeListAdmissible`, and
+  `ElaborationIR.Examples.singleton_outputShapeListPortsLabelsUnique`: accepted node and kind output
+  declarations preserve authored output shape, distinguishing a single output port from an exclusive
+  output sum group while flattening to the same `Finset PortSignature` view consumed by the
+  source-linearity lift. The shape carrier admits valid arm keys, unique arm keys, unique port
+  labels per group, valid flattened ports across the whole frontier, and equality between the
+  flattened authored shapes and the projected `outputPorts` finset. Sum-group arms may share
+  contracts; only the arm-local label set must be Nodup. The per-shape and per-list admission
+  predicates expose `Decidable` instances where natural and transport across
+  `RawNodeDecl.toAccepted` and `RawKindDecl.toAccepted` without losing the authored shape
+  distinction.
+- `ElaborationIR.CertifiedGraph`, `ElaborationIR.CertifiedGraph.empty`,
+  `ElaborationIR.CertifiedGraph.nodeOf`, `ElaborationIR.CertifiedGraph.bindingOf`,
+  `ElaborationIR.CertifiedGraph.Disjoint`, `ElaborationIR.CertifiedGraph.overlayOf`,
+  `ElaborationIR.CertifiedGraph.SingletonMatch`,
+  `ElaborationIR.CertifiedGraph.BulkContractContainsPair`,
+  `ElaborationIR.CertifiedGraph.CompatiblePair`, `ElaborationIR.CertifiedGraph.BoundaryMatchTrace`,
+  `ElaborationIR.CertifiedGraph.connectOf`, `ElaborationIR.Admits`,
+  `ElaborationIR.CertifiedGraph.admits_overlay_usedRefs_disjoint`,
+  `ElaborationIR.CertifiedGraph.admits_overlay_usedNodes_disjoint`,
+  `ElaborationIR.CertifiedGraph.admits_overlay_self_binding_false`,
+  `ElaborationIR.CertifiedGraph.singletonMatch_unique`, and
+  `ElaborationIR.CertifiedGraph.admits_overlay_object_eq`,
+  `ElaborationIR.CertifiedGraph.admits_connect_object_graph_eq`: primitive `GraphExpr` shapes
+  (`empty`, `node`, `binding`, `overlay`, `connect`) admit to certified graph objects packaging a
+  source-linear `LinearPortObject` with finite ledgers of consumed source-node identities and
+  resolved graph-binding references; admitted overlays carry disjoint node and reference ledgers, so
+  `a <> a` is rejected even when the resolved binding has empty node domain. `connectOf` now
+  consumes a certified `BulkContract` trace through `BoundaryMatchTrace` plus its bundled
+  `determined` witness that the trace contains exactly the compatible exposed boundary pairs, so
+  bulk-frontier source-linearity preservation and match-set exactness are part of the primitive
+  graph-admission carrier. Recursive admission of bound graph expressions remains an explicit
+  follow-up obligation.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished
@@ -281,6 +380,23 @@ Mechanized results now include:
   actualization preserves that accounting under namespace-freshness/domain-disjointness premises.
   This does not yet mechanize exact selected-fragment projection or runtime `actualizedPortGraphOf`
   projection.
+- `projectSourceOutput`, `projectSourceInput`, `projectSourceOutput_injective`,
+  `projectSourceInput_injective`, `projectedActualizedGraph`, `SourceToActualizedProjection`,
+  `SourceToActualizedProjection.canonical`, `SourceToActualizedProjection.portNodeDomain_eq`,
+  `SourceToActualizedProjection.canonical_terminalDischarges_eq_empty`,
+  `SourceToActualizedProjection.source_output_mem`, `SourceToActualizedProjection.source_input_mem`,
+  `SourceToActualizedProjection.actualized_output_source`,
+  `SourceToActualizedProjection.actualized_input_source`, `PortUseWitness.AlignedWith`,
+  `compiledPortUseWitness_exact_output_forward`, `compiledPortUseWitness_exact_input_forward`,
+  `compiledPortUseWitness_exact_output_reverse`, `compiledPortUseWitness_exact_input_reverse`,
+  `compiledPortUseWitness_exact_output`, `compiledPortUseWitness_exact_input`,
+  `AlignedPortUseWitnessSoundness`, and `alignedPortUseWitness_closedPortLinear`:
+  source-to-actualized projection is a deterministic injective image of source `LinearPortObject`
+  carriers; an aligned `PortUseWitness` matches that projection extensionally on outputs, inputs,
+  and edge consumers, ruling out runtime ports the source carrier never declared, source ports the
+  witness silently drops, and source-edge mismatch. Aligned witnesses also discharge closed
+  actualized port linearity. Terminal-discharge correspondence, compiler witness production, and
+  richer port-relabelling projections remain open.
 - `BoundaryLaw`, `AnchorBoundaryUse`, `RewriteSlot`, `BoundaryResourceUse`,
   `BudgetedBoundaryResourceUse`, `GraphRewrite.expandNode_resourceUse`,
   `GraphRewrite.appendAfter_resourceUse`, `ConstructedPlanningStep.boundaryResourceUse`,
@@ -418,6 +534,27 @@ Mechanized results now include:
   budget; unselected branch nodes stay out of the raw replayed fragment and, under namespace
   freshness, the constructed selected-branch delta topology; the record then feeds the existing
   Wire/Pulse safe-run preservation theorem.
+- `SelectAdmission.SelectableOutputShape`, `SelectAdmission.SelectArm`,
+  `SelectAdmission.SelectExpr`, `SelectAdmission.SelectAdmissionError`,
+  `SelectAdmission.LatentSelectAdmission`,
+  `SelectAdmission.LatentSelectAdmission.keys_perm_shape_keys`,
+  `SelectAdmission.LatentSelectAdmission.keys_eq_shape_keys`,
+  `SelectAdmission.LatentSelectAdmission.length_eq_armPorts`,
+  `SelectAdmission.LatentSelectAdmission.keys_nodup`, `SelectAdmission.detectDuplicateArm`,
+  `SelectAdmission.contractFallbackCandidates`, `SelectAdmission.resolveArmKey`,
+  `SelectAdmission.resolveArms`, `SelectAdmission.admitClause`, `SelectAdmission.admitClauseAtNode`,
+  `SelectAdmission.admitClause_entries_keys_eq_shape`,
+  `SelectAdmission.LatentSelectAdmission.FromClause`, `SelectAdmission.FragmentEvidence`,
+  `SelectAdmission.LatentSelectAdmission.fragmentLookup`,
+  `SelectAdmission.LatentSelectAdmission.fragmentLookup_entry`,
+  `SelectAdmission.LatentSelectAdmission.toLatentBranchFamily`: source-level admission for Wire
+  `select(...)` clauses projects a two-or-more exclusive output sum from the base node, resolves
+  source arm keys label-first with unique contract-name fallback, rejects duplicate canonical arms,
+  missing coverage, and ambiguous contract fallback with explicit `SelectAdmissionError`
+  diagnostics, keeps admitted arm bodies latent rather than overlaying live topology, names the
+  optional body-provenance obligation through `FromClause`, and bridges admitted `SubgraphSpec` arm
+  bodies into the existing `LatentBranchFamily` carrier under caller-supplied per-arm validity and
+  pairwise fragment-node disjointness evidence.
 - `WirePulseSnapshot`, `SafeWirePulseSnapshot`, `AdmittedWirePulseStep`, `AdmittedWirePulseTrace`,
   `WirePulseSnapshot.runStart_establishes_safeRunState`,
   `AdmittedWirePulseStep.preserves_safeRunState`, `AdmittedWirePulseTrace.preserves_safeRunState`,
@@ -446,7 +583,10 @@ for single and multi-output Wire values, plus `planGraphRewriteWithAdmissionWitn
 the Lean-shaped planner and budget-admission equations around `planGraphRewrite` and
 `admitRewriteDelta`. Circuit lowering tests now check that selected latent branches lower through
 the same admitted `AppendAfter` witness surface, omit unselected branch nodes from the selected
-delta, and charge only the selected branch cost.
+delta, and charge only the selected branch cost. Regression tests pin name-by-name shadowing of
+top-level CorePure bindings by `where` fields, the closed-builtin authority's missing-variable error
+path, the wrap/unwrap round-trip across single and multi-output Wire values, and the structural
+exclusion of unselected `select(...)` branch bodies from the outer compiled circuit.
 
 The remaining Track 3 correspondence obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next slices are:
