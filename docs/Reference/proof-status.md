@@ -128,6 +128,13 @@ rows.
   and keeps raw-connection projection tied to replayed primitive contractions. This is intentionally
   not yet `GraphElaboration.CertifiedGraph`: accepted-node declarations and binding expansion are
   still separate correspondence evidence.
+- Generated-form artifacts now have the same kind of artifact-boundary reconstruction:
+  `AdmissionArtifact.GeneratedReconstruction`. `AdmissionArtifact.Sound.toGeneratedReconstruction`
+  proves that persisted `make`/`makeEach` rows recover accepted source `MakeItem`s, unique source
+  child provenance for each surviving generated node, primitive-backed child frontiers, frontier-key
+  accounting through primitive replay, canonical value-free `make` payloads, and decoded static
+  payload projection. This is intentionally not yet `KindInstantiatedFrontiers` or `MakeWitness`;
+  accepted-kind substitution evidence is still the next boundary.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph

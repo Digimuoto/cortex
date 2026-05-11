@@ -464,6 +464,12 @@ Mechanized results now include:
   (exposed, consumed, or select-internal), and raw-connection projection. It deliberately stops at
   the artifact boundary rather than claiming a `GraphElaboration.CertifiedGraph`, because accepted
   node declarations and binding expansion are not serialized in primitive artifact rows.
+  `AdmissionArtifact.GeneratedReconstruction` similarly reconstructs generated-form artifact
+  evidence from `AdmissionArtifact.Sound`: source `MakeItem` acceptance, unique source row and
+  projected item provenance for every surviving generated child, primitive-backed child frontiers,
+  primitive frontier-key accounting, canonical value-free `make` payloads, and decoded static-value
+  projection. It deliberately stops short of `KindInstantiatedFrontiers` and `MakeWitness` until
+  accepted-kind substitution evidence is present.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished
