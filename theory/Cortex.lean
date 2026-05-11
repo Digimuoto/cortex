@@ -40,6 +40,7 @@ import Cortex.Wire.AdmissionArtifact.Boundary
 import Cortex.Wire.AdmissionArtifact.Generated
 import Cortex.Wire.AdmissionArtifact.Phantom
 import Cortex.Wire.AdmissionArtifact.Primitive
+import Cortex.Wire.AdmissionArtifact.PrimitiveReconstruction
 import Cortex.Wire.AdmissionArtifact.PrimitiveTraceCheck
 import Cortex.Wire.AdmissionArtifact.ReadyGeneral
 import Cortex.Wire.AdmissionArtifact.ReadyGenerated

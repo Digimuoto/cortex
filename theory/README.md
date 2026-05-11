@@ -458,6 +458,12 @@ Mechanized results now include:
   without downstream proofs depending on checker-internal field layout. This is still not a
   completeness proof that the Haskell compiler emits such an artifact for every accepted Wire
   program; it is the reusable target that such a proof must hit.
+  `AdmissionArtifact.PrimitiveGraphReconstruction` is the first replay witness reconstructed from
+  that cutline: `AdmissionArtifact.Sound.toPrimitiveGraphReconstruction` recovers the final
+  primitive frame, summary matching, source-visible duplicate-freedom, frontier-key accounting
+  (exposed, consumed, or select-internal), and raw-connection projection. It deliberately stops at
+  the artifact boundary rather than claiming a `GraphElaboration.CertifiedGraph`, because accepted
+  node declarations and binding expansion are not serialized in primitive artifact rows.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished

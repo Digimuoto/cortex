@@ -120,6 +120,14 @@ rows.
   `AdmissionArtifact.validatorReady_sound` to produce `AdmissionArtifact.Sound`. Haskell integration
   still needs to run this checker on decoded artifacts; the Lean checker is now the intended
   artifact-validation authority.
+- Primitive artifact replay now has an explicit reconstruction target:
+  `AdmissionArtifact.PrimitiveGraphReconstruction`. From `AdmissionArtifact.Sound`,
+  `AdmissionArtifact.Sound.toPrimitiveGraphReconstruction` recovers the final primitive replay
+  frame, proves it matches the top-level summary, proves source-visible primitive rows are
+  duplicate-free, classifies every primitive frontier key as exposed, consumed, or select-internal,
+  and keeps raw-connection projection tied to replayed primitive contractions. This is intentionally
+  not yet `GraphElaboration.CertifiedGraph`: accepted-node declarations and binding expansion are
+  still separate correspondence evidence.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph
