@@ -2670,6 +2670,627 @@ theorem selectAdmissionDomainClosedCheck_sound
     , variantPortsClosed := Check.allDecide_sound hVariants
     }
 
+/-- Boolean exclusive-group ownership check for select condition-node internal exits. -/
+def selectExitOwnedByConditionCheck
+    (conditionNode : NodeId)
+    (exit : AdmissionBoundaryPort) :
+    Bool :=
+  match exit.exclusiveGroup with
+  | none => false
+  | some (owner, _index) => decide (owner = conditionNode)
+
+/-- Successful condition-owner checking returns the serialized exclusive-group index. -/
+theorem selectExitOwnedByConditionCheck_sound
+    {conditionNode : NodeId}
+    {exit : AdmissionBoundaryPort}
+    (hCheck : selectExitOwnedByConditionCheck conditionNode exit = true) :
+    ∃ index, exit.exclusiveGroup = some (conditionNode, index) := by
+  unfold selectExitOwnedByConditionCheck at hCheck
+  cases hGroup : exit.exclusiveGroup with
+  | none =>
+      simp [hGroup] at hCheck
+  | some group =>
+      cases group with
+      | mk owner index =>
+          have hOwner : owner = conditionNode := by
+            have hOwnerCheck : decide (owner = conditionNode) = true := by
+              simpa [selectExitOwnedByConditionCheck, hGroup] using hCheck
+            exact of_decide_eq_true hOwnerCheck
+          exact ⟨index, by simp [hOwner]⟩
+
+/-- Serialized condition-owned exits are accepted by the boolean owner check. -/
+theorem selectExitOwnedByConditionCheck_complete
+    {conditionNode : NodeId}
+    {exit : AdmissionBoundaryPort}
+    (hGroup : ∃ index, exit.exclusiveGroup = some (conditionNode, index)) :
+    selectExitOwnedByConditionCheck conditionNode exit = true := by
+  obtain ⟨index, hGroupEq⟩ := hGroup
+  unfold selectExitOwnedByConditionCheck
+  rw [hGroupEq]
+  simp
+
+/-- Boolean check that a finite list contains exactly one row satisfying `matchCheck`. -/
+def uniqueBoolCheck
+    {α : Type}
+    [DecidableEq α]
+    (items : List α)
+    (matchCheck : α → Bool) :
+    Bool :=
+  match items.find? matchCheck with
+  | none => false
+  | some selected =>
+      Check.allDecide items fun item =>
+        matchCheck item = true → item = selected
+
+/-- `List.find?` over a boolean predicate returns an item from the scanned list. -/
+theorem find?_bool_mem
+    {α : Type}
+    {items : List α}
+    {matchCheck : α → Bool}
+    {selected : α}
+    (hFind : items.find? matchCheck = some selected) :
+    selected ∈ items ∧ matchCheck selected = true := by
+  induction items with
+  | nil =>
+      simp at hFind
+  | cons head tail ih =>
+      simp only [List.find?_cons] at hFind
+      cases hHead : matchCheck head with
+      | false =>
+          rw [hHead] at hFind
+          have hTail := ih hFind
+          exact ⟨List.mem_cons_of_mem head hTail.left, hTail.right⟩
+      | true =>
+          rw [hHead] at hFind
+          cases hFind
+          exact ⟨List.mem_cons_self, hHead⟩
+
+/-- Successful finite uniqueness checking returns the unique matched item. -/
+theorem uniqueBoolCheck_sound
+    {α : Type}
+    [DecidableEq α]
+    {items : List α}
+    {matchCheck : α → Bool}
+    (hCheck : uniqueBoolCheck items matchCheck = true) :
+    ∃ selected, selected ∈ items ∧ matchCheck selected = true ∧
+      ∀ item, item ∈ items → matchCheck item = true → item = selected := by
+  unfold uniqueBoolCheck at hCheck
+  cases hFind : items.find? matchCheck with
+  | none =>
+      rw [hFind] at hCheck
+      simp at hCheck
+  | some selected =>
+      rw [hFind] at hCheck
+      have hSelected := find?_bool_mem hFind
+      exact
+        ⟨ selected
+        , hSelected.left
+        , hSelected.right
+        , Check.allDecide_sound hCheck
+        ⟩
+
+/-- Boolean predicate for a variant-compatible select bridge entry. -/
+def selectBridgeEntryMatchCheck
+    (variant : SelectVariantArtifact)
+    (entry : AdmissionBoundaryPort) :
+    Bool :=
+  decide (variant.port.CompatibleWith entry)
+
+/-- Executable checker for unique select bridge entries. -/
+def selectBridgeEntryUniqueCheck
+    (variant : SelectVariantArtifact)
+    (entries : List AdmissionBoundaryPort) :
+    Bool :=
+  uniqueBoolCheck entries (selectBridgeEntryMatchCheck variant)
+
+/-- Successful bridge-entry uniqueness checking proves `SelectBridgeEntryUnique`. -/
+theorem selectBridgeEntryUniqueCheck_sound
+    {variant : SelectVariantArtifact}
+    {entries : List AdmissionBoundaryPort}
+    (hCheck : selectBridgeEntryUniqueCheck variant entries = true) :
+    SelectBridgeEntryUnique variant entries := by
+  obtain ⟨entry, hEntry, hMatch, hUnique⟩ :=
+    uniqueBoolCheck_sound hCheck
+  have hCompatible : variant.port.CompatibleWith entry :=
+    of_decide_eq_true hMatch
+  exact
+    ⟨ entry
+    , hEntry
+    , hCompatible
+    , fun other hOther hOtherCompatible =>
+        hUnique other hOther (decide_eq_true hOtherCompatible)
+    ⟩
+
+/-- Boolean predicate for a variant-compatible, condition-owned select bridge exit. -/
+def selectBridgeInternalExitMatchCheck
+    (conditionNode : NodeId)
+    (variant : SelectVariantArtifact)
+    (exit : AdmissionBoundaryPort) :
+    Bool :=
+  decide (variant.port.CompatibleWith exit) &&
+    selectExitOwnedByConditionCheck conditionNode exit
+
+/-- Executable checker for unique select internal branch-choice exits. -/
+def selectBridgeInternalExitUniqueCheck
+    (conditionNode : NodeId)
+    (variant : SelectVariantArtifact)
+    (exits : List AdmissionBoundaryPort) :
+    Bool :=
+  uniqueBoolCheck exits
+    (selectBridgeInternalExitMatchCheck conditionNode variant)
+
+/-- Successful internal-exit uniqueness checking proves `SelectBridgeInternalExitUnique`. -/
+theorem selectBridgeInternalExitUniqueCheck_sound
+    {conditionNode : NodeId}
+    {variant : SelectVariantArtifact}
+    {exits : List AdmissionBoundaryPort}
+    (hCheck :
+      selectBridgeInternalExitUniqueCheck conditionNode variant exits = true) :
+    SelectBridgeInternalExitUnique conditionNode variant exits := by
+  obtain ⟨exit, hExit, hMatch, hUnique⟩ :=
+    uniqueBoolCheck_sound hCheck
+  unfold selectBridgeInternalExitMatchCheck at hMatch
+  rw [Bool.and_eq_true] at hMatch
+  have hCompatible : variant.port.CompatibleWith exit :=
+    of_decide_eq_true hMatch.left
+  have hGroup := selectExitOwnedByConditionCheck_sound hMatch.right
+  exact
+    ⟨ exit
+    , hExit
+    , hCompatible
+    , hGroup
+    , fun other hOther hOtherCompatible hOtherGroup =>
+        hUnique other hOther (by
+          unfold selectBridgeInternalExitMatchCheck
+          rw [Bool.and_eq_true]
+          exact
+            ⟨ decide_eq_true hOtherCompatible
+            , selectExitOwnedByConditionCheck_complete hOtherGroup
+            ⟩)
+    ⟩
+
+/-- Row checker for one select condition-node primitive frontier row. -/
+def selectBridgeFrontiersPrimitiveStepCheck
+    (selectAdmission : SelectAdmissionArtifact) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.node node _entries exits =>
+      decide (node = selectAdmission.conditionNode) &&
+        Check.allBool selectAdmission.variants fun variant =>
+          selectBridgeEntryUniqueCheck variant _entries &&
+            selectBridgeInternalExitUniqueCheck
+              selectAdmission.conditionNode variant exits
+  | PrimitiveGraphStep.empty =>
+      false
+  | PrimitiveGraphStep.bindingRef _binding =>
+      false
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      false
+  | PrimitiveGraphStep.connect _leftExits _rightEntries _matchedPairs
+      _unmatchedLeftExits _unmatchedRightEntries =>
+      false
+
+/-- Executable checker for one select row's primitive bridge frontier backing. -/
+def selectBridgeFrontiersBackedByPrimitiveRowCheck
+    (artifact : WireAdmissionArtifact)
+    (selectAdmission : SelectAdmissionArtifact) :
+    Bool :=
+  artifact.primitiveSteps.any
+    (selectBridgeFrontiersPrimitiveStepCheck selectAdmission)
+
+/-- Successful row checking proves primitive bridge frontier backing for one select row. -/
+theorem selectBridgeFrontiersBackedByPrimitiveRowCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {selectAdmission : SelectAdmissionArtifact}
+    (hCheck :
+      selectBridgeFrontiersBackedByPrimitiveRowCheck artifact selectAdmission = true) :
+    ∃ entries exits,
+      PrimitiveGraphStep.node selectAdmission.conditionNode entries exits ∈
+        artifact.primitiveSteps ∧
+        ∀ variant, variant ∈ selectAdmission.variants →
+          SelectBridgeEntryUnique variant entries ∧
+            SelectBridgeInternalExitUnique selectAdmission.conditionNode variant exits := by
+  unfold selectBridgeFrontiersBackedByPrimitiveRowCheck at hCheck
+  rcases List.any_eq_true.mp hCheck with
+    ⟨primitiveStep, hPrimitiveStep, hPrimitiveCheck⟩
+  cases primitiveStep with
+  | empty =>
+      simp [selectBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | bindingRef _binding =>
+      simp [selectBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      simp [selectBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | connect _leftExits _rightEntries _matchedPairs _unmatchedLeftExits _unmatchedRightEntries =>
+      simp [selectBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | node primitiveNode entries exits =>
+      unfold selectBridgeFrontiersPrimitiveStepCheck at hPrimitiveCheck
+      rw [Bool.and_eq_true] at hPrimitiveCheck
+      have hNode : primitiveNode = selectAdmission.conditionNode :=
+        of_decide_eq_true hPrimitiveCheck.left
+      refine ⟨entries, exits, ?_, ?_⟩
+      · simpa [hNode] using hPrimitiveStep
+      · intro variant hVariant
+        have hVariantCheck :=
+          Check.allBool_sound hPrimitiveCheck.right
+            (fun checkedVariant _ hCheck =>
+              show
+                SelectBridgeEntryUnique checkedVariant entries ∧
+                  SelectBridgeInternalExitUnique
+                    selectAdmission.conditionNode checkedVariant exits
+              by
+                rw [Bool.and_eq_true] at hCheck
+                exact
+                  ⟨ selectBridgeEntryUniqueCheck_sound hCheck.left
+                  , selectBridgeInternalExitUniqueCheck_sound hCheck.right
+                  ⟩)
+            variant hVariant
+        exact hVariantCheck
+
+/-- Executable checker for primitive backing of all select condition bridge frontiers. -/
+def selectBridgeFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.selects
+    (selectBridgeFrontiersBackedByPrimitiveRowCheck artifact)
+
+/-- Successful select bridge-frontier checking proves `SelectBridgeFrontiersBackedByPrimitive`. -/
+theorem selectBridgeFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.selectBridgeFrontiersBackedByPrimitiveCheck = true) :
+    artifact.SelectBridgeFrontiersBackedByPrimitive :=
+  Check.allBool_sound hCheck
+    (fun _selectAdmission _ hSelect =>
+      selectBridgeFrontiersBackedByPrimitiveRowCheck_sound hSelect)
+
+/-- Row checker for condition-node bridge entries being consumed by primitive replay. -/
+def selectBridgeEntriesConsumedPrimitiveStepCheck
+    (artifact : WireAdmissionArtifact)
+    (selectAdmission : SelectAdmissionArtifact) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.node node entries _exits =>
+      if node = selectAdmission.conditionNode then
+        let matchedConnections :=
+          PrimitiveGraphStep.matchedConnectionsList artifact.primitiveSteps
+        Check.allBool selectAdmission.variants fun variant =>
+          Check.allDecide entries fun entry =>
+            variant.port.CompatibleWith entry →
+              { fromPort := variant.port, toPort := entry } ∈ matchedConnections
+      else
+        true
+  | PrimitiveGraphStep.empty =>
+      true
+  | PrimitiveGraphStep.bindingRef _binding =>
+      true
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      true
+  | PrimitiveGraphStep.connect _leftExits _rightEntries _matchedPairs
+      _unmatchedLeftExits _unmatchedRightEntries =>
+      true
+
+/-- Executable checker for consumed select bridge entries. -/
+def selectBridgeEntriesConsumedCheck (artifact : WireAdmissionArtifact) : Bool :=
+  Check.allBool artifact.selects fun selectAdmission =>
+    Check.allBool artifact.primitiveSteps
+      (selectBridgeEntriesConsumedPrimitiveStepCheck artifact selectAdmission)
+
+/-- Successful select bridge-entry consumption checking proves `SelectBridgeEntriesConsumed`. -/
+theorem selectBridgeEntriesConsumedCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.selectBridgeEntriesConsumedCheck = true) :
+    artifact.SelectBridgeEntriesConsumed := by
+  intro selectAdmission hSelect entries exits hNode variant hVariant entry hEntry
+    hCompatible
+  have hSelectCheck :=
+    Check.allBool_sound hCheck
+      (fun checkedSelect _ hCheckedSelect =>
+        Check.allBool_sound hCheckedSelect
+          (fun primitiveStep _ hPrimitiveStep =>
+            show
+              selectBridgeEntriesConsumedPrimitiveStepCheck
+                artifact checkedSelect primitiveStep = true by
+              exact hPrimitiveStep))
+      selectAdmission hSelect
+  have hStepCheck :=
+    hSelectCheck
+      (PrimitiveGraphStep.node selectAdmission.conditionNode entries exits) hNode
+  unfold selectBridgeEntriesConsumedPrimitiveStepCheck at hStepCheck
+  simp at hStepCheck
+  have hVariantCheck :=
+    Check.allBool_sound hStepCheck
+      (fun checkedVariant _ hCheckedVariant =>
+        Check.allDecide_sound hCheckedVariant)
+      variant hVariant
+  exact hVariantCheck entry hEntry hCompatible
+
+/-- Executable checker for the select identity-arm bridge-output branch. -/
+def selectArmIdentityBodyShapeCheck
+    (selectAdmission : SelectAdmissionArtifact)
+    (exits : List AdmissionBoundaryPort)
+    (arm : SelectArmAdmissionArtifact)
+    (variant : SelectVariantArtifact) :
+    Bool :=
+  decide (arm.bodyNodes = [] ∧ arm.bodyEntries = [] ∧ arm.bodyExits = []) &&
+    decide
+      (SelectConditionBridgeOutputShapes selectAdmission exits =
+        [variant.port.identityOutputShape])
+
+/-- Successful identity-arm shape checking proves the identity branch. -/
+theorem selectArmIdentityBodyShapeCheck_sound
+    {selectAdmission : SelectAdmissionArtifact}
+    {exits : List AdmissionBoundaryPort}
+    {arm : SelectArmAdmissionArtifact}
+    {variant : SelectVariantArtifact}
+    (hCheck :
+      selectArmIdentityBodyShapeCheck selectAdmission exits arm variant = true) :
+    (arm.bodyNodes = [] ∧ arm.bodyEntries = [] ∧ arm.bodyExits = []) ∧
+      SelectConditionBridgeOutputShapes selectAdmission exits =
+        [variant.port.identityOutputShape] := by
+  unfold selectArmIdentityBodyShapeCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact ⟨of_decide_eq_true hCheck.left, of_decide_eq_true hCheck.right⟩
+
+/-- Executable checker for the non-identity select-arm bridge-output branch. -/
+def selectArmNonIdentityBodyShapeCheck
+    (selectAdmission : SelectAdmissionArtifact)
+    (exits : List AdmissionBoundaryPort)
+    (arm : SelectArmAdmissionArtifact)
+    (variant : SelectVariantArtifact) :
+    Bool :=
+  decide
+      (arm.bodyEntries.map AdmissionBoundaryPort.compatibilityShape =
+        [variant.port.compatibilityShape]) &&
+    Check.permCheck
+      (arm.bodyExits.map AdmissionBoundaryPort.outputShape)
+      (SelectConditionBridgeOutputShapes selectAdmission exits)
+
+/-- Successful non-identity arm shape checking proves the body-boundary branch. -/
+theorem selectArmNonIdentityBodyShapeCheck_sound
+    {selectAdmission : SelectAdmissionArtifact}
+    {exits : List AdmissionBoundaryPort}
+    {arm : SelectArmAdmissionArtifact}
+    {variant : SelectVariantArtifact}
+    (hCheck :
+      selectArmNonIdentityBodyShapeCheck selectAdmission exits arm variant = true) :
+    arm.bodyEntries.map AdmissionBoundaryPort.compatibilityShape =
+        [variant.port.compatibilityShape] ∧
+      (arm.bodyExits.map AdmissionBoundaryPort.outputShape).Perm
+        (SelectConditionBridgeOutputShapes selectAdmission exits) := by
+  unfold selectArmNonIdentityBodyShapeCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact ⟨of_decide_eq_true hCheck.left, Check.permCheck_sound hCheck.right⟩
+
+/-- Executable checker for one select arm's body boundary shape. -/
+def selectArmBodyBoundaryShapeCheck
+    (selectAdmission : SelectAdmissionArtifact)
+    (exits : List AdmissionBoundaryPort)
+    (arm : SelectArmAdmissionArtifact)
+    (variant : SelectVariantArtifact) :
+    Bool :=
+  decide (variant.key = arm.canonicalKey) &&
+    (selectArmIdentityBodyShapeCheck selectAdmission exits arm variant ||
+      selectArmNonIdentityBodyShapeCheck selectAdmission exits arm variant)
+
+/-- Successful arm-boundary shape checking proves the relational branch shape. -/
+theorem selectArmBodyBoundaryShapeCheck_sound
+    {selectAdmission : SelectAdmissionArtifact}
+    {exits : List AdmissionBoundaryPort}
+    {arm : SelectArmAdmissionArtifact}
+    {variant : SelectVariantArtifact}
+    (hCheck :
+      selectArmBodyBoundaryShapeCheck selectAdmission exits arm variant = true) :
+    variant.key = arm.canonicalKey ∧
+      (((arm.bodyNodes = [] ∧ arm.bodyEntries = [] ∧ arm.bodyExits = []) ∧
+          SelectConditionBridgeOutputShapes selectAdmission exits =
+            [variant.port.identityOutputShape]) ∨
+        (arm.bodyEntries.map AdmissionBoundaryPort.compatibilityShape =
+            [variant.port.compatibilityShape] ∧
+          (arm.bodyExits.map AdmissionBoundaryPort.outputShape).Perm
+            (SelectConditionBridgeOutputShapes selectAdmission exits))) := by
+  unfold selectArmBodyBoundaryShapeCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  have hKey : variant.key = arm.canonicalKey :=
+    of_decide_eq_true hCheck.left
+  cases hIdentity :
+      selectArmIdentityBodyShapeCheck selectAdmission exits arm variant with
+  | true =>
+      exact
+        ⟨ hKey
+        , Or.inl (selectArmIdentityBodyShapeCheck_sound hIdentity)
+        ⟩
+  | false =>
+      have hBody :
+          selectArmNonIdentityBodyShapeCheck selectAdmission exits arm variant =
+            true := by
+        simpa [hIdentity] using hCheck.right
+      exact
+        ⟨ hKey
+        , Or.inr (selectArmNonIdentityBodyShapeCheck_sound hBody)
+        ⟩
+
+/-- Row checker for all select-arm bodies against one condition-node primitive row. -/
+def selectArmBodyBoundariesPrimitiveStepCheck
+    (selectAdmission : SelectAdmissionArtifact) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.node node _entries exits =>
+      decide (node = selectAdmission.conditionNode) &&
+        Check.allBool selectAdmission.arms fun arm =>
+          selectAdmission.variants.any fun variant =>
+            selectArmBodyBoundaryShapeCheck selectAdmission exits arm variant
+  | PrimitiveGraphStep.empty =>
+      false
+  | PrimitiveGraphStep.bindingRef _binding =>
+      false
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      false
+  | PrimitiveGraphStep.connect _leftExits _rightEntries _matchedPairs
+      _unmatchedLeftExits _unmatchedRightEntries =>
+      false
+
+/-- Executable checker for one select row's latent arm body boundary facts. -/
+def selectArmBodyBoundariesMatchConditionRowCheck
+    (artifact : WireAdmissionArtifact)
+    (selectAdmission : SelectAdmissionArtifact) :
+    Bool :=
+  artifact.primitiveSteps.any
+    (selectArmBodyBoundariesPrimitiveStepCheck selectAdmission)
+
+/-- Successful row checking proves body-boundary facts for one select row. -/
+theorem selectArmBodyBoundariesMatchConditionRowCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {selectAdmission : SelectAdmissionArtifact}
+    (hCheck :
+      selectArmBodyBoundariesMatchConditionRowCheck artifact selectAdmission =
+        true) :
+    ∃ entries exits,
+      PrimitiveGraphStep.node selectAdmission.conditionNode entries exits ∈
+        artifact.primitiveSteps ∧
+        ∀ arm, arm ∈ selectAdmission.arms →
+          ∃ variant, variant ∈ selectAdmission.variants ∧
+            variant.key = arm.canonicalKey ∧
+            (((arm.bodyNodes = [] ∧ arm.bodyEntries = [] ∧ arm.bodyExits = []) ∧
+                SelectConditionBridgeOutputShapes selectAdmission exits =
+                  [variant.port.identityOutputShape]) ∨
+              (arm.bodyEntries.map AdmissionBoundaryPort.compatibilityShape =
+                  [variant.port.compatibilityShape] ∧
+                (arm.bodyExits.map AdmissionBoundaryPort.outputShape).Perm
+                  (SelectConditionBridgeOutputShapes selectAdmission exits))) := by
+  unfold selectArmBodyBoundariesMatchConditionRowCheck at hCheck
+  rcases List.any_eq_true.mp hCheck with
+    ⟨primitiveStep, hPrimitiveStep, hPrimitiveCheck⟩
+  cases primitiveStep with
+  | empty =>
+      simp [selectArmBodyBoundariesPrimitiveStepCheck] at hPrimitiveCheck
+  | bindingRef _binding =>
+      simp [selectArmBodyBoundariesPrimitiveStepCheck] at hPrimitiveCheck
+  | overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      simp [selectArmBodyBoundariesPrimitiveStepCheck] at hPrimitiveCheck
+  | connect _leftExits _rightEntries _matchedPairs _unmatchedLeftExits _unmatchedRightEntries =>
+      simp [selectArmBodyBoundariesPrimitiveStepCheck] at hPrimitiveCheck
+  | node primitiveNode entries exits =>
+      unfold selectArmBodyBoundariesPrimitiveStepCheck at hPrimitiveCheck
+      rw [Bool.and_eq_true] at hPrimitiveCheck
+      have hNode : primitiveNode = selectAdmission.conditionNode :=
+        of_decide_eq_true hPrimitiveCheck.left
+      refine ⟨entries, exits, ?_, ?_⟩
+      · simpa [hNode] using hPrimitiveStep
+      · intro arm hArm
+        have hArmCheck :=
+          Check.allBool_sound hPrimitiveCheck.right
+            (fun checkedArm _ hCheckedArm =>
+              show
+                ∃ variant, variant ∈ selectAdmission.variants ∧
+                  variant.key = checkedArm.canonicalKey ∧
+                  (((checkedArm.bodyNodes = [] ∧ checkedArm.bodyEntries = [] ∧
+                        checkedArm.bodyExits = []) ∧
+                      SelectConditionBridgeOutputShapes selectAdmission exits =
+                        [variant.port.identityOutputShape]) ∨
+                    (checkedArm.bodyEntries.map
+                          AdmissionBoundaryPort.compatibilityShape =
+                        [variant.port.compatibilityShape] ∧
+                      (checkedArm.bodyExits.map
+                          AdmissionBoundaryPort.outputShape).Perm
+                        (SelectConditionBridgeOutputShapes selectAdmission exits))) by
+                rcases List.any_eq_true.mp hCheckedArm with
+                  ⟨variant, hVariant, hVariantCheck⟩
+                exact
+                  ⟨ variant
+                  , hVariant
+                  , selectArmBodyBoundaryShapeCheck_sound hVariantCheck
+                  ⟩)
+            arm hArm
+        exact hArmCheck
+
+/-- Executable checker for all select arm body boundary facts. -/
+def selectArmBodyBoundariesMatchConditionCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.selects
+    (selectArmBodyBoundariesMatchConditionRowCheck artifact)
+
+/-- Successful select arm body-boundary checking proves `SelectArmBodyBoundariesMatchCondition`. -/
+theorem selectArmBodyBoundariesMatchConditionCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.selectArmBodyBoundariesMatchConditionCheck = true) :
+    artifact.SelectArmBodyBoundariesMatchCondition :=
+  Check.allBool_sound hCheck
+    (fun _selectAdmission _ hSelect =>
+      selectArmBodyBoundariesMatchConditionRowCheck_sound hSelect)
+
+/-- Executable checker that latent select body nodes are fresh from the top-level summary. -/
+def selectArmBodyNodesFreshFromSummaryCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.selects fun selectAdmission =>
+    Check.allBool selectAdmission.arms fun arm =>
+      Check.allDecide arm.bodyNodes fun node =>
+        node ∉ artifact.nodes
+
+/-- Successful freshness checking proves `SelectArmBodyNodesFreshFromSummary`. -/
+theorem selectArmBodyNodesFreshFromSummaryCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.selectArmBodyNodesFreshFromSummaryCheck = true) :
+    artifact.SelectArmBodyNodesFreshFromSummary := by
+  intro selectAdmission hSelect arm hArm node hNode
+  have hSelectCheck :=
+    Check.allBool_sound hCheck
+      (fun checkedSelect _ hCheckedSelect =>
+        Check.allBool_sound hCheckedSelect
+          (fun checkedArm _ hCheckedArm =>
+            Check.allDecide_sound hCheckedArm))
+      selectAdmission hSelect
+  have hArmCheck := hSelectCheck arm hArm
+  exact hArmCheck node hNode
+
+/-- Row-pair checker that latent select arm body nodes are pairwise disjoint. -/
+def selectArmBodyNodesDisjointPairCheck
+    (left right : SelectArmAdmissionArtifact) :
+    Bool :=
+  if left.canonicalKey = right.canonicalKey then
+    true
+  else
+    Check.allDecide left.bodyNodes fun node =>
+      node ∉ right.bodyNodes
+
+/-- Successful row-pair checking proves body-node disjointness for distinct canonical keys. -/
+theorem selectArmBodyNodesDisjointPairCheck_sound
+    {left right : SelectArmAdmissionArtifact}
+    (hCheck : selectArmBodyNodesDisjointPairCheck left right = true)
+    (hKeys : left.canonicalKey ≠ right.canonicalKey) :
+    ∀ node, node ∈ left.bodyNodes → node ∉ right.bodyNodes := by
+  unfold selectArmBodyNodesDisjointPairCheck at hCheck
+  rw [if_neg hKeys] at hCheck
+  exact Check.allDecide_sound hCheck
+
+/-- Executable checker that latent select arm body-node domains are pairwise disjoint. -/
+def selectArmBodyNodesPairwiseDisjointCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.selects fun selectAdmission =>
+    Check.allBool selectAdmission.arms fun left =>
+      Check.allBool selectAdmission.arms fun right =>
+        selectArmBodyNodesDisjointPairCheck left right
+
+/-- Successful body-node disjointness checking proves `SelectArmBodyNodesPairwiseDisjoint`. -/
+theorem selectArmBodyNodesPairwiseDisjointCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.selectArmBodyNodesPairwiseDisjointCheck = true) :
+    artifact.SelectArmBodyNodesPairwiseDisjoint := by
+  intro selectAdmission hSelect left hLeft right hRight hKeys node hNode
+  have hSelectCheck :=
+    Check.allBool_sound hCheck
+      (fun checkedSelect _ hCheckedSelect =>
+        Check.allBool_sound hCheckedSelect
+          (fun checkedLeft _ hCheckedLeft =>
+            Check.allBool_sound hCheckedLeft
+              (fun checkedRight _ hCheckedRight =>
+                show
+                  selectArmBodyNodesDisjointPairCheck
+                    checkedLeft checkedRight = true by
+                  exact hCheckedRight)))
+      selectAdmission hSelect
+  have hLeftCheck := hSelectCheck left hLeft
+  have hRightCheck := hLeftCheck right hRight
+  exact selectArmBodyNodesDisjointPairCheck_sound hRightCheck hKeys node hNode
+
 /-- Executable checker for all component-domain closure obligations. -/
 def componentDomainsClosedCheck (artifact : WireAdmissionArtifact) : Bool :=
   Check.allBool artifact.primitiveSteps
@@ -2812,6 +3433,15 @@ structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
     artifact.PrimitiveConnectFrontiersBackedByNodes
   primitiveConnectFrontiersPrefixAvailable :
     artifact.PrimitiveConnectFrontiersPrefixAvailable
+  selectBridgeFrontiersBackedByPrimitive :
+    artifact.SelectBridgeFrontiersBackedByPrimitive
+  selectBridgeEntriesConsumed : artifact.SelectBridgeEntriesConsumed
+  selectArmBodyBoundariesMatchCondition :
+    artifact.SelectArmBodyBoundariesMatchCondition
+  selectArmBodyNodesFreshFromSummary :
+    artifact.SelectArmBodyNodesFreshFromSummary
+  selectArmBodyNodesPairwiseDisjoint :
+    artifact.SelectArmBodyNodesPairwiseDisjoint
 
 /-- Full validator readiness implies the executable core contract. -/
 theorem validatorReady_core
@@ -2840,6 +3470,13 @@ theorem validatorReady_core
     hReady.primitiveConnectFrontiersBackedByNodes
   primitiveConnectFrontiersPrefixAvailable :=
     hReady.primitiveConnectFrontiersPrefixAvailable
+  selectBridgeFrontiersBackedByPrimitive :=
+    hReady.selectBridgeFrontiersBackedByPrimitive
+  selectBridgeEntriesConsumed := hReady.selectBridgeEntriesConsumed
+  selectArmBodyBoundariesMatchCondition :=
+    hReady.selectArmBodyBoundariesMatchCondition
+  selectArmBodyNodesFreshFromSummary := hReady.selectArmBodyNodesFreshFromSummary
+  selectArmBodyNodesPairwiseDisjoint := hReady.selectArmBodyNodesPairwiseDisjoint
 
 /-- Executable checker for the representative validator-ready core. -/
 def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
@@ -2861,7 +3498,12 @@ def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
                                   artifact.primitiveTraceStackValidCheck &&
                                     artifact.primitiveOverlayLedgersPrefixAvailableCheck &&
                                       artifact.primitiveConnectFrontiersBackedByNodesCheck &&
-                                        artifact.primitiveConnectFrontiersPrefixAvailableCheck
+                                        artifact.primitiveConnectFrontiersPrefixAvailableCheck &&
+                                          artifact.selectBridgeFrontiersBackedByPrimitiveCheck &&
+                                            artifact.selectBridgeEntriesConsumedCheck &&
+                                              artifact.selectArmBodyBoundariesMatchConditionCheck &&
+                                                artifact.selectArmBodyNodesFreshFromSummaryCheck &&
+                                                  artifact.selectArmBodyNodesPairwiseDisjointCheck
 
 /-- Successful core checking proves the representative validator-ready core. -/
 theorem validatorReadyCoreCheck_sound
@@ -2871,12 +3513,13 @@ theorem validatorReadyCoreCheck_sound
   unfold validatorReadyCoreCheck at hCheck
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with
-    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
+    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
       hSummaryDomain⟩, hSummaryIdentities⟩, hSummaryBacked⟩, hSummaryFrontiers⟩,
       hRawConnections⟩, hComponentDomains⟩, hSelects⟩, hComponentRows⟩,
       hGeneratedReferenced⟩, hGeneratedValid⟩, hPhantomValid⟩, hPrimitiveSteps⟩,
       hPrimitiveTrace⟩, hPrimitiveOverlayPrefix⟩, hPrimitiveConnectBacked⟩,
-      hPrimitiveConnectPrefix⟩
+      hPrimitiveConnectPrefix⟩, hSelectBridgeFrontiers⟩, hSelectBridgeEntries⟩,
+      hSelectArmBodyBoundaries⟩, hSelectArmBodyFresh⟩, hSelectArmBodyDisjoint⟩
   exact
     { schemaCurrent := of_decide_eq_true hSchema
     , summaryKeysUnique := summaryKeysUniqueCheck_sound hSummaryKeys
@@ -2905,6 +3548,16 @@ theorem validatorReadyCoreCheck_sound
         primitiveConnectFrontiersBackedByNodesCheck_sound hPrimitiveConnectBacked
     , primitiveConnectFrontiersPrefixAvailable :=
         primitiveConnectFrontiersPrefixAvailableCheck_sound hPrimitiveConnectPrefix
+    , selectBridgeFrontiersBackedByPrimitive :=
+        selectBridgeFrontiersBackedByPrimitiveCheck_sound hSelectBridgeFrontiers
+    , selectBridgeEntriesConsumed :=
+        selectBridgeEntriesConsumedCheck_sound hSelectBridgeEntries
+    , selectArmBodyBoundariesMatchCondition :=
+        selectArmBodyBoundariesMatchConditionCheck_sound hSelectArmBodyBoundaries
+    , selectArmBodyNodesFreshFromSummary :=
+        selectArmBodyNodesFreshFromSummaryCheck_sound hSelectArmBodyFresh
+    , selectArmBodyNodesPairwiseDisjoint :=
+        selectArmBodyNodesPairwiseDisjointCheck_sound hSelectArmBodyDisjoint
     }
 
 end WireAdmissionArtifact
