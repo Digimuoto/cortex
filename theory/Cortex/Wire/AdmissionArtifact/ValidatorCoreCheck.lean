@@ -8,9 +8,9 @@ Executable core checks for decoded Wire admission artifacts.
 
 This module is a measurement slice for the Lean-owned validator strategy. It
 does not decide the full `ValidatorReady` predicate. Instead, it groups a
-representative core: schema version, summary invariants, local select-row
-validity, component-row uniqueness, primitive row validity, and executable
-primitive stack replay.
+representative core: schema version, summary invariants, component-domain
+closure, local generated/select/phantom row validity, component-row uniqueness,
+primitive row validity, and executable primitive stack replay.
 
 Each checker has a theorem of the form `check = true → predicate`, so this file
 tests whether replacing mirrored Haskell validator clauses with Lean-owned
@@ -681,6 +681,44 @@ theorem rawConnectionsClosedCheck_sound
       connection.fromEndpoint.node ∈ nodes ∧ connection.toEndpoint.node ∈ nodes :=
   Check.allDecide_sound hCheck
 
+/-- Executable checker for a boundary contraction being closed over a node summary. -/
+def connectionClosedCheck
+    (nodes : List NodeId)
+    (connection : AdmissionConnection) :
+    Bool :=
+  boundaryPortClosedCheck nodes connection.fromPort &&
+    boundaryPortClosedCheck nodes connection.toPort
+
+/-- Successful connection-closure checking proves both endpoints are closed. -/
+theorem connectionClosedCheck_sound
+    {nodes : List NodeId}
+    {connection : AdmissionConnection}
+    (hCheck : connectionClosedCheck nodes connection = true) :
+    connection.fromPort.ClosedOver nodes ∧ connection.toPort.ClosedOver nodes := by
+  unfold connectionClosedCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact
+    ⟨ boundaryPortClosedCheck_sound hCheck.left
+    , boundaryPortClosedCheck_sound hCheck.right
+    ⟩
+
+/-- Executable checker for boundary contraction lists being closed over a node summary. -/
+def connectionsClosedCheck
+    (nodes : List NodeId)
+    (connections : List AdmissionConnection) :
+    Bool :=
+  Check.allBool connections (connectionClosedCheck nodes)
+
+/-- Successful connection-list closure checking proves `ConnectionsClosed`. -/
+theorem connectionsClosedCheck_sound
+    {nodes : List NodeId}
+    {connections : List AdmissionConnection}
+    (hCheck : connectionsClosedCheck nodes connections = true) :
+    ConnectionsClosed nodes connections :=
+  Check.allBool_sound hCheck
+    (fun _connection _ hConnection =>
+      connectionClosedCheck_sound hConnection)
+
 /-- Executable checker for top-level summary closure over serialized nodes. -/
 def summaryDomainClosedCheck (artifact : WireAdmissionArtifact) : Bool :=
   boundaryPortsClosedCheck artifact.nodes artifact.entries &&
@@ -700,6 +738,78 @@ theorem summaryDomainClosedCheck_sound
     , exitsClosed := boundaryPortsClosedCheck_sound hExits
     , connectionsClosed := rawConnectionsClosedCheck_sound hConnections
     }
+
+/-- Executable checker for primitive trace rows being closed over artifact summaries. -/
+def primitiveStepDomainClosedCheck
+    (nodes : List NodeId)
+    (bindingRefs : List BindingName) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.empty =>
+      true
+  | PrimitiveGraphStep.node nodeId entries exits =>
+      Check.memCheck nodeId nodes &&
+        boundaryPortsClosedCheck nodes entries &&
+          boundaryPortsClosedCheck nodes exits
+  | PrimitiveGraphStep.bindingRef binding =>
+      Check.memCheck binding bindingRefs
+  | PrimitiveGraphStep.overlay leftNodeIds rightNodeIds leftBindings rightBindings =>
+      Check.allDecide leftNodeIds (fun node => node ∈ nodes) &&
+        Check.allDecide rightNodeIds (fun node => node ∈ nodes) &&
+          Check.allDecide leftBindings (fun binding => binding ∈ bindingRefs) &&
+            Check.allDecide rightBindings (fun binding => binding ∈ bindingRefs)
+  | PrimitiveGraphStep.connect
+      leftExits rightEntries matchedPairs unmatchedLeftExits unmatchedRightEntries =>
+      boundaryPortsClosedCheck nodes leftExits &&
+        boundaryPortsClosedCheck nodes rightEntries &&
+          connectionsClosedCheck nodes matchedPairs &&
+            boundaryPortsClosedCheck nodes unmatchedLeftExits &&
+              boundaryPortsClosedCheck nodes unmatchedRightEntries
+
+/-- Successful primitive-domain checking proves `PrimitiveGraphStep.DomainClosed`. -/
+theorem primitiveStepDomainClosedCheck_sound
+    {nodes : List NodeId}
+    {bindingRefs : List BindingName}
+    {primitiveStep : PrimitiveGraphStep}
+    (hCheck : primitiveStepDomainClosedCheck nodes bindingRefs primitiveStep = true) :
+    PrimitiveGraphStep.DomainClosed nodes bindingRefs primitiveStep := by
+  cases primitiveStep with
+  | empty =>
+      exact trivial
+  | node nodeId entries exits =>
+      unfold primitiveStepDomainClosedCheck at hCheck
+      simp only [Bool.and_eq_true] at hCheck
+      rcases hCheck with ⟨⟨hNode, hEntries⟩, hExits⟩
+      exact
+        ⟨ Check.memCheck_sound hNode
+        , boundaryPortsClosedCheck_sound hEntries
+        , boundaryPortsClosedCheck_sound hExits
+        ⟩
+  | bindingRef binding =>
+      exact Check.memCheck_sound hCheck
+  | overlay leftNodeIds rightNodeIds leftBindings rightBindings =>
+      unfold primitiveStepDomainClosedCheck at hCheck
+      simp only [Bool.and_eq_true] at hCheck
+      rcases hCheck with ⟨⟨⟨hLeftNodes, hRightNodes⟩, hLeftBindings⟩, hRightBindings⟩
+      exact
+        ⟨ Check.allDecide_sound hLeftNodes
+        , Check.allDecide_sound hRightNodes
+        , Check.allDecide_sound hLeftBindings
+        , Check.allDecide_sound hRightBindings
+        ⟩
+  | connect leftExits rightEntries matchedPairs unmatchedLeftExits
+      unmatchedRightEntries =>
+      unfold primitiveStepDomainClosedCheck at hCheck
+      simp only [Bool.and_eq_true] at hCheck
+      rcases hCheck with
+        ⟨⟨⟨⟨hLeftExits, hRightEntries⟩, hMatchedPairs⟩, hUnmatchedLeft⟩,
+          hUnmatchedRight⟩
+      exact
+        ⟨ boundaryPortsClosedCheck_sound hLeftExits
+        , boundaryPortsClosedCheck_sound hRightEntries
+        , connectionsClosedCheck_sound hMatchedPairs
+        , boundaryPortsClosedCheck_sound hUnmatchedLeft
+        , boundaryPortsClosedCheck_sound hUnmatchedRight
+        ⟩
 
 /-- Executable checker that summary identities match primitive identity rows. -/
 def summaryIdentitiesMatchPrimitiveCheck
@@ -1067,6 +1177,879 @@ theorem rawConnectionsMatchPrimitiveCheck_sound
     artifact.RawConnectionsMatchPrimitive :=
   Check.permCheck_sound hCheck
 
+/-! ## Generated-Form Row Checks -/
+
+mutual
+
+/-- Executable checker for serialized static values in generated-form source rows. -/
+def staticValueValidCheck : AdmissionStaticValue → Bool
+  | AdmissionStaticValue.string _value =>
+      true
+  | AdmissionStaticValue.bool _value =>
+      true
+  | AdmissionStaticValue.nat _value =>
+      true
+  | AdmissionStaticValue.list values =>
+      staticValueValuesValidCheck values
+  | AdmissionStaticValue.record fields =>
+      Check.nodupMapCheck fields Prod.fst &&
+        staticValueFieldsValidCheck fields
+
+/-- Executable checker for serialized static-value lists. -/
+def staticValueValuesValidCheck : List AdmissionStaticValue → Bool
+  | [] =>
+      true
+  | value :: values =>
+      staticValueValidCheck value &&
+        staticValueValuesValidCheck values
+
+/-- Executable checker for serialized static record fields. -/
+def staticValueFieldsValidCheck :
+    List (FieldLabel × AdmissionStaticValue) → Bool
+  | [] =>
+      true
+  | field :: fields =>
+      decide field.fst.Valid &&
+        staticValueValidCheck field.snd &&
+          staticValueFieldsValidCheck fields
+
+end
+
+mutual
+
+/-- Successful static-value checking proves `AdmissionStaticValue.Valid`. -/
+theorem staticValueValidCheck_sound
+    {value : AdmissionStaticValue}
+    (hCheck : staticValueValidCheck value = true) :
+    value.Valid := by
+  cases value with
+  | string value =>
+      exact trivial
+  | bool value =>
+      exact trivial
+  | nat value =>
+      exact trivial
+  | list values =>
+      exact staticValueValuesValidCheck_sound hCheck
+  | record fields =>
+      unfold staticValueValidCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact
+        ⟨ Check.nodupMapCheck_sound hCheck.left
+        , staticValueFieldsValidCheck_sound hCheck.right
+        ⟩
+
+/-- Successful static-value-list checking proves `AdmissionStaticValue.ValuesValid`. -/
+theorem staticValueValuesValidCheck_sound
+    {values : List AdmissionStaticValue}
+    (hCheck : staticValueValuesValidCheck values = true) :
+    AdmissionStaticValue.ValuesValid values := by
+  cases values with
+  | nil =>
+      exact trivial
+  | cons value values =>
+      unfold staticValueValuesValidCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact
+        ⟨ staticValueValidCheck_sound hCheck.left
+        , staticValueValuesValidCheck_sound hCheck.right
+        ⟩
+
+/-- Successful static-field checking proves `AdmissionStaticValue.FieldsValid`. -/
+theorem staticValueFieldsValidCheck_sound
+    {fields : List (FieldLabel × AdmissionStaticValue)}
+    (hCheck : staticValueFieldsValidCheck fields = true) :
+    AdmissionStaticValue.FieldsValid fields := by
+  cases fields with
+  | nil =>
+      exact trivial
+  | cons field fields =>
+      cases field with
+      | mk label value =>
+          unfold staticValueFieldsValidCheck at hCheck
+          simp only [Bool.and_eq_true] at hCheck
+          rcases hCheck with ⟨⟨hLabel, hValue⟩, hFields⟩
+          exact
+            ⟨ of_decide_eq_true hLabel
+            , staticValueValidCheck_sound hValue
+            , staticValueFieldsValidCheck_sound hFields
+            ⟩
+
+end
+
+/-- Executable checker for optional static payloads on generated source children. -/
+def generatedChildSourceStaticValueValidCheck
+    (child : GeneratedChildSourceArtifact) :
+    Bool :=
+  match child.value with
+  | none => true
+  | some value => staticValueValidCheck value
+
+/-- Successful optional-payload checking proves source-child static payload validity. -/
+theorem generatedChildSourceStaticValueValidCheck_sound
+    {child : GeneratedChildSourceArtifact}
+    (hCheck : generatedChildSourceStaticValueValidCheck child = true) :
+    child.StaticValueValid := by
+  cases hValue : child.value with
+  | none =>
+      simp [GeneratedChildSourceArtifact.StaticValueValid, hValue]
+  | some value =>
+      have hValueCheck : staticValueValidCheck value = true := by
+        simpa [generatedChildSourceStaticValueValidCheck, hValue] using hCheck
+      simpa [GeneratedChildSourceArtifact.StaticValueValid, hValue] using
+        staticValueValidCheck_sound hValueCheck
+
+/-- Executable checker for source generated-child row validity. -/
+def generatedChildSourceValidCheck
+    (child : GeneratedChildSourceArtifact) :
+    Bool :=
+  decide child.node.Valid &&
+    decide child.label.Valid &&
+      generatedChildSourceStaticValueValidCheck child
+
+/-- Successful source-child checking proves `GeneratedChildSourceArtifact.Valid`. -/
+theorem generatedChildSourceValidCheck_sound
+    {child : GeneratedChildSourceArtifact}
+    (hCheck : generatedChildSourceValidCheck child = true) :
+    child.Valid := by
+  unfold generatedChildSourceValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨⟨hNode, hLabel⟩, hStatic⟩
+  exact
+    { nodeValid := of_decide_eq_true hNode
+    , labelValid := of_decide_eq_true hLabel
+    , staticValueValid := generatedChildSourceStaticValueValidCheck_sound hStatic
+    }
+
+/-- Executable checker that generated-child frontiers are owned by the child node. -/
+def generatedChildFrontiersOwnedCheck
+    (child : GeneratedChildArtifact) :
+    Bool :=
+  Check.allDecide child.outputs (fun output => output.node = child.node) &&
+    Check.allDecide child.inputs (fun input => input.node = child.node)
+
+/-- Successful generated-child frontier ownership proves `FrontiersOwnedByChild`. -/
+theorem generatedChildFrontiersOwnedCheck_sound
+    {child : GeneratedChildArtifact}
+    (hCheck : generatedChildFrontiersOwnedCheck child = true) :
+    child.FrontiersOwnedByChild := by
+  unfold generatedChildFrontiersOwnedCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact
+    ⟨ Check.allDecide_sound hCheck.left
+    , Check.allDecide_sound hCheck.right
+    ⟩
+
+/-- Executable checker that generated-child frontier keys are unique per direction. -/
+def generatedChildFrontierKeysUniqueCheck
+    (child : GeneratedChildArtifact) :
+    Bool :=
+  Check.nodupMapCheck child.outputs AdmissionBoundaryPort.key &&
+    Check.nodupMapCheck child.inputs AdmissionBoundaryPort.key
+
+/-- Successful generated-child frontier uniqueness proves `FrontierKeysUnique`. -/
+theorem generatedChildFrontierKeysUniqueCheck_sound
+    {child : GeneratedChildArtifact}
+    (hCheck : generatedChildFrontierKeysUniqueCheck child = true) :
+    child.FrontierKeysUnique := by
+  unfold generatedChildFrontierKeysUniqueCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact
+    ⟨ Check.nodupMapCheck_sound hCheck.left
+    , Check.nodupMapCheck_sound hCheck.right
+    ⟩
+
+/-- Executable checker for used generated-child row validity. -/
+def generatedChildValidCheck
+    (child : GeneratedChildArtifact) :
+    Bool :=
+  decide child.node.Valid &&
+    decide child.label.Valid &&
+      generatedChildFrontiersOwnedCheck child &&
+        generatedChildFrontierKeysUniqueCheck child &&
+          AdmissionArtifactCheck.boundaryPortsValidCheck child.outputs &&
+            AdmissionArtifactCheck.boundaryPortsValidCheck child.inputs
+
+/-- Successful used-child checking proves `GeneratedChildArtifact.Valid`. -/
+theorem generatedChildValidCheck_sound
+    {child : GeneratedChildArtifact}
+    (hCheck : generatedChildValidCheck child = true) :
+    child.Valid := by
+  unfold generatedChildValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with
+    ⟨⟨⟨⟨⟨hNode, hLabel⟩, hOwned⟩, hUnique⟩, hOutputs⟩, hInputs⟩
+  exact
+    { nodeValid := of_decide_eq_true hNode
+    , labelValid := of_decide_eq_true hLabel
+    , frontiersOwnedByChild := generatedChildFrontiersOwnedCheck_sound hOwned
+    , frontierKeysUnique := generatedChildFrontierKeysUniqueCheck_sound hUnique
+    , outputsValid := AdmissionArtifactCheck.boundaryPortsValidCheck_sound hOutputs
+    , inputsValid := AdmissionArtifactCheck.boundaryPortsValidCheck_sound hInputs
+    }
+
+/-- Executable checker for used generated-child domain closure. -/
+def generatedChildDomainClosedCheck
+    (nodes : List NodeId)
+    (child : GeneratedChildArtifact) :
+    Bool :=
+  Check.memCheck child.node nodes &&
+    boundaryPortsClosedCheck nodes child.outputs &&
+      boundaryPortsClosedCheck nodes child.inputs
+
+/-- Successful used-child closure checking proves `GeneratedChildArtifact.DomainClosed`. -/
+theorem generatedChildDomainClosedCheck_sound
+    {nodes : List NodeId}
+    {child : GeneratedChildArtifact}
+    (hCheck : generatedChildDomainClosedCheck nodes child = true) :
+    child.DomainClosed nodes := by
+  unfold generatedChildDomainClosedCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨⟨hNode, hOutputs⟩, hInputs⟩
+  exact
+    { nodeClosed := Check.memCheck_sound hNode
+    , outputsClosed := boundaryPortsClosedCheck_sound hOutputs
+    , inputsClosed := boundaryPortsClosedCheck_sound hInputs
+    }
+
+/-- Executable checker that used generated children are backed by source rows. -/
+def generatedUsedChildrenFromSourceCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  Check.allDecide artifact.usedChildren fun child =>
+    child.key ∈ artifact.sourceChildKeys
+
+/-- Successful source-backing checking proves `UsedChildrenFromSource`. -/
+theorem generatedUsedChildrenFromSourceCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedUsedChildrenFromSourceCheck artifact = true) :
+    artifact.UsedChildrenFromSource :=
+  Check.allDecide_sound hCheck
+
+/-- Executable checker that generated child names follow the binding/label policy. -/
+def generatedChildrenOwnedByBindingCheck
+    (artifact : GeneratedFormArtifact) :
+  Bool :=
+  Check.allDecide artifact.sourceChildren
+      (fun child =>
+        child.node = GeneratedFormArtifact.childNodeFor artifact.binding child.label) &&
+    Check.allDecide artifact.usedChildren
+      (fun child =>
+        child.node = GeneratedFormArtifact.childNodeFor artifact.binding child.label)
+
+/-- Successful generated-name checking proves `ChildrenOwnedByBinding`. -/
+theorem generatedChildrenOwnedByBindingCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedChildrenOwnedByBindingCheck artifact = true) :
+    artifact.ChildrenOwnedByBinding := by
+  unfold generatedChildrenOwnedByBindingCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact
+    ⟨ Check.allDecide_sound hCheck.left
+    , Check.allDecide_sound hCheck.right
+    ⟩
+
+/-- Executable checker that source and used generated child keys are duplicate-free. -/
+def generatedChildKeysUniqueCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  Check.nodupCheck artifact.sourceChildKeys &&
+    Check.nodupCheck artifact.usedChildKeys
+
+/-- Successful generated-key checking proves `ChildKeysUnique`. -/
+theorem generatedChildKeysUniqueCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedChildKeysUniqueCheck artifact = true) :
+    artifact.ChildKeysUnique := by
+  unfold generatedChildKeysUniqueCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact
+    ⟨ Check.nodupCheck_sound hCheck.left
+    , Check.nodupCheck_sound hCheck.right
+    ⟩
+
+/-- Executable checker that every generated source payload is structurally valid. -/
+def generatedSourceValuesValidCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  Check.allBool artifact.sourceChildren generatedChildSourceStaticValueValidCheck
+
+/-- Successful generated source-payload checking proves `SourceValuesValid`. -/
+theorem generatedSourceValuesValidCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedSourceValuesValidCheck artifact = true) :
+    artifact.SourceValuesValid :=
+  Check.allBool_sound hCheck
+    (fun _child _ hChild =>
+      generatedChildSourceStaticValueValidCheck_sound hChild)
+
+/-- Executable checker that `make` source labels are canonical. -/
+def makeSourceLabelsCanonicalCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  decide
+    (artifact.sourceLabels =
+      (List.range artifact.sourceChildren.length).map (fun index => ⟨toString index⟩))
+
+/-- Successful canonical-label checking proves `MakeSourceLabelsCanonical`. -/
+theorem makeSourceLabelsCanonicalCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : makeSourceLabelsCanonicalCheck artifact = true) :
+    artifact.MakeSourceLabelsCanonical := by
+  unfold GeneratedFormArtifact.MakeSourceLabelsCanonical
+  exact of_decide_eq_true hCheck
+
+/-- Executable checker that a source child carries no static payload. -/
+def generatedSourceValueEmptyCheck
+    (child : GeneratedChildSourceArtifact) :
+    Bool :=
+  match child.value with
+  | none => true
+  | some _value => false
+
+/-- Successful empty-payload checking proves the child payload is absent. -/
+theorem generatedSourceValueEmptyCheck_sound
+    {child : GeneratedChildSourceArtifact}
+    (hCheck : generatedSourceValueEmptyCheck child = true) :
+    child.value = none := by
+  cases hValue : child.value with
+  | none =>
+      rfl
+  | some value =>
+      simp [generatedSourceValueEmptyCheck, hValue] at hCheck
+
+/-- Executable checker that all source children carry no static payload. -/
+def makeSourceValuesEmptyCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  Check.allBool artifact.sourceChildren generatedSourceValueEmptyCheck
+
+/-- Successful empty-payload-list checking proves `MakeSourceValuesEmpty`. -/
+theorem makeSourceValuesEmptyCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : makeSourceValuesEmptyCheck artifact = true) :
+    artifact.MakeSourceValuesEmpty :=
+  Check.allBool_sound hCheck
+    (fun _child _ hChild =>
+      generatedSourceValueEmptyCheck_sound hChild)
+
+/-- Executable checker that generated-form payload shape matches its source form. -/
+def generatedKindShapeMatchesCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  match artifact.kind with
+  | GeneratedFormKind.make =>
+      makeSourceLabelsCanonicalCheck artifact &&
+        makeSourceValuesEmptyCheck artifact
+  | GeneratedFormKind.makeEach =>
+      true
+
+/-- Successful generated-kind-shape checking proves `KindShapeMatches`. -/
+theorem generatedKindShapeMatchesCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedKindShapeMatchesCheck artifact = true) :
+    artifact.KindShapeMatches := by
+  cases hKind : artifact.kind with
+  | make =>
+      unfold generatedKindShapeMatchesCheck at hCheck
+      rw [hKind] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      unfold GeneratedFormArtifact.KindShapeMatches
+      rw [hKind]
+      exact
+        ⟨ makeSourceLabelsCanonicalCheck_sound hCheck.left
+        , makeSourceValuesEmptyCheck_sound hCheck.right
+        ⟩
+  | makeEach =>
+      unfold GeneratedFormArtifact.KindShapeMatches
+      rw [hKind]
+      exact trivial
+
+/-- Executable checker for generated-form row-local facts. -/
+def generatedFormRowsValidCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  decide artifact.kindName.Valid &&
+    decide artifact.binding.Valid &&
+      Check.allBool artifact.sourceChildren generatedChildSourceValidCheck &&
+        Check.allBool artifact.usedChildren generatedChildValidCheck
+
+/-- Successful generated-form row checking proves `GeneratedFormArtifact.RowsValid`. -/
+theorem generatedFormRowsValidCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedFormRowsValidCheck artifact = true) :
+    artifact.RowsValid := by
+  unfold generatedFormRowsValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨⟨⟨hKind, hBinding⟩, hSourceChildren⟩, hUsedChildren⟩
+  exact
+    { kindNameValid := of_decide_eq_true hKind
+    , bindingValid := of_decide_eq_true hBinding
+    , sourceChildrenValid :=
+        Check.allBool_sound hSourceChildren
+          (fun _child _ hChild => generatedChildSourceValidCheck_sound hChild)
+    , usedChildrenValid :=
+        Check.allBool_sound hUsedChildren
+          (fun _child _ hChild => generatedChildValidCheck_sound hChild)
+    }
+
+/-- Executable checker for one generated-form artifact. -/
+def generatedFormValidCheck
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  generatedUsedChildrenFromSourceCheck artifact &&
+    generatedChildrenOwnedByBindingCheck artifact &&
+      generatedChildKeysUniqueCheck artifact &&
+        generatedSourceValuesValidCheck artifact &&
+          generatedKindShapeMatchesCheck artifact &&
+            generatedFormRowsValidCheck artifact
+
+/-- Successful generated-form checking proves `GeneratedFormArtifact.Valid`. -/
+theorem generatedFormValidCheck_sound
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedFormValidCheck artifact = true) :
+    artifact.Valid := by
+  unfold generatedFormValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with
+    ⟨⟨⟨⟨⟨hSource, hOwned⟩, hUnique⟩, hValues⟩, hShape⟩, hRows⟩
+  exact
+    { usedChildrenFromSource := generatedUsedChildrenFromSourceCheck_sound hSource
+    , childrenOwnedByBinding := generatedChildrenOwnedByBindingCheck_sound hOwned
+    , childKeysUnique := generatedChildKeysUniqueCheck_sound hUnique
+    , sourceValuesValid := generatedSourceValuesValidCheck_sound hValues
+    , kindShapeMatches := generatedKindShapeMatchesCheck_sound hShape
+    , rowsValid := generatedFormRowsValidCheck_sound hRows
+    }
+
+/-- Executable checker for generated-form domain closure over the top-level node summary. -/
+def generatedFormDomainClosedCheck
+    (nodes : List NodeId)
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  Check.allBool artifact.usedChildren (generatedChildDomainClosedCheck nodes)
+
+/-- Successful generated-form closure checking proves `GeneratedFormArtifact.DomainClosed`. -/
+theorem generatedFormDomainClosedCheck_sound
+    {nodes : List NodeId}
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedFormDomainClosedCheck nodes artifact = true) :
+    artifact.DomainClosed nodes :=
+  Check.allBool_sound hCheck
+    (fun _child _ hChild =>
+      generatedChildDomainClosedCheck_sound hChild)
+
+/-- Executable checker that a generated-form row is anchored by used children
+or an empty binding. -/
+def generatedFormReferencedCheck
+    (bindingRefs : List BindingName)
+    (artifact : GeneratedFormArtifact) :
+    Bool :=
+  match artifact.usedChildren with
+  | _child :: _children => true
+  | [] =>
+      match artifact.sourceChildren with
+      | [] => Check.memCheck artifact.binding bindingRefs
+      | _source :: _sources => false
+
+/-- Successful generated-form reference checking proves the row is replay-addressable. -/
+theorem generatedFormReferencedCheck_sound
+    {bindingRefs : List BindingName}
+    {artifact : GeneratedFormArtifact}
+    (hCheck : generatedFormReferencedCheck bindingRefs artifact = true) :
+    artifact.usedChildren ≠ [] ∨
+      (artifact.sourceChildren = [] ∧ artifact.binding ∈ bindingRefs) := by
+  rcases artifact with ⟨kind, kindName, binding, sourceChildren, usedChildren⟩
+  cases usedChildren with
+  | nil =>
+      cases sourceChildren with
+      | nil =>
+          have hBinding : Check.memCheck binding bindingRefs = true := by
+            simpa [generatedFormReferencedCheck] using hCheck
+          exact Or.inr ⟨rfl, Check.memCheck_sound hBinding⟩
+      | cons source sources =>
+          simp [generatedFormReferencedCheck] at hCheck
+  | cons child children =>
+      exact Or.inl (by intro hEmpty; cases hEmpty)
+
+/-! ## Phantom Adapter Row Checks -/
+
+/-- Executable checker for duplicate-free record field labels in product-shape rows. -/
+def productShapeFieldLabelsUniqueCheck
+    (shape : ProductShapeArtifact) :
+    Bool :=
+  match shape with
+  | ProductShapeArtifact.record _contract fields =>
+      Check.nodupMapCheck fields Prod.fst
+  | ProductShapeArtifact.indexed _element _count =>
+      true
+
+/-- Successful product field-label checking proves `ProductShapeArtifact.FieldLabelsUnique`. -/
+theorem productShapeFieldLabelsUniqueCheck_sound
+    {shape : ProductShapeArtifact}
+    (hCheck : productShapeFieldLabelsUniqueCheck shape = true) :
+    shape.FieldLabelsUnique := by
+  cases shape with
+  | record contract fields =>
+      exact Check.nodupMapCheck_sound hCheck
+  | indexed element count =>
+      exact trivial
+
+/-- Executable checker for product-shape contract and field-row validity. -/
+def productShapeRowsValidCheck
+    (shape : ProductShapeArtifact) :
+    Bool :=
+  match shape with
+  | ProductShapeArtifact.record contract fields =>
+      decide contract.Valid &&
+        Check.allDecide fields (fun field => field.fst.Valid ∧ field.snd.Valid)
+  | ProductShapeArtifact.indexed element _count =>
+      decide element.Valid
+
+/-- Successful product row checking proves `ProductShapeArtifact.RowsValid`. -/
+theorem productShapeRowsValidCheck_sound
+    {shape : ProductShapeArtifact}
+    (hCheck : productShapeRowsValidCheck shape = true) :
+    shape.RowsValid := by
+  cases shape with
+  | record contract fields =>
+      unfold productShapeRowsValidCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact
+        ⟨ of_decide_eq_true hCheck.left
+        , Check.allDecide_sound hCheck.right
+        ⟩
+  | indexed element count =>
+      show element.Valid
+      exact of_decide_eq_true hCheck
+
+/-- Executable checker that indexed product elements are not serialized nested products. -/
+def productShapeIndexedElementNominalCheck
+    (shape : ProductShapeArtifact) :
+    Bool :=
+  match shape with
+  | ProductShapeArtifact.record _contract _fields =>
+      true
+  | ProductShapeArtifact.indexed element _count =>
+      decide (element.name.startsWith "[" = false)
+
+/-- Successful nested-product rejection proves `ProductShapeArtifact.IndexedElementNominal`. -/
+theorem productShapeIndexedElementNominalCheck_sound
+    {shape : ProductShapeArtifact}
+    (hCheck : productShapeIndexedElementNominalCheck shape = true) :
+    shape.IndexedElementNominal := by
+  cases shape with
+  | record contract fields =>
+      exact trivial
+  | indexed element count =>
+      show element.name.startsWith "[" = false
+      exact of_decide_eq_true hCheck
+
+/-- Executable checker for serialized product-shape validity. -/
+def productShapeValidCheck
+    (shape : ProductShapeArtifact) :
+    Bool :=
+  productShapeFieldLabelsUniqueCheck shape &&
+    productShapeRowsValidCheck shape &&
+      productShapeIndexedElementNominalCheck shape
+
+/-- Successful product-shape checking proves `ProductShapeArtifact.Valid`. -/
+theorem productShapeValidCheck_sound
+    {shape : ProductShapeArtifact}
+    (hCheck : productShapeValidCheck shape = true) :
+    shape.Valid := by
+  unfold productShapeValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨⟨hFields, hRows⟩, hNominal⟩
+  exact
+    { fieldLabelsUnique := productShapeFieldLabelsUniqueCheck_sound hFields
+    , rowsValid := productShapeRowsValidCheck_sound hRows
+    , indexedElementNominal := productShapeIndexedElementNominalCheck_sound hNominal
+    }
+
+/-- Executable checker that multi-side boundaries match the serialized product shape. -/
+def productShapeBoundariesMatchCheck
+    (shape : ProductShapeArtifact)
+    (multi : List AdmissionBoundaryPort) :
+    Bool :=
+  match shape with
+  | ProductShapeArtifact.record _contract fields =>
+      Check.permCheck (multi.filterMap AdmissionBoundaryPort.recordField) fields
+  | ProductShapeArtifact.indexed element _count =>
+      Check.allDecide multi (fun boundary => boundary.contract = element)
+
+/-- Successful multi-side boundary checking proves `ProductShapeArtifact.BoundariesMatch`. -/
+theorem productShapeBoundariesMatchCheck_sound
+    {shape : ProductShapeArtifact}
+    {multi : List AdmissionBoundaryPort}
+    (hCheck : productShapeBoundariesMatchCheck shape multi = true) :
+    shape.BoundariesMatch multi := by
+  cases shape with
+  | record contract fields =>
+      exact Check.permCheck_sound hCheck
+  | indexed element count =>
+      exact Check.allDecide_sound hCheck
+
+/-- Executable checker that a phantom row's multi-side length matches its product arity. -/
+def phantomProductArityMatchesCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  decide (artifact.multi.length = artifact.productShape.arity)
+
+/-- Successful arity checking proves `ProductArityMatches`. -/
+theorem phantomProductArityMatchesCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomProductArityMatchesCheck artifact = true) :
+    artifact.ProductArityMatches := by
+  unfold PhantomAdapterArtifact.ProductArityMatches
+  exact of_decide_eq_true hCheck
+
+/-- Executable checker that a phantom row's multi-side boundary matches its product shape. -/
+def phantomProductShapeMatchesMultiCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  productShapeBoundariesMatchCheck artifact.productShape artifact.multi
+
+/-- Successful multi-side shape checking proves `ProductShapeMatchesMulti`. -/
+theorem phantomProductShapeMatchesMultiCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomProductShapeMatchesMultiCheck artifact = true) :
+    artifact.ProductShapeMatchesMulti :=
+  productShapeBoundariesMatchCheck_sound hCheck
+
+/-- Executable checker that the singular endpoint uses the aggregate product contract. -/
+def phantomProductContractMatchesSingularCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  decide (artifact.singular.contract = artifact.productShape.contract)
+
+/-- Successful singular-contract checking proves `ProductContractMatchesSingular`. -/
+theorem phantomProductContractMatchesSingularCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomProductContractMatchesSingularCheck artifact = true) :
+    artifact.ProductContractMatchesSingular := by
+  unfold PhantomAdapterArtifact.ProductContractMatchesSingular
+  exact of_decide_eq_true hCheck
+
+/-- Executable checker that source-visible multi-side endpoints are duplicate-free. -/
+def phantomMultiEndpointKeysUniqueCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  Check.nodupMapCheck artifact.multi AdmissionBoundaryPort.key
+
+/-- Successful multi-endpoint checking proves `MultiEndpointKeysUnique`. -/
+theorem phantomMultiEndpointKeysUniqueCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomMultiEndpointKeysUniqueCheck artifact = true) :
+    artifact.MultiEndpointKeysUnique :=
+  Check.nodupMapCheck_sound hCheck
+
+/-- Executable checker that bulk endpoints match the phantom adapter direction. -/
+def phantomBulkEndpointsMatchCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  match artifact.direction with
+  | PhantomAdapterDirection.gather =>
+      Check.allDecide artifact.leftBulk (fun pair =>
+          pair.fromPort ∈ artifact.multi ∧ pair.toPort.node = artifact.node) &&
+        Check.allDecide artifact.rightBulk (fun pair =>
+          pair.fromPort.node = artifact.node ∧ pair.toPort = artifact.singular)
+  | PhantomAdapterDirection.scatter =>
+      Check.allDecide artifact.leftBulk (fun pair =>
+          pair.fromPort = artifact.singular ∧ pair.toPort.node = artifact.node) &&
+        Check.allDecide artifact.rightBulk (fun pair =>
+          pair.fromPort.node = artifact.node ∧ pair.toPort ∈ artifact.multi)
+
+/-- Successful bulk-endpoint checking proves `BulkEndpointsMatch`. -/
+theorem phantomBulkEndpointsMatchCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomBulkEndpointsMatchCheck artifact = true) :
+    artifact.BulkEndpointsMatch := by
+  cases hDirection : artifact.direction with
+  | gather =>
+      unfold phantomBulkEndpointsMatchCheck at hCheck
+      rw [hDirection] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      unfold PhantomAdapterArtifact.BulkEndpointsMatch
+      rw [hDirection]
+      exact
+        ⟨ Check.allDecide_sound hCheck.left
+        , Check.allDecide_sound hCheck.right
+        ⟩
+  | scatter =>
+      unfold phantomBulkEndpointsMatchCheck at hCheck
+      rw [hDirection] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      unfold PhantomAdapterArtifact.BulkEndpointsMatch
+      rw [hDirection]
+      exact
+        ⟨ Check.allDecide_sound hCheck.left
+        , Check.allDecide_sound hCheck.right
+        ⟩
+
+/-- Executable checker that bulk ledgers cover the source-visible endpoints exactly. -/
+def phantomBulkEndpointPartitionCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  match artifact.direction with
+  | PhantomAdapterDirection.gather =>
+      Check.permCheck artifact.leftBulkSourceKeys
+          (artifact.multi.map AdmissionBoundaryPort.key) &&
+        Check.permCheck artifact.rightBulkTargetKeys [artifact.singular.key]
+  | PhantomAdapterDirection.scatter =>
+      Check.permCheck artifact.leftBulkSourceKeys [artifact.singular.key] &&
+        Check.permCheck artifact.rightBulkTargetKeys
+          (artifact.multi.map AdmissionBoundaryPort.key)
+
+/-- Successful bulk-partition checking proves `BulkEndpointPartition`. -/
+theorem phantomBulkEndpointPartitionCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomBulkEndpointPartitionCheck artifact = true) :
+    artifact.BulkEndpointPartition := by
+  cases hDirection : artifact.direction with
+  | gather =>
+      unfold phantomBulkEndpointPartitionCheck at hCheck
+      rw [hDirection] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      unfold PhantomAdapterArtifact.BulkEndpointPartition
+      rw [hDirection]
+      exact
+        ⟨ Check.permCheck_sound hCheck.left
+        , Check.permCheck_sound hCheck.right
+        ⟩
+  | scatter =>
+      unfold phantomBulkEndpointPartitionCheck at hCheck
+      rw [hDirection] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      unfold PhantomAdapterArtifact.BulkEndpointPartition
+      rw [hDirection]
+      exact
+        ⟨ Check.permCheck_sound hCheck.left
+        , Check.permCheck_sound hCheck.right
+        ⟩
+
+/-- Executable checker for indexed multi-side compatibility-key uniqueness. -/
+def phantomIndexedMultiCompatibilityKeysUniqueCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  match artifact.productShape with
+  | ProductShapeArtifact.record _contract _fields =>
+      true
+  | ProductShapeArtifact.indexed _element _count =>
+      Check.nodupMapCheck artifact.multi AdmissionBoundaryPort.compatibilityShape
+
+/-- Successful indexed compatibility-key checking proves the indexed uniqueness obligation. -/
+theorem phantomIndexedMultiCompatibilityKeysUniqueCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomIndexedMultiCompatibilityKeysUniqueCheck artifact = true) :
+    artifact.IndexedMultiCompatibilityKeysUnique := by
+  cases hShape : artifact.productShape with
+  | record contract fields =>
+      unfold PhantomAdapterArtifact.IndexedMultiCompatibilityKeysUnique
+      rw [hShape]
+      exact trivial
+  | indexed element count =>
+      unfold phantomIndexedMultiCompatibilityKeysUniqueCheck at hCheck
+      rw [hShape] at hCheck
+      unfold PhantomAdapterArtifact.IndexedMultiCompatibilityKeysUnique
+      rw [hShape]
+      exact Check.nodupMapCheck_sound hCheck
+
+/-- Executable checker for phantom-adapter row-local facts. -/
+def phantomAdapterRowsValidCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  decide artifact.node.Valid &&
+    decide artifact.singular.Valid &&
+      AdmissionArtifactCheck.boundaryPortsValidCheck artifact.multi &&
+        AdmissionArtifactCheck.connectionsValidCheck artifact.leftBulk &&
+          AdmissionArtifactCheck.connectionsValidCheck artifact.rightBulk
+
+/-- Successful phantom row-local checking proves `PhantomAdapterArtifact.RowsValid`. -/
+theorem phantomAdapterRowsValidCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomAdapterRowsValidCheck artifact = true) :
+    artifact.RowsValid := by
+  unfold phantomAdapterRowsValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with
+    ⟨⟨⟨⟨hNode, hSingular⟩, hMulti⟩, hLeftBulk⟩, hRightBulk⟩
+  exact
+    { nodeValid := of_decide_eq_true hNode
+    , singularValid := of_decide_eq_true hSingular
+    , multiValid := AdmissionArtifactCheck.boundaryPortsValidCheck_sound hMulti
+    , leftBulkValid := AdmissionArtifactCheck.connectionsValidCheck_sound hLeftBulk
+    , rightBulkValid := AdmissionArtifactCheck.connectionsValidCheck_sound hRightBulk
+    }
+
+/-- Executable checker for one phantom-adapter artifact. -/
+def phantomAdapterValidCheck
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  productShapeValidCheck artifact.productShape &&
+    phantomProductArityMatchesCheck artifact &&
+      phantomProductShapeMatchesMultiCheck artifact &&
+        phantomProductContractMatchesSingularCheck artifact &&
+          phantomMultiEndpointKeysUniqueCheck artifact &&
+            phantomBulkEndpointsMatchCheck artifact &&
+              phantomBulkEndpointPartitionCheck artifact &&
+                phantomIndexedMultiCompatibilityKeysUniqueCheck artifact &&
+                  phantomAdapterRowsValidCheck artifact
+
+/-- Successful phantom-adapter checking proves `PhantomAdapterArtifact.Valid`. -/
+theorem phantomAdapterValidCheck_sound
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomAdapterValidCheck artifact = true) :
+    artifact.Valid := by
+  unfold phantomAdapterValidCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with
+    ⟨⟨⟨⟨⟨⟨⟨⟨hShape, hArity⟩, hMultiShape⟩, hSingularContract⟩,
+      hMultiUnique⟩, hBulkMatch⟩, hBulkPartition⟩, hIndexedUnique⟩, hRows⟩
+  exact
+    { productShapeValid := productShapeValidCheck_sound hShape
+    , productArityMatches := phantomProductArityMatchesCheck_sound hArity
+    , productShapeMatchesMulti :=
+        phantomProductShapeMatchesMultiCheck_sound hMultiShape
+    , productContractMatchesSingular :=
+        phantomProductContractMatchesSingularCheck_sound hSingularContract
+    , multiEndpointKeysUnique := phantomMultiEndpointKeysUniqueCheck_sound hMultiUnique
+    , bulkEndpointsMatch := phantomBulkEndpointsMatchCheck_sound hBulkMatch
+    , bulkEndpointPartition := phantomBulkEndpointPartitionCheck_sound hBulkPartition
+    , indexedMultiCompatibilityKeysUnique :=
+        phantomIndexedMultiCompatibilityKeysUniqueCheck_sound hIndexedUnique
+    , rowsValid := phantomAdapterRowsValidCheck_sound hRows
+    }
+
+/-- Executable checker for phantom-adapter domain closure over the top-level node summary. -/
+def phantomAdapterDomainClosedCheck
+    (nodes : List NodeId)
+    (artifact : PhantomAdapterArtifact) :
+    Bool :=
+  Check.memCheck artifact.node nodes &&
+    boundaryPortClosedCheck nodes artifact.singular &&
+      boundaryPortsClosedCheck nodes artifact.multi &&
+        connectionsClosedCheck nodes artifact.leftBulk &&
+          connectionsClosedCheck nodes artifact.rightBulk
+
+/-- Successful phantom-adapter closure checking proves `PhantomAdapterArtifact.DomainClosed`. -/
+theorem phantomAdapterDomainClosedCheck_sound
+    {nodes : List NodeId}
+    {artifact : PhantomAdapterArtifact}
+    (hCheck : phantomAdapterDomainClosedCheck nodes artifact = true) :
+    artifact.DomainClosed nodes := by
+  unfold phantomAdapterDomainClosedCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with
+    ⟨⟨⟨⟨hNode, hSingular⟩, hMulti⟩, hLeftBulk⟩, hRightBulk⟩
+  exact
+    { nodeClosed := Check.memCheck_sound hNode
+    , singularNodeClosed := (boundaryPortClosedCheck_sound hSingular).left
+    , multiClosed := boundaryPortsClosedCheck_sound hMulti
+    , leftBulkClosed := connectionsClosedCheck_sound hLeftBulk
+    , rightBulkClosed := connectionsClosedCheck_sound hRightBulk
+    }
+
 /-! ## Select Row Checks -/
 
 /-- Executable checker for one select variant row. -/
@@ -1333,6 +2316,109 @@ theorem selectsValidCheck_sound
     (fun _selectAdmission _ hSelect =>
       selectAdmissionValidCheck_sound hSelect)
 
+/-- Executable checker for select-admission domain closure over the top-level node summary. -/
+def selectAdmissionDomainClosedCheck
+    (nodes : List NodeId)
+    (selectAdmission : SelectAdmissionArtifact) :
+    Bool :=
+  Check.memCheck selectAdmission.owner nodes &&
+    Check.memCheck selectAdmission.conditionNode nodes &&
+      Check.allDecide selectAdmission.variants fun variant =>
+        variant.port.node ∈ nodes
+
+/-- Successful select-domain checking proves `SelectAdmissionArtifact.DomainClosed`. -/
+theorem selectAdmissionDomainClosedCheck_sound
+    {nodes : List NodeId}
+    {selectAdmission : SelectAdmissionArtifact}
+    (hCheck : selectAdmissionDomainClosedCheck nodes selectAdmission = true) :
+    selectAdmission.DomainClosed nodes := by
+  unfold selectAdmissionDomainClosedCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨⟨hOwner, hCondition⟩, hVariants⟩
+  exact
+    { ownerClosed := Check.memCheck_sound hOwner
+    , conditionNodeClosed := Check.memCheck_sound hCondition
+    , variantPortsClosed := Check.allDecide_sound hVariants
+    }
+
+/-- Executable checker for all component-domain closure obligations. -/
+def componentDomainsClosedCheck (artifact : WireAdmissionArtifact) : Bool :=
+  Check.allBool artifact.primitiveSteps
+      (primitiveStepDomainClosedCheck artifact.nodes artifact.bindingRefs) &&
+    Check.allBool artifact.generatedForms
+      (generatedFormDomainClosedCheck artifact.nodes) &&
+      Check.allBool artifact.phantomAdapters
+        (phantomAdapterDomainClosedCheck artifact.nodes) &&
+        Check.allBool artifact.selects
+          (selectAdmissionDomainClosedCheck artifact.nodes)
+
+/-- Successful component-domain checking proves `ComponentDomainsClosed`. -/
+theorem componentDomainsClosedCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.componentDomainsClosedCheck = true) :
+    artifact.ComponentDomainsClosed := by
+  unfold componentDomainsClosedCheck at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨⟨⟨hPrimitive, hGenerated⟩, hPhantom⟩, hSelects⟩
+  exact
+    { primitiveStepsClosed :=
+        Check.allBool_sound hPrimitive
+          (fun _primitiveStep _ hPrimitiveStep =>
+            primitiveStepDomainClosedCheck_sound hPrimitiveStep)
+    , generatedFormsClosed :=
+        Check.allBool_sound hGenerated
+          (fun _generated _ hGenerated =>
+            generatedFormDomainClosedCheck_sound hGenerated)
+    , phantomAdaptersClosed :=
+        Check.allBool_sound hPhantom
+          (fun _phantom _ hPhantom =>
+            phantomAdapterDomainClosedCheck_sound hPhantom)
+    , selectsClosed :=
+        Check.allBool_sound hSelects
+          (fun _selectAdmission _ hSelect =>
+            selectAdmissionDomainClosedCheck_sound hSelect)
+    }
+
+/-- Executable checker that generated-form rows are replay-addressable. -/
+def generatedFormsReferencedCheck (artifact : WireAdmissionArtifact) : Bool :=
+  Check.allBool artifact.generatedForms
+    (generatedFormReferencedCheck artifact.bindingRefs)
+
+/-- Successful generated-form reference checking proves `GeneratedFormsReferenced`. -/
+theorem generatedFormsReferencedCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.generatedFormsReferencedCheck = true) :
+    artifact.GeneratedFormsReferenced :=
+  Check.allBool_sound hCheck
+    (fun _generated _ hGenerated =>
+      generatedFormReferencedCheck_sound hGenerated)
+
+/-- Executable checker that all generated-form rows are locally valid. -/
+def generatedFormsValidCheck (artifact : WireAdmissionArtifact) : Bool :=
+  Check.allBool artifact.generatedForms generatedFormValidCheck
+
+/-- Successful generated-form list checking proves `GeneratedFormsValid`. -/
+theorem generatedFormsValidCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.generatedFormsValidCheck = true) :
+    artifact.GeneratedFormsValid :=
+  Check.allBool_sound hCheck
+    (fun _generated _ hGenerated =>
+      generatedFormValidCheck_sound hGenerated)
+
+/-- Executable checker that all phantom-adapter rows are locally valid. -/
+def phantomAdaptersValidCheck (artifact : WireAdmissionArtifact) : Bool :=
+  Check.allBool artifact.phantomAdapters phantomAdapterValidCheck
+
+/-- Successful phantom-adapter list checking proves `PhantomAdaptersValid`. -/
+theorem phantomAdaptersValidCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.phantomAdaptersValidCheck = true) :
+    artifact.PhantomAdaptersValid :=
+  Check.allBool_sound hCheck
+    (fun _phantom _ hPhantom =>
+      phantomAdapterValidCheck_sound hPhantom)
+
 /-- Executable checker for component-row identity uniqueness. -/
 def componentRowsUniqueCheck (artifact : WireAdmissionArtifact) : Bool :=
   Check.nodupMapCheck artifact.generatedForms GeneratedFormArtifact.binding &&
@@ -1383,8 +2469,12 @@ structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
   summaryFrontiersBackedByPrimitive : artifact.SummaryFrontiersBackedByPrimitive
   summaryFrontiersMatchPrimitive : artifact.SummaryFrontiersMatchPrimitive
   rawConnectionsMatchPrimitive : artifact.RawConnectionsMatchPrimitive
+  componentDomainsClosed : artifact.ComponentDomainsClosed
   selectsValid : artifact.SelectsValid
   componentRowsUnique : artifact.ComponentRowsUnique
+  generatedFormsReferenced : artifact.GeneratedFormsReferenced
+  generatedFormsValid : artifact.GeneratedFormsValid
+  phantomAdaptersValid : artifact.PhantomAdaptersValid
   primitiveStepsValid : artifact.PrimitiveStepsValid
   primitiveTraceStackValid : artifact.PrimitiveTraceStackValid
 
@@ -1401,8 +2491,12 @@ theorem validatorReady_core
   summaryFrontiersBackedByPrimitive := hReady.summaryFrontiersBackedByPrimitive
   summaryFrontiersMatchPrimitive := hReady.summaryFrontiersMatchPrimitive
   rawConnectionsMatchPrimitive := hReady.rawConnectionsMatchPrimitive
+  componentDomainsClosed := hReady.componentDomainsClosed
   selectsValid := hReady.selectsValid
   componentRowsUnique := hReady.componentRowsUnique
+  generatedFormsReferenced := hReady.generatedFormsReferenced
+  generatedFormsValid := hReady.generatedFormsValid
+  phantomAdaptersValid := hReady.phantomAdaptersValid
   primitiveStepsValid := hReady.primitiveStepsValid
   primitiveTraceStackValid := hReady.primitiveTraceStackValid
 
@@ -1413,13 +2507,17 @@ def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
       artifact.summaryRowsValidCheck &&
         artifact.summaryDomainClosedCheck &&
           artifact.summaryIdentitiesMatchPrimitiveCheck &&
-            artifact.summaryFrontiersBackedByPrimitiveCheck &&
-              artifact.summaryFrontiersMatchPrimitiveCheck &&
-                artifact.rawConnectionsMatchPrimitiveCheck &&
-                  artifact.selectsValidCheck &&
-                    artifact.componentRowsUniqueCheck &&
-                      artifact.primitiveStepsValidCheck &&
-                        artifact.primitiveTraceStackValidCheck
+              artifact.summaryFrontiersBackedByPrimitiveCheck &&
+                artifact.summaryFrontiersMatchPrimitiveCheck &&
+                  artifact.rawConnectionsMatchPrimitiveCheck &&
+                    artifact.componentDomainsClosedCheck &&
+                      artifact.selectsValidCheck &&
+                        artifact.componentRowsUniqueCheck &&
+                          artifact.generatedFormsReferencedCheck &&
+                            artifact.generatedFormsValidCheck &&
+                              artifact.phantomAdaptersValidCheck &&
+                                artifact.primitiveStepsValidCheck &&
+                                  artifact.primitiveTraceStackValidCheck
 
 /-- Successful core checking proves the representative validator-ready core. -/
 theorem validatorReadyCoreCheck_sound
@@ -1429,9 +2527,11 @@ theorem validatorReadyCoreCheck_sound
   unfold validatorReadyCoreCheck at hCheck
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with
-    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
+    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
       hSummaryDomain⟩, hSummaryIdentities⟩, hSummaryBacked⟩, hSummaryFrontiers⟩,
-      hRawConnections⟩, hSelects⟩, hComponentRows⟩, hPrimitiveSteps⟩, hPrimitiveTrace⟩
+      hRawConnections⟩, hComponentDomains⟩, hSelects⟩, hComponentRows⟩,
+      hGeneratedReferenced⟩, hGeneratedValid⟩, hPhantomValid⟩, hPrimitiveSteps⟩,
+      hPrimitiveTrace⟩
   exact
     { schemaCurrent := of_decide_eq_true hSchema
     , summaryKeysUnique := summaryKeysUniqueCheck_sound hSummaryKeys
@@ -1445,8 +2545,13 @@ theorem validatorReadyCoreCheck_sound
         summaryFrontiersMatchPrimitiveCheck_sound hSummaryFrontiers
     , rawConnectionsMatchPrimitive :=
         rawConnectionsMatchPrimitiveCheck_sound hRawConnections
+    , componentDomainsClosed := componentDomainsClosedCheck_sound hComponentDomains
     , selectsValid := selectsValidCheck_sound hSelects
     , componentRowsUnique := componentRowsUniqueCheck_sound hComponentRows
+    , generatedFormsReferenced :=
+        generatedFormsReferencedCheck_sound hGeneratedReferenced
+    , generatedFormsValid := generatedFormsValidCheck_sound hGeneratedValid
+    , phantomAdaptersValid := phantomAdaptersValidCheck_sound hPhantomValid
     , primitiveStepsValid := primitiveStepsValidCheck_sound hPrimitiveSteps
     , primitiveTraceStackValid := primitiveTraceStackValidCheck_sound hPrimitiveTrace
     }

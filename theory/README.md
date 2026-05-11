@@ -397,8 +397,9 @@ Mechanized results now include:
   `AdmissionArtifact.ValidatorReadyCore`, `AdmissionArtifact.validatorReadyCoreCheck`, and
   `AdmissionArtifact.validatorReadyCoreCheck_sound` extend that strategy to a representative
   executable validator core: schema version, summary-key uniqueness, summary-row validity, summary
-  domain closure, summary identity/frontier/raw-connection matching against primitive rows, local
-  select-row validity, component-row uniqueness, primitive row validity, and primitive stack replay.
+  domain closure, summary identity/frontier/raw-connection matching against primitive rows,
+  component-domain closure, local generated/select/phantom row validity, generated-form reference
+  anchoring, component-row uniqueness, primitive row validity, and primitive stack replay.
   `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
   `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
   generated-child or empty-family row for each generated artifact, rather than only a label
@@ -445,8 +446,8 @@ Mechanized results now include:
   position. Schema version 3 additionally makes the record product's aggregate contract explicit, so
   Lean can compare the serialized product row to the singular endpoint rather than inferring the
   record contract from field rows; the validator-ready indexed-product surface also rejects nested
-  indexed elements and exposes duplicate-free indexed multi-side compatibility keys, matching the
-  source grammar's nominal element position and the executable `*` duplicate-key check.
+  indexed elements and exposes duplicate-free indexed multi-side compatibility keys. Full source
+  identifier grammar for the indexed element remains a parser/Haskell correspondence obligation.
   `AdmissionArtifact.PrimitiveSound`, `AdmissionArtifact.GeneratedSound`,
   `AdmissionArtifact.SelectSound`, `AdmissionArtifact.PhantomSound`, `AdmissionArtifact.Sound`, and
   `AdmissionArtifact.validatorReady_sound` now name the proof-facing cutline for this decoded

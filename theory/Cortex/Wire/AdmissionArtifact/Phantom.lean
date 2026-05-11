@@ -47,11 +47,13 @@ def RowsValid : ProductShapeArtifact → Prop
         ∀ field, field ∈ fields → field.fst.Valid ∧ field.snd.Valid
   | .indexed elementContract _count => elementContract.Valid
 
-/-- Indexed product elements are nominal contract rows, not another serialized `[T; N]`.
+/-- Indexed product elements are not another serialized `[T; N]`.
 
-The executable grammar only accepts an identifier in the element position of
-`[T; N]`. This artifact predicate mirrors that boundary by rejecting rows whose
-element text already starts with the indexed-product delimiter. -/
+The executable grammar accepts an identifier in the element position of
+`[T; N]`. This artifact predicate mirrors the nested-product part of that
+boundary by rejecting rows whose element text already starts with the
+indexed-product delimiter. Full source-identifier grammar remains outside the
+non-empty nominal-name approximation used by this proof layer. -/
 def IndexedElementNominal : ProductShapeArtifact → Prop
   | .record _ _ => True
   | .indexed elementContract _count => elementContract.name.startsWith "[" = false
@@ -127,7 +129,7 @@ theorem valid_indexed_elementValid
     element.Valid :=
   hValid.rowsValid
 
-/-- Valid indexed products expose that their element is nominal, not another `[T; N]`. -/
+/-- Valid indexed products expose that their element is not another `[T; N]`. -/
 theorem valid_indexed_elementNominal
     {element : ContractId}
     {count : Nat}

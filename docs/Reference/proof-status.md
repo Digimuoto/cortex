@@ -108,13 +108,14 @@ rows.
   Haskell validator clause with a Lean checker plus theorem, not yet a full executable
   `ValidatorReady` checker.
 - `AdmissionArtifact.validatorReadyCoreCheck_sound` now measures the next strategy: a Lean-owned
-  executable checker can establish a representative `ValidatorReadyCore` covering twelve fields:
+  executable checker can establish a representative `ValidatorReadyCore` covering sixteen fields:
   schema version, summary-key uniqueness, summary-row validity, summary domain closure, summary
   identities matching primitive rows, summary frontiers backed by primitive rows, exact summary
-  residual-frontier matching, raw connections matching primitive rows, local select-row validity,
-  component-row uniqueness, primitive row validity, and primitive stack replay. The helper
-  combinators are Lean-side soundness tools (`check = true → predicate`); full Haskell-validator
-  equivalence remains a separate field-by-field correspondence obligation.
+  residual-frontier matching, raw connections matching primitive rows, component-domain closure,
+  local select-row validity, component-row uniqueness, generated-form reference anchoring, local
+  generated-form validity, local phantom-adapter validity, primitive row validity, and primitive
+  stack replay. The helper combinators are Lean-side soundness tools (`check = true → predicate`);
+  full Haskell-validator equivalence remains a separate field-by-field correspondence obligation.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph
@@ -133,7 +134,7 @@ rows.
 - Phantom-adapter artifact handoff now exposes row and domain facts directly: Lean names the
   product-shape, multi-side, singular, and left/right bulk-row obligations that Haskell validates,
   including stronger boundary closure over optional exclusive-group owners, record boundary labels,
-  record aggregate-contract rows, indexed element-contract rows, indexed nominal-element rejection,
+  record aggregate-contract rows, indexed element-contract rows, nested-indexed element rejection,
   and singular endpoint equality with the serialized aggregate product contract. Admission artifact
   schema version 3 carries the record aggregate contract explicitly so the Haskell row can be
   checked against the Lean product-shape contract instead of being inferred from record fields.
