@@ -3291,6 +3291,165 @@ theorem selectArmBodyNodesPairwiseDisjointCheck_sound
   have hRightCheck := hLeftCheck right hRight
   exact selectArmBodyNodesDisjointPairCheck_sound hRightCheck hKeys node hNode
 
+/-! ## Phantom Bridge Cross-Reference Checks -/
+
+/-- Executable checker that one phantom row's internal bridge endpoints are primitive-backed. -/
+def phantomBridgeFrontiersBackedByPrimitiveRowCheck
+    (artifact : WireAdmissionArtifact)
+    (phantom : PhantomAdapterArtifact) :
+    Bool :=
+  let entryKeys := PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps
+  let exitKeys := PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps
+  (Check.allDecide phantom.leftBulk fun pair => pair.toPort.key ∈ entryKeys) &&
+    (Check.allDecide phantom.rightBulk fun pair => pair.fromPort.key ∈ exitKeys)
+
+/-- Successful phantom bridge-frontier backing checking proves one phantom row. -/
+theorem phantomBridgeFrontiersBackedByPrimitiveRowCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {phantom : PhantomAdapterArtifact}
+    (hCheck :
+      phantomBridgeFrontiersBackedByPrimitiveRowCheck artifact phantom = true) :
+    (∀ pair, pair ∈ phantom.leftBulk →
+      pair.toPort.key ∈ PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps) ∧
+      (∀ pair, pair ∈ phantom.rightBulk →
+        pair.fromPort.key ∈
+          PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps) := by
+  unfold phantomBridgeFrontiersBackedByPrimitiveRowCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact ⟨Check.allDecide_sound hCheck.left, Check.allDecide_sound hCheck.right⟩
+
+/-- Executable checker for all phantom bridge endpoint primitive backing. -/
+def phantomBridgeFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.phantomAdapters
+    (phantomBridgeFrontiersBackedByPrimitiveRowCheck artifact)
+
+/-- Successful backing checking proves `PhantomBridgeFrontiersBackedByPrimitive`. -/
+theorem phantomBridgeFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.phantomBridgeFrontiersBackedByPrimitiveCheck = true) :
+    artifact.PhantomBridgeFrontiersBackedByPrimitive :=
+  Check.allBool_sound hCheck
+    (fun _phantom _ hPhantom =>
+      phantomBridgeFrontiersBackedByPrimitiveRowCheck_sound hPhantom)
+
+/-- Row checker for the primitive node frontier row behind one phantom adapter. -/
+def phantomBridgeFrontiersPrimitiveStepCheck
+    (phantom : PhantomAdapterArtifact) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.node node entries exits =>
+      decide (node = phantom.node) &&
+        Check.permCheck phantom.leftBulkTargetKeys
+          (entries.map AdmissionBoundaryPort.key) &&
+          Check.permCheck phantom.rightBulkSourceKeys
+            (exits.map AdmissionBoundaryPort.key)
+  | PrimitiveGraphStep.empty =>
+      false
+  | PrimitiveGraphStep.bindingRef _binding =>
+      false
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      false
+  | PrimitiveGraphStep.connect _leftExits _rightEntries _matchedPairs
+      _unmatchedLeftExits _unmatchedRightEntries =>
+      false
+
+/-- Executable checker that one phantom row exactly matches its primitive node frontier row. -/
+def phantomBridgeFrontiersMatchPrimitiveRowCheck
+    (artifact : WireAdmissionArtifact)
+    (phantom : PhantomAdapterArtifact) :
+    Bool :=
+  artifact.primitiveSteps.any
+    (phantomBridgeFrontiersPrimitiveStepCheck phantom)
+
+/-- Successful row checking proves one phantom bridge frontier match. -/
+theorem phantomBridgeFrontiersMatchPrimitiveRowCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {phantom : PhantomAdapterArtifact}
+    (hCheck :
+      phantomBridgeFrontiersMatchPrimitiveRowCheck artifact phantom = true) :
+    ∃ entries exits,
+      PrimitiveGraphStep.node phantom.node entries exits ∈ artifact.primitiveSteps ∧
+        phantom.leftBulkTargetKeys.Perm (entries.map AdmissionBoundaryPort.key) ∧
+        phantom.rightBulkSourceKeys.Perm (exits.map AdmissionBoundaryPort.key) := by
+  unfold phantomBridgeFrontiersMatchPrimitiveRowCheck at hCheck
+  rcases List.any_eq_true.mp hCheck with
+    ⟨primitiveStep, hPrimitiveStep, hPrimitiveCheck⟩
+  cases primitiveStep with
+  | empty =>
+      simp [phantomBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | bindingRef _binding =>
+      simp [phantomBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      simp [phantomBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | connect _leftExits _rightEntries _matchedPairs _unmatchedLeftExits _unmatchedRightEntries =>
+      simp [phantomBridgeFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | node primitiveNode entries exits =>
+      unfold phantomBridgeFrontiersPrimitiveStepCheck at hPrimitiveCheck
+      simp only [Bool.and_eq_true] at hPrimitiveCheck
+      rcases hPrimitiveCheck with ⟨⟨hNode, hLeft⟩, hRight⟩
+      have hNodeEq : primitiveNode = phantom.node := of_decide_eq_true hNode
+      refine ⟨entries, exits, ?_, ?_, ?_⟩
+      · simpa [hNodeEq] using hPrimitiveStep
+      · exact Check.permCheck_sound hLeft
+      · exact Check.permCheck_sound hRight
+
+/-- Executable checker for all phantom bridge frontier exactness rows. -/
+def phantomBridgeFrontiersMatchPrimitiveCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.phantomAdapters
+    (phantomBridgeFrontiersMatchPrimitiveRowCheck artifact)
+
+/-- Successful frontier-match checking proves `PhantomBridgeFrontiersMatchPrimitive`. -/
+theorem phantomBridgeFrontiersMatchPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.phantomBridgeFrontiersMatchPrimitiveCheck = true) :
+    artifact.PhantomBridgeFrontiersMatchPrimitive :=
+  Check.allBool_sound hCheck
+    (fun _phantom _ hPhantom =>
+      phantomBridgeFrontiersMatchPrimitiveRowCheck_sound hPhantom)
+
+/-- Executable checker that one phantom row's bulk contractions were replayed. -/
+def phantomBridgeBulkConnectionsReplayedRowCheck
+    (artifact : WireAdmissionArtifact)
+    (phantom : PhantomAdapterArtifact) :
+    Bool :=
+  let matchedConnections :=
+    PrimitiveGraphStep.matchedConnectionsList artifact.primitiveSteps
+  (Check.allDecide phantom.leftBulk fun pair => pair ∈ matchedConnections) &&
+    (Check.allDecide phantom.rightBulk fun pair => pair ∈ matchedConnections)
+
+/-- Successful replay checking proves one phantom row's bulk contractions were replayed. -/
+theorem phantomBridgeBulkConnectionsReplayedRowCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {phantom : PhantomAdapterArtifact}
+    (hCheck :
+      phantomBridgeBulkConnectionsReplayedRowCheck artifact phantom = true) :
+    (∀ pair, pair ∈ phantom.leftBulk →
+      pair ∈ PrimitiveGraphStep.matchedConnectionsList artifact.primitiveSteps) ∧
+      (∀ pair, pair ∈ phantom.rightBulk →
+        pair ∈ PrimitiveGraphStep.matchedConnectionsList artifact.primitiveSteps) := by
+  unfold phantomBridgeBulkConnectionsReplayedRowCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact ⟨Check.allDecide_sound hCheck.left, Check.allDecide_sound hCheck.right⟩
+
+/-- Executable checker for all phantom bridge bulk replay rows. -/
+def phantomBridgeBulkConnectionsReplayedCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.phantomAdapters
+    (phantomBridgeBulkConnectionsReplayedRowCheck artifact)
+
+/-- Successful replay checking proves `PhantomBridgeBulkConnectionsReplayed`. -/
+theorem phantomBridgeBulkConnectionsReplayedCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.phantomBridgeBulkConnectionsReplayedCheck = true) :
+    artifact.PhantomBridgeBulkConnectionsReplayed :=
+  Check.allBool_sound hCheck
+    (fun _phantom _ hPhantom =>
+      phantomBridgeBulkConnectionsReplayedRowCheck_sound hPhantom)
+
 /-- Executable checker for all component-domain closure obligations. -/
 def componentDomainsClosedCheck (artifact : WireAdmissionArtifact) : Bool :=
   Check.allBool artifact.primitiveSteps
@@ -3442,6 +3601,12 @@ structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
     artifact.SelectArmBodyNodesFreshFromSummary
   selectArmBodyNodesPairwiseDisjoint :
     artifact.SelectArmBodyNodesPairwiseDisjoint
+  phantomBridgeFrontiersBackedByPrimitive :
+    artifact.PhantomBridgeFrontiersBackedByPrimitive
+  phantomBridgeFrontiersMatchPrimitive :
+    artifact.PhantomBridgeFrontiersMatchPrimitive
+  phantomBridgeBulkConnectionsReplayed :
+    artifact.PhantomBridgeBulkConnectionsReplayed
 
 /-- Full validator readiness implies the executable core contract. -/
 theorem validatorReady_core
@@ -3477,33 +3642,42 @@ theorem validatorReady_core
     hReady.selectArmBodyBoundariesMatchCondition
   selectArmBodyNodesFreshFromSummary := hReady.selectArmBodyNodesFreshFromSummary
   selectArmBodyNodesPairwiseDisjoint := hReady.selectArmBodyNodesPairwiseDisjoint
+  phantomBridgeFrontiersBackedByPrimitive :=
+    hReady.phantomBridgeFrontiersBackedByPrimitive
+  phantomBridgeFrontiersMatchPrimitive :=
+    hReady.phantomBridgeFrontiersMatchPrimitive
+  phantomBridgeBulkConnectionsReplayed :=
+    hReady.phantomBridgeBulkConnectionsReplayed
 
 /-- Executable checker for the representative validator-ready core. -/
 def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
   decide artifact.SchemaCurrent &&
-    artifact.summaryKeysUniqueCheck &&
-      artifact.summaryRowsValidCheck &&
-        artifact.summaryDomainClosedCheck &&
-          artifact.summaryIdentitiesMatchPrimitiveCheck &&
-              artifact.summaryFrontiersBackedByPrimitiveCheck &&
-                artifact.summaryFrontiersMatchPrimitiveCheck &&
-                  artifact.rawConnectionsMatchPrimitiveCheck &&
-                    artifact.componentDomainsClosedCheck &&
-                      artifact.selectsValidCheck &&
-                        artifact.componentRowsUniqueCheck &&
-                          artifact.generatedFormsReferencedCheck &&
-                            artifact.generatedFormsValidCheck &&
-                              artifact.phantomAdaptersValidCheck &&
-                                artifact.primitiveStepsValidCheck &&
-                                  artifact.primitiveTraceStackValidCheck &&
-                                    artifact.primitiveOverlayLedgersPrefixAvailableCheck &&
-                                      artifact.primitiveConnectFrontiersBackedByNodesCheck &&
-                                        artifact.primitiveConnectFrontiersPrefixAvailableCheck &&
-                                          artifact.selectBridgeFrontiersBackedByPrimitiveCheck &&
-                                            artifact.selectBridgeEntriesConsumedCheck &&
-                                              artifact.selectArmBodyBoundariesMatchConditionCheck &&
-                                                artifact.selectArmBodyNodesFreshFromSummaryCheck &&
-                                                  artifact.selectArmBodyNodesPairwiseDisjointCheck
+  artifact.summaryKeysUniqueCheck &&
+  artifact.summaryRowsValidCheck &&
+  artifact.summaryDomainClosedCheck &&
+  artifact.summaryIdentitiesMatchPrimitiveCheck &&
+  artifact.summaryFrontiersBackedByPrimitiveCheck &&
+  artifact.summaryFrontiersMatchPrimitiveCheck &&
+  artifact.rawConnectionsMatchPrimitiveCheck &&
+  artifact.componentDomainsClosedCheck &&
+  artifact.selectsValidCheck &&
+  artifact.componentRowsUniqueCheck &&
+  artifact.generatedFormsReferencedCheck &&
+  artifact.generatedFormsValidCheck &&
+  artifact.phantomAdaptersValidCheck &&
+  artifact.primitiveStepsValidCheck &&
+  artifact.primitiveTraceStackValidCheck &&
+  artifact.primitiveOverlayLedgersPrefixAvailableCheck &&
+  artifact.primitiveConnectFrontiersBackedByNodesCheck &&
+  artifact.primitiveConnectFrontiersPrefixAvailableCheck &&
+  artifact.selectBridgeFrontiersBackedByPrimitiveCheck &&
+  artifact.selectBridgeEntriesConsumedCheck &&
+  artifact.selectArmBodyBoundariesMatchConditionCheck &&
+  artifact.selectArmBodyNodesFreshFromSummaryCheck &&
+  artifact.selectArmBodyNodesPairwiseDisjointCheck &&
+  artifact.phantomBridgeFrontiersBackedByPrimitiveCheck &&
+  artifact.phantomBridgeFrontiersMatchPrimitiveCheck &&
+  artifact.phantomBridgeBulkConnectionsReplayedCheck
 
 /-- Successful core checking proves the representative validator-ready core. -/
 theorem validatorReadyCoreCheck_sound
@@ -3513,13 +3687,15 @@ theorem validatorReadyCoreCheck_sound
   unfold validatorReadyCoreCheck at hCheck
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with
-    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
+    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
       hSummaryDomain⟩, hSummaryIdentities⟩, hSummaryBacked⟩, hSummaryFrontiers⟩,
       hRawConnections⟩, hComponentDomains⟩, hSelects⟩, hComponentRows⟩,
       hGeneratedReferenced⟩, hGeneratedValid⟩, hPhantomValid⟩, hPrimitiveSteps⟩,
       hPrimitiveTrace⟩, hPrimitiveOverlayPrefix⟩, hPrimitiveConnectBacked⟩,
       hPrimitiveConnectPrefix⟩, hSelectBridgeFrontiers⟩, hSelectBridgeEntries⟩,
-      hSelectArmBodyBoundaries⟩, hSelectArmBodyFresh⟩, hSelectArmBodyDisjoint⟩
+      hSelectArmBodyBoundaries⟩, hSelectArmBodyFresh⟩, hSelectArmBodyDisjoint⟩,
+      hPhantomBridgeFrontiersBacked⟩, hPhantomBridgeFrontiersMatch⟩,
+      hPhantomBridgeBulkReplayed⟩
   exact
     { schemaCurrent := of_decide_eq_true hSchema
     , summaryKeysUnique := summaryKeysUniqueCheck_sound hSummaryKeys
@@ -3558,6 +3734,13 @@ theorem validatorReadyCoreCheck_sound
         selectArmBodyNodesFreshFromSummaryCheck_sound hSelectArmBodyFresh
     , selectArmBodyNodesPairwiseDisjoint :=
         selectArmBodyNodesPairwiseDisjointCheck_sound hSelectArmBodyDisjoint
+    , phantomBridgeFrontiersBackedByPrimitive :=
+        phantomBridgeFrontiersBackedByPrimitiveCheck_sound
+          hPhantomBridgeFrontiersBacked
+    , phantomBridgeFrontiersMatchPrimitive :=
+        phantomBridgeFrontiersMatchPrimitiveCheck_sound hPhantomBridgeFrontiersMatch
+    , phantomBridgeBulkConnectionsReplayed :=
+        phantomBridgeBulkConnectionsReplayedCheck_sound hPhantomBridgeBulkReplayed
     }
 
 end WireAdmissionArtifact
