@@ -37,9 +37,9 @@ The page proves:
 * successful admission produces a `LatentSelectAdmission` whose arm-key set is
   an order-insensitive permutation of the sum-group keys, and whose arm bodies
   remain latent;
-* `LatentSelectAdmission.FromClause` names the additional body-provenance
-  obligation future runtime-correspondence slices should require when they need
-  to connect latent bodies back to source arms;
+* successful `admitClause` and `admitClauseAtNode` construction witness
+  `LatentSelectAdmission.FromClause`, tying admitted latent bodies back to their
+  source arms;
 * a bridging constructor lifts a `LatentSelectAdmission` together with a
   caller-supplied `SubgraphSpec` family into a `LatentBranchFamily`.
 -/
@@ -533,6 +533,161 @@ theorem admitClause_entries_keys_eq_shape
               cases hAdmit
               exact collected.entries_keys_exact
 
+/-- Successful arm-body lookup returns a source arm with the requested key and body. -/
+private theorem findArmBody?_some
+    {body : Type}
+    {arms : List (SelectArm body)}
+    {key : SelectArmKey}
+    {bodyValue : body}
+    (hFind : findArmBody? arms key = some bodyValue) :
+    ∃ arm, arm ∈ arms ∧ arm.key = key ∧ arm.body = bodyValue := by
+  induction arms with
+  | nil =>
+      unfold findArmBody? at hFind
+      simp at hFind
+  | cons head tail ih =>
+      unfold findArmBody? at hFind
+      simp only [List.find?_cons] at hFind
+      by_cases hKey : head.key = key
+      · simp [hKey] at hFind
+        cases hFind
+        exact ⟨head, by simp, hKey, rfl⟩
+      · simp [hKey] at hFind
+        rcases hFind with ⟨arm, hFindTail, hArmBody⟩
+        have hFindTailMapped : findArmBody? tail key = some bodyValue := by
+          unfold findArmBody?
+          rw [hFindTail]
+          simp [hArmBody]
+        rcases ih hFindTailMapped with ⟨arm, hArm, hArmKey, hArmBody⟩
+        exact ⟨arm, List.mem_cons_of_mem head hArm, hArmKey, hArmBody⟩
+
+/-- Successful single-arm resolution preserves body provenance and records the canonical key. -/
+private theorem resolveArm_ok_source
+    {body : Type}
+    {shape : SelectableOutputShape}
+    {arm resolved : SelectArm body}
+    (hResolve : resolveArm shape arm = Except.ok resolved) :
+    arm.body = resolved.body ∧
+      resolveArmKey shape arm.key = Except.ok resolved.key := by
+  unfold resolveArm at hResolve
+  cases hKey : resolveArmKey shape arm.key with
+  | error err =>
+      rw [hKey] at hResolve
+      change Except.error err = Except.ok resolved at hResolve
+      cases hResolve
+  | ok canonicalKey =>
+      rw [hKey] at hResolve
+      change Except.ok { key := canonicalKey, body := arm.body } =
+        Except.ok resolved at hResolve
+      cases hResolve
+      exact ⟨rfl, by simp⟩
+
+/-- Successful source-arm resolution keeps every resolved arm tied to a source arm. -/
+private theorem resolveArms_mem_source
+    {body : Type}
+    {shape : SelectableOutputShape}
+    {arms resolvedArms : List (SelectArm body)}
+    (hResolved : resolveArms shape arms = Except.ok resolvedArms)
+    {resolved : SelectArm body}
+    (hMem : resolved ∈ resolvedArms) :
+    ∃ arm, arm ∈ arms ∧
+      arm.body = resolved.body ∧
+        resolveArmKey shape arm.key = Except.ok resolved.key := by
+  induction arms generalizing resolvedArms with
+  | nil =>
+      unfold resolveArms at hResolved
+      cases hResolved
+      cases hMem
+  | cons head tail ih =>
+      unfold resolveArms at hResolved
+      cases hHead : resolveArm shape head with
+      | error err =>
+          rw [hHead] at hResolved
+          change Except.error err = Except.ok resolvedArms at hResolved
+          cases hResolved
+      | ok resolvedHead =>
+          rw [hHead] at hResolved
+          change
+            (resolveArms shape tail).map
+              (fun resolvedRest => resolvedHead :: resolvedRest) =
+            Except.ok resolvedArms at hResolved
+          cases hTail : resolveArms shape tail with
+          | error err =>
+              rw [hTail] at hResolved
+              change Except.error err = Except.ok resolvedArms at hResolved
+              cases hResolved
+          | ok resolvedTail =>
+              rw [hTail] at hResolved
+              change Except.ok (resolvedHead :: resolvedTail) =
+                Except.ok resolvedArms at hResolved
+              cases hResolved
+              simp only [List.mem_cons] at hMem
+              rcases hMem with hHeadMem | hTailMem
+              · subst hHeadMem
+                have hSource := resolveArm_ok_source hHead
+                exact
+                  ⟨ head
+                  , by simp
+                  , hSource.left
+                  , hSource.right
+                  ⟩
+              · rcases ih hTail hTailMem with
+                  ⟨arm, hArm, hBody, hResolvedKey⟩
+                exact
+                  ⟨ arm
+                  , List.mem_cons_of_mem head hArm
+                  , hBody
+                  , hResolvedKey
+                  ⟩
+
+/-- Collected entries are sourced from the already-resolved source arm list. -/
+private theorem collectEntriesFrom_mem_resolved
+    {body : Type}
+    {armPorts : List (SelectArmKey × PortSignature)}
+    {arms : List (SelectArm body)}
+    {collected : CollectedEntries body (armPorts.map Prod.fst)}
+    (hCollected : collectEntriesFrom armPorts arms = Except.ok collected)
+    {entry : SelectArmKey × body}
+    (hEntry : entry ∈ collected.entries) :
+    ∃ arm, arm ∈ arms ∧ arm.key = entry.fst ∧ arm.body = entry.snd := by
+  induction armPorts with
+  | nil =>
+      unfold collectEntriesFrom at hCollected
+      change Except.ok { entries := [], entries_keys_exact := rfl } =
+        Except.ok collected at hCollected
+      cases hCollected
+      cases hEntry
+  | cons armPort rest ih =>
+      unfold collectEntriesFrom at hCollected
+      cases hFind : findArmBody? arms armPort.fst with
+      | none =>
+          rw [hFind] at hCollected
+          change Except.error (SelectAdmissionError.uncoveredShapeArm armPort.fst) =
+            Except.ok collected at hCollected
+          cases hCollected
+      | some bodyValue =>
+          rw [hFind] at hCollected
+          cases hRest : collectEntriesFrom rest arms with
+          | error err =>
+              rw [hRest] at hCollected
+              change Except.error err = Except.ok collected at hCollected
+              cases hCollected
+          | ok collectedRest =>
+              rw [hRest] at hCollected
+              change
+                Except.ok
+                  { entries := (armPort.fst, bodyValue) :: collectedRest.entries
+                    entries_keys_exact := _ } =
+                Except.ok collected at hCollected
+              cases hCollected
+              simp only [List.mem_cons] at hEntry
+              rcases hEntry with hHead | hTail
+              · cases hHead
+                rcases findArmBody?_some hFind with
+                  ⟨arm, hArm, hArmKey, hArmBody⟩
+                exact ⟨arm, hArm, hArmKey, hArmBody⟩
+              · exact ih hRest hTail
+
 /-- Admit a source `select(...)` clause whose base is an `AcceptedNodeDecl`,
 projecting the exclusive output sum from the node's authored `OutputShape`.
 
@@ -581,6 +736,79 @@ def FromClause
             resolveArmKey admission.shape arm.key = Except.ok entry.fst
 
 end LatentSelectAdmission
+
+/-- Successful `admitClause` construction witnesses source-arm body provenance. -/
+theorem admitClause_fromClause
+    {base body : Type}
+    (shape : SelectableOutputShape)
+    (clause : SelectExpr base body)
+    {admission : LatentSelectAdmission body}
+    (hAdmit : admitClause shape clause = Except.ok admission) :
+    admission.FromClause clause := by
+  unfold admitClause at hAdmit
+  cases hResolved : resolveArms shape clause.arms with
+  | error err =>
+      rw [hResolved] at hAdmit
+      change Except.error err = Except.ok admission at hAdmit
+      cases hAdmit
+  | ok resolvedArms =>
+      rw [hResolved] at hAdmit
+      change
+        (detectDuplicateArm (resolvedArms.map SelectArm.key)).bind
+          (fun _ =>
+            (collectEntries shape resolvedArms).map
+              (fun collected => collectedEntriesAdmission shape collected)) =
+          Except.ok admission at hAdmit
+      cases hDuplicate : detectDuplicateArm (resolvedArms.map SelectArm.key) with
+      | error err =>
+          rw [hDuplicate] at hAdmit
+          change Except.error err = Except.ok admission at hAdmit
+          cases hAdmit
+      | ok _unit =>
+          rw [hDuplicate] at hAdmit
+          change
+            (collectEntries shape resolvedArms).map
+              (fun collected => collectedEntriesAdmission shape collected) =
+            Except.ok admission at hAdmit
+          cases hCollected : collectEntries shape resolvedArms with
+          | error err =>
+              rw [hCollected] at hAdmit
+              change Except.error err = Except.ok admission at hAdmit
+              cases hAdmit
+          | ok collected =>
+              rw [hCollected] at hAdmit
+              change Except.ok (collectedEntriesAdmission shape collected) =
+                Except.ok admission at hAdmit
+              cases hAdmit
+              intro entry hEntry
+              rcases collectEntriesFrom_mem_resolved hCollected hEntry with
+                ⟨resolvedArm, hResolvedArm, hResolvedKey, hResolvedBody⟩
+              rcases resolveArms_mem_source hResolved hResolvedArm with
+                ⟨sourceArm, hSourceArm, hSourceBody, hSourceKey⟩
+              exact
+                ⟨ sourceArm
+                , hSourceArm
+                , by rw [hSourceBody, hResolvedBody]
+                , by rw [← hResolvedKey]; exact hSourceKey
+                ⟩
+
+/-- Successful node-based `select(...)` admission witnesses source-arm body provenance. -/
+theorem admitClauseAtNode_fromClause
+    {body : Type}
+    (clause : SelectExpr AcceptedNodeDecl body)
+    {admission : LatentSelectAdmission body}
+    (hAdmit : admitClauseAtNode clause = Except.ok admission) :
+    admission.FromClause clause := by
+  unfold admitClauseAtNode at hAdmit
+  cases hShape : SelectableOutputShape.ofAcceptedNode? clause.base with
+  | none =>
+      rw [hShape] at hAdmit
+      change Except.error SelectAdmissionError.nonExclusiveBase =
+        Except.ok admission at hAdmit
+      cases hAdmit
+  | some shape =>
+      rw [hShape] at hAdmit
+      exact admitClause_fromClause shape clause hAdmit
 
 /-! ## Bridge Into `LatentBranchFamily` -/
 

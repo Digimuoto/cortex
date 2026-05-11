@@ -702,6 +702,71 @@ def acceptItems
     Except MakeEachError (List MakeItem) :=
   acceptItemsWithSeen sourceBinding [] items
 
+/-- Valid, duplicate-free `makeEach` rows pass the item checker unchanged.
+
+The auxiliary `seen` list is the accumulator used by `acceptItemsWithSeen`.
+The freshness premise says no remaining item label has already been seen. -/
+theorem acceptItemsWithSeen_ok_eq_self
+    (sourceBinding : ElaborationIR.BindingName)
+    (seen : List ElaborationIR.FieldLabel) :
+    ∀ items,
+      MakeItem.ItemsValid items →
+        MakeItem.LabelsUnique items →
+          (∀ item, item ∈ items → item.label ∉ seen) →
+            acceptItemsWithSeen sourceBinding seen items = Except.ok items := by
+  intro items
+  induction items generalizing seen with
+  | nil =>
+      intro _hValid _hUnique _hFresh
+      rfl
+  | cons head tail ih =>
+      intro hValid hUnique hFresh
+      have hHeadValid : head.Valid :=
+        hValid head (by simp)
+      have hHeadFresh : head.label ∉ seen :=
+        hFresh head (by simp)
+      have hTailValid : MakeItem.ItemsValid tail := by
+        intro item hItem
+        exact hValid item (by simp [hItem])
+      have hLabelsNodup :
+          (head.label :: tail.map MakeItem.label).Nodup := by
+        simpa [MakeItem.LabelsUnique] using hUnique
+      have hTailUnique : MakeItem.LabelsUnique tail := by
+        simpa [MakeItem.LabelsUnique] using hLabelsNodup.tail
+      have hHeadNotInTail : head.label ∉ tail.map MakeItem.label :=
+        hLabelsNodup.notMem
+      have hTailFresh :
+          ∀ item, item ∈ tail → item.label ∉ head.label :: seen := by
+        intro item hItem hSeen
+        rcases List.mem_cons.mp hSeen with hSame | hOldSeen
+        · have hLabelMem : item.label ∈ tail.map MakeItem.label :=
+            List.mem_map.mpr ⟨item, hItem, rfl⟩
+          exact hHeadNotInTail (by rw [← hSame]; exact hLabelMem)
+        · exact hFresh item (by simp [hItem]) hOldSeen
+      have hTailAccept :
+          acceptItemsWithSeen sourceBinding (head.label :: seen) tail = Except.ok tail :=
+        ih (head.label :: seen) hTailValid hTailUnique hTailFresh
+      simp [acceptItemsWithSeen, hHeadValid, hHeadFresh, hTailAccept]
+
+/-- Valid, duplicate-free `makeEach` rows pass the public item checker unchanged. -/
+theorem acceptItems_ok_eq_self
+    (sourceBinding : ElaborationIR.BindingName)
+    (items : List MakeItem)
+    (hValid : MakeItem.ItemsValid items)
+    (hUnique : MakeItem.LabelsUnique items) :
+    acceptItems sourceBinding items = Except.ok items := by
+  unfold acceptItems
+  exact
+    acceptItemsWithSeen_ok_eq_self
+      sourceBinding
+      []
+      items
+      hValid
+      hUnique
+      (by
+        intro item _hItem
+        simp)
+
 private def makeEachExampleBinding : ElaborationIR.BindingName := ⟨"workers"⟩
 
 private def makeEachExampleItem : MakeItem :=

@@ -1,3 +1,4 @@
+import Cortex.Wire.PhantomAdapter
 import Cortex.Wire.PulseSafety
 
 /-!
@@ -28,6 +29,8 @@ The page proves:
   it is proven to come from;
 * equal selected-arm choices produce equal lowered append rewrites;
 * unselected branch nodes remain outside the replayed selected raw fragment;
+* a recovered phantom-adapter artifact can be tied to a concrete
+  `PhantomAdapterWitness` inside the selected branch;
 * selected-branch recovery feeds the existing safe-run preservation theorem.
 -/
 
@@ -131,6 +134,61 @@ def replayedSelectedNodes
       SelectedBranchRecoveryRecord family policy contractOk context budget) :
     Finset node :=
   record.actualize.selectedFragmentNodes
+
+/-- Runtime correspondence target for a phantom adapter persisted inside a recovered branch.
+
+The executable artifact carries a concrete phantom-adapter node. Lean does not
+consume the JSON artifact directly here; instead, the correspondence layer must
+decode that row into this embedding: the artifact node is one node of the
+`PhantomAdapterWitness.starInsertion` graph, and every node in that
+star-insertion graph belongs to the selected raw fragment replayed by recovery.
+-/
+structure PhantomAdapterEmbedding
+    {outputPort inputPort productContract label : Type}
+    [DecidableEq outputPort]
+    [DecidableEq inputPort]
+    (record :
+      SelectedBranchRecoveryRecord family policy contractOk context budget)
+    (witness :
+      LinearPortGraph.PhantomAdapterWitness
+        node
+        outputPort
+        inputPort
+        productContract
+        label)
+    (artifactNode : node) :
+    Prop where
+  /-- The persisted artifact node is represented inside the phantom-adapter witness. -/
+  artifactNode_mem_starInsertion :
+    artifactNode ∈ (witness.starInsertion).graph.nodes
+  /-- The complete star-insertion graph is part of the selected branch replayed by recovery. -/
+  starInsertion_nodes_replayed :
+    ∀ {nodeId},
+      nodeId ∈ (witness.starInsertion).graph.nodes →
+        nodeId ∈ record.replayedSelectedNodes
+
+namespace PhantomAdapterEmbedding
+
+/-- A persisted phantom-adapter artifact node is replayed by the selected branch. -/
+theorem artifactNode_replayed
+    {outputPort inputPort productContract label : Type}
+    [DecidableEq outputPort]
+    [DecidableEq inputPort]
+    {record :
+      SelectedBranchRecoveryRecord family policy contractOk context budget}
+    {witness :
+      LinearPortGraph.PhantomAdapterWitness
+        node
+        outputPort
+        inputPort
+        productContract
+        label}
+    {artifactNode : node}
+    (hEmbedding : PhantomAdapterEmbedding record witness artifactNode) :
+    artifactNode ∈ record.replayedSelectedNodes :=
+  hEmbedding.starInsertion_nodes_replayed hEmbedding.artifactNode_mem_starInsertion
+
+end PhantomAdapterEmbedding
 
 /-- The replayed rewrite is the retained-owner append rewrite for the selected fragment. -/
 theorem replayedRewrite_eq_appendAfter
@@ -311,6 +369,98 @@ theorem selectedBranch_unselected_not_replayed
     hUnselectedMem
     hDifferent
     hNode
+
+/-- Selected-branch recovery with an embedded phantom adapter stays linear and prunes other arms.
+
+The embedding premise is the non-vacuous handoff: it ties the persisted
+phantom-adapter artifact and the proof-side `PhantomAdapterWitness` to the
+selected branch replayed by recovery. With that bridge, every star-insertion
+node is replayed as selected, while the same node cannot belong to any
+unselected branch fragment. -/
+theorem selectedBranch_recovery_embeddedPhantomAdapter_linear_and_prunes
+    {outputPort inputPort productContract label : Type}
+    [DecidableEq outputPort]
+    [DecidableEq inputPort]
+    {family : LatentBranchFamily node arm}
+    {policy : RuntimeNamespacePolicy node}
+    {contractOk : Graph node → Prop}
+    {context : PlanningContext node}
+    {budget : RewriteBudget}
+    (record :
+      SelectedBranchRecoveryRecord family policy contractOk context budget)
+    (witness :
+      LinearPortGraph.PhantomAdapterWitness
+        node
+        outputPort
+        inputPort
+        productContract
+        label)
+    {artifactNode : node}
+    (hEmbedding :
+      SelectedBranchRecoveryRecord.PhantomAdapterEmbedding
+        record
+        witness
+        artifactNode)
+    {unselected : arm}
+    (hUnselectedMem : unselected ∈ family.arms)
+    (hDifferent : unselected ≠ record.actualize.selected)
+    {adapterNode : node}
+    (hAdapterNode : adapterNode ∈ (witness.starInsertion).graph.nodes) :
+    (witness.starInsertion).graph.PortLinear ∧
+      adapterNode ∈ record.replayedSelectedNodes ∧
+        adapterNode ∉ family.fragmentNodes unselected := by
+  have hReplayed :
+      adapterNode ∈ record.replayedSelectedNodes :=
+    hEmbedding.starInsertion_nodes_replayed hAdapterNode
+  have hPruned :
+      adapterNode ∉ family.fragmentNodes unselected := by
+    intro hUnselectedNode
+    exact
+      (selectedBranch_unselected_not_replayed
+        record
+        hUnselectedMem
+        hDifferent
+        hUnselectedNode)
+        hReplayed
+  exact
+    ⟨ LinearPortGraph.PhantomAdapterWitness.starInsertion_portLinear witness
+    , ⟨ hReplayed, hPruned ⟩
+    ⟩
+
+/-- The persisted phantom-adapter artifact node is replayed by the selected branch and absent from
+every unselected branch fragment. -/
+theorem selectedBranch_recovery_embeddedPhantomAdapter_artifact_replayed_and_pruned
+    {outputPort inputPort productContract label : Type}
+    [DecidableEq outputPort]
+    [DecidableEq inputPort]
+    (record :
+      SelectedBranchRecoveryRecord family policy contractOk context budget)
+    (witness :
+      LinearPortGraph.PhantomAdapterWitness
+        node
+        outputPort
+        inputPort
+        productContract
+        label)
+    {artifactNode : node}
+    (hEmbedding :
+      SelectedBranchRecoveryRecord.PhantomAdapterEmbedding
+        record
+        witness
+        artifactNode)
+    {unselected : arm}
+    (hUnselectedMem : unselected ∈ family.arms)
+    (hDifferent : unselected ≠ record.actualize.selected) :
+    (witness.starInsertion).graph.PortLinear ∧
+      artifactNode ∈ record.replayedSelectedNodes ∧
+        artifactNode ∉ family.fragmentNodes unselected :=
+  selectedBranch_recovery_embeddedPhantomAdapter_linear_and_prunes
+    record
+    witness
+    hEmbedding
+    hUnselectedMem
+    hDifferent
+    hEmbedding.artifactNode_mem_starInsertion
 
 /-- Namespaced unselected branch nodes are absent from the constructed delta topology.
 
