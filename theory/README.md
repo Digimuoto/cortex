@@ -373,6 +373,87 @@ Mechanized results now include:
   bulk-frontier source-linearity preservation and match-set exactness are part of the primitive
   graph-admission carrier. Recursive admission of bound graph expressions remains an explicit
   follow-up obligation.
+- `AdmissionArtifact.PrimitiveTraceFrame`, `AdmissionArtifact.PrimitiveTraceStep`,
+  `AdmissionArtifact.PrimitiveTraceReplays`, `AdmissionArtifact.PrimitiveTraceStackValid`, and
+  `AdmissionArtifact.validatorReady_primitiveTraceStackValid`: decoded Haskell admission artifacts
+  must replay primitive `empty`/node/binding/overlay/connect rows as one postorder stack whose final
+  source-visible node, binding, frontier, and connection ledgers match the artifact summary. Select
+  condition branch-choice exits remain primitive bridge exits but are erased from the source-visible
+  final frontier before comparison. `AdmissionArtifact.SelectBridgeEntriesConsumed`,
+  `AdmissionArtifact.PhantomBridgeBulkConnectionsReplayed`,
+  `AdmissionArtifact.validatorReady_primitiveConnect_compatiblePair_replayed`,
+  `AdmissionArtifact.validatorReady_primitiveConnect_compatiblePair_consumed`,
+  `AdmissionArtifact.validatorReady_summary_connection_replayedByPrimitiveMatch`,
+  `AdmissionArtifact.validatorReady_primitiveMatchedConnection_in_summary`,
+  `AdmissionArtifact.validatorReady_primitiveOverlay_mem_prefixAvailable`, and
+  `AdmissionArtifact.validatorReady_primitiveConnect_mem_prefixAvailable` additionally expose exact
+  bridge replay, compatible-pair consumption, raw-edge summary projection, and prefix-order
+  availability for overlay/connect rows, so those bridge rows cannot be justified by
+  shape-compatible but unrelated replay. `AdmissionArtifact.primitiveTraceStepCheck`,
+  `AdmissionArtifact.primitiveTraceReplayCheck`, `AdmissionArtifact.primitiveTraceStackValidCheck`,
+  and `AdmissionArtifact.primitiveTraceStackValidCheck_sound` are the first Lean-owned executable
+  checker slice for this artifact contract: a successful primitive-stack check implies the
+  relational `PrimitiveTraceStackValid` field required by `ValidatorReady`.
+  `AdmissionArtifact.ValidatorReadyCore`, `AdmissionArtifact.validatorReadyCoreCheck`, and
+  `AdmissionArtifact.validatorReadyCoreCheck_sound` extend that strategy to a representative
+  executable validator core: schema version, summary-key uniqueness, summary-row validity,
+  component-row uniqueness, primitive row validity, and primitive stack replay.
+  `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
+  `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
+  generated-child or empty-family row for each generated artifact, rather than only a label
+  membership fact. `AdmissionArtifact.validatorReady_generated_usedChild_sourceMakeItem` then
+  carries each surviving generated child through the decoded source-row-to-`MakeItem` projection,
+  `AdmissionArtifact.validatorReady_generated_usedChild_uniqueSourceMakeItem` makes that projected
+  source item unique by generated label, and
+  `AdmissionArtifact.validatorReady_generated_make_usedChild_sourceMakeItem_value_empty` specializes
+  the bridge to `make` rows whose generated source items have no static payload. Static `makeEach`
+  record payloads expose duplicate-free serialized and converted field labels through
+  `AdmissionArtifact.validatorReady_generated_sourceChild_staticRecordFieldsUnique` and
+  `AdmissionArtifact.validatorReady_generated_sourceChild_staticRecordFieldsUnique_toStaticValue`.
+  The decoded artifact surface also exposes select body-shape branch facts
+  (`AdmissionArtifact.validatorReady_select_identityArm_bridgeShape`,
+  `AdmissionArtifact.validatorReady_select_nonIdentityArm_bodyShapes`) plus the source exclusive
+  group shared by persisted base variants
+  (`AdmissionArtifact.validatorReady_select_variantsShareExclusiveGroup`,
+  `AdmissionArtifact.validatorReady_select_variants_sameSourceNode`).
+  `AdmissionArtifact.SelectAdmissionArtifact.toLatentSelectAdmission` projects decoded select rows
+  into the generic `SelectAdmission.LatentSelectAdmission` key carrier, with decoded arm rows kept
+  as latent metadata rather than claimed executable branch fragments; the
+  `AdmissionArtifact.SelectAdmissionArtifact.toLatentSelectAdmission_entry_sourceArm` and
+  `AdmissionArtifact.validatorReady_select_latentEntry_sourceArm` accessors expose that every latent
+  body in this projection is exactly one persisted source arm row, and
+  `AdmissionArtifact.validatorReady_select_latentEntry_bodyNodeFresh` plus
+  `AdmissionArtifact.validatorReady_select_latentEntries_bodyNodesDisjoint` carry the serialized
+  body-node freshness/disjointness facts through that projection. The decoded artifact surface also
+  exposes record/indexed phantom product row facts
+  (`AdmissionArtifact.validatorReady_phantomAdapter_product_contractValid`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_record_multi_boundary_labeled`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_record_multi_boundary_field_mem`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_record_singular_contract_eq`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_record_multi_length_eq`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_indexed_multi_contract_eq`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_indexed_multiCompatibilityShapesUnique`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_indexed_singular_contract_eq`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_indexed_elementValid`,
+  `AdmissionArtifact.validatorReady_phantomAdapter_indexed_elementNominal`) for the Haskell
+  validator-ready payload. Direction-specific replay accessors such as
+  `AdmissionArtifact.validatorReady_phantomAdapter_gather_multiEndpoint_replayed` and
+  `AdmissionArtifact.validatorReady_phantomAdapter_scatter_multiEndpoint_replayed` combine the
+  phantom row's endpoint partition with primitive matched-connection replay, so every source-visible
+  multi/singular side has a replayed primitive contraction row in the expected gather/scatter
+  position. Schema version 3 additionally makes the record product's aggregate contract explicit, so
+  Lean can compare the serialized product row to the singular endpoint rather than inferring the
+  record contract from field rows; the validator-ready indexed-product surface also rejects nested
+  indexed elements and exposes duplicate-free indexed multi-side compatibility keys, matching the
+  source grammar's nominal element position and the executable `*` duplicate-key check.
+  `AdmissionArtifact.PrimitiveSound`, `AdmissionArtifact.GeneratedSound`,
+  `AdmissionArtifact.SelectSound`, `AdmissionArtifact.PhantomSound`, `AdmissionArtifact.Sound`, and
+  `AdmissionArtifact.validatorReady_sound` now name the proof-facing cutline for this decoded
+  artifact layer: Haskell validation should establish `AdmissionArtifact.ValidatorReady`, and Lean
+  then exposes the grouped primitive, generated-form, select, and phantom-adapter consequences
+  without downstream proofs depending on checker-internal field layout. This is still not a
+  completeness proof that the Haskell compiler emits such an artifact for every accepted Wire
+  program; it is the reusable target that such a proof must hit.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished
@@ -533,14 +614,17 @@ Mechanized results now include:
   actualization then preserve the envelope when the runtime supplies the corresponding materialized
   Pulse DAG/state witness.
 - `SelectedBranchRecoveryRecord`, `SelectedBranchRecoveryRecord.Provenance`,
-  `PersistedSelectedBranchAdmission`, `replayedRewrite_eq_of_selected_eq`,
-  `selectedBranch_recovery_deterministic`, `selectedBranch_unselected_not_replayed`,
-  `selectedBranch_unselected_not_in_delta_topology`, and
+  `SelectedBranchRecoveryRecord.PhantomAdapterEmbedding`, `PersistedSelectedBranchAdmission`,
+  `replayedRewrite_eq_of_selected_eq`, `selectedBranch_recovery_deterministic`,
+  `selectedBranch_unselected_not_replayed`, `selectedBranch_unselected_not_in_delta_topology`,
+  `selectedBranch_recovery_embeddedPhantomAdapter_artifact_replayed_and_pruned`, and
   `selectedBranch_recovery_preserves_safeRunState`: selected-branch recovery records loaded from the
   same persisted admission replay the same selected append rewrite, constructed delta, and remaining
   budget; unselected branch nodes stay out of the raw replayed fragment and, under namespace
-  freshness, the constructed selected-branch delta topology; the record then feeds the existing
-  Wire/Pulse safe-run preservation theorem.
+  freshness, the constructed selected-branch delta topology; when a phantom-adapter witness is
+  embedded in the selected branch, its persisted artifact node is replayed and still pruned from
+  every unselected branch; the record then feeds the existing Wire/Pulse safe-run preservation
+  theorem.
 - `SelectAdmission.SelectableOutputShape`, `SelectAdmission.SelectArm`,
   `SelectAdmission.SelectExpr`, `SelectAdmission.SelectAdmissionError`,
   `SelectAdmission.LatentSelectAdmission`,

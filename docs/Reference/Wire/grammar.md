@@ -351,6 +351,10 @@ Projection indices must be integer literals in range. Lowered node identities re
 list binding. Items may be strings or records with a string `label` field. Generated nodes use
 `<binding>_<label>` identities. `K` must declare either one `PortLabel` parameter, or
 `PortLabel, Value` when the full item record should be passed into the generated kind application.
+When that `Value` parameter is used, each item payload must be representable as the proof-side
+static-value subset: strings, booleans, natural numbers, lists, and records whose fields recursively
+contain values from the same subset. Record keys are flat field labels; dotted field paths are
+rejected and duplicate record fields are rejected before admission artifacts are emitted.
 
 ### Source Includes
 

@@ -16,6 +16,7 @@ Wire-layer research synthesis retained because it still feeds current language d
 | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | 2026-04-23 | [Wire composition sugar - operators, templates, lambdas, combinator executors](2026-04-23-wire-composition-sugar.md) |
 | 2026-05-07 | [Wire frontier binding syntax](2026-05-07-wire-frontier-binding-syntax.md)                                           |
+| 2026-05-10 | [Wire admission correspondence after PR 189](2026-05-10-wire-admission-correspondence.md)                            |
 
 ## Related
 

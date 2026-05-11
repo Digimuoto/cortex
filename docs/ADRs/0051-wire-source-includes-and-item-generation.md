@@ -52,6 +52,12 @@ reference with either:
 - one `PortLabel` parameter; or
 - `PortLabel, Value`, where the full item is passed as the value argument.
 
+For `PortLabel, Value` kinds, item payloads are restricted to the proof-side static-value subset:
+strings, booleans, natural numbers, lists, and records whose fields recursively contain values from
+the same subset. Record keys are flat, duplicate-free field labels; dotted field paths and general
+CorePure expressions remain valid in runtime value positions, but not as `makeEach`
+source-generation payloads.
+
 Generated nodes are named `<binding>_<item.label>`. `makeEach` remains a source macro: it is valid
 only in the same binding positions as `make(N, K)`.
 

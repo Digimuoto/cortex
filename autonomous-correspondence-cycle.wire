@@ -1,0 +1,602 @@
+# Autonomous Cortex correspondence cycle sketch.
+#
+# This is intentionally aspirational Wire. It sketches the "blessed" part of
+# the PR #189 workflow as a durable graph: gather context, attack claims,
+# classify gaps, implement one bounded slice, validate, publish, journal, and
+# either stop or rewrite the graph for the next bounded iteration.
+#
+# It assumes a future Logos/Cortex executor library with repo, git, GitHub,
+# Lean, Haskell, doc, journal, and graph-rewrite tools. The shape is the point;
+# this file is not expected to compile with the current std library.
+
+use logos.repo.{
+  @repo.snapshot,
+  @repo.diff_scope,
+  @repo.read_journal,
+  @repo.write_journal,
+  @repo.issue_index
+};
+
+use logos.review.{
+  @lean.theorem_attack,
+  @lean.style_review,
+  @haskell.style_review,
+  @docs.scope_review,
+  @architecture.archetype_passes
+};
+
+use logos.work.{
+  @implementation.apply_slice,
+  @validation.run_matrix,
+  @git.commit_signed,
+  @git.push_branch,
+  @github.pr_checks,
+  @ci.repair
+};
+
+use logos.wire.{@wire.propose_rewrite, @wire.apply_rewrite};
+
+contract RunRequest;
+contract RunCharter;
+contract RepoSnapshot;
+contract DiffScope;
+contract JournalMemory;
+contract IssueStack;
+contract CorrespondenceMap;
+contract ReviewBundle;
+contract FindingSet;
+contract Triage;
+contract SlicePlan;
+contract PatchSet;
+contract ValidationPlan;
+contract ValidationReport;
+contract PublishRecord;
+contract CiSnapshot;
+contract JournalEntry;
+contract RewriteProposal;
+contract FinalReport;
+
+node intake
+  -> request: RunRequest = request;
+  where let
+    request = {
+      branch = "174-wire-admission-witness-artifacts";
+      pr = 189;
+      journal = ".agent-journal/wire-admission-witness-artifacts.md";
+      objective = "Advance Haskell-to-Lean Wire admission correspondence without widening scope.";
+      hardStops = [
+        "no P1/P2 theorem-attack findings",
+        "validator-ready contract mirrored in Haskell and Lean",
+        "compiler metadata emission gated by executable validator",
+        "tests cover primitive/generated/phantom/select artifact families",
+        "docs state remaining witness-production boundary",
+        "two consecutive optional-accessor-only slices"
+      ];
+      forbidden = [
+        "invent runtime correctness claims not carried by theorem statements",
+        "add proof accessors without a downstream obligation",
+        "publish with failing local gates",
+        "rewrite shared history without explicit squash/ship phase"
+      ];
+    };
+  in
+  { inherit request; };
+
+node charter
+  <- request: RunRequest;
+  -> charter: RunCharter = charter;
+  where let
+    coreDone = [
+      "artifact emitted",
+      "artifact decoded",
+      "artifact executable-validator-ready",
+      "Lean mirror exists",
+      "Lean ValidatorReady mirror exists",
+      "source docs ledger synced"
+    ];
+    nextWorkRule = [
+      "prefer executable bug or forged-artifact rejection",
+      "then required Lean bridge for a named witness obligation",
+      "then docs if prose overclaims",
+      "stop before optional ergonomics churn"
+    ];
+    charter = {
+      inherit request coreDone nextWorkRule;
+      commitPolicy = {
+        signed = true;
+        provenanceRange = "origin/main..HEAD";
+      };
+      validationPolicy = {
+        haskell = ["just test", "just lint", "just fmt-check"];
+        lean = ["just lean-lint", "just lean-check"];
+        docs = ["just docs-lint"];
+        universal = ["git diff --check"];
+      };
+    };
+  in
+  { inherit charter; };
+
+node repo_snapshot
+  <- charter: RunCharter;
+  -> snapshot: RepoSnapshot;
+= @repo.snapshot {
+  includeStatus = true;
+  includeBranch = true;
+  includeHead = true;
+  preserveDirtyFiles = true;
+} (charter);
+
+node diff_scope
+  <- snapshot: RepoSnapshot;
+  -> scope: DiffScope;
+= @repo.diff_scope {
+  base = "origin/main";
+  include = [
+    "src/Cortex/Wire/**/*.hs",
+    "test/Cortex/Wire/**/*.hs",
+    "theory/Cortex/Wire/**/*.lean",
+    "theory/README.md",
+    "docs/ADRs/**/*.md",
+    "docs/Reference/**/*.md",
+    "examples/wire/**/*.wire"
+  ];
+} (snapshot);
+
+node journal_memory
+  <- charter: RunCharter;
+  -> memory: JournalMemory;
+= @repo.read_journal {
+  primary = ".agent-journal/wire-admission-witness-artifacts.md";
+  fallback = ".codex-journal/wire-compiler-finish-line.md";
+  summarize = true;
+  preserveTimestamps = true;
+} (charter);
+
+node issue_stack
+  <- charter: RunCharter;
+  -> issues: IssueStack;
+= @repo.issue_index {
+  pr = 189;
+  labels = ["wire", "lean", "compiler", "proof"];
+  includeOpenReviewThreads = true;
+  includeCiState = true;
+} (charter);
+
+node correspondence_map
+  <- scope: DiffScope;
+  <- memory: JournalMemory;
+  <- issues: IssueStack;
+  -> map: CorrespondenceMap = map;
+  where let
+    surfaces = [
+      {
+        name = "primitive replay";
+        haskell = "wireAdmissionPrimitiveTraceStackValid";
+        lean = "WireAdmissionArtifact.PrimitiveTraceStackValid";
+        required = true;
+      },
+      {
+        name = "generated forms";
+        haskell = "wireAdmissionGeneratedChildFrontiersMatchPrimitive";
+        lean = "GeneratedChildFrontiersMatchPrimitive";
+        required = true;
+      },
+      {
+        name = "phantom adapters";
+        haskell = "wireAdmissionPhantomBridgeBulkConnectionsReplayed";
+        lean = "PhantomBridgeBulkConnectionsReplayed";
+        required = true;
+      },
+      {
+        name = "select admission";
+        haskell = "wireAdmissionSelectArmBodyBoundariesMatchCondition";
+        lean = "SelectArmBodyBoundariesMatchCondition";
+        required = true;
+      },
+      {
+        name = "runtime proof production";
+        haskell = null;
+        lean = "ValidatorReady";
+        required = false;
+        status = "future proof-producing validator";
+      }
+    ];
+    map = {
+      inherit scope memory issues surfaces;
+      missingRequired = surfaces |> filter (surface: surface.required && surface.status == "missing");
+      optionalSurfaces = surfaces |> filter (surface: !surface.required);
+    };
+  in
+  { inherit map; };
+
+node theorem_attack
+  <- map: CorrespondenceMap;
+  -> review: ReviewBundle;
+= @lean.theorem_attack {
+  mode = "sequential";
+  lenses = ["logos", "episteme", "kritikos", "themis", "techne", "poiesis", "sophia"];
+  rejectVacuousComposition = true;
+  requireRuntimeCounterpart = true;
+  priorityFocus = ["P1", "P2"];
+} (map);
+
+node lean_style
+  <- map: CorrespondenceMap;
+  -> review: ReviewBundle;
+= @lean.style_review {
+  checkTrustedBase = true;
+  checkDocstrings = true;
+  checkAccessorChurn = true;
+  commands = ["just lean-lint"];
+} (map);
+
+node haskell_style
+  <- map: CorrespondenceMap;
+  -> review: ReviewBundle;
+= @haskell.style_review {
+  checkArtifactTruth = true;
+  checkOwnedAdtWildcards = true;
+  checkPublicJsonBoundaryTests = true;
+  checkStringlyFields = true;
+} (map);
+
+node docs_review
+  <- map: CorrespondenceMap;
+  -> review: ReviewBundle;
+= @docs.scope_review {
+  checkProofClaims = true;
+  checkAdrLedger = true;
+  checkOutOfScopeBoundary = true;
+} (map);
+
+node synthesize_findings
+  <- theorem: ReviewBundle;
+  <- lean: ReviewBundle;
+  <- haskell: ReviewBundle;
+  <- docs: ReviewBundle;
+  -> findings: FindingSet = findings;
+  where let
+    allFindings = theorem.findings ++ lean.findings ++ haskell.findings ++ docs.findings;
+    blockers = allFindings |> filter (finding: finding.priority == "P1" || finding.priority == "P2");
+    executableDrift = allFindings |> filter (finding: finding.kind == "haskell-lean-drift");
+    proofShapeRisk = allFindings |> filter (finding: finding.kind == "vacuous-theorem" || finding.kind == "accessor-churn");
+    docsOverclaim = allFindings |> filter (finding: finding.kind == "docs-overclaim");
+    findings = {
+      inherit allFindings blockers executableDrift proofShapeRisk docsOverclaim;
+      hasBlockers = length blockers > 0;
+    };
+  in
+  { inherit findings; };
+
+node triage
+  <- charter: RunCharter;
+  <- map: CorrespondenceMap;
+  <- findings: FindingSet;
+  -> implement: Triage | stop: Triage | rewrite: Triage = decision;
+  where let
+    mustFix = findings.blockers;
+    executableFirst = findings.executableDrift;
+    proofRequired = findings.proofShapeRisk |> filter (finding: finding.requiredByDownstreamProof);
+    docOnly = findings.docsOverclaim;
+    optionalOnly = length mustFix == 0 && length executableFirst == 0 && length proofRequired == 0;
+    shouldStop = optionalOnly || length map.missingRequired == 0 && charter.request.objectiveSatisfied;
+    selected =
+      if length executableFirst > 0 then executableFirst
+      else if length mustFix > 0 then mustFix
+      else if length proofRequired > 0 then proofRequired
+      else docOnly;
+    decision =
+      if shouldStop then { stop = { reason = "core correspondence boundary met"; selected = []; } }
+      else if length selected > 0 then { implement = { inherit selected; maxFiles = 6; maxCommits = 2; } }
+      else { rewrite = { reason = "no bounded slice found; request a narrower graph"; } };
+  in
+  decision;
+
+node plan_slice
+  <- implement: Triage;
+  -> plan: SlicePlan = plan;
+  where let
+    selected = implement.selected;
+    hasHaskell = selected |> any (finding: finding.surface == "haskell" || finding.kind == "haskell-lean-drift");
+    hasLean = selected |> any (finding: finding.surface == "lean" || finding.kind == "vacuous-theorem");
+    hasDocs = selected |> any (finding: finding.kind == "docs-overclaim");
+    commands =
+      (if hasHaskell then ["just test", "just lint"] else []) ++
+      (if hasLean then ["just lean-lint", "just lean-check"] else []) ++
+      (if hasDocs then ["just docs-lint"] else []) ++
+      ["just fmt-check", "git diff --check"];
+    plan = {
+      title = selected |> map (finding: finding.title) |> joinWith "; ";
+      edits = selected |> map (finding: finding.repair);
+      inherit commands;
+      commitSubject = selected |> first |> (finding: finding.commitSubject);
+      stopIf = [
+        "requires new architecture decision",
+        "third consecutive optional accessor",
+        "validation failure not explained by edited files",
+        "work exceeds maxFiles or maxCommits"
+      ];
+    };
+  in
+  { inherit plan; };
+
+node apply_slice
+  <- plan: SlicePlan;
+  -> patch: PatchSet;
+= @implementation.apply_slice {
+  useApplyPatch = true;
+  preserveUserChanges = true;
+  avoidUnrelatedRefactors = true;
+  updateDocsWithScopeChange = true;
+} (plan);
+
+node validation_plan
+  <- plan: SlicePlan;
+  <- patch: PatchSet;
+  -> validation: ValidationPlan = validation;
+  where let
+    files = patch.files;
+    leanFiles = files |> filter (file: endsWith file ".lean");
+    haskellFiles = files |> filter (file: endsWith file ".hs");
+    docsFiles = files |> filter (file: endsWith file ".md");
+    commands =
+      (if length leanFiles > 0 then ["just lean-lint", "just lean-check"] else []) ++
+      (if length haskellFiles > 0 then ["just test", "just lint"] else []) ++
+      (if length docsFiles > 0 then ["just docs-lint"] else []) ++
+      ["just fmt-check", "git diff --check"];
+    validation = {
+      inherit files leanFiles haskellFiles docsFiles commands;
+      fullEnough = length commands > 2;
+    };
+  in
+  { inherit validation; };
+
+node validate
+  <- validation: ValidationPlan;
+  -> passed: ValidationReport | failed: ValidationReport;
+= @validation.run_matrix {
+  stopOnFirstFailure = true;
+  captureLogs = true;
+  classifyFailure = true;
+} (validation);
+
+node repair_validation
+  <- failed: ValidationReport;
+  -> patch: PatchSet;
+= @implementation.apply_slice {
+  mode = "validation-repair";
+  preserveOriginalScope = true;
+  rejectScopeExpansion = true;
+} (failed);
+
+node publish
+  <- passed: ValidationReport;
+  -> published: PublishRecord;
+= @git.commit_signed {
+  sign = true;
+  signoff = true;
+  verifyCommit = true;
+  provenance = "origin/main..HEAD";
+  subjectFromPlan = true;
+} (passed);
+
+node push
+  <- published: PublishRecord;
+  -> published: PublishRecord;
+= @git.push_branch {
+  branch = "174-wire-admission-witness-artifacts";
+  forceWithLeaseOnlyIfRewritten = true;
+} (published);
+
+node ci_snapshot
+  <- published: PublishRecord;
+  -> ci: CiSnapshot;
+= @github.pr_checks {
+  pr = 189;
+  unsetTokens = true;
+  wait = "short";
+} (published);
+
+node ci_gate
+  <- ci: CiSnapshot;
+  -> ok: CiSnapshot | repair: CiSnapshot | pending: CiSnapshot = decision;
+  where let
+    failing = ci.checks |> filter (check: check.conclusion == "failure");
+    pending = ci.checks |> filter (check: check.status == "pending" || check.status == "queued");
+    decision =
+      if length failing > 0 then { repair = ci }
+      else if length pending > 0 then { pending = ci }
+      else { ok = ci };
+  in
+  decision;
+
+node repair_ci
+  <- repair: CiSnapshot;
+  -> patch: PatchSet;
+= @ci.repair {
+  preserveScope = true;
+  reproduceLocallyFirst = true;
+} (repair);
+
+node journal_slice
+  <- charter: RunCharter;
+  <- map: CorrespondenceMap;
+  <- findings: FindingSet;
+  <- published: PublishRecord;
+  <- ci: CiSnapshot;
+  -> entry: JournalEntry;
+= @repo.write_journal {
+  path = ".agent-journal/wire-admission-witness-artifacts.md";
+  include = [
+    "timestamp",
+    "input signal",
+    "files changed",
+    "theorem/test/doc names",
+    "validation commands",
+    "commit hash",
+    "ci state",
+    "next target",
+    "stop rationale if optional-only"
+  ];
+} (charter, map, findings, published, ci);
+
+node propose_next_cycle
+  <- charter: RunCharter;
+  <- findings: FindingSet;
+  <- ci: CiSnapshot;
+  <- entry: JournalEntry;
+  -> done: FinalReport | rewrite: RewriteProposal = decision;
+  where let
+    blockingFindings = findings.blockers;
+    ciGreen = ci.state == "green";
+    optionalOnly = length blockingFindings == 0 && findings.optionalOnly;
+    shouldStop = optionalOnly && ciGreen;
+    decision =
+      if shouldStop then {
+        done = {
+          result = "stop";
+          reason = "core correspondence boundary is met; remaining work is follow-up proof ergonomics";
+          journalEntry = entry;
+        };
+      } else {
+        rewrite = {
+          title = "append bounded correspondence iteration";
+          authority = "charter";
+          budget = { nodes = 18; edges = 48; depth = 8; frontier = 16; ops = 6; };
+          instruction = "Append one bounded iteration targeting the highest-priority unclosed Haskell/Lean correspondence gap. Do not add optional accessors unless tied to a named witness obligation.";
+          seed = {
+            findings = blockingFindings;
+            inherit ci;
+            journalEntry = entry;
+          };
+        };
+      };
+  in
+  decision;
+
+node apply_cycle_rewrite
+  <- rewrite: RewriteProposal;
+  -> request: RunRequest;
+= @wire.apply_rewrite {
+  requireBudget = true;
+  requireFrontierPreservation = true;
+  preserveJournalInput = true;
+  preserveStopConditions = true;
+} (rewrite);
+
+node final_report
+  <- stop: Triage;
+  -> done: FinalReport = done;
+  where let
+    done = {
+      result = "stop";
+      reason = stop.reason;
+      remaining = stop.selected;
+    };
+  in
+  { inherit done; };
+
+node workflow_metadata
+  <- done: FinalReport;
+  -> done: FinalReport;
+= @cortex.workflow {
+  workflowId = "wire_correspondence_autonomous_cycle";
+  displayLabel = "Wire Correspondence Autonomous Cycle";
+  displayDescription = "A bounded autonomous loop for advancing Haskell-to-Lean Wire admission correspondence while preventing optional proof-surface churn.";
+  selectable = false;
+  stageGraph = [
+    "intake",
+    "context",
+    "review_lenses",
+    "triage",
+    "implementation",
+    "validation",
+    "publish",
+    "journal",
+    "rewrite_or_stop"
+  ];
+  stageModelPolicy = {
+    theorem_attack = "frontier-reasoning";
+    implementation = "coding";
+    publish = "deterministic";
+  };
+  features = {
+    adaptationPoints = {
+      propose_next_cycle = {
+        maxBranches = 1;
+        propagateRewriteAuthority = true;
+        promptSchema = {
+          type = "string";
+          description = "Return either an empty string to stop or a bounded Wire append proposal that targets one required Haskell/Lean correspondence gap.";
+        };
+        budgetSlice = {
+          nodes = 18;
+          edges = 48;
+          depth = 8;
+          frontier = 16;
+          ops = 6;
+        };
+      };
+    };
+    stopPolicy = {
+      hardStopAfterOptionalAccessorOnlySlices = 2;
+      requireHumanReviewBeforeSquash = true;
+      requireNoP1P2BeforeShip = true;
+    };
+  };
+} (done);
+
+export let context =
+  intake
+    => charter
+    => (repo_snapshot <> journal_memory <> issue_stack)
+    => diff_scope
+    => correspondence_map;
+
+export let review_lenses =
+  (theorem_attack <> lean_style <> haskell_style <> docs_review)
+    => synthesize_findings;
+
+export let implementation_cycle =
+  triage select(
+    stop: final_report,
+    implement:
+      plan_slice
+        => apply_slice
+	        => validation_plan
+	        => validate select(
+	          failed:
+	            repair_validation
+	              => validation_plan
+	              => validate,
+	          passed:
+	            publish
+	              => push
+	              => ci_snapshot
+	              => ci_gate select(
+	                repair:
+	                  repair_ci
+	                    => validation_plan
+	                    => validate,
+	                pending:
+	                  journal_slice
+	                    => propose_next_cycle,
+	                ok:
+	                  journal_slice
+	                    => propose_next_cycle
+	              )
+	        ),
+	    rewrite: apply_cycle_rewrite
+  );
+
+export let wire_correspondence_autonomous_cycle =
+  context
+	    => review_lenses
+	    => implementation_cycle select(
+	      done: workflow_metadata,
+	      rewrite:
+	        apply_cycle_rewrite
+	          => charter
+	    );
+
+wire_correspondence_autonomous_cycle
