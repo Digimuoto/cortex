@@ -469,7 +469,12 @@ Mechanized results now include:
   projected item provenance for every surviving generated child, primitive-backed child frontiers,
   primitive frontier-key accounting, canonical value-free `make` payloads, and decoded static-value
   projection. It deliberately stops short of `KindInstantiatedFrontiers` and `MakeWitness` until
-  accepted-kind substitution evidence is present.
+  accepted-kind substitution evidence is present. `AdmissionArtifact.PhantomReconstruction`
+  reconstructs the corresponding phantom-adapter artifact evidence: the generated adapter node's
+  primitive backing, a source-linear open phantom node object, primitive frontier-key accounting,
+  left/right bulk replay, direction-specific multi/singular endpoint coverage, and record or
+  bounded-indexed product facts. It deliberately stops short of `PhantomAdapterWitness` until full
+  graph reconstruction supplies operand objects and certified `BulkContract` traces.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished

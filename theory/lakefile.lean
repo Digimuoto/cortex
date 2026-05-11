@@ -64,6 +64,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.AdmissionArtifact.Generated,
     `Cortex.Wire.AdmissionArtifact.GeneratedReconstruction,
     `Cortex.Wire.AdmissionArtifact.Phantom,
+    `Cortex.Wire.AdmissionArtifact.PhantomReconstruction,
     `Cortex.Wire.AdmissionArtifact.Primitive,
     `Cortex.Wire.AdmissionArtifact.PrimitiveReconstruction,
     `Cortex.Wire.AdmissionArtifact.PrimitiveTraceCheck,

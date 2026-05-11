@@ -135,6 +135,13 @@ rows.
   accounting through primitive replay, canonical value-free `make` payloads, and decoded static
   payload projection. This is intentionally not yet `KindInstantiatedFrontiers` or `MakeWitness`;
   accepted-kind substitution evidence is still the next boundary.
+- Phantom-adapter artifacts now also reconstruct at the artifact boundary:
+  `AdmissionArtifact.PhantomReconstruction`. `AdmissionArtifact.Sound.toPhantomReconstruction`
+  proves that every persisted `*` row has a primitive-backed generated adapter node, a source-linear
+  open phantom-node object, frontier-key accounting through primitive replay, replayed left/right
+  bulk rows, direction-specific multi/singular endpoint coverage, and record or bounded-indexed
+  product-shape evidence. This is intentionally not yet `PhantomAdapterWitness`: the serialized row
+  does not contain the left/right operand objects or certified `BulkContract` traces.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph
