@@ -36,17 +36,18 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Char qualified as Char
 import Data.Foldable (foldlM, traverse_)
 import Data.Int (Int32)
-import Data.List (nub, nubBy)
+import Data.List (nub, nubBy, sortOn)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Vector qualified as Vector
+import Numeric.Natural (Natural)
 
 import Cortex.Algebra.Graph
   ( Relation
@@ -62,6 +63,35 @@ import Cortex.Algebra.Graph
   )
 import Cortex.Pulse.Memory.Types (MemoryStrategy (..))
 import Cortex.Wire.AST qualified as WireCore
+import Cortex.Wire.AdmissionArtifact
+  ( AdmissionBoundaryPort (..)
+  , AdmissionConnection (..)
+  , AdmissionPortLabel (..)
+  , AdmissionStaticField (..)
+  , AdmissionStaticValue (..)
+  , GeneratedChildArtifact (..)
+  , GeneratedChildSourceArtifact (..)
+  , GeneratedFormArtifact (..)
+  , GeneratedFormKind (..)
+  , PhantomAdapterArtifact (..)
+  , PhantomAdapterDirection (..)
+  , PrimitiveGraphStep (..)
+  , ProductShapeArtifact (..)
+  , SelectAdmissionArtifact (..)
+  , SelectArmAdmissionArtifact (..)
+  , SelectResolutionMode (..)
+  , SelectVariantArtifact (..)
+  , WireAdmissionArtifact (..)
+  , appendGeneratedFormArtifact
+  , appendPhantomAdapterArtifact
+  , appendPrimitiveStep
+  , appendSelectAdmissionArtifact
+  , combineWireAdmissionArtifacts
+  , emptyWireAdmissionArtifact
+  , wireAdmissionArtifactValidatorReady
+  , wireAdmissionMetadataKey
+  , wireAdmissionMetadataValue
+  )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitCompatibilityWitness (..)
   , CircuitConditionNode (..)
@@ -102,7 +132,14 @@ import Cortex.Wire.NodeBoundary
   , signalNodeBoundaryNormalForm
   , validateNodeBoundaryNormalForm
   )
-import Cortex.Wire.Parser (parseWireFile, renderParseError)
+import Cortex.Wire.Parser
+  ( GeneratedFamilyChild (..)
+  , GeneratedFamilyKind (..)
+  , GeneratedFamilyProvenance (..)
+  , WireParseInfo (..)
+  , parseWireFileWithInfo
+  , renderParseError
+  )
 import Cortex.Wire.Pure
   ( PureEvalError (..)
   , corePureStaticContextFromBindings
@@ -139,11 +176,11 @@ compileWireText =
 
 compileWireTextWithEnv :: WireCompileEnv -> Text -> Either WireCore.WireError CompiledCircuit
 compileWireTextWithEnv compileEnv sourceText = do
-  wireFile <-
+  (parseInfo, wireFile) <-
     mapLeft
       (WireCore.WireParseError . renderParseError)
-      (parseWireFile "wire" sourceText)
-  compileWireFileWithEnv compileEnv wireFile
+      (parseWireFileWithInfo "wire" sourceText)
+  compileWireParsedFileWithEnv compileEnv parseInfo wireFile
 
 compileWireTextWithReturn :: Text -> Text -> Either WireCore.WireError CompiledCircuit
 compileWireTextWithReturn =
@@ -152,11 +189,11 @@ compileWireTextWithReturn =
 compileWireTextWithReturnAndEnv
   :: WireCompileEnv -> Text -> Text -> Either WireCore.WireError CompiledCircuit
 compileWireTextWithReturnAndEnv compileEnv selectedReturn sourceText = do
-  wireFile <-
+  (parseInfo, wireFile) <-
     mapLeft
       (WireCore.WireParseError . renderParseError)
-      (parseWireFile "wire" sourceText)
-  compileWireFileWithReturnAndEnv compileEnv selectedReturn wireFile
+      (parseWireFileWithInfo "wire" sourceText)
+  compileWireParsedFileWithReturnAndEnv compileEnv parseInfo selectedReturn wireFile
 
 compileWireFragmentText :: Text -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentText =
@@ -165,11 +202,11 @@ compileWireFragmentText =
 compileWireFragmentTextWithEnv
   :: WireCompileEnv -> Text -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentTextWithEnv compileEnv sourceText = do
-  wireFile <-
+  (parseInfo, wireFile) <-
     mapLeft
       (WireCore.WireParseError . renderParseError)
-      (parseWireFile "wire-fragment" sourceText)
-  compileWireFragmentFileWithEnv compileEnv wireFile
+      (parseWireFileWithInfo "wire-fragment" sourceText)
+  compileWireParsedFragmentFileWithEnv compileEnv parseInfo wireFile
 
 compileWireFile :: WireFile -> Either WireCore.WireError CompiledCircuit
 compileWireFile =
@@ -178,6 +215,17 @@ compileWireFile =
 compileWireFileWithEnv :: WireCompileEnv -> WireFile -> Either WireCore.WireError CompiledCircuit
 compileWireFileWithEnv compileEnv wireFile = do
   lowered <- lowerWireFile compileEnv wireFile
+  compileLoweredWireFile compileEnv True wireFile lowered
+
+compileWireParsedFileWithEnv
+  :: WireCompileEnv -> WireParseInfo -> WireFile -> Either WireCore.WireError CompiledCircuit
+compileWireParsedFileWithEnv compileEnv parseInfo wireFile = do
+  lowered <-
+    lowerWireFileWithProvenance
+      compileEnv
+      parseInfo.wireParseGeneratedFamilies
+      RequireAllDeclaredNodesUsed
+      wireFile
   compileLoweredWireFile compileEnv True wireFile lowered
 
 compileWireFileWithReturn :: Text -> WireFile -> Either WireCore.WireError CompiledCircuit
@@ -195,6 +243,26 @@ compileWireFileWithReturnAndEnv compileEnv selectedReturn wireFile =
         lowered <- lowerWireFileWithUnusedPolicy compileEnv AllowUnusedDeclaredNodes selectedWireFile
         compileLoweredWireFile compileEnv True selectedWireFile lowered
 
+compileWireParsedFileWithReturnAndEnv
+  :: WireCompileEnv
+  -> WireParseInfo
+  -> Text
+  -> WireFile
+  -> Either WireCore.WireError CompiledCircuit
+compileWireParsedFileWithReturnAndEnv compileEnv parseInfo selectedReturn wireFile =
+  let selectedWireFile =
+        wireFile
+          { wireFileReturn = Just (ExprIdent (QName (selectedReturn :| [])))
+          }
+   in do
+        lowered <-
+          lowerWireFileWithProvenance
+            compileEnv
+            parseInfo.wireParseGeneratedFamilies
+            AllowUnusedDeclaredNodes
+            selectedWireFile
+        compileLoweredWireFile compileEnv True selectedWireFile lowered
+
 compileWireFragmentFile :: WireFile -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentFile =
   compileWireFragmentFileWithEnv emptyWireCompileEnv
@@ -203,6 +271,21 @@ compileWireFragmentFileWithEnv
   :: WireCompileEnv -> WireFile -> Either WireCore.WireError CompiledCircuit
 compileWireFragmentFileWithEnv compileEnv wireFile = do
   lowered <- lowerWireFile compileEnv wireFile
+  compileLoweredWireFile compileEnv False wireFile lowered
+
+-- Text entry points retain parser expansion provenance, so they can emit generated-form
+-- admission artifacts for `make`/`makeEach`. Public `WireFile` values are plain surface syntax;
+-- their compile path intentionally uses empty provenance rather than trusting caller-supplied
+-- generation claims.
+compileWireParsedFragmentFileWithEnv
+  :: WireCompileEnv -> WireParseInfo -> WireFile -> Either WireCore.WireError CompiledCircuit
+compileWireParsedFragmentFileWithEnv compileEnv parseInfo wireFile = do
+  lowered <-
+    lowerWireFileWithProvenance
+      compileEnv
+      parseInfo.wireParseGeneratedFamilies
+      RequireAllDeclaredNodesUsed
+      wireFile
   compileLoweredWireFile compileEnv False wireFile lowered
 
 compileLoweredWireFile
@@ -229,10 +312,11 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
         (Map.keysSet lowered.lwfFragment.gfNodes)
         lowered.lwfFragment.gfEntries
         lowered.lwfFragment.gfConnections
+  admission <- validateWireAdmissionArtifact lowered.lwfFragment.gfAdmission
   let metadataValue =
-        fromMaybe
-          (Aeson.object ["format" Aeson..= ("cortex.workflow.wire" :: Text)])
+        attachAdmissionMetadata
           lowered.lwfMetadata
+          admission
   pure
     CompiledCircuit
       { compiledCircuitId = lowered.lwfCircuitId
@@ -244,6 +328,37 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
       , compiledCircuitNodes = Map.map (.lnCompiledNode) lowered.lwfFragment.gfNodes
       , compiledCircuitMetadata = metadataValue
       }
+
+validateWireAdmissionArtifact
+  :: WireAdmissionArtifact -> Either WireCore.WireError WireAdmissionArtifact
+validateWireAdmissionArtifact admission
+  | wireAdmissionArtifactValidatorReady admission =
+      Right admission
+  | otherwise =
+      Left
+        ( WireCore.WireParseError
+            "internal Wire admission artifact failed validator-ready checks"
+        )
+
+attachAdmissionMetadata :: Maybe Aeson.Value -> WireAdmissionArtifact -> Aeson.Value
+attachAdmissionMetadata maybeMetadata admission =
+  let admissionKey = Key.fromText wireAdmissionMetadataKey
+      admissionValue = wireAdmissionMetadataValue admission
+      base =
+        fromMaybe
+          (Aeson.object ["format" Aeson..= ("cortex.workflow.wire" :: Text)])
+          maybeMetadata
+   in case base of
+        Aeson.Object objectValue ->
+          Aeson.Object (KeyMap.insert admissionKey admissionValue objectValue)
+        nonObjectMetadata ->
+          -- Preserve a defensive non-object metadata value under "metadata" while
+          -- keeping the compiled circuit's public metadata object-shaped.
+          Aeson.object
+            [ "format" Aeson..= ("cortex.workflow.wire" :: Text)
+            , "metadata" Aeson..= nonObjectMetadata
+            , admissionKey Aeson..= admissionValue
+            ]
 
 data LoweredWireFile = LoweredWireFile
   { lwfFragment :: !GraphFragment
@@ -257,10 +372,21 @@ data UnusedNodePolicy
   | AllowUnusedDeclaredNodes
   deriving stock (Eq, Show)
 
+data GeneratedNodeProvenance = GeneratedNodeProvenance
+  { generatedNodeProvenanceBinding :: !Text
+  , generatedNodeProvenanceKind :: !GeneratedFamilyKind
+  , generatedNodeProvenanceKindName :: !Text
+  , generatedNodeProvenanceLabel :: !Text
+  , generatedNodeProvenanceValue :: !(Maybe CorePureExpr)
+  }
+  deriving stock (Eq, Show)
+
 data LoweringState = LoweringState
   { lsBindings :: !(Map Text EvalValue)
   , lsPureBindings :: ![CorePureBinding]
   , lsGraphBindings :: !(Map Text GraphFragment)
+  , lsGeneratedFamilies :: !(Map Text GeneratedFamilyProvenance)
+  , lsGeneratedNodes :: !(Map Text GeneratedNodeProvenance)
   , lsExportedGraphNodeRefs :: !(Set.Set CircuitNodeRef)
   , lsNamedNodes :: !(Map Text LoweredNode)
   , lsAnonCounter :: !Int
@@ -275,6 +401,8 @@ emptyLoweringState =
     { lsBindings = Map.empty
     , lsPureBindings = []
     , lsGraphBindings = Map.empty
+    , lsGeneratedFamilies = Map.empty
+    , lsGeneratedNodes = Map.empty
     , lsExportedGraphNodeRefs = Set.empty
     , lsNamedNodes = Map.empty
     , lsAnonCounter = 0
@@ -282,6 +410,30 @@ emptyLoweringState =
     , lsDeclaredRecordContracts = Map.empty
     , lsUseScope = emptyWireUseScope
     }
+
+loweringStateWithProvenance :: Map Text GeneratedFamilyProvenance -> LoweringState
+loweringStateWithProvenance generatedFamilies =
+  emptyLoweringState
+    { lsGeneratedFamilies = generatedFamilies
+    , lsGeneratedNodes = generatedNodeProvenanceMap generatedFamilies
+    }
+
+generatedNodeProvenanceMap
+  :: Map Text GeneratedFamilyProvenance -> Map Text GeneratedNodeProvenance
+generatedNodeProvenanceMap generatedFamilies =
+  Map.fromList
+    [ ( child.generatedFamilyChildNode
+      , GeneratedNodeProvenance
+          { generatedNodeProvenanceBinding = family.generatedFamilyBinding
+          , generatedNodeProvenanceKind = family.generatedFamilyKind
+          , generatedNodeProvenanceKindName = family.generatedFamilyKindName
+          , generatedNodeProvenanceLabel = child.generatedFamilyChildLabel
+          , generatedNodeProvenanceValue = child.generatedFamilyChildValue
+          }
+      )
+    | family <- Map.elems generatedFamilies
+    , child <- family.generatedFamilyChildren
+    ]
 
 data EvalValue
   = EvalString !Text
@@ -307,7 +459,7 @@ data LoweredPort = LoweredPort
   , lpContract :: !Text
   , lpLabel :: !PortLabel
   , lpCardinality :: !(Maybe WireCore.WireInputCardinality)
-  , lpExclusiveGroup :: !(Maybe Int)
+  , lpExclusiveGroup :: !(Maybe Natural)
   }
   deriving stock (Eq, Show)
 
@@ -323,6 +475,7 @@ data LoweredNode = LoweredNode
   , lnPorts :: !WireCore.WirePorts
   , lnInputs :: ![LoweredPort]
   , lnOutputs :: ![LoweredPort]
+  , lnGeneratedOrigin :: !(Maybe GeneratedNodeProvenance)
   }
   deriving stock (Eq, Show)
 
@@ -331,22 +484,45 @@ data BoundaryPort = BoundaryPort
   , bpPortName :: !Text
   , bpContract :: !Text
   , bpLabel :: !PortLabel
-  , bpExclusiveGroup :: !(Maybe (CircuitNodeRef, Int))
+  , bpExclusiveGroup :: !(Maybe (CircuitNodeRef, Natural))
   }
   deriving stock (Eq, Ord, Show)
 
 data BoundaryShape = BoundaryShape
   { bsContract :: !Text
   , bsLabel :: !PortLabel
-  , bsExclusiveGroup :: !(Maybe Int)
+  , bsExclusiveGroup :: !(Maybe Natural)
   }
   deriving stock (Eq, Ord, Show)
+
+admissionLabelFromPortLabel :: PortLabel -> AdmissionPortLabel
+admissionLabelFromPortLabel = \case
+  NoLabel -> AdmissionNoLabel
+  Label labelText -> AdmissionLabel labelText
+
+admissionBoundaryFromPort :: BoundaryPort -> AdmissionBoundaryPort
+admissionBoundaryFromPort boundary =
+  AdmissionBoundaryPort
+    { admissionBoundaryNode = boundary.bpNodeRef
+    , admissionBoundaryPort = boundary.bpPortName
+    , admissionBoundaryContract = boundary.bpContract
+    , admissionBoundaryLabel = admissionLabelFromPortLabel boundary.bpLabel
+    , admissionBoundaryExclusiveGroup = boundary.bpExclusiveGroup
+    }
+
+admissionConnectionFromPair :: (BoundaryPort, BoundaryPort) -> AdmissionConnection
+admissionConnectionFromPair (fromBoundary, toBoundary) =
+  AdmissionConnection
+    { admissionConnectionFrom = admissionBoundaryFromPort fromBoundary
+    , admissionConnectionTo = admissionBoundaryFromPort toBoundary
+    }
 
 data GraphFragment = GraphFragment
   { gfNodes :: !(Map CircuitNodeRef LoweredNode)
   , gfEntries :: ![BoundaryPort]
   , gfExits :: ![BoundaryPort]
   , gfConnections :: ![WireCore.Connection]
+  , gfAdmission :: !WireAdmissionArtifact
   }
   deriving stock (Eq, Show)
 
@@ -357,7 +533,185 @@ emptyFragment =
     , gfEntries = []
     , gfExits = []
     , gfConnections = []
+    , gfAdmission = appendPrimitiveStep PrimitiveEmpty emptyWireAdmissionArtifact
     }
+
+syncFragmentAdmission :: GraphFragment -> GraphFragment
+syncFragmentAdmission fragment =
+  fragment
+    { gfAdmission =
+        fragment.gfAdmission
+          { wireAdmissionNodes = Map.keys fragment.gfNodes
+          , wireAdmissionEntries = fmap admissionBoundaryFromPort fragment.gfEntries
+          , wireAdmissionExits = fmap admissionBoundaryFromPort fragment.gfExits
+          , wireAdmissionConnections = fragment.gfConnections
+          }
+    }
+
+nodeAdmissionArtifact :: LoweredNode -> WireAdmissionArtifact
+nodeAdmissionArtifact loweredNode =
+  appendPrimitiveStep (PrimitiveNode loweredNode.lnRef entries exits) $
+    emptyWireAdmissionArtifact
+      { wireAdmissionNodes = [loweredNode.lnRef]
+      , wireAdmissionEntries = entries
+      , wireAdmissionExits = exits
+      }
+  where
+    entries =
+      fmap (admissionBoundaryFromPort . boundaryFromPort) loweredNode.lnInputs
+
+    exits =
+      fmap (admissionBoundaryFromPort . boundaryFromPort) loweredNode.lnOutputs
+
+markGraphBindingRef :: Text -> GraphFragment -> GraphFragment
+markGraphBindingRef bindingName fragment =
+  fragment
+    { gfAdmission =
+        appendPrimitiveStep (PrimitiveBindingRef bindingName) $
+          fragment.gfAdmission
+            { wireAdmissionBindingRefs =
+                fragment.gfAdmission.wireAdmissionBindingRefs <> [bindingName]
+            }
+    }
+
+annotateGeneratedFamiliesInFragment :: LoweringState -> GraphFragment -> GraphFragment
+annotateGeneratedFamiliesInFragment state fragment =
+  foldl appendFamily fragment (Map.elems state.lsGeneratedFamilies)
+  where
+    appendFamily current family =
+      case generatedFormArtifactForFamily current family of
+        Nothing -> current
+        Just artifact ->
+          current
+            { gfAdmission = appendGeneratedFormArtifact artifact current.gfAdmission
+            }
+
+generatedFormArtifactForFamily
+  :: GraphFragment -> GeneratedFamilyProvenance -> Maybe GeneratedFormArtifact
+generatedFormArtifactForFamily fragment family = do
+  sourceChildren <- traverse generatedChildSourceArtifact family.generatedFamilyChildren
+  let artifact =
+        GeneratedFormArtifact
+          { generatedFormKind = generatedFormKindFromProvenance family.generatedFamilyKind
+          , generatedFormKindName = family.generatedFamilyKindName
+          , generatedFormBinding = family.generatedFamilyBinding
+          , generatedFormSourceChildren = sourceChildren
+          , generatedFormUsedChildren = usedChildren
+          }
+  case (usedChildren, sourceChildren, familyBindingUsed) of
+    ([], [], True) -> Just artifact
+    ([], _, _) -> Nothing
+    (_ : _, _, _) -> Just artifact
+  where
+    familyBindingUsed =
+      family.generatedFamilyBinding `elem` fragment.gfAdmission.wireAdmissionBindingRefs
+
+    usedChildren =
+      mapMaybe generatedChildArtifactIfUsed family.generatedFamilyChildren
+
+    generatedChildArtifactIfUsed child = do
+      let childRef = CircuitNodeRef child.generatedFamilyChildNode
+      loweredNode <- Map.lookup childRef fragment.gfNodes
+      origin <- loweredNode.lnGeneratedOrigin
+      guard (origin.generatedNodeProvenanceBinding == family.generatedFamilyBinding)
+      guard (origin.generatedNodeProvenanceKind == family.generatedFamilyKind)
+      guard (origin.generatedNodeProvenanceKindName == family.generatedFamilyKindName)
+      guard (origin.generatedNodeProvenanceLabel == child.generatedFamilyChildLabel)
+      guard (origin.generatedNodeProvenanceValue == child.generatedFamilyChildValue)
+      pure (generatedChildArtifact child loweredNode)
+
+    generatedChildArtifact child loweredNode =
+      GeneratedChildArtifact
+        { generatedChildNode = loweredNode.lnRef
+        , generatedChildLabel = child.generatedFamilyChildLabel
+        , generatedChildOutputs =
+            fmap
+              (admissionBoundaryFromPort . boundaryFromPort)
+              loweredNode.lnOutputs
+        , generatedChildInputs =
+            fmap
+              (admissionBoundaryFromPort . boundaryFromPort)
+              loweredNode.lnInputs
+        }
+
+generatedChildSourceArtifact :: GeneratedFamilyChild -> Maybe GeneratedChildSourceArtifact
+generatedChildSourceArtifact child = do
+  staticValue <- traverse admissionStaticValueFromCorePure child.generatedFamilyChildValue
+  Just
+    GeneratedChildSourceArtifact
+      { generatedSourceChildNode = CircuitNodeRef child.generatedFamilyChildNode
+      , generatedSourceChildLabel = child.generatedFamilyChildLabel
+      , generatedSourceChildValue = staticValue
+      }
+
+admissionStaticValueFromCorePure :: CorePureExpr -> Maybe AdmissionStaticValue
+admissionStaticValueFromCorePure = \case
+  CorePureLit (CorePureString text) ->
+    Just (AdmissionStaticString text)
+  CorePureLit (CorePureBool boolValue) ->
+    Just (AdmissionStaticBool boolValue)
+  CorePureLit (CorePureNumber numberValue) -> do
+    integerValue <- scientificToNatural numberValue
+    Just (AdmissionStaticNat integerValue)
+  CorePureLit CorePureNull ->
+    Nothing
+  CorePureList items ->
+    AdmissionStaticList <$> traverse admissionStaticValueFromCorePure items
+  CorePureRecord fields -> do
+    guard (corePureStaticRecordFieldLabelsUnique fields)
+    AdmissionStaticRecord <$> traverse admissionStaticFieldFromCorePure fields
+  CorePureIdent _name ->
+    Nothing
+  CorePureFieldAccess _target _fieldName ->
+    Nothing
+  CorePureIndex _target _index ->
+    Nothing
+  CorePureLambda _params _body ->
+    Nothing
+  CorePureCall _function _arguments ->
+    Nothing
+  CorePureUnary _operator _value ->
+    Nothing
+  CorePureBinary _operator _lhs _rhs ->
+    Nothing
+  CorePureLet _bindings _body ->
+    Nothing
+  CorePureIf _condition _thenBranch _elseBranch ->
+    Nothing
+
+corePureStaticRecordFieldLabelsUnique :: [CorePureField] -> Bool
+corePureStaticRecordFieldLabelsUnique fields =
+  Set.size (Set.fromList fieldNames) == length fieldNames
+  where
+    fieldNames =
+      [ fieldName
+      | CorePureField (fieldName :| []) _value <- fields
+      ]
+
+admissionStaticFieldFromCorePure :: CorePureField -> Maybe AdmissionStaticField
+admissionStaticFieldFromCorePure = \case
+  CorePureField (fieldName :| []) value -> do
+    staticValue <- admissionStaticValueFromCorePure value
+    Just
+      AdmissionStaticField
+        { admissionStaticFieldLabel = fieldName
+        , admissionStaticFieldValue = staticValue
+        }
+  CorePureField (_fieldName :| _nestedPath) _value ->
+    Nothing
+
+scientificToNatural :: Scientific -> Maybe Natural
+scientificToNatural numberValue =
+  case floatingOrInteger numberValue :: Either Double Integer of
+    Right integerValue
+      | integerValue >= 0 -> Just (fromInteger integerValue)
+    Right _negativeValue -> Nothing
+    Left _fractionalValue -> Nothing
+
+generatedFormKindFromProvenance :: GeneratedFamilyKind -> GeneratedFormKind
+generatedFormKindFromProvenance = \case
+  GeneratedFamilyFromMake -> GeneratedMake
+  GeneratedFamilyFromMakeEach -> GeneratedMakeEach
 
 lowerWireFile :: WireCompileEnv -> WireFile -> Either WireCore.WireError LoweredWireFile
 lowerWireFile compileEnv =
@@ -366,21 +720,38 @@ lowerWireFile compileEnv =
 lowerWireFileWithUnusedPolicy
   :: WireCompileEnv -> UnusedNodePolicy -> WireFile -> Either WireCore.WireError LoweredWireFile
 lowerWireFileWithUnusedPolicy compileEnv unusedNodePolicy wireFile = do
+  lowerWireFileWithProvenance compileEnv Map.empty unusedNodePolicy wireFile
+
+lowerWireFileWithProvenance
+  :: WireCompileEnv
+  -> Map Text GeneratedFamilyProvenance
+  -> UnusedNodePolicy
+  -> WireFile
+  -> Either WireCore.WireError LoweredWireFile
+lowerWireFileWithProvenance compileEnv generatedFamilies unusedNodePolicy wireFile = do
   loweredState <-
-    foldlM (lowerTopForm compileEnv) emptyLoweringState wireFile.wireFileTopForms
+    foldlM
+      (lowerTopForm compileEnv)
+      (loweringStateWithProvenance generatedFamilies)
+      wireFile.wireFileTopForms
   fileReturn <- maybe (Left WireCore.WireMissingCircuit) Right wireFile.wireFileReturn
   (resultFragment, maybeMetadata, loweredState') <- lowerFileReturn compileEnv loweredState fileReturn
+  let witnessedFragment = annotateGeneratedFamiliesInFragment loweredState' resultFragment
   let usedNodeRefs =
-        foldMap loweredNodeRefs resultFragment.gfNodes
+        foldMap loweredNodeRefs witnessedFragment.gfNodes
           <> loweredState'.lsExportedGraphNodeRefs
       declaredNodeRefs = Set.fromList (fmap (.lnRef) (Map.elems loweredState'.lsNamedNodes))
-      unusedNodeRefs = Set.toAscList (Set.difference declaredNodeRefs usedNodeRefs)
+      generatedNodeRefs =
+        generatedSiblingRefsForUsedFamilies loweredState' usedNodeRefs
+      unusedNodeRefs =
+        Set.toAscList
+          (declaredNodeRefs `Set.difference` usedNodeRefs `Set.difference` generatedNodeRefs)
   case (unusedNodePolicy, unusedNodeRefs) of
     (RequireAllDeclaredNodesUsed, unusedRef : _) -> Left (WireCore.WireUnusedNodeRef unusedRef)
     (RequireAllDeclaredNodesUsed, []) ->
       Right
         LoweredWireFile
-          { lwfFragment = resultFragment
+          { lwfFragment = witnessedFragment
           , lwfMetadata = maybeMetadata
           , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
           , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
@@ -388,7 +759,7 @@ lowerWireFileWithUnusedPolicy compileEnv unusedNodePolicy wireFile = do
     (AllowUnusedDeclaredNodes, _) ->
       Right
         LoweredWireFile
-          { lwfFragment = resultFragment
+          { lwfFragment = witnessedFragment
           , lwfMetadata = maybeMetadata
           , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
           , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
@@ -401,11 +772,35 @@ loweredNodeRefs loweredNode =
       CompiledCircuitCondition conditionNode ->
         fragmentNodeRefs conditionNode.circuitConditionNodeThenFragment
           <> foldMap fragmentNodeRefs conditionNode.circuitConditionNodeElseFragment
-      _ ->
+      CompiledCircuitTask {} ->
+        Set.empty
+      CompiledCircuitSignal {} ->
+        Set.empty
+      CompiledCircuitArtifact {} ->
+        Set.empty
+      CompiledCircuitRewriteBoundary {} ->
         Set.empty
   where
     fragmentNodeRefs fragment =
       foldMap compiledNodeRefs fragment.compiledCircuitFragmentNodes
+
+generatedSiblingRefsForUsedFamilies
+  :: LoweringState -> Set.Set CircuitNodeRef -> Set.Set CircuitNodeRef
+generatedSiblingRefsForUsedFamilies state usedNodeRefs =
+  Set.fromList
+    [ CircuitNodeRef child.generatedFamilyChildNode
+    | family <- Map.elems state.lsGeneratedFamilies
+    , Set.member family.generatedFamilyBinding usedFamilies
+    , child <- family.generatedFamilyChildren
+    ]
+  where
+    usedFamilies =
+      Set.fromList
+        [ origin.generatedNodeProvenanceBinding
+        | loweredNode <- Map.elems state.lsNamedNodes
+        , Set.member loweredNode.lnRef usedNodeRefs
+        , Just origin <- [loweredNode.lnGeneratedOrigin]
+        ]
 
 compiledNodeRefs :: CompiledCircuitNode -> Set.Set CircuitNodeRef
 compiledNodeRefs = \case
@@ -558,7 +953,17 @@ isGraphLetExpr st = \case
   ExprIdent (QName (name :| [])) ->
     Map.member name st.lsNamedNodes || Map.member name st.lsGraphBindings
   ExprFamilyProjection {} -> True
-  _ -> False
+  ExprMerge {} -> False
+  ExprConcat {} -> False
+  ExprConfiguredExecutor {} -> False
+  ExprConstructor {} -> False
+  ExprRecord {} -> False
+  ExprList {} -> False
+  ExprLit (LitString _text) -> False
+  ExprLit (LitMultilineString _text) -> False
+  ExprLit (LitNumber _number) -> False
+  ExprLit (LitBool _boolValue) -> False
+  ExprIdent (QName (_name :| _qualifier)) -> False
 
 appendPureBindingIfCapturable :: Text -> EvalValue -> LoweringState -> LoweringState
 appendPureBindingIfCapturable name value st =
@@ -596,13 +1001,14 @@ lowerNamedNode
 lowerNamedNode compileEnv st nodeDecl = do
   let nodeRef = CircuitNodeRef nodeDecl.nodeDeclName
   ports <- lowerPortSignature st nodeRef nodeDecl.nodeDeclPortSig
-  case nodeDecl.nodeDeclBody of
+  loweredNode <- case nodeDecl.nodeDeclBody of
     NodeBodyExecutor whereExpr executorCallValue -> do
       validateWhereClause st nodeRef ports.lnpInputs whereExpr
       loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue
     NodeBodyPure pureBody -> do
       validateWhereClause st nodeRef ports.lnpInputs pureBody.nodePureBodyWhere
       loweredPureNodeFromBody compileEnv st nodeRef ports st.lsPureBindings pureBody
+  Right (loweredNode {lnGeneratedOrigin = Map.lookup nodeDecl.nodeDeclName st.lsGeneratedNodes})
 
 lowerFileReturn
   :: WireCompileEnv
@@ -703,7 +1109,7 @@ lowerGraphBase compileEnv st = \case
   ExprIdent (QName (name :| [])) ->
     case Map.lookup name st.lsGraphBindings of
       Just fragment ->
-        Right fragment
+        Right (markGraphBindingRef name fragment)
       Nothing ->
         lowerNamedGraphRef name
   ExprSelect baseExpr arms -> do
@@ -733,12 +1139,15 @@ lowerGraphBase compileEnv st = \case
       case Map.lookup name st.lsNamedNodes of
         Just loweredNode ->
           Right
-            GraphFragment
-              { gfNodes = Map.singleton loweredNode.lnRef loweredNode
-              , gfEntries = fmap boundaryFromPort loweredNode.lnInputs
-              , gfExits = fmap boundaryFromPort loweredNode.lnOutputs
-              , gfConnections = []
-              }
+            ( syncFragmentAdmission
+                GraphFragment
+                  { gfNodes = Map.singleton loweredNode.lnRef loweredNode
+                  , gfEntries = fmap boundaryFromPort loweredNode.lnInputs
+                  , gfExits = fmap boundaryFromPort loweredNode.lnOutputs
+                  , gfConnections = []
+                  , gfAdmission = nodeAdmissionArtifact loweredNode
+                  }
+            )
         Nothing ->
           Left (WireCore.WireUnknownNodeRef (CircuitNodeRef name))
 
@@ -746,13 +1155,23 @@ joinGraphFragments
   :: Text -> GraphFragment -> GraphFragment -> Either WireCore.WireError GraphFragment
 joinGraphFragments context lhs rhs = do
   ensureDisjointGraphDomains context lhs rhs
-  Right
-    GraphFragment
-      { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
-      , gfEntries = dedupeBoundaries (lhs.gfEntries <> rhs.gfEntries)
-      , gfExits = dedupeBoundaries (lhs.gfExits <> rhs.gfExits)
-      , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections)
-      }
+  Right $
+    syncFragmentAdmission
+      GraphFragment
+        { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
+        , gfEntries = dedupeBoundaries (lhs.gfEntries <> rhs.gfEntries)
+        , gfExits = dedupeBoundaries (lhs.gfExits <> rhs.gfExits)
+        , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections)
+        , gfAdmission =
+            appendPrimitiveStep
+              ( PrimitiveOverlay
+                  (Map.keys lhs.gfNodes)
+                  (Map.keys rhs.gfNodes)
+                  lhs.gfAdmission.wireAdmissionBindingRefs
+                  rhs.gfAdmission.wireAdmissionBindingRefs
+              )
+              (combineWireAdmissionArtifacts lhs.gfAdmission rhs.gfAdmission)
+        }
 
 connectFragments :: GraphFragment -> GraphFragment -> Either WireCore.WireError GraphFragment
 connectFragments lhs rhs = do
@@ -768,13 +1187,24 @@ connectFragments lhs rhs = do
                 (boundaryEndpoint rightBoundary)
           )
           matchedPairs
-  Right
-    GraphFragment
-      { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
-      , gfEntries = dedupeBoundaries (lhs.gfEntries <> filter (`Set.notMember` matchedRight) rhs.gfEntries)
-      , gfExits = dedupeBoundaries (filter (`Set.notMember` matchedLeft) lhs.gfExits <> rhs.gfExits)
-      , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections <> bridgeConnections)
-      }
+  Right $
+    syncFragmentAdmission
+      GraphFragment
+        { gfNodes = Map.union lhs.gfNodes rhs.gfNodes
+        , gfEntries = dedupeBoundaries (lhs.gfEntries <> filter (`Set.notMember` matchedRight) rhs.gfEntries)
+        , gfExits = dedupeBoundaries (filter (`Set.notMember` matchedLeft) lhs.gfExits <> rhs.gfExits)
+        , gfConnections = dedupeConnections (lhs.gfConnections <> rhs.gfConnections <> bridgeConnections)
+        , gfAdmission =
+            appendPrimitiveStep
+              ( PrimitiveConnect
+                  (fmap admissionBoundaryFromPort lhs.gfExits)
+                  (fmap admissionBoundaryFromPort rhs.gfEntries)
+                  (fmap admissionConnectionFromPair matchedPairs)
+                  (fmap admissionBoundaryFromPort (filter (`Set.notMember` matchedLeft) lhs.gfExits))
+                  (fmap admissionBoundaryFromPort (filter (`Set.notMember` matchedRight) rhs.gfEntries))
+              )
+              (combineWireAdmissionArtifacts lhs.gfAdmission rhs.gfAdmission)
+        }
 
 ensureDisjointGraphDomains
   :: Text -> GraphFragment -> GraphFragment -> Either WireCore.WireError ()
@@ -858,14 +1288,25 @@ lowerStarFragments compileEnv st lhs rhs = do
   plan <- resolveStarPlan compileEnv st lhs.gfExits rhs.gfEntries
   phantom <- buildStarPhantomNode compileEnv st plan
   let phantomFragment =
-        GraphFragment
-          { gfNodes = Map.singleton phantom.lnRef phantom
-          , gfEntries = fmap boundaryFromPort phantom.lnInputs
-          , gfExits = fmap boundaryFromPort phantom.lnOutputs
-          , gfConnections = []
-          }
+        syncFragmentAdmission
+          GraphFragment
+            { gfNodes = Map.singleton phantom.lnRef phantom
+            , gfEntries = fmap boundaryFromPort phantom.lnInputs
+            , gfExits = fmap boundaryFromPort phantom.lnOutputs
+            , gfConnections = []
+            , gfAdmission = nodeAdmissionArtifact phantom
+            }
+  leftPairs <- linearBoundaryMatches lhs.gfExits phantomFragment.gfEntries
   leftToPhantom <- connectFragments lhs phantomFragment
-  connectFragments leftToPhantom rhs
+  rightPairs <- linearBoundaryMatches leftToPhantom.gfExits rhs.gfEntries
+  connected <- connectFragments leftToPhantom rhs
+  Right
+    connected
+      { gfAdmission =
+          appendPhantomAdapterArtifact
+            (phantomAdapterArtifactFromPlan plan phantom leftPairs rightPairs)
+            connected.gfAdmission
+      }
 
 data StarPlan = StarPlan
   { starPlanDirection :: !StarDirection
@@ -877,11 +1318,45 @@ data StarPlan = StarPlan
 
 data StarProductShape
   = StarRecordShape !(Map Text ContractId)
-  | StarIndexedShape !Text !Int
+  | StarIndexedShape !Text !Natural
   deriving stock (Eq, Show)
 
 data StarPortSide = StarInputSide | StarOutputSide
   deriving stock (Eq, Show)
+
+phantomAdapterArtifactFromPlan
+  :: StarPlan
+  -> LoweredNode
+  -> [(BoundaryPort, BoundaryPort)]
+  -> [(BoundaryPort, BoundaryPort)]
+  -> PhantomAdapterArtifact
+phantomAdapterArtifactFromPlan plan phantom leftPairs rightPairs =
+  PhantomAdapterArtifact
+    { phantomAdapterDirection = phantomAdapterDirectionFromStar plan.starPlanDirection
+    , phantomAdapterNode = phantom.lnRef
+    , phantomAdapterProductShape =
+        productShapeArtifact plan.starPlanSingular plan.starPlanProductShape
+    , phantomAdapterSingular = admissionBoundaryFromPort plan.starPlanSingular
+    , phantomAdapterMulti = fmap admissionBoundaryFromPort plan.starPlanMulti
+    , phantomAdapterLeftBulk = fmap admissionConnectionFromPair leftPairs
+    , phantomAdapterRightBulk = fmap admissionConnectionFromPair rightPairs
+    }
+
+phantomAdapterDirectionFromStar :: StarDirection -> PhantomAdapterDirection
+phantomAdapterDirectionFromStar = \case
+  StarGather -> PhantomGather
+  StarScatter -> PhantomScatter
+
+productShapeArtifact :: BoundaryPort -> StarProductShape -> ProductShapeArtifact
+productShapeArtifact singular = \case
+  StarRecordShape fields ->
+    ProductRecord
+      singular.bpContract
+      [ (label, contract.unContractId)
+      | (label, contract) <- Map.toAscList fields
+      ]
+  StarIndexedShape elementContract count ->
+    ProductIndexed elementContract count
 
 resolveStarPlan
   :: WireCompileEnv
@@ -1035,9 +1510,9 @@ validateStarMultiSide productShape multiBoundaries =
       traverse_ (validateIndexedBoundary elementContract) multiBoundaries
       validateIndexedBoundaryKeys multiBoundaries
 
-validateIndexedStarArity :: Text -> Int -> [BoundaryPort] -> Either WireCore.WireError ()
+validateIndexedStarArity :: Text -> Natural -> [BoundaryPort] -> Either WireCore.WireError ()
 validateIndexedStarArity elementContract count multiBoundaries =
-  when (length multiBoundaries /= count) $
+  when (fromIntegral (length multiBoundaries) /= count) $
     Left
       ( WireCore.WireParseError
           ( "`*` multi-side frontier does not match bounded indexed product. Expected "
@@ -1341,7 +1816,9 @@ lowerSelectStep compileEnv st current arms maybeDownstream = do
           pure
             PreparedSelectArm
               { psaVariant = variant
+              , psaSourceIndex = resolvedArm.selectArmSourceIndex
               , psaKey = resolvedArm.selectArmResolvedKey
+              , psaResolutionMode = resolvedArm.selectArmResolvedMode
               , psaFragment = armFragment
               , psaOutputBoundary = armOutputBoundary
               }
@@ -1355,24 +1832,23 @@ lowerSelectStep compileEnv st current arms maybeDownstream = do
     else do
       conditionNode <- buildSelectConditionTree selectorVariants commonBoundary preparedArms
       let conditionFragment =
-            GraphFragment
-              { gfNodes = Map.singleton conditionNode.lnRef conditionNode
-              , gfEntries = fmap boundaryFromPort conditionNode.lnInputs
-              , gfExits = fmap boundaryFromPort (bridgeOutputPorts conditionNode)
-              , gfConnections = []
-              }
+            selectConditionFragment selectorVariants preparedArms conditionNode
       currentToCondition <- connectFragments current conditionFragment
       maybe (pure currentToCondition) (connectFragments currentToCondition) maybeDownstream
 
 data PreparedSelectArm = PreparedSelectArm
   { psaVariant :: !BoundaryPort
+  , psaSourceIndex :: !Natural
   , psaKey :: !Text
+  , psaResolutionMode :: !SelectResolutionMode
   , psaFragment :: !GraphFragment
   , psaOutputBoundary :: ![BoundaryPort]
   }
 
 data ResolvedSelectArm = ResolvedSelectArm
-  { selectArmResolvedKey :: !Text
+  { selectArmSourceIndex :: !Natural
+  , selectArmResolvedKey :: !Text
+  , selectArmResolvedMode :: !SelectResolutionMode
   , selectArmResolvedExpr :: !Expr
   }
 
@@ -1413,13 +1889,15 @@ resolveSelectArms selectorVariants arms = do
           | variant <- NE.toList selectorVariants
           , Label labelText <- [variant.bpLabel]
           ]
-      resolveKey arm =
-        case Map.lookup arm.selectArmKey variantsByLabel <|> Map.lookup arm.selectArmKey variantsByContract of
+      resolveKey (sourceIndex, arm) =
+        case Map.lookup arm.selectArmKey variantsByLabel of
           Just [variant] ->
             Right
               ( variant
               , ResolvedSelectArm
-                  { selectArmResolvedKey = arm.selectArmKey
+                  { selectArmSourceIndex = sourceIndex
+                  , selectArmResolvedKey = arm.selectArmKey
+                  , selectArmResolvedMode = SelectResolvedByLabel
                   , selectArmResolvedExpr = arm.selectArmExpr
                   }
               )
@@ -1431,15 +1909,40 @@ resolveSelectArms selectorVariants arms = do
                       <> " is ambiguous. Use an explicit unique variant label."
                   )
               )
-          _ ->
-            Left
-              ( WireCore.WireParseError
-                  ( "select arm key "
-                      <> arm.selectArmKey
-                      <> " does not match any variant on the selector boundary."
+          Just [] ->
+            Left (WireCore.WireParseError "internal select lowering error: empty label bucket")
+          Nothing ->
+            case Map.lookup arm.selectArmKey variantsByContract of
+              Just [variant] ->
+                Right
+                  ( variant
+                  , ResolvedSelectArm
+                      { selectArmSourceIndex = sourceIndex
+                      , selectArmResolvedKey = arm.selectArmKey
+                      , selectArmResolvedMode = SelectResolvedByContract
+                      , selectArmResolvedExpr = arm.selectArmExpr
+                      }
                   )
-              )
-      resolved = traverse resolveKey arms
+              Just (_ : _ : _) ->
+                Left
+                  ( WireCore.WireParseError
+                      ( "select arm key "
+                          <> arm.selectArmKey
+                          <> " is ambiguous. Use an explicit unique variant label."
+                      )
+                  )
+              Just [] ->
+                Left (WireCore.WireParseError "internal select lowering error: empty contract bucket")
+              Nothing ->
+                Left
+                  ( WireCore.WireParseError
+                      ( "select arm key "
+                          <> arm.selectArmKey
+                          <> " does not match any variant on the selector boundary."
+                      )
+                  )
+      indexedArms = NE.zip (0 :| [1 ..]) arms
+      resolved = traverse resolveKey indexedArms
   case resolved of
     Left err ->
       Left err
@@ -1563,13 +2066,56 @@ buildSelectBranchGroup commonBoundary arms@(firstArm :| restArms) =
             else do
               nestedCondition <- buildSelectConditionTree (fmap psaVariant arms) commonBoundary arms
               let nestedFragment =
-                    GraphFragment
-                      { gfNodes = Map.singleton nestedCondition.lnRef nestedCondition
-                      , gfEntries = fmap boundaryFromPort nestedCondition.lnInputs
-                      , gfExits = fmap boundaryFromPort (bridgeOutputPorts nestedCondition)
-                      , gfConnections = []
-                      }
+                    selectConditionFragment (fmap psaVariant arms) arms nestedCondition
               Right (fmap psaKey armList, Just nestedFragment)
+
+selectConditionFragment
+  :: NonEmpty BoundaryPort -> NonEmpty PreparedSelectArm -> LoweredNode -> GraphFragment
+selectConditionFragment selectorVariants preparedArms conditionNode =
+  syncFragmentAdmission
+    GraphFragment
+      { gfNodes = Map.singleton conditionNode.lnRef conditionNode
+      , gfEntries = fmap boundaryFromPort conditionNode.lnInputs
+      , gfExits = fmap boundaryFromPort (bridgeOutputPorts conditionNode)
+      , gfConnections = []
+      , gfAdmission =
+          appendSelectAdmissionArtifact
+            (selectAdmissionArtifact selectorVariants preparedArms conditionNode.lnRef)
+            (nodeAdmissionArtifact conditionNode)
+      }
+
+selectAdmissionArtifact
+  :: NonEmpty BoundaryPort -> NonEmpty PreparedSelectArm -> CircuitNodeRef -> SelectAdmissionArtifact
+selectAdmissionArtifact selectorVariants preparedArms conditionRef =
+  SelectAdmissionArtifact
+    { selectAdmissionOwner = conditionRef
+    , selectAdmissionVariants =
+        [ SelectVariantArtifact
+            { selectVariantKey = selectVariantCanonicalKey variant
+            , selectVariantPort = admissionBoundaryFromPort variant
+            }
+        | variant <- NE.toList selectorVariants
+        ]
+    , selectAdmissionArms =
+        [ SelectArmAdmissionArtifact
+            { selectArmSourceIndex = preparedArm.psaSourceIndex
+            , selectArmSourceKey = preparedArm.psaKey
+            , selectArmCanonicalKey = selectVariantCanonicalKey preparedArm.psaVariant
+            , selectArmResolutionMode = preparedArm.psaResolutionMode
+            , selectArmBodyNodes = Map.keys preparedArm.psaFragment.gfNodes
+            , selectArmBodyEntries = fmap admissionBoundaryFromPort preparedArm.psaFragment.gfEntries
+            , selectArmBodyExits = fmap admissionBoundaryFromPort preparedArm.psaFragment.gfExits
+            }
+        | preparedArm <- sortOn psaSourceIndex (NE.toList preparedArms)
+        ]
+    , selectAdmissionConditionNode = conditionRef
+    }
+
+selectVariantCanonicalKey :: BoundaryPort -> Text
+selectVariantCanonicalKey variant =
+  case variant.bpLabel of
+    Label labelText -> labelText
+    NoLabel -> variant.bpContract
 
 buildBinarySelectConditionNode
   :: NonEmpty BoundaryPort
@@ -1639,6 +2185,7 @@ buildBinarySelectConditionNode selectorVariants commonBoundary thenKeys thenFrag
       , lnPorts = ports
       , lnInputs = inputs
       , lnOutputs = outputs
+      , lnGeneratedOrigin = Nothing
       }
 
 nonIdentityFragment :: GraphFragment -> Maybe GraphFragment
@@ -1660,6 +2207,10 @@ fragmentFromBoundaryOutputs outputs =
     , gfEntries = []
     , gfExits = outputs
     , gfConnections = []
+    , gfAdmission =
+        emptyWireAdmissionArtifact
+          { wireAdmissionExits = fmap admissionBoundaryFromPort outputs
+          }
     }
 
 dedupeDownstreamEntries :: [BoundaryPort] -> [BoundaryPort]
@@ -1699,7 +2250,7 @@ boundaryShapes boundaries =
                       Just existingTag ->
                         (groupTags, Just existingTag)
                       Nothing ->
-                        let nextTag = Map.size groupTags
+                        let nextTag = fromIntegral (Map.size groupTags)
                          in (Map.insert groupId nextTag groupTags, Just nextTag)
            in ( groupTags'
               , acc
@@ -2019,6 +2570,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       , lnPorts = runtimePorts
       , lnInputs = ports.lnpInputs
       , lnOutputs = ports.lnpOutputs
+      , lnGeneratedOrigin = Nothing
       }
   where
     knownSimpleFields =
@@ -2159,6 +2711,7 @@ loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports topLevelBindings wh
       , lnPorts = runtimePorts
       , lnInputs = ports.lnpInputs
       , lnOutputs = ports.lnpOutputs
+      , lnGeneratedOrigin = Nothing
       }
 
 nativePureTaskConfigValue
@@ -2467,7 +3020,7 @@ lowerPortSignature st nodeRef portSig = do
               PortInputDecl {} ->
                 (nextGroup, acc)
           )
-          (0 :: Int, [])
+          (0 :: Natural, [])
           decls
 
 resolveContractId :: LoweringState -> Text -> Text

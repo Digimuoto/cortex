@@ -72,6 +72,7 @@ import Data.Scientific (Scientific)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Numeric.Natural (Natural)
 import Text.Read (readMaybe)
 
 import Cortex.Wire.AST
@@ -97,11 +98,11 @@ newtype ContractId = ContractId {unContractId :: Text}
 {- | Canonical compact storage form for bounded indexed products; use 'renderContractId' for
 user-facing output with spacing.
 -}
-boundedIndexedContractName :: Text -> Int -> Text
+boundedIndexedContractName :: Text -> Natural -> Text
 boundedIndexedContractName elementContract count =
   "[" <> elementContract <> ";" <> T.pack (show count) <> "]"
 
-parseBoundedIndexedContractName :: Text -> Maybe (Text, Int)
+parseBoundedIndexedContractName :: Text -> Maybe (Text, Natural)
 parseBoundedIndexedContractName rawName = do
   -- Accept the human-rendered form "[T; N]" as well as canonical storage "[T;N]".
   inner <- T.stripSuffix "]" =<< T.stripPrefix "[" (T.strip rawName)
@@ -110,9 +111,9 @@ parseBoundedIndexedContractName rawName = do
       let elementContract = T.strip rawElement
       guard (not (T.null elementContract))
       count <- readMaybe (T.unpack (T.strip rawCount))
-      if count < (0 :: Int)
+      if count < (0 :: Integer)
         then Nothing
-        else Just (elementContract, count)
+        else Just (elementContract, fromInteger count)
     _ ->
       Nothing
 

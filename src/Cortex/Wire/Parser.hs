@@ -17,6 +17,9 @@ module Cortex.Wire.Parser
   ( parseWireFile
   , parseWireFileWithInfo
   , parseWireExpr
+  , GeneratedFamilyKind (..)
+  , GeneratedFamilyChild (..)
+  , GeneratedFamilyProvenance (..)
   , WireParseInfo (..)
   , ParseError
   , renderParseError
@@ -35,6 +38,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust, listToMaybe, mapMaybe)
 import Data.Scientific (Scientific, floatingOrInteger)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void (Void)
@@ -62,8 +66,35 @@ import Cortex.Wire.Syntax
 
 type Parser = ParsecT Void Text (State WireParseInfo)
 
-newtype WireParseInfo = WireParseInfo
+data GeneratedFamilyKind
+  = GeneratedFamilyFromMake
+  | GeneratedFamilyFromMakeEach
+  deriving stock (Eq, Show)
+
+data GeneratedFamilyChild = GeneratedFamilyChild
+  { generatedFamilyChildNode :: !Text
+  , generatedFamilyChildLabel :: !Text
+  , generatedFamilyChildValue :: !(Maybe CorePureExpr)
+  }
+  deriving stock (Eq, Show)
+
+data GeneratedFamilyProvenance = GeneratedFamilyProvenance
+  { generatedFamilyBinding :: !Text
+  , generatedFamilyKind :: !GeneratedFamilyKind
+  , generatedFamilyKindName :: !Text
+  , generatedFamilyChildren :: ![GeneratedFamilyChild]
+  }
+  deriving stock (Eq, Show)
+
+{- | Parser-side metadata that is not part of the public Wire AST.
+
+Generated-family provenance records structural expansion decisions made by the parser. The
+compiler trusts this metadata only on text entry points that call `parseWireFileWithInfo`;
+hand-built `WireFile` values do not carry generated-form admission evidence.
+-}
+data WireParseInfo = WireParseInfo
   { wireParseCorePureInterpolationLine :: Maybe Int
+  , wireParseGeneratedFamilies :: !(Map Text GeneratedFamilyProvenance)
   }
   deriving stock (Eq, Show)
 
@@ -71,6 +102,7 @@ emptyWireParseInfo :: WireParseInfo
 emptyWireParseInfo =
   WireParseInfo
     { wireParseCorePureInterpolationLine = Nothing
+    , wireParseGeneratedFamilies = Map.empty
     }
 
 newtype ParseError = ParseError (MP.ParseErrorBundle Text Void)
@@ -1007,6 +1039,11 @@ wireFile = do
     notFollowedBy (symbol ";")
     pure e
   (scope, expandedForms) <- either fail pure (expandStructuralForms forms)
+  lift . State.modify' $ \info ->
+    info
+      { wireParseGeneratedFamilies =
+          wireParseGeneratedFamilies info <> scope.esGeneratedFamilies
+      }
   ret' <- either fail pure (traverse (resolveFamilyProjections scope.esIndexedFamilies) ret)
   pure (WireFile expandedForms ret')
 
@@ -1065,7 +1102,7 @@ boundedIndexedContract = do
   _ <- symbol ";"
   count <- nonNegativeIntLiteral "bounded indexed contract"
   _ <- symbol "]"
-  pure (ContractId (boundedIndexedContractName elementContract count))
+  pure (ContractId (boundedIndexedContractName elementContract (fromIntegral count)))
 
 nonNegativeIntLiteral :: String -> Parser Int
 nonNegativeIntLiteral context = lexeme $ do
@@ -1451,17 +1488,27 @@ expandStructuralForms forms = do
         Right (recordStaticMakeData name resolved scope, TopLet visibility name resolved : acc)
       ParsedTopLetMake visibility target application -> do
         expanded <- expandMakeBinding scope visibility target.letTargetName application
-        let scope' =
+        let scopeWithFamily = recordGeneratedFamily expanded.embGeneratedFamily scope
+            scope' =
               if target.letTargetIndexed
-                then recordIndexedFamily target.letTargetName expanded.embGeneratedChildNames scope
-                else scope
+                then
+                  recordIndexedFamily
+                    target.letTargetName
+                    expanded.embGeneratedChildNames
+                    scopeWithFamily
+                else scopeWithFamily
         Right (scope', reverse expanded.embForms <> acc)
       ParsedTopLetApplication visibility name application -> do
         application' <- resolveFormApplicationFamilyProjections scope.esIndexedFamilies application
         case Map.lookup application'.formApplicationName scope.esForms of
           Just formDeclValue -> do
             expanded <- expandFormBinding scope visibility name formDeclValue application'
-            Right (scope, reverse expanded <> acc)
+            let scopeWithFamilies =
+                  scope
+                    { esGeneratedFamilies =
+                        expanded.efbGeneratedFamilies <> scope.esGeneratedFamilies
+                    }
+            Right (scopeWithFamilies, reverse expanded.efbForms <> acc)
           Nothing -> do
             rhs <- formApplicationToCorePureLetRhs application'
             Right (scope, TopLet visibility name rhs : acc)
@@ -1505,6 +1552,7 @@ data ExpansionScope = ExpansionScope
     esMakeCounts :: !(Map Text Scientific)
   , esMakeItems :: !(Map Text [MakeItem])
   , esIndexedFamilies :: !(Map Text [Text])
+  , esGeneratedFamilies :: !(Map Text GeneratedFamilyProvenance)
   }
   deriving stock (Show)
 
@@ -1516,11 +1564,21 @@ emptyExpansionScope =
     , esMakeCounts = Map.empty
     , esMakeItems = Map.empty
     , esIndexedFamilies = Map.empty
+    , esGeneratedFamilies = Map.empty
     }
 
 data ExpandedMakeBinding = ExpandedMakeBinding
   { embForms :: ![TopForm]
   , embGeneratedChildNames :: ![Text]
+  , embGeneratedFamily :: !GeneratedFamilyProvenance
+  }
+  deriving stock (Show)
+
+data GeneratedMakeChild = GeneratedMakeChild
+  { gmcName :: !Text
+  , gmcLabel :: !Text
+  , gmcValue :: !(Maybe CorePureExpr)
+  , gmcKindArguments :: ![Expr]
   }
   deriving stock (Show)
 
@@ -1539,28 +1597,56 @@ expandMakeBinding scope visibility bindingName application = do
       Right
       (Map.lookup application.makeApplicationKindName scope.esKinds)
   generated <- makeGeneratedChildren scope bindingName application kindDeclValue
-  let childNames = fmap fst generated
-      childNode (name, args) =
-        expandParsedNode
-          scope.esKinds
-          ( ParsedNodeKindApplication
-              name
-              KindApplication
-                { kindApplicationName = application.makeApplicationKindName
-                , kindApplicationArgs = args
-                }
-          )
+  let childNames = fmap (.gmcName) generated
+      familyKind =
+        case application.makeApplicationInput of
+          MakeInputCount {} -> GeneratedFamilyFromMake
+          MakeInputEach {} -> GeneratedFamilyFromMakeEach
+      generatedFamily =
+        GeneratedFamilyProvenance
+          { generatedFamilyBinding = bindingName
+          , generatedFamilyKind = familyKind
+          , generatedFamilyKindName = application.makeApplicationKindName
+          , generatedFamilyChildren =
+              [ GeneratedFamilyChild
+                  { generatedFamilyChildNode = child.gmcName
+                  , generatedFamilyChildLabel = child.gmcLabel
+                  , generatedFamilyChildValue = child.gmcValue
+                  }
+              | child <- generated
+              ]
+          }
+      childNode child = do
+        nodeDeclValue <-
+          expandParsedNode
+            scope.esKinds
+            ( ParsedNodeKindApplication
+                child.gmcName
+                KindApplication
+                  { kindApplicationName = application.makeApplicationKindName
+                  , kindApplicationArgs = child.gmcKindArguments
+                  }
+            )
+        Right nodeDeclValue
       resultExpr = overlayGeneratedChildren childNames
   nodes <- traverse childNode generated
   Right
     ExpandedMakeBinding
       { embForms = fmap TopNode nodes <> [TopLet visibility bindingName (LetRhsWire resultExpr)]
       , embGeneratedChildNames = childNames
+      , embGeneratedFamily = generatedFamily
       }
 
 recordIndexedFamily :: Text -> [Text] -> ExpansionScope -> ExpansionScope
 recordIndexedFamily familyName childNames scope =
   scope {esIndexedFamilies = Map.insert familyName childNames scope.esIndexedFamilies}
+
+recordGeneratedFamily :: GeneratedFamilyProvenance -> ExpansionScope -> ExpansionScope
+recordGeneratedFamily family scope =
+  scope
+    { esGeneratedFamilies =
+        Map.insert family.generatedFamilyBinding family scope.esGeneratedFamilies
+    }
 
 resolveLetRhsFamilyProjections :: Map Text [Text] -> LetRhs -> Either String LetRhs
 resolveLetRhsFamilyProjections families = \case
@@ -1720,15 +1806,21 @@ makeGeneratedChildren
   -> Text
   -> MakeApplication
   -> KindDecl
-  -> Either String [(Text, [Expr])]
+  -> Either String [GeneratedMakeChild]
 makeGeneratedChildren scope bindingName application kindDeclValue =
   case application.makeApplicationInput of
     MakeInputCount countInput -> do
       _ <- makeKindLabelParam kindDeclValue
       count <- staticMakeCount scope bindingName countInput
       Right
-        [ let name = bindingName <> "_" <> T.pack (show idx)
-           in (name, [ExprIdent (QName (name :| []))])
+        [ let label = T.pack (show idx)
+              name = bindingName <> "_" <> label
+           in GeneratedMakeChild
+                { gmcName = name
+                , gmcLabel = label
+                , gmcValue = Nothing
+                , gmcKindArguments = [ExprIdent (QName (name :| []))]
+                }
         | idx <- [0 .. count - 1]
         ]
     MakeInputEach eachInput -> do
@@ -1736,8 +1828,27 @@ makeGeneratedChildren scope bindingName application kindDeclValue =
       items <- staticMakeEachItems scope bindingName eachInput
       let child item = do
             let name = bindingName <> "_" <> item.makeItemLabel
-            valueArg <- traverse (\_ -> corePureExprToExpr item.makeItemValue) maybeValueParam
-            Right (name, ExprIdent (QName (name :| [])) : foldMap pure valueArg)
+            sourceValue <-
+              traverse
+                ( \_ ->
+                    if corePureLeanStaticValueCompatible item.makeItemValue
+                      then Right item.makeItemValue
+                      else
+                        Left
+                          ( "makeEach Value item for "
+                              <> T.unpack bindingName
+                              <> " must be a source static value: string, boolean, natural number, list, or flat record"
+                          )
+                )
+                maybeValueParam
+            valueArg <- traverse (const (corePureExprToExpr item.makeItemValue)) maybeValueParam
+            Right
+              GeneratedMakeChild
+                { gmcName = name
+                , gmcLabel = item.makeItemLabel
+                , gmcValue = sourceValue
+                , gmcKindArguments = ExprIdent (QName (name :| [])) : foldMap pure valueArg
+                }
       traverse child items
 
 makeKindLabelParam :: KindDecl -> Either String KindParam
@@ -1877,6 +1988,46 @@ staticMakeItemFromCorePure exprValue =
     _ ->
       Nothing
 
+corePureLeanStaticValueCompatible :: CorePureExpr -> Bool
+corePureLeanStaticValueCompatible = \case
+  CorePureLit (CorePureString _text) -> True
+  CorePureLit (CorePureBool _boolValue) -> True
+  CorePureLit (CorePureNumber numberValue) ->
+    case floatingOrInteger numberValue :: Either Double Integer of
+      Right integerValue -> integerValue >= 0
+      Left _fractionalValue -> False
+  CorePureLit CorePureNull -> False
+  CorePureList items ->
+    all corePureLeanStaticValueCompatible items
+  CorePureRecord fields ->
+    corePureLeanStaticRecordCompatible fields
+  CorePureIdent _name -> False
+  CorePureFieldAccess _target _fieldName -> False
+  CorePureIndex _target _index -> False
+  CorePureLambda _params _body -> False
+  CorePureCall _function _arguments -> False
+  CorePureUnary _operator _value -> False
+  CorePureBinary _operator _lhs _rhs -> False
+  CorePureLet _bindings _body -> False
+  CorePureIf _condition _thenBranch _elseBranch -> False
+
+corePureLeanStaticRecordCompatible :: [CorePureField] -> Bool
+corePureLeanStaticRecordCompatible fields =
+  all corePureLeanStaticFieldCompatible fields
+    && Set.size (Set.fromList fieldNames) == length fieldNames
+  where
+    fieldNames =
+      [ fieldName
+      | CorePureField (fieldName :| []) _value <- fields
+      ]
+
+corePureLeanStaticFieldCompatible :: CorePureField -> Bool
+corePureLeanStaticFieldCompatible = \case
+  CorePureField (_fieldName :| []) value ->
+    corePureLeanStaticValueCompatible value
+  CorePureField (_fieldName :| _nestedPath) _value ->
+    False
+
 staticRecordStringField :: Text -> [CorePureField] -> Maybe Text
 staticRecordStringField fieldName fields =
   case [ text
@@ -1984,6 +2135,7 @@ data FormExpansionState = FormExpansionState
   , fesIndexedFamilies :: !(Map Text [Text])
   , fesMakeCounts :: !(Map Text Scientific)
   , fesMakeItems :: !(Map Text [MakeItem])
+  , fesGeneratedFamilies :: !(Map Text GeneratedFamilyProvenance)
   , fesOutputForms :: ![TopForm]
   }
   deriving stock (Show)
@@ -1996,8 +2148,15 @@ emptyFormExpansionState =
     , fesIndexedFamilies = Map.empty
     , fesMakeCounts = Map.empty
     , fesMakeItems = Map.empty
+    , fesGeneratedFamilies = Map.empty
     , fesOutputForms = []
     }
+
+data ExpandedFormBinding = ExpandedFormBinding
+  { efbForms :: ![TopForm]
+  , efbGeneratedFamilies :: !(Map Text GeneratedFamilyProvenance)
+  }
+  deriving stock (Show)
 
 expandFormBinding
   :: ExpansionScope
@@ -2005,7 +2164,7 @@ expandFormBinding
   -> Text
   -> FormDecl
   -> FormApplication
-  -> Either String [TopForm]
+  -> Either String ExpandedFormBinding
 expandFormBinding scope visibility bindingName formDeclValue application = do
   subst <- formSubstitutionForApplication formDeclValue application
   expandedState <-
@@ -2019,9 +2178,13 @@ expandFormBinding scope visibility bindingName formDeclValue application = do
       expandedState.fesLocalNames
       expandedState.fesIndexedFamilies
       formDeclValue.formDeclResult
-  Right $
-    expandedState.fesOutputForms
-      <> [TopLet visibility bindingName (LetRhsWire resultExpr)]
+  Right
+    ExpandedFormBinding
+      { efbForms =
+          expandedState.fesOutputForms
+            <> [TopLet visibility bindingName (LetRhsWire resultExpr)]
+      , efbGeneratedFamilies = expandedState.fesGeneratedFamilies
+      }
 
 expandFormItem
   :: ExpansionScope
@@ -2063,7 +2226,12 @@ expandFormItem scope subst prefix state = \case
                 state.fesIndexedFamilies
                 application
             expanded <- expandFormBinding scope LetPrivate prefixedName formDeclValue application'
-            Right stateWithName {fesOutputForms = state.fesOutputForms <> expanded}
+            Right
+              stateWithName
+                { fesOutputForms = state.fesOutputForms <> expanded.efbForms
+                , fesGeneratedFamilies =
+                    expanded.efbGeneratedFamilies <> state.fesGeneratedFamilies
+                }
           Nothing -> do
             letRhsValue <-
               formApplicationToCorePureLetRhs
@@ -2088,7 +2256,15 @@ expandFormItem scope subst prefix state = \case
                         Map.insert localName expanded.embGeneratedChildNames stateWithName.fesIndexedFamilies
                     }
                 else stateWithName
-        Right stateWithFamily {fesOutputForms = state.fesOutputForms <> expanded.embForms}
+        Right
+          stateWithFamily
+            { fesOutputForms = state.fesOutputForms <> expanded.embForms
+            , fesGeneratedFamilies =
+                Map.insert
+                  expanded.embGeneratedFamily.generatedFamilyBinding
+                  expanded.embGeneratedFamily
+                  state.fesGeneratedFamilies
+            }
       FormLetRhsWire exprValue -> do
         letRhsValue <-
           substituteFormWireLetRhs
@@ -2309,12 +2485,12 @@ formApplicationToCorePureLetRhs application =
 
 substituteFormNodeDecl
   :: FormSubstitution -> Map Text Text -> NodeDecl -> Either String NodeDecl
-substituteFormNodeDecl subst localLetNames nodeDeclValue =
-  NodeDecl nodeDeclValue.nodeDeclName
-    <$> traverse (substitutePortDecl subst.fsKindSubstitution) nodeDeclValue.nodeDeclPortSig
-    <*> ( substituteNodeBody subst.fsKindSubstitution nodeDeclValue.nodeDeclBody
-            >>= rewriteNodeBodyLocalLets localLetNames
-        )
+substituteFormNodeDecl subst localLetNames nodeDeclValue = do
+  portSig <- traverse (substitutePortDecl subst.fsKindSubstitution) nodeDeclValue.nodeDeclPortSig
+  body <-
+    substituteNodeBody subst.fsKindSubstitution nodeDeclValue.nodeDeclBody
+      >>= rewriteNodeBodyLocalLets localLetNames
+  Right (nodeDeclValue {nodeDeclPortSig = portSig, nodeDeclBody = body})
 
 substituteFormExpr
   :: FormSubstitution -> Map Text Text -> Map Text [Text] -> Expr -> Either String Expr
@@ -2476,7 +2652,12 @@ duplicateText =
 
 expandParsedNode :: Map Text KindDecl -> ParsedNodeDecl -> Either String NodeDecl
 expandParsedNode _kindScope (ParsedNodeBody name portSig body) =
-  Right (NodeDecl name portSig body)
+  Right
+    NodeDecl
+      { nodeDeclName = name
+      , nodeDeclPortSig = portSig
+      , nodeDeclBody = body
+      }
 expandParsedNode kindScope (ParsedNodeKindApplication nodeName application) = do
   kindDeclValue <-
     maybe
@@ -2486,9 +2667,14 @@ expandParsedNode kindScope (ParsedNodeKindApplication nodeName application) = do
       Right
       (Map.lookup application.kindApplicationName kindScope)
   subst <- kindSubstitutionForApplication kindDeclValue application
-  NodeDecl nodeName
-    <$> traverse (substitutePortDecl subst) kindDeclValue.kindDeclPortSig
-    <*> substituteNodeBody subst kindDeclValue.kindDeclBody
+  portSig <- traverse (substitutePortDecl subst) kindDeclValue.kindDeclPortSig
+  body <- substituteNodeBody subst kindDeclValue.kindDeclBody
+  Right
+    NodeDecl
+      { nodeDeclName = nodeName
+      , nodeDeclPortSig = portSig
+      , nodeDeclBody = body
+      }
 
 kindSubstitutionForApplication :: KindDecl -> KindApplication -> Either String KindSubstitution
 kindSubstitutionForApplication kindDeclValue application = do

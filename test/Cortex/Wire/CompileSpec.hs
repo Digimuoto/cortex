@@ -15,15 +15,44 @@ module Cortex.Wire.CompileSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Foldable qualified as Foldable
 import Data.Map.Strict qualified as Map
-import Data.Scientific (Scientific)
+import Data.Maybe (isJust, mapMaybe)
+import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Numeric.Natural (Natural)
 import Test.Hspec
 
 import Cortex.Algebra.Graph (successors)
-import Cortex.Wire (WirePayloadKind (..))
+import Cortex.Wire (Connection (..), EndpointRef (..), WirePayloadKind (..))
+import Cortex.Wire.AdmissionArtifact
+  ( AdmissionBoundaryPort (..)
+  , AdmissionConnection (..)
+  , AdmissionPortLabel (..)
+  , AdmissionStaticField (..)
+  , AdmissionStaticValue (..)
+  , GeneratedChildArtifact (..)
+  , GeneratedChildSourceArtifact (..)
+  , GeneratedFormArtifact (..)
+  , GeneratedFormKind (..)
+  , PhantomAdapterArtifact (..)
+  , PhantomAdapterDirection (..)
+  , PrimitiveGraphStep (..)
+  , ProductShapeArtifact (..)
+  , SelectAdmissionArtifact (..)
+  , SelectArmAdmissionArtifact (..)
+  , SelectResolutionMode (..)
+  , SelectVariantArtifact (..)
+  , WireAdmissionArtifact (..)
+  , combineWireAdmissionArtifacts
+  , emptyWireAdmissionArtifact
+  , wireAdmissionArtifactValidatorReady
+  , wireAdmissionCurrentSchemaVersion
+  , wireAdmissionMetadataKey
+  , wireAdmissionMetadataValue
+  )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
   , CompiledCircuit (..)
@@ -71,6 +100,2597 @@ spec = describe "Cortex.Wire.Compile" $ do
     compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "analyst"]
     successors compiled.compiledCircuitTopology (CircuitNodeRef "planner")
       `shouldBe` Set.singleton (CircuitNodeRef "analyst")
+    expectWireAdmissionArtifact compiled $ \artifact ->
+      fmap Aeson.toJSON artifact.wireAdmissionConnections
+        `shouldBe` [ simpleChainConnectionJson
+                   ]
+    expectWireAdmissionArtifact compiled assertSimpleChainPrimitiveConnectArtifact
+    wireAdmissionArrayAny
+      "wireAdmissionPrimitiveSteps"
+      primitiveConnectMatchesSimpleChain
+      compiled
+      `shouldBe` True
+
+  it "rejects unsupported Wire admission artifact schema versions" $ do
+    compiled <- requireRight (compileWireText simpleChainSourceText)
+    case wireAdmissionValue compiled of
+      Nothing ->
+        expectationFailure "wire admission metadata missing"
+      Just admission -> do
+        let unsupportedAdmission =
+              case admission of
+                Aeson.Object obj ->
+                  Aeson.Object
+                    ( KeyMap.insert
+                        "wireAdmissionSchemaVersion"
+                        (Aeson.Number 0)
+                        obj
+                    )
+                other ->
+                  other
+        case Aeson.fromJSON unsupportedAdmission :: Aeson.Result WireAdmissionArtifact of
+          Aeson.Success _artifact ->
+            expectationFailure "unsupported wire admission schema version decoded"
+          Aeson.Error message ->
+            message `shouldContain` "unsupported wire admission schema version"
+
+  it "rejects negative indexed product artifact counts" $
+    case Aeson.fromJSON negativeIndexedProductShapeJson :: Aeson.Result ProductShapeArtifact of
+      Aeson.Success _productShape ->
+        expectationFailure "negative indexed product artifact count decoded"
+      Aeson.Error message ->
+        message `shouldContain` "indexed product count must be non-negative"
+
+  it "rejects negative boundary exclusive group artifact indexes" $
+    case Aeson.fromJSON negativeExclusiveGroupBoundaryJson :: Aeson.Result AdmissionBoundaryPort of
+      Aeson.Success _boundary ->
+        expectationFailure "negative exclusive group artifact index decoded"
+      Aeson.Error message ->
+        message `shouldContain` "exclusive group index must be non-negative"
+
+  it "rejects negative select arm source artifact indexes" $
+    case Aeson.fromJSON negativeSelectArmSourceIndexJson :: Aeson.Result SelectArmAdmissionArtifact of
+      Aeson.Success _arm ->
+        expectationFailure "negative select arm source artifact index decoded"
+      Aeson.Error message ->
+        message `shouldContain` "select arm source index must be non-negative"
+
+  it "normalizes combined Wire admission artifacts to the current schema version" $ do
+    let staleArtifact =
+          emptyWireAdmissionArtifact {wireAdmissionSchemaVersion = wireAdmissionCurrentSchemaVersion + 1}
+        combinedArtifact = combineWireAdmissionArtifacts staleArtifact emptyWireAdmissionArtifact
+    combinedArtifact.wireAdmissionSchemaVersion `shouldBe` wireAdmissionCurrentSchemaVersion
+
+  it "rejects stale Wire admission artifacts at the validator boundary" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSchemaVersion = wireAdmissionCurrentSchemaVersion + 1
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects top-level admission summaries with duplicate identities" $ do
+    let duplicatedNode = CircuitNodeRef "duplicated"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [duplicatedNode, duplicatedNode]
+            , wireAdmissionBindingRefs = ["shared", "shared"]
+            , wireAdmissionEntries = [plannerBoundary, plannerBoundary]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated component rows with duplicate bindings" $ do
+    let validArtifact = minimalGeneratedAdmissionArtifact
+        generatedRows = validArtifact.wireAdmissionGeneratedForms
+        malformedArtifact =
+          validArtifact {wireAdmissionGeneratedForms = generatedRows <> generatedRows}
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects empty generated component rows without binding references" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = []
+                    , generatedFormUsedChildren = []
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects non-empty generated source rows without used children" $ do
+    let generatedNode = CircuitNodeRef "workers_0"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionBindingRefs = ["workers"]
+            , wireAdmissionPrimitiveSteps = [PrimitiveBindingRef "workers"]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren =
+                        [GeneratedChildSourceArtifact generatedNode "0" Nothing]
+                    , generatedFormUsedChildren = []
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter component rows with duplicate nodes" $ do
+    let validArtifact = minimalPhantomAdmissionArtifact
+        phantomRows = validArtifact.wireAdmissionPhantomAdapters
+        malformedArtifact =
+          validArtifact {wireAdmissionPhantomAdapters = phantomRows <> phantomRows}
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose singular contract does not match the product" $ do
+    let validArtifact = minimalPhantomAdmissionArtifact
+        wrongSingular = admissionTestBoundary (CircuitNodeRef "sink") "plans" "[Other;1]"
+        wrongPhantomSingular =
+          admissionTestBoundary (CircuitNodeRef "__star:gather:planner:sink") "plans" "[Other;1]"
+        malformedArtifact =
+          validArtifact
+            { wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode (CircuitNodeRef "planner") [] [plannerBoundary]
+                , PrimitiveNode
+                    (CircuitNodeRef "__star:gather:planner:sink")
+                    [admissionTestBoundary (CircuitNodeRef "__star:gather:planner:sink") "item_0" "PlannerOutput"]
+                    [wrongPhantomSingular]
+                , PrimitiveConnect
+                    [plannerBoundary]
+                    [admissionTestBoundary (CircuitNodeRef "__star:gather:planner:sink") "item_0" "PlannerOutput"]
+                    [ AdmissionConnection
+                        plannerBoundary
+                        (admissionTestBoundary (CircuitNodeRef "__star:gather:planner:sink") "item_0" "PlannerOutput")
+                    ]
+                    []
+                    []
+                , PrimitiveNode (CircuitNodeRef "sink") [wrongSingular] []
+                , PrimitiveConnect
+                    [wrongPhantomSingular]
+                    [wrongSingular]
+                    [AdmissionConnection wrongPhantomSingular wrongSingular]
+                    []
+                    []
+                ]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = CircuitNodeRef "__star:gather:planner:sink"
+                    , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+                    , phantomAdapterSingular = wrongSingular
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [ AdmissionConnection
+                            plannerBoundary
+                            ( admissionTestBoundary
+                                (CircuitNodeRef "__star:gather:planner:sink")
+                                "item_0"
+                                "PlannerOutput"
+                            )
+                        ]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection wrongPhantomSingular wrongSingular]
+                    }
+                ]
+            }
+    validArtifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts with indexed-product-shaped elements" $ do
+    let planner = CircuitNodeRef "planner"
+        analyst = CircuitNodeRef "analyst"
+        sink = CircuitNodeRef "sink"
+        phantomNode = CircuitNodeRef "__star:gather:nested"
+        rawConnection fromBoundary toBoundary =
+          Connection
+            { connectionFrom =
+                EndpointRef
+                  fromBoundary.admissionBoundaryNode
+                  (Just fromBoundary.admissionBoundaryPort)
+            , connectionTo =
+                EndpointRef
+                  toBoundary.admissionBoundaryNode
+                  (Just toBoundary.admissionBoundaryPort)
+            }
+        malformedArtifact elementContract aggregateContract =
+          let firstMulti = admissionTestBoundary planner "plan0" elementContract
+              secondMulti = admissionTestBoundary analyst "plan1" elementContract
+              phantomFirst = admissionTestBoundary phantomNode "item_0" elementContract
+              phantomSecond = admissionTestBoundary phantomNode "item_1" elementContract
+              singular = admissionTestBoundary sink "plans" aggregateContract
+              phantomSingular = admissionTestBoundary phantomNode "plans" aggregateContract
+           in emptyWireAdmissionArtifact
+                { wireAdmissionNodes = [planner, analyst, sink, phantomNode]
+                , wireAdmissionConnections =
+                    [ rawConnection firstMulti phantomFirst
+                    , rawConnection secondMulti phantomSecond
+                    , rawConnection phantomSingular singular
+                    ]
+                , wireAdmissionPrimitiveSteps =
+                    [ PrimitiveNode planner [] [firstMulti]
+                    , PrimitiveNode analyst [] [secondMulti]
+                    , PrimitiveNode phantomNode [phantomFirst, phantomSecond] [phantomSingular]
+                    , PrimitiveConnect
+                        [firstMulti, secondMulti]
+                        [phantomFirst, phantomSecond]
+                        [ AdmissionConnection firstMulti phantomFirst
+                        , AdmissionConnection secondMulti phantomSecond
+                        ]
+                        []
+                        []
+                    , PrimitiveNode sink [singular] []
+                    , PrimitiveConnect
+                        [phantomSingular]
+                        [singular]
+                        [AdmissionConnection phantomSingular singular]
+                        []
+                        []
+                    ]
+                , wireAdmissionPhantomAdapters =
+                    [ PhantomAdapterArtifact
+                        { phantomAdapterDirection = PhantomGather
+                        , phantomAdapterNode = phantomNode
+                        , phantomAdapterProductShape = ProductIndexed elementContract 2
+                        , phantomAdapterSingular = singular
+                        , phantomAdapterMulti = [firstMulti, secondMulti]
+                        , phantomAdapterLeftBulk =
+                            [ AdmissionConnection firstMulti phantomFirst
+                            , AdmissionConnection secondMulti phantomSecond
+                            ]
+                        , phantomAdapterRightBulk = [AdmissionConnection phantomSingular singular]
+                        }
+                    ]
+                }
+    minimalPhantomAdmissionArtifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
+    malformedArtifact "[PlannerOutput;1]" "[[PlannerOutput;1];2]"
+      `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+    malformedArtifact "[PlannerOutput" "[[PlannerOutput;2]"
+      `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select component rows with duplicate condition nodes" $ do
+    let validArtifact = minimalSelectAdmissionArtifact
+        selectRows = validArtifact.wireAdmissionSelects
+        malformedArtifact =
+          validArtifact {wireAdmissionSelects = selectRows <> selectRows}
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive nodes claimed by multiple component roles" $ do
+    let planner = CircuitNodeRef "planner"
+        sink = CircuitNodeRef "sink"
+        sharedNode = CircuitNodeRef "workers_0"
+        singular = admissionTestBoundary sink "plans" "[PlannerOutput; 1]"
+        multi = admissionTestBoundary planner "plan" "PlannerOutput"
+        phantomMulti = admissionTestBoundary sharedNode "item_0" "PlannerOutput"
+        phantomSingular = admissionTestBoundary sharedNode "plans" "[PlannerOutput; 1]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, sink, sharedNode]
+            , wireAdmissionEntries = [singular, phantomMulti]
+            , wireAdmissionExits = [multi, phantomSingular]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [multi]
+                , PrimitiveNode sink [singular] []
+                , PrimitiveNode sharedNode [phantomMulti] [phantomSingular]
+                ]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "worker"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren =
+                        [GeneratedChildSourceArtifact sharedNode "0" Nothing]
+                    , generatedFormUsedChildren =
+                        [GeneratedChildArtifact sharedNode "0" [phantomSingular] [phantomMulti]]
+                    }
+                ]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = sharedNode
+                    , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [multi]
+                    , phantomAdapterLeftBulk = [AdmissionConnection multi phantomMulti]
+                    , phantomAdapterRightBulk = [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects admission artifacts with empty row identities" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef ""]
+            , wireAdmissionBindingRefs = [""]
+            , wireAdmissionEntries =
+                [admissionTestBoundary (CircuitNodeRef "") "" ""]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects top-level summary boundaries outside the node summary" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner"]
+            , wireAdmissionEntries =
+                [admissionTestBoundary (CircuitNodeRef "external") "plan" "PlannerOutput"]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects boundary exclusive groups outside the node summary" $ do
+    let malformedBoundary =
+          plannerBoundary
+            { admissionBoundaryExclusiveGroup =
+                Just (CircuitNodeRef "external-selector", 0)
+            }
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner"]
+            , wireAdmissionExits = [malformedBoundary]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects boundary exclusive groups owned by another node" $ do
+    let malformedBoundary =
+          plannerBoundary
+            { admissionBoundaryExclusiveGroup =
+                Just (CircuitNodeRef "selector", 0)
+            }
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner", CircuitNodeRef "selector"]
+            , wireAdmissionExits = [malformedBoundary]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects top-level summary connections outside the node summary" $ do
+    let malformedJson =
+          wireAdmissionJsonWith
+            [
+              ( "wireAdmissionNodes"
+              , Aeson.toJSON [CircuitNodeRef "planner"]
+              )
+            ,
+              ( "wireAdmissionConnections"
+              , Aeson.toJSON [simpleChainConnectionJson]
+              )
+            ]
+    case Aeson.fromJSON malformedJson :: Aeson.Result WireAdmissionArtifact of
+      Aeson.Success malformedArtifact ->
+        malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+      Aeson.Error message ->
+        expectationFailure ("expected WireAdmissionArtifact JSON to decode: " <> message)
+
+  it "rejects top-level raw connections not backed by primitive connect rows" $ do
+    let malformedJson =
+          wireAdmissionJsonWith
+            [
+              ( "wireAdmissionNodes"
+              , Aeson.toJSON [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+              )
+            ,
+              ( "wireAdmissionConnections"
+              , Aeson.toJSON [simpleChainConnectionJson]
+              )
+            ]
+    case Aeson.fromJSON malformedJson :: Aeson.Result WireAdmissionArtifact of
+      Aeson.Success malformedArtifact ->
+        malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+      Aeson.Error message ->
+        expectationFailure ("expected WireAdmissionArtifact JSON to decode: " <> message)
+
+  it "rejects top-level node summaries not backed by primitive node rows" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "orphan"]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects top-level binding summaries not backed by primitive binding rows" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionBindingRefs = ["orphan"]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifact rows outside the top-level summaries" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner"]
+            , wireAdmissionPrimitiveSteps =
+                [PrimitiveNode (CircuitNodeRef "external") [] []]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects top-level entries not backed by primitive node frontiers" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner]
+            , wireAdmissionEntries = [plannerBoundary]
+            , wireAdmissionPrimitiveSteps = [PrimitiveNode planner [] []]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive residual frontiers omitted from the top-level summary" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        plannerInput =
+          admissionTestBoundary planner "request" "PlannerInput"
+        plannerOutput =
+          admissionTestBoundary planner "plan" "PlannerOutput"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner]
+            , wireAdmissionPrimitiveSteps =
+                [PrimitiveNode planner [plannerInput] [plannerOutput]]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects top-level exits already consumed by primitive connect rows" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        analyst =
+          CircuitNodeRef "analyst"
+        plannerPlan =
+          admissionTestBoundary planner "plan" "PlannerOutput"
+        analystPlan =
+          admissionTestBoundary analyst "plan" "PlannerOutput"
+        consumed =
+          AdmissionConnection
+            { admissionConnectionFrom = plannerPlan
+            , admissionConnectionTo = analystPlan
+            }
+        malformedJson =
+          wireAdmissionJsonWith
+            [
+              ( "wireAdmissionNodes"
+              , Aeson.toJSON [planner, analyst]
+              )
+            ,
+              ( "wireAdmissionExits"
+              , Aeson.toJSON [plannerPlan]
+              )
+            ,
+              ( "wireAdmissionPrimitiveSteps"
+              , Aeson.toJSON
+                  [ PrimitiveNode planner [] [plannerPlan]
+                  , PrimitiveNode analyst [analystPlan] []
+                  , PrimitiveConnect [plannerPlan] [analystPlan] [consumed] [] []
+                  ]
+              )
+            ,
+              ( "wireAdmissionConnections"
+              , Aeson.toJSON [simpleChainConnectionJson]
+              )
+            ]
+    case Aeson.fromJSON malformedJson :: Aeson.Result WireAdmissionArtifact of
+      Aeson.Success malformedArtifact ->
+        malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+      Aeson.Error message ->
+        expectationFailure ("expected WireAdmissionArtifact JSON to decode: " <> message)
+
+  it "rejects primitive overlay artifacts with overlapping ledgers" $ do
+    let sharedNode =
+          CircuitNodeRef "planner"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [sharedNode]
+            , wireAdmissionBindingRefs = ["shared"]
+            , wireAdmissionPrimitiveSteps =
+                [PrimitiveOverlay [sharedNode] [sharedNode] ["shared"] ["shared"]]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive overlay artifacts with duplicated side ledgers" $ do
+    let duplicatedNode =
+          CircuitNodeRef "planner"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [duplicatedNode]
+            , wireAdmissionBindingRefs = ["shared"]
+            , wireAdmissionPrimitiveSteps =
+                [PrimitiveOverlay [duplicatedNode, duplicatedNode] [] ["shared", "shared"] []]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive overlay ledgers introduced after the overlay row" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        analyst =
+          CircuitNodeRef "analyst"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, analyst]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveOverlay [planner] [analyst] [] []
+                , PrimitiveNode planner [] []
+                , PrimitiveNode analyst [] []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated used children outside the node summary" $ do
+    let generatedNode = CircuitNodeRef "workers_0"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner"]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "worker"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren =
+                        [GeneratedChildSourceArtifact generatedNode "0" Nothing]
+                    , generatedFormUsedChildren =
+                        [GeneratedChildArtifact generatedNode "0" [] []]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts outside the node summary" $ do
+    let phantomNode = CircuitNodeRef "__star:domain"
+        sinkNode = CircuitNodeRef "sink"
+        singular = admissionTestBoundary sinkNode "samples" "[Sample; 0]"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 0]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [sinkNode]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 0
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = []
+                    , phantomAdapterLeftBulk = []
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select variant artifacts outside the node summary" $ do
+    let selectorNode = CircuitNodeRef "__select:choice"
+        externalVariant =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "external")
+            "ok"
+            "Choice"
+            "ok"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [selectorNode]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [SelectVariantArtifact "ok" externalVariant]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select variants not backed by primitive node exits" $ do
+    let selectorNode =
+          CircuitNodeRef "__select:choice"
+        okVariant =
+          admissionTestLabeledBoundary selectorNode "ok" "Choice" "ok"
+        issueVariant =
+          admissionTestLabeledBoundary selectorNode "issue" "Choice" "issue"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [selectorNode]
+            , wireAdmissionPrimitiveSteps = [PrimitiveNode selectorNode [] []]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okVariant
+                        , SelectVariantArtifact "issue" issueVariant
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select condition nodes without primitive bridge frontiers" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode]
+            , wireAdmissionExits = [okPort, issuePort]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , PrimitiveNode conditionNode [] []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select condition nodes with duplicate compatible internal exits" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "ok_in" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "issue_in" "PlanIssue" "issue"
+        okInternalA =
+          (admissionTestLabeledBoundary conditionNode "ok_a" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        okInternalB =
+          (admissionTestLabeledBoundary conditionNode "ok_b" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 1)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "issue_a" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 2)
+            }
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode]
+            , wireAdmissionEntries = [okEntry, issueEntry]
+            , wireAdmissionExits = [okPort, issuePort]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , PrimitiveNode
+                    conditionNode
+                    [okEntry, issueEntry]
+                    [okInternalA, okInternalB, issueInternal]
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select bridge entries exposed in the final summary" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        okBody =
+          CircuitNodeRef "__select:ok_body"
+        issueBody =
+          CircuitNodeRef "__select:issue_body"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "ok_in" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "issue_in" "PlanIssue" "issue"
+        okInternal =
+          (admissionTestLabeledBoundary conditionNode "ok_choice" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "issue_choice" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 1)
+            }
+        bridgeExit =
+          admissionTestLabeledBoundary conditionNode "result" "SelectedPlan" "result"
+        okBodyEntry =
+          admissionTestLabeledBoundary okBody "ok_in" "ResearchPlan" "ok"
+        okBodyExit =
+          admissionTestLabeledBoundary okBody "result" "SelectedPlan" "result"
+        issueBodyEntry =
+          admissionTestLabeledBoundary issueBody "issue_in" "PlanIssue" "issue"
+        issueBodyExit =
+          admissionTestLabeledBoundary issueBody "result" "SelectedPlan" "result"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode]
+            , wireAdmissionEntries = [okEntry, issueEntry]
+            , wireAdmissionExits = [okPort, issuePort, bridgeExit]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , PrimitiveNode
+                    conditionNode
+                    [okEntry, issueEntry]
+                    [okInternal, issueInternal, bridgeExit]
+                , PrimitiveOverlay [planner] [conditionNode] [] []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [okBody]
+                            , selectArmBodyEntries = [okBodyEntry]
+                            , selectArmBodyExits = [okBodyExit]
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [issueBody]
+                            , selectArmBodyEntries = [issueBodyEntry]
+                            , selectArmBodyExits = [issueBodyExit]
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select bridge entries consumed by a non-variant source" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        decoy =
+          CircuitNodeRef "decoy"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        okBody =
+          CircuitNodeRef "__select:ok_body"
+        issueBody =
+          CircuitNodeRef "__select:issue_body"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        decoyOk =
+          admissionTestLabeledBoundary decoy "ok" "ResearchPlan" "ok"
+        decoyIssue =
+          admissionTestLabeledBoundary decoy "issue" "PlanIssue" "issue"
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "ok_in" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "issue_in" "PlanIssue" "issue"
+        okInternal =
+          (admissionTestLabeledBoundary conditionNode "ok_choice" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "issue_choice" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 1)
+            }
+        bridgeExit =
+          admissionTestLabeledBoundary conditionNode "result" "SelectedPlan" "result"
+        okBodyEntry =
+          admissionTestLabeledBoundary okBody "ok_in" "ResearchPlan" "ok"
+        okBodyExit =
+          admissionTestLabeledBoundary okBody "result" "SelectedPlan" "result"
+        issueBodyEntry =
+          admissionTestLabeledBoundary issueBody "issue_in" "PlanIssue" "issue"
+        issueBodyExit =
+          admissionTestLabeledBoundary issueBody "result" "SelectedPlan" "result"
+        decoyOkPair =
+          AdmissionConnection decoyOk okEntry
+        decoyIssuePair =
+          AdmissionConnection decoyIssue issueEntry
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [decoy, conditionNode, planner]
+            , wireAdmissionExits = [bridgeExit, okPort, issuePort]
+            , wireAdmissionConnections =
+                [ Connection
+                    { connectionFrom = EndpointRef decoy (Just "ok")
+                    , connectionTo = EndpointRef conditionNode (Just "ok_in")
+                    }
+                , Connection
+                    { connectionFrom = EndpointRef decoy (Just "issue")
+                    , connectionTo = EndpointRef conditionNode (Just "issue_in")
+                    }
+                ]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode decoy [] [decoyOk, decoyIssue]
+                , PrimitiveNode
+                    conditionNode
+                    [okEntry, issueEntry]
+                    [okInternal, issueInternal, bridgeExit]
+                , PrimitiveConnect
+                    [decoyOk, decoyIssue]
+                    [okEntry, issueEntry]
+                    [decoyOkPair, decoyIssuePair]
+                    []
+                    []
+                , PrimitiveNode planner [] [okPort, issuePort]
+                , PrimitiveOverlay [decoy, conditionNode] [planner] [] []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [okBody]
+                            , selectArmBodyEntries = [okBodyEntry]
+                            , selectArmBodyExits = [okBodyExit]
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [issueBody]
+                            , selectArmBodyEntries = [issueBodyEntry]
+                            , selectArmBodyExits = [issueBodyExit]
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive connect frontiers not backed by primitive node frontiers" $ do
+    let pair =
+          AdmissionConnection plannerBoundary analystBoundary
+        malformedJson =
+          wireAdmissionJsonWith
+            [
+              ( "wireAdmissionNodes"
+              , Aeson.toJSON [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+              )
+            ,
+              ( "wireAdmissionPrimitiveSteps"
+              , Aeson.toJSON
+                  [ PrimitiveNode (CircuitNodeRef "planner") [] []
+                  , PrimitiveNode (CircuitNodeRef "analyst") [] []
+                  , PrimitiveConnect [plannerBoundary] [analystBoundary] [pair] [] []
+                  ]
+              )
+            ,
+              ( "wireAdmissionConnections"
+              , Aeson.toJSON [simpleChainConnectionJson]
+              )
+            ]
+    case Aeson.fromJSON malformedJson :: Aeson.Result WireAdmissionArtifact of
+      Aeson.Success malformedArtifact ->
+        malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+      Aeson.Error message ->
+        expectationFailure ("expected WireAdmissionArtifact JSON to decode: " <> message)
+
+  it "rejects primitive connect frontiers introduced after the connect row" $ do
+    let pair =
+          AdmissionConnection plannerBoundary analystBoundary
+        malformedJson =
+          wireAdmissionJsonWith
+            [
+              ( "wireAdmissionNodes"
+              , Aeson.toJSON [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+              )
+            ,
+              ( "wireAdmissionPrimitiveSteps"
+              , Aeson.toJSON
+                  [ PrimitiveConnect [plannerBoundary] [analystBoundary] [pair] [] []
+                  , PrimitiveNode (CircuitNodeRef "planner") [] [plannerBoundary]
+                  , PrimitiveNode (CircuitNodeRef "analyst") [analystBoundary] []
+                  ]
+              )
+            ,
+              ( "wireAdmissionConnections"
+              , Aeson.toJSON [simpleChainConnectionJson]
+              )
+            ]
+    case Aeson.fromJSON malformedJson :: Aeson.Result WireAdmissionArtifact of
+      Aeson.Success malformedArtifact ->
+        malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+      Aeson.Error message ->
+        expectationFailure ("expected WireAdmissionArtifact JSON to decode: " <> message)
+
+  it "rejects primitive connect artifacts that omit operand frontiers" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+            , wireAdmissionEntries = [analystBoundary]
+            , wireAdmissionExits = [plannerBoundary]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode (CircuitNodeRef "planner") [] [plannerBoundary]
+                , PrimitiveNode (CircuitNodeRef "analyst") [analystBoundary] []
+                , PrimitiveConnect [] [] [] [] []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts whose postorder rows leave multiple frames" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+            , wireAdmissionEntries = [analystBoundary]
+            , wireAdmissionExits = [plannerBoundary]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode (CircuitNodeRef "planner") [] [plannerBoundary]
+                , PrimitiveNode (CircuitNodeRef "analyst") [analystBoundary] []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts whose matched pair is outside the row frontier" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPrimitiveSteps =
+                [ PrimitiveConnect
+                    [plannerBoundary]
+                    []
+                    [AdmissionConnection plannerBoundary analystBoundary]
+                    []
+                    []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts whose unmatched endpoints are outside the row frontier" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPrimitiveSteps =
+                [ PrimitiveConnect
+                    [plannerBoundary]
+                    [analystBoundary]
+                    []
+                    [sinkBoundary]
+                    [plannerBoundary]
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts whose matched pairs reuse endpoints" $ do
+    let pair = AdmissionConnection plannerBoundary analystBoundary
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPrimitiveSteps =
+                [ PrimitiveConnect
+                    [plannerBoundary]
+                    [analystBoundary]
+                    [pair, pair]
+                    []
+                    []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts whose matched pairs have incompatible boundaries" $ do
+    let incompatibleAnalyst =
+          admissionTestBoundary (CircuitNodeRef "analyst") "plan" "OtherOutput"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveConnect
+                    [plannerBoundary]
+                    [incompatibleAnalyst]
+                    [AdmissionConnection plannerBoundary incompatibleAnalyst]
+                    []
+                    []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts that leave compatible endpoints unmatched" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner", CircuitNodeRef "analyst"]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveConnect
+                    [plannerBoundary]
+                    [analystBoundary]
+                    []
+                    [plannerBoundary]
+                    [analystBoundary]
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects primitive artifacts whose matched and unmatched endpoints do not partition frontiers" $ do
+    let pair = AdmissionConnection plannerBoundary analystBoundary
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPrimitiveSteps =
+                [ PrimitiveConnect
+                    [plannerBoundary, sinkBoundary]
+                    [analystBoundary]
+                    [pair]
+                    []
+                    []
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose used child lacks source backing" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren =
+                        [GeneratedChildSourceArtifact (CircuitNodeRef "workers_0") "0" Nothing]
+                    , generatedFormUsedChildren =
+                        [GeneratedChildArtifact (CircuitNodeRef "workers_1") "1" [] []]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose source child keys are duplicated" $ do
+    let sourceChild = GeneratedChildSourceArtifact (CircuitNodeRef "workers_0") "0" Nothing
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild, sourceChild]
+                    , generatedFormUsedChildren =
+                        [GeneratedChildArtifact (CircuitNodeRef "workers_0") "0" [] []]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose used child keys are duplicated" $ do
+    let sourceChild = GeneratedChildSourceArtifact (CircuitNodeRef "workers_0") "0" Nothing
+        usedChild = GeneratedChildArtifact (CircuitNodeRef "workers_0") "0" [] []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild, usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose child nodes do not follow the binding label policy" $ do
+    let sourceChild = GeneratedChildSourceArtifact (CircuitNodeRef "other_0") "0" Nothing
+        usedChild = GeneratedChildArtifact (CircuitNodeRef "other_0") "0" [] []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "other_0"]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose used child frontier is not primitive-backed" $ do
+    let childNode =
+          CircuitNodeRef "workers_0"
+        childOutput =
+          admissionTestBoundary childNode "result" "Sample"
+        sourceChild =
+          GeneratedChildSourceArtifact childNode "0" Nothing
+        usedChild =
+          GeneratedChildArtifact childNode "0" [childOutput] []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [childNode]
+            , wireAdmissionPrimitiveSteps = [PrimitiveNode childNode [] []]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose used child omits primitive frontiers" $ do
+    let childNode =
+          CircuitNodeRef "workers_0"
+        childOutput =
+          admissionTestBoundary childNode "result" "Sample"
+        sourceChild =
+          GeneratedChildSourceArtifact childNode "0" Nothing
+        usedChild =
+          GeneratedChildArtifact childNode "0" [] []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [childNode]
+            , wireAdmissionExits = [childOutput]
+            , wireAdmissionPrimitiveSteps = [PrimitiveNode childNode [] [childOutput]]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects make artifacts whose source labels are not count-derived" $ do
+    let sourceChild = GeneratedChildSourceArtifact (CircuitNodeRef "workers_alpha") "alpha" Nothing
+        usedChild = GeneratedChildArtifact (CircuitNodeRef "workers_alpha") "alpha" [] []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "workers_alpha"]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects make artifacts whose source rows carry makeEach value payloads" $ do
+    let sourceChild =
+          GeneratedChildSourceArtifact
+            (CircuitNodeRef "workers_0")
+            "0"
+            (Just (AdmissionStaticString "alpha"))
+        usedChild = GeneratedChildArtifact (CircuitNodeRef "workers_0") "0" [] []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "workers_0"]
+            , wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose used child frontier rows are duplicated" $ do
+    let sourceChild = GeneratedChildSourceArtifact (CircuitNodeRef "workers_0") "0" Nothing
+        outputBoundary = admissionTestBoundary (CircuitNodeRef "workers_0") "out" "Sample"
+        usedChild =
+          GeneratedChildArtifact
+            (CircuitNodeRef "workers_0")
+            "0"
+            [outputBoundary, outputBoundary]
+            []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose used child frontier belongs to another node" $ do
+    let sourceChild = GeneratedChildSourceArtifact (CircuitNodeRef "workers_0") "0" Nothing
+        outputBoundary = admissionTestBoundary (CircuitNodeRef "other_worker") "out" "Sample"
+        usedChild =
+          GeneratedChildArtifact
+            (CircuitNodeRef "workers_0")
+            "0"
+            [outputBoundary]
+            []
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMake
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren = [usedChild]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose static record fields are duplicated" $ do
+    let sourceChild =
+          GeneratedChildSourceArtifact
+            (CircuitNodeRef "workers_0")
+            "0"
+            ( Just
+                ( AdmissionStaticRecord
+                    [ AdmissionStaticField "priority" (AdmissionStaticNat 1)
+                    , AdmissionStaticField "priority" (AdmissionStaticNat 2)
+                    ]
+                )
+            )
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMakeEach
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren =
+                        [GeneratedChildArtifact (CircuitNodeRef "workers_0") "0" [] []]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects generated artifacts whose static record field labels are empty" $ do
+    let sourceChild =
+          GeneratedChildSourceArtifact
+            (CircuitNodeRef "workers_0")
+            "0"
+            ( Just
+                ( AdmissionStaticRecord
+                    [AdmissionStaticField "" (AdmissionStaticNat 1)]
+                )
+            )
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionGeneratedForms =
+                [ GeneratedFormArtifact
+                    { generatedFormKind = GeneratedMakeEach
+                    , generatedFormKindName = "sample"
+                    , generatedFormBinding = "workers"
+                    , generatedFormSourceChildren = [sourceChild]
+                    , generatedFormUsedChildren =
+                        [GeneratedChildArtifact (CircuitNodeRef "workers_0") "0" [] []]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose multi-side arity does not match" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = CircuitNodeRef "__star:gather:bad"
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 2
+                    , phantomAdapterSingular = sinkBoundary
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk = []
+                    , phantomAdapterRightBulk = []
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts with empty row identities" $ do
+    let phantomNode = CircuitNodeRef ""
+        singular = admissionTestBoundary (CircuitNodeRef "sink") "samples" "[Sample; 1]"
+        phantomMulti = admissionTestBoundary phantomNode "item_0" "Sample"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 1]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 1
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection plannerBoundary phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose record product fields are duplicated" $ do
+    let phantomNode = CircuitNodeRef "__star:gather:record-duplicate"
+        singular = admissionTestBoundary (CircuitNodeRef "sink") "samples" "Samples"
+        phantomMulti0 = admissionTestBoundary phantomNode "sample_0" "Sample"
+        phantomMulti1 = admissionTestBoundary phantomNode "sample_1" "Sample"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "Samples"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape =
+                        ProductRecord "Samples" [("sample", "Sample"), ("sample", "Sample")]
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerBoundary, analystBoundary]
+                    , phantomAdapterLeftBulk =
+                        [ AdmissionConnection plannerBoundary phantomMulti0
+                        , AdmissionConnection analystBoundary phantomMulti1
+                        ]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose source frontier is not primitive-backed" $ do
+    let phantomNode =
+          CircuitNodeRef "__star:gather:planner:sink"
+        phantomMulti =
+          admissionTestBoundary phantomNode "item_0" "PlannerOutput"
+        phantomSingular =
+          admissionTestBoundary phantomNode "samples" "[Sample; 2]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes =
+                [ CircuitNodeRef "planner"
+                , CircuitNodeRef "sink"
+                , phantomNode
+                ]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode (CircuitNodeRef "planner") [] []
+                , PrimitiveNode (CircuitNodeRef "sink") [sinkBoundary] []
+                , PrimitiveNode phantomNode [phantomMulti] [phantomSingular]
+                ]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+                    , phantomAdapterSingular = sinkBoundary
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection plannerBoundary phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular sinkBoundary]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose bridge frontier is not primitive-backed" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        sink =
+          CircuitNodeRef "sink"
+        phantomNode =
+          CircuitNodeRef "__star:gather:planner:sink"
+        phantomMulti =
+          admissionTestBoundary phantomNode "item_0" "PlannerOutput"
+        phantomSingular =
+          admissionTestBoundary phantomNode "samples" "[Sample; 2]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, sink, phantomNode]
+            , wireAdmissionEntries = [sinkBoundary]
+            , wireAdmissionExits = [plannerBoundary]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [plannerBoundary]
+                , PrimitiveNode sink [sinkBoundary] []
+                , PrimitiveNode phantomNode [] []
+                ]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+                    , phantomAdapterSingular = sinkBoundary
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection plannerBoundary phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular sinkBoundary]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose primitive bridge frontier has extra endpoints" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        sink =
+          CircuitNodeRef "sink"
+        phantomNode =
+          CircuitNodeRef "__star:gather:planner:sink"
+        singular =
+          admissionTestBoundary sink "plans" "[PlannerOutput; 1]"
+        phantomMulti =
+          admissionTestBoundary phantomNode "item_0" "PlannerOutput"
+        phantomSingular =
+          admissionTestBoundary phantomNode "plans" "[PlannerOutput; 1]"
+        extraPhantomExit =
+          admissionTestBoundary phantomNode "extra" "[PlannerOutput; 1]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, sink, phantomNode]
+            , wireAdmissionEntries = [singular, phantomMulti]
+            , wireAdmissionExits = [plannerBoundary, phantomSingular, extraPhantomExit]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [plannerBoundary]
+                , PrimitiveNode sink [singular] []
+                , PrimitiveNode phantomNode [phantomMulti] [phantomSingular, extraPhantomExit]
+                ]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection plannerBoundary phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter bulk rows absent from primitive replay" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        sink =
+          CircuitNodeRef "sink"
+        phantomNode =
+          CircuitNodeRef "__star:gather:planner:sink"
+        singular =
+          admissionTestBoundary sink "plans" "[PlannerOutput; 1]"
+        multi =
+          admissionTestBoundary planner "plan" "PlannerOutput"
+        phantomMulti =
+          admissionTestBoundary phantomNode "item_0" "PlannerOutput"
+        phantomSingular =
+          admissionTestBoundary phantomNode "plans" "[PlannerOutput; 1]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, phantomNode, sink]
+            , wireAdmissionEntries = [phantomMulti, singular]
+            , wireAdmissionExits = [multi, phantomSingular]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [multi]
+                , PrimitiveNode phantomNode [phantomMulti] [phantomSingular]
+                , PrimitiveOverlay [planner] [phantomNode] [] []
+                , PrimitiveNode sink [singular] []
+                , PrimitiveOverlay [planner, phantomNode] [sink] [] []
+                ]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [multi]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection multi phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose record multi-side shape does not match" $ do
+    let sourceLeft = CircuitNodeRef "source_left"
+        sourceRight = CircuitNodeRef "source_right"
+        sinkNode = CircuitNodeRef "sink"
+        phantomNode = CircuitNodeRef "__star:record-shape"
+        leftBoundary = admissionTestLabeledBoundary sourceLeft "left" "Left" "left"
+        wrongBoundary = admissionTestLabeledBoundary sourceRight "wrong" "Right" "wrong"
+        singular = admissionTestBoundary sinkNode "record" "Record"
+        phantomLeft = admissionTestBoundary phantomNode "left" "Left"
+        phantomRight = admissionTestBoundary phantomNode "right" "Right"
+        phantomSingular = admissionTestBoundary phantomNode "record" "Record"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [sourceLeft, sourceRight, sinkNode, phantomNode]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape =
+                        ProductRecord "Record" [("left", "Left"), ("right", "Right")]
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [leftBoundary, wrongBoundary]
+                    , phantomAdapterLeftBulk =
+                        [ AdmissionConnection leftBoundary phantomLeft
+                        , AdmissionConnection wrongBoundary phantomRight
+                        ]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose indexed multi-side contracts do not match" $ do
+    let sourceLeft = CircuitNodeRef "source_left"
+        sourceRight = CircuitNodeRef "source_right"
+        sinkNode = CircuitNodeRef "sink"
+        phantomNode = CircuitNodeRef "__star:indexed-shape"
+        leftBoundary = admissionTestLabeledBoundary sourceLeft "left" "Other" "left"
+        rightBoundary = admissionTestLabeledBoundary sourceRight "right" "Sample" "right"
+        singular = admissionTestBoundary sinkNode "samples" "[Sample; 2]"
+        phantomLeft = admissionTestBoundary phantomNode "left" "Sample"
+        phantomRight = admissionTestBoundary phantomNode "right" "Sample"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 2]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [sourceLeft, sourceRight, sinkNode, phantomNode]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 2
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [leftBoundary, rightBoundary]
+                    , phantomAdapterLeftBulk =
+                        [ AdmissionConnection leftBoundary phantomLeft
+                        , AdmissionConnection rightBoundary phantomRight
+                        ]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose bulk rows do not match direction" $ do
+    let phantomNode = CircuitNodeRef "__star:gather:bad"
+        singular = admissionTestBoundary (CircuitNodeRef "sink") "samples" "[Sample; 1]"
+        phantomMulti = admissionTestBoundary phantomNode "item_0" "Sample"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 1]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 1
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection analystBoundary phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose bulk rows connect incompatible boundaries" $ do
+    let plannerSample = admissionTestBoundary (CircuitNodeRef "planner") "sample" "Sample"
+        phantomNode = CircuitNodeRef "__star:gather:incompatible"
+        singular = admissionTestBoundary (CircuitNodeRef "sink") "samples" "[Sample; 1]"
+        phantomMulti = admissionTestBoundary phantomNode "item_0" "Other"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 1]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [CircuitNodeRef "planner", CircuitNodeRef "sink", phantomNode]
+            , wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 1
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerSample]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection plannerSample phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose multi-side endpoints are duplicated" $ do
+    let phantomNode = CircuitNodeRef "__star:gather:duplicate"
+        singular = admissionTestBoundary (CircuitNodeRef "sink") "samples" "[Sample; 2]"
+        phantomMulti = admissionTestBoundary phantomNode "item_0" "Sample"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 2]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 2
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerBoundary, plannerBoundary]
+                    , phantomAdapterLeftBulk =
+                        [ AdmissionConnection plannerBoundary phantomMulti
+                        , AdmissionConnection plannerBoundary phantomMulti
+                        ]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects phantom adapter artifacts whose bulk rows do not partition endpoints" $ do
+    let phantomNode = CircuitNodeRef "__star:gather:partition"
+        singular = admissionTestBoundary (CircuitNodeRef "sink") "samples" "[Sample; 2]"
+        phantomMulti = admissionTestBoundary phantomNode "item_0" "Sample"
+        phantomSingular = admissionTestBoundary phantomNode "samples" "[Sample; 2]"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionPhantomAdapters =
+                [ PhantomAdapterArtifact
+                    { phantomAdapterDirection = PhantomGather
+                    , phantomAdapterNode = phantomNode
+                    , phantomAdapterProductShape = ProductIndexed "Sample" 2
+                    , phantomAdapterSingular = singular
+                    , phantomAdapterMulti = [plannerBoundary, analystBoundary]
+                    , phantomAdapterLeftBulk =
+                        [AdmissionConnection plannerBoundary phantomMulti]
+                    , phantomAdapterRightBulk =
+                        [AdmissionConnection phantomSingular singular]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose arms do not cover variant keys" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = CircuitNodeRef "__select:choice"
+                    , selectAdmissionConditionNode = CircuitNodeRef "__select:choice"
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" plannerBoundary
+                        , SelectVariantArtifact "issue" analystBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose owner does not match the condition node" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = CircuitNodeRef "__select:owner"
+                    , selectAdmissionConditionNode = CircuitNodeRef "__select:condition"
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" plannerBoundary
+                        , SelectVariantArtifact "issue" analystBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts with fewer than two variants" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = CircuitNodeRef "__select:choice"
+                    , selectAdmissionConditionNode = CircuitNodeRef "__select:choice"
+                    , selectAdmissionVariants =
+                        [SelectVariantArtifact "ok" plannerBoundary]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose variants are not one exclusive group" $ do
+    case minimalSelectAdmissionArtifact.wireAdmissionSelects of
+      [selectAdmission] -> do
+        let clearGroup variant =
+              variant
+                { selectVariantPort =
+                    variant.selectVariantPort
+                      { admissionBoundaryExclusiveGroup = Nothing
+                      }
+                }
+            malformedArtifact =
+              minimalSelectAdmissionArtifact
+                { wireAdmissionSelects =
+                    [ selectAdmission
+                        { selectAdmissionVariants =
+                            fmap clearGroup selectAdmission.selectAdmissionVariants
+                        }
+                    ]
+                }
+        malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+      other ->
+        expectationFailure ("expected one select admission artifact, got: " <> show other)
+
+  it "rejects select artifacts whose variant keys are duplicated" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = CircuitNodeRef "__select:choice"
+                    , selectAdmissionConditionNode = CircuitNodeRef "__select:choice"
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" plannerBoundary
+                        , SelectVariantArtifact "ok" analystBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose labeled variant key is not canonical" $ do
+    let conditionNode = CircuitNodeRef "__select:choice"
+        variantPort =
+          admissionTestLabeledBoundary conditionNode "accepted" "Choice" "accepted"
+        issuePort =
+          admissionTestLabeledBoundary conditionNode "issue" "PlanIssue" "issue"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [conditionNode]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "wrong" variantPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "accepted"
+                            , selectArmCanonicalKey = "wrong"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose contract-fallback variant key is not canonical" $ do
+    let conditionNode = CircuitNodeRef "__select:contract-choice"
+        variantPort = admissionTestBoundary conditionNode "research_plan" "ResearchPlan"
+        issuePort =
+          admissionTestLabeledBoundary conditionNode "issue" "PlanIssue" "issue"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [conditionNode]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "wrong" variantPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ResearchPlan"
+                            , selectArmCanonicalKey = "wrong"
+                            , selectArmResolutionMode = SelectResolvedByContract
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose source arm indexes are duplicated" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = CircuitNodeRef "__select:choice"
+                    , selectAdmissionConditionNode = CircuitNodeRef "__select:choice"
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" plannerBoundary
+                        , SelectVariantArtifact "issue" analystBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose source arm indexes skip source order" $ do
+    let malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = CircuitNodeRef "__select:choice"
+                    , selectAdmissionConditionNode = CircuitNodeRef "__select:choice"
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" plannerBoundary
+                        , SelectVariantArtifact "issue" analystBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 2
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose label-mode arm was not label-resolved" $ do
+    let selectorNode = CircuitNodeRef "__select:choice"
+        validBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "valid"
+            "ResearchPlan"
+            "valid"
+        issueBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "issue"
+            "PlanIssue"
+            "issue"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "valid" validBoundary
+                        , SelectVariantArtifact "issue" issueBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ResearchPlan"
+                            , selectArmCanonicalKey = "valid"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose contract fallback is ambiguous" $ do
+    let selectorNode = CircuitNodeRef "__select:choice"
+        validBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "valid"
+            "ResearchPlan"
+            "valid"
+        acceptedBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "accepted"
+            "ResearchPlan"
+            "accepted"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "valid" validBoundary
+                        , SelectVariantArtifact "accepted" acceptedBoundary
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ResearchPlan"
+                            , selectArmCanonicalKey = "valid"
+                            , selectArmResolutionMode = SelectResolvedByContract
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "accepted"
+                            , selectArmCanonicalKey = "accepted"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose body nodes are duplicated" $ do
+    let selectorNode = CircuitNodeRef "__select:choice"
+        branchNode = CircuitNodeRef "branch"
+        okBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "ok"
+            "Choice"
+            "ok"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [SelectVariantArtifact "ok" okBoundary]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [branchNode, branchNode]
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose exclusive arms share body nodes" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        sharedBranch =
+          CircuitNodeRef "shared_branch"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "ok_in" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "issue_in" "PlanIssue" "issue"
+        okInternal =
+          (admissionTestLabeledBoundary conditionNode "ok_out" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "issue_out" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 1)
+            }
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode, sharedBranch]
+            , wireAdmissionEntries = [okEntry, issueEntry]
+            , wireAdmissionExits = [okPort, issuePort]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , PrimitiveNode conditionNode [okEntry, issueEntry] [okInternal, issueInternal]
+                , PrimitiveNode sharedBranch [] []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [sharedBranch]
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [sharedBranch]
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose latent body node is already top-level" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        leakedBranch =
+          CircuitNodeRef "leaked_branch"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "ok_in" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "issue_in" "PlanIssue" "issue"
+        okInternal =
+          (admissionTestLabeledBoundary conditionNode "ok_out" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "issue_out" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 1)
+            }
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode, leakedBranch]
+            , wireAdmissionEntries = [okEntry, issueEntry]
+            , wireAdmissionExits = [okPort, issuePort]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , PrimitiveNode conditionNode [okEntry, issueEntry] [okInternal, issueInternal]
+                , PrimitiveNode leakedBranch [] []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [leakedBranch]
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose body boundary is outside the body nodes" $ do
+    let selectorNode = CircuitNodeRef "__select:choice"
+        branchNode = CircuitNodeRef "branch"
+        externalBoundary = admissionTestBoundary (CircuitNodeRef "external") "in" "Choice"
+        okBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "ok"
+            "Choice"
+            "ok"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [SelectVariantArtifact "ok" okBoundary]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [branchNode]
+                            , selectArmBodyEntries = [externalBoundary]
+                            , selectArmBodyExits = []
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select body exclusive groups outside the body nodes" $ do
+    let selectorNode = CircuitNodeRef "__select:choice"
+        branchNode = CircuitNodeRef "branch"
+        branchBoundary =
+          (admissionTestBoundary branchNode "out" "Choice")
+            { admissionBoundaryExclusiveGroup =
+                Just (CircuitNodeRef "external-selector", 0)
+            }
+        okBoundary =
+          admissionTestLabeledBoundary
+            (CircuitNodeRef "selector")
+            "ok"
+            "Choice"
+            "ok"
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = selectorNode
+                    , selectAdmissionConditionNode = selectorNode
+                    , selectAdmissionVariants =
+                        [SelectVariantArtifact "ok" okBoundary]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [branchNode]
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = [branchBoundary]
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects select artifacts whose body entry does not consume its variant" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        branchNode =
+          CircuitNodeRef "repair_branch"
+        okPort =
+          admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok"
+        issuePort =
+          admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue"
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "variant_in_1" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "variant_in_2" "PlanIssue" "issue"
+        okInternal =
+          (admissionTestLabeledBoundary conditionNode "variant_out_1" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "variant_out_2" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        bridgeOut =
+          admissionTestLabeledBoundary conditionNode "bridge_out_1" "ResearchPlan" "ok"
+        wrongBodyEntry =
+          admissionTestLabeledBoundary branchNode "wrong_in" "OtherContract" "issue"
+        bodyOut =
+          admissionTestLabeledBoundary branchNode "repaired" "ResearchPlan" "ok"
+        conditionPrimitive =
+          PrimitiveNode conditionNode [okEntry, issueEntry] [okInternal, issueInternal, bridgeOut]
+        malformedArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode]
+            , wireAdmissionEntries = [okEntry, issueEntry]
+            , wireAdmissionExits = [okPort, issuePort, bridgeOut]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , conditionPrimitive
+                , PrimitiveOverlay [planner] [conditionNode] [] []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = []
+                            , selectArmBodyEntries = []
+                            , selectArmBodyExits = []
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [branchNode]
+                            , selectArmBodyEntries = [wrongBodyEntry]
+                            , selectArmBodyExits = [bodyOut]
+                            }
+                        ]
+                    }
+                ]
+            }
+    malformedArtifact `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "accepts select artifacts whose body exits preserve exclusive bridge shapes" $ do
+    let planner =
+          CircuitNodeRef "planner"
+        conditionNode =
+          CircuitNodeRef "__select:choice"
+        okBranch =
+          CircuitNodeRef "ok_branch"
+        issueBranch =
+          CircuitNodeRef "issue_branch"
+        okPort =
+          (admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (planner, 0)
+            }
+        issuePort =
+          (admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (planner, 0)
+            }
+        okEntry =
+          admissionTestLabeledBoundary conditionNode "variant_in_1" "ResearchPlan" "ok"
+        issueEntry =
+          admissionTestLabeledBoundary conditionNode "variant_in_2" "PlanIssue" "issue"
+        okInternal =
+          (admissionTestLabeledBoundary conditionNode "variant_out_1" "ResearchPlan" "ok")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        issueInternal =
+          (admissionTestLabeledBoundary conditionNode "variant_out_2" "PlanIssue" "issue")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        approvedBridge =
+          (admissionTestLabeledBoundary conditionNode "bridge_out_1" "Approved" "approved")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        blockedBridge =
+          (admissionTestLabeledBoundary conditionNode "bridge_out_2" "Blocked" "blocked")
+            { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+            }
+        okBodyEntry =
+          admissionTestLabeledBoundary okBranch "selected" "ResearchPlan" "ok"
+        issueBodyEntry =
+          admissionTestLabeledBoundary issueBranch "selected" "PlanIssue" "issue"
+        okApproved =
+          (admissionTestLabeledBoundary okBranch "approved" "Approved" "approved")
+            { admissionBoundaryExclusiveGroup = Just (okBranch, 0)
+            }
+        okBlocked =
+          (admissionTestLabeledBoundary okBranch "blocked" "Blocked" "blocked")
+            { admissionBoundaryExclusiveGroup = Just (okBranch, 0)
+            }
+        issueApproved =
+          (admissionTestLabeledBoundary issueBranch "approved" "Approved" "approved")
+            { admissionBoundaryExclusiveGroup = Just (issueBranch, 0)
+            }
+        issueBlocked =
+          (admissionTestLabeledBoundary issueBranch "blocked" "Blocked" "blocked")
+            { admissionBoundaryExclusiveGroup = Just (issueBranch, 0)
+            }
+        conditionPrimitive =
+          PrimitiveNode
+            conditionNode
+            [okEntry, issueEntry]
+            [okInternal, issueInternal, approvedBridge, blockedBridge]
+        okPair =
+          AdmissionConnection okPort okEntry
+        issuePair =
+          AdmissionConnection issuePort issueEntry
+        okRawConnection =
+          Connection
+            { connectionFrom = EndpointRef planner (Just "ok")
+            , connectionTo = EndpointRef conditionNode (Just "variant_in_1")
+            }
+        issueRawConnection =
+          Connection
+            { connectionFrom = EndpointRef planner (Just "issue")
+            , connectionTo = EndpointRef conditionNode (Just "variant_in_2")
+            }
+        validArtifact =
+          emptyWireAdmissionArtifact
+            { wireAdmissionNodes = [planner, conditionNode]
+            , wireAdmissionEntries = []
+            , wireAdmissionExits = [approvedBridge, blockedBridge]
+            , wireAdmissionConnections = [okRawConnection, issueRawConnection]
+            , wireAdmissionPrimitiveSteps =
+                [ PrimitiveNode planner [] [okPort, issuePort]
+                , conditionPrimitive
+                , PrimitiveConnect
+                    [okPort, issuePort]
+                    [okEntry, issueEntry]
+                    [okPair, issuePair]
+                    []
+                    []
+                ]
+            , wireAdmissionSelects =
+                [ SelectAdmissionArtifact
+                    { selectAdmissionOwner = conditionNode
+                    , selectAdmissionConditionNode = conditionNode
+                    , selectAdmissionVariants =
+                        [ SelectVariantArtifact "ok" okPort
+                        , SelectVariantArtifact "issue" issuePort
+                        ]
+                    , selectAdmissionArms =
+                        [ SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 0
+                            , selectArmSourceKey = "ok"
+                            , selectArmCanonicalKey = "ok"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [okBranch]
+                            , selectArmBodyEntries = [okBodyEntry]
+                            , selectArmBodyExits = [okApproved, okBlocked]
+                            }
+                        , SelectArmAdmissionArtifact
+                            { selectArmSourceIndex = 1
+                            , selectArmSourceKey = "issue"
+                            , selectArmCanonicalKey = "issue"
+                            , selectArmResolutionMode = SelectResolvedByLabel
+                            , selectArmBodyNodes = [issueBranch]
+                            , selectArmBodyEntries = [issueBodyEntry]
+                            , selectArmBodyExits = [issueApproved, issueBlocked]
+                            }
+                        ]
+                    }
+                ]
+            }
+    validArtifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
 
   it "compiles explicit overlay with independent entries and exits" $ do
     compiled <- requireRight (compileWireFragmentText overlayFragmentSourceText)
@@ -99,6 +2719,41 @@ spec = describe "Cortex.Wire.Compile" $ do
         , CircuitNodeRef "workers_1"
         , CircuitNodeRef "workers_2"
         ]
+    wireAdmissionArrayAny
+      "wireAdmissionGeneratedForms"
+      ( generatedFormMatches
+          "GeneratedMake"
+          "sample"
+          "workers"
+          [ (CircuitNodeRef "workers_0", "0", False)
+          , (CircuitNodeRef "workers_1", "1", False)
+          , (CircuitNodeRef "workers_2", "2", False)
+          ]
+          [ (CircuitNodeRef "workers_0", "0")
+          , (CircuitNodeRef "workers_1", "1")
+          , (CircuitNodeRef "workers_2", "2")
+          ]
+      )
+      compiled
+      `shouldBe` True
+    wireAdmissionSchemaVersionFromJson compiled `shouldBe` Just wireAdmissionCurrentSchemaVersion
+    expectWireAdmissionArtifact compiled $
+      assertGeneratedFormArtifact
+        ExpectedGeneratedForm
+          { expectedGeneratedKind = GeneratedMake
+          , expectedGeneratedKindName = "sample"
+          , expectedGeneratedBinding = "workers"
+          , expectedGeneratedSource =
+              [ (CircuitNodeRef "workers_0", "0", False)
+              , (CircuitNodeRef "workers_1", "1", False)
+              , (CircuitNodeRef "workers_2", "2", False)
+              ]
+          , expectedGeneratedUsed =
+              [ (CircuitNodeRef "workers_0", "0", ["workers_0"], [])
+              , (CircuitNodeRef "workers_1", "1", ["workers_1"], [])
+              , (CircuitNodeRef "workers_2", "2", ["workers_2"], [])
+              ]
+          }
 
   it "expands make(N, K) with a preceding static count binding" $ do
     compiled <- requireRight (compileWireFragmentText makeStaticCountSourceText)
@@ -108,6 +2763,19 @@ spec = describe "Cortex.Wire.Compile" $ do
         , CircuitNodeRef "workers_1"
         ]
 
+  it "records make(0, K) as an empty generated family inside topology" $ do
+    compiled <- requireRight (compileWireFragmentText makeZeroSourceText)
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "sink")
+    expectWireAdmissionArtifact compiled $
+      assertGeneratedFormArtifact
+        ExpectedGeneratedForm
+          { expectedGeneratedKind = GeneratedMake
+          , expectedGeneratedKindName = "sample"
+          , expectedGeneratedBinding = "workers"
+          , expectedGeneratedSource = []
+          , expectedGeneratedUsed = []
+          }
+
   it "expands form-local make(N, K) with a preceding static count binding" $ do
     compiled <- requireRight (compileWireFragmentText formLocalMakeStaticCountSourceText)
     Map.keysSet compiled.compiledCircuitNodes
@@ -116,6 +2784,46 @@ spec = describe "Cortex.Wire.Compile" $ do
         , CircuitNodeRef "batch/workers_1"
         ]
 
+  it "keeps trusted generated-family provenance for a projected make child" $ do
+    compiled <- requireRight (compileWireFragmentText indexedMakeProjectionSourceText)
+    Map.keysSet compiled.compiledCircuitNodes
+      `shouldBe` Set.singleton (CircuitNodeRef "workers_1")
+    wireAdmissionArray
+      "wireAdmissionGeneratedForms"
+      compiled
+      `shouldSatisfy` maybe
+        False
+        ( (== 1)
+            . length
+            . filter
+              ( generatedFormMatches
+                  "GeneratedMake"
+                  "sample"
+                  "workers"
+                  [ (CircuitNodeRef "workers_0", "0", False)
+                  , (CircuitNodeRef "workers_1", "1", False)
+                  ]
+                  [(CircuitNodeRef "workers_1", "1")]
+              )
+        )
+    expectWireAdmissionArtifact compiled $
+      assertGeneratedFormArtifact
+        ExpectedGeneratedForm
+          { expectedGeneratedKind = GeneratedMake
+          , expectedGeneratedKindName = "sample"
+          , expectedGeneratedBinding = "workers"
+          , expectedGeneratedSource =
+              [ (CircuitNodeRef "workers_0", "0", False)
+              , (CircuitNodeRef "workers_1", "1", False)
+              ]
+          , expectedGeneratedUsed =
+              [(CircuitNodeRef "workers_1", "1", ["workers_1"], [])]
+          }
+
+  it "still rejects an entirely unused generated make family" $
+    compileWireFragmentText unusedMakeFamilySourceText
+      `shouldSatisfy` isWireUnusedNodeRef (CircuitNodeRef "workers_0")
+
   it "expands makeEach(items, K) into source-labeled generated nodes" $ do
     compiled <- requireRight (compileWireFragmentText makeEachSourceText)
     Map.keysSet compiled.compiledCircuitNodes
@@ -123,6 +2831,76 @@ spec = describe "Cortex.Wire.Compile" $ do
         [ CircuitNodeRef "workers_alpha"
         , CircuitNodeRef "workers_beta"
         ]
+    wireAdmissionArrayAny
+      "wireAdmissionGeneratedForms"
+      ( generatedFormMatches
+          "GeneratedMakeEach"
+          "sample"
+          "workers"
+          [ (CircuitNodeRef "workers_alpha", "alpha", False)
+          , (CircuitNodeRef "workers_beta", "beta", False)
+          ]
+          [ (CircuitNodeRef "workers_alpha", "alpha")
+          , (CircuitNodeRef "workers_beta", "beta")
+          ]
+      )
+      compiled
+      `shouldBe` True
+    expectWireAdmissionArtifact compiled $
+      assertGeneratedFormArtifact
+        ExpectedGeneratedForm
+          { expectedGeneratedKind = GeneratedMakeEach
+          , expectedGeneratedKindName = "sample"
+          , expectedGeneratedBinding = "workers"
+          , expectedGeneratedSource =
+              [ (CircuitNodeRef "workers_alpha", "alpha", False)
+              , (CircuitNodeRef "workers_beta", "beta", False)
+              ]
+          , expectedGeneratedUsed =
+              [ (CircuitNodeRef "workers_alpha", "alpha", ["workers_alpha"], [])
+              , (CircuitNodeRef "workers_beta", "beta", ["workers_beta"], [])
+              ]
+          }
+
+  it "records makeEach([], K) as an empty generated family inside topology" $ do
+    compiled <- requireRight (compileWireFragmentText makeEachEmptySourceText)
+    Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "sink")
+    expectWireAdmissionArtifact compiled $
+      assertGeneratedFormArtifact
+        ExpectedGeneratedForm
+          { expectedGeneratedKind = GeneratedMakeEach
+          , expectedGeneratedKindName = "sample"
+          , expectedGeneratedBinding = "workers"
+          , expectedGeneratedSource = []
+          , expectedGeneratedUsed = []
+          }
+
+  it "emits Lean-shaped makeEach Value payloads" $ do
+    compiled <- requireRight (compileWireFragmentText makeEachValueSourceText)
+    wireAdmissionArrayAny
+      "wireAdmissionGeneratedForms"
+      ( generatedFormSourceChildValueMatches
+          (CircuitNodeRef "workers_alpha")
+          (staticRecordFieldNat "priority" 7)
+      )
+      compiled
+      `shouldBe` True
+    wireAdmissionArrayAny
+      "wireAdmissionGeneratedForms"
+      ( generatedFormSourceChildValueMatches
+          (CircuitNodeRef "workers_beta")
+          (staticRecordFieldBool "enabled" False)
+      )
+      compiled
+      `shouldBe` True
+
+  it "rejects makeEach Value payloads outside the Lean static-value shape" $
+    compileWireFragmentText makeEachFractionalValueSourceText
+      `shouldSatisfy` isWireParseFailureContaining "must be a source static value"
+
+  it "rejects makeEach Value payloads with duplicate static record fields" $
+    compileWireFragmentText makeEachDuplicateFieldValueSourceText
+      `shouldSatisfy` isWireParseFailureContaining "must be a source static value"
 
   it "lowers record-form * gather through an explicit phantom adapter" $ do
     compiled <- requireRight (compileWireTextWithEnv starContractEnv starGatherSourceText)
@@ -136,6 +2914,8 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Set.singleton phantomRef
     successors compiled.compiledCircuitTopology phantomRef
       `shouldBe` Set.singleton (CircuitNodeRef "sink")
+    expectWireAdmissionArtifact compiled $
+      assertRecordPhantomArtifact PhantomGather phantomRef
 
   it "lowers indexed make-family * gather through an explicit product adapter" $ do
     compiled <- requireRight (compileWireText indexedProductGatherSourceText)
@@ -143,6 +2923,13 @@ spec = describe "Cortex.Wire.Compile" $ do
         phantomRefs = Set.filter (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef)) nodeRefs
     Set.size phantomRefs `shouldBe` 1
     let phantomRef = Set.findMin phantomRefs
+    wireAdmissionArrayAny
+      "wireAdmissionPhantomAdapters"
+      (phantomAdapterMatchesIndexedGather phantomRef 3)
+      compiled
+      `shouldBe` True
+    expectWireAdmissionArtifact compiled $
+      assertIndexedGatherPhantomArtifact phantomRef
     successors compiled.compiledCircuitTopology (CircuitNodeRef "workers_0")
       `shouldBe` Set.singleton phantomRef
     successors compiled.compiledCircuitTopology (CircuitNodeRef "workers_1")
@@ -194,6 +2981,8 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Set.singleton phantomRef
     successors compiled.compiledCircuitTopology phantomRef
       `shouldBe` Set.fromList [CircuitNodeRef "a", CircuitNodeRef "b"]
+    expectWireAdmissionArtifact compiled $
+      assertRecordPhantomArtifact PhantomScatter phantomRef
 
   it "lowers indexed product * scatter into an indexed make family" $ do
     compiled <- requireRight (compileWireText indexedProductScatterSourceText)
@@ -345,8 +3134,46 @@ spec = describe "Cortex.Wire.Compile" $ do
         successors compiled.compiledCircuitTopology (CircuitNodeRef "validate_plan")
           `shouldBe` Set.singleton selectRef
         conditionNode.circuitConditionNodeElseFragment `shouldBe` Nothing
+        wireAdmissionArrayAny
+          "wireAdmissionSelects"
+          (selectAdmissionMatchesLabelResolution selectRef (Set.fromList ["ok", "issue"]))
+          compiled
+          `shouldBe` True
+        expectWireAdmissionArtifact compiled $
+          assertLabeledSelectAdmissionArtifact selectRef
       other ->
         expectationFailure ("expected one condition node, got: " <> show other)
+
+  it "emits select admission arms in source order after variant-order lowering" $ do
+    compiled <- requireRight (compileWireText selectReorderedArmsSourceText)
+    expectWireAdmissionArtifact compiled $ \artifact ->
+      case artifact.wireAdmissionSelects of
+        [selectArtifact] -> do
+          fmap selectArmSourceIndex selectArtifact.selectAdmissionArms `shouldBe` [0, 1]
+          fmap selectArmSourceKey selectArtifact.selectAdmissionArms `shouldBe` ["issue", "ok"]
+          fmap selectArmCanonicalKey selectArtifact.selectAdmissionArms `shouldBe` ["issue", "ok"]
+        other ->
+          expectationFailure ("expected one select admission artifact, got: " <> show other)
+
+  it "records select(...) contract fallback resolution" $ do
+    compiled <- requireRight (compileWireText selectContractFallbackSourceText)
+    let conditionRefs =
+          [ ref
+          | (ref, CompiledCircuitCondition {}) <- Map.toList compiled.compiledCircuitNodes
+          ]
+    case conditionRefs of
+      [selectRef] ->
+        wireAdmissionArrayAny
+          "wireAdmissionSelects"
+          (selectAdmissionMatchesResolutionMode selectRef "SelectResolvedByContract")
+          compiled
+          `shouldBe` True
+      other ->
+        expectationFailure ("expected one condition node, got: " <> show other)
+
+  it "rejects ambiguous select(...) contract fallback resolution" $
+    compileWireText selectAmbiguousContractFallbackSourceText
+      `shouldSatisfy` isWireParseFailureContaining "is ambiguous"
 
   -- Lean correspondence: mirrors `selectActualize_lowers_to_appendAfter` and
   -- `selectActualize_unselected_not_in_selectedFragment` in
@@ -810,6 +3637,37 @@ makeStaticCountSourceText =
     , "workers"
     ]
 
+makeZeroSourceText :: T.Text
+makeZeroSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "node sink"
+    , "  -> done: Done = @review.sink ({}) ;"
+    , "let workers = make(0, sample);"
+    , "workers <> sink"
+    ]
+
+indexedMakeProjectionSourceText :: T.Text
+indexedMakeProjectionSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "let workers[] = make(2, sample);"
+    , "workers[1]"
+    ]
+
+unusedMakeFamilySourceText :: T.Text
+unusedMakeFamilySourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "node sink"
+    , "  -> done: Done = @review.sink ({}) ;"
+    , "let workers[] = make(2, sample);"
+    , "sink"
+    ]
+
 formLocalMakeStaticCountSourceText :: T.Text
 formLocalMakeStaticCountSourceText =
   T.unlines
@@ -831,6 +3689,48 @@ makeEachSourceText =
     , "  -> label: Sample = @review.sample ({}) ;"
     , "let worker_names = [\"alpha\", \"beta\"];"
     , "let workers = makeEach(worker_names, sample);"
+    , "workers"
+    ]
+
+makeEachEmptySourceText :: T.Text
+makeEachEmptySourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel) ="
+    , "  -> label: Sample = @review.sample ({}) ;"
+    , "node sink"
+    , "  -> done: Done = @review.sink ({}) ;"
+    , "let workers = makeEach([], sample);"
+    , "workers <> sink"
+    ]
+
+makeEachValueSourceText :: T.Text
+makeEachValueSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel, item: Value) ="
+    , "  -> label: Sample = item ;"
+    , "let worker_items = ["
+    , "  { label = \"alpha\"; priority = 7; enabled = true; },"
+    , "  { label = \"beta\"; priority = 3; enabled = false; },"
+    , "];"
+    , "let workers = makeEach(worker_items, sample);"
+    , "workers"
+    ]
+
+makeEachFractionalValueSourceText :: T.Text
+makeEachFractionalValueSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel, item: Value) ="
+    , "  -> label: Sample = item ;"
+    , "let workers = makeEach([{ label = \"alpha\"; weight = 1.5; }], sample);"
+    , "workers"
+    ]
+
+makeEachDuplicateFieldValueSourceText :: T.Text
+makeEachDuplicateFieldValueSourceText =
+  T.unlines
+    [ "kind sample(label: PortLabel, item: Value) ="
+    , "  -> label: Sample = item ;"
+    , "let workers = makeEach([{ label = \"alpha\"; priority = 1; priority = 2; }], sample);"
     , "workers"
     ]
 
@@ -1077,6 +3977,65 @@ selectSourceText =
     , "  ok: (),"
     , "  issue: (gather_missing_constraints => repair_plan)"
     , ") => publish_report"
+    ]
+
+selectReorderedArmsSourceText :: T.Text
+selectReorderedArmsSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan ;"
+    , "  -> ok: ResearchPlan | issue: PlanIssue ;"
+    , "  = @review.validate_plan (draft) ;"
+    , "node gather_missing_constraints"
+    , "  <- issue: PlanIssue ;"
+    , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+    , "node repair_plan"
+    , "  <- issue: PlanIssue ;"
+    , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
+    , "node publish_report"
+    , "  <- ok: ResearchPlan ;"
+    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "draft_plan => validate_plan select("
+    , "  issue: (gather_missing_constraints => repair_plan),"
+    , "  ok: ()"
+    , ") => publish_report"
+    ]
+
+selectContractFallbackSourceText :: T.Text
+selectContractFallbackSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan ;"
+    , "  -> valid: ResearchPlan | issue: PlanIssue ;"
+    , "  = @review.validate_plan (draft) ;"
+    , "node gather_missing_constraints"
+    , "  <- issue: PlanIssue ;"
+    , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+    , "node repair_plan"
+    , "  <- issue: PlanIssue ;"
+    , "  -> valid: ResearchPlan = @review.repair_plan (issue) ;"
+    , "node publish_report"
+    , "  <- valid: ResearchPlan ;"
+    , "  -> report: ReportArtifactRef = @artifact.publish_report (valid) ;"
+    , "draft_plan => validate_plan select("
+    , "  ResearchPlan: (),"
+    , "  PlanIssue: (gather_missing_constraints => repair_plan)"
+    , ") => publish_report"
+    ]
+
+selectAmbiguousContractFallbackSourceText :: T.Text
+selectAmbiguousContractFallbackSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> left: Same | right: Same ;"
+    , "  = @review.source ({}) ;"
+    , "source select("
+    , "  Same: ()"
+    , ")"
     ]
 
 typoContractSourceText :: T.Text
@@ -1385,7 +4344,9 @@ stdIoWriteFileBadShapeSourceText =
 
 requireRight :: Show err => Either err a -> IO a
 requireRight = \case
-  Left err -> expectationFailure ("expected Right, got Left: " <> show err) >> error "unreachable"
+  Left err ->
+    expectationFailure ("expected Right, got Left: " <> show err)
+      >> fail "unreachable after expectationFailure"
   Right ok -> pure ok
 
 compileQuantumEraserFixture :: FilePath -> Expectation
@@ -1440,6 +4401,732 @@ metadataHasPureBinding =
 metadataHasPureWhere :: Aeson.Value -> Bool
 metadataHasPureWhere =
   metadataConfigHasKey "where"
+
+wireAdmissionValue :: CompiledCircuit -> Maybe Aeson.Value
+wireAdmissionValue compiled =
+  case compiled.compiledCircuitMetadata of
+    Aeson.Object obj ->
+      KeyMap.lookup (Key.fromText wireAdmissionMetadataKey) obj
+    _ -> Nothing
+
+wireAdmissionArtifact :: CompiledCircuit -> Maybe WireAdmissionArtifact
+wireAdmissionArtifact compiled = do
+  admission <- wireAdmissionValue compiled
+  case Aeson.fromJSON admission of
+    Aeson.Success artifact -> Just artifact
+    Aeson.Error _message -> Nothing
+
+expectWireAdmissionArtifact
+  :: CompiledCircuit -> (WireAdmissionArtifact -> Expectation) -> Expectation
+expectWireAdmissionArtifact compiled check =
+  case (wireAdmissionValue compiled, wireAdmissionArtifact compiled) of
+    (Just admission, Just artifact) -> do
+      Aeson.toJSON artifact `shouldBe` admission
+      artifact.wireAdmissionSchemaVersion `shouldBe` wireAdmissionCurrentSchemaVersion
+      artifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
+      check artifact
+    _ -> expectationFailure "wire admission metadata did not decode"
+
+wireAdmissionArray :: T.Text -> CompiledCircuit -> Maybe [Aeson.Value]
+wireAdmissionArray fieldName compiled = do
+  admission <- wireAdmissionValue compiled
+  case admission of
+    Aeson.Object obj ->
+      case KeyMap.lookup (Key.fromText fieldName) obj of
+        Just (Aeson.Array values) -> Just (Foldable.toList values)
+        _ -> Nothing
+    _ -> Nothing
+
+wireAdmissionArrayAny :: T.Text -> (Aeson.Value -> Bool) -> CompiledCircuit -> Bool
+wireAdmissionArrayAny fieldName predicate compiled =
+  maybe False (any predicate) (wireAdmissionArray fieldName compiled)
+
+wireAdmissionSchemaVersionFromJson :: CompiledCircuit -> Maybe Natural
+wireAdmissionSchemaVersionFromJson compiled = do
+  admission <- wireAdmissionValue compiled
+  case admission of
+    Aeson.Object obj -> do
+      Aeson.Number version <- KeyMap.lookup "wireAdmissionSchemaVersion" obj
+      case floatingOrInteger version :: Either Double Integer of
+        Right intVersion
+          | intVersion >= 0 -> Just (fromInteger intVersion)
+        Left _ -> Nothing
+        Right _negativeVersion -> Nothing
+    _ -> Nothing
+
+wireAdmissionJsonWith :: [(T.Text, Aeson.Value)] -> Aeson.Value
+wireAdmissionJsonWith fields =
+  case wireAdmissionMetadataValue emptyWireAdmissionArtifact of
+    Aeson.Object obj ->
+      Aeson.Object
+        ( foldl
+            insertField
+            obj
+            fields
+        )
+    other ->
+      other
+  where
+    insertField current (fieldName, fieldValue) =
+      KeyMap.insert (Key.fromText fieldName) fieldValue current
+
+simpleChainConnectionJson :: Aeson.Value
+simpleChainConnectionJson =
+  Aeson.object
+    [ "connectionFrom" Aeson..= endpointJson "planner" "plan"
+    , "connectionTo" Aeson..= endpointJson "analyst" "plan"
+    ]
+  where
+    endpointJson :: T.Text -> T.Text -> Aeson.Value
+    endpointJson node port =
+      Aeson.object
+        [ "endpointNodeRef" Aeson..= node
+        , "endpointPortName" Aeson..= port
+        ]
+
+negativeIndexedProductShapeJson :: Aeson.Value
+negativeIndexedProductShapeJson =
+  Aeson.object
+    [ "kind" Aeson..= ("indexed" :: T.Text)
+    , "elementContract" Aeson..= ("Sample" :: T.Text)
+    , "count" Aeson..= (-1 :: Int)
+    ]
+
+negativeExclusiveGroupBoundaryJson :: Aeson.Value
+negativeExclusiveGroupBoundaryJson =
+  Aeson.object
+    [ "admissionBoundaryNode" Aeson..= CircuitNodeRef "selector"
+    , "admissionBoundaryPort" Aeson..= ("choice" :: T.Text)
+    , "admissionBoundaryContract" Aeson..= ("Choice" :: T.Text)
+    , "admissionBoundaryLabel" Aeson..= AdmissionNoLabel
+    , "admissionBoundaryExclusiveGroup" Aeson..= (CircuitNodeRef "selector", -1 :: Int)
+    ]
+
+negativeSelectArmSourceIndexJson :: Aeson.Value
+negativeSelectArmSourceIndexJson =
+  Aeson.object
+    [ "selectArmSourceIndex" Aeson..= (-1 :: Int)
+    , "selectArmSourceKey" Aeson..= ("accepted" :: T.Text)
+    , "selectArmCanonicalKey" Aeson..= ("accepted" :: T.Text)
+    , "selectArmResolutionMode" Aeson..= SelectResolvedByLabel
+    , "selectArmBodyNodes" Aeson..= ([] :: [CircuitNodeRef])
+    , "selectArmBodyEntries" Aeson..= ([] :: [AdmissionBoundaryPort])
+    , "selectArmBodyExits" Aeson..= ([] :: [AdmissionBoundaryPort])
+    ]
+
+plannerBoundary :: AdmissionBoundaryPort
+plannerBoundary =
+  admissionTestBoundary (CircuitNodeRef "planner") "plan" "PlannerOutput"
+
+analystBoundary :: AdmissionBoundaryPort
+analystBoundary =
+  admissionTestBoundary (CircuitNodeRef "analyst") "plan" "PlannerOutput"
+
+sinkBoundary :: AdmissionBoundaryPort
+sinkBoundary =
+  admissionTestBoundary (CircuitNodeRef "sink") "samples" "[Sample; 2]"
+
+admissionTestBoundary :: CircuitNodeRef -> T.Text -> T.Text -> AdmissionBoundaryPort
+admissionTestBoundary node port contract =
+  AdmissionBoundaryPort
+    { admissionBoundaryNode = node
+    , admissionBoundaryPort = port
+    , admissionBoundaryContract = contract
+    , admissionBoundaryLabel = AdmissionNoLabel
+    , admissionBoundaryExclusiveGroup = Nothing
+    }
+
+admissionTestLabeledBoundary
+  :: CircuitNodeRef -> T.Text -> T.Text -> T.Text -> AdmissionBoundaryPort
+admissionTestLabeledBoundary node port contract label =
+  (admissionTestBoundary node port contract)
+    { admissionBoundaryLabel = AdmissionLabel label
+    }
+
+minimalGeneratedAdmissionArtifact :: WireAdmissionArtifact
+minimalGeneratedAdmissionArtifact =
+  emptyWireAdmissionArtifact
+    { wireAdmissionNodes = [generatedNode]
+    , wireAdmissionPrimitiveSteps = [PrimitiveNode generatedNode [] []]
+    , wireAdmissionGeneratedForms = [generatedForm]
+    }
+  where
+    generatedNode =
+      CircuitNodeRef "workers_0"
+
+    generatedForm =
+      GeneratedFormArtifact
+        { generatedFormKind = GeneratedMake
+        , generatedFormKindName = "worker"
+        , generatedFormBinding = "workers"
+        , generatedFormSourceChildren =
+            [GeneratedChildSourceArtifact generatedNode "0" Nothing]
+        , generatedFormUsedChildren =
+            [GeneratedChildArtifact generatedNode "0" [] []]
+        }
+
+minimalPhantomAdmissionArtifact :: WireAdmissionArtifact
+minimalPhantomAdmissionArtifact =
+  emptyWireAdmissionArtifact
+    { wireAdmissionNodes = [planner, sink, phantomNode]
+    , wireAdmissionEntries = []
+    , wireAdmissionExits = []
+    , wireAdmissionConnections =
+        [ rawConnection multi phantomMulti
+        , rawConnection phantomSingular singular
+        ]
+    , wireAdmissionPrimitiveSteps =
+        [ PrimitiveNode planner [] [multi]
+        , PrimitiveNode phantomNode [phantomMulti] [phantomSingular]
+        , PrimitiveConnect [multi] [phantomMulti] [AdmissionConnection multi phantomMulti] [] []
+        , PrimitiveNode sink [singular] []
+        , PrimitiveConnect
+            [phantomSingular]
+            [singular]
+            [AdmissionConnection phantomSingular singular]
+            []
+            []
+        ]
+    , wireAdmissionPhantomAdapters = [phantomAdapter]
+    }
+  where
+    planner =
+      CircuitNodeRef "planner"
+
+    sink =
+      CircuitNodeRef "sink"
+
+    phantomNode =
+      CircuitNodeRef "__star:gather:planner:sink"
+
+    singular =
+      admissionTestBoundary sink "plans" "[PlannerOutput;1]"
+
+    multi =
+      admissionTestBoundary planner "plan" "PlannerOutput"
+
+    phantomMulti =
+      admissionTestBoundary phantomNode "item_0" "PlannerOutput"
+
+    phantomSingular =
+      admissionTestBoundary phantomNode "plans" "[PlannerOutput;1]"
+
+    phantomAdapter =
+      PhantomAdapterArtifact
+        { phantomAdapterDirection = PhantomGather
+        , phantomAdapterNode = phantomNode
+        , phantomAdapterProductShape = ProductIndexed "PlannerOutput" 1
+        , phantomAdapterSingular = singular
+        , phantomAdapterMulti = [multi]
+        , phantomAdapterLeftBulk = [AdmissionConnection multi phantomMulti]
+        , phantomAdapterRightBulk = [AdmissionConnection phantomSingular singular]
+        }
+
+    rawConnection fromBoundary toBoundary =
+      Connection
+        { connectionFrom =
+            EndpointRef
+              fromBoundary.admissionBoundaryNode
+              (Just fromBoundary.admissionBoundaryPort)
+        , connectionTo =
+            EndpointRef
+              toBoundary.admissionBoundaryNode
+              (Just toBoundary.admissionBoundaryPort)
+        }
+
+minimalSelectAdmissionArtifact :: WireAdmissionArtifact
+minimalSelectAdmissionArtifact =
+  emptyWireAdmissionArtifact
+    { wireAdmissionNodes = [planner, conditionNode]
+    , wireAdmissionEntries = [okEntry, issueEntry]
+    , wireAdmissionExits = [okPort, issuePort, approvedBridge, blockedBridge]
+    , wireAdmissionPrimitiveSteps =
+        [ PrimitiveNode planner [] [okPort, issuePort]
+        , PrimitiveNode
+            conditionNode
+            [okEntry, issueEntry]
+            [okInternal, issueInternal, approvedBridge, blockedBridge]
+        ]
+    , wireAdmissionSelects = [selectAdmission]
+    }
+  where
+    planner =
+      CircuitNodeRef "planner"
+
+    conditionNode =
+      CircuitNodeRef "__select:choice"
+
+    okBranch =
+      CircuitNodeRef "ok_branch"
+
+    issueBranch =
+      CircuitNodeRef "issue_branch"
+
+    okPort =
+      (admissionTestLabeledBoundary planner "ok" "ResearchPlan" "ok")
+        { admissionBoundaryExclusiveGroup = Just (planner, 0)
+        }
+
+    issuePort =
+      (admissionTestLabeledBoundary planner "issue" "PlanIssue" "issue")
+        { admissionBoundaryExclusiveGroup = Just (planner, 0)
+        }
+
+    okEntry =
+      admissionTestLabeledBoundary conditionNode "variant_in_1" "ResearchPlan" "ok"
+
+    issueEntry =
+      admissionTestLabeledBoundary conditionNode "variant_in_2" "PlanIssue" "issue"
+
+    okInternal =
+      (admissionTestLabeledBoundary conditionNode "variant_out_1" "ResearchPlan" "ok")
+        { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+        }
+
+    issueInternal =
+      (admissionTestLabeledBoundary conditionNode "variant_out_2" "PlanIssue" "issue")
+        { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+        }
+
+    approvedBridge =
+      (admissionTestLabeledBoundary conditionNode "bridge_out_1" "Approved" "approved")
+        { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+        }
+
+    blockedBridge =
+      (admissionTestLabeledBoundary conditionNode "bridge_out_2" "Blocked" "blocked")
+        { admissionBoundaryExclusiveGroup = Just (conditionNode, 0)
+        }
+
+    okBodyEntry =
+      admissionTestLabeledBoundary okBranch "selected" "ResearchPlan" "ok"
+
+    issueBodyEntry =
+      admissionTestLabeledBoundary issueBranch "selected" "PlanIssue" "issue"
+
+    okApproved =
+      (admissionTestLabeledBoundary okBranch "approved" "Approved" "approved")
+        { admissionBoundaryExclusiveGroup = Just (okBranch, 0)
+        }
+
+    okBlocked =
+      (admissionTestLabeledBoundary okBranch "blocked" "Blocked" "blocked")
+        { admissionBoundaryExclusiveGroup = Just (okBranch, 0)
+        }
+
+    issueApproved =
+      (admissionTestLabeledBoundary issueBranch "approved" "Approved" "approved")
+        { admissionBoundaryExclusiveGroup = Just (issueBranch, 0)
+        }
+
+    issueBlocked =
+      (admissionTestLabeledBoundary issueBranch "blocked" "Blocked" "blocked")
+        { admissionBoundaryExclusiveGroup = Just (issueBranch, 0)
+        }
+
+    selectAdmission =
+      SelectAdmissionArtifact
+        { selectAdmissionOwner = conditionNode
+        , selectAdmissionConditionNode = conditionNode
+        , selectAdmissionVariants =
+            [ SelectVariantArtifact "ok" okPort
+            , SelectVariantArtifact "issue" issuePort
+            ]
+        , selectAdmissionArms =
+            [ SelectArmAdmissionArtifact
+                { selectArmSourceIndex = 0
+                , selectArmSourceKey = "ok"
+                , selectArmCanonicalKey = "ok"
+                , selectArmResolutionMode = SelectResolvedByLabel
+                , selectArmBodyNodes = [okBranch]
+                , selectArmBodyEntries = [okBodyEntry]
+                , selectArmBodyExits = [okApproved, okBlocked]
+                }
+            , SelectArmAdmissionArtifact
+                { selectArmSourceIndex = 1
+                , selectArmSourceKey = "issue"
+                , selectArmCanonicalKey = "issue"
+                , selectArmResolutionMode = SelectResolvedByLabel
+                , selectArmBodyNodes = [issueBranch]
+                , selectArmBodyEntries = [issueBodyEntry]
+                , selectArmBodyExits = [issueApproved, issueBlocked]
+                }
+            ]
+        }
+
+type BoundarySummary = (T.Text, T.Text, T.Text)
+
+type ConnectionSummary = (BoundarySummary, BoundarySummary)
+
+type ExpectedGeneratedSourceChild = (CircuitNodeRef, T.Text, Bool)
+
+type ExpectedGeneratedUsedChild = (CircuitNodeRef, T.Text, [T.Text], [T.Text])
+
+data ExpectedGeneratedForm = ExpectedGeneratedForm
+  { expectedGeneratedKind :: !GeneratedFormKind
+  , expectedGeneratedKindName :: !T.Text
+  , expectedGeneratedBinding :: !T.Text
+  , expectedGeneratedSource :: ![ExpectedGeneratedSourceChild]
+  , expectedGeneratedUsed :: ![ExpectedGeneratedUsedChild]
+  }
+  deriving stock (Eq, Show)
+
+primitiveConnectMatchesSimpleChain :: Aeson.Value -> Bool
+primitiveConnectMatchesSimpleChain = \case
+  Aeson.Object obj ->
+    KeyMap.lookup "tag" obj == Just (Aeson.String "PrimitiveConnect")
+      && boundaryArraySummary obj "leftExits" == Just [plannerPlan]
+      && boundaryArraySummary obj "rightEntries" == Just [analystPlan]
+      && connectionArraySummary obj "matchedPairs" == Just [(plannerPlan, analystPlan)]
+      && boundaryArraySummary obj "unmatchedLeftExits" == Just []
+      && boundaryArraySummary obj "unmatchedRightEntries" == Just []
+  _ -> False
+  where
+    plannerPlan = ("planner", "plan", "PlannerOutput")
+    analystPlan = ("analyst", "plan", "PlannerOutput")
+
+boundaryArraySummary :: KeyMap.KeyMap Aeson.Value -> Key.Key -> Maybe [BoundarySummary]
+boundaryArraySummary obj fieldName =
+  case KeyMap.lookup fieldName obj of
+    Just (Aeson.Array values) ->
+      traverse boundarySummary (Foldable.toList values)
+    _ ->
+      Nothing
+
+connectionArraySummary :: KeyMap.KeyMap Aeson.Value -> Key.Key -> Maybe [ConnectionSummary]
+connectionArraySummary obj fieldName =
+  case KeyMap.lookup fieldName obj of
+    Just (Aeson.Array values) ->
+      traverse connectionSummary (Foldable.toList values)
+    _ ->
+      Nothing
+
+boundarySummary :: Aeson.Value -> Maybe BoundarySummary
+boundarySummary = \case
+  Aeson.Object obj -> do
+    Aeson.String node <- KeyMap.lookup "admissionBoundaryNode" obj
+    Aeson.String port <- KeyMap.lookup "admissionBoundaryPort" obj
+    Aeson.String contract <- KeyMap.lookup "admissionBoundaryContract" obj
+    pure (node, port, contract)
+  _ -> Nothing
+
+connectionSummary :: Aeson.Value -> Maybe ConnectionSummary
+connectionSummary = \case
+  Aeson.Object obj -> do
+    fromBoundary <- KeyMap.lookup "admissionConnectionFrom" obj >>= boundarySummary
+    toBoundary <- KeyMap.lookup "admissionConnectionTo" obj >>= boundarySummary
+    pure (fromBoundary, toBoundary)
+  _ -> Nothing
+
+assertSimpleChainPrimitiveConnectArtifact :: WireAdmissionArtifact -> Expectation
+assertSimpleChainPrimitiveConnectArtifact artifact =
+  case mapMaybe primitiveConnectStep artifact.wireAdmissionPrimitiveSteps of
+    [PrimitiveConnect leftExits rightEntries matchedPairs unmatchedLeftExits unmatchedRightEntries] -> do
+      fmap admissionBoundaryTypedSummary leftExits
+        `shouldBe` [plannerPlan]
+      fmap admissionBoundaryTypedSummary rightEntries
+        `shouldBe` [analystPlan]
+      fmap admissionConnectionTypedSummary matchedPairs
+        `shouldBe` [(plannerPlan, analystPlan)]
+      unmatchedLeftExits `shouldBe` []
+      unmatchedRightEntries `shouldBe` []
+    other ->
+      expectationFailure ("expected one primitive connect artifact, got: " <> show other)
+  where
+    plannerPlan = ("planner", "plan", "PlannerOutput")
+    analystPlan = ("analyst", "plan", "PlannerOutput")
+
+primitiveConnectStep :: PrimitiveGraphStep -> Maybe PrimitiveGraphStep
+primitiveConnectStep = \case
+  PrimitiveEmpty -> Nothing
+  PrimitiveNode _node _entries _exits -> Nothing
+  PrimitiveBindingRef _binding -> Nothing
+  PrimitiveOverlay _leftNodes _rightNodes _leftBindings _rightBindings -> Nothing
+  step@(PrimitiveConnect {}) -> Just step
+
+admissionBoundaryTypedSummary :: AdmissionBoundaryPort -> BoundarySummary
+admissionBoundaryTypedSummary boundary =
+  ( (admissionBoundaryNode boundary).unCircuitNodeRef
+  , admissionBoundaryPort boundary
+  , admissionBoundaryContract boundary
+  )
+
+admissionConnectionTypedSummary :: AdmissionConnection -> ConnectionSummary
+admissionConnectionTypedSummary connection =
+  ( admissionBoundaryTypedSummary connection.admissionConnectionFrom
+  , admissionBoundaryTypedSummary connection.admissionConnectionTo
+  )
+
+assertGeneratedFormArtifact :: ExpectedGeneratedForm -> WireAdmissionArtifact -> Expectation
+assertGeneratedFormArtifact expected artifact =
+  case artifact.wireAdmissionGeneratedForms of
+    [generated] -> do
+      generated.generatedFormKind `shouldBe` expected.expectedGeneratedKind
+      generated.generatedFormKindName `shouldBe` expected.expectedGeneratedKindName
+      generated.generatedFormBinding `shouldBe` expected.expectedGeneratedBinding
+      fmap generatedSourceChildTypedSummary generated.generatedFormSourceChildren
+        `shouldBe` expected.expectedGeneratedSource
+      fmap generatedUsedChildTypedSummary generated.generatedFormUsedChildren
+        `shouldBe` expected.expectedGeneratedUsed
+    other ->
+      expectationFailure ("expected one generated form artifact, got: " <> show other)
+
+generatedSourceChildTypedSummary
+  :: GeneratedChildSourceArtifact -> ExpectedGeneratedSourceChild
+generatedSourceChildTypedSummary child =
+  ( generatedSourceChildNode child
+  , generatedSourceChildLabel child
+  , isJust (generatedSourceChildValue child)
+  )
+
+generatedUsedChildTypedSummary
+  :: GeneratedChildArtifact -> ExpectedGeneratedUsedChild
+generatedUsedChildTypedSummary child =
+  ( generatedChildNode child
+  , generatedChildLabel child
+  , fmap admissionBoundaryPort child.generatedChildOutputs
+  , fmap admissionBoundaryPort child.generatedChildInputs
+  )
+
+assertIndexedGatherPhantomArtifact :: CircuitNodeRef -> WireAdmissionArtifact -> Expectation
+assertIndexedGatherPhantomArtifact phantomRef artifact =
+  case artifact.wireAdmissionPhantomAdapters of
+    [phantom] -> do
+      phantom.phantomAdapterDirection `shouldBe` PhantomGather
+      phantom.phantomAdapterNode `shouldBe` phantomRef
+      phantom.phantomAdapterProductShape `shouldBe` ProductIndexed "Sample" 3
+      Set.fromList (fmap admissionBoundaryNode phantom.phantomAdapterMulti)
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "workers_0"
+          , CircuitNodeRef "workers_1"
+          , CircuitNodeRef "workers_2"
+          ]
+      Set.fromList (fmap (admissionBoundaryNode . admissionConnectionFrom) phantom.phantomAdapterLeftBulk)
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "workers_0"
+          , CircuitNodeRef "workers_1"
+          , CircuitNodeRef "workers_2"
+          ]
+      Set.fromList (fmap (admissionBoundaryNode . admissionConnectionTo) phantom.phantomAdapterLeftBulk)
+        `shouldBe` Set.singleton phantomRef
+      Set.fromList
+        (fmap (admissionBoundaryNode . admissionConnectionFrom) phantom.phantomAdapterRightBulk)
+        `shouldBe` Set.singleton phantomRef
+      Set.fromList (fmap (admissionBoundaryNode . admissionConnectionTo) phantom.phantomAdapterRightBulk)
+        `shouldBe` Set.singleton (CircuitNodeRef "sink")
+    other ->
+      expectationFailure ("expected one indexed gather phantom artifact, got: " <> show other)
+
+assertRecordPhantomArtifact
+  :: PhantomAdapterDirection -> CircuitNodeRef -> WireAdmissionArtifact -> Expectation
+assertRecordPhantomArtifact expectedDirection phantomRef artifact =
+  case artifact.wireAdmissionPhantomAdapters of
+    [phantom] -> do
+      phantom.phantomAdapterDirection `shouldBe` expectedDirection
+      phantom.phantomAdapterNode `shouldBe` phantomRef
+      phantom.phantomAdapterProductShape
+        `shouldBe` ProductRecord "Pair" [("a", "A"), ("b", "B")]
+      admissionBoundaryContract phantom.phantomAdapterSingular `shouldBe` "Pair"
+      Set.fromList (fmap admissionBoundaryTypedSummary phantom.phantomAdapterMulti)
+        `shouldBe` Set.fromList
+          [ ("a", "a", "A")
+          , ("b", "b", "B")
+          ]
+    other ->
+      expectationFailure ("expected one record phantom artifact, got: " <> show other)
+
+assertLabeledSelectAdmissionArtifact :: CircuitNodeRef -> WireAdmissionArtifact -> Expectation
+assertLabeledSelectAdmissionArtifact selectRef artifact =
+  case artifact.wireAdmissionSelects of
+    [selectArtifact] -> do
+      selectArtifact.selectAdmissionOwner `shouldBe` selectRef
+      selectArtifact.selectAdmissionConditionNode `shouldBe` selectRef
+      Set.fromList (fmap selectVariantKey selectArtifact.selectAdmissionVariants)
+        `shouldBe` Set.fromList ["ok", "issue"]
+      Set.fromList (fmap selectArmSourceIndex selectArtifact.selectAdmissionArms)
+        `shouldBe` Set.fromList [0, 1]
+      Foldable.traverse_ assertArm selectArtifact.selectAdmissionArms
+    other ->
+      expectationFailure ("expected one select admission artifact, got: " <> show other)
+  where
+    assertArm arm =
+      case arm.selectArmCanonicalKey of
+        "ok" -> do
+          arm.selectArmSourceKey `shouldBe` "ok"
+          arm.selectArmResolutionMode `shouldBe` SelectResolvedByLabel
+          arm.selectArmBodyNodes `shouldBe` []
+          arm.selectArmBodyEntries `shouldBe` []
+          arm.selectArmBodyExits `shouldBe` []
+        "issue" -> do
+          arm.selectArmSourceKey `shouldBe` "issue"
+          arm.selectArmResolutionMode `shouldBe` SelectResolvedByLabel
+          Set.fromList arm.selectArmBodyNodes
+            `shouldBe` Set.fromList
+              [ CircuitNodeRef "gather_missing_constraints"
+              , CircuitNodeRef "repair_plan"
+              ]
+        other ->
+          expectationFailure ("unexpected select arm key: " <> show other)
+
+generatedFormMatches
+  :: T.Text
+  -> T.Text
+  -> T.Text
+  -> [(CircuitNodeRef, T.Text, Bool)]
+  -> [(CircuitNodeRef, T.Text)]
+  -> Aeson.Value
+  -> Bool
+generatedFormMatches expectedKind expectedKindName expectedBinding expectedSource expectedUsed = \case
+  Aeson.Object obj ->
+    KeyMap.lookup "generatedFormKind" obj == Just (Aeson.String expectedKind)
+      && KeyMap.lookup "generatedFormKindName" obj == Just (Aeson.String expectedKindName)
+      && KeyMap.lookup "generatedFormBinding" obj == Just (Aeson.String expectedBinding)
+      && case KeyMap.lookup "generatedFormSourceChildren" obj of
+        Just (Aeson.Array children) ->
+          traverse generatedSourceChildSummary (Foldable.toList children) == Just expectedSource
+        _ -> False
+      && case KeyMap.lookup "generatedFormUsedChildren" obj of
+        Just (Aeson.Array children) ->
+          traverse generatedChildSummary (Foldable.toList children) == Just expectedUsed
+        _ -> False
+  _ -> False
+
+generatedSourceChildSummary :: Aeson.Value -> Maybe (CircuitNodeRef, T.Text, Bool)
+generatedSourceChildSummary = \case
+  Aeson.Object obj -> do
+    nodeValue <- KeyMap.lookup "generatedSourceChildNode" obj
+    labelValue <- KeyMap.lookup "generatedSourceChildLabel" obj
+    let hasValue =
+          case KeyMap.lookup "generatedSourceChildValue" obj of
+            Just Aeson.Null -> False
+            Just _ -> True
+            Nothing -> False
+    case (nodeValue, labelValue) of
+      (Aeson.String nodeRef, Aeson.String label) -> Just (CircuitNodeRef nodeRef, label, hasValue)
+      _ -> Nothing
+  _ -> Nothing
+
+generatedFormSourceChildValueMatches
+  :: CircuitNodeRef -> (Aeson.Value -> Bool) -> Aeson.Value -> Bool
+generatedFormSourceChildValueMatches expectedNode predicate = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "generatedFormSourceChildren" obj of
+      Just (Aeson.Array children) ->
+        any sourceChildMatches children
+      _ -> False
+  _ -> False
+  where
+    sourceChildMatches = \case
+      Aeson.Object childObj ->
+        KeyMap.lookup "generatedSourceChildNode" childObj
+          == Just (Aeson.String expectedNode.unCircuitNodeRef)
+          && maybe False predicate (KeyMap.lookup "generatedSourceChildValue" childObj)
+      _ -> False
+
+staticRecordFieldNat :: T.Text -> Integer -> Aeson.Value -> Bool
+staticRecordFieldNat fieldName expectedValue =
+  staticRecordField fieldName $ \case
+    Aeson.Object valueObj ->
+      KeyMap.lookup "kind" valueObj == Just (Aeson.String "nat")
+        && KeyMap.lookup "value" valueObj == Just (Aeson.Number (fromInteger expectedValue))
+    _ -> False
+
+staticRecordFieldBool :: T.Text -> Bool -> Aeson.Value -> Bool
+staticRecordFieldBool fieldName expectedValue =
+  staticRecordField fieldName $ \case
+    Aeson.Object valueObj ->
+      KeyMap.lookup "kind" valueObj == Just (Aeson.String "bool")
+        && KeyMap.lookup "value" valueObj == Just (Aeson.Bool expectedValue)
+    _ -> False
+
+staticRecordField :: T.Text -> (Aeson.Value -> Bool) -> Aeson.Value -> Bool
+staticRecordField fieldName predicate = \case
+  Aeson.Object valueObj ->
+    KeyMap.lookup "kind" valueObj == Just (Aeson.String "record")
+      && case KeyMap.lookup "fields" valueObj of
+        Just (Aeson.Array fields) ->
+          any fieldMatches fields
+        _ -> False
+  _ -> False
+  where
+    fieldMatches = \case
+      Aeson.Object fieldObj ->
+        KeyMap.lookup "label" fieldObj == Just (Aeson.String fieldName)
+          && maybe False predicate (KeyMap.lookup "value" fieldObj)
+      _ -> False
+
+generatedChildSummary :: Aeson.Value -> Maybe (CircuitNodeRef, T.Text)
+generatedChildSummary = \case
+  Aeson.Object obj -> do
+    nodeValue <- KeyMap.lookup "generatedChildNode" obj
+    labelValue <- KeyMap.lookup "generatedChildLabel" obj
+    case (nodeValue, labelValue) of
+      (Aeson.String nodeRef, Aeson.String label) -> Just (CircuitNodeRef nodeRef, label)
+      _ -> Nothing
+  _ -> Nothing
+
+phantomAdapterMatchesIndexedGather :: CircuitNodeRef -> Int -> Aeson.Value -> Bool
+phantomAdapterMatchesIndexedGather expectedNode expectedCount = \case
+  Aeson.Object obj ->
+    KeyMap.lookup "phantomAdapterDirection" obj == Just (Aeson.String "gather")
+      && KeyMap.lookup "phantomAdapterNode" obj == Just (Aeson.toJSON expectedNode)
+      && case KeyMap.lookup "phantomAdapterProductShape" obj of
+        Just (Aeson.Object productShape) ->
+          KeyMap.lookup "kind" productShape == Just (Aeson.String "indexed")
+            && KeyMap.lookup "count" productShape == Just (Aeson.Number (fromIntegral expectedCount))
+        _ -> False
+  _ -> False
+
+selectAdmissionMatchesLabelResolution :: CircuitNodeRef -> Set.Set T.Text -> Aeson.Value -> Bool
+selectAdmissionMatchesLabelResolution expectedCondition expectedKeys = \case
+  Aeson.Object obj ->
+    KeyMap.lookup "selectAdmissionOwner" obj == Just (Aeson.toJSON expectedCondition)
+      && KeyMap.lookup "selectAdmissionConditionNode" obj == Just (Aeson.toJSON expectedCondition)
+      && case KeyMap.lookup "selectAdmissionArms" obj of
+        Just (Aeson.Array arms) ->
+          let armSummaries = mapMaybe selectArmSummary (Foldable.toList arms)
+           in length armSummaries == Foldable.length arms
+                && Set.fromList (fmap selectArmKey armSummaries) == expectedKeys
+                && all ((== "SelectResolvedByLabel") . selectArmMode) armSummaries
+                && Set.fromList (fmap selectArmIndex armSummaries) == Set.fromList [0, 1]
+        _ -> False
+  _ -> False
+  where
+    selectArmSummary = \case
+      Aeson.Object armObj -> do
+        Aeson.String canonicalKey <- KeyMap.lookup "selectArmCanonicalKey" armObj
+        Aeson.String resolutionMode <- KeyMap.lookup "selectArmResolutionMode" armObj
+        Aeson.Number sourceIndex <- KeyMap.lookup "selectArmSourceIndex" armObj
+        case floatingOrInteger sourceIndex :: Either Double Int of
+          Right intIndex -> Just (canonicalKey, resolutionMode, intIndex)
+          Left _ -> Nothing
+      _ -> Nothing
+
+    selectArmKey (key, _, _) = key
+    selectArmMode (_, mode, _) = mode
+    selectArmIndex (_, _, indexValue) = indexValue
+
+selectAdmissionMatchesResolutionMode :: CircuitNodeRef -> T.Text -> Aeson.Value -> Bool
+selectAdmissionMatchesResolutionMode expectedCondition expectedMode = \case
+  Aeson.Object obj ->
+    KeyMap.lookup "selectAdmissionConditionNode" obj == Just (Aeson.toJSON expectedCondition)
+      && case KeyMap.lookup "selectAdmissionArms" obj of
+        Just (Aeson.Array arms) ->
+          let armSummaries = mapMaybe selectArmModeSummary (Foldable.toList arms)
+           in length armSummaries == Foldable.length arms
+                && all ((== expectedMode) . snd) armSummaries
+                && Set.fromList (fmap fst armSummaries) == Set.fromList [0, 1]
+        _ -> False
+  _ -> False
+  where
+    selectArmModeSummary = \case
+      Aeson.Object armObj -> do
+        Aeson.Number sourceIndex <- KeyMap.lookup "selectArmSourceIndex" armObj
+        Aeson.String mode <- KeyMap.lookup "selectArmResolutionMode" armObj
+        case floatingOrInteger sourceIndex :: Either Double Int of
+          Right intIndex -> Just (intIndex, mode)
+          Left _ -> Nothing
+      _ -> Nothing
 
 metadataHasPureBindingIn :: Key.Key -> T.Text -> Aeson.Value -> Bool
 metadataHasPureBindingIn bindingField bindingName = \case
@@ -1554,6 +5241,11 @@ isParseFailure = \case
 isWireParseFailureContaining :: T.Text -> Either WireError ok -> Bool
 isWireParseFailureContaining expected = \case
   Left (WireParseError message) -> expected `T.isInfixOf` message
+  _ -> False
+
+isWireUnusedNodeRef :: CircuitNodeRef -> Either WireError ok -> Bool
+isWireUnusedNodeRef expected = \case
+  Left (WireUnusedNodeRef nodeRef) -> nodeRef == expected
   _ -> False
 
 isCorePureScopeViolationOf :: T.Text -> Either WireError ok -> Bool

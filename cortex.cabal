@@ -166,6 +166,7 @@ library
         Cortex.Pulse.Resume
         Cortex.Pulse.Runtime
         Cortex.Wire
+        Cortex.Wire.AdmissionArtifact
         Cortex.Wire.Compile
         Cortex.Wire.Contract
         Cortex.Wire.Executor

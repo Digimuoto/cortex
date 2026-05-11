@@ -59,7 +59,7 @@ data EndpointRef = EndpointRef
   , endpointPortName :: !(Maybe Text)
   }
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (ToJSON)
+  deriving anyclass (FromJSON, ToJSON)
 
 renderEndpointRef :: EndpointRef -> Text
 renderEndpointRef endpointRef =
@@ -71,7 +71,7 @@ data Connection = Connection
   , connectionTo :: !EndpointRef
   }
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (ToJSON)
+  deriving anyclass (FromJSON, ToJSON)
 
 connect :: EndpointRef -> EndpointRef -> Connection
 connect = Connection
