@@ -398,9 +398,10 @@ Mechanized results now include:
   `AdmissionArtifact.validatorReadyCoreCheck_sound` extend that strategy to a representative
   executable validator core: schema version, summary-key uniqueness, summary-row validity, summary
   domain closure, summary identity/frontier/raw-connection matching against primitive rows,
-  component-domain closure, local generated/select/phantom row validity, generated-form reference
-  anchoring, component-row uniqueness, primitive row validity, and primitive stack replay.
-  `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
+  primitive overlay ledger prefix availability, primitive connect frontier backing, primitive
+  connect frontier prefix availability, component-domain closure, local generated/select/phantom row
+  validity, generated-form reference anchoring, component-row uniqueness, primitive row validity,
+  and primitive stack replay. `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
   `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
   generated-child or empty-family row for each generated artifact, rather than only a label
   membership fact. `AdmissionArtifact.validatorReady_generated_usedChild_sourceMakeItem` then

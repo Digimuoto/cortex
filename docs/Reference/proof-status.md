@@ -108,14 +108,16 @@ rows.
   Haskell validator clause with a Lean checker plus theorem, not yet a full executable
   `ValidatorReady` checker.
 - `AdmissionArtifact.validatorReadyCoreCheck_sound` now measures the next strategy: a Lean-owned
-  executable checker can establish a representative `ValidatorReadyCore` covering sixteen fields:
+  executable checker can establish a representative `ValidatorReadyCore` covering nineteen fields:
   schema version, summary-key uniqueness, summary-row validity, summary domain closure, summary
   identities matching primitive rows, summary frontiers backed by primitive rows, exact summary
-  residual-frontier matching, raw connections matching primitive rows, component-domain closure,
-  local select-row validity, component-row uniqueness, generated-form reference anchoring, local
-  generated-form validity, local phantom-adapter validity, primitive row validity, and primitive
-  stack replay. The helper combinators are Lean-side soundness tools (`check = true → predicate`);
-  full Haskell-validator equivalence remains a separate field-by-field correspondence obligation.
+  residual-frontier matching, raw connections matching primitive rows, primitive overlay ledger
+  prefix availability, primitive connect frontier backing, primitive connect frontier prefix
+  availability, component-domain closure, local select-row validity, component-row uniqueness,
+  generated-form reference anchoring, local generated-form validity, local phantom-adapter validity,
+  primitive row validity, and primitive stack replay. The helper combinators are Lean-side soundness
+  tools (`check = true → predicate`); full Haskell-validator equivalence remains a separate
+  field-by-field correspondence obligation.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph

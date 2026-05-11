@@ -1177,6 +1177,335 @@ theorem rawConnectionsMatchPrimitiveCheck_sound
     artifact.RawConnectionsMatchPrimitive :=
   Check.permCheck_sound hCheck
 
+/-! ## Primitive Prefix Checks -/
+
+/-- Replay-order scan for primitive predicates whose truth depends on the trace prefix. -/
+def primitivePrefixScanCheck
+    (rowCheck : List PrimitiveGraphStep → PrimitiveGraphStep → Bool)
+    (priorSteps : List PrimitiveGraphStep) :
+    List PrimitiveGraphStep → Bool
+  | [] =>
+      true
+  | primitiveStep :: primitiveSteps =>
+      rowCheck priorSteps primitiveStep &&
+        primitivePrefixScanCheck rowCheck (priorSteps ++ [primitiveStep]) primitiveSteps
+
+/-- A successful prefix scan proves the row predicate at every trace position. -/
+theorem primitivePrefixScanCheck_at_step_sound
+    {rowCheck : List PrimitiveGraphStep → PrimitiveGraphStep → Bool}
+    {rowPredicate : List PrimitiveGraphStep → PrimitiveGraphStep → Prop}
+    (rowSound :
+      ∀ priorSteps primitiveStep,
+        rowCheck priorSteps primitiveStep = true →
+          rowPredicate priorSteps primitiveStep)
+    {priorSteps primitiveSteps : List PrimitiveGraphStep}
+    (hCheck :
+      primitivePrefixScanCheck rowCheck priorSteps primitiveSteps = true) :
+    ∀ tracePrefix suffix primitiveStep,
+      primitiveSteps = tracePrefix ++ [primitiveStep] ++ suffix →
+        rowPredicate (priorSteps ++ tracePrefix) primitiveStep := by
+  induction primitiveSteps generalizing priorSteps with
+  | nil =>
+      intro tracePrefix suffix primitiveStep hEq
+      cases tracePrefix with
+      | nil =>
+          simp at hEq
+      | cons traceHead traceTail =>
+          simp at hEq
+  | cons head tail ih =>
+      unfold primitivePrefixScanCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      intro tracePrefix suffix primitiveStep hEq
+      cases tracePrefix with
+      | nil =>
+          simp at hEq
+          rcases hEq with ⟨hHead, _hTail⟩
+          subst primitiveStep
+          simpa using rowSound priorSteps head hCheck.left
+      | cons traceHead traceTail =>
+          simp at hEq
+          rcases hEq with ⟨hHead, hTail⟩
+          subst traceHead
+          have hTailEq :
+              tail = traceTail ++ [primitiveStep] ++ suffix := by
+            simpa using hTail
+          have hTailPredicate :=
+            ih hCheck.right traceTail suffix primitiveStep hTailEq
+          simpa [List.append_assoc] using hTailPredicate
+
+/-- Row predicate for overlay ledgers being backed by primitive identity rows in prior steps. -/
+def primitiveOverlayLedgersPrefixAvailableAt
+    (priorSteps : List PrimitiveGraphStep) :
+    PrimitiveGraphStep → Prop
+  | PrimitiveGraphStep.empty =>
+      True
+  | PrimitiveGraphStep.node _node _entries _exits =>
+      True
+  | PrimitiveGraphStep.bindingRef _binding =>
+      True
+  | PrimitiveGraphStep.overlay leftNodes rightNodes leftBindings rightBindings =>
+      (∀ node, node ∈ leftNodes ++ rightNodes →
+        node ∈ PrimitiveGraphStep.nodeRowsList priorSteps) ∧
+      (∀ binding, binding ∈ leftBindings ++ rightBindings →
+        binding ∈ PrimitiveGraphStep.bindingRowsList priorSteps)
+  | PrimitiveGraphStep.connect
+      _leftExits _rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      True
+
+/-- Row checker for overlay ledgers being backed by primitive identity rows in prior steps. -/
+def primitiveOverlayLedgersPrefixStepCheck
+    (priorSteps : List PrimitiveGraphStep) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.empty =>
+      true
+  | PrimitiveGraphStep.node _node _entries _exits =>
+      true
+  | PrimitiveGraphStep.bindingRef _binding =>
+      true
+  | PrimitiveGraphStep.overlay leftNodes rightNodes leftBindings rightBindings =>
+      let nodeRows := PrimitiveGraphStep.nodeRowsList priorSteps
+      let bindingRows := PrimitiveGraphStep.bindingRowsList priorSteps
+      Check.allDecide (leftNodes ++ rightNodes) (fun node => node ∈ nodeRows) &&
+        Check.allDecide (leftBindings ++ rightBindings)
+          (fun binding => binding ∈ bindingRows)
+  | PrimitiveGraphStep.connect
+      _leftExits _rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      true
+
+/-- Successful row checking proves overlay ledger prefix availability at that row. -/
+theorem primitiveOverlayLedgersPrefixStepCheck_sound
+    (priorSteps : List PrimitiveGraphStep)
+    (primitiveStep : PrimitiveGraphStep)
+    (hCheck : primitiveOverlayLedgersPrefixStepCheck priorSteps primitiveStep = true) :
+    primitiveOverlayLedgersPrefixAvailableAt priorSteps primitiveStep := by
+  cases primitiveStep with
+  | empty =>
+      exact trivial
+  | node _node _entries _exits =>
+      exact trivial
+  | bindingRef _binding =>
+      exact trivial
+  | overlay leftNodes rightNodes leftBindings rightBindings =>
+      unfold primitiveOverlayLedgersPrefixStepCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact
+        ⟨ Check.allDecide_sound hCheck.left
+        , Check.allDecide_sound hCheck.right
+        ⟩
+  | connect _leftExits _rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      exact trivial
+
+/-- Executable checker for primitive overlay ledger replay-order availability. -/
+def primitiveOverlayLedgersPrefixAvailableCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  primitivePrefixScanCheck primitiveOverlayLedgersPrefixStepCheck []
+    artifact.primitiveSteps
+
+/-- Successful overlay-prefix checking proves `PrimitiveOverlayLedgersPrefixAvailable`. -/
+theorem primitiveOverlayLedgersPrefixAvailableCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.primitiveOverlayLedgersPrefixAvailableCheck = true) :
+    artifact.PrimitiveOverlayLedgersPrefixAvailable := by
+  intro tracePrefix suffix leftNodes rightNodes leftBindings rightBindings hTrace
+  have hAt :=
+    primitivePrefixScanCheck_at_step_sound
+      primitiveOverlayLedgersPrefixStepCheck_sound
+      hCheck tracePrefix suffix
+      (PrimitiveGraphStep.overlay leftNodes rightNodes leftBindings rightBindings)
+      hTrace
+  simpa [primitiveOverlayLedgersPrefixAvailableAt] using hAt
+
+/-- Row predicate for connect frontiers being backed by primitive node rows. -/
+def primitiveConnectFrontiersBackedByNodesAt
+    (artifact : WireAdmissionArtifact) :
+    PrimitiveGraphStep → Prop
+  | PrimitiveGraphStep.empty =>
+      True
+  | PrimitiveGraphStep.node _node _entries _exits =>
+      True
+  | PrimitiveGraphStep.bindingRef _binding =>
+      True
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      True
+  | PrimitiveGraphStep.connect
+      leftExits rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      (∀ leftExit, leftExit ∈ leftExits →
+        leftExit.key ∈
+          PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps) ∧
+      (∀ rightEntry, rightEntry ∈ rightEntries →
+        rightEntry.key ∈
+          PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps)
+
+/-- Row checker for connect frontiers being backed by primitive node rows. -/
+def primitiveConnectFrontiersBackedByNodesStepCheck
+    (artifact : WireAdmissionArtifact) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.empty =>
+      true
+  | PrimitiveGraphStep.node _node _entries _exits =>
+      true
+  | PrimitiveGraphStep.bindingRef _binding =>
+      true
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      true
+  | PrimitiveGraphStep.connect
+      leftExits rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      let nodeExitKeys := PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps
+      let nodeEntryKeys := PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps
+      Check.allDecide leftExits (fun leftExit => leftExit.key ∈ nodeExitKeys) &&
+        Check.allDecide rightEntries (fun rightEntry => rightEntry.key ∈ nodeEntryKeys)
+
+/-- Successful row checking proves connect frontier backing at that row. -/
+theorem primitiveConnectFrontiersBackedByNodesStepCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {primitiveStep : PrimitiveGraphStep}
+    (hCheck :
+      primitiveConnectFrontiersBackedByNodesStepCheck artifact primitiveStep = true) :
+    primitiveConnectFrontiersBackedByNodesAt artifact primitiveStep := by
+  cases primitiveStep with
+  | empty =>
+      exact trivial
+  | node _node _entries _exits =>
+      exact trivial
+  | bindingRef _binding =>
+      exact trivial
+  | overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      exact trivial
+  | connect _leftExits _rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      unfold primitiveConnectFrontiersBackedByNodesStepCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact
+        ⟨ Check.allDecide_sound hCheck.left
+        , Check.allDecide_sound hCheck.right
+        ⟩
+
+/-- Executable checker for primitive connect frontier node-row backing. -/
+def primitiveConnectFrontiersBackedByNodesCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.primitiveSteps
+    (primitiveConnectFrontiersBackedByNodesStepCheck artifact)
+
+/-- Successful connect-backing checking proves `PrimitiveConnectFrontiersBackedByNodes`. -/
+theorem primitiveConnectFrontiersBackedByNodesCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.primitiveConnectFrontiersBackedByNodesCheck = true) :
+    artifact.PrimitiveConnectFrontiersBackedByNodes := by
+  intro leftExits rightEntries matchedPairs unmatchedLeftExits
+    unmatchedRightEntries hStep
+  have hAt :=
+    Check.allBool_sound hCheck
+      (fun _primitiveStep _hMem hPrimitiveStep =>
+        primitiveConnectFrontiersBackedByNodesStepCheck_sound hPrimitiveStep)
+      (PrimitiveGraphStep.connect
+        leftExits rightEntries matchedPairs unmatchedLeftExits
+        unmatchedRightEntries)
+      hStep
+  simpa [primitiveConnectFrontiersBackedByNodesAt] using hAt
+
+/-- Row predicate for connect frontiers being available and unconsumed in prior steps. -/
+def primitiveConnectFrontiersPrefixAvailableAt
+    (priorSteps : List PrimitiveGraphStep) :
+    PrimitiveGraphStep → Prop
+  | PrimitiveGraphStep.empty =>
+      True
+  | PrimitiveGraphStep.node _node _entries _exits =>
+      True
+  | PrimitiveGraphStep.bindingRef _binding =>
+      True
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      True
+  | PrimitiveGraphStep.connect
+      leftExits rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      (∀ leftExit, leftExit ∈ leftExits →
+        leftExit.key ∈ PrimitiveGraphStep.nodeExitKeysList priorSteps ∧
+          leftExit.key ∉ PrimitiveGraphStep.consumedExitKeysList priorSteps) ∧
+      (∀ rightEntry, rightEntry ∈ rightEntries →
+        rightEntry.key ∈ PrimitiveGraphStep.nodeEntryKeysList priorSteps ∧
+          rightEntry.key ∉ PrimitiveGraphStep.consumedEntryKeysList priorSteps)
+
+/-- Row checker for connect frontiers being available and unconsumed in prior steps. -/
+def primitiveConnectFrontiersPrefixStepCheck
+    (priorSteps : List PrimitiveGraphStep) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.empty =>
+      true
+  | PrimitiveGraphStep.node _node _entries _exits =>
+      true
+  | PrimitiveGraphStep.bindingRef _binding =>
+      true
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      true
+  | PrimitiveGraphStep.connect
+      leftExits rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      let availableExits := PrimitiveGraphStep.nodeExitKeysList priorSteps
+      let consumedExits := PrimitiveGraphStep.consumedExitKeysList priorSteps
+      let availableEntries := PrimitiveGraphStep.nodeEntryKeysList priorSteps
+      let consumedEntries := PrimitiveGraphStep.consumedEntryKeysList priorSteps
+      Check.allDecide leftExits
+          (fun leftExit =>
+            leftExit.key ∈ availableExits ∧ leftExit.key ∉ consumedExits) &&
+        Check.allDecide rightEntries
+          (fun rightEntry =>
+            rightEntry.key ∈ availableEntries ∧ rightEntry.key ∉ consumedEntries)
+
+/-- Successful row checking proves connect frontier prefix availability at that row. -/
+theorem primitiveConnectFrontiersPrefixStepCheck_sound
+    (priorSteps : List PrimitiveGraphStep)
+    (primitiveStep : PrimitiveGraphStep)
+    (hCheck : primitiveConnectFrontiersPrefixStepCheck priorSteps primitiveStep = true) :
+    primitiveConnectFrontiersPrefixAvailableAt priorSteps primitiveStep := by
+  cases primitiveStep with
+  | empty =>
+      exact trivial
+  | node _node _entries _exits =>
+      exact trivial
+  | bindingRef _binding =>
+      exact trivial
+  | overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      exact trivial
+  | connect leftExits rightEntries _matchedPairs _unmatchedLeftExits
+      _unmatchedRightEntries =>
+      unfold primitiveConnectFrontiersPrefixStepCheck at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact
+        ⟨ Check.allDecide_sound hCheck.left
+        , Check.allDecide_sound hCheck.right
+        ⟩
+
+/-- Executable checker for primitive connect frontier replay-order availability. -/
+def primitiveConnectFrontiersPrefixAvailableCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  primitivePrefixScanCheck primitiveConnectFrontiersPrefixStepCheck []
+    artifact.primitiveSteps
+
+/-- Successful connect-prefix checking proves `PrimitiveConnectFrontiersPrefixAvailable`. -/
+theorem primitiveConnectFrontiersPrefixAvailableCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.primitiveConnectFrontiersPrefixAvailableCheck = true) :
+    artifact.PrimitiveConnectFrontiersPrefixAvailable := by
+  intro tracePrefix suffix leftExits rightEntries matchedPairs unmatchedLeftExits
+    unmatchedRightEntries hTrace
+  have hAt :=
+    primitivePrefixScanCheck_at_step_sound
+      primitiveConnectFrontiersPrefixStepCheck_sound
+      hCheck tracePrefix suffix
+      (PrimitiveGraphStep.connect
+        leftExits rightEntries matchedPairs unmatchedLeftExits
+        unmatchedRightEntries)
+      hTrace
+  simpa [primitiveConnectFrontiersPrefixAvailableAt] using hAt
+
 /-! ## Generated-Form Row Checks -/
 
 mutual
@@ -2477,6 +2806,12 @@ structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
   phantomAdaptersValid : artifact.PhantomAdaptersValid
   primitiveStepsValid : artifact.PrimitiveStepsValid
   primitiveTraceStackValid : artifact.PrimitiveTraceStackValid
+  primitiveOverlayLedgersPrefixAvailable :
+    artifact.PrimitiveOverlayLedgersPrefixAvailable
+  primitiveConnectFrontiersBackedByNodes :
+    artifact.PrimitiveConnectFrontiersBackedByNodes
+  primitiveConnectFrontiersPrefixAvailable :
+    artifact.PrimitiveConnectFrontiersPrefixAvailable
 
 /-- Full validator readiness implies the executable core contract. -/
 theorem validatorReady_core
@@ -2499,6 +2834,12 @@ theorem validatorReady_core
   phantomAdaptersValid := hReady.phantomAdaptersValid
   primitiveStepsValid := hReady.primitiveStepsValid
   primitiveTraceStackValid := hReady.primitiveTraceStackValid
+  primitiveOverlayLedgersPrefixAvailable :=
+    hReady.primitiveOverlayLedgersPrefixAvailable
+  primitiveConnectFrontiersBackedByNodes :=
+    hReady.primitiveConnectFrontiersBackedByNodes
+  primitiveConnectFrontiersPrefixAvailable :=
+    hReady.primitiveConnectFrontiersPrefixAvailable
 
 /-- Executable checker for the representative validator-ready core. -/
 def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
@@ -2517,7 +2858,10 @@ def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
                             artifact.generatedFormsValidCheck &&
                               artifact.phantomAdaptersValidCheck &&
                                 artifact.primitiveStepsValidCheck &&
-                                  artifact.primitiveTraceStackValidCheck
+                                  artifact.primitiveTraceStackValidCheck &&
+                                    artifact.primitiveOverlayLedgersPrefixAvailableCheck &&
+                                      artifact.primitiveConnectFrontiersBackedByNodesCheck &&
+                                        artifact.primitiveConnectFrontiersPrefixAvailableCheck
 
 /-- Successful core checking proves the representative validator-ready core. -/
 theorem validatorReadyCoreCheck_sound
@@ -2527,11 +2871,12 @@ theorem validatorReadyCoreCheck_sound
   unfold validatorReadyCoreCheck at hCheck
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with
-    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
+    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
       hSummaryDomain⟩, hSummaryIdentities⟩, hSummaryBacked⟩, hSummaryFrontiers⟩,
       hRawConnections⟩, hComponentDomains⟩, hSelects⟩, hComponentRows⟩,
       hGeneratedReferenced⟩, hGeneratedValid⟩, hPhantomValid⟩, hPrimitiveSteps⟩,
-      hPrimitiveTrace⟩
+      hPrimitiveTrace⟩, hPrimitiveOverlayPrefix⟩, hPrimitiveConnectBacked⟩,
+      hPrimitiveConnectPrefix⟩
   exact
     { schemaCurrent := of_decide_eq_true hSchema
     , summaryKeysUnique := summaryKeysUniqueCheck_sound hSummaryKeys
@@ -2554,6 +2899,12 @@ theorem validatorReadyCoreCheck_sound
     , phantomAdaptersValid := phantomAdaptersValidCheck_sound hPhantomValid
     , primitiveStepsValid := primitiveStepsValidCheck_sound hPrimitiveSteps
     , primitiveTraceStackValid := primitiveTraceStackValidCheck_sound hPrimitiveTrace
+    , primitiveOverlayLedgersPrefixAvailable :=
+        primitiveOverlayLedgersPrefixAvailableCheck_sound hPrimitiveOverlayPrefix
+    , primitiveConnectFrontiersBackedByNodes :=
+        primitiveConnectFrontiersBackedByNodesCheck_sound hPrimitiveConnectBacked
+    , primitiveConnectFrontiersPrefixAvailable :=
+        primitiveConnectFrontiersPrefixAvailableCheck_sound hPrimitiveConnectPrefix
     }
 
 end WireAdmissionArtifact
