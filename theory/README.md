@@ -391,19 +391,17 @@ Mechanized results now include:
   availability for overlay/connect rows, so those bridge rows cannot be justified by
   shape-compatible but unrelated replay. `AdmissionArtifact.primitiveTraceStepCheck`,
   `AdmissionArtifact.primitiveTraceReplayCheck`, `AdmissionArtifact.primitiveTraceStackValidCheck`,
-  and `AdmissionArtifact.primitiveTraceStackValidCheck_sound` are the first Lean-owned executable
-  checker slice for this artifact contract: a successful primitive-stack check implies the
-  relational `PrimitiveTraceStackValid` field required by `ValidatorReady`.
-  `AdmissionArtifact.ValidatorReadyCore`, `AdmissionArtifact.validatorReadyCoreCheck`, and
-  `AdmissionArtifact.validatorReadyCoreCheck_sound` extend that strategy to a representative
-  executable validator core: schema version, summary-key uniqueness, summary-row validity, summary
-  domain closure, summary identity/frontier/raw-connection matching against primitive rows,
-  primitive overlay ledger prefix availability, primitive connect frontier backing, primitive
-  connect frontier prefix availability, select bridge frontier backing, select bridge entry
-  consumption, select arm body-boundary matching, select body-node freshness, select body-node
-  disjointness, phantom bridge frontier backing, phantom bridge frontier exactness, phantom bulk
-  replay, component-domain closure, local generated/select/phantom row validity, generated-form
-  reference anchoring, component-row uniqueness, primitive row validity, and primitive stack replay.
+  and `AdmissionArtifact.primitiveTraceStackValidCheck_sound` are the primitive-replay slice of the
+  Lean-owned artifact validator. `AdmissionArtifact.validatorReadyCheck`,
+  `AdmissionArtifact.validatorReadyCheck_sound`, and
+  `AdmissionArtifact.validatorReadyCheck_soundness` now cover the full executable `ValidatorReady`
+  contract: schema and summary invariants, summary/frontier/raw-connection matching against
+  primitive rows, component-domain closure, component frontier backing, generated-child frontier
+  exactness, primitive overlay/connect prefix availability, select bridge and latent-body checks,
+  phantom bridge frontier and bulk replay checks, local generated/select/phantom row validity,
+  component-row uniqueness, primitive row validity, and primitive stack replay. The remaining
+  Haskell integration task is to run this Lean checker on decoded artifacts; the checker is now the
+  intended artifact-validation authority.
   `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
   `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
   generated-child or empty-family row for each generated artifact, rather than only a label

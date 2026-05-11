@@ -104,23 +104,22 @@ rows.
   `AdmissionArtifact.Sound`. That is the established cutline for this PR.
 - Lean now owns an executable primitive-stack replay checker:
   `AdmissionArtifact.primitiveTraceStackValidCheck_sound` proves that a successful check implies the
-  relational `PrimitiveTraceStackValid` obligation. This is a first replacement of a mirrored
-  Haskell validator clause with a Lean checker plus theorem, not yet a full executable
-  `ValidatorReady` checker.
-- `AdmissionArtifact.validatorReadyCoreCheck_sound` now measures the next strategy: a Lean-owned
-  executable checker can establish a representative `ValidatorReadyCore` covering twenty-seven
-  fields: schema version, summary-key uniqueness, summary-row validity, summary domain closure,
-  summary identities matching primitive rows, summary frontiers backed by primitive rows, exact
-  summary residual-frontier matching, raw connections matching primitive rows, primitive overlay
-  ledger prefix availability, primitive connect frontier backing, primitive connect frontier prefix
-  availability, select bridge frontier backing, select bridge entry consumption, select arm
-  body-boundary matching, select body-node freshness, select body-node disjointness, phantom bridge
-  frontier backing, phantom bridge frontier exactness, phantom bulk replay, component-domain
-  closure, local select-row validity, component-row uniqueness, generated-form reference anchoring,
-  local generated-form validity, local phantom-adapter validity, primitive row validity, and
-  primitive stack replay. The helper combinators are Lean-side soundness tools
-  (`check = true → predicate`); full Haskell-validator equivalence remains a separate field-by-field
-  correspondence obligation.
+  relational `PrimitiveTraceStackValid` obligation. `AdmissionArtifact.validatorReadyCheck_sound`
+  now lifts the same Lean-owned executable strategy to the full `ValidatorReady` contract: schema
+  version, summary-key uniqueness, summary-row validity, summary domain closure, summary identities
+  matching primitive rows, summary frontiers backed by primitive rows, exact summary
+  residual-frontier matching, raw connections matching primitive rows, component-domain closure,
+  component-row uniqueness, generated-form reference anchoring, component frontier backing,
+  generated-child frontier exactness, primitive stack replay, primitive overlay ledger prefix
+  availability, primitive connect frontier backing, primitive connect frontier prefix availability,
+  select bridge frontier backing, select bridge entry consumption, select arm body-boundary
+  matching, select body-node freshness, select body-node disjointness, phantom bridge frontier
+  backing, phantom bridge frontier exactness, phantom bulk replay, primitive row validity, local
+  generated-form validity, local phantom-adapter validity, and local select-row validity.
+  `AdmissionArtifact.validatorReadyCheck_soundness` then composes that result with
+  `AdmissionArtifact.validatorReady_sound` to produce `AdmissionArtifact.Sound`. Haskell integration
+  still needs to run this checker on decoded artifacts; the Lean checker is now the intended
+  artifact-validation authority.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph

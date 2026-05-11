@@ -1,16 +1,18 @@
 import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.PrimitiveTraceCheck
+import Cortex.Wire.AdmissionArtifact.Sound
 
 /-!
 ## Overview
 
 Executable core checks for decoded Wire admission artifacts.
 
-This module is a measurement slice for the Lean-owned validator strategy. It
-does not decide the full `ValidatorReady` predicate. Instead, it groups a
-representative core: schema version, summary invariants, component-domain
-closure, local generated/select/phantom row validity, component-row uniqueness,
-primitive row validity, and executable primitive stack replay.
+This module is the Lean-owned executable validator for decoded artifact rows.
+The historical `ValidatorReadyCore` name remains as the checker-record layer,
+but it now covers every field of `ValidatorReady`: schema and summary
+invariants, component-domain and frontier cross-references, local
+generated/select/phantom row validity, component-row uniqueness, primitive row
+validity, and executable primitive stack replay.
 
 Each checker has a theorem of the form `check = true → predicate`, so this file
 tests whether replacing mirrored Haskell validator clauses with Lean-owned
@@ -3291,6 +3293,263 @@ theorem selectArmBodyNodesPairwiseDisjointCheck_sound
   have hRightCheck := hLeftCheck right hRight
   exact selectArmBodyNodesDisjointPairCheck_sound hRightCheck hKeys node hNode
 
+/-! ## Component Frontier Cross-Reference Checks -/
+
+/-- Executable checker that generated-child frontiers are primitive-backed. -/
+def generatedChildComponentFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact)
+    (child : GeneratedChildArtifact) :
+    Bool :=
+  let exitKeys := PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps
+  let entryKeys := PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps
+  (Check.allDecide child.outputs fun output => output.key ∈ exitKeys) &&
+    (Check.allDecide child.inputs fun input => input.key ∈ entryKeys)
+
+/-- Successful generated-child component-frontier checking proves primitive backing. -/
+theorem generatedChildComponentFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {child : GeneratedChildArtifact}
+    (hCheck :
+      generatedChildComponentFrontiersBackedByPrimitiveCheck artifact child =
+        true) :
+    (∀ output, output ∈ child.outputs →
+      output.key ∈ PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps) ∧
+      (∀ input, input ∈ child.inputs →
+        input.key ∈
+          PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps) := by
+  unfold generatedChildComponentFrontiersBackedByPrimitiveCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact ⟨Check.allDecide_sound hCheck.left, Check.allDecide_sound hCheck.right⟩
+
+/-- Executable checker that all used children in one generated row are primitive-backed. -/
+def generatedFormComponentFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact)
+    (generated : GeneratedFormArtifact) :
+    Bool :=
+  Check.allBool generated.usedChildren
+    (generatedChildComponentFrontiersBackedByPrimitiveCheck artifact)
+
+/-- Successful generated-row checking proves primitive backing for every used child. -/
+theorem generatedFormComponentFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {generated : GeneratedFormArtifact}
+    (hCheck :
+      generatedFormComponentFrontiersBackedByPrimitiveCheck artifact generated =
+        true) :
+    ∀ child, child ∈ generated.usedChildren →
+      (∀ output, output ∈ child.outputs →
+        output.key ∈ PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps) ∧
+        (∀ input, input ∈ child.inputs →
+          input.key ∈
+            PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps) :=
+  Check.allBool_sound hCheck
+    (fun _child _ hChild =>
+      generatedChildComponentFrontiersBackedByPrimitiveCheck_sound hChild)
+
+/-- Executable checker that source-visible phantom frontiers are primitive-backed. -/
+def phantomAdapterComponentFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact)
+    (phantom : PhantomAdapterArtifact) :
+    Bool :=
+  let entryKeys := PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps
+  let exitKeys := PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps
+  match phantom.direction with
+  | PhantomAdapterDirection.gather =>
+      decide (phantom.singular.key ∈ entryKeys) &&
+        Check.allDecide phantom.multi fun multi => multi.key ∈ exitKeys
+  | PhantomAdapterDirection.scatter =>
+      decide (phantom.singular.key ∈ exitKeys) &&
+        Check.allDecide phantom.multi fun multi => multi.key ∈ entryKeys
+
+/-- Successful phantom component-frontier checking proves primitive backing. -/
+theorem phantomAdapterComponentFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {phantom : PhantomAdapterArtifact}
+    (hCheck :
+      phantomAdapterComponentFrontiersBackedByPrimitiveCheck artifact phantom =
+        true) :
+    match phantom.direction with
+    | PhantomAdapterDirection.gather =>
+        phantom.singular.key ∈
+          PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps ∧
+        ∀ multi, multi ∈ phantom.multi →
+          multi.key ∈
+            PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps
+    | PhantomAdapterDirection.scatter =>
+        phantom.singular.key ∈
+          PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps ∧
+        ∀ multi, multi ∈ phantom.multi →
+          multi.key ∈
+            PrimitiveGraphStep.nodeEntryKeysList artifact.primitiveSteps := by
+  cases hDirection : phantom.direction with
+  | gather =>
+      unfold phantomAdapterComponentFrontiersBackedByPrimitiveCheck at hCheck
+      rw [hDirection] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact ⟨of_decide_eq_true hCheck.left, Check.allDecide_sound hCheck.right⟩
+  | scatter =>
+      unfold phantomAdapterComponentFrontiersBackedByPrimitiveCheck at hCheck
+      rw [hDirection] at hCheck
+      rw [Bool.and_eq_true] at hCheck
+      exact ⟨of_decide_eq_true hCheck.left, Check.allDecide_sound hCheck.right⟩
+
+/-- Executable checker that select variant frontiers are primitive-backed. -/
+def selectVariantsComponentFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact)
+    (selectAdmission : SelectAdmissionArtifact) :
+    Bool :=
+  let exitKeys := PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps
+  Check.allDecide selectAdmission.variants fun variant => variant.port.key ∈ exitKeys
+
+/-- Successful select-row checking proves primitive backing for every variant. -/
+theorem selectVariantsComponentFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {selectAdmission : SelectAdmissionArtifact}
+    (hCheck :
+      selectVariantsComponentFrontiersBackedByPrimitiveCheck
+        artifact selectAdmission = true) :
+    ∀ variant, variant ∈ selectAdmission.variants →
+      variant.port.key ∈
+        PrimitiveGraphStep.nodeExitKeysList artifact.primitiveSteps :=
+  Check.allDecide_sound hCheck
+
+/-- Executable checker for component-specific primitive frontier backing. -/
+def componentFrontiersBackedByPrimitiveCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.generatedForms
+      (generatedFormComponentFrontiersBackedByPrimitiveCheck artifact) &&
+    Check.allBool artifact.phantomAdapters
+      (phantomAdapterComponentFrontiersBackedByPrimitiveCheck artifact) &&
+      Check.allBool artifact.selects
+        (selectVariantsComponentFrontiersBackedByPrimitiveCheck artifact)
+
+/-- Successful component-frontier checking proves `ComponentFrontiersBackedByPrimitive`. -/
+theorem componentFrontiersBackedByPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.componentFrontiersBackedByPrimitiveCheck = true) :
+    artifact.ComponentFrontiersBackedByPrimitive := by
+  unfold componentFrontiersBackedByPrimitiveCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  exact
+    { generatedChildren :=
+        Check.allBool_sound hCheck.left.left
+          (fun _generated _ hGenerated =>
+            generatedFormComponentFrontiersBackedByPrimitiveCheck_sound
+              hGenerated)
+    , phantomAdapters :=
+        Check.allBool_sound hCheck.left.right
+          (fun _phantom _ hPhantom =>
+            phantomAdapterComponentFrontiersBackedByPrimitiveCheck_sound
+              hPhantom)
+    , selectVariants :=
+        Check.allBool_sound hCheck.right
+          (fun _selectAdmission _ hSelect =>
+            selectVariantsComponentFrontiersBackedByPrimitiveCheck_sound
+              hSelect)
+    }
+
+/-- Row checker for the primitive node frontier row behind a generated child. -/
+def generatedChildFrontiersPrimitiveStepCheck
+    (child : GeneratedChildArtifact) :
+    PrimitiveGraphStep → Bool
+  | PrimitiveGraphStep.node node entries exits =>
+      decide (node = child.node) &&
+        Check.permCheck child.inputKeys
+          (entries.map AdmissionBoundaryPort.key) &&
+          Check.permCheck child.outputKeys
+            (exits.map AdmissionBoundaryPort.key)
+  | PrimitiveGraphStep.empty =>
+      false
+  | PrimitiveGraphStep.bindingRef _binding =>
+      false
+  | PrimitiveGraphStep.overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      false
+  | PrimitiveGraphStep.connect _leftExits _rightEntries _matchedPairs
+      _unmatchedLeftExits _unmatchedRightEntries =>
+      false
+
+/-- Executable checker that one generated child matches its primitive node frontier row. -/
+def generatedChildFrontiersMatchPrimitiveChildCheck
+    (artifact : WireAdmissionArtifact)
+    (child : GeneratedChildArtifact) :
+    Bool :=
+  artifact.primitiveSteps.any
+    (generatedChildFrontiersPrimitiveStepCheck child)
+
+/-- Successful child checking proves exact primitive frontier matching. -/
+theorem generatedChildFrontiersMatchPrimitiveChildCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {child : GeneratedChildArtifact}
+    (hCheck :
+      generatedChildFrontiersMatchPrimitiveChildCheck artifact child = true) :
+    ∃ entries exits,
+      PrimitiveGraphStep.node child.node entries exits ∈ artifact.primitiveSteps ∧
+        child.inputKeys.Perm (entries.map AdmissionBoundaryPort.key) ∧
+        child.outputKeys.Perm (exits.map AdmissionBoundaryPort.key) := by
+  unfold generatedChildFrontiersMatchPrimitiveChildCheck at hCheck
+  rcases List.any_eq_true.mp hCheck with
+    ⟨primitiveStep, hPrimitiveStep, hPrimitiveCheck⟩
+  cases primitiveStep with
+  | empty =>
+      simp [generatedChildFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | bindingRef _binding =>
+      simp [generatedChildFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | overlay _leftNodes _rightNodes _leftBindings _rightBindings =>
+      simp [generatedChildFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | connect _leftExits _rightEntries _matchedPairs _unmatchedLeftExits _unmatchedRightEntries =>
+      simp [generatedChildFrontiersPrimitiveStepCheck] at hPrimitiveCheck
+  | node primitiveNode entries exits =>
+      unfold generatedChildFrontiersPrimitiveStepCheck at hPrimitiveCheck
+      simp only [Bool.and_eq_true] at hPrimitiveCheck
+      rcases hPrimitiveCheck with ⟨⟨hNode, hInputs⟩, hOutputs⟩
+      have hNodeEq : primitiveNode = child.node := of_decide_eq_true hNode
+      refine ⟨entries, exits, ?_, ?_, ?_⟩
+      · simpa [hNodeEq] using hPrimitiveStep
+      · exact Check.permCheck_sound hInputs
+      · exact Check.permCheck_sound hOutputs
+
+/-- Executable checker that all used children in one generated row match primitive rows. -/
+def generatedFormChildFrontiersMatchPrimitiveCheck
+    (artifact : WireAdmissionArtifact)
+    (generated : GeneratedFormArtifact) :
+    Bool :=
+  Check.allBool generated.usedChildren
+    (generatedChildFrontiersMatchPrimitiveChildCheck artifact)
+
+/-- Successful generated-row checking proves primitive frontier exactness for every child. -/
+theorem generatedFormChildFrontiersMatchPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    {generated : GeneratedFormArtifact}
+    (hCheck :
+      generatedFormChildFrontiersMatchPrimitiveCheck artifact generated = true) :
+    ∀ child, child ∈ generated.usedChildren →
+      ∃ entries exits,
+        PrimitiveGraphStep.node child.node entries exits ∈
+          artifact.primitiveSteps ∧
+          child.inputKeys.Perm (entries.map AdmissionBoundaryPort.key) ∧
+          child.outputKeys.Perm (exits.map AdmissionBoundaryPort.key) :=
+  Check.allBool_sound hCheck
+    (fun _child _ hChild =>
+      generatedChildFrontiersMatchPrimitiveChildCheck_sound hChild)
+
+/-- Executable checker for generated-child primitive frontier exactness. -/
+def generatedChildFrontiersMatchPrimitiveCheck
+    (artifact : WireAdmissionArtifact) :
+    Bool :=
+  Check.allBool artifact.generatedForms
+    (generatedFormChildFrontiersMatchPrimitiveCheck artifact)
+
+/-- Successful generated-frontier checking proves `GeneratedChildFrontiersMatchPrimitive`. -/
+theorem generatedChildFrontiersMatchPrimitiveCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.generatedChildFrontiersMatchPrimitiveCheck = true) :
+    artifact.GeneratedChildFrontiersMatchPrimitive :=
+  Check.allBool_sound hCheck
+    (fun _generated _ hGenerated =>
+      generatedFormChildFrontiersMatchPrimitiveCheck_sound hGenerated)
+
 /-! ## Phantom Bridge Cross-Reference Checks -/
 
 /-- Executable checker that one phantom row's internal bridge endpoints are primitive-backed. -/
@@ -3564,10 +3823,10 @@ theorem primitiveStepsValidCheck_sound
       (fun primitiveStep _ hStepCheck =>
         PrimitiveGraphStep.validCheck_sound hStepCheck)
 
-/-- Representative executable subset of `ValidatorReady`.
+/-- Executable checker-record counterpart of `ValidatorReady`.
 
-This is not a replacement for full validator readiness. It names the fields
-covered by the current executable-checker strategy spike.
+The name is retained from the earlier staged checker slices. At this point it
+contains every field needed to construct `ValidatorReady`.
 -/
 structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
   schemaCurrent : artifact.SchemaCurrent
@@ -3582,6 +3841,10 @@ structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
   selectsValid : artifact.SelectsValid
   componentRowsUnique : artifact.ComponentRowsUnique
   generatedFormsReferenced : artifact.GeneratedFormsReferenced
+  componentFrontiersBackedByPrimitive :
+    artifact.ComponentFrontiersBackedByPrimitive
+  generatedChildFrontiersMatchPrimitive :
+    artifact.GeneratedChildFrontiersMatchPrimitive
   generatedFormsValid : artifact.GeneratedFormsValid
   phantomAdaptersValid : artifact.PhantomAdaptersValid
   primitiveStepsValid : artifact.PrimitiveStepsValid
@@ -3625,6 +3888,10 @@ theorem validatorReady_core
   selectsValid := hReady.selectsValid
   componentRowsUnique := hReady.componentRowsUnique
   generatedFormsReferenced := hReady.generatedFormsReferenced
+  componentFrontiersBackedByPrimitive :=
+    hReady.componentFrontiersBackedByPrimitive
+  generatedChildFrontiersMatchPrimitive :=
+    hReady.generatedChildFrontiersMatchPrimitive
   generatedFormsValid := hReady.generatedFormsValid
   phantomAdaptersValid := hReady.phantomAdaptersValid
   primitiveStepsValid := hReady.primitiveStepsValid
@@ -3649,7 +3916,7 @@ theorem validatorReady_core
   phantomBridgeBulkConnectionsReplayed :=
     hReady.phantomBridgeBulkConnectionsReplayed
 
-/-- Executable checker for the representative validator-ready core. -/
+/-- Executable checker for the validator-ready checker-record layer. -/
 def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
   decide artifact.SchemaCurrent &&
   artifact.summaryKeysUniqueCheck &&
@@ -3663,6 +3930,8 @@ def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
   artifact.selectsValidCheck &&
   artifact.componentRowsUniqueCheck &&
   artifact.generatedFormsReferencedCheck &&
+  artifact.componentFrontiersBackedByPrimitiveCheck &&
+  artifact.generatedChildFrontiersMatchPrimitiveCheck &&
   artifact.generatedFormsValidCheck &&
   artifact.phantomAdaptersValidCheck &&
   artifact.primitiveStepsValidCheck &&
@@ -3679,23 +3948,41 @@ def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
   artifact.phantomBridgeFrontiersMatchPrimitiveCheck &&
   artifact.phantomBridgeBulkConnectionsReplayedCheck
 
-/-- Successful core checking proves the representative validator-ready core. -/
+/-- Successful core checking proves the validator-ready checker-record layer. -/
 theorem validatorReadyCoreCheck_sound
     {artifact : WireAdmissionArtifact}
     (hCheck : artifact.validatorReadyCoreCheck = true) :
     artifact.ValidatorReadyCore := by
   unfold validatorReadyCoreCheck at hCheck
   simp only [Bool.and_eq_true] at hCheck
-  rcases hCheck with
-    ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSchema, hSummaryKeys⟩, hSummaryRows⟩,
-      hSummaryDomain⟩, hSummaryIdentities⟩, hSummaryBacked⟩, hSummaryFrontiers⟩,
-      hRawConnections⟩, hComponentDomains⟩, hSelects⟩, hComponentRows⟩,
-      hGeneratedReferenced⟩, hGeneratedValid⟩, hPhantomValid⟩, hPrimitiveSteps⟩,
-      hPrimitiveTrace⟩, hPrimitiveOverlayPrefix⟩, hPrimitiveConnectBacked⟩,
-      hPrimitiveConnectPrefix⟩, hSelectBridgeFrontiers⟩, hSelectBridgeEntries⟩,
-      hSelectArmBodyBoundaries⟩, hSelectArmBodyFresh⟩, hSelectArmBodyDisjoint⟩,
-      hPhantomBridgeFrontiersBacked⟩, hPhantomBridgeFrontiersMatch⟩,
-      hPhantomBridgeBulkReplayed⟩
+  rcases hCheck with ⟨hCheck, hPhantomBridgeBulkReplayed⟩
+  rcases hCheck with ⟨hCheck, hPhantomBridgeFrontiersMatch⟩
+  rcases hCheck with ⟨hCheck, hPhantomBridgeFrontiersBacked⟩
+  rcases hCheck with ⟨hCheck, hSelectArmBodyDisjoint⟩
+  rcases hCheck with ⟨hCheck, hSelectArmBodyFresh⟩
+  rcases hCheck with ⟨hCheck, hSelectArmBodyBoundaries⟩
+  rcases hCheck with ⟨hCheck, hSelectBridgeEntries⟩
+  rcases hCheck with ⟨hCheck, hSelectBridgeFrontiers⟩
+  rcases hCheck with ⟨hCheck, hPrimitiveConnectPrefix⟩
+  rcases hCheck with ⟨hCheck, hPrimitiveConnectBacked⟩
+  rcases hCheck with ⟨hCheck, hPrimitiveOverlayPrefix⟩
+  rcases hCheck with ⟨hCheck, hPrimitiveTrace⟩
+  rcases hCheck with ⟨hCheck, hPrimitiveSteps⟩
+  rcases hCheck with ⟨hCheck, hPhantomValid⟩
+  rcases hCheck with ⟨hCheck, hGeneratedValid⟩
+  rcases hCheck with ⟨hCheck, hGeneratedChildFrontiers⟩
+  rcases hCheck with ⟨hCheck, hComponentFrontiers⟩
+  rcases hCheck with ⟨hCheck, hGeneratedReferenced⟩
+  rcases hCheck with ⟨hCheck, hComponentRows⟩
+  rcases hCheck with ⟨hCheck, hSelects⟩
+  rcases hCheck with ⟨hCheck, hComponentDomains⟩
+  rcases hCheck with ⟨hCheck, hRawConnections⟩
+  rcases hCheck with ⟨hCheck, hSummaryFrontiers⟩
+  rcases hCheck with ⟨hCheck, hSummaryBacked⟩
+  rcases hCheck with ⟨hCheck, hSummaryIdentities⟩
+  rcases hCheck with ⟨hCheck, hSummaryDomain⟩
+  rcases hCheck with ⟨hCheck, hSummaryRows⟩
+  rcases hCheck with ⟨hSchema, hSummaryKeys⟩
   exact
     { schemaCurrent := of_decide_eq_true hSchema
     , summaryKeysUnique := summaryKeysUniqueCheck_sound hSummaryKeys
@@ -3714,6 +4001,10 @@ theorem validatorReadyCoreCheck_sound
     , componentRowsUnique := componentRowsUniqueCheck_sound hComponentRows
     , generatedFormsReferenced :=
         generatedFormsReferencedCheck_sound hGeneratedReferenced
+    , componentFrontiersBackedByPrimitive :=
+        componentFrontiersBackedByPrimitiveCheck_sound hComponentFrontiers
+    , generatedChildFrontiersMatchPrimitive :=
+        generatedChildFrontiersMatchPrimitiveCheck_sound hGeneratedChildFrontiers
     , generatedFormsValid := generatedFormsValidCheck_sound hGeneratedValid
     , phantomAdaptersValid := phantomAdaptersValidCheck_sound hPhantomValid
     , primitiveStepsValid := primitiveStepsValidCheck_sound hPrimitiveSteps
@@ -3742,6 +4033,69 @@ theorem validatorReadyCoreCheck_sound
     , phantomBridgeBulkConnectionsReplayed :=
         phantomBridgeBulkConnectionsReplayedCheck_sound hPhantomBridgeBulkReplayed
     }
+
+/-- The executable core now covers every field of `ValidatorReady`. -/
+theorem validatorReadyCore_toValidatorReady
+    {artifact : WireAdmissionArtifact}
+    (hCore : artifact.ValidatorReadyCore) :
+    artifact.ValidatorReady where
+  schemaCurrent := hCore.schemaCurrent
+  summaryKeysUnique := hCore.summaryKeysUnique
+  summaryRowsValid := hCore.summaryRowsValid
+  summaryDomainClosed := hCore.summaryDomainClosed
+  summaryIdentitiesMatchPrimitive := hCore.summaryIdentitiesMatchPrimitive
+  summaryFrontiersBackedByPrimitive := hCore.summaryFrontiersBackedByPrimitive
+  summaryFrontiersMatchPrimitive := hCore.summaryFrontiersMatchPrimitive
+  rawConnectionsMatchPrimitive := hCore.rawConnectionsMatchPrimitive
+  componentDomainsClosed := hCore.componentDomainsClosed
+  componentRowsUnique := hCore.componentRowsUnique
+  generatedFormsReferenced := hCore.generatedFormsReferenced
+  componentFrontiersBackedByPrimitive :=
+    hCore.componentFrontiersBackedByPrimitive
+  generatedChildFrontiersMatchPrimitive :=
+    hCore.generatedChildFrontiersMatchPrimitive
+  primitiveTraceStackValid := hCore.primitiveTraceStackValid
+  primitiveOverlayLedgersPrefixAvailable :=
+    hCore.primitiveOverlayLedgersPrefixAvailable
+  primitiveConnectFrontiersBackedByNodes :=
+    hCore.primitiveConnectFrontiersBackedByNodes
+  primitiveConnectFrontiersPrefixAvailable :=
+    hCore.primitiveConnectFrontiersPrefixAvailable
+  selectBridgeFrontiersBackedByPrimitive :=
+    hCore.selectBridgeFrontiersBackedByPrimitive
+  selectBridgeEntriesConsumed := hCore.selectBridgeEntriesConsumed
+  selectArmBodyBoundariesMatchCondition :=
+    hCore.selectArmBodyBoundariesMatchCondition
+  selectArmBodyNodesFreshFromSummary := hCore.selectArmBodyNodesFreshFromSummary
+  selectArmBodyNodesPairwiseDisjoint := hCore.selectArmBodyNodesPairwiseDisjoint
+  phantomBridgeFrontiersBackedByPrimitive :=
+    hCore.phantomBridgeFrontiersBackedByPrimitive
+  phantomBridgeFrontiersMatchPrimitive :=
+    hCore.phantomBridgeFrontiersMatchPrimitive
+  phantomBridgeBulkConnectionsReplayed :=
+    hCore.phantomBridgeBulkConnectionsReplayed
+  primitiveStepsValid := hCore.primitiveStepsValid
+  generatedFormsValid := hCore.generatedFormsValid
+  phantomAdaptersValid := hCore.phantomAdaptersValid
+  selectsValid := hCore.selectsValid
+
+/-- Full Lean-owned executable checker for decoded Wire admission artifacts. -/
+def validatorReadyCheck (artifact : WireAdmissionArtifact) : Bool :=
+  artifact.validatorReadyCoreCheck
+
+/-- Successful executable validator checking proves the full validator-ready contract. -/
+theorem validatorReadyCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.validatorReadyCheck = true) :
+    artifact.ValidatorReady :=
+  validatorReadyCore_toValidatorReady (validatorReadyCoreCheck_sound hCheck)
+
+/-- Successful executable validator checking supplies the theorem-facing soundness cutline. -/
+theorem validatorReadyCheck_soundness
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.validatorReadyCheck = true) :
+    artifact.Sound :=
+  validatorReady_sound (validatorReadyCheck_sound hCheck)
 
 end WireAdmissionArtifact
 
