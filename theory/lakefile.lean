@@ -78,6 +78,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.AdmissionArtifact.ReadySelectBridge,
     `Cortex.Wire.AdmissionArtifact.ReadySummary,
     `Cortex.Wire.AdmissionArtifact.Select,
+    `Cortex.Wire.AdmissionArtifact.SelectReconstruction,
     `Cortex.Wire.AdmissionArtifact.Sound,
     `Cortex.Wire.AdmissionArtifact.StaticValue,
     `Cortex.Wire.AdmissionArtifact.Validator,

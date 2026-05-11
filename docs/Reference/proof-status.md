@@ -142,6 +142,13 @@ rows.
   bulk rows, direction-specific multi/singular endpoint coverage, and record or bounded-indexed
   product-shape evidence. This is intentionally not yet `PhantomAdapterWitness`: the serialized row
   does not contain the left/right operand objects or certified `BulkContract` traces.
+- Select-admission artifacts now reconstruct at the artifact boundary:
+  `AdmissionArtifact.SelectReconstruction`. `AdmissionArtifact.Sound.toSelectReconstruction` proves
+  that every persisted `select(...)` row has projected latent-admission key coverage, source arm
+  provenance, label-first or unique-contract-fallback resolution evidence, latent body freshness and
+  pairwise body disjointness, condition-bridge/body-boundary shape evidence, and selected-variant
+  bridge entry consumption. This is intentionally not selected-branch durable recovery: replaying
+  the chosen latent body remains a separate recovery witness.
 - The remaining end-to-end compiler theorem is stronger than `Sound`: it must show that every
   accepted Wire program causes the Haskell compiler to emit an artifact satisfying the validator,
   and that decoded rows can be replayed into the concrete Lean witnesses consumed by graph

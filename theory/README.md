@@ -475,6 +475,11 @@ Mechanized results now include:
   left/right bulk replay, direction-specific multi/singular endpoint coverage, and record or
   bounded-indexed product facts. It deliberately stops short of `PhantomAdapterWitness` until full
   graph reconstruction supplies operand objects and certified `BulkContract` traces.
+  `AdmissionArtifact.SelectReconstruction` reconstructs select-admission artifact evidence:
+  projected latent admissions, source arm provenance, label-first or unique-contract-fallback
+  resolution, body freshness and pairwise body disjointness, condition-bridge/body-boundary shape,
+  and selected-variant bridge consumption. It deliberately stops short of selected-branch durable
+  recovery, which still belongs to the recovery witness layer.
 - `LinearPortGraph.FrontierFinished`, `LinearPortGraph.OutputReclaimable`,
   `LinearPortGraph.InputReclaimable`, `frontierFinished_noRemainingConsumerObligations`,
   `frontierFinished_noRemainingProducerObligations`, and `frontierFinished_reclaimable`: finished

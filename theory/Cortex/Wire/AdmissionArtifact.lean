@@ -3,6 +3,7 @@ import Cortex.Wire.AdmissionArtifact.GeneratedReconstruction
 import Cortex.Wire.AdmissionArtifact.PhantomReconstruction
 import Cortex.Wire.AdmissionArtifact.PrimitiveReconstruction
 import Cortex.Wire.AdmissionArtifact.PrimitiveTraceCheck
+import Cortex.Wire.AdmissionArtifact.SelectReconstruction
 import Cortex.Wire.AdmissionArtifact.Sound
 import Cortex.Wire.AdmissionArtifact.ValidatorCoreCheck
 
@@ -21,6 +22,8 @@ artifact-level graph witness with explicit frontier-key accounting. Generated
 artifact rows reconstruct source item provenance and primitive-backed child
 frontier evidence, and phantom rows reconstruct primitive-backed adapter-node
 and bulk-replay evidence without yet claiming full `PhantomAdapterWitness`
-construction. Importing this module preserves the public import path for
-downstream theory code.
+construction. Select rows reconstruct projected latent admissions, arm
+provenance, resolution, condition-bridge, and body-domain evidence without yet
+claiming durable selected-branch replay. Importing this module preserves the
+public import path for downstream theory code.
 -/
