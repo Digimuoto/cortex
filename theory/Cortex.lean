@@ -35,6 +35,7 @@ import Cortex.Wire.Make
 import Cortex.Wire.PhantomAdapter
 import Cortex.Wire.GeneratedForms
 import Cortex.Wire.AdmissionArtifact
+import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.Boundary
 import Cortex.Wire.AdmissionArtifact.Generated
 import Cortex.Wire.AdmissionArtifact.Phantom

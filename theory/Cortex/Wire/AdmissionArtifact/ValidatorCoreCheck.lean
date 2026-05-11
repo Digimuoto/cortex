@@ -1,3 +1,4 @@
+import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.PrimitiveTraceCheck
 
 /-!
@@ -94,53 +95,6 @@ instance validDecidable (connection : AdmissionRawConnection) :
 
 end AdmissionRawConnection
 
-/-! ## List Helpers -/
-
-namespace Check
-
-/-- Boolean universal quantification over a decoded finite row list. -/
-def allDecide {α : Type}
-    (items : List α)
-    (predicate : α → Prop)
-    [DecidablePred predicate] :
-    Bool :=
-  items.all fun item => decide (predicate item)
-
-/-- A successful finite boolean universal check supplies the corresponding predicate. -/
-theorem allDecide_sound
-    {α : Type}
-    {items : List α}
-    {predicate : α → Prop}
-    [DecidablePred predicate]
-    (hCheck : allDecide items predicate = true) :
-    ∀ item, item ∈ items → predicate item := by
-  intro item hItem
-  have hItemCheck :
-      decide (predicate item) = true :=
-    (List.all_eq_true.mp hCheck) item hItem
-  exact of_decide_eq_true hItemCheck
-
-/-- Boolean existential search over a decoded finite row list. -/
-def anyDecide {α : Type}
-    (items : List α)
-    (predicate : α → Prop)
-    [DecidablePred predicate] :
-    Bool :=
-  items.any fun item => decide (predicate item)
-
-/-- A successful finite boolean existential check supplies a matching row. -/
-theorem anyDecide_sound
-    {α : Type}
-    {items : List α}
-    {predicate : α → Prop}
-    [DecidablePred predicate]
-    (hCheck : anyDecide items predicate = true) :
-    ∃ item, item ∈ items ∧ predicate item := by
-  rcases List.any_eq_true.mp hCheck with ⟨item, hItem, hPredicate⟩
-  exact ⟨item, hItem, of_decide_eq_true hPredicate⟩
-
-end Check
-
 /-! ## Boundary Checks -/
 
 namespace AdmissionArtifactCheck
@@ -198,8 +152,8 @@ theorem nodeFrontiersOwnedCheck_sound
 def nodeFrontiersLinearCheck
     (entries exits : List AdmissionBoundaryPort) :
     Bool :=
-  decide ((entries.map AdmissionBoundaryPort.key).Nodup) &&
-    decide ((exits.map AdmissionBoundaryPort.key).Nodup)
+  Check.nodupMapCheck entries AdmissionBoundaryPort.key &&
+    Check.nodupMapCheck exits AdmissionBoundaryPort.key
 
 /-- Successful frontier-linearity checking proves `NodeFrontiersLinear`. -/
 theorem nodeFrontiersLinearCheck_sound
@@ -208,7 +162,10 @@ theorem nodeFrontiersLinearCheck_sound
     NodeFrontiersLinear entries exits := by
   unfold nodeFrontiersLinearCheck at hCheck
   rw [Bool.and_eq_true] at hCheck
-  exact ⟨of_decide_eq_true hCheck.left, of_decide_eq_true hCheck.right⟩
+  exact
+    ⟨ Check.nodupMapCheck_sound hCheck.left
+    , Check.nodupMapCheck_sound hCheck.right
+    ⟩
 
 /-- Executable checker for primitive node-row validity. -/
 def nodeValidCheck
@@ -243,10 +200,10 @@ def overlayLedgersUniqueCheck
     (leftNodeIds rightNodeIds : List NodeId)
     (leftBindings rightBindings : List BindingName) :
     Bool :=
-  decide leftNodeIds.Nodup &&
-    decide rightNodeIds.Nodup &&
-      decide leftBindings.Nodup &&
-        decide rightBindings.Nodup
+  Check.nodupCheck leftNodeIds &&
+    Check.nodupCheck rightNodeIds &&
+      Check.nodupCheck leftBindings &&
+        Check.nodupCheck rightBindings
 
 /-- Successful overlay-uniqueness checking proves `OverlayLedgersUnique`. -/
 theorem overlayLedgersUniqueCheck_sound
@@ -260,10 +217,10 @@ theorem overlayLedgersUniqueCheck_sound
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with ⟨⟨⟨hLeftNodes, hRightNodes⟩, hLeftBindings⟩, hRightBindings⟩
   exact
-    ⟨ of_decide_eq_true hLeftNodes
-    , of_decide_eq_true hRightNodes
-    , of_decide_eq_true hLeftBindings
-    , of_decide_eq_true hRightBindings
+    ⟨ Check.nodupCheck_sound hLeftNodes
+    , Check.nodupCheck_sound hRightNodes
+    , Check.nodupCheck_sound hLeftBindings
+    , Check.nodupCheck_sound hRightBindings
     ⟩
 
 /-- Primitive overlay side ledgers are disjoint before merge. -/
@@ -328,8 +285,8 @@ theorem overlayValidCheck_sound
 
 /-- Matched primitive connect pairs do not reuse outputs or inputs. -/
 def connectPairsLinearCheck (matchedPairs : List AdmissionConnection) : Bool :=
-  decide ((matchedPairs.map AdmissionConnection.fromKey).Nodup) &&
-    decide ((matchedPairs.map AdmissionConnection.toKey).Nodup)
+  Check.nodupMapCheck matchedPairs AdmissionConnection.fromKey &&
+    Check.nodupMapCheck matchedPairs AdmissionConnection.toKey
 
 /-- Successful connect-pair linearity checking proves `ConnectPairsLinear`. -/
 theorem connectPairsLinearCheck_sound
@@ -338,14 +295,17 @@ theorem connectPairsLinearCheck_sound
     ConnectPairsLinear matchedPairs := by
   unfold connectPairsLinearCheck at hCheck
   rw [Bool.and_eq_true] at hCheck
-  exact ⟨of_decide_eq_true hCheck.left, of_decide_eq_true hCheck.right⟩
+  exact
+    ⟨ Check.nodupMapCheck_sound hCheck.left
+    , Check.nodupMapCheck_sound hCheck.right
+    ⟩
 
 /-- Serialized primitive connect frontiers are duplicate-free per side. -/
 def connectFrontiersLinearCheck
     (leftExits rightEntries : List AdmissionBoundaryPort) :
     Bool :=
-  decide ((leftExits.map AdmissionBoundaryPort.key).Nodup) &&
-    decide ((rightEntries.map AdmissionBoundaryPort.key).Nodup)
+  Check.nodupMapCheck leftExits AdmissionBoundaryPort.key &&
+    Check.nodupMapCheck rightEntries AdmissionBoundaryPort.key
 
 /-- Successful connect-frontier linearity checking proves `ConnectFrontiersLinear`. -/
 theorem connectFrontiersLinearCheck_sound
@@ -354,7 +314,10 @@ theorem connectFrontiersLinearCheck_sound
     ConnectFrontiersLinear leftExits rightEntries := by
   unfold connectFrontiersLinearCheck at hCheck
   rw [Bool.and_eq_true] at hCheck
-  exact ⟨of_decide_eq_true hCheck.left, of_decide_eq_true hCheck.right⟩
+  exact
+    ⟨ Check.nodupMapCheck_sound hCheck.left
+    , Check.nodupMapCheck_sound hCheck.right
+    ⟩
 
 /-- Matched and residual connect rows partition the serialized frontiers. -/
 def connectFrontierPartitionCheck
@@ -362,14 +325,14 @@ def connectFrontierPartitionCheck
     (matchedPairs : List AdmissionConnection)
     (unmatchedLeftExits unmatchedRightEntries : List AdmissionBoundaryPort) :
     Bool :=
-  decide
-      (((matchedPairs.map AdmissionConnection.fromKey) ++
-          (unmatchedLeftExits.map AdmissionBoundaryPort.key)).Perm
-        (leftExits.map AdmissionBoundaryPort.key)) &&
-    decide
-      (((matchedPairs.map AdmissionConnection.toKey) ++
-          (unmatchedRightEntries.map AdmissionBoundaryPort.key)).Perm
-        (rightEntries.map AdmissionBoundaryPort.key))
+  Check.permCheck
+      ((matchedPairs.map AdmissionConnection.fromKey) ++
+        (unmatchedLeftExits.map AdmissionBoundaryPort.key))
+      (leftExits.map AdmissionBoundaryPort.key) &&
+    Check.permCheck
+      ((matchedPairs.map AdmissionConnection.toKey) ++
+        (unmatchedRightEntries.map AdmissionBoundaryPort.key))
+      (rightEntries.map AdmissionBoundaryPort.key)
 
 /-- Successful partition checking proves `ConnectFrontierPartition`. -/
 theorem connectFrontierPartitionCheck_sound
@@ -385,7 +348,10 @@ theorem connectFrontierPartitionCheck_sound
         unmatchedLeftExits unmatchedRightEntries := by
   unfold connectFrontierPartitionCheck at hCheck
   rw [Bool.and_eq_true] at hCheck
-  exact ⟨of_decide_eq_true hCheck.left, of_decide_eq_true hCheck.right⟩
+  exact
+    ⟨ Check.permCheck_sound hCheck.left
+    , Check.permCheck_sound hCheck.right
+    ⟩
 
 /-- Matched pairs are drawn from the frontiers serialized in the same connect row. -/
 def connectPairsDrawnFromFrontiersCheck
@@ -459,12 +425,10 @@ def connectMatchesAllCompatibleCheck
     (leftExits rightEntries : List AdmissionBoundaryPort)
     (matchedPairs : List AdmissionConnection) :
     Bool :=
-  leftExits.all fun leftExit =>
-    rightEntries.all fun rightEntry =>
-      if leftExit.CompatibleWith rightEntry then
-        exactMatchedPairCheck matchedPairs leftExit rightEntry
-      else
-        true
+  Check.allPairsWhenCheck
+    leftExits rightEntries
+    AdmissionBoundaryPort.CompatibleWith
+    (exactMatchedPairCheck matchedPairs)
 
 /-- Successful compatibility matching proves `ConnectMatchesAllCompatible`. -/
 theorem connectMatchesAllCompatibleCheck_sound
@@ -474,16 +438,11 @@ theorem connectMatchesAllCompatibleCheck_sound
       connectMatchesAllCompatibleCheck leftExits rightEntries matchedPairs =
         true) :
     ConnectMatchesAllCompatible leftExits rightEntries matchedPairs := by
-  intro leftExit hLeftExit rightEntry hRightEntry hCompatible
   unfold connectMatchesAllCompatibleCheck at hCheck
-  have hLeftCheck :=
-    (List.all_eq_true.mp hCheck) leftExit hLeftExit
-  have hRightCheck :=
-    (List.all_eq_true.mp hLeftCheck) rightEntry hRightEntry
-  by_cases hCompatibleCheck : leftExit.CompatibleWith rightEntry
-  · simp [hCompatibleCheck] at hRightCheck
-    exact exactMatchedPairCheck_sound hRightCheck
-  · exact False.elim (hCompatibleCheck hCompatible)
+  exact
+    Check.allPairsWhenCheck_sound hCheck
+      (fun leftExit _ rightEntry _ hExact =>
+        exactMatchedPairCheck_sound hExact)
 
 /-- Boundary rows inside a primitive connect row are structurally valid. -/
 def connectRowsValidCheck
@@ -613,11 +572,11 @@ namespace WireAdmissionArtifact
 
 /-- Executable checker for top-level summary-key uniqueness. -/
 def summaryKeysUniqueCheck (artifact : WireAdmissionArtifact) : Bool :=
-  decide artifact.nodes.Nodup &&
-    decide artifact.bindingRefs.Nodup &&
-      decide ((artifact.entries.map AdmissionBoundaryPort.key).Nodup) &&
-        decide ((artifact.exits.map AdmissionBoundaryPort.key).Nodup) &&
-          decide artifact.connections.Nodup
+  Check.nodupCheck artifact.nodes &&
+    Check.nodupCheck artifact.bindingRefs &&
+      Check.nodupMapCheck artifact.entries AdmissionBoundaryPort.key &&
+        Check.nodupMapCheck artifact.exits AdmissionBoundaryPort.key &&
+          Check.nodupCheck artifact.connections
 
 /-- Successful summary-key checking proves `SummaryKeysUnique`. -/
 theorem summaryKeysUniqueCheck_sound
@@ -628,11 +587,11 @@ theorem summaryKeysUniqueCheck_sound
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with ⟨⟨⟨⟨hNodes, hBindings⟩, hEntries⟩, hExits⟩, hConnections⟩
   exact
-    { nodesUnique := of_decide_eq_true hNodes
-    , bindingRefsUnique := of_decide_eq_true hBindings
-    , entriesUnique := of_decide_eq_true hEntries
-    , exitsUnique := of_decide_eq_true hExits
-    , connectionsUnique := of_decide_eq_true hConnections
+    { nodesUnique := Check.nodupCheck_sound hNodes
+    , bindingRefsUnique := Check.nodupCheck_sound hBindings
+    , entriesUnique := Check.nodupMapCheck_sound hEntries
+    , exitsUnique := Check.nodupMapCheck_sound hExits
+    , connectionsUnique := Check.nodupCheck_sound hConnections
     }
 
 /-- Executable checker for top-level summary row validity. -/
@@ -661,10 +620,10 @@ theorem summaryRowsValidCheck_sound
 
 /-- Executable checker for component-row identity uniqueness. -/
 def componentRowsUniqueCheck (artifact : WireAdmissionArtifact) : Bool :=
-  decide ((artifact.generatedForms.map GeneratedFormArtifact.binding).Nodup) &&
-    decide ((artifact.phantomAdapters.map PhantomAdapterArtifact.node).Nodup) &&
-      decide ((artifact.selects.map SelectAdmissionArtifact.conditionNode).Nodup) &&
-        decide artifact.componentRoleNodes.Nodup
+  Check.nodupMapCheck artifact.generatedForms GeneratedFormArtifact.binding &&
+    Check.nodupMapCheck artifact.phantomAdapters PhantomAdapterArtifact.node &&
+      Check.nodupMapCheck artifact.selects SelectAdmissionArtifact.conditionNode &&
+        Check.nodupCheck artifact.componentRoleNodes
 
 /-- Successful component-row checking proves `ComponentRowsUnique`. -/
 theorem componentRowsUniqueCheck_sound
@@ -675,23 +634,25 @@ theorem componentRowsUniqueCheck_sound
   simp only [Bool.and_eq_true] at hCheck
   rcases hCheck with ⟨⟨⟨hGenerated, hPhantom⟩, hSelect⟩, hRoles⟩
   exact
-    { generatedFormBindingsUnique := of_decide_eq_true hGenerated
-    , phantomAdapterNodesUnique := of_decide_eq_true hPhantom
-    , selectConditionNodesUnique := of_decide_eq_true hSelect
-    , componentRoleNodesUnique := of_decide_eq_true hRoles
+    { generatedFormBindingsUnique := Check.nodupMapCheck_sound hGenerated
+    , phantomAdapterNodesUnique := Check.nodupMapCheck_sound hPhantom
+    , selectConditionNodesUnique := Check.nodupMapCheck_sound hSelect
+    , componentRoleNodesUnique := Check.nodupCheck_sound hRoles
     }
 
 /-- Executable checker for primitive graph-step row-local validity. -/
 def primitiveStepsValidCheck (artifact : WireAdmissionArtifact) : Bool :=
-  artifact.primitiveSteps.all PrimitiveGraphStep.validCheck
+  Check.allBool artifact.primitiveSteps PrimitiveGraphStep.validCheck
 
 /-- Successful primitive-step checking proves `PrimitiveStepsValid`. -/
 theorem primitiveStepsValidCheck_sound
     {artifact : WireAdmissionArtifact}
     (hCheck : artifact.primitiveStepsValidCheck = true) :
     artifact.PrimitiveStepsValid := by
-  intro primitiveStep hStep
-  exact PrimitiveGraphStep.validCheck_sound ((List.all_eq_true.mp hCheck) _ hStep)
+  exact
+    Check.allBool_sound hCheck
+      (fun primitiveStep _ hStepCheck =>
+        PrimitiveGraphStep.validCheck_sound hStepCheck)
 
 /-- Representative executable subset of `ValidatorReady`.
 
