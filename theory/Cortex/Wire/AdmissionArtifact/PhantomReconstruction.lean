@@ -93,12 +93,20 @@ structure PhantomBridgeObjectReconstruction
     PrimitiveGraphStep.node phantom.node entries exits ∈ artifact.primitiveSteps
   entriesOwned : ∀ entry, entry ∈ entries → entry.node = phantom.node
   exitsOwned : ∀ exit, exit ∈ exits → exit.node = phantom.node
+  /-- No two entries share a boundary key. Load-bearing against silent collapse
+  in `openBoundaryNodeObject`'s `.toFinset` dedup, which projects on the
+  `(node, port, contract)` key only (see `AdmissionBoundaryPort.key`). -/
   entriesUnique : (entries.map AdmissionBoundaryPort.key).Nodup
+  /-- No two exits share a boundary key. Same role as `entriesUnique`. -/
   exitsUnique : (exits.map AdmissionBoundaryPort.key).Nodup
   leftBulkTargetsMatchPrimitive :
     phantom.leftBulkTargetKeys.Perm (entries.map AdmissionBoundaryPort.key)
   rightBulkSourcesMatchPrimitive :
     phantom.rightBulkSourceKeys.Perm (exits.map AdmissionBoundaryPort.key)
+  /-- The open phantom-node object is source-linear. The proof is the smart
+  constructor's built-in `openNodePorts_portLinear` invariant; it does not
+  depend on artifact-specific data. The no-silent-collapse fields downstream
+  consumers should read are `entriesUnique` / `exitsUnique`. -/
   openObjectLinear :
     (AdmissionBoundaryPort.openBoundaryNodeObject
       phantom.node entries exits entriesOwned exitsOwned).graph.PortLinear
@@ -190,14 +198,23 @@ inductive PhantomDirectionReconstruction
                   artifact.primitiveSteps) :
         PhantomDirectionReconstruction artifact phantom
 
-/-- Artifact-boundary reconstruction evidence for one phantom adapter row. -/
-structure PhantomAdapterReconstruction
+/-- Artifact-boundary reconstruction evidence for one phantom adapter row
+indexed by a shared primitive bridge witness.
+
+The `bridgeEntries` / `bridgeExits` parameters name the single primitive node
+row that backs the adapter node. Sharing them at this layer pins the bridge
+frontier witness to one concrete primitive row, removing the ambiguity that
+would otherwise arise from `bridge` carrying its own existential `(entries,
+exits)`. The bulk-replay fields don't quantify over any primitive frontier
+row — they only assert membership in `matchedConnectionsList`, so they're
+unaffected by this parameterization. -/
+structure PhantomAdapterReconstructionRecord
     (artifact : WireAdmissionArtifact)
-    (phantom : PhantomAdapterArtifact) : Prop where
+    (phantom : PhantomAdapterArtifact)
+    (bridgeEntries bridgeExits : List AdmissionBoundaryPort) : Prop where
   valid : phantom.Valid
   bridge :
-    ∃ entries exits,
-      PhantomBridgeObjectReconstruction artifact phantom entries exits
+    PhantomBridgeObjectReconstruction artifact phantom bridgeEntries bridgeExits
   product : PhantomProductReconstruction artifact phantom
   direction : PhantomDirectionReconstruction artifact phantom
   leftBulkReplayed :
@@ -208,6 +225,13 @@ structure PhantomAdapterReconstruction
     ∀ {pair : AdmissionConnection},
       pair ∈ phantom.rightBulk →
         pair ∈ PrimitiveGraphStep.matchedConnectionsList artifact.primitiveSteps
+
+/-- Artifact-boundary reconstruction evidence for one phantom adapter row. -/
+def PhantomAdapterReconstruction
+    (artifact : WireAdmissionArtifact)
+    (phantom : PhantomAdapterArtifact) : Prop :=
+  ∃ bridgeEntries bridgeExits,
+    PhantomAdapterReconstructionRecord artifact phantom bridgeEntries bridgeExits
 
 /-- Artifact-boundary phantom reconstruction for every phantom adapter row. -/
 def PhantomReconstruction (artifact : WireAdmissionArtifact) : Prop :=
@@ -411,9 +435,12 @@ theorem Sound.toPhantomReconstruction
     (hSound : artifact.Sound) :
     artifact.PhantomReconstruction := by
   intro phantom hPhantom
+  obtain ⟨bridgeEntries, bridgeExits, hBridge⟩ :=
+    hSound.phantomBridgeObjectReconstruction hPhantom
+  refine ⟨bridgeEntries, bridgeExits, ?_⟩
   exact
     { valid := hSound.phantom.phantomAdaptersValid phantom hPhantom
-      bridge := hSound.phantomBridgeObjectReconstruction hPhantom
+      bridge := hBridge
       product := hSound.phantomProductReconstruction hPhantom
       direction := hSound.phantomDirectionReconstruction hPhantom
       leftBulkReplayed := by

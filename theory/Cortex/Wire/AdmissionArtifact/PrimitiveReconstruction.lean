@@ -197,6 +197,48 @@ theorem sourceVisibleRowsUnique_of_matchesSummary
 
 end PrimitiveTraceFrame
 
+/-! ## Primitive Node Row Uniqueness -/
+
+/-- Sound artifacts have duplicate-free primitive node identity rows.
+
+`Sound.primitive` carries `summaryIdentitiesMatchPrimitive` and
+`summaryKeysUnique.nodesUnique`; together they force the primitive node-row
+ledger to inherit the top-level summary's Nodup. Reconstruction proofs use this
+to identify the unique primitive node row for a given `NodeId`. -/
+theorem PrimitiveSound.primitiveNodeRowsUnique
+    {artifact : WireAdmissionArtifact}
+    (hPrimitive : artifact.PrimitiveSound) :
+    (PrimitiveGraphStep.nodeRowsList artifact.primitiveSteps).Nodup :=
+  hPrimitive.summaryIdentitiesMatchPrimitive.left.nodup_iff.mp
+    hPrimitive.summaryKeysUnique.nodesUnique
+
+/-- Sound artifacts have at most one primitive node row per `NodeId`. -/
+theorem PrimitiveSound.primitiveNode_frontiers_unique
+    {artifact : WireAdmissionArtifact}
+    (hPrimitive : artifact.PrimitiveSound)
+    {node : NodeId}
+    {entries₁ exits₁ entries₂ exits₂ : List AdmissionBoundaryPort}
+    (hLeft :
+      PrimitiveGraphStep.node node entries₁ exits₁ ∈ artifact.primitiveSteps)
+    (hRight :
+      PrimitiveGraphStep.node node entries₂ exits₂ ∈ artifact.primitiveSteps) :
+    entries₁ = entries₂ ∧ exits₁ = exits₂ :=
+  PrimitiveGraphStep.node_frontiers_eq_of_nodeRowsList_nodup
+    hPrimitive.primitiveNodeRowsUnique hLeft hRight
+
+/-- Sound artifacts have at most one primitive node row per `NodeId`. -/
+theorem Sound.primitiveNode_frontiers_unique
+    {artifact : WireAdmissionArtifact}
+    (hSound : artifact.Sound)
+    {node : NodeId}
+    {entries₁ exits₁ entries₂ exits₂ : List AdmissionBoundaryPort}
+    (hLeft :
+      PrimitiveGraphStep.node node entries₁ exits₁ ∈ artifact.primitiveSteps)
+    (hRight :
+      PrimitiveGraphStep.node node entries₂ exits₂ ∈ artifact.primitiveSteps) :
+    entries₁ = entries₂ ∧ exits₁ = exits₂ :=
+  hSound.primitive.primitiveNode_frontiers_unique hLeft hRight
+
 /-! ## Primitive Frontier Accounting -/
 
 /-- A primitive input key is accounted for either as a source-visible entry or

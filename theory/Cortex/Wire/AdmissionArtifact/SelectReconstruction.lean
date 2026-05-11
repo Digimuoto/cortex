@@ -17,6 +17,10 @@ should consume:
 - arm body boundary rows match the condition bridge; and
 - selected-variant bridge entries are consumed by primitive replay.
 
+The reconstruction record exposes one shared `(conditionEntries, conditionExits)`
+primitive node row at the top level so that all per-arm and per-variant bridge
+facts witness the same primitive backing for the condition node.
+
 This is still source-side admission. Replaying a chosen latent body into durable
 selected-branch recovery remains a separate proof surface.
 -/
@@ -53,69 +57,58 @@ inductive SelectArmResolutionReconstruction
             variant.key = arm.canonicalKey)) :
         SelectArmResolutionReconstruction selectAdmission arm
 
-/-- Condition-bridge/body-boundary evidence for one select arm. -/
-structure SelectArmBridgeReconstruction
-    (artifact : WireAdmissionArtifact)
+/-- Body-shape evidence for one source select arm against its chosen variant
+and the shared condition-bridge exits. -/
+inductive SelectArmBodyShapeReconstruction
     (selectAdmission : SelectAdmissionArtifact)
     (arm : SelectArmAdmissionArtifact)
-    (entries exits : List AdmissionBoundaryPort)
+    (conditionExits : List AdmissionBoundaryPort)
     (variant : SelectVariantArtifact) : Prop where
-  primitiveConditionNode :
-    PrimitiveGraphStep.node selectAdmission.conditionNode entries exits ∈
-      artifact.primitiveSteps
+  | emptyBody
+      (bodyNodesEmpty : arm.bodyNodes = [])
+      (bodyEntriesEmpty : arm.bodyEntries = [])
+      (bodyExitsEmpty : arm.bodyExits = [])
+      (conditionOutputShapesIdentity :
+        SelectConditionBridgeOutputShapes selectAdmission conditionExits =
+          [variant.port.identityOutputShape]) :
+        SelectArmBodyShapeReconstruction
+          selectAdmission arm conditionExits variant
+  | nonEmptyBody
+      (bodyEntriesMatch :
+        arm.bodyEntries.map AdmissionBoundaryPort.compatibilityShape =
+          [variant.port.compatibilityShape])
+      (bodyExitsPerm :
+        (arm.bodyExits.map AdmissionBoundaryPort.outputShape).Perm
+          (SelectConditionBridgeOutputShapes selectAdmission conditionExits)) :
+        SelectArmBodyShapeReconstruction
+          selectAdmission arm conditionExits variant
+
+/-- Condition-bridge variant evidence for one source select arm, indexed by
+the shared condition-node exits and the resolved variant. -/
+structure SelectArmBridgeReconstruction
+    (selectAdmission : SelectAdmissionArtifact)
+    (arm : SelectArmAdmissionArtifact)
+    (conditionExits : List AdmissionBoundaryPort)
+    (variant : SelectVariantArtifact) : Prop where
   variantMem : variant ∈ selectAdmission.variants
   variantKey : variant.key = arm.canonicalKey
   bodyShape :
-    (((arm.bodyNodes = [] ∧ arm.bodyEntries = [] ∧ arm.bodyExits = []) ∧
-        SelectConditionBridgeOutputShapes selectAdmission exits =
-          [variant.port.identityOutputShape]) ∨
-      (arm.bodyEntries.map AdmissionBoundaryPort.compatibilityShape =
-          [variant.port.compatibilityShape] ∧
-        (arm.bodyExits.map AdmissionBoundaryPort.outputShape).Perm
-          (SelectConditionBridgeOutputShapes selectAdmission exits)))
-  conditionInputKeysAccounted :
-    ∀ {key : NodeId × FieldLabel × ContractId},
-      key ∈ entries.map AdmissionBoundaryPort.key →
-        PrimitiveInputKeyAccounted artifact key
-  conditionOutputKeysAccounted :
-    ∀ {key : NodeId × FieldLabel × ContractId},
-      key ∈ exits.map AdmissionBoundaryPort.key →
-        PrimitiveOutputKeyAccounted artifact key
+    SelectArmBodyShapeReconstruction selectAdmission arm conditionExits variant
 
-/-- Artifact-boundary bridge evidence exists for one select arm. -/
-def SelectArmBridge
-    (artifact : WireAdmissionArtifact)
-    (selectAdmission : SelectAdmissionArtifact)
-    (arm : SelectArmAdmissionArtifact) : Prop :=
-  ∃ entries exits variant,
-    SelectArmBridgeReconstruction artifact selectAdmission arm entries exits variant
-
-/-- Primitive replay evidence for one selected variant's bridge entry. -/
+/-- Primitive replay evidence for one selected variant's bridge entry, indexed
+by the shared condition-node entries and the chosen entry. -/
 structure SelectVariantBridgeReconstruction
     (artifact : WireAdmissionArtifact)
-    (selectAdmission : SelectAdmissionArtifact)
     (variant : SelectVariantArtifact)
-    (entries exits : List AdmissionBoundaryPort)
+    (conditionEntries : List AdmissionBoundaryPort)
     (entry : AdmissionBoundaryPort) : Prop where
-  primitiveConditionNode :
-    PrimitiveGraphStep.node selectAdmission.conditionNode entries exits ∈
-      artifact.primitiveSteps
-  entryMem : entry ∈ entries
+  entryMem : entry ∈ conditionEntries
   compatible : variant.port.CompatibleWith entry
   replayed :
     { fromPort := variant.port, toPort := entry } ∈
       PrimitiveGraphStep.matchedConnectionsList artifact.primitiveSteps
   entryConsumed :
     entry.key ∈ PrimitiveGraphStep.consumedEntryKeysList artifact.primitiveSteps
-
-/-- Artifact-boundary variant bridge evidence exists for one base variant. -/
-def SelectVariantBridge
-    (artifact : WireAdmissionArtifact)
-    (selectAdmission : SelectAdmissionArtifact)
-    (variant : SelectVariantArtifact) : Prop :=
-  ∃ entries exits entry,
-    SelectVariantBridgeReconstruction
-      artifact selectAdmission variant entries exits entry
 
 /-- Reconstruction evidence for one projected latent select entry. -/
 structure SelectLatentEntryReconstruction
@@ -136,16 +129,34 @@ structure SelectLatentEntryReconstruction
           ∀ {node : NodeId},
             node ∈ entry.snd.bodyNodes → node ∉ other.snd.bodyNodes
 
-/-- Artifact-boundary reconstruction evidence for one select-admission row. -/
-structure SelectAdmissionReconstruction
+/-- Artifact-boundary reconstruction evidence for one select-admission row,
+indexed by a shared condition-node primitive row.
+
+Sharing `conditionEntries` / `conditionExits` at this layer rules out the
+formal countermodel where `armBridge` and `variantBridge` could pick different
+primitive node rows for the same `selectAdmission.conditionNode`. -/
+structure SelectAdmissionReconstructionRecord
     (artifact : WireAdmissionArtifact)
-    (selectAdmission : SelectAdmissionArtifact) : Prop where
+    (selectAdmission : SelectAdmissionArtifact)
+    (conditionEntries conditionExits : List AdmissionBoundaryPort) : Prop where
   valid : selectAdmission.Valid
   ownerMatchesCondition : selectAdmission.owner = selectAdmission.conditionNode
   armsAtLeastTwo : 2 ≤ selectAdmission.arms.length
   latentKeyCoverage :
     ((selectAdmission.toLatentSelectAdmission valid).entries.map Prod.fst).Perm
       (selectAdmission.toLatentSelectAdmission valid).shape.armKeys
+  primitiveConditionNode :
+    PrimitiveGraphStep.node selectAdmission.conditionNode
+        conditionEntries conditionExits ∈
+      artifact.primitiveSteps
+  conditionInputKeysAccounted :
+    ∀ {key : NodeId × FieldLabel × ContractId},
+      key ∈ conditionEntries.map AdmissionBoundaryPort.key →
+        PrimitiveInputKeyAccounted artifact key
+  conditionOutputKeysAccounted :
+    ∀ {key : NodeId × FieldLabel × ContractId},
+      key ∈ conditionExits.map AdmissionBoundaryPort.key →
+        PrimitiveOutputKeyAccounted artifact key
   latentEntries :
     ∀ {entry : SelectArmKey × SelectArmAdmissionArtifact},
       entry ∈ (selectAdmission.toLatentSelectAdmission valid).entries →
@@ -157,11 +168,23 @@ structure SelectAdmissionReconstruction
   armBridge :
     ∀ {arm : SelectArmAdmissionArtifact},
       arm ∈ selectAdmission.arms →
-        SelectArmBridge artifact selectAdmission arm
+        ∃ variant,
+          SelectArmBridgeReconstruction
+            selectAdmission arm conditionExits variant
   variantBridge :
     ∀ {variant : SelectVariantArtifact},
       variant ∈ selectAdmission.variants →
-        SelectVariantBridge artifact selectAdmission variant
+        ∃ entry,
+          SelectVariantBridgeReconstruction
+            artifact variant conditionEntries entry
+
+/-- Artifact-boundary reconstruction evidence for one select-admission row. -/
+def SelectAdmissionReconstruction
+    (artifact : WireAdmissionArtifact)
+    (selectAdmission : SelectAdmissionArtifact) : Prop :=
+  ∃ conditionEntries conditionExits,
+    SelectAdmissionReconstructionRecord
+      artifact selectAdmission conditionEntries conditionExits
 
 /-- Artifact-boundary select reconstruction for every select row. -/
 def SelectReconstruction (artifact : WireAdmissionArtifact) : Prop :=
@@ -193,70 +216,6 @@ theorem Sound.selectArmResolutionReconstruction
         SelectArmResolutionReconstruction.byContract
           hMode hResolution.left hResolution.right
 
-/-- Select soundness reconstructs condition-bridge evidence for one arm. -/
-theorem Sound.selectArmBridge
-    {artifact : WireAdmissionArtifact}
-    (hSound : artifact.Sound)
-    {selectAdmission : SelectAdmissionArtifact}
-    (hSelect : selectAdmission ∈ artifact.selects)
-    {arm : SelectArmAdmissionArtifact}
-    (hArm : arm ∈ selectAdmission.arms) :
-    SelectArmBridge artifact selectAdmission arm := by
-  obtain ⟨entries, exits, hPrimitiveNode, hArms⟩ :=
-    hSound.select.selectArmBodyBoundariesMatchCondition
-      selectAdmission hSelect
-  obtain ⟨variant, hVariant, hVariantKey, hBodyShape⟩ :=
-    hArms arm hArm
-  have hAccounted :
-      artifact.PrimitiveFrontierKeysAccounted :=
-    primitiveFrontierKeysAccounted
-      hSound.primitive.summaryFrontiersMatchPrimitive
-  refine ⟨entries, exits, variant, ?_⟩
-  exact
-    { primitiveConditionNode := hPrimitiveNode
-      variantMem := hVariant
-      variantKey := hVariantKey
-      bodyShape := hBodyShape
-      conditionInputKeysAccounted := by
-        intro key hKey
-        have hPrimitiveKey :
-            key ∈ PrimitiveGraphStep.nodeEntryKeysList
-              artifact.primitiveSteps :=
-          PrimitiveGraphStep.nodeEntryKeysList_mem_of_node_mem
-            hPrimitiveNode hKey
-        exact hAccounted.inputs hPrimitiveKey
-      conditionOutputKeysAccounted := by
-        intro key hKey
-        have hPrimitiveKey :
-            key ∈ PrimitiveGraphStep.nodeExitKeysList
-              artifact.primitiveSteps :=
-          PrimitiveGraphStep.nodeExitKeysList_mem_of_node_mem
-            hPrimitiveNode hKey
-        exact hAccounted.outputs hPrimitiveKey }
-
-/-- Select soundness reconstructs primitive bridge evidence for one base variant. -/
-theorem Sound.selectVariantBridge
-    {artifact : WireAdmissionArtifact}
-    (hSound : artifact.Sound)
-    {selectAdmission : SelectAdmissionArtifact}
-    (hSelect : selectAdmission ∈ artifact.selects)
-    {variant : SelectVariantArtifact}
-    (hVariant : variant ∈ selectAdmission.variants) :
-    SelectVariantBridge artifact selectAdmission variant := by
-  obtain ⟨entries, exits, entry, hPrimitiveNode, hEntry, hCompat,
-    hReplayed, hConsumed⟩ :=
-      hSound.select.variantBridgeEntryConsumed hSelect hVariant
-  exact
-    ⟨ entries
-    , exits
-    , entry
-    , { primitiveConditionNode := hPrimitiveNode
-        entryMem := hEntry
-        compatible := hCompat
-        replayed := hReplayed
-        entryConsumed := hConsumed }
-    ⟩
-
 /-- Select soundness reconstructs provenance and freshness for one latent entry. -/
 theorem Sound.selectLatentEntryReconstruction
     {artifact : WireAdmissionArtifact}
@@ -285,33 +244,94 @@ theorem Sound.selectLatentEntryReconstruction
           hSound.select.latentEntriesBodyNodesDisjoint
             hSelect hValid hEntry hOther hKeys hNode }
 
-/-- Validator soundness reconstructs select-admission artifact-boundary witnesses. -/
+/-- Validator soundness reconstructs select-admission artifact-boundary witnesses
+indexed by a single shared condition-node primitive row.
+
+Primitive node-row uniqueness (`Sound.primitiveNode_frontiers_unique`) collapses
+the per-variant existential in `variantBridgeEntryConsumed` onto the same
+`(conditionEntries, conditionExits)` chosen by
+`selectArmBodyBoundariesMatchCondition`. -/
 theorem Sound.toSelectReconstruction
     {artifact : WireAdmissionArtifact}
     (hSound : artifact.Sound) :
     artifact.SelectReconstruction := by
   intro selectAdmission hSelect
-  let hValid := hSound.select.selectsValid selectAdmission hSelect
-  exact
+  obtain ⟨conditionEntries, conditionExits, hPrimitiveNode, hArms⟩ :=
+    hSound.select.selectArmBodyBoundariesMatchCondition
+      selectAdmission hSelect
+  have hValid := hSound.select.selectsValid selectAdmission hSelect
+  have hAccounted :
+      artifact.PrimitiveFrontierKeysAccounted :=
+    primitiveFrontierKeysAccounted
+      hSound.primitive.summaryFrontiersMatchPrimitive
+  refine ⟨conditionEntries, conditionExits, ?_⟩
+  refine
     { valid := hValid
       ownerMatchesCondition := hValid.ownerMatchesCondition
       armsAtLeastTwo := hSound.select.armsAtLeastTwo hSelect
       latentKeyCoverage :=
         (selectAdmission.toLatentSelectAdmission hValid).entries_keys_perm
-      latentEntries := by
-        intro entry hEntry
+      primitiveConditionNode := hPrimitiveNode
+      conditionInputKeysAccounted := ?inputs
+      conditionOutputKeysAccounted := ?outputs
+      latentEntries := ?latent
+      armResolution := ?resolution
+      armBridge := ?bridge
+      variantBridge := ?variantBridge }
+  case inputs =>
+    intro key hKey
+    exact
+      hAccounted.inputs
+        (PrimitiveGraphStep.nodeEntryKeysList_mem_of_node_mem
+          hPrimitiveNode hKey)
+  case outputs =>
+    intro key hKey
+    exact
+      hAccounted.outputs
+        (PrimitiveGraphStep.nodeExitKeysList_mem_of_node_mem
+          hPrimitiveNode hKey)
+  case latent =>
+    intro entry hEntry
+    exact hSound.selectLatentEntryReconstruction hSelect hValid hEntry
+  case resolution =>
+    intro arm hArm
+    exact hSound.selectArmResolutionReconstruction hSelect hArm
+  case bridge =>
+    intro arm hArm
+    obtain ⟨variant, hVariantMem, hVariantKey, hBodyShape⟩ := hArms arm hArm
+    refine
+      ⟨ variant
+      , { variantMem := hVariantMem
+          variantKey := hVariantKey
+          bodyShape := ?_ }⟩
+    cases hBodyShape with
+    | inl hEmpty =>
+        obtain ⟨⟨hBodyNodes, hBodyEntries, hBodyExits⟩, hOutputShapes⟩ :=
+          hEmpty
         exact
-          hSound.selectLatentEntryReconstruction
-            hSelect hValid hEntry
-      armResolution := by
-        intro arm hArm
-        exact hSound.selectArmResolutionReconstruction hSelect hArm
-      armBridge := by
-        intro arm hArm
-        exact hSound.selectArmBridge hSelect hArm
-      variantBridge := by
-        intro variant hVariant
-        exact hSound.selectVariantBridge hSelect hVariant }
+          SelectArmBodyShapeReconstruction.emptyBody
+            hBodyNodes hBodyEntries hBodyExits hOutputShapes
+    | inr hNonEmpty =>
+        exact
+          SelectArmBodyShapeReconstruction.nonEmptyBody
+            hNonEmpty.left hNonEmpty.right
+  case variantBridge =>
+    intro variant hVariant
+    obtain
+      ⟨variantEntries, _variantExits, variantEntry,
+        hVariantPrimitiveNode, hVariantEntryMem, hVariantCompat,
+        hVariantReplayed, hVariantConsumed⟩ :=
+      hSound.select.variantBridgeEntryConsumed hSelect hVariant
+    obtain ⟨hEntriesEq, _hExitsEq⟩ :=
+      hSound.primitiveNode_frontiers_unique
+        hVariantPrimitiveNode hPrimitiveNode
+    subst hEntriesEq
+    exact
+      ⟨ variantEntry
+      , { entryMem := hVariantEntryMem
+          compatible := hVariantCompat
+          replayed := hVariantReplayed
+          entryConsumed := hVariantConsumed }⟩
 
 end WireAdmissionArtifact
 
