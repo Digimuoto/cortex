@@ -6,10 +6,10 @@ import Mathlib.Data.List.Perm.Basic
 Reusable boolean checker combinators for decoded Wire admission artifacts.
 
 Each helper is intentionally small: a checker returns `Bool`, and its paired
-soundness theorem converts `check = true` into the proof-facing predicate. The
-artifact-specific modules keep the semantic predicates; this page only removes
-the recurring list, membership, permutation, uniqueness, and gated-pair
-boilerplate.
+soundness theorem converts `check = true` into the proof-facing predicate. These
+are Lean-side soundness combinators, not standalone proofs that the Haskell
+validator uses the same algorithm. Artifact-specific modules keep the semantic
+predicates and any Haskell-correspondence obligations.
 -/
 
 namespace Cortex.Wire
@@ -149,6 +149,27 @@ theorem memCheck_sound
     (hCheck : memCheck item items = true) :
     item ∈ items :=
   propCheck_sound hCheck
+
+/-- Boolean set-style equality for lists, ignoring multiplicity and order. -/
+def sameMembersCheck {α : Type} [DecidableEq α] (left right : List α) : Bool :=
+  allDecide left (fun item => item ∈ right) &&
+    allDecide right (fun item => item ∈ left)
+
+/-- Successful set-style equality checking proves membership equivalence. -/
+theorem sameMembersCheck_sound
+    {α : Type}
+    [DecidableEq α]
+    {left right : List α}
+    (hCheck : sameMembersCheck left right = true) :
+    ∀ item, item ∈ left ↔ item ∈ right := by
+  unfold sameMembersCheck at hCheck
+  rw [Bool.and_eq_true] at hCheck
+  intro item
+  constructor
+  · intro hItem
+    exact allDecide_sound hCheck.left item hItem
+  · intro hItem
+    exact allDecide_sound hCheck.right item hItem
 
 /-! ## Gated Pair Checks -/
 

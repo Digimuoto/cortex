@@ -396,8 +396,9 @@ Mechanized results now include:
   relational `PrimitiveTraceStackValid` field required by `ValidatorReady`.
   `AdmissionArtifact.ValidatorReadyCore`, `AdmissionArtifact.validatorReadyCoreCheck`, and
   `AdmissionArtifact.validatorReadyCoreCheck_sound` extend that strategy to a representative
-  executable validator core: schema version, summary-key uniqueness, summary-row validity,
-  component-row uniqueness, primitive row validity, and primitive stack replay.
+  executable validator core: schema version, summary-key uniqueness, summary-row validity, summary
+  domain closure, summary identity/frontier/raw-connection matching against primitive rows, local
+  select-row validity, component-row uniqueness, primitive row validity, and primitive stack replay.
   `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
   `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
   generated-child or empty-family row for each generated artifact, rather than only a label
