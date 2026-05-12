@@ -132,6 +132,14 @@ every `RuntimeConstructionInputs` field.
 
 ## Ordering
 
+This ordering covers the **Haskell correspondence engineering** side of the ledger. For the
+**substrate-novelty priority** (which research questions actually need answering before
+correspondence engineering is worth investing in), see
+[Roadmap/Epics/substrate-soundness-closure.md](../Roadmap/Epics/substrate-soundness-closure.md). The
+epic argues that closing the novel-middle composition (four cross-layer bridges plus one stitch-up
+theorem) is the load-bearing research deliverable, and that the four engineering steps below become
+amplification work afterwards.
+
 The next implementation proof work should proceed in this order:
 
 1. **CorePure evaluator and contract correspondence** - continue from the Haskell static-context

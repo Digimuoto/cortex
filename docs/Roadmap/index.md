@@ -21,6 +21,12 @@ transition notes, or migration-era planning notes.
   architecture.
 - **[Archive/](Archive/)** - superseded proposals retained selectively.
 
+## Active Epics
+
+- **[Substrate Soundness Closure](Epics/substrate-soundness-closure.md)** — prove the novel
+  Wire/Pulse middle is mechanically sound end-to-end, before investing in parser/compiler/IO
+  correspondence.
+
 ## Current Plans
 
 - **[Lean mechanization](Plans/lean-mechanization.md)** - machine-checked support for the
