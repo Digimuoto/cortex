@@ -69,6 +69,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0050](0050-wire-corepure-output-residue.md)                    | Wire CorePure Output Residue                                        | proposed   |
 | [0051](0051-wire-source-includes-and-item-generation.md)        | Wire Source Includes and Item Generation                            | proposed   |
 | [0052](0052-wire-bounded-indexed-boundary-products.md)          | Wire Bounded Indexed Boundary Products                              | proposed   |
+| [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)   | Executor Catalog Manifests and Pulse Runtime Bindings               | proposed   |
 
 ## Writing a new ADR
 
