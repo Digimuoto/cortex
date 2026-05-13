@@ -17,6 +17,7 @@ Substrate-layer research synthesis: formalism, algebraic structure, and coordina
 | 2026-04-11 | [Formalism stack synthesis](2026-04-11-formalism-stack-synthesis.md)                                                 |
 | 2026-04-24 | [CALM and coordination boundaries on evolving graphs](2026-04-24-calm-coordination-boundaries-on-evolving-graphs.md) |
 | 2026-05-05 | [Linear port graph layer](2026-05-05-linear-port-graph-layer.md)                                                     |
+| 2026-05-09 | [Stage-structured causal pipelines](2026-05-09-stage-structured-causal-pipelines.md)                                 |
 
 ## Related
 
