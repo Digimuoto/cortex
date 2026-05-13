@@ -58,7 +58,10 @@
           # `elan` resolves the toolchain version pinned in
           # `theory/lean-toolchain` and provides `lake`, `lean`, `leanc`.
           elan
-        ]);
+        ])
+        ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+          pkgs.zathura
+        ];
 
       shellHook = ''
         ${config.pre-commit.installationScript or ""}
@@ -81,6 +84,8 @@
           just test        # Run test suite
           just fmt         # Format code
           just docs-dev    # Docs dev server
+          just paper-generate # Build paper PDF into current dir
+          just papers-open # Build and view paper PDFs
 
         Wire DSL:
           hl-wire <path.wire>   # Terminal-highlight a .wire file

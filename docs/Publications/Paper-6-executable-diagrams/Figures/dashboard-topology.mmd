@@ -1,0 +1,9 @@
+flowchart LR
+    receive_request["receive_request"] --> fetch_user["fetch_user"]
+    fetch_user --> prepare_dashboard["prepare_dashboard"]
+    prepare_dashboard -- "posts_req" --> fetch_posts["fetch_posts"]
+    prepare_dashboard -- "friends_req" --> fetch_friends["fetch_friends"]
+    prepare_dashboard -- "profile" --> assemble["assemble"]
+    fetch_posts -- "posts" --> assemble
+    fetch_friends -- "friends" --> assemble
+    assemble --> respond["respond"]

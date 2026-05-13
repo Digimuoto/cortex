@@ -20,6 +20,7 @@ Plan and state of the current Cortex publication portfolio.
 | 2   | [Algebraic foundations](Paper-2-algebraic-foundations/)               | Draft  | Core fixed-topology theory                         |
 | 3   | [Graph substitution semantics](Paper-3-graph-substitution-semantics/) | Draft  | Dynamic substitution theory                        |
 | 4   | [Wire language](Paper-4-wire-language/)                               | Draft  | Authoring language and authority-composition paper |
+| 6   | [Executable causal diagrams](Paper-6-executable-diagrams/)            | Draft  | Short artifact paper on executable causal diagrams |
 
 ## Supporting research plans
 
@@ -40,6 +41,8 @@ Paper 2 is the keystone paper.
   lineage-plus-materialization semantics.
 - Paper 4 explains the authoring layer above that substrate: closed authority registration,
   endpoint-typed composition, partial reuse, and bounded proposal authoring.
+- Paper 6 extracts the diagrammatic-computation story from Wire: source causal diagrams, typed
+  linear frontiers, circuit lowering, durable replay, and proof-facing accepted objects.
 - The rewrite materialization and recovery plan connects Paper 3's substitution theory back to
   runtime recovery and admission policy.
 

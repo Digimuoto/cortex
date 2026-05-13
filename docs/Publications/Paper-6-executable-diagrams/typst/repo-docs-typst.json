@@ -1,0 +1,11 @@
+{
+  "entry": "manuscript.typ",
+  "output": "manuscript.pdf",
+  "route": "Publications/Paper-6-executable-diagrams/typeset-manuscript",
+  "title": "Paper 6 - Executable Causal Diagrams with Typed Linear Frontiers",
+  "description": "Submission-ready Typst rendering of the executable causal diagrams manuscript.",
+  "sidebar": {
+    "label": "Typeset PDF",
+    "order": 3
+  }
+}

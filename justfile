@@ -107,6 +107,55 @@ docs-preview:
     nix run .#docs-preview
 
 # ============================================================================
+# PAPERS
+# ============================================================================
+
+# Build all Nix-rendered paper PDFs
+papers-build:
+    @echo "📄 Building paper PDFs..."
+    nix build .#papers-renderings --out-link result-papers
+
+# Build the main paper PDF and copy it into the directory where just was invoked
+paper-generate PDF="paper6-executable-diagrams.pdf":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    out="$(nix build .#papers-renderings --no-link --print-out-paths)"
+    pdf="$out/{{ PDF }}"
+    dest="{{ invocation_directory() }}"
+
+    if [[ ! -e "$pdf" ]]; then
+      echo "paper PDF not found: {{ PDF }}" >&2
+      echo "available PDFs:" >&2
+      find "$out" -maxdepth 1 -name '*.pdf' | sort | while IFS= read -r candidate; do
+        printf '  %s\n' "$(basename "$candidate")" >&2
+      done
+      exit 1
+    fi
+
+    cp -f "$pdf" "$dest/"
+    printf 'generated %s\n' "$dest/$(basename "$pdf")"
+
+# Build paper PDFs and open one with zathura from the Nix dev shell
+papers-open PDF="paper6-executable-diagrams.pdf":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    out="$(nix build .#papers-renderings --no-link --print-out-paths)"
+    pdf="$out/{{ PDF }}"
+
+    if [[ ! -e "$pdf" ]]; then
+      echo "paper PDF not found: {{ PDF }}" >&2
+      echo "available PDFs:" >&2
+      find "$out" -maxdepth 1 -name '*.pdf' | sort | while IFS= read -r candidate; do
+        printf '  %s\n' "$(basename "$candidate")" >&2
+      done
+      exit 1
+    fi
+
+    exec nix develop -c zathura "$pdf"
+
+# ============================================================================
 # LEAN 4 THEORY (theory/)
 # ============================================================================
 

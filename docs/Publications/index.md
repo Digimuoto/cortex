@@ -24,6 +24,8 @@ now holds the active paper candidates. Companion theory and proof plans live und
   artifacts, graph substitution, and dynamic-topology semantics.
 - **[Paper-4-wire-language/](Paper-4-wire-language/)** — authoring language for typed topology,
   registered authority, and bounded structural proposals.
+- **[Paper-6-executable-diagrams/](Paper-6-executable-diagrams/)** — executable causal diagrams,
+  tying Wire source, durable replay, and proof-facing admission together.
 
 ## Supporting material
 
@@ -40,6 +42,7 @@ Each `paper-N-*/` folder contains:
 
 - `index.md` — landing page with status, abstract, figures, and related material.
 - `manuscript.md` — the manuscript itself.
+- `typst/` — Nix-rendered PDF source when a paper has a typeset manuscript.
 - `Figures/` — figure sources and export notes.
 
 ## Template

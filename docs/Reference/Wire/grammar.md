@@ -232,7 +232,7 @@ node_body ::=
   | executor_output_clause* "=" executor_call ";"
   | "->" output_variant "=" executor_call ";"
 
-pure_output_equation ::= "->" output_variant "=" "pure" "(" corepure_expr ")" ";"
+pure_output_equation ::= "->" output_variant "=" corepure_expr ";"
 executor_output_clause ::= "->" output_body ";"
 output_body ::= output_variant ("|" output_variant)*
 output_variant ::= ident ":" contract_ref

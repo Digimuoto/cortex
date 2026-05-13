@@ -1,0 +1,8 @@
+flowchart LR
+    S["Source diagram<br/>causal expression"] --> L["Admitted frontier<br/>typed resources"]
+    L --> G["Causal topology<br/>port-erased graph"]
+    L --> C["Circuit<br/>executable artifact"]
+    G --> C
+    C --> R["Runtime trace<br/>schedule, replay"]
+    P["Proof IR<br/>accepted objects"] -. "names post-elaboration objects" .- L
+    P -. "correspondence obligations" .- S

@@ -1,0 +1,63 @@
+# Canonical executable causal diagram example for the Paper 6 dashboard diamond.
+# The `prepare_dashboard` node is effect-free CorePure: it consumes the
+# fetched user once and emits distinct typed facts for the parallel branches
+# and join. The `profile` endpoint remains exposed across the branch connect
+# and is consumed by `assemble`; it does not pass through either branch.
+
+contract UserId;
+contract UserProfile;
+contract ProfileSummary;
+contract PostsRequest;
+contract FriendsRequest;
+contract PostsFeed;
+contract FriendGraph;
+contract Dashboard;
+
+node receive_request
+  -> uid: UserId = @http.receive_dashboard_request ({});
+
+node fetch_user
+  <- uid: UserId;
+  -> user: UserProfile = @http.fetch_user (uid);
+
+node prepare_dashboard
+  <- user: UserProfile;
+  -> profile: ProfileSummary = {
+    id = user.id;
+    name = user.name;
+  };
+  -> posts_req: PostsRequest = {
+    user_id = user.id;
+    limit = 20;
+  };
+  -> friends_req: FriendsRequest = {
+    user_id = user.id;
+    include_mutual = true;
+  };
+
+node fetch_posts
+  <- posts_req: PostsRequest;
+  -> posts: PostsFeed = @http.fetch_posts (posts_req);
+
+node fetch_friends
+  <- friends_req: FriendsRequest;
+  -> friends: FriendGraph = @http.fetch_friends (friends_req);
+
+node assemble
+  <- profile: ProfileSummary;
+  <- posts: PostsFeed;
+  <- friends: FriendGraph;
+  -> dashboard: Dashboard = @dashboard.assemble ({
+    inherit profile posts friends;
+  });
+
+node respond
+  <- dashboard: Dashboard;
+  = @http.respond_dashboard (dashboard);
+
+receive_request
+  => fetch_user
+  => prepare_dashboard
+  => fetch_posts <> fetch_friends
+  => assemble
+  => respond

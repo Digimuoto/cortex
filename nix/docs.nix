@@ -2,7 +2,11 @@
 #
 # Outputs: packages.docs-site, apps.docs-{dev,preview}.
 {
-  perSystem = {config, ...}: {
+  perSystem = {
+    config,
+    pkgs,
+    ...
+  }: {
     docsSite = {
       enable = true;
 
@@ -74,8 +78,42 @@
           paper2.dir = "Publications/Paper-2-algebraic-foundations/typst";
           paper3.dir = "Publications/Paper-3-graph-substitution-semantics/typst";
           paper4.dir = "Publications/Paper-4-wire-language/typst";
+          paper6.dir = "Publications/Paper-6-executable-diagrams/typst";
         };
       };
+    };
+
+    packages.paper6-executable-diagrams-renderings = pkgs.stdenvNoCC.mkDerivation {
+      pname = "paper6-executable-diagrams-renderings";
+      version = "2026-05-08";
+      src = ../.;
+      nativeBuildInputs = [pkgs.typst];
+      dontConfigure = true;
+      dontFixup = true;
+      buildPhase = ''
+        runHook preBuild
+        typst compile --root "$PWD" \
+          docs/Publications/Paper-6-executable-diagrams/typst/manuscript.typ \
+          paper6-executable-diagrams.pdf
+        typst compile --root "$PWD" \
+          docs/Publications/Paper-6-executable-diagrams/Figures/executable-diagram-layers.typ \
+          executable-diagram-layers.pdf
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        mkdir -p "$out"
+        cp paper6-executable-diagrams.pdf "$out/"
+        cp executable-diagram-layers.pdf "$out/"
+        runHook postInstall
+      '';
+    };
+
+    packages.papers-renderings = pkgs.symlinkJoin {
+      name = "cortex-paper-renderings";
+      paths = [
+        config.packages.paper6-executable-diagrams-renderings
+      ];
     };
 
     packages.docs-site = config.packages.default-site;
