@@ -89,6 +89,12 @@ docs/.astro/
 docs/node_modules/
 docs/package-lock.json
 
+# Generated artifacts from runnable examples
+examples/wire/c-build/build
+examples/wire/c-build/build/
+examples/wire/c-build/dist
+examples/wire/c-build/dist/
+
 # Cabal / GHC
 dist-newstyle/
 dist/
