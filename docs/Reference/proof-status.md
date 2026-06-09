@@ -7,7 +7,7 @@ sidebar:
   label: Proof status
   order: 3
 status: active
-date: 2026-05-07
+date: 2026-06-10
 related:
   - docs/Usage/index.md
   - docs/Architecture/03-formalism-stack.md
@@ -177,6 +177,25 @@ rows.
 - The Haskell compiler now gates metadata emission through `wireAdmissionArtifactValidatorReady`, so
   compiled circuits cannot publish a schema-versioned admission artifact that fails the same
   executable predicate mirrored by Lean's `AdmissionArtifact.ValidatorReady` target.
+- Artifact-to-circuit binding is now a checked invariant rather than a construction property:
+  `Cortex.Wire.AdmissionBinding.admissionArtifactBindsCompiledCircuit` decides whether an artifact
+  describes a specific `CompiledCircuit` — schema currency, node-set equality against the circuit
+  node map, node-level connection projection rebuilding the circuit topology exactly, entry/exit
+  node lists matching topology sources/sinks, metadata embedding exactly that artifact, and select
+  rows replaying the condition node's nested then/else fragment tree (including identity-arm pruning
+  and branch swaps). Mutation regression tests perturb each clause on both sides (artifact against
+  unchanged circuit, circuit against unchanged artifact) and pin the rejection. The checker binds
+  values, not provenance: it does not prove the compiler emitted the artifact, and artifact
+  entries/exits (boundary ports) are deliberately not equated with circuit entry/exit nodes
+  (relation sources/sinks), which live at a different abstraction level and are bound through the
+  primitive trace and the topology respectively.
+- The Lean executable validator has its first emitted-artifact instance:
+  `AdmissionArtifact.EmittedFixture.chainArtifact` transcribes the artifact the Haskell compiler
+  attaches for the labeled-chain compile fixture, `#guard` runs `validatorReadyCheck` on it at build
+  time, and `chainArtifact_sound` packages the result as `AdmissionArtifact.Sound`. The
+  transcription step is currently manual and therefore trusted; generating such fixtures from the
+  Haskell test suite is the remaining mechanical step for running the Lean checker across the
+  representative program set.
 - `SelectedBranchRecoveryRecord.PhantomAdapterEmbedding` is the recovery-side hook for the case
   where a selected branch contains a finite-product `*` adapter. The embedding theorem proves the
   persisted adapter node is replayed by the selected branch and pruned from every unselected branch.
