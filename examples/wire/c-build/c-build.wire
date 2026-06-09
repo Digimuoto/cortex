@@ -2,30 +2,43 @@
 #
 #   nix run .#wire -- run examples/wire/c-build/c-build.wire
 #
-# This file is an educational build example. It deliberately avoids the
-# Makefile habit of hiding the build graph inside shell recipes:
+# This is a shell-backed example, but the shell is not the interesting part.
+# Wire owns the build topology: source discovery, generated compile nodes,
+# explicit fanout/fanin, gates between artifact steps, and typed reports.
 #
-#   * include_dir discovers source files at Wire elaboration time.
-#   * makeEach expands one fresh command node for each discovered file.
-#   * `*` gathers generated frontiers into nominal record contracts.
-#   * serial dependency gates carry earlier command results forward so the
-#     final report can gather them structurally.
+# Guarantees this gets from Wire:
 #
-# include_dir/include_str are Rust-style source includes. They are evaluated
-# before parsing this file. Missing files or directories are compile errors,
-# and runtime CorePure receives ordinary embedded data with no filesystem
-# authority.
+#   * include_dir/include_str fail at source elaboration if inputs are missing.
+#   * makeEach gives every discovered file/check a stable graph node.
+#   * `*` gathers only exact frontiers into nominal record contracts. Add a C
+#     source without updating the summary contract and compilation fails early.
+#   * forms keep reusable graph fragments explicit instead of hiding them in one
+#     long `sh -c '...'` command.
+#   * final reporting consumes structured CommandResult values with per-node
+#     lineage, status, stdout/stderr, and exit codes.
+#
+# The release section demonstrates the common deployment failure this example
+# is meant to prevent: testing one binary but promoting a different artifact.
+# Package, manifest, checksum audit, and promotion are wired as typed evidence.
+
+# ============================================================================
+# 1. Standard Executors
+# ============================================================================
 
 use std.io.{@command, @stdout, CommandSpec, CommandResult};
 
+# ============================================================================
+# 2. Contracts: Typed Build, Audit, And Release Boundaries
+# ============================================================================
+#
+# The records below are not documentation-only shapes. They are the nominal
+# contracts used by `*` gathers and by typed node ports. If a generated source
+# frontier grows or an audit output is accidentally dropped, the graph stops
+# compiling before a release command can run.
+
 contract BuildReport;
-contract BuildStart;
 contract BuildSummary;
 
-# makeEach names generated nodes as <binding>_<item.label>. The record fields
-# below are therefore the generated frontier labels. If a source file is added
-# to a directory, makeEach generates another node and this contract becomes the
-# visible place where the build graph must be amended.
 contract LibObjectResults {
   lib_objects_metrics: CommandResult;
   lib_objects_parse: CommandResult;
@@ -43,11 +56,19 @@ contract QualityResults {
   quality_checks_headers: CommandResult;
 };
 
-contract FinalResults {
+contract PackageAuditResults {
+  binaryAudit: CommandResult;
+  manifestAudit: CommandResult;
+  sizeAudit: CommandResult;
+  checksumAudit: CommandResult;
+};
+
+contract PreReleaseResults {
   libCompileReport: BuildSummary;
   appCompileReport: BuildSummary;
   testCompileReport: BuildSummary;
   qualityReport: BuildSummary;
+  packageAuditReport: BuildSummary;
   buildNote: BuildSummary;
   archive: CommandResult;
   linkApp: CommandResult;
@@ -57,41 +78,70 @@ contract FinalResults {
   runParseTest: CommandResult;
   smokeRun: CommandResult;
   package: CommandResult;
+  binaryAudit: CommandResult;
+  manifestAudit: CommandResult;
+  sizeAudit: CommandResult;
+  checksumAudit: CommandResult;
 };
 
-kind run_command(spec: PortLabel, result: PortLabel) =
-  <- spec: CommandSpec;
-  -> result: CommandResult = @command {} (spec);
-
-# makeEach can pass a source metadata record into a kind as a Value parameter.
-# This command kind does not need the item value at runtime; the item already
-# shaped the generated node name. The command spec with the same label supplies
-# the actual executor payload.
-kind generated_command(label: PortLabel, item: Value) =
-  <- label: CommandSpec;
-  -> label: CommandResult = @command {} (label);
-
-# A dependency gate turns "previous command must have happened" into an
-# explicit port. It also re-emits the previous result so later report stages can
-# still observe it without implicit graph fan-out.
-kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
-  <- spec: CommandSpec;
-  <- previous: CommandResult;
-  -> previous: CommandResult = previous;
-  -> ready: CommandSpec = spec;
-
-form gated_command(spec: PortLabel, previous: PortLabel, ready: PortLabel, result: PortLabel) = {
-  node gate = command_gate(spec, previous, ready);
-  node run = run_command(ready, result);
-
-  gate
-    => run;
+contract ReleaseEvidence {
+  testCompileReport: BuildSummary;
+  qualityReport: BuildSummary;
+  packageAuditReport: BuildSummary;
+  runMetricsTest: CommandResult;
+  runParseTest: CommandResult;
+  smokeRun: CommandResult;
+  package: CommandResult;
+  binaryAudit: CommandResult;
+  manifestAudit: CommandResult;
+  sizeAudit: CommandResult;
+  checksumAudit: CommandResult;
 };
 
-# Source discovery. These are compile-time includes, not runtime reads.
+contract FinalResults {
+  libCompileReport: BuildSummary;
+  appCompileReport: BuildSummary;
+  testCompileReport: BuildSummary;
+  qualityReport: BuildSummary;
+  packageAuditReport: BuildSummary;
+  buildNote: BuildSummary;
+  archive: CommandResult;
+  linkApp: CommandResult;
+  linkMetricsTest: CommandResult;
+  linkParseTest: CommandResult;
+  runMetricsTest: CommandResult;
+  runParseTest: CommandResult;
+  smokeRun: CommandResult;
+  package: CommandResult;
+  binaryAudit: CommandResult;
+  manifestAudit: CommandResult;
+  sizeAudit: CommandResult;
+  checksumAudit: CommandResult;
+  promotedRelease: CommandResult;
+};
+
+# ============================================================================
+# 3. Tiny C Builder Vocabulary
+# ============================================================================
+#
+# These helpers are deliberately small. They are the part that should move into
+# a reusable `c-builder.wire` once file imports compile. The build graph below
+# stays readable because command construction is centralized here.
+#
+# The manifest records source discovery and compile flags at elaboration time,
+# then records the packaged binary hash at runtime. The checksum audit verifies
+# that the manifest describes the artifact being promoted.
+
+# A tiny in-file "C builder" library. These are CorePure constructors for
+# std.io.command specs; the executor leaves below remain separate graph nodes.
+let root = "examples/wire/c-build";
+let flags = "-std=c11 -Wall -Wextra -Werror -O2 -Iinclude";
+let smokeInput = "12,18,7,23,15";
+
 let lib_sources = include_dir("src/lib");
 let app_sources = include_dir("src/app");
 let test_sources = include_dir("src/tests");
+let buildNoteText = include_str("BUILD-NOTE.txt");
 
 let quality_units = [
   { label = "syntax"; },
@@ -99,137 +149,205 @@ let quality_units = [
   { label = "headers"; },
 ];
 
-# Generated command frontiers. Each binding expands to one node per item.
-let lib_objects = makeEach(lib_sources, generated_command);
-let app_objects = makeEach(app_sources, generated_command);
-let test_objects = makeEach(test_sources, generated_command);
-let quality_checks = makeEach(quality_units, generated_command);
+let shell = name: command: {
+  inherit name;
+  argv = ["sh", "-c", command];
+  cwd = root;
+  required = true;
+  skip = false;
+  echo = true;
+};
 
-node start_build
-  -> start: BuildStart = "build";
+let objectPath = unit: "build/${unit.label}.o";
+let executablePath = unit: "build/${unit.label}";
+let objectArgs = sources: sources |> map objectPath |> joinWith " ";
+let sourcePaths = [
+  lib_sources[0].path,
+  lib_sources[1].path,
+  lib_sources[2].path,
+  app_sources[0].path,
+  test_sources[0].path,
+  test_sources[1].path,
+] |> joinWith ",";
 
-# plan_build's where clause is source-elaboration/CorePure planning data. It
-# uses the same static includes as makeEach, so command specs and generated
-# node labels derive from one source directory snapshot. Shell strings remain
-# executor payloads; dependency shape lives in the graph below.
-node plan_build
-  <- start: BuildStart;
-  -> lib_objects_metrics: CommandSpec = libMetricsSpec;
-  -> lib_objects_parse: CommandSpec = libParseSpec;
-  -> lib_objects_render: CommandSpec = libRenderSpec;
-  -> app_objects_main: CommandSpec = appMainSpec;
-  -> test_objects_test_metrics: CommandSpec = testMetricsCompileSpec;
-  -> test_objects_test_parse: CommandSpec = testParseCompileSpec;
-  -> quality_checks_syntax: CommandSpec = syntaxCheckSpec;
-  -> quality_checks_todo: CommandSpec = todoCheckSpec;
-  -> quality_checks_headers: CommandSpec = headerCheckSpec;
-  -> archiveSpec: CommandSpec = archiveCommandSpec;
-  -> linkAppSpec: CommandSpec = linkAppCommandSpec;
-  -> linkMetricsTestSpec: CommandSpec = linkMetricsCommandSpec;
-  -> linkParseTestSpec: CommandSpec = linkParseCommandSpec;
-  -> runMetricsTestSpec: CommandSpec = runMetricsCommandSpec;
-  -> runParseTestSpec: CommandSpec = runParseCommandSpec;
-  -> smokeSpec: CommandSpec = smokeCommandSpec;
-  -> packageSpec: CommandSpec = packageCommandSpec;
-  -> buildNote: BuildSummary = buildNote;
-  where let
-    root = "examples/wire/c-build";
-    flags = "-std=c11 -Wall -Wextra -Werror -O2 -Iinclude";
-    libSources = include_dir("src/lib");
-    appSources = include_dir("src/app");
-    testSources = include_dir("src/tests");
-    buildNoteText = include_str("BUILD-NOTE.txt");
-    qualityUnits = [
-      { label = "syntax"; },
-      { label = "todo"; },
-      { label = "headers"; },
-    ];
-    objectPath = unit: "build/${unit.label}.o";
-    executablePath = unit: "build/${unit.label}";
-    shell = name: command: {
-      inherit name;
-      argv = ["sh", "-c", command];
-      cwd = root;
-      required = true;
-      skip = false;
-      echo = true;
-    };
-    compileSpec = unit:
-      shell "compile-${unit.label}"
-        "mkdir -p build dist && cc ${flags} -c ${unit.path} -o ${objectPath unit}";
-    qualitySpec = unit:
-      if unit.label == "syntax"
-      then shell "syntax-only" "cc -std=c11 -Wall -Wextra -Werror -Iinclude -fsyntax-only src/app/main.c src/lib/metrics.c src/lib/parse.c src/lib/render.c"
-      else
-        if unit.label == "todo"
-        then shell "todo-scan" "! grep -R TODO include src"
-        else shell "header-contracts" "test -f include/metrics.h && test -f include/parse.h && test -f include/render.h";
-    libObjectArgs = libSources |> map objectPath |> joinWith " ";
-    appObjectArgs = appSources |> map objectPath |> joinWith " ";
-    archiveCommandSpec =
-      shell "archive-libmetrics"
-        "ar rcs build/libmetrics.a ${libObjectArgs}";
-    linkAppCommandSpec =
-      shell "link-metrics-demo"
-        "cc ${flags} -o build/metrics-demo ${appObjectArgs} build/libmetrics.a";
-    linkTestSpec = unit:
-      shell "link-${unit.label}"
-        "cc ${flags} -o ${executablePath unit} ${objectPath unit} build/libmetrics.a";
-    runTestSpec = unit:
-      shell "run-${unit.label}"
-        "./${executablePath unit}";
-    smokeCommandSpec =
-      shell "run-smoke"
-        "./build/metrics-demo '12,18,7,23,15'";
-    packageCommandSpec =
-      shell "package-dist"
-        "mkdir -p dist && cp build/metrics-demo dist/metrics-demo && printf 'metrics-demo\n' > dist/manifest.txt";
-    libMetricsSpec = compileSpec libSources[0];
-    libParseSpec = compileSpec libSources[1];
-    libRenderSpec = compileSpec libSources[2];
-    appMainSpec = compileSpec appSources[0];
-    testMetricsCompileSpec = compileSpec testSources[0];
-    testParseCompileSpec = compileSpec testSources[1];
-    syntaxCheckSpec = qualitySpec qualityUnits[0];
-    todoCheckSpec = qualitySpec qualityUnits[1];
-    headerCheckSpec = qualitySpec qualityUnits[2];
-    linkMetricsCommandSpec = linkTestSpec testSources[0];
-    linkParseCommandSpec = linkTestSpec testSources[1];
-    runMetricsCommandSpec = runTestSpec testSources[0];
-    runParseCommandSpec = runTestSpec testSources[1];
-    buildNote = {
-      label = "source include";
-      ok = true;
-      summary = buildNoteText;
-    };
-  in
-  {
-    inherit
-      libMetricsSpec
-      libParseSpec
-      libRenderSpec
-      appMainSpec
-      testMetricsCompileSpec
-      testParseCompileSpec
-      syntaxCheckSpec
-      todoCheckSpec
-      headerCheckSpec
-      archiveCommandSpec
-      linkAppCommandSpec
-      linkMetricsCommandSpec
-      linkParseCommandSpec
-      runMetricsCommandSpec
-      runParseCommandSpec
-      smokeCommandSpec
-      packageCommandSpec
-      buildNote;
-  };
+let compileSpec = unit:
+  shell "compile-${unit.label}"
+    "mkdir -p build dist && cc ${flags} -c ${unit.path} -o ${objectPath unit}";
+
+let qualitySpec = unit:
+  if unit.label == "syntax"
+  then shell "syntax-only" "cc -std=c11 -Wall -Wextra -Werror -Iinclude -fsyntax-only src/app/main.c src/lib/metrics.c src/lib/parse.c src/lib/render.c"
+  else
+    if unit.label == "todo"
+    then shell "todo-scan" "grep -R TODO include src; status=$?; test $status -eq 1"
+    else shell "header-contracts" "test -f include/metrics.h && test -f include/parse.h && test -f include/render.h";
+
+let linkTestSpec = unit:
+  shell "link-${unit.label}"
+    "cc ${flags} -o ${executablePath unit} ${objectPath unit} build/libmetrics.a";
+
+let runTestSpec = unit:
+  shell "run-${unit.label}"
+    "./${executablePath unit}";
+
+let archiveSpec =
+  shell "archive-libmetrics"
+    "ar rcs build/libmetrics.a ${objectArgs lib_sources}";
+
+let linkAppSpec =
+  shell "link-metrics-demo"
+    "cc ${flags} -o build/metrics-demo ${objectArgs app_sources} build/libmetrics.a";
+
+let linkMetricsTestSpec = linkTestSpec test_sources[0];
+let linkParseTestSpec = linkTestSpec test_sources[1];
+let runMetricsTestSpec = runTestSpec test_sources[0];
+let runParseTestSpec = runTestSpec test_sources[1];
+
+let smokeSpec =
+  shell "run-smoke"
+    "./build/metrics-demo '${smokeInput}'";
+
+let packageSpec =
+  shell "package-dist"
+    "mkdir -p dist && cp build/metrics-demo dist/metrics-demo && hash=$(sha256sum dist/metrics-demo | cut -d ' ' -f 1) && case $hash in ?*) true;; *) false;; esac && { printf 'artifact metrics-demo\n'; printf 'sha256 %s\n' $hash; printf 'flags %s\n' '${flags}'; printf 'sources %s\n' '${sourcePaths}'; } > dist/manifest.txt";
+
+let binaryAuditSpec =
+  shell "audit-binary-executable"
+    "test -x dist/metrics-demo";
+
+let manifestAuditSpec =
+  shell "audit-manifest"
+    "grep -Fqx 'artifact metrics-demo' dist/manifest.txt && grep -Eq '^sha256 [0-9a-f]{64}$' dist/manifest.txt && grep -Fqx 'flags ${flags}' dist/manifest.txt && grep -Fqx 'sources ${sourcePaths}' dist/manifest.txt";
+
+let sizeAuditSpec =
+  shell "audit-size"
+    "bytes=$(wc -c < dist/metrics-demo) && test $bytes -gt 0 && printf 'bytes=%s\n' $bytes";
+
+let checksumAuditSpec =
+  shell "audit-checksum"
+    "expected=$(grep '^sha256 ' dist/manifest.txt | cut -d ' ' -f 2) && actual=$(sha256sum dist/metrics-demo | cut -d ' ' -f 1) && case $expected in ?*) true;; *) false;; esac && case $actual in ?*) true;; *) false;; esac && test x$actual = x$expected && printf 'sha256=%s\n' $actual";
+
+let promoteReleaseSpec =
+  shell "promote-release"
+    "rm -rf release && mkdir -p release && cp dist/metrics-demo release/metrics-demo && cp dist/manifest.txt release/manifest.txt && cmp -s dist/metrics-demo release/metrics-demo && cmp -s dist/manifest.txt release/manifest.txt";
+
+let buildNote = {
+  label = "source include";
+  ok = true;
+  summary = buildNoteText;
+};
 
 let summarize = runs: label: {
   inherit label;
   ok = length (runs |> filter (run: !run.ok)) == 0;
   summary = runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
 };
+
+# ============================================================================
+# 4. Reusable Graph Fragments
+# ============================================================================
+#
+# These kinds/forms are the graph vocabulary. The important part is that they
+# do not collapse several shell operations into one opaque script. Each command
+# remains a named node with its own result, and every dependency edge is visible
+# to Wire's checker.
+
+kind run_command(spec: PortLabel, result: PortLabel) =
+  <- spec: CommandSpec;
+  -> result: CommandResult = @command {} (spec);
+
+kind planned_command(label: PortLabel, item: Value) =
+  <- label: CommandSpec;
+  -> label: CommandResult = @command {} (label);
+
+# A gate records the dependency as a Wire edge while preserving the previous
+# CommandResult for later reporting. Make/CMake can order commands; here the
+# edge and the carried result are first-class graph structure.
+kind command_gate(previous: PortLabel, ready: PortLabel, spec: Value) =
+  <- previous: CommandResult;
+  -> previous: CommandResult = previous;
+  -> ready: CommandSpec = spec;
+
+kind command_prereq_gate(previous: PortLabel, ready: PortLabel, spec: Value) =
+  <- previous: CommandResult;
+  -> ready: CommandSpec = spec;
+
+kind command_result_fanout(source: PortLabel, first: PortLabel, second: PortLabel, third: PortLabel, fourth: PortLabel) =
+  <- source: CommandResult;
+  -> source: CommandResult = source;
+  -> first: CommandResult = source;
+  -> second: CommandResult = source;
+  -> third: CommandResult = source;
+  -> fourth: CommandResult = source;
+
+form gated_command(spec: Value, previous: PortLabel, result: PortLabel) = {
+  node gate = command_gate(previous, ready, spec);
+  node run = run_command(ready, result);
+
+  gate
+    => run;
+};
+
+# Package audit is an explicit fanout, not three hidden reads of "whatever is
+# in dist". The split node below gathers only the audit results, so accidental
+# pass-through ports cannot satisfy PackageAuditResults.
+form audit_package(package: PortLabel, binaryAudit: PortLabel, manifestAudit: PortLabel, sizeAudit: PortLabel, checksumAudit: PortLabel) = {
+  node fanout = command_result_fanout(package, binaryPrereq, manifestPrereq, sizePrereq, checksumPrereq);
+  node binary_gate = command_prereq_gate(binaryPrereq, binaryReady, binaryAuditSpec);
+  node manifest_gate = command_prereq_gate(manifestPrereq, manifestReady, manifestAuditSpec);
+  node size_gate = command_prereq_gate(sizePrereq, sizeReady, sizeAuditSpec);
+  node checksum_gate = command_prereq_gate(checksumPrereq, checksumReady, checksumAuditSpec);
+  node binary = run_command(binaryReady, binaryAudit);
+  node manifest = run_command(manifestReady, manifestAudit);
+  node size = run_command(sizeReady, sizeAudit);
+  node checksum = run_command(checksumReady, checksumAudit);
+
+  fanout
+    => (
+      (binary_gate
+        => binary)
+      <> (manifest_gate
+        => manifest)
+      <> (size_gate
+        => size)
+      <> (checksum_gate
+        => checksum)
+    );
+};
+
+# ============================================================================
+# 5. Source Discovery And Parallel Compile/Check Frontier
+# ============================================================================
+#
+# `include_dir` snapshots source files at Wire elaboration time. `makeEach`
+# turns those snapshots into graph nodes. The exact record contracts above are
+# intentionally the place where newly discovered files become visible.
+
+# Source-discovered frontiers. These are parallel compile/check nodes generated
+# from elaboration-time data, then exact-gathered into record summaries.
+#
+# Runtime command leaves consume simple input identifiers today, so this compact
+# planner materializes only the source-generated command specs as ports. The
+# artifact chain below keeps its specs inside reusable gates.
+node plan_specs
+  -> lib_objects_metrics: CommandSpec = compileSpec lib_sources[0];
+  -> lib_objects_parse: CommandSpec = compileSpec lib_sources[1];
+  -> lib_objects_render: CommandSpec = compileSpec lib_sources[2];
+  -> app_objects_main: CommandSpec = compileSpec app_sources[0];
+  -> test_objects_test_metrics: CommandSpec = compileSpec test_sources[0];
+  -> test_objects_test_parse: CommandSpec = compileSpec test_sources[1];
+  -> quality_checks_syntax: CommandSpec = qualitySpec quality_units[0];
+  -> quality_checks_todo: CommandSpec = qualitySpec quality_units[1];
+  -> quality_checks_headers: CommandSpec = qualitySpec quality_units[2];
+
+let lib_objects = makeEach(lib_sources, planned_command);
+let app_objects = makeEach(app_sources, planned_command);
+let test_objects = makeEach(test_sources, planned_command);
+let quality_checks = makeEach(quality_units, planned_command);
+
+# ============================================================================
+# 6. Frontier Summaries
+# ============================================================================
 
 node summarize_lib_objects
   <- libObjects: LibObjectResults;
@@ -247,15 +365,21 @@ node analyze_quality
   <- quality: QualityResults;
   -> qualityReport: BuildSummary = summarize ([quality.quality_checks_syntax, quality.quality_checks_todo, quality.quality_checks_headers]) "quality checks";
 
-# archive_gate is the point where all parallel source-generated frontiers must
-# be complete before artifact production starts.
+# ============================================================================
+# 7. Artifact Build, Package Audit, And Promotion Evidence
+# ============================================================================
+#
+# The promotion gate is the core release guarantee in this example. Promotion
+# does not depend on a vague "package succeeded" flag. It depends on typed
+# evidence: test results, quality results, package result, manifest audit, size
+# audit, and checksum audit. If a refactor forgets one piece, the promotion
+# gate cannot be wired.
+
 node archive_gate
   <- libCompileReport: BuildSummary;
   <- appCompileReport: BuildSummary;
   <- testCompileReport: BuildSummary;
   <- qualityReport: BuildSummary;
-  <- buildNote: BuildSummary;
-  <- archiveSpec: CommandSpec;
   -> libCompileReport: BuildSummary = libCompileReport;
   -> appCompileReport: BuildSummary = appCompileReport;
   -> testCompileReport: BuildSummary = testCompileReport;
@@ -265,13 +389,88 @@ node archive_gate
 
 node archive_core = run_command(archiveReady, archive);
 
-let link_app = gated_command(linkAppSpec, archive, linkAppReady, linkApp);
-let link_metrics_test = gated_command(linkMetricsTestSpec, linkApp, linkMetricsTestReady, linkMetricsTest);
-let link_parse_test = gated_command(linkParseTestSpec, linkMetricsTest, linkParseTestReady, linkParseTest);
-let run_metrics_test = gated_command(runMetricsTestSpec, linkParseTest, runMetricsTestReady, runMetricsTest);
-let run_parse_test = gated_command(runParseTestSpec, runMetricsTest, runParseTestReady, runParseTest);
-let run_smoke = gated_command(smokeSpec, runParseTest, smokeReady, smokeRun);
-let package_dist = gated_command(packageSpec, smokeRun, packageReady, package);
+let link_app = gated_command(linkAppSpec, archive, linkApp);
+let link_metrics_test = gated_command(linkMetricsTestSpec, linkApp, linkMetricsTest);
+let link_parse_test = gated_command(linkParseTestSpec, linkMetricsTest, linkParseTest);
+let run_metrics_test = gated_command(runMetricsTestSpec, linkParseTest, runMetricsTest);
+let run_parse_test = gated_command(runParseTestSpec, runMetricsTest, runParseTest);
+let run_smoke = gated_command(smokeSpec, runParseTest, smokeRun);
+let package_dist = gated_command(packageSpec, smokeRun, package);
+let package_audit = audit_package(package, binaryAudit, manifestAudit, sizeAudit, checksumAudit);
+
+node split_package_audit
+  <- package: CommandResult;
+  <- binaryAudit: CommandResult;
+  <- manifestAudit: CommandResult;
+  <- sizeAudit: CommandResult;
+  <- checksumAudit: CommandResult;
+  -> package: CommandResult = package;
+  -> audits: PackageAuditResults = {
+    inherit binaryAudit manifestAudit sizeAudit checksumAudit;
+  };
+
+node summarize_package_audit
+  <- audits: PackageAuditResults;
+  -> packageAuditReport: BuildSummary = summarize ([audits.binaryAudit, audits.manifestAudit, audits.sizeAudit, audits.checksumAudit]) "package audit";
+  -> binaryAudit: CommandResult = audits.binaryAudit;
+  -> manifestAudit: CommandResult = audits.manifestAudit;
+  -> sizeAudit: CommandResult = audits.sizeAudit;
+  -> checksumAudit: CommandResult = audits.checksumAudit;
+
+node collect_release_evidence
+  <- pre: PreReleaseResults;
+  -> pre: PreReleaseResults = pre;
+  -> releaseEvidence: ReleaseEvidence = {
+    testCompileReport = pre.testCompileReport;
+    qualityReport = pre.qualityReport;
+    packageAuditReport = pre.packageAuditReport;
+    runMetricsTest = pre.runMetricsTest;
+    runParseTest = pre.runParseTest;
+    smokeRun = pre.smokeRun;
+    package = pre.package;
+    binaryAudit = pre.binaryAudit;
+    manifestAudit = pre.manifestAudit;
+    sizeAudit = pre.sizeAudit;
+    checksumAudit = pre.checksumAudit;
+  };
+
+node release_gate
+  <- releaseEvidence: ReleaseEvidence;
+  -> promoteReady: CommandSpec = promoteReleaseSpec;
+
+node promote_release = run_command(promoteReady, promotedRelease);
+
+node assemble_final_results
+  <- pre: PreReleaseResults;
+  <- promotedRelease: CommandResult;
+  -> final: FinalResults = {
+    libCompileReport = pre.libCompileReport;
+    appCompileReport = pre.appCompileReport;
+    testCompileReport = pre.testCompileReport;
+    qualityReport = pre.qualityReport;
+    packageAuditReport = pre.packageAuditReport;
+    buildNote = pre.buildNote;
+    archive = pre.archive;
+    linkApp = pre.linkApp;
+    linkMetricsTest = pre.linkMetricsTest;
+    linkParseTest = pre.linkParseTest;
+    runMetricsTest = pre.runMetricsTest;
+    runParseTest = pre.runParseTest;
+    smokeRun = pre.smokeRun;
+    package = pre.package;
+    binaryAudit = pre.binaryAudit;
+    manifestAudit = pre.manifestAudit;
+    sizeAudit = pre.sizeAudit;
+    checksumAudit = pre.checksumAudit;
+    inherit promotedRelease;
+  };
+
+# ============================================================================
+# 8. Human Report
+# ============================================================================
+#
+# The report is intentionally plain text, but it is not log scraping. It is a
+# deterministic summary built from typed CommandResult and BuildSummary values.
 
 node render_build_report
   <- final: FinalResults;
@@ -286,6 +485,11 @@ node render_build_report
       final.runParseTest,
       final.smokeRun,
       final.package,
+      final.binaryAudit,
+      final.manifestAudit,
+      final.sizeAudit,
+      final.checksumAudit,
+      final.promotedRelease,
     ];
     failures = commands |> filter (run: !run.ok);
     commandLines =
@@ -294,8 +498,8 @@ node render_build_report
         |> joinWith "\n";
     gate =
       if final.libCompileReport.ok && final.appCompileReport.ok && final.testCompileReport.ok && final.qualityReport.ok && length failures == 0
-      then "C build gate: open"
-      else "C build gate: blocked";
+      then "Release promotion gate: open"
+      else "Release promotion gate: blocked";
     report =
       [
         gate,
@@ -303,10 +507,15 @@ node render_build_report
         "app: ${final.appCompileReport.summary}",
         "tests: ${final.testCompileReport.summary}",
         "quality: ${final.qualityReport.summary}",
+        "audit: ${final.packageAuditReport.summary}",
         "note: ${final.buildNote.summary}",
         "commands:",
         commandLines,
-        "artifact: examples/wire/c-build/dist/metrics-demo",
+        "artifact-size: ${final.sizeAudit.stdout}",
+        "artifact-sha256: ${final.checksumAudit.stdout}",
+        "tested-artifact: examples/wire/c-build/dist/metrics-demo",
+        "promoted-artifact: examples/wire/c-build/release/metrics-demo",
+        "promoted-manifest: examples/wire/c-build/release/manifest.txt",
       ] |> joinWith "\n";
   in
   { inherit report; };
@@ -315,27 +524,33 @@ node print_report
   <- report: BuildReport;
   = @stdout { newline = true; } (report);
 
-let lib_object_stage =
-  lib_objects
-    * summarize_lib_objects;
+# ============================================================================
+# 9. Final Graph
+# ============================================================================
 
+let lib_object_stage = lib_objects * summarize_lib_objects;
 let app_object_stage =
   app_objects
     => summarize_app_objects;
-
-let test_object_stage =
-  test_objects
-    * summarize_test_objects;
-
-let quality_stage =
-  quality_checks
-    * analyze_quality;
+let test_object_stage = test_objects * summarize_test_objects;
+let quality_stage = quality_checks * analyze_quality;
 
 let source_frontiers =
   lib_object_stage
     <> app_object_stage
     <> test_object_stage
     <> quality_stage;
+
+let package_audit_stage =
+  package_audit
+    => split_package_audit
+    => summarize_package_audit;
+
+let release_promotion =
+  collect_release_evidence
+    => release_gate
+    => promote_release
+    => assemble_final_results;
 
 let artifact_sequence =
   archive_gate
@@ -346,14 +561,15 @@ let artifact_sequence =
     => run_metrics_test
     => run_parse_test
     => run_smoke
-    => package_dist;
+    => package_dist
+    => package_audit_stage;
 
 let report_stage =
   artifact_sequence
-    * render_build_report;
+    * release_promotion
+    => render_build_report;
 
-start_build
-  => plan_build
+plan_specs
   => source_frontiers
   => report_stage
   => print_report

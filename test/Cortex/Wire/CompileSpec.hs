@@ -3468,10 +3468,70 @@ spec = describe "Cortex.Wire.Compile" $ do
       successors compiled.compiledCircuitTopology (Set.findMin gatherPhantoms)
         `shouldBe` Set.singleton (CircuitNodeRef "reduce_findings")
 
-    it "compiles the C build example" $ do
+    it "preserves the C build example as a structured shell graph" $ do
       source <- TIO.readFile "examples/wire/c-build/c-build.wire"
       expanded <- requireRight =<< expandWireSourceIncludes "examples/wire/c-build/c-build.wire" source
-      compileWireText expanded `shouldSatisfy` isRight
+      compiled <- requireRight (compileWireText expanded)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.singleton (CircuitNodeRef "plan_specs")
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.singleton (CircuitNodeRef "print_report")
+      let nodeRefs = Map.keysSet compiled.compiledCircuitNodes
+      nodeRefs `shouldSatisfy` Set.notMember (CircuitNodeRef "start_build")
+      nodeRefs `shouldSatisfy` Set.notMember (CircuitNodeRef "plan_build")
+      expectNodeRefs
+        compiled
+        [ CircuitNodeRef "plan_specs"
+        , CircuitNodeRef "lib_objects_metrics"
+        , CircuitNodeRef "app_objects_main"
+        , CircuitNodeRef "test_objects_test_metrics"
+        , CircuitNodeRef "quality_checks_todo"
+        , CircuitNodeRef "archive_core"
+        , CircuitNodeRef "link_app/gate"
+        , CircuitNodeRef "link_app/run"
+        , CircuitNodeRef "package_dist/run"
+        , CircuitNodeRef "package_audit/fanout"
+        , CircuitNodeRef "package_audit/binary_gate"
+        , CircuitNodeRef "package_audit/binary"
+        , CircuitNodeRef "package_audit/manifest"
+        , CircuitNodeRef "package_audit/size"
+        , CircuitNodeRef "package_audit/checksum_gate"
+        , CircuitNodeRef "package_audit/checksum"
+        , CircuitNodeRef "split_package_audit"
+        , CircuitNodeRef "summarize_package_audit"
+        , CircuitNodeRef "collect_release_evidence"
+        , CircuitNodeRef "release_gate"
+        , CircuitNodeRef "promote_release"
+        , CircuitNodeRef "assemble_final_results"
+        ]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "link_app/gate")
+        `shouldSatisfy` Set.member (CircuitNodeRef "link_app/run")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "package_audit/fanout")
+        `shouldBe` Set.fromList
+          [ CircuitNodeRef "package_audit/binary_gate"
+          , CircuitNodeRef "package_audit/manifest_gate"
+          , CircuitNodeRef "package_audit/size_gate"
+          , CircuitNodeRef "package_audit/checksum_gate"
+          , CircuitNodeRef "split_package_audit"
+          ]
+      let gatherRefs =
+            Set.filter
+              (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef))
+              nodeRefs
+      Set.size gatherRefs `shouldSatisfy` (>= 4)
+      mapM_
+        (expectTaskExecutorTarget compiled "std.io.command")
+        [ CircuitNodeRef "lib_objects_metrics"
+        , CircuitNodeRef "quality_checks_todo"
+        , CircuitNodeRef "archive_core"
+        , CircuitNodeRef "link_app/run"
+        , CircuitNodeRef "package_dist/run"
+        , CircuitNodeRef "package_audit/binary"
+        , CircuitNodeRef "package_audit/manifest"
+        , CircuitNodeRef "package_audit/size"
+        , CircuitNodeRef "package_audit/checksum"
+        , CircuitNodeRef "promote_release"
+        ]
 
     it "compiles the quantum Bell-state example with consumer executor projections" $ do
       source <- TIO.readFile "examples/wire/quantum-bell-state.wire"
@@ -4341,6 +4401,19 @@ stdIoWriteFileBadShapeSourceText =
     , "  -> written: Report = @writeFile { path = \"/tmp/wire-report.txt\"; } (report) ;"
     , "bad_write"
     ]
+
+expectNodeRefs :: CompiledCircuit -> [CircuitNodeRef] -> Expectation
+expectNodeRefs compiled expected =
+  Set.fromList expected `Set.difference` Map.keysSet compiled.compiledCircuitNodes
+    `shouldBe` Set.empty
+
+expectTaskExecutorTarget :: CompiledCircuit -> T.Text -> CircuitNodeRef -> Expectation
+expectTaskExecutorTarget compiled expectedTarget ref =
+  case Map.lookup ref compiled.compiledCircuitNodes of
+    Just (CompiledCircuitTask taskNode) ->
+      taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget expectedTarget
+    other ->
+      expectationFailure ("expected task node " <> show ref <> ", got: " <> show other)
 
 requireRight :: Show err => Either err a -> IO a
 requireRight = \case
