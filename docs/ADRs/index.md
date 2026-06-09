@@ -71,6 +71,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0052](0052-wire-bounded-indexed-boundary-products.md)          | Wire Bounded Indexed Boundary Products                              | proposed   |
 | [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)   | Executor Catalog Manifests and Pulse Runtime Bindings               | proposed   |
 | [0054](0054-downstream-wire-packages-and-host-bindings.md)      | Downstream Wire Packages and Host Runtime Bindings                  | proposed   |
+| [0055](0055-pulse-runtime-bounded-iteration.md)                 | Pulse Runtime-Bounded Iteration                                     | proposed   |
 
 ## Writing a new ADR
 
