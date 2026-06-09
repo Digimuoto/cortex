@@ -401,8 +401,11 @@ Mechanized results now include:
   phantom bridge frontier and bulk replay checks, local generated/select/phantom row validity,
   component-row uniqueness, primitive row validity, and primitive stack replay. The remaining
   Haskell integration task is to run this Lean checker on decoded artifacts; the checker is now the
-  intended artifact-validation authority.
-  `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
+  intended artifact-validation authority. `AdmissionArtifact.EmittedFixture.chainArtifact` is the
+  first emitted-artifact instance: the labeled-chain compile fixture's artifact transcribed as a
+  Lean value, `#guard`-checked by `validatorReadyCheck` at build time and packaged as `Sound` by
+  `chainArtifact_sound`; generating such fixtures from the Haskell test suite is the remaining
+  mechanical step. `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
   `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
   generated-child or empty-family row for each generated artifact, rather than only a label
   membership fact. `AdmissionArtifact.validatorReady_generated_usedChild_sourceMakeItem` then
