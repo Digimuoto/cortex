@@ -53,6 +53,10 @@ import Cortex.Wire.AdmissionArtifact
   , wireAdmissionMetadataKey
   , wireAdmissionMetadataValue
   )
+import Cortex.Wire.AdmissionBinding
+  ( AdmissionBindingError (..)
+  , admissionArtifactBindsCompiledCircuit
+  )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
   , CompiledCircuit (..)
@@ -3622,6 +3626,187 @@ spec = describe "Cortex.Wire.Compile" $ do
       source <- TIO.readFile "test/fixtures/wire/thesis-parallel-claim-branches.wire"
       compileWireText source `shouldSatisfy` isRight
 
+  describe "admission artifact circuit binding" $ do
+    it "binds the labeled chain artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the overlay fragment artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireFragmentText overlayFragmentSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the make expansion artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireFragmentText makeExpansionSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the makeEach expansion artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireFragmentText makeEachSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the record gather phantom artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireTextWithEnv starContractEnv starGatherSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the indexed product gather artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireText indexedProductGatherSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the record scatter phantom artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireTextWithEnv starContractEnv starScatterSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the label-resolved select artifact with a pruned identity arm" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds the contract-fallback select artifact to its compiled circuit" $ do
+      compiled <- requireRight (compileWireText selectContractFallbackSourceText)
+      expectArtifactBindsCircuit compiled
+
+    it "binds a three-arm select artifact across its nested condition tree" $ do
+      compiled <- requireRight (compileWireText threeArmSelectSourceText)
+      expectArtifactBindsCircuit compiled
+      artifact <- requireWireAdmissionArtifact compiled
+      case artifact.wireAdmissionSelects of
+        [selectRow] -> do
+          length selectRow.selectAdmissionArms `shouldBe` 3
+          case Map.lookup selectRow.selectAdmissionConditionNode compiled.compiledCircuitNodes of
+            Just (CompiledCircuitCondition conditionNode) -> do
+              conditionNode.circuitConditionNodeElseFragment `shouldBe` Nothing
+              case Map.elems conditionNode.circuitConditionNodeThenFragment.compiledCircuitFragmentNodes of
+                [CompiledCircuitCondition _nestedCondition] -> pure ()
+                otherNodes ->
+                  expectationFailure
+                    ("expected exactly one nested condition node, got: " <> show otherNodes)
+            otherNode ->
+              expectationFailure ("expected a condition node, got: " <> show otherNode)
+        otherRows ->
+          expectationFailure ("expected exactly one select row, got: " <> show otherRows)
+
+    it "binds the quantum eraser experiment artifact to its compiled circuit" $ do
+      source <- TIO.readFile "examples/wire/quantum-eraser-experiment.wire"
+      compiled <- requireRight (compileWireText source)
+      expectArtifactBindsCircuit compiled
+
+    it "rejects a stale artifact schema version against the compiled circuit" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingSchemaVersionMismatch {} -> True; _ -> False)
+        artifact {wireAdmissionSchemaVersion = 2}
+        compiled
+
+    it "rejects an artifact summary that dropped a node row" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingNodeSetMismatch {} -> True; _ -> False)
+        artifact {wireAdmissionNodes = drop 1 artifact.wireAdmissionNodes}
+        compiled
+
+    it "rejects an artifact that dropped its raw connections" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingTopologyMismatch {} -> True; _ -> False)
+        artifact {wireAdmissionConnections = []}
+        compiled
+
+    it "rejects forged binding refs through the metadata attachment clause" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingMetadataArtifactMismatch -> True; _ -> False)
+        artifact {wireAdmissionBindingRefs = ["forged"]}
+        compiled
+
+    it "rejects a select row whose condition node is missing from the circuit" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let mutated =
+            mutateFirstSelectRow
+              (\selectRow -> selectRow {selectAdmissionConditionNode = CircuitNodeRef "missing"})
+              artifact
+      expectBindingFailure
+        (\case BindingSelectConditionNodeMissing {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
+    it "rejects select arm body rows that disagree with the nested fragment" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let growBody arm
+            | null arm.selectArmBodyNodes = arm
+            | otherwise =
+                arm {selectArmBodyNodes = CircuitNodeRef "bogus" : arm.selectArmBodyNodes}
+          mutated =
+            mutateFirstSelectRow
+              (\selectRow -> selectRow {selectAdmissionArms = fmap growBody selectRow.selectAdmissionArms})
+              artifact
+      expectBindingFailure
+        (\case BindingSelectBranchBodyMismatch {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
+    it "rejects identity arms that claim body nodes the circuit pruned" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let claimBody arm
+            | null arm.selectArmBodyNodes =
+                arm {selectArmBodyNodes = [CircuitNodeRef "bogus"]}
+            | otherwise = arm
+          mutated =
+            mutateFirstSelectRow
+              (\selectRow -> selectRow {selectAdmissionArms = fmap claimBody selectRow.selectAdmissionArms})
+              artifact
+      expectBindingFailure
+        (\case BindingSelectBranchBodyMismatch {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
+    it "rejects circuit entry nodes that are not topology sources" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingEntryNodesNotTopologySources {} -> True; _ -> False)
+        artifact
+        compiled {compiledCircuitEntryNodes = []}
+
+    it "rejects circuit exit nodes that are not topology sinks" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingExitNodesNotTopologySinks {} -> True; _ -> False)
+        artifact
+        compiled {compiledCircuitExitNodes = []}
+
+    it "rejects a circuit node map missing an artifact node" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingNodeSetMismatch {} -> True; _ -> False)
+        artifact
+        compiled
+          { compiledCircuitNodes =
+              Map.delete (CircuitNodeRef "planner") compiled.compiledCircuitNodes
+          }
+
+    it "rejects circuits whose metadata lost the admission artifact" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingMetadataMissingAdmissionKey -> True; _ -> False)
+        artifact
+        compiled {compiledCircuitMetadata = Aeson.object []}
+
+    it "rejects circuits with non-object metadata" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      expectBindingFailure
+        (\case BindingMetadataNotObject -> True; _ -> False)
+        artifact
+        compiled {compiledCircuitMetadata = Aeson.String "not-an-object"}
+
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
@@ -4087,6 +4272,31 @@ selectContractFallbackSourceText =
     , ") => publish_report"
     ]
 
+threeArmSelectSourceText :: T.Text
+threeArmSelectSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan ;"
+    , "  -> ok: ResearchPlan | issue: PlanIssue | retry: PlanRetry ;"
+    , "  = @review.validate_plan (draft) ;"
+    , "node repair_issue"
+    , "  <- issue: PlanIssue ;"
+    , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
+    , "node retry_plan"
+    , "  <- retry: PlanRetry ;"
+    , "  -> ok: ResearchPlan = @review.retry_plan (retry) ;"
+    , "node publish_report"
+    , "  <- ok: ResearchPlan ;"
+    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "draft_plan => validate_plan select("
+    , "  ok: (),"
+    , "  issue: (repair_issue),"
+    , "  retry: (retry_plan)"
+    , ") => publish_report"
+    ]
+
 selectAmbiguousContractFallbackSourceText :: T.Text
 selectAmbiguousContractFallbackSourceText =
   T.unlines
@@ -4499,6 +4709,51 @@ expectWireAdmissionArtifact compiled check =
       artifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
       check artifact
     _ -> expectationFailure "wire admission metadata did not decode"
+
+requireWireAdmissionArtifact :: CompiledCircuit -> IO WireAdmissionArtifact
+requireWireAdmissionArtifact compiled =
+  maybe (fail "wire admission metadata did not decode") pure (wireAdmissionArtifact compiled)
+
+expectArtifactBindsCircuit :: CompiledCircuit -> Expectation
+expectArtifactBindsCircuit compiled = do
+  artifact <- requireWireAdmissionArtifact compiled
+  admissionArtifactBindsCompiledCircuit artifact compiled `shouldBe` Right ()
+
+expectBindingFailure
+  :: (AdmissionBindingError -> Bool)
+  -> WireAdmissionArtifact
+  -> CompiledCircuit
+  -> Expectation
+expectBindingFailure matches artifact compiled =
+  case admissionArtifactBindsCompiledCircuit artifact compiled of
+    Left bindingError | matches bindingError -> pure ()
+    other -> expectationFailure ("unexpected binding result: " <> show other)
+
+-- Re-embed a mutated artifact into the circuit metadata so the metadata
+-- attachment clause stays satisfied and deeper binding clauses are exercised.
+patchAdmissionMetadata :: WireAdmissionArtifact -> CompiledCircuit -> CompiledCircuit
+patchAdmissionMetadata artifact compiled =
+  case compiled.compiledCircuitMetadata of
+    Aeson.Object metadataObject ->
+      compiled
+        { compiledCircuitMetadata =
+            Aeson.Object
+              ( KeyMap.insert
+                  (Key.fromText wireAdmissionMetadataKey)
+                  (wireAdmissionMetadataValue artifact)
+                  metadataObject
+              )
+        }
+    _nonObjectMetadata -> compiled
+
+mutateFirstSelectRow
+  :: (SelectAdmissionArtifact -> SelectAdmissionArtifact)
+  -> WireAdmissionArtifact
+  -> WireAdmissionArtifact
+mutateFirstSelectRow mutate artifact =
+  case artifact.wireAdmissionSelects of
+    selectRow : restRows -> artifact {wireAdmissionSelects = mutate selectRow : restRows}
+    [] -> artifact
 
 wireAdmissionArray :: T.Text -> CompiledCircuit -> Maybe [Aeson.Value]
 wireAdmissionArray fieldName compiled = do
