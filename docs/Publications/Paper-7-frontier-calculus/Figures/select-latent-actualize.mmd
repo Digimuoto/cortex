@@ -1,0 +1,13 @@
+flowchart LR
+    subgraph admitted["Admitted (static)"]
+        base["validate<br/>-> ok | issue (exclusive sum)"] --> chi["condition node χ<br/>bridge: common boundary"]
+        armOk["arm ok: latent body"]
+        armIssue["arm issue: latent body"]
+        chi -.- armOk
+        chi -.- armIssue
+    end
+    subgraph actualized["Actualized (run time)"]
+        chi2["χ"] -- "selected: issue" --> body["issue body<br/>appended, budgeted"]
+        pruned["ok body: excluded,<br/>never instantiated"]
+    end
+    admitted -- "selection = append rewrite" --> actualized

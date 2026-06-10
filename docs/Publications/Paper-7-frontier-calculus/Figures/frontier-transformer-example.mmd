@@ -1,0 +1,16 @@
+flowchart LR
+    subgraph stage1["source <> config"]
+        source["source"]
+        config["config"]
+    end
+    subgraph stage2["=> build"]
+        build["build"]
+    end
+    subgraph stage3["=> package"]
+        package["package"]
+    end
+    source -- "src: Sources" --> build
+    config -- "cfg: BuildConfig" --> build
+    build -- "bin: Binary" --> package
+    build -. "log: BuildLog (carried)" .-> out1["frontier"]
+    package -. "pkg: Package" .-> out1

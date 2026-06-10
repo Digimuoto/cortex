@@ -1,0 +1,5 @@
+flowchart LR
+    w0["worker_0<br/>-> out: Shard"] -- "out: Shard (0)" --> phi["phantom adapter φ<br/>one constructor crossing"]
+    w1["worker_1<br/>-> out: Shard"] -- "out: Shard (1)" --> phi
+    w2["worker_2<br/>-> out: Shard"] -- "out: Shard (2)" --> phi
+    phi -- "all: [Shard; 3]" --> merge["merge<br/>&lt;- all: [Shard; 3]"]

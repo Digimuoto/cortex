@@ -16,16 +16,28 @@ now holds the active paper candidates. Companion theory and proof plans live und
 
 ## Papers
 
-- **[Paper-1-staged-reduction/](Paper-1-staged-reduction/)** — fixed-topology staged reduction and
-  structural recovery safety.
-- **[Paper-2-algebraic-foundations/](Paper-2-algebraic-foundations/)** — algebraic kernel and
-  extension boundary of the fixed-topology calculus.
+- **[Paper-1-staged-reduction/](Paper-1-staged-reduction/)** — fixed-topology staged reduction,
+  structural recovery safety, the algebraic kernel, and the extension boundary (absorbed Paper 2).
+- **[Paper-2-algebraic-foundations/](Paper-2-algebraic-foundations/)** — superseded; merged into
+  Paper 1.
 - **[Paper-3-graph-substitution-semantics/](Paper-3-graph-substitution-semantics/)** — compiled
   artifacts, graph substitution, and dynamic-topology semantics.
 - **[Paper-4-wire-language/](Paper-4-wire-language/)** — authoring language for typed topology,
   registered authority, and bounded structural proposals.
+- **[Paper-5-Causal-Programming/](Paper-5-Causal-Programming/)** — causal programming and temporal
+  honesty: the paradigm umbrella over the other papers, with Wire and Pulse as the existence proof.
 - **[Paper-6-executable-diagrams/](Paper-6-executable-diagrams/)** — executable causal diagrams,
   tying Wire source, durable replay, and proof-facing admission together.
+- **[Paper-7-frontier-calculus/](Paper-7-frontier-calculus/)** — the flagship: the typed linear
+  frontier calculus on paper, with mechanized metatheory and the compiler as implementation claim.
+
+## Claims policy
+
+Any manuscript that cites verification numbers (mechanized-claim counts, Haskell-correspondence
+counts, axiom status) states the date it was checked against
+[../Reference/proof-status.md](../Reference/proof-status.md). A manuscript is stale when the
+proof-status page is newer than its stated as-of date; refresh the numbers before any submission
+freeze.
 
 ## Supporting material
 

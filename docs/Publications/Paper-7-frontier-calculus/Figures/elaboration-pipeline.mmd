@@ -1,0 +1,7 @@
+flowchart LR
+    src["Source program<br/>core + derived forms"] --> ir["Accepted IR<br/>reference-closed declarations"]
+    ir --> adm["Admitted diagram<br/>port-linear, typed frontiers"]
+    adm --> circ["Compiled circuit<br/>+ admission artifact"]
+    circ --> run["Durable run<br/>schedule, replay, provenance"]
+    circ -. "structural binding check" .-> adm
+    run -. "actualized layer,<br/>projection-exact" .-> adm
