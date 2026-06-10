@@ -8,9 +8,11 @@ checked by the Lean-owned executable validator.
 
 The value below is the artifact the Haskell compiler attaches to the compiled
 circuit for the `CompileSpec` labeled-chain fixture (`planner => analyst`),
-transcribed field-for-field from the emitted metadata. `#guard` then runs
-`validatorReadyCheck` on it, so building this module is the first end-to-end
-instance of "Lean validates what Haskell actually emitted".
+hand-transcribed field-for-field from the emitted metadata. `#guard` then runs
+`validatorReadyCheck` on it. This is the first hand-transcribed
+emitted-artifact fixture, not an end-to-end validation: no Lean code consumes
+actual Haskell output until a generator or decoder replaces the manual
+transcription.
 
 ## Context
 

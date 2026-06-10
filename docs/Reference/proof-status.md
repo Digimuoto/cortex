@@ -177,25 +177,28 @@ rows.
 - The Haskell compiler now gates metadata emission through `wireAdmissionArtifactValidatorReady`, so
   compiled circuits cannot publish a schema-versioned admission artifact that fails the same
   executable predicate mirrored by Lean's `AdmissionArtifact.ValidatorReady` target.
-- Artifact-to-circuit binding is now a checked invariant rather than a construction property:
-  `Cortex.Wire.AdmissionBinding.admissionArtifactBindsCompiledCircuit` decides whether an artifact
-  describes a specific `CompiledCircuit` — schema currency, node-set equality against the circuit
-  node map, node-level connection projection rebuilding the circuit topology exactly, entry/exit
-  node lists matching topology sources/sinks, metadata embedding exactly that artifact, and select
-  rows replaying the condition node's nested then/else fragment tree (including identity-arm pruning
-  and branch swaps). Mutation regression tests perturb each clause on both sides (artifact against
-  unchanged circuit, circuit against unchanged artifact) and pin the rejection. The checker binds
-  values, not provenance: it does not prove the compiler emitted the artifact, and artifact
-  entries/exits (boundary ports) are deliberately not equated with circuit entry/exit nodes
-  (relation sources/sinks), which live at a different abstraction level and are bound through the
-  primitive trace and the topology respectively.
-- The Lean executable validator has its first emitted-artifact instance:
+- Artifact-to-circuit binding is now an enforced invariant on the Wire compile path rather than a
+  construction property: `Cortex.Wire.AdmissionBinding.admissionArtifactBindsCompiledCircuit`
+  decides whether an artifact describes a specific `CompiledCircuit` — schema currency, node-set
+  equality against the circuit node map, node-level connection projection rebuilding the circuit
+  topology exactly, entry/exit node lists matching topology sources/sinks, metadata embedding
+  exactly that artifact, and select rows replaying the condition node's nested then/else fragment
+  tree (including identity-arm pruning and branch swaps) — and `compileLoweredWireFile` gates every
+  compiled circuit on it, so a Wire compilation cannot succeed with a non-binding artifact. Mutation
+  regression tests perturb each clause on both sides (artifact against unchanged circuit, circuit
+  against unchanged artifact) and pin the rejection per error constructor. The checker binds values,
+  not provenance: it does not prove the compiler emitted the artifact, circuits built outside the
+  Wire compile path (for example the workflow-IR compiler) are not gated, and artifact entries/exits
+  (boundary ports) are deliberately not equated with circuit entry/exit nodes (relation
+  sources/sinks), which live at a different abstraction level and are bound through the primitive
+  trace and the topology respectively.
+- The Lean executable validator has its first hand-transcribed emitted-artifact fixture:
   `AdmissionArtifact.EmittedFixture.chainArtifact` transcribes the artifact the Haskell compiler
   attaches for the labeled-chain compile fixture, `#guard` runs `validatorReadyCheck` on it at build
-  time, and `chainArtifact_sound` packages the result as `AdmissionArtifact.Sound`. The
-  transcription step is currently manual and therefore trusted; generating such fixtures from the
-  Haskell test suite is the remaining mechanical step for running the Lean checker across the
-  representative program set.
+  time, and `chainArtifact_sound` packages the result as `AdmissionArtifact.Sound`. This is not yet
+  Lean consuming actual Haskell output: the transcription step is manual and therefore trusted, and
+  replacing it with a generator in the Haskell test suite (or a decoder on the Lean side) is the
+  remaining step for running the Lean checker across the representative program set.
 - `SelectedBranchRecoveryRecord.PhantomAdapterEmbedding` is the recovery-side hook for the case
   where a selected branch contains a finite-product `*` adapter. The embedding theorem proves the
   persisted adapter node is replayed by the selected branch and pruned from every unselected branch.
