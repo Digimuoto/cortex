@@ -3873,6 +3873,83 @@ spec = describe "Cortex.Wire.Compile" $ do
         artifact
         compiled {compiledCircuitMetadata = Aeson.String "not-an-object"}
 
+  describe "frontier calculus paper claims" $ do
+    it "compiles the worked build pipeline with the claimed topology and frontier" $ do
+      compiled <- requireRight (compileWireText paperBuildPipelineSourceText)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "source", CircuitNodeRef "config"]
+      compiled.compiledCircuitExitNodes `shouldBe` [CircuitNodeRef "package"]
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+        `shouldBe` Set.singleton (CircuitNodeRef "build")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "config")
+        `shouldBe` Set.singleton (CircuitNodeRef "build")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "build")
+        `shouldBe` Set.singleton (CircuitNodeRef "package")
+      expectWireAdmissionArtifact compiled $ \artifact -> do
+        Set.fromList
+          [ (boundary.admissionBoundaryNode, boundary.admissionBoundaryPort)
+          | boundary <- artifact.wireAdmissionExits
+          ]
+          `shouldBe` Set.fromList
+            [ (CircuitNodeRef "build", "log")
+            , (CircuitNodeRef "package", "pkg")
+            ]
+        artifact.wireAdmissionEntries `shouldBe` []
+
+    it "rejects the worked example's fan-out dual on the Binary key" $
+      compileWireText paperBuildPipelineFanOutSourceText
+        `shouldSatisfy` isWireParseFailureContaining "would copy output endpoint"
+
+    it "packages an open-output diagram as a circuit (carried log endpoint)" $ do
+      compiled <- requireRight (compileWireText paperBuildPipelineSourceText)
+      expectWireAdmissionArtifact compiled $ \artifact ->
+        artifact.wireAdmissionExits `shouldSatisfy` (not . null)
+
+    it "packages an open-input diagram as a circuit with an entry port" $ do
+      compiled <- requireRight (compileWireText paperOpenInputSourceText)
+      compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "sink"]
+      expectWireAdmissionArtifact compiled $ \artifact ->
+        fmap (.admissionBoundaryPort) artifact.wireAdmissionEntries `shouldBe` ["x"]
+
+    it "rejects two outputs sharing one key against one input (fan-in)" $
+      compileWireText paperFanInSameKeySourceText
+        `shouldSatisfy` isWireParseFailureContaining "would merge multiple output endpoints"
+
+    it "rejects one output against two inputs sharing one key (fan-out)" $
+      compileWireText paperFanOutSameKeySourceText
+        `shouldSatisfy` isWireParseFailureContaining "would copy output endpoint"
+
+    it "rejects same-key multiplicity above one on both sides" $
+      compileWireText paperTwoTwoSameKeySourceText
+        `shouldSatisfy` isWireParseFailureContaining "would copy output endpoint"
+
+    it "rejects a select whose left boundary has an exit outside the exclusive sum" $
+      compileWireText paperSelectExtraExitSourceText
+        `shouldSatisfy` isWireParseFailureContaining "exactly one exclusive output boundary"
+
+    it "compiles the three-node example with one matched key and carried frontier" $ do
+      compiled <- requireRight (compileWireText paperThreeNodeExampleSourceText)
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "source")
+        `shouldBe` Set.singleton (CircuitNodeRef "use_left")
+      expectWireAdmissionArtifact compiled $ \artifact -> do
+        Set.fromList
+          [ (boundary.admissionBoundaryNode, boundary.admissionBoundaryPort)
+          | boundary <- artifact.wireAdmissionExits
+          ]
+          `shouldBe` Set.fromList
+            [ (CircuitNodeRef "source", "right")
+            , (CircuitNodeRef "use_left", "out")
+            ]
+        artifact.wireAdmissionEntries `shouldBe` []
+
+    it "rejects an all-identity select: variant shapes cannot converge" $
+      -- Identity arms expose their variant at the common boundary; distinct port
+      -- names give distinct labels, so an all-identity select never satisfies the
+      -- convergence premise. The implementation's pass-through branch for this
+      -- case sits after validation and is unreachable.
+      compileWireText paperAllIdentitySelectSourceText
+        `shouldSatisfy` isWireParseFailureContaining "does not converge"
+
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
@@ -4336,6 +4413,173 @@ selectContractFallbackSourceText =
     , "  ResearchPlan: (),"
     , "  PlanIssue: (gather_missing_constraints => repair_plan)"
     , ") => publish_report"
+    ]
+
+paperBuildPipelineSourceText :: T.Text
+paperBuildPipelineSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> src: Sources = @demo.source ({});"
+    , "node config"
+    , "  -> cfg: BuildConfig = @demo.config ({});"
+    , "node build"
+    , "  <- src: Sources;"
+    , "  <- cfg: BuildConfig;"
+    , "  -> bin: Binary = {"
+    , "    src = src;"
+    , "  };"
+    , "  -> log: BuildLog = {"
+    , "    cfg = cfg;"
+    , "  };"
+    , "node package"
+    , "  <- bin: Binary;"
+    , "  -> pkg: Package = {"
+    , "    bin = bin;"
+    , "  };"
+    , "source <> config => build => package"
+    ]
+
+paperBuildPipelineFanOutSourceText :: T.Text
+paperBuildPipelineFanOutSourceText =
+  T.unlines
+    [ "node source"
+    , "  -> src: Sources = @demo.source ({});"
+    , "node config"
+    , "  -> cfg: BuildConfig = @demo.config ({});"
+    , "node build"
+    , "  <- src: Sources;"
+    , "  <- cfg: BuildConfig;"
+    , "  -> bin: Binary = {"
+    , "    src = src;"
+    , "  };"
+    , "  -> log: BuildLog = {"
+    , "    cfg = cfg;"
+    , "  };"
+    , "node package"
+    , "  <- bin: Binary;"
+    , "  -> pkg: Package = {"
+    , "    bin = bin;"
+    , "  };"
+    , "node archive"
+    , "  <- bin: Binary;"
+    , "  -> arc: Archive = {"
+    , "    bin = bin;"
+    , "  };"
+    , "source <> config => build => package <> archive"
+    ]
+
+paperOpenInputSourceText :: T.Text
+paperOpenInputSourceText =
+  T.unlines
+    [ "node sink"
+    , "  <- x: Thing;"
+    , "  -> y: Out = {"
+    , "    x = x;"
+    , "  };"
+    , "sink"
+    ]
+
+paperFanInSameKeySourceText :: T.Text
+paperFanInSameKeySourceText =
+  T.unlines
+    [ "node alpha"
+    , "  -> v: K = @demo.alpha ({});"
+    , "node beta"
+    , "  -> v: K = @demo.beta ({});"
+    , "node gamma"
+    , "  <- v: K;"
+    , "  -> out: Done = {"
+    , "    v = v;"
+    , "  };"
+    , "alpha <> beta => gamma"
+    ]
+
+paperFanOutSameKeySourceText :: T.Text
+paperFanOutSameKeySourceText =
+  T.unlines
+    [ "node alpha"
+    , "  -> v: K = @demo.alpha ({});"
+    , "node gammaOne"
+    , "  <- v: K;"
+    , "  -> out: DoneOne = {"
+    , "    v = v;"
+    , "  };"
+    , "node gammaTwo"
+    , "  <- v: K;"
+    , "  -> res: DoneTwo = {"
+    , "    v = v;"
+    , "  };"
+    , "alpha => gammaOne <> gammaTwo"
+    ]
+
+paperTwoTwoSameKeySourceText :: T.Text
+paperTwoTwoSameKeySourceText =
+  T.unlines
+    [ "node alpha"
+    , "  -> v: K = @demo.alpha ({});"
+    , "node beta"
+    , "  -> v: K = @demo.beta ({});"
+    , "node gammaOne"
+    , "  <- v: K;"
+    , "  -> out: DoneOne = {"
+    , "    v = v;"
+    , "  };"
+    , "node gammaTwo"
+    , "  <- v: K;"
+    , "  -> res: DoneTwo = {"
+    , "    v = v;"
+    , "  };"
+    , "alpha <> beta => gammaOne <> gammaTwo"
+    ]
+
+paperSelectExtraExitSourceText :: T.Text
+paperSelectExtraExitSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @review.plan ({});"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan;"
+    , "  -> ok: ResearchPlan | issue: PlanIssue;"
+    , "  = @review.validate_plan (draft);"
+    , "node side"
+    , "  -> extra: SideChannel = @demo.side ({});"
+    , -- Parenthesized: select binds tighter than <>, and the claim under test
+      -- is a select over the composite boundary (sum plus an extra exit).
+      "draft_plan => (validate_plan <> side) select("
+    , "  ok: (),"
+    , "  issue: ()"
+    , ")"
+    ]
+
+paperAllIdentitySelectSourceText :: T.Text
+paperAllIdentitySelectSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @review.plan ({});"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan;"
+    , "  -> ok: ResearchPlan | issue: PlanIssue;"
+    , "  = @review.validate_plan (draft);"
+    , "draft_plan => validate_plan select("
+    , "  ok: (),"
+    , "  issue: ()"
+    , ")"
+    ]
+
+paperThreeNodeExampleSourceText :: T.Text
+paperThreeNodeExampleSourceText =
+  T.unlines
+    [ "contract A;"
+    , "contract B;"
+    , "contract C;"
+    , "node source"
+    , "  -> left: A;"
+    , "  -> right: B;"
+    , "  = @demo.source ({});"
+    , "node use_left"
+    , "  <- left: A;"
+    , "  -> out: C = @demo.use_left (left);"
+    , "source => use_left"
     ]
 
 threeArmSelectSourceText :: T.Text
