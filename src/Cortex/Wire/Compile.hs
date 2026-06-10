@@ -1839,15 +1839,21 @@ lowerSelectStep compileEnv st current arms maybeDownstream = do
       resolvedArms
   commonBoundary <- resolveSelectCommonBoundary maybeDownstream preparedArms
   traverse_ (validatePreparedSelectArm commonBoundary) preparedArms
-  if all (isIdentityFragment . psaFragment) preparedArms
-    then
-      maybe (pure current) (connectFragments current) maybeDownstream
-    else do
-      conditionNode <- buildSelectConditionTree selectorVariants commonBoundary preparedArms
-      let conditionFragment =
-            selectConditionFragment selectorVariants preparedArms conditionNode
-      currentToCondition <- connectFragments current conditionFragment
-      maybe (pure currentToCondition) (connectFragments currentToCondition) maybeDownstream
+  -- An all-identity select cannot reach this point: identity arms expose their
+  -- variant's shape at the common boundary, and variants carry pairwise distinct
+  -- labels, so convergence validation above already rejected the clause. Guard
+  -- loudly instead of passing the diagram through so a future change to arm
+  -- validation cannot silently skip condition-tree construction.
+  when (all (isIdentityFragment . psaFragment) preparedArms) $
+    Left
+      ( WireCore.WireParseError
+          "internal Wire select lowering error: all-identity arms survived convergence validation"
+      )
+  conditionNode <- buildSelectConditionTree selectorVariants commonBoundary preparedArms
+  let conditionFragment =
+        selectConditionFragment selectorVariants preparedArms conditionNode
+  currentToCondition <- connectFragments current conditionFragment
+  maybe (pure currentToCondition) (connectFragments currentToCondition) maybeDownstream
 
 data PreparedSelectArm = PreparedSelectArm
   { psaVariant :: !BoundaryPort
@@ -1865,6 +1871,10 @@ data ResolvedSelectArm = ResolvedSelectArm
   , selectArmResolvedExpr :: !Expr
   }
 
+{- | The mixed-boundary rejection below (exclusive sum plus ordinary exits) is
+reachable only through composition: a single node cannot declare a sum plus an
+extra output, the grammar forbids it.
+-}
 resolveExclusiveBoundary :: [BoundaryPort] -> Either WireCore.WireError (NonEmpty BoundaryPort)
 resolveExclusiveBoundary exits =
   case dedupeBoundaries exits of
