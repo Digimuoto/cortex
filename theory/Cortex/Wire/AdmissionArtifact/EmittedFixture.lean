@@ -9,20 +9,18 @@ checked by the Lean-owned executable validator.
 The value below is the artifact the Haskell compiler attaches to the compiled
 circuit for the `CompileSpec` labeled-chain fixture (`planner => analyst`),
 hand-transcribed field-for-field from the emitted metadata. `#guard` then runs
-`validatorReadyCheck` on it. This is the first hand-transcribed
-emitted-artifact fixture, not an end-to-end validation: no Lean code consumes
-actual Haskell output until a generator or decoder replaces the manual
-transcription.
+`validatorReadyCheck` on it. This was the first emitted-artifact fixture and
+remains as the original hand-transcribed instance of the route.
 
 ## Context
 
-This is the fixture-transcription integration route for running the Lean
-checker on emitted artifacts: Haskell (or, for this first instance, a person
-reading the emitted metadata) renders the decoded artifact as a Lean value and
-the build evaluates the checker. The transcription step is trusted; replacing
-it with a generator inside the Haskell test suite, or with a JSON decoder on
-the Lean side, are the alternative integration shapes under issue #201. The
-checker itself and its soundness theorems are unchanged either way:
+The transcription route this file pioneered is now automated:
+`Cortex.Wire.LeanFixture` renders compiler-emitted artifacts as the generated
+modules under `Cortex.Wire.AdmissionArtifact.Emitted`, the build checks them
+at every `lean-check`, and the Haskell test suite fails on drift between the
+checked-in modules and current compiler output (`just wire-lean-fixtures`
+regenerates). This file keeps the manual original alongside the generated set.
+The checker and its soundness theorems are shared by both routes:
 `validatorReadyCheck_soundness` turns this build-time check into
 `WireAdmissionArtifact.Sound` for this artifact.
 -/

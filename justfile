@@ -34,6 +34,11 @@ bench-pure-wire *ARGS:
     nix run .#pure-wire-bench {{ ARGS }}
 
 # Run the cortex-test suite (hspec-discover)
+# Regenerate Lean fixtures for emitted Wire admission artifacts
+wire-lean-fixtures:
+    @echo "🧬 Regenerating emitted Lean artifact fixtures..."
+    nix run .#wire -- lean-fixtures theory/Cortex/Wire/AdmissionArtifact/Emitted
+
 test:
     @echo "🧪 Running cortex tests..."
     nix run .#cortex-tests

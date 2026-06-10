@@ -399,14 +399,14 @@ Mechanized results now include:
   primitive rows, component-domain closure, component frontier backing, generated-child frontier
   exactness, primitive overlay/connect prefix availability, select bridge and latent-body checks,
   phantom bridge frontier and bulk replay checks, local generated/select/phantom row validity,
-  component-row uniqueness, primitive row validity, and primitive stack replay. The remaining
-  Haskell integration task is to run this Lean checker on decoded artifacts; the checker is now the
-  intended artifact-validation authority. `AdmissionArtifact.EmittedFixture.chainArtifact` is the
-  first hand-transcribed emitted-artifact fixture: the labeled-chain compile fixture's artifact
-  transcribed manually as a Lean value, `#guard`-checked by `validatorReadyCheck` at build time and
-  packaged as `Sound` by `chainArtifact_sound`. No Lean code consumes actual Haskell output yet;
-  generating such fixtures from the Haskell test suite (or decoding the JSON in Lean) is the
-  remaining step. `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
+  component-row uniqueness, primitive row validity, and primitive stack replay. The checker now runs
+  on generated compiler output: `Cortex.Wire.AdmissionArtifact.Emitted.*` are Lean modules rendered
+  by the Haskell `Cortex.Wire.LeanFixture` generator from the artifacts real compilations attach
+  (chain, make, makeEach, record scatter, indexed gather/scatter, both select resolution modes),
+  each `#guard`-checked by `validatorReadyCheck` at build time and packaged as `Sound`. The Haskell
+  test suite re-renders each fixture and fails on drift; `just wire-lean-fixtures` regenerates.
+  `AdmissionArtifact.EmittedFixture.chainArtifact` remains as the original hand-transcribed instance
+  of the route. `AdmissionArtifact.validatorReady_generated_usedChild_sourceChild` and
   `AdmissionArtifact.validatorReady_emptyGeneratedForm_bindingRow` recover the concrete source
   generated-child or empty-family row for each generated artifact, rather than only a label
   membership fact. `AdmissionArtifact.validatorReady_generated_usedChild_sourceMakeItem` then

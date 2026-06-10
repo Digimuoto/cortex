@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Differential parse over the Wire corpus: the megaparsec parser (via
+# `wire parse`, which expands includes first) against the tree-sitter grammar
+# (which parses the raw source). Divergence in accept/reject is the signal;
+# include-expansion failures are a known boundary difference, not grammar
+# drift. Run inside the dev shell (`tree-sitter` on PATH).
+
+set -eu
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GRAMMAR_DIR="$REPO/editors/tree-sitter-wire"
+KNOWN_FILE="$REPO/scripts/wire-grammar-diff.known"
+WIRE_BIN="${WIRE_BIN:-}"
+
+if [ -z "$WIRE_BIN" ]; then
+  echo "building wire CLI..."
+  nix build "$REPO#wire" --out-link "$REPO/.wire-cli-result"
+  WIRE_BIN="$REPO/.wire-cli-result/bin/wire"
+fi
+# The harness changes directory below; pin the binary path first.
+WIRE_BIN="$(cd "$(dirname "$WIRE_BIN")" && pwd)/$(basename "$WIRE_BIN")"
+
+FIXTURE_DIRS=(
+  "$REPO/test/fixtures/wire"
+  "$REPO/examples/wire"
+)
+
+cd "$GRAMMAR_DIR"
+
+divergences=0
+checked=0
+known=0
+stale=0
+while IFS= read -r f; do
+  name="${f#"$REPO"/}"
+  checked=$((checked + 1))
+
+  if "$WIRE_BIN" parse "$f" >/dev/null 2>&1; then
+    haskell=ok
+  else
+    haskell=fail
+  fi
+
+  if tree-sitter parse -q "$f" >/dev/null 2>&1; then
+    treesitter=ok
+  else
+    treesitter=fail
+  fi
+
+  if [ "$haskell" = "$treesitter" ]; then
+    if grep -qx "$name" "$KNOWN_FILE" 2>/dev/null; then
+      printf 'STALE-KNOWN %s (no longer diverges; remove from %s)\n' "$name" "${KNOWN_FILE#"$REPO"/}"
+      stale=$((stale + 1))
+    else
+      printf '%-4s %-4s %s\n' "$haskell" "$treesitter" "$name"
+    fi
+  elif grep -qx "$name" "$KNOWN_FILE" 2>/dev/null; then
+    printf 'known-diverge haskell=%s tree-sitter=%s %s\n' "$haskell" "$treesitter" "$name"
+    known=$((known + 1))
+  else
+    printf 'DIVERGE haskell=%s tree-sitter=%s %s\n' "$haskell" "$treesitter" "$name"
+    divergences=$((divergences + 1))
+  fi
+done < <(find "${FIXTURE_DIRS[@]}" -name '*.wire' | sort)
+
+printf '\nchecked %d Wire sources (%d known divergence(s))\n' "$checked" "$known"
+if [ "$divergences" -gt 0 ]; then
+  printf '%d new grammar divergence(s) between megaparsec and tree-sitter\n' "$divergences" >&2
+  exit 1
+fi
+if [ "$stale" -gt 0 ]; then
+  printf '%d stale known-divergence entr(y/ies); prune the allowlist\n' "$stale" >&2
+  exit 1
+fi
+echo "no new grammar divergences"

@@ -38,6 +38,15 @@ import Cortex.Wire.AdmissionArtifact
 import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.Boundary
 import Cortex.Wire.AdmissionArtifact.EmittedFixture
+import Cortex.Wire.AdmissionArtifact.Emitted
+import Cortex.Wire.AdmissionArtifact.Emitted.Chain
+import Cortex.Wire.AdmissionArtifact.Emitted.IndexedGather
+import Cortex.Wire.AdmissionArtifact.Emitted.IndexedScatter
+import Cortex.Wire.AdmissionArtifact.Emitted.Make
+import Cortex.Wire.AdmissionArtifact.Emitted.MakeEach
+import Cortex.Wire.AdmissionArtifact.Emitted.RecordScatter
+import Cortex.Wire.AdmissionArtifact.Emitted.SelectContract
+import Cortex.Wire.AdmissionArtifact.Emitted.SelectLabel
 import Cortex.Wire.AdmissionArtifact.Generated
 import Cortex.Wire.AdmissionArtifact.GeneratedReconstruction
 import Cortex.Wire.AdmissionArtifact.Phantom

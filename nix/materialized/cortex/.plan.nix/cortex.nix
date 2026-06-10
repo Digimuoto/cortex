@@ -139,6 +139,7 @@
           "Cortex/Wire/Executor"
           "Cortex/Wire/Include"
           "Cortex/Wire/Format"
+          "Cortex/Wire/LeanFixture"
           "Cortex/Wire/Parser"
           "Cortex/Wire/Pure"
           "Cortex/Wire/Std"
@@ -199,6 +200,8 @@
             (hsPkgs."async" or (errorHandler.buildDepError "async"))
             (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
             (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
             (hsPkgs."process" or (errorHandler.buildDepError "process"))
             (hsPkgs."text" or (errorHandler.buildDepError "text"))
           ];

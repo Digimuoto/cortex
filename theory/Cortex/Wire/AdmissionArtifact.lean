@@ -1,5 +1,6 @@
 import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.EmittedFixture
+import Cortex.Wire.AdmissionArtifact.Emitted
 import Cortex.Wire.AdmissionArtifact.GeneratedReconstruction
 import Cortex.Wire.AdmissionArtifact.PhantomReconstruction
 import Cortex.Wire.AdmissionArtifact.PrimitiveReconstruction

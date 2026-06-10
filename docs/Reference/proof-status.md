@@ -192,13 +192,17 @@ rows.
   (boundary ports) are deliberately not equated with circuit entry/exit nodes (relation
   sources/sinks), which live at a different abstraction level and are bound through the primitive
   trace and the topology respectively.
-- The Lean executable validator has its first hand-transcribed emitted-artifact fixture:
-  `AdmissionArtifact.EmittedFixture.chainArtifact` transcribes the artifact the Haskell compiler
-  attaches for the labeled-chain compile fixture, `#guard` runs `validatorReadyCheck` on it at build
-  time, and `chainArtifact_sound` packages the result as `AdmissionArtifact.Sound`. This is not yet
-  Lean consuming actual Haskell output: the transcription step is manual and therefore trusted, and
-  replacing it with a generator in the Haskell test suite (or a decoder on the Lean side) is the
-  remaining step for running the Lean checker across the representative program set.
+- The Lean executable validator now checks generated emitted-artifact fixtures for a representative
+  program set. `Cortex.Wire.LeanFixture` renders the artifact each compilation attaches into Lean
+  source under `theory/Cortex/Wire/AdmissionArtifact/Emitted/` (chain, make, makeEach, record
+  scatter, indexed gather/scatter, label select, contract-fallback select); each module `#guard`s
+  `validatorReadyCheck` at build time and packages `artifact_sound` via
+  `validatorReadyCheck_soundness`. The Haskell test suite re-renders every fixture and fails on
+  drift against the checked-in file (`just wire-lean-fixtures` regenerates), so the generation step
+  is itself a tested code path rather than a manual transcription. The remaining trust is the
+  renderer (a structural Haskell-to-Lean pretty-printer) and fixture coverage: programs outside the
+  representative set are still only checked by the Haskell-side validator. The original
+  hand-transcribed `EmittedFixture.chainArtifact` remains as the first instance of the route.
 - `SelectedBranchRecoveryRecord.PhantomAdapterEmbedding` is the recovery-side hook for the case
   where a selected branch contains a finite-product `*` adapter. The embedding theorem proves the
   persisted adapter node is replayed by the selected branch and pruned from every unselected branch.

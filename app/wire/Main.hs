@@ -15,7 +15,7 @@ module Main (main) where
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (IOException, displayException, try, uninterruptibleMask_)
-import Control.Monad (foldM, forM, unless, when, zipWithM)
+import Control.Monad (foldM, forM, forM_, unless, when, zipWithM)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Aeson.Key qualified as AesonKey
@@ -32,8 +32,10 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
+import System.Directory (createDirectoryIfMissing)
 import System.Environment (getArgs)
 import System.Exit (ExitCode (..), exitFailure)
+import System.FilePath (takeDirectory, (</>))
 import System.IO (hFlush, stderr, stdout)
 import System.Process (CreateProcess (cwd), proc, readCreateProcessWithExitCode)
 
@@ -91,6 +93,12 @@ import Cortex.Wire
   , wirePayloadKindMediaType
   )
 import Cortex.Wire.Include (expandWireSourceIncludes)
+import Cortex.Wire.LeanFixture
+  ( EmittedFixture (..)
+  , emittedFixtures
+  , renderEmittedFixtureModule
+  , renderEmittedUmbrellaModule
+  )
 import Cortex.Wire.Use
   ( WireUseError (..)
   , WireUseScope
@@ -103,6 +111,8 @@ data Command
   = CommandBuild !(Maybe Text) !FilePath
   | CommandFmt !FmtMode ![FilePath]
   | CommandRun !FilePath
+  | CommandLeanFixtures !FilePath
+  | CommandParse !FilePath
   | CommandHelp
   deriving stock (Eq, Show)
 
@@ -176,6 +186,8 @@ main = do
     Right (CommandBuild maybeSelectedReturn path) -> buildWire maybeSelectedReturn path
     Right (CommandFmt mode paths) -> fmtWire mode paths
     Right (CommandRun path) -> runWire path
+    Right (CommandLeanFixtures outDir) -> leanFixturesWire outDir
+    Right (CommandParse path) -> parseWireOnly path
 
 parseCommand :: [String] -> Either Text Command
 parseCommand = \case
@@ -187,10 +199,14 @@ parseCommand = \case
     Right (CommandBuild (Just (T.pack selectedReturn)) path)
   "fmt" : args -> parseFmtCommand args
   ["run", path] -> Right (CommandRun path)
+  ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
+  ["parse", path] -> Right (CommandParse path)
   [path] -> Right (CommandRun path)
   "build" : _ -> Left "usage: wire build [--return NAME] FILE"
   "fmt" : _ -> Left "usage: wire fmt [--check | --stdout] FILE..."
   "run" : _ -> Left "usage: wire run FILE"
+  "lean-fixtures" : _ -> Left "usage: wire lean-fixtures OUTDIR"
+  "parse" : _ -> Left "usage: wire parse FILE"
   _ -> Left usageText
 
 parseFmtCommand :: [String] -> Either Text Command
@@ -223,6 +239,8 @@ usageText =
     , "  wire run FILE"
     , "  wire build [--return NAME] FILE"
     , "  wire fmt [--check | --stdout] FILE..."
+    , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
+    , "  wire parse FILE              (expand includes and parse; no compilation)"
     , ""
     , "The local runner currently supports stdin/stdout executors plus CorePure DAG frontiers."
     ]
@@ -235,6 +253,32 @@ buildWire maybeSelectedReturn path = do
   compiled <- either (dieText . renderWireError) pure (compile wireFile)
   BSL.putStr (AesonPretty.encodePretty compiled)
   BSL.putStr "\n"
+
+{- | Regenerate the Lean fixture modules for emitted admission artifacts.
+The umbrella module is rewritten alongside the per-fixture modules so lake
+registration only tracks one root.
+-}
+leanFixturesWire :: FilePath -> IO ()
+leanFixturesWire outDir = do
+  createDirectoryIfMissing True outDir
+  forM_ emittedFixtures $ \fixture -> do
+    rendered <-
+      either
+        (dieText . renderWireError)
+        pure
+        (renderEmittedFixtureModule fixture)
+    let path = outDir </> T.unpack fixture.emittedFixtureSlug <> ".lean"
+    TIO.writeFile path rendered
+    TIO.putStrLn ("wrote " <> T.pack path)
+  let umbrellaPath = takeDirectory outDir </> "Emitted.lean"
+  TIO.writeFile umbrellaPath (renderEmittedUmbrellaModule emittedFixtures)
+  TIO.putStrLn ("wrote " <> T.pack umbrellaPath)
+
+-- | Parse-only acceptance check used by the grammar differential harness.
+parseWireOnly :: FilePath -> IO ()
+parseWireOnly path = do
+  _wireFile <- readAndParseWireFile path
+  TIO.putStrLn ("parse ok: " <> T.pack path)
 
 fmtWire :: FmtMode -> [FilePath] -> IO ()
 fmtWire mode paths = do

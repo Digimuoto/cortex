@@ -87,6 +87,12 @@ import Cortex.Wire.Executor
   , wireExecutorRegistryFromList
   )
 import Cortex.Wire.Include (expandWireSourceIncludes)
+import Cortex.Wire.LeanFixture
+  ( EmittedFixture (..)
+  , emittedFixtures
+  , renderEmittedFixtureModule
+  , renderEmittedUmbrellaModule
+  )
 import Cortex.Wire.Pure (pureWireExecutorProjection)
 import Cortex.Wire.Std
   ( stdIoReadFileShapeMessage
@@ -3949,6 +3955,24 @@ spec = describe "Cortex.Wire.Compile" $ do
       -- case sits after validation and is unreachable.
       compileWireText paperAllIdentitySelectSourceText
         `shouldSatisfy` isWireParseFailureContaining "does not converge"
+
+  describe "emitted Lean fixtures" $ do
+    -- Drift gate for the generated theory modules: the checked-in Lean fixture
+    -- files must match what the current compiler emits and the current
+    -- renderer produces. Regenerate with `just wire-lean-fixtures`.
+    Foldable.for_ emittedFixtures $ \fixture ->
+      it ("matches the checked-in module for " <> T.unpack fixture.emittedFixtureSlug) $ do
+        rendered <- requireRight (renderEmittedFixtureModule fixture)
+        checkedIn <-
+          TIO.readFile
+            ( "theory/Cortex/Wire/AdmissionArtifact/Emitted/"
+                <> T.unpack fixture.emittedFixtureSlug
+                <> ".lean"
+            )
+        rendered `shouldBe` checkedIn
+    it "matches the checked-in umbrella module" $ do
+      checkedIn <- TIO.readFile "theory/Cortex/Wire/AdmissionArtifact/Emitted.lean"
+      renderEmittedUmbrellaModule emittedFixtures `shouldBe` checkedIn
 
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
