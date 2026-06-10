@@ -8,7 +8,7 @@ status: draft
 authors:
   - Julius Koskela
 date: 2026-04-28
-updated: 2026-04-28
+updated: 2026-06-10
 related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Roadmap/Plans/rewrite-materialization-and-recovery.md
@@ -82,6 +82,9 @@ fragment into a durable graph through a bounded, typed, interface-preserving rul
 ---
 
 ## 2. Glossary
+
+Wording is aligned with the shared publications glossary ([../glossary.md](../glossary.md)); the
+entries are restated locally so the paper stays self-contained at a venue.
 
 - **workflow**: a semantic program describing obligations, dependencies, branching, waiting, and
   artifact boundaries
@@ -864,19 +867,39 @@ convenience that lowers into the node-centered calculus.
 
 ### 12.1 Core Results
 
-The paper's core formal obligations are the following.
+The paper's core formal obligations are the following. Since the first draft of this paper, the Lean
+mechanization track has discharged substantial parts of each obligation; we state each result
+together with the declarations that carry it (theorem names as of 2026-06-10, per the project's
+proof-status dashboard). The mechanized statements are about the runtime-shaped admission and
+planner models, not about this paper's abstract calculus verbatim; the correspondence between the
+two is stated per result.
 
 #### Substitution Safety
 
 Admissible substitution preserves graph well-formedness, causal structure, and interface
 compatibility.
 
+Mechanized substance: `planGraphRewriteChecks_admissible` and
+`runtimePlannerConstruction_admissible` prove that the runtime-shaped planner checks imply the
+abstract admissible-rewrite predicate (anchor existence, subgraph validity, boundary non-emptiness,
+orphan-freedom, acyclicity, budget consumption); `BoundaryResource.substitution_preserves_boundary`
+and `appendContinuation_preserves_boundary` prove boundary preservation for the two rewrite law
+families; and `constructedPlanningChain_preserves_registryBoundary_of_constructedDelta` extends
+preservation across finite constructed chains. `selectActualize_preserves_closedPortLinearity` and
+`selectActualize_preserves_registryBoundary` carry the same discipline through selected-branch
+actualization. What remains open at this layer is executable witness production: the Haskell runtime
+is tested against, not extracted from, these models.
+
 #### Phase Determinism
 
 Within a fixed materialized topology, reducing a frontier phase is order-insensitive with respect to
 the accumulation order of independent node facts, provided that frontier execution emits node-local
-facts keyed by the executing node or else emits into a deterministic reducer. The intended proof
-strategy is:
+facts keyed by the executing node or else emits into a deterministic reducer.
+
+Mechanized substance: the three-step strategy below is no longer only intended — step 2 is
+`applyNodeFacts_perm_invariant` (permutation invariance of disjoint-key fact accumulation), and the
+composed determinism statement is `pulseReplayDeterminism_modulo_fixedOutcomes`, lifted to the
+Wire/Pulse envelope by `wirePulseExecutionFacts_replay_deterministic`:
 
 1. each node $v$ in the current frontier contributes facts affecting only the loci owned by $v$,
    such as $\sigma(v)$ and $o(v)$
@@ -893,6 +916,13 @@ outputs or mediated by a deterministic reduction step before the theorem applies
 Resume from materialized lineage prefix, compatibility witness, and integrity witness reconstructs
 the canonical schedulable state defined in §9.3.
 
+Mechanized substance: `pulseRecoveryStep_preserves_safeRunState` proves recovery normalization
+preserves the structural safe-run predicate; `AdmittedWirePulseTrace.preserves_safeRunState` (and
+its non-stuckness companion) extends this across admitted run traces; and
+`selectedBranch_recovery_deterministic` proves that recovery records loaded from the same persisted
+admission replay the same selected branch, constructed delta, and budget state. Durable lineage
+decoding from the persistence layer into these witnesses remains an open correspondence obligation.
+
 ### 12.2 Extension Program
 
 The following are intentionally outside the paper's core formal development but define its natural
@@ -908,25 +938,38 @@ $$
 
 for an appropriate denotational semantics of workflows, graphs, and their equivalence. This is a
 research program for the workflow/lowering boundary, not part of the minimal substitution calculus
-proved here.
+proved here. Fragments exist: `pureNode_lowering_evalOutputs_eq` proves the lowered native pure-task
+configuration evaluates like the source pure node, and `selectActualize_lowers_to_appendAfter`
+proves certified selected branches lower to retained-anchor append rewrites. The full-language
+theorem remains open.
 
 #### Routed Interfaces and Resource-Aware Contracts
 
 The minimal preorder on $\mathcal{K}$ intentionally leaves out named ports, arity constraints,
 linear or affine resources, and retention obligations for values that later substitutions may still
 depend on. A stronger interface calculus would enrich $\Gamma$ with those structures so that
-executable routing policies and resource-sensitive admissibility can be stated directly.
+executable routing policies and resource-sensitive admissibility can be stated directly. A
+substantial part of this program is now mechanized in a companion carrier: the source linear port
+graph (`LinearPortGraph.PortLinear`) and the closed actualized port discipline (`ClosedPortLinear`)
+give named, typed, linearity-checked ports through overlay and certified contraction. Linear/affine
+retention obligations across substitutions remain open.
 
 #### Concurrent Substitution Commutation
 
 For a richer extension, independent substitutions may admit a commutation law. That requires an
-explicit independence relation and belongs to a stronger calculus than the base one defined here.
+explicit independence relation and belongs to a stronger calculus than the base one defined here. No
+independence relation is mechanized; this remains genuinely open.
 
 #### Budget-Bounded Growth
 
 If substitution cost is tracked and budget decreases monotonically, one would like a bounded-growth
-result limiting the number or size of admitted substitutions in a run. That is an operational
-extension, not part of the minimal semantic core established here.
+result limiting the number or size of admitted substitutions in a run. The monotone half is no
+longer an extension: `ConstructedPlanningChain.finalBudget_le_initial` proves budget non-increase
+across finite constructed chains, `ConstructedPlanningStep.boundaryResourceCost_fits_budget` proves
+per-step cost fits the remaining budget, and `selectActualize_consumes_selected_cost` proves
+selected-branch actualization consumes exactly the constructed selected-fragment cost. What remains
+open is the derived combinatorial bound on the number or total size of admitted substitutions in a
+run.
 
 ---
 

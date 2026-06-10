@@ -8,7 +8,7 @@ status: draft
 authors:
   - Julius Koskela
 date: 2026-04-28
-updated: 2026-04-28
+updated: 2026-06-10
 related:
   - docs/Publications/Paper-1-staged-reduction/lean-haskell-boundary.md
   - docs/Publications/Paper-1-staged-reduction/lean-mechanization.md
@@ -28,11 +28,16 @@ of the paper is intentionally narrow: incremental persistence is **structurally 
 during accumulation because recovery normalizes partially persisted state and re-closes it before
 any authoritative lifecycle decision is taken. We define the recovered-state validity contract
 explicitly and show how the three-phase decomposition explains both normal execution and crash
-recovery. The paper reports the design as implemented in the Pulse runtime, contrasts it with the
-failure modes of an earlier imperative runtime, and supports the implementation claims with
-property-based validation plus a proof sketch of the core structural argument. We do not claim
-end-to-end workflow correctness, outcome reproducibility for nondeterministic stages, or
-topology-changing rewrite correctness in this paper.
+recovery. Throughout, we separate three layers of obligation: algebraic facts about accumulation,
+closure, and classification (proved, and mechanized in Lean 4); structural recovery theorems for
+fixed-topology execution (mechanized, with named persistence-boundary preconditions); and external
+assumptions about worker I/O reproducibility (stated, not claimed). We also characterize the
+extension boundary: which changes preserve the staged reduction and which require a different
+machine, with topology-changing rewriting as the canonical boundary crossing. The paper reports the
+design as implemented in the Pulse runtime, contrasts it with the failure modes of an earlier
+imperative runtime, and supports the implementation claims with property-based validation alongside
+the mechanized core. We do not claim end-to-end workflow correctness, outcome reproducibility for
+nondeterministic stages, or topology-changing rewrite correctness in this paper.
 
 ## Artifact Status
 
@@ -153,8 +158,11 @@ A graph is:
 - **terminal** when settled and either some node is Failed or all nodes are Completed or Skipped
 - **suspended** when at least one node is Waiting and no node is ready
 
-The runtime also has rewrite-capable extensions, but they are intentionally out of scope for this
-paper's theorem path.
+The full status type additionally carries `NodeInterrupted` (an input to crash normalization,
+removed by recovery) and `NodeRewritten` (from the rewrite-capable extension). Both appear in the
+validity contract below — recovery must eliminate the former, and readiness treats the latter as a
+satisfied predecessor — even though rewriting itself is intentionally out of scope for this paper's
+theorem path. The Lean model carries the same constructors.
 
 ## 3. The Staged Reduction
 
@@ -186,6 +194,18 @@ accumulation, idempotent failure closure, and exhaustive lifecycle classificatio
 coordinator (bottom) dispatches frontier work, persists state, and finalizes lifecycle outcomes from
 the classifier's verdict.
 
+Algebraically, the fixed-topology machine factors as
+
+$$
+\operatorname{reduce}(G, R, s) =
+\operatorname{classify}(G,\ \operatorname{close}(G,\ \operatorname{accumulate}(R, s)))
+$$
+
+with `accumulate = foldl (flip applyNodeFact)`, `close = propagateFailure`, and
+`classify = classifyGraphState`. The execution model uses barriered frontier waves, but the
+algebraic core only sees a set of node-local facts and a topology-indexed state. The rest of this
+section develops each factor and the properties that make the factorization load-bearing.
+
 ### 3.1 Frontier Computation
 
 The execution frontier is the set of Pending nodes whose predecessors are all Completed, Skipped, or
@@ -199,6 +219,10 @@ readyNodes rel state =
       , all (isCompletedOrSkipped state) (Set.toList (predecessors rel v))
   ]
 ```
+
+Despite its historical name, `isCompletedOrSkipped` also accepts `NodeRewritten`
+(`src/Cortex/Pulse/GraphRuntime.hs`), which is why the validity contract in Definition 1 lists all
+three satisfied-predecessor statuses.
 
 **Lemma 1 (Frontier antichain).** The ready set forms an antichain under reachability.
 
@@ -236,8 +260,21 @@ The outcome type partitions into two classes with different algebraic roles:
 - **forward outcomes** advance the node's status monotonically on the status partial order
 - **reset outcomes** revert the node to Pending and are explicitly non-monotone
 
+The forward statuses form the local monotone fragment:
+
+$$
+\begin{aligned}
+\text{Pending} &\leq \text{Running} \leq \text{Completed} \\
+\text{Pending} &\leq \text{Running} \leq \text{Failed} \\
+\text{Pending} &\leq \text{Running} \leq \text{Skipped} \\
+\text{Pending} &\leq \text{Running} \leq \text{Waiting}(signal)
+\end{aligned}
+$$
+
 Both classes commute for independent frontier nodes because they update disjoint keys. Only the
-forward fragment admits the stronger lattice-style monotonicity reading.
+forward fragment admits the stronger lattice-style monotonicity reading; cancellation, shutdown, and
+crash normalization are explicitly non-monotone, which is why no claim of global runtime
+monotonicity is made anywhere in this paper.
 
 ### 3.3 Phase 1: Accumulate
 
@@ -277,6 +314,19 @@ $$
 This lemma is deliberately weaker than the shared-state commutativity results studied in LVars or
 CRDTs. Here we exploit disjoint-key point updates, not conflict resolution on a shared key.
 
+The algebraic reading: let $F$ be the free commutative monoid of `NodeResult` values with distinct
+node identifiers — distinctness justified by Lemma 1. `applyNodeFact` induces a monoid action
+
+$$
+\operatorname{act} : F \times \mathit{GraphState} \to \mathit{GraphState},
+\qquad
+\operatorname{act}(S, s) = \operatorname{foldl}(\operatorname{flip}\ applyNodeFact,\ s,\ S),
+$$
+
+and Lemma 2 is exactly what makes the action well-defined on the commutative quotient. The
+load-bearing property is not a deep join law on shared state; it is this modest disjoint-key
+commutativity of point updates.
+
 ### 3.4 Phase 2: Close
 
 ```haskell
@@ -311,10 +361,10 @@ Items 5 and 6 are properties of the closed, normalized state used for classifica
 Arbitrary mid-accumulation persisted snapshots need not satisfy them before normalization and
 closure.
 
-#### Proposition 1 (Structural persistence safety, conditional on closure laws)
+#### Proposition 1 (Structural persistence safety)
 
-Assuming the closure laws above, let $S$ be a frontier result set and let $S' \subseteq S$ be the
-prefix whose facts were durably persisted before a crash. Define:
+Using the closure laws above — proven, not assumed — let $S$ be a frontier result set and let
+$S' \subseteq S$ be the prefix whose facts were durably persisted before a crash. Define:
 
 ```haskell
 gsPersisted  = foldl' (flip applyNodeFact) gs0 S'
@@ -340,12 +390,17 @@ _Proof sketch._ The proof obligation breaks into named parts:
 
 The proposition is therefore a structural statement: the recovered graph state is normalized,
 closed, and schedulable. It does not prove that replayed worker I/O yields the same business result
-as the pre-crash execution.
+as the pre-crash execution. The decomposition into named obligations — domain preservation,
+normalization, closure laws, readiness soundness — is what keeps the recovery theorem from being
+circular: only after each obligation is stated independently does "recovery re-closes to a valid
+state" become a theorem rather than a restatement of the definitions.
 
 Proposition 1 is mechanized in Lean 4 as `persistence_safety` in `theory/Cortex/Pulse/Recovery.lean`
-(see [lean-mechanization.md](lean-mechanization.md)). The Lean theorem is conditional on persisted
-topology-domain, output-ownership, output-completeness, and causal-history preconditions, which the
-runtime must establish at the persistence boundary.
+(see [lean-mechanization.md](lean-mechanization.md)). The closure laws it uses are themselves
+mechanized, so the only remaining hypotheses are the persistence-boundary preconditions: persisted
+topology-domain, output-ownership, output-completeness, and causal-history, which the runtime must
+establish at the persistence boundary. That residual conditionality is a statement about the Haskell
+correspondence, not about the theorem.
 
 ### 3.5 Phase 3: Classify
 
@@ -543,11 +598,13 @@ The implementation-level claims are backed by QuickCheck property tests on rando
 | Recovery normalization               | §3.4, §3.7 | Partial frontier + `resetRunningToPending` + classify yields a valid closed state |
 | Sequential = batch                   | §3.6       | Fold of single-element `applyFrontierResults` matches batch application           |
 
-Several of these properties are now mechanized in Lean 4 — frontier antichain, disjoint-key
-commutativity and fold permutation, closure extensiveness, monotonicity, idempotence, recovery
-normalization, and classification exhaustiveness — and the artifacts are listed in
+All of these properties are mechanized in Lean 4 — frontier antichain, disjoint-key commutativity
+and fold permutation, closure extensiveness, monotonicity, idempotence, recovery normalization, and
+classification exhaustiveness — with no axioms and no incomplete proofs in the theory tree as of
+2026-06-10 (per the project proof-status dashboard); the artifacts are listed in
 [lean-mechanization.md](lean-mechanization.md). The QuickCheck tests remain runtime evidence on the
-live Haskell implementation; they are not a substitute for the Lean proof surface.
+live Haskell implementation; they are not a substitute for the Lean proof surface, and conversely
+the Lean theorems do not certify the Haskell implementation beyond the tested correspondence.
 
 ## 5. Failure Modes Addressed by the Redesign
 
@@ -591,6 +648,17 @@ Haxl [\[14\]](#ref-14) and the Par monad [\[15\]](#ref-15) exploit independence 
 parallelism; our contribution extends that design pressure to long-running durable tasks with crash
 recovery and signal suspension.
 
+The barriered execution shape also resembles a BSP-style [\[17\]](#ref-17) fragment of concurrent
+Kleene algebra [\[16\]](#ref-16):
+
+$$
+(\text{wave}_1\ \text{workers}) ; \text{close} ; \text{classify} ;
+(\text{wave}_2\ \text{workers}) ; \text{close} ; \text{classify} ; \cdots
+$$
+
+This is useful intuition for barriered parallel composition, but we do not claim a full CKA
+embedding.
+
 ## 7. Discussion
 
 ### 7.1 Structural Safety Versus End-to-End Correctness
@@ -616,12 +684,44 @@ The node-outcome type partitions into monotone forward outcomes and explicitly n
 outcomes. The monotone core admits the cleaner algebraic story. Reset outcomes commute only because
 they remain node-local. This boundary is the honest edge of the model and should remain explicit.
 
-### 7.4 Boundary to Topology-Changing Execution
+### 7.4 The Extension Boundary
 
-Dynamic graph rewriting is no longer treated as part of this paper's theorem path. Once topology
-changes mid-run, the fixed-topology structural-safety theorem stated here is insufficient.
-Rewrite-capable execution needs an additional materialization boundary, durable identity story, and
-recovery theorem. That is now a separate paper track.
+The staged reduction has three load-bearing invariants:
+
+- **I.** accumulation commutativity for frontier facts
+- **II.** closure idempotence
+- **III.** frontier antichain / readiness soundness
+
+Extensions that preserve the core:
+
+| Extension                                           | I   | II            | III           | Reason                               |
+| --------------------------------------------------- | --- | ------------- | ------------- | ------------------------------------ |
+| new node-local forward outcome                      | yes | yes           | yes           | still a point update                 |
+| richer classification output                        | yes | yes           | yes           | classification is observational      |
+| additional closure commuting with failure closure   | yes | conditionally | yes           | composition of commuting closures    |
+| edge annotations preserving DAG readiness semantics | yes | yes           | conditionally | if readiness stays predecessor-based |
+
+Extensions that cross the boundary:
+
+| Extension                                       | Broken invariant | Why                                                    |
+| ----------------------------------------------- | ---------------- | ------------------------------------------------------ |
+| inter-node mutation in accumulation             | I                | facts no longer commute by disjoint key                |
+| compensating or oscillating propagation         | II               | closure may stop being idempotent                      |
+| topology mutation during accumulation           | III              | frontier and closure are computed over moving topology |
+| shared-key accumulation without a merge algebra | I                | update order becomes observable                        |
+
+Topology-changing execution is therefore not "just another extension." Once topology changes
+mid-run, the fixed-topology structural-safety theorem stated here is insufficient: rewrite-capable
+execution needs a materialization boundary, a durable identity story, and a different recovery
+theorem. That machine and its admission, budget, and recovery theorems are developed in the
+companion substitution-semantics and frontier-calculus work.
+
+### 7.5 Open Problems
+
+1. **Characterize the closed-state subspace.** The closure operator suggests a useful sub-poset of
+   normalized states, but its exact algebraic structure is still only partly understood.
+2. **Weaken replay assumptions.** Structural safety needs less than outcome identity. The weakest
+   useful replay-compatibility condition is still open.
 
 ## 8. Conclusion
 
@@ -664,3 +764,7 @@ and classified by a pure algebra with explicit assumptions and boundaries.
 14. <a id="ref-14"></a>Marlow, S. et al. (2014). _There is No Fork_. ICFP 2014.
 15. <a id="ref-15"></a>Marlow, S. et al. (2011). _A Monad for Deterministic Parallelism_.
     Haskell 2011.
+16. <a id="ref-16"></a>Hoare, C. A. R., Möller, B., Struth, G., Wehrman, I. (2009). _Foundations of
+    Concurrent Kleene Algebra_. RelMiCS 2009.
+17. <a id="ref-17"></a>Valiant, L. G. (1990). _A Bridging Model for Parallel Computation_.
+    Communications of the ACM 33(8):103–111.

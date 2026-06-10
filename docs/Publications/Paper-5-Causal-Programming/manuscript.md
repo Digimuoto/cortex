@@ -8,7 +8,7 @@ status: draft
 authors:
   - Julius Koskela
 date: 2026-05-04
-updated: 2026-05-04
+updated: 2026-06-10
 related:
   - docs/Publications/Paper-1-staged-reduction/
   - docs/Publications/Paper-2-algebraic-foundations/
@@ -993,11 +993,14 @@ proposals whose serialized form cannot denote the proof-side sets and natural nu
 ### 5.4 The verification surface
 
 The Cortex proof-status dashboard is conservative by design. It tracks human-level claims, not raw
-theorem counts. As of the most recent revision, the dashboard contains 25 such claims. All 25 are
-mechanized in Lean 4. Of the 25, 17 are connected to executable Haskell correspondence through
-checks, witnesses, regression tests, or hooks; 2 are graph-vocabulary proof-only facts with no
-direct runtime analog; the remaining 6 have a Lean proof in place with executable correspondence
-work in progress.
+theorem counts. As of 2026-06-10, the dashboard contains 28 such claims. All 28 are mechanized in
+Lean 4, with no axioms and no incomplete proofs in the theory tree. Of the 28, 19 are connected to
+executable Haskell correspondence through checks, witnesses, regression tests, or hooks; 2 are
+graph-vocabulary proof-only facts with no direct runtime analog; the remaining 7 have a Lean proof
+in place with executable correspondence work in progress. Since this draft was first written, the
+correspondence layer has also gained an enforced compiler invariant: every compiled circuit is gated
+on a binding check that the admission artifact it carries describes exactly that circuit, so
+artifact-circuit drift is a compile failure rather than a silent possibility.
 
 The dashboard explicitly distinguishes Lean-side proof from runtime correspondence. A Lean proof is
 not the same thing as proof that the Haskell runtime conforms; the boundary witness must still be
@@ -1105,8 +1108,11 @@ eraser configuration preserves the no-signalling property—the unsorted screen 
 balanced regardless of phase—and recovers complementary fringes only when the data is conditioned on
 the marker observation. At 100 shots per circuit, this run is qualitative rather than a precision
 physics claim, but the expected pattern is clearly visible. The reproducibility artifacts include
-the Wire source, the report file, and the IBM Runtime job identifiers; the run reported here used
-the `ibm_fez` backend with job identifier `d7rnnhst738s73cfpljg`.
+the Wire source (`examples/wire/quantum-eraser-experiment.wire` in the Cortex repository), the
+report file, and the IBM Runtime job identifiers; the run reported here used the `ibm_fez` backend
+with job identifier `d7rnnhst738s73cfpljg`. At submission freeze, pin the Wire source and report to
+the repository commit used for the run so the artifact reference is exact rather than
+branch-relative.
 
 The demonstration is rhetorically apt for the paradigm. The whole point of the eraser experiment is
 that looking only at the screen marginal hides the joint causal structure: the unsorted distribution

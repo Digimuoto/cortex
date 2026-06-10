@@ -5,9 +5,9 @@ description:
 sidebar:
   label: Paper 2
   order: 2
-status: draft
+status: superseded
 date: 2026-04-28
-updated: 2026-04-28
+updated: 2026-06-10
 related:
   - docs/Publications/Paper-1-staged-reduction/
   - docs/Publications/Paper-3-graph-substitution-semantics/
@@ -17,12 +17,15 @@ related:
 
 # Paper 2 — Algebraic Foundations
 
-The keystone paper in the series: the algebraic calculus that the other papers refine, mechanize,
-and extend.
+The algebraic calculus of fixed-topology staged durable execution. **Superseded:** this material is
+merged into [Paper 1](../Paper-1-staged-reduction/), which now carries the algebraic framing, the
+forward-fragment order, the extension-boundary analysis, and the results table citing the delivered
+Lean mechanization. The directory is retained until Paper 1's submission freeze, then removed.
 
 ## Status
 
-Draft manuscript. See [manuscript.md](manuscript.md) for the full text.
+Superseded by the merged Paper 1 manuscript. The manuscript here is kept for reference; do not edit
+it further.
 
 ## Abstract
 

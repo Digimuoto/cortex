@@ -1,12 +1,12 @@
 ---
 title: "Paper 2: Algebraic Foundations"
-description: Algebraic foundations of staged durable execution.
+description: Algebraic foundations of staged durable execution. Superseded; merged into Paper 1.
 kind: publication
-status: draft
+status: superseded
 authors:
   - Julius Koskela
 date: 2026-04-28
-updated: 2026-04-28
+updated: 2026-06-10
 related:
   - docs/Publications/Paper-1-staged-reduction/
   - docs/Publications/Paper-3-graph-substitution-semantics/
