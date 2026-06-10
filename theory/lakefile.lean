@@ -55,6 +55,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.ActualizedBridge,
     `Cortex.Wire.ElaborationIR,
     `Cortex.Wire.GraphElaboration,
+    `Cortex.Wire.GraphElaborationExec,
     `Cortex.Wire.Make,
     `Cortex.Wire.PhantomAdapter,
     `Cortex.Wire.GeneratedForms,

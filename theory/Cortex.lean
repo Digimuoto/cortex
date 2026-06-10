@@ -31,6 +31,7 @@ import Cortex.Wire.PortLinearity
 import Cortex.Wire.ActualizedBridge
 import Cortex.Wire.ElaborationIR
 import Cortex.Wire.GraphElaboration
+import Cortex.Wire.GraphElaborationExec
 import Cortex.Wire.Make
 import Cortex.Wire.PhantomAdapter
 import Cortex.Wire.GeneratedForms
