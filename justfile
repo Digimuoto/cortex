@@ -34,6 +34,11 @@ bench-pure-wire *ARGS:
     nix run .#pure-wire-bench {{ ARGS }}
 
 # Run the cortex-test suite (hspec-discover)
+# Differential parse: megaparsec vs tree-sitter over the Wire corpus
+wire-grammar-diff:
+    @echo "🔀 Comparing Wire grammars over the corpus..."
+    scripts/wire-grammar-diff
+
 # Regenerate Lean fixtures for emitted Wire admission artifacts
 wire-lean-fixtures:
     @echo "🧬 Regenerating emitted Lean artifact fixtures..."
