@@ -203,6 +203,25 @@ rows.
   renderer (a structural Haskell-to-Lean pretty-printer) and fixture coverage: programs outside the
   representative set are still only checked by the Haskell-side validator. The original
   hand-transcribed `EmittedFixture.chainArtifact` remains as the first instance of the route.
+- The primitive admission relation now has an executable kernel: `CertifiedGraph.elaborate`
+  (`theory/Cortex/Wire/GraphElaborationExec.lean`) computes the certified graph for
+  `empty`/`node`/`binding`/`overlay`/`connect` together with its `Admits` derivation carried in the
+  return type, so soundness has no separate trust step. The matcher computes the ADR 0047-compatible
+  pairs, rejects non-functional matchings (the fan-in/fan-out ambiguity rejections), and constructs
+  the certified `BulkContract` trace with its exact match-set witness. Derived forms return a named
+  `unsupportedForm` error in this slice, and the kernel is not yet differentially compared against
+  Haskell compiler output on shared fixtures.
+- Derived-form elaboration is mechanized as deterministic
+  (`theory/Cortex/Wire/GeneratedFormsDeterminism.lean`): `KindInstantiatedFrontiers` is determined
+  by its child labels (`eq_of_childLabel_eq`), the `make`/`makeEach` label witnesses pin those
+  labels, and `Make.accept_deterministic` / `MakeEach.accept_deterministic` make the accepted object
+  independent of the supplied witness. The emitted artifact for a generated form is therefore unique
+  for its source on the proof side.
+- The frontier typing rules have a mechanized carrier correspondence for the primitive subset:
+  `FrontierTyped` (`theory/Cortex/Wire/FrontierTyping.lean`) states T-Empty/T-Node/T-Overlay/
+  T-Connect over node-qualified port-instance frontiers, and `frontierTyped_of_admits` proves every
+  admitted certified graph is frontier-typed at exactly its exposed boundary. The converse direction
+  and derived forms remain open.
 - `SelectedBranchRecoveryRecord.PhantomAdapterEmbedding` is the recovery-side hook for the case
   where a selected branch contains a finite-product `*` adapter. The embedding theorem proves the
   persisted adapter node is replayed by the selected branch and pruned from every unselected branch.
