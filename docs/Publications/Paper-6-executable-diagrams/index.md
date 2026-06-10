@@ -8,7 +8,7 @@ sidebar:
   order: 6
 status: draft
 date: 2026-05-08
-updated: 2026-05-13
+updated: 2026-06-10
 related:
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Publications/Paper-3-graph-substitution-semantics/

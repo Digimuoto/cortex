@@ -8,8 +8,9 @@ status: draft
 authors:
   - Julius Koskela
 date: 2026-05-08
-updated: 2026-05-13
+updated: 2026-06-10
 related:
+  - docs/Publications/glossary.md
   - docs/Publications/Paper-2-algebraic-foundations/
   - docs/Publications/Paper-3-graph-substitution-semantics/
   - docs/Publications/Paper-4-wire-language/
@@ -34,21 +35,98 @@ documentation: https://digimuoto.github.io/cortex/
 
 # Executable Causal Diagrams with Typed Linear Frontiers
 
-Wire makes a source program elaborate to the causal diagram scheduled, replayed, and explained by
-the runtime. The admitted diagram records which events depend on prior observations, which events
-are incomparable, and which typed values cross between them. Wire turns Lamport's partial-order view
-of distributed execution [\[1\]](#ref-1) into an authoring discipline for executable artifacts.
+Wire is a source language whose programs elaborate to directed graphs of typed events, and whose
+runtime schedules, replays, and explains exactly the graph that elaboration produced. The paper
+turns Lamport's partial-order view of distributed execution [\[1\]](#ref-1) into an authoring
+discipline: the diagram is the program, not a visualization of it.
 
-Conventional source forms tend to hide that structure. Imperative programs are ordered vectors of
-effects: a later read is meaningful only because the program counter supplies an ordered prefix.
-Pure functional `let` expressions move closer to named records of dependencies, but effectful
-programs usually regain a linear spine unless the author adds a separate parallel or applicative
-structure. Wire makes the next step explicit. A graph expression is read as a typed frontier
-transformer: `<>` unions incomparable boundary fragments, and `=>` matches compatible output-input
-endpoints while carrying unmatched endpoints forward. A written pipeline is therefore not a sequence
-of barriers; it is a compact description of a partial order.
+We make three claims. First, a **language claim**: graph expressions read as typed frontier
+transformers — composition either unions independent boundary fragments or matches compatible
+output-input ports — elaborate to port-linear diagrams in which every typed endpoint is used exactly
+once. Second, a **mechanization claim**: the linearity invariant and its preservation through
+elaboration (including bounded node generation and product adapters) are stated and proved in Lean 4
+over an accepted-object intermediate representation. Third, an **execution claim**: a durable
+runtime journals, replays, and reports provenance against the same admitted diagram, so recovery
+resumes from a recorded causal prefix and audit trails point at named nodes and typed edges rather
+than reconstructed traces.
 
-A dashboard request illustrates the gap:
+## Definitions
+
+The five terms the paper relies on are defined here, before use.
+
+A **port instance** is one occurrence of a typed, direction-tagged endpoint — a node name, a port
+name, a nominal payload contract, and an optional label — owned by the node that declares it. For a
+node $n$, $\operatorname{OwnedPorts}(n)$ is the finite set of port instances $n$ declares.
+
+The **frontier** of a graph expression is the multiset of port instances exposed on its boundary:
+the ports not yet consumed by composition. Composition operators are read as frontier transformers.
+**Overlay** (`<>`) unions fragments with disjoint node sets; the result's frontier is the union of
+the operands' frontiers. **Connect** (`=>`) is port-key-matched: an edge forms between a left output
+and a right input exactly when their (contract, label) match keys agree uniquely — direction is
+enforced by matching outputs against inputs; both matched ports leave the frontier, and every
+unmatched port is **carried** — it remains on the composed frontier, acting as an identity wire for
+an open boundary.
+
+A diagram is **admitted** when it passes elaboration and boundary admission; admitted diagrams are
+the objects the runtime executes and the theorems quantify over.
+
+For an admitted graph expression $g$ and a port instance $e \in \operatorname{OwnedPorts}(n)$ of a
+node $n$ in $g$, define two indicator functions
+$\operatorname{internal}_g, \operatorname{frontier}_g : \operatorname{OwnedPorts}(n) \to \{0,1\}$:
+$\operatorname{internal}_g(e) = 1$ iff $e$ is the endpoint of exactly one edge internal to $g$, and
+$\operatorname{frontier}_g(e) = 1$ iff $e$ occurs on the frontier of $g$.
+
+**Definition 1 (port linearity, node-boundary form).** An admitted diagram $g$ is port-linear when
+
+$$
+\forall n \in g,\ \forall e \in \operatorname{OwnedPorts}(n),\quad
+\operatorname{internal}_g(e) + \operatorname{frontier}_g(e) = 1 .
+$$
+
+Every owned endpoint is consumed by exactly one internal edge or exposed on the boundary — never
+both, never neither, never twice. This is the statement mechanized as `PortLinear` in the Lean
+development. Closedness (an empty frontier) is a property, not an admission requirement: admitted
+diagrams compile whether open or closed, with open inputs becoming entry ports and open outputs exit
+ports of the executable circuit. There is no ambient copying or discarding: weakening is not an
+operation, and contraction requires an explicit node that consumes one endpoint and produces fresh
+ones.
+
+## A Three-Node Example
+
+The smallest composition that shows both matching and carrying:
+
+```wire
+contract A;
+contract B;
+contract C;
+
+node source
+  -> left: A;
+  -> right: B;
+  = @demo.source ({});
+
+node use_left
+  <- left: A;
+  -> out: C = @demo.use_left (left);
+
+source => use_left
+```
+
+The frontiers are $\{\mathit{left}^{+}{:}A,\ \mathit{right}^{+}{:}B\}$ for `source` and
+$\{\mathit{left}^{-}{:}A,\ \mathit{out}^{+}{:}C\}$ for `use_left` (superscripts mark direction).
+Connect matches the unique compatible pair $\mathit{left}^{+}/\mathit{left}^{-}$ on key
+$(A, \mathit{left})$ and forms one edge; `right` and `out` are carried. The composed frontier is
+$\{\mathit{right}^{+}{:}B,\ \mathit{out}^{+}{:}C\}$, and Definition 1 checks per port: `source.left`
+and `use_left.left` are internal (indicator $1+0$), the other two are frontier ($0+1$). If a second
+node also declared `<- left: A`, the composition would be rejected — one produced endpoint with two
+compatible consumers has no linear reading, and the admission error says so at the source level.
+That rejection, scaled up, is the paper's running discipline.
+
+## A Realistic Diagram: the Dashboard Diamond
+
+A dashboard request shows what the discipline buys at realistic scale. Conventional source forms
+hide the causal structure: imperative programs are ordered vectors of effects, and effectful
+functional programs regain a linear spine unless the author adds separate parallel structure.
 
 ```python
 async def dashboard(uid):
@@ -68,20 +146,12 @@ reconstructs a DAG from spans after the fact. Durable workflow runtimes can jour
 expose the causal object directly.
 
 In Wire, the diamond is authored directly rather than inferred from spans, continuations, or runtime
-heuristics. Durable replay and provenance refer to the admitted diagram: recovery resumes from a
-recorded causal prefix, and audit trails can point to named nodes and typed edges instead of
-reconstructed traces outside the language.
-
-## The Dashboard Diamond in Wire
-
-The same request can be authored as a typed causal diagram. Contracts are nominal boundary
-interfaces, not first-class CorePure values. Wire's pure expression sublanguage, CorePure, computes
-JSON-shaped payloads; contracts classify the ports through which those payloads enter and leave the
-diagram. The `@` form is Wire's effect boundary: network calls, storage, model calls, tools, and
-other host effects stay behind registered executors, while deterministic payload shaping can stay in
-Wire. Pulse, Cortex's durable runtime, journals outcomes for those executor nodes over the admitted
-topology; CorePure expressions remain deterministic boundary equations rather than hidden host
-effects.
+heuristics. Contracts are nominal boundary interfaces. CorePure, the pure expression sublanguage,
+computes JSON-shaped payloads; contracts classify the ports through which those payloads enter and
+leave the diagram. The `@` form is the effect boundary: network calls, storage, model calls, and
+other host effects stay behind registered executors. Pulse, the durable runtime, journals outcomes
+for executor nodes over the admitted topology; CorePure expressions remain deterministic boundary
+equations rather than hidden host effects.
 
 ```wire
 # Registered facts that may cross node boundaries.
@@ -187,47 +257,51 @@ conjunctive over all predecessors. It records that `profile` has no causal reaso
 either branch.
 
 If the dashboard tried to wire `fetch_user` directly into two branches that both declared
-`<- user: UserProfile`, admission would reject the graph: one produced endpoint would have two
-consumers. This is a semantic rejection. A silent copy of `user` would remove the event that
-explains why two downstream observations are legitimate. The fix is to name the causal event that
-derives branch facts from one prior observation.
+`<- user: UserProfile`, admission would reject the graph — the three-node rejection from above at
+scale: one produced endpoint would have two consumers. This is a semantic rejection. A silent copy
+of `user` would remove the event that explains why two downstream observations are legitimate. The
+fix is `prepare_dashboard`: name the causal event that derives branch facts from one prior
+observation.
 
-## Linear Frontiers and Algebraic Graphs
+## Relation to Algebraic Graphs, Open Graphs, and Linear Logic
 
-Linearity supplies the accounting discipline behind the causal reading. It is the bridge from
-Lamport's partial-order view to source authoring: fan-out without a named event destroys the causal
-explanation for why two downstream observations share a prior source. Wire refines Mokhov's algebra
-of graphs [\[2\]](#ref-2): the source skeleton still has empty diagrams, vertices, overlay, and
-connect, but vertices carry named input and output ports, and each port endpoint is a resource. The
-same boundary admits graph expressions, determines executable topology, and exposes proof
-obligations.
+Linearity (Definition 1) supplies the accounting discipline behind the causal reading. It is the
+bridge from Lamport's partial-order view to source authoring: fan-out without a named event destroys
+the causal explanation for why two downstream observations share a prior source.
 
-At the node boundary, the intended invariant is small enough to state directly:
+**Against Mokhov's algebra of graphs** [\[2\]](#ref-2), the delta is precise. Wire keeps the
+four-constructor skeleton — empty, vertex, overlay, connect — but vertices carry named, typed ports,
+and connect changes meaning: Mokhov's connect adds the full cross-product of edges between operands,
+while Wire's `=>` adds an edge only per uniquely matched port key and carries the rest. Two
+algebraic consequences follow. Multiple compatible counterparts for one port are a static error
+rather than a fan-out, and source-level distributivity of connect over overlay deliberately
+**fails**: distributing a source expression across an overlay can duplicate an operand and with it a
+port resource, so `(down => some) <> (down => things)` is rejected where `down => some <> things` is
+admitted. Mokhov's laws are recovered after admission by a forgetful lowering that erases port
+identity into a plain edge relation; the laws hold of the lowered object, not of source expressions.
 
-$$
-\forall e \in \operatorname{OwnedPorts}(n),\quad
-\operatorname{internal}(e) + \operatorname{frontier}(e) = 1
-$$
+**Against cospan, open-graph, and string-diagram accounts of composition** [\[3\]](#ref-3),
+[\[4\]](#ref-4), [\[7\]](#ref-7), Wire's boundary is the same shape — a typed interface through
+which composition glues — but the interface is a multiset of contract-and-label-keyed ports with
+admission obligations attached, and the composite is not only a categorical object: it is the
+executable artifact a durable runtime schedules and replays, with the linearity obligation
+discharged by a mechanized check rather than by construction in a chosen category. We do not claim a
+functorial semantics into a cospan category here; stating one is future work, and the
+port-key-matched composition (partial, key-directed, carrying) is exactly where such a statement
+would have to differ from the standard symmetric monoidal setting.
 
-An owned endpoint is either used by exactly one internal edge or remains exposed on the frontier.
-The closed-circuit check is the final admission step requiring a top-level circuit to have no
-exposed endpoints. Overlay forms disjoint incomparable frontier union; connect matches and consumes
-compatible output-input endpoint pairs; unmatched endpoints remain open obligations on the composed
-boundary. Operationally, a carried endpoint plays the role of an identity wire for an open frontier:
-it crosses a composition unchanged until a later compatible input consumes it. The frontier is
-treated as a multiset of labelled ports, so exchange holds definitionally while source order is
-retained for diagnostics. Weakening is not an operation that discards resources. Contraction is not
-ambient either: reusing information requires a node that consumes one endpoint and produces fresh
-endpoints with their own labels and contracts.
+**Against linear logic and proof nets** [\[5\]](#ref-5), [\[6\]](#ref-6), Wire inherits the
+structural-rule vocabulary but uses a restricted fragment: exchange holds definitionally (the
+frontier is a multiset; source order is kept only for diagnostics), weakening is absent (no
+operation discards a resource), and contraction is never ambient — reusing information requires an
+explicit node consuming one endpoint and producing fresh ones, which is what makes every fan-out a
+named causal event. There is no exponential modality and no cut elimination claim; the linear
+discipline governs diagram admission, not proof reduction.
 
-Finite-product adapters support the same law. The artifact supports a `*` operator that elaborates
-to a generated phantom adapter for named records and bounded indexed products such as `[T; 4]`. The
-adapter crosses one product constructor, creates distinct leaf endpoints, and then ordinary connect
-consumes each leaf once. Static scatter/gather uses this mechanism, but it adds no copying rule and
-does not drive the paper's argument. The structural-rule vocabulary is inherited from linear logic
-and proof-net work [\[5\]](#ref-5), [\[6\]](#ref-6), while the interface shape places Wire near
-cospan, open-graph, and string-diagram accounts of composition [\[3\]](#ref-3), [\[4\]](#ref-4),
-[\[7\]](#ref-7).
+Finite-product adapters stay inside the same law. The `*` operator elaborates to a generated
+**phantom adapter** for named records and bounded indexed products such as `[T; 4]`: the adapter
+crosses one product constructor, creates distinct leaf endpoints, and ordinary connect consumes each
+leaf once. Static scatter/gather uses this mechanism; it adds no copying rule.
 
 ## One Object, Five Views
 
@@ -280,6 +354,14 @@ source-linearity preservation for certified bounded generation and product adapt
 source-to-actualized bridge proves port-domain exactness for aligned witnesses. Edge-side exactness,
 runtime-witness production, and correspondence to compiled Haskell artifacts remain open obligations
 in the verification story.
+
+The same discipline reaches an unplanned domain. Wire's examples include quantum circuit
+descriptions — among them a delayed-choice quantum eraser executed on IBM hardware — authored in the
+same language with no quantum-specific rules: qubit-carrying ports are linear resources, so the
+calculus's fan-out rejection coincides with the no-cloning constraint a qubit port requires, and
+gates are nodes whose typed frontiers enforce application order. One port-linear language spans
+durable workflows and quantum circuit description because both are causal diagrams over unforgeable
+resources.
 
 The submitted artifact exposes this boundary through a build-backed dashboard example, parser and
 compiler path, source includes, bounded graph generation, indexed family projection, finite-product
