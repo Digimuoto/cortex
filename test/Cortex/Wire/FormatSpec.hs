@@ -10,7 +10,13 @@ The spec exercises the public Wire formatter through the same Nix-backed test su
 -}
 module Cortex.Wire.FormatSpec (spec) where
 
+import Data.Foldable (for_)
+import Data.List (sort)
 import Data.Text (Text)
+import Data.Text.IO qualified as TIO
+import Data.Traversable (for)
+import System.Directory (doesDirectoryExist, listDirectory)
+import System.FilePath (takeExtension, (</>))
 import Test.Hspec
 
 import Cortex.Wire
@@ -275,6 +281,44 @@ spec = do
       let source = "let home = \"${HOME}\";\nhome\n"
       formatWireSource "test" source
         `shouldBe` Right "let home = \"${HOME}\";\n\nhome\n"
+
+  describe "format round-trip over the Wire corpus" $ do
+    corpusFiles <- runIO discoverWireCorpus
+    it "discovers a non-trivial corpus" $
+      length corpusFiles `shouldSatisfy` (>= 15)
+    for_ corpusFiles $ \path ->
+      it ("round-trips " <> path) $ do
+        source <- TIO.readFile path
+        expanded <- requireRightIO (expandWireSourceIncludes path source)
+        -- A successful format already verifies its own reparse equality (or
+        -- deliberately preserves the source); the second pass pins idempotence:
+        -- formatted output is the formatter's fixed point.
+        formatted <- requireRight (formatWireSourceWithExpanded path source expanded)
+        expandedFormatted <- requireRightIO (expandWireSourceIncludes path formatted)
+        formatWireSourceWithExpanded path formatted expandedFormatted
+          `shouldBe` Right formatted
+
+discoverWireCorpus :: IO [FilePath]
+discoverWireCorpus = do
+  exampleFiles <- listWireFilesRecursively "examples/wire"
+  fixtureFiles <- listWireFilesRecursively "test/fixtures/wire"
+  pure (sort (exampleFiles <> fixtureFiles))
+
+listWireFilesRecursively :: FilePath -> IO [FilePath]
+listWireFilesRecursively dir = do
+  entries <- listDirectory dir
+  fmap concat . for entries $ \entry -> do
+    let path = dir </> entry
+    isDir <- doesDirectoryExist path
+    if isDir
+      then listWireFilesRecursively path
+      else pure [path | takeExtension path == ".wire"]
+
+requireRightIO :: Show err => IO (Either err a) -> IO a
+requireRightIO action =
+  action >>= \case
+    Right value -> pure value
+    Left err -> expectationFailure ("expected Right, got Left " <> show err) >> pure (error "unreachable")
 
 requireRight :: Either WireFormatError Text -> IO Text
 requireRight = \case
