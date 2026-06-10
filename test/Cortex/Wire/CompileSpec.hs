@@ -3764,6 +3764,72 @@ spec = describe "Cortex.Wire.Compile" $ do
         mutated
         (patchAdmissionMetadata mutated compiled)
 
+    it "rejects a select row whose condition node resolves to a task node" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let mutated =
+            mutateFirstSelectRow
+              ( \selectRow ->
+                  selectRow {selectAdmissionConditionNode = CircuitNodeRef "publish_report"}
+              )
+              artifact
+      expectBindingFailure
+        (\case BindingSelectConditionNodeNotCondition {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
+    it "rejects a select row reduced below two arms" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let mutated =
+            mutateFirstSelectRow
+              (\selectRow -> selectRow {selectAdmissionArms = take 1 selectRow.selectAdmissionArms})
+              artifact
+      expectBindingFailure
+        (\case BindingSelectArmGroupTooSmall {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
+    it "rejects select rows whose arms are all identity against a concrete tree" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let pruneArm arm =
+            arm
+              { selectArmBodyNodes = []
+              , selectArmBodyEntries = []
+              , selectArmBodyExits = []
+              }
+          mutated =
+            mutateFirstSelectRow
+              (\selectRow -> selectRow {selectAdmissionArms = fmap pruneArm selectRow.selectAdmissionArms})
+              artifact
+      expectBindingFailure
+        (\case BindingSelectBranchShapeMismatch {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
+    it "rejects a forged extra arm that promises a nested condition node" $ do
+      compiled <- requireRight (compileWireText selectSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let forgeThirdArm selectRow =
+            case reverse selectRow.selectAdmissionArms of
+              lastArm : _ ->
+                selectRow
+                  { selectAdmissionArms =
+                      selectRow.selectAdmissionArms
+                        <> [ lastArm
+                               { selectArmSourceIndex = lastArm.selectArmSourceIndex + 1
+                               , selectArmSourceKey = "forged"
+                               }
+                           ]
+                  }
+              [] -> selectRow
+          mutated = mutateFirstSelectRow forgeThirdArm artifact
+      expectBindingFailure
+        (\case BindingSelectNestedFragmentShapeMismatch {} -> True; _ -> False)
+        mutated
+        (patchAdmissionMetadata mutated compiled)
+
     it "rejects circuit entry nodes that are not topology sources" $ do
       compiled <- requireRight (compileWireText simpleChainSourceText)
       artifact <- requireWireAdmissionArtifact compiled

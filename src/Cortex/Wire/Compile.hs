@@ -92,6 +92,7 @@ import Cortex.Wire.AdmissionArtifact
   , wireAdmissionMetadataKey
   , wireAdmissionMetadataValue
   )
+import Cortex.Wire.AdmissionBinding (admissionArtifactBindsCompiledCircuit)
 import Cortex.Wire.Circuit.Artifact
   ( CircuitCompatibilityWitness (..)
   , CircuitConditionNode (..)
@@ -317,17 +318,29 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
         attachAdmissionMetadata
           lowered.lwfMetadata
           admission
-  pure
-    CompiledCircuit
-      { compiledCircuitId = lowered.lwfCircuitId
-      , compiledCircuitLabel = lowered.lwfCircuitId
-      , compiledCircuitCompatibility = compatibilityWitness wireFile
-      , compiledCircuitEntryNodes = Set.toAscList (sources relation)
-      , compiledCircuitExitNodes = Set.toAscList (sinks relation)
-      , compiledCircuitTopology = relation
-      , compiledCircuitNodes = Map.map (.lnCompiledNode) lowered.lwfFragment.gfNodes
-      , compiledCircuitMetadata = metadataValue
-      }
+      compiled =
+        CompiledCircuit
+          { compiledCircuitId = lowered.lwfCircuitId
+          , compiledCircuitLabel = lowered.lwfCircuitId
+          , compiledCircuitCompatibility = compatibilityWitness wireFile
+          , compiledCircuitEntryNodes = Set.toAscList (sources relation)
+          , compiledCircuitExitNodes = Set.toAscList (sinks relation)
+          , compiledCircuitTopology = relation
+          , compiledCircuitNodes = Map.map (.lnCompiledNode) lowered.lwfFragment.gfNodes
+          , compiledCircuitMetadata = metadataValue
+          }
+  -- The artifact and the circuit are derived from the same lowering fragment
+  -- through parallel paths; gating on the binding checker turns that shared
+  -- derivation into an enforced invariant instead of a refactor hazard.
+  case admissionArtifactBindsCompiledCircuit admission compiled of
+    Right () -> pure compiled
+    Left bindingError ->
+      Left
+        ( WireCore.WireParseError
+            ( "internal Wire admission artifact does not bind to the compiled circuit: "
+                <> T.pack (show bindingError)
+            )
+        )
 
 validateWireAdmissionArtifact
   :: WireAdmissionArtifact -> Either WireCore.WireError WireAdmissionArtifact
