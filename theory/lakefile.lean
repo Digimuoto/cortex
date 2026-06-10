@@ -58,6 +58,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.Make,
     `Cortex.Wire.PhantomAdapter,
     `Cortex.Wire.GeneratedForms,
+    `Cortex.Wire.GeneratedFormsDeterminism,
     `Cortex.Wire.AdmissionArtifact,
     `Cortex.Wire.AdmissionArtifact.Check,
     `Cortex.Wire.AdmissionArtifact.Boundary,
