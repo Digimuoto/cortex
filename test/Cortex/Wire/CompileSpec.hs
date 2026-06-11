@@ -67,6 +67,7 @@ import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
 import Cortex.Wire.Compile
   ( compileWireFragmentText
   , compileWireFragmentTextWithEnv
+  , compileWireModules
   , compileWireText
   , compileWireTextWithEnv
   , compileWireTextWithReturn
@@ -87,7 +88,7 @@ import Cortex.Wire.Executor
   , wireExecutorProjectionFromPorts
   , wireExecutorRegistryFromList
   )
-import Cortex.Wire.Include (expandWireSourceIncludes)
+import Cortex.Wire.Import (loadWireModuleClosure, renderWireImportError)
 import Cortex.Wire.LeanFixture
   ( EmittedFixture (..)
   , compiledWireAdmissionArtifact
@@ -3485,9 +3486,12 @@ spec = describe "Cortex.Wire.Compile" $ do
         `shouldBe` Set.singleton (CircuitNodeRef "reduce_findings")
 
     it "preserves the C build example as a structured shell graph" $ do
-      source <- TIO.readFile "examples/wire/c-build/c-build.wire"
-      expanded <- requireRight =<< expandWireSourceIncludes "examples/wire/c-build/c-build.wire" source
-      compiled <- requireRight (compileWireText expanded)
+      -- The example imports its builder vocabulary from c-builder.wire, so
+      -- compilation goes through the module-closure loader.
+      modules <-
+        either (fail . T.unpack . renderWireImportError) pure
+          =<< loadWireModuleClosure "examples/wire/c-build/c-build.wire"
+      compiled <- requireRight (compileWireModules emptyWireCompileEnv modules)
       Set.fromList compiled.compiledCircuitEntryNodes
         `shouldBe` Set.singleton (CircuitNodeRef "plan_specs")
       Set.fromList compiled.compiledCircuitExitNodes

@@ -23,6 +23,11 @@ module Cortex.Wire.Compile
   , compileWireTextWithReturnAndEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
+  , WireModule (..)
+  , WireModuleExports
+  , compileWireModules
+  , compileWireModulesForRun
+  , compileWireModulesWithReturn
   )
 where
 
@@ -289,6 +294,430 @@ compileWireParsedFragmentFileWithEnv compileEnv parseInfo wireFile = do
       wireFile
   compileLoweredWireFile compileEnv False wireFile lowered
 
+{- | One parsed module of an import closure. Loading, path resolution, and
+ordering are IO concerns owned by "Cortex.Wire.Import"; the compiler consumes
+an already-ordered closure purely (dependencies first, root last).
+-}
+data WireModule = WireModule
+  { wireModulePath :: !FilePath
+  -- ^ Canonical identity of the module file; unique within a closure.
+  , wireModuleDisplayPath :: !Text
+  -- ^ Path used in diagnostics.
+  , wireModuleParseInfo :: !WireParseInfo
+  , wireModuleFile :: !WireFile
+  , wireModuleImportPaths :: !(Map Text FilePath)
+  {- ^ Import path text as written in this module, resolved to the canonical
+  path of the target module.
+  -}
+  }
+  deriving stock (Eq, Show)
+
+-- | The importable surface of a lowered module.
+data WireModuleExports = WireModuleExports
+  { wmeDisplayPath :: !Text
+  , wmeGraphs :: !(Map Text GraphFragment)
+  , wmeValues :: !(Map Text EvalValue)
+  , wmePure :: !(Map Text [CorePureBinding])
+  {- ^ Exported CorePure bindings together with their in-module support
+  closure, in module declaration order.
+  -}
+  , wmeFileReturn :: !(Maybe GraphFragment)
+  , wmePrivateNames :: !(Set.Set Text)
+  , wmeContracts :: !(Set.Set Text)
+  , wmeRecordContracts :: !(Map Text (Map Text ContractId))
+  }
+  deriving stock (Eq, Show)
+
+-- | Compile an import closure to the root module's circuit.
+compileWireModules
+  :: WireCompileEnv -> NonEmpty WireModule -> Either WireCore.WireError CompiledCircuit
+compileWireModules compileEnv modules =
+  fst <$> compileWireModulesForRun compileEnv modules
+
+{- | Compile an import closure and also return the merged top-level CorePure
+bindings, which a local runner needs to evaluate pure nodes whose bindings
+were imported from another module.
+-}
+compileWireModulesForRun
+  :: WireCompileEnv
+  -> NonEmpty WireModule
+  -> Either WireCore.WireError (CompiledCircuit, [CorePureBinding])
+compileWireModulesForRun = compileModulesInternal Nothing
+
+{- | Compile an import closure selecting a named graph binding of the root
+module as the compiled return, mirroring 'compileWireFileWithReturnAndEnv'.
+-}
+compileWireModulesWithReturn
+  :: WireCompileEnv
+  -> Text
+  -> NonEmpty WireModule
+  -> Either WireCore.WireError CompiledCircuit
+compileWireModulesWithReturn compileEnv selectedReturn modules =
+  fst <$> compileModulesInternal (Just selectedReturn) compileEnv modules
+
+compileModulesInternal
+  :: Maybe Text
+  -> WireCompileEnv
+  -> NonEmpty WireModule
+  -> Either WireCore.WireError (CompiledCircuit, [CorePureBinding])
+compileModulesInternal maybeSelectedReturn compileEnv modules = do
+  let dependencyModules = NE.init modules
+      rootModule = NE.last modules
+  exportsByPath <- foldlM (addModuleExports compileEnv) Map.empty dependencyModules
+  rootCtx <- moduleImportContext exportsByPath rootModule
+  let rootFile = case maybeSelectedReturn of
+        Nothing -> rootModule.wireModuleFile
+        Just selectedReturn ->
+          (rootModule.wireModuleFile)
+            { wireFileReturn = Just (ExprIdent (QName (selectedReturn :| [])))
+            }
+      unusedPolicy = case maybeSelectedReturn of
+        Nothing -> RequireAllDeclaredNodesUsed
+        Just _ -> AllowUnusedDeclaredNodes
+  (lowered, loweredState) <-
+    lowerWireFileWithImports
+      compileEnv
+      rootCtx
+      rootModule.wireModuleParseInfo.wireParseGeneratedFamilies
+      unusedPolicy
+      rootFile
+  compiled <- compileLoweredWireFile compileEnv True rootFile lowered
+  pure (compiled, loweredState.lsPureBindings)
+
+addModuleExports
+  :: WireCompileEnv
+  -> Map FilePath WireModuleExports
+  -> WireModule
+  -> Either WireCore.WireError (Map FilePath WireModuleExports)
+addModuleExports compileEnv exportsByPath wireModule = do
+  importCtx <- moduleImportContext exportsByPath wireModule
+  moduleExports <- lowerModuleExports compileEnv importCtx wireModule
+  Right (Map.insert wireModule.wireModulePath moduleExports exportsByPath)
+
+moduleImportContext
+  :: Map FilePath WireModuleExports
+  -> WireModule
+  -> Either WireCore.WireError (Map Text WireModuleExports)
+moduleImportContext exportsByPath wireModule =
+  traverse lookupExports wireModule.wireModuleImportPaths
+  where
+    lookupExports resolvedPath =
+      case Map.lookup resolvedPath exportsByPath of
+        Just moduleExports -> Right moduleExports
+        Nothing ->
+          Left
+            ( WireCore.WireParseError
+                ( "internal Wire import closure is out of dependency order at "
+                    <> wireModule.wireModuleDisplayPath
+                )
+            )
+
+-- | Lower a dependency module and compute its importable surface.
+lowerModuleExports
+  :: WireCompileEnv
+  -> Map Text WireModuleExports
+  -> WireModule
+  -> Either WireCore.WireError WireModuleExports
+lowerModuleExports compileEnv importCtx wireModule = do
+  let wireFile = wireModule.wireModuleFile
+  loweredState <-
+    foldlM
+      (lowerTopForm compileEnv importCtx)
+      (loweringStateWithProvenance wireModule.wireModuleParseInfo.wireParseGeneratedFamilies)
+      wireFile.wireFileTopForms
+  returnFragment <- moduleReturnFragment compileEnv loweredState wireFile
+  let usedNodeRefs =
+        foldMap (foldMap loweredNodeRefs . (.gfNodes)) returnFragment
+          <> loweredState.lsExportedGraphNodeRefs
+  case unusedDeclaredNodeRefs loweredState usedNodeRefs of
+    unusedRef : _ -> Left (WireCore.WireUnusedNodeRef unusedRef)
+    [] -> Right ()
+  let exportedNames = loweredState.lsExportedLetNames
+      pureBindingNames =
+        Set.fromList (fmap (.corePureBindingName) loweredState.lsPureBindings)
+      definedNames =
+        Map.keysSet loweredState.lsGraphBindings
+          <> Map.keysSet loweredState.lsBindings
+          <> Map.keysSet loweredState.lsNamedNodes
+          <> pureBindingNames
+  Right
+    WireModuleExports
+      { wmeDisplayPath = wireModule.wireModuleDisplayPath
+      , wmeGraphs = Map.restrictKeys loweredState.lsGraphBindings exportedNames
+      , wmeValues = Map.restrictKeys loweredState.lsBindings exportedNames
+      , wmePure =
+          Map.fromList
+            [ (name, pureBindingSupportClosure loweredState.lsPureBindings name)
+            | name <- Set.toAscList (Set.intersection exportedNames pureBindingNames)
+            ]
+      , wmeFileReturn = returnFragment
+      , wmePrivateNames = definedNames `Set.difference` exportedNames
+      , wmeContracts = loweredState.lsDeclaredContracts
+      , wmeRecordContracts = loweredState.lsDeclaredRecordContracts
+      }
+
+moduleReturnFragment
+  :: WireCompileEnv
+  -> LoweringState
+  -> WireFile
+  -> Either WireCore.WireError (Maybe GraphFragment)
+moduleReturnFragment compileEnv st wireFile =
+  case wireFile.wireFileReturn of
+    Nothing -> Right Nothing
+    Just returnExpr
+      | isGraphLetExpr st returnExpr -> do
+          (fragment, _metadata, st') <- lowerFileReturn compileEnv st returnExpr
+          Right (Just (annotateGeneratedFamiliesInFragment st' fragment))
+      | otherwise -> Right Nothing
+
+-- | Resolve one @import@ statement against the loaded module surface.
+lowerImportSpec
+  :: Map Text WireModuleExports
+  -> LoweringState
+  -> ImportSpec
+  -> Either WireCore.WireError LoweringState
+lowerImportSpec importCtx st importSpec = do
+  let pathText = importSpecPath importSpec
+  moduleExports <-
+    case Map.lookup pathText importCtx of
+      Just moduleExports -> Right moduleExports
+      Nothing ->
+        Left
+          ( WireCore.WireParseError
+              ( "import \""
+                  <> pathText
+                  <> "\" requires file-based compilation; compile through the module loader"
+                  <> " (wire build/run or Cortex.Wire.Import)"
+              )
+          )
+  stWithContracts <- mergeAmbientContracts moduleExports st
+  case importSpec of
+    ImportNamed name _path ->
+      case moduleExports.wmeFileReturn of
+        Nothing ->
+          Left
+            ( WireCore.WireParseError
+                ( "imported file "
+                    <> moduleExports.wmeDisplayPath
+                    <> " has no graph-valued file-return to import as "
+                    <> name
+                )
+            )
+        Just fragment ->
+          bindImportedGraph moduleExports name fragment stWithContracts
+    ImportExplicit names _path ->
+      foldlM (bindImportedName moduleExports) stWithContracts names
+
+importSpecPath :: ImportSpec -> Text
+importSpecPath = \case
+  ImportNamed _name path -> path
+  ImportExplicit _names path -> path
+
+{- | Contracts are ambient once a file is loaded: every import merges the
+imported module's contract surface. Identical shapes merge silently; a
+shape conflict is an error.
+-}
+mergeAmbientContracts
+  :: WireModuleExports -> LoweringState -> Either WireCore.WireError LoweringState
+mergeAmbientContracts moduleExports st = do
+  traverse_ checkContract (Set.toAscList moduleExports.wmeContracts)
+  Right
+    st
+      { lsDeclaredContracts = st.lsDeclaredContracts <> moduleExports.wmeContracts
+      , lsDeclaredRecordContracts =
+          st.lsDeclaredRecordContracts <> moduleExports.wmeRecordContracts
+      , lsAmbientContracts = st.lsAmbientContracts <> moduleExports.wmeContracts
+      }
+  where
+    checkContract contractName
+      | Set.member contractName st.lsDeclaredContracts =
+          if Map.lookup contractName st.lsDeclaredRecordContracts
+            == Map.lookup contractName moduleExports.wmeRecordContracts
+            then Right ()
+            else
+              Left
+                ( WireCore.WireParseError
+                    ( "contract "
+                        <> contractName
+                        <> " imported from "
+                        <> moduleExports.wmeDisplayPath
+                        <> " conflicts with an existing declaration of a different shape"
+                    )
+                )
+      | topLevelBindingNameTaken st contractName =
+          Left
+            ( WireCore.WireParseError
+                ( "contract "
+                    <> contractName
+                    <> " imported from "
+                    <> moduleExports.wmeDisplayPath
+                    <> " collides with an existing non-contract binding"
+                )
+            )
+      | otherwise = Right ()
+
+bindImportedGraph
+  :: WireModuleExports
+  -> Text
+  -> GraphFragment
+  -> LoweringState
+  -> Either WireCore.WireError LoweringState
+bindImportedGraph moduleExports name fragment st = do
+  when (topLevelBindingNameTaken st name) (Left (WireCore.WireDuplicateLetBinding name))
+  foreignRefs <-
+    foldlM recordForeignNodeRef st.lsForeignNodeRefs (Map.keys fragment.gfNodes)
+  Right
+    st
+      { lsGraphBindings = Map.insert name fragment st.lsGraphBindings
+      , lsForeignNodeRefs = foreignRefs
+      }
+  where
+    localNodeRefs = Set.fromList (fmap (.lnRef) (Map.elems st.lsNamedNodes))
+
+    recordForeignNodeRef refs nodeRef
+      | Set.member nodeRef localNodeRefs =
+          Left
+            ( WireCore.WireParseError
+                ( "graph "
+                    <> name
+                    <> " imported from "
+                    <> moduleExports.wmeDisplayPath
+                    <> " contains node "
+                    <> nodeRef.unCircuitNodeRef
+                    <> ", which collides with a locally declared node"
+                )
+            )
+      | otherwise =
+          case Map.lookup nodeRef refs of
+            Just existingSource
+              | existingSource == moduleExports.wmeDisplayPath ->
+                  -- The same module surface reached through two import
+                  -- routes refers to the same node instance; linearity
+                  -- rules govern its use, not the import.
+                  Right refs
+              | otherwise ->
+                  Left
+                    ( WireCore.WireParseError
+                        ( "graph "
+                            <> name
+                            <> " imported from "
+                            <> moduleExports.wmeDisplayPath
+                            <> " contains node "
+                            <> nodeRef.unCircuitNodeRef
+                            <> ", which collides with a node imported from "
+                            <> existingSource
+                        )
+                    )
+            Nothing ->
+              Right (Map.insert nodeRef moduleExports.wmeDisplayPath refs)
+
+bindImportedName
+  :: WireModuleExports -> LoweringState -> Text -> Either WireCore.WireError LoweringState
+bindImportedName moduleExports st name
+  | Just fragment <- Map.lookup name moduleExports.wmeGraphs =
+      bindImportedGraph moduleExports name fragment st
+  | Just value <- Map.lookup name moduleExports.wmeValues = do
+      when (topLevelBindingNameTaken st name) (Left (WireCore.WireDuplicateLetBinding name))
+      let st' = st {lsBindings = Map.insert name value st.lsBindings}
+      Right (appendPureBindingIfCapturable name value st')
+  | Just supportClosure <- Map.lookup name moduleExports.wmePure =
+      foldlM (appendImportedPureBinding moduleExports name) st supportClosure
+  | Set.member name moduleExports.wmePrivateNames =
+      Left
+        ( WireCore.WireParseError
+            ( "file "
+                <> moduleExports.wmeDisplayPath
+                <> " defines "
+                <> name
+                <> " but does not export it; mark it `export let "
+                <> name
+                <> " = ...`"
+            )
+        )
+  | otherwise =
+      Left
+        ( WireCore.WireParseError
+            ( "file "
+                <> moduleExports.wmeDisplayPath
+                <> " does not export "
+                <> name
+            )
+        )
+
+{- | Add one imported CorePure binding. A support dependency that is already
+present with an identical expression merges silently, so diamond imports of
+the same helper stay legal; any other collision is an error.
+-}
+appendImportedPureBinding
+  :: WireModuleExports
+  -> Text
+  -> LoweringState
+  -> CorePureBinding
+  -> Either WireCore.WireError LoweringState
+appendImportedPureBinding moduleExports importedName st binding =
+  case existingExpr of
+    Just expr
+      | expr == binding.corePureBindingExpr -> Right st
+      | otherwise -> Left collisionError
+    Nothing
+      | topLevelBindingNameTaken st binding.corePureBindingName -> Left collisionError
+      | otherwise ->
+          Right st {lsPureBindings = st.lsPureBindings <> [binding]}
+  where
+    existingExpr =
+      lookup
+        binding.corePureBindingName
+        [ (existing.corePureBindingName, existing.corePureBindingExpr)
+        | existing <- st.lsPureBindings
+        ]
+
+    collisionError =
+      WireCore.WireParseError $
+        if binding.corePureBindingName == importedName
+          then
+            "imported binding "
+              <> importedName
+              <> " from "
+              <> moduleExports.wmeDisplayPath
+              <> " collides with an existing binding"
+          else
+            "binding "
+              <> binding.corePureBindingName
+              <> ", imported from "
+              <> moduleExports.wmeDisplayPath
+              <> " as a dependency of "
+              <> importedName
+              <> ", collides with an existing binding"
+
+{- | The dependency-closed slice of a module's CorePure bindings needed by
+one exported binding, in module declaration order.
+-}
+pureBindingSupportClosure :: [CorePureBinding] -> Text -> [CorePureBinding]
+pureBindingSupportClosure moduleBindings rootName =
+  [ binding
+  | binding <- moduleBindings
+  , Set.member binding.corePureBindingName neededNames
+  ]
+  where
+    bindingsByName =
+      Map.fromList
+        [ (binding.corePureBindingName, binding)
+        | binding <- moduleBindings
+        ]
+
+    neededNames = grow (Set.singleton rootName) [rootName]
+
+    grow seen [] = seen
+    grow seen (name : queue) =
+      case Map.lookup name bindingsByName of
+        Nothing -> grow seen queue
+        Just binding ->
+          let references =
+                corePureFreeNames Set.empty binding.corePureBindingExpr
+                  `Set.intersection` Map.keysSet bindingsByName
+              fresh = references `Set.difference` seen
+           in grow (seen <> fresh) (queue <> Set.toAscList fresh)
+
 compileLoweredWireFile
   :: WireCompileEnv
   -> Bool
@@ -401,7 +830,18 @@ data LoweringState = LoweringState
   , lsGeneratedFamilies :: !(Map Text GeneratedFamilyProvenance)
   , lsGeneratedNodes :: !(Map Text GeneratedNodeProvenance)
   , lsExportedGraphNodeRefs :: !(Set.Set CircuitNodeRef)
+  , lsExportedLetNames :: !(Set.Set Text)
   , lsNamedNodes :: !(Map Text LoweredNode)
+  , lsForeignNodeRefs :: !(Map CircuitNodeRef Text)
+  {- ^ Node refs carried in from imported graph values, mapped to the
+  display path of the module that declared them. Used to reject
+  cross-module node-name collisions with a useful message.
+  -}
+  , lsAmbientContracts :: !(Set.Set Text)
+  {- ^ Contracts that became ambient through a file import. A local
+  redeclaration with an identical shape is a readability no-op;
+  a local duplicate of a locally declared contract stays an error.
+  -}
   , lsAnonCounter :: !Int
   , lsDeclaredContracts :: !(Set.Set Text)
   , lsDeclaredRecordContracts :: !(Map Text (Map Text ContractId))
@@ -417,7 +857,10 @@ emptyLoweringState =
     , lsGeneratedFamilies = Map.empty
     , lsGeneratedNodes = Map.empty
     , lsExportedGraphNodeRefs = Set.empty
+    , lsExportedLetNames = Set.empty
     , lsNamedNodes = Map.empty
+    , lsForeignNodeRefs = Map.empty
+    , lsAmbientContracts = Set.empty
     , lsAnonCounter = 0
     , lsDeclaredContracts = Set.empty
     , lsDeclaredRecordContracts = Map.empty
@@ -741,10 +1184,20 @@ lowerWireFileWithProvenance
   -> UnusedNodePolicy
   -> WireFile
   -> Either WireCore.WireError LoweredWireFile
-lowerWireFileWithProvenance compileEnv generatedFamilies unusedNodePolicy wireFile = do
+lowerWireFileWithProvenance compileEnv generatedFamilies unusedNodePolicy wireFile =
+  fst <$> lowerWireFileWithImports compileEnv Map.empty generatedFamilies unusedNodePolicy wireFile
+
+lowerWireFileWithImports
+  :: WireCompileEnv
+  -> Map Text WireModuleExports
+  -> Map Text GeneratedFamilyProvenance
+  -> UnusedNodePolicy
+  -> WireFile
+  -> Either WireCore.WireError (LoweredWireFile, LoweringState)
+lowerWireFileWithImports compileEnv importCtx generatedFamilies unusedNodePolicy wireFile = do
   loweredState <-
     foldlM
-      (lowerTopForm compileEnv)
+      (lowerTopForm compileEnv importCtx)
       (loweringStateWithProvenance generatedFamilies)
       wireFile.wireFileTopForms
   fileReturn <- maybe (Left WireCore.WireMissingCircuit) Right wireFile.wireFileReturn
@@ -753,30 +1206,25 @@ lowerWireFileWithProvenance compileEnv generatedFamilies unusedNodePolicy wireFi
   let usedNodeRefs =
         foldMap loweredNodeRefs witnessedFragment.gfNodes
           <> loweredState'.lsExportedGraphNodeRefs
-      declaredNodeRefs = Set.fromList (fmap (.lnRef) (Map.elems loweredState'.lsNamedNodes))
-      generatedNodeRefs =
-        generatedSiblingRefsForUsedFamilies loweredState' usedNodeRefs
-      unusedNodeRefs =
-        Set.toAscList
-          (declaredNodeRefs `Set.difference` usedNodeRefs `Set.difference` generatedNodeRefs)
-  case (unusedNodePolicy, unusedNodeRefs) of
+      lowered =
+        LoweredWireFile
+          { lwfFragment = witnessedFragment
+          , lwfMetadata = maybeMetadata
+          , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
+          , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
+          }
+  case (unusedNodePolicy, unusedDeclaredNodeRefs loweredState' usedNodeRefs) of
     (RequireAllDeclaredNodesUsed, unusedRef : _) -> Left (WireCore.WireUnusedNodeRef unusedRef)
-    (RequireAllDeclaredNodesUsed, []) ->
-      Right
-        LoweredWireFile
-          { lwfFragment = witnessedFragment
-          , lwfMetadata = maybeMetadata
-          , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
-          , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
-          }
-    (AllowUnusedDeclaredNodes, _) ->
-      Right
-        LoweredWireFile
-          { lwfFragment = witnessedFragment
-          , lwfMetadata = maybeMetadata
-          , lwfCircuitId = fromMaybe "wire" (extractCircuitId maybeMetadata)
-          , lwfDeclaredContracts = loweredState'.lsDeclaredContracts
-          }
+    (RequireAllDeclaredNodesUsed, []) -> Right (lowered, loweredState')
+    (AllowUnusedDeclaredNodes, _) -> Right (lowered, loweredState')
+
+unusedDeclaredNodeRefs :: LoweringState -> Set.Set CircuitNodeRef -> [CircuitNodeRef]
+unusedDeclaredNodeRefs loweredState usedNodeRefs =
+  Set.toAscList
+    (declaredNodeRefs `Set.difference` usedNodeRefs `Set.difference` generatedNodeRefs)
+  where
+    declaredNodeRefs = Set.fromList (fmap (.lnRef) (Map.elems loweredState.lsNamedNodes))
+    generatedNodeRefs = generatedSiblingRefsForUsedFamilies loweredState usedNodeRefs
 
 loweredNodeRefs :: LoweredNode -> Set.Set CircuitNodeRef
 loweredNodeRefs loweredNode =
@@ -834,8 +1282,12 @@ compiledNodeRefs = \case
       foldMap compiledNodeRefs fragment.compiledCircuitFragmentNodes
 
 lowerTopForm
-  :: WireCompileEnv -> LoweringState -> TopForm -> Either WireCore.WireError LoweringState
-lowerTopForm compileEnv st = \case
+  :: WireCompileEnv
+  -> Map Text WireModuleExports
+  -> LoweringState
+  -> TopForm
+  -> Either WireCore.WireError LoweringState
+lowerTopForm compileEnv importCtx st = \case
   TopContract contractDeclValue -> do
     let ContractId contractName = contractDeclValue.contractDeclId
         recordFields = fromMaybe [] contractDeclValue.contractDeclRecordFields
@@ -844,6 +1296,10 @@ lowerTopForm compileEnv st = \case
             [ (fieldName, ContractId (resolveContractId st fieldContract.unContractId))
             | (fieldName, fieldContract) <- recordFields
             ]
+        declaredShape =
+          case contractDeclValue.contractDeclRecordFields of
+            Nothing -> Nothing
+            Just _ -> Just resolvedFields
     case duplicatePortNames (fmap fst recordFields) of
       duplicateField : _ ->
         Left
@@ -856,49 +1312,77 @@ lowerTopForm compileEnv st = \case
               )
           )
       [] -> Right ()
-    if topLevelBindingNameTaken st contractName
-      then Left (WireCore.WireDuplicateBinding contractName)
+    if Set.member contractName st.lsAmbientContracts
+      then
+        if Map.lookup contractName st.lsDeclaredRecordContracts == declaredShape
+          then Right st
+          else
+            Left
+              ( WireCore.WireParseError
+                  ( "contract "
+                      <> contractName
+                      <> " is ambient from a file import with a different shape"
+                  )
+              )
       else
-        Right
-          st
-            { lsDeclaredContracts = Set.insert contractName st.lsDeclaredContracts
-            , lsDeclaredRecordContracts =
-                case contractDeclValue.contractDeclRecordFields of
-                  Nothing -> st.lsDeclaredRecordContracts
-                  Just _ -> Map.insert contractName resolvedFields st.lsDeclaredRecordContracts
-            }
+        if topLevelBindingNameTaken st contractName
+          then Left (WireCore.WireDuplicateBinding contractName)
+          else
+            Right
+              st
+                { lsDeclaredContracts = Set.insert contractName st.lsDeclaredContracts
+                , lsDeclaredRecordContracts =
+                    case declaredShape of
+                      Nothing -> st.lsDeclaredRecordContracts
+                      Just _ -> Map.insert contractName resolvedFields st.lsDeclaredRecordContracts
+                }
   TopUse useSpec ->
     lowerUseSpec st useSpec
-  TopImport _ ->
-    Left (WireCore.WireParseError "Wire imports are not compiled yet.")
+  TopImport importSpec ->
+    lowerImportSpec importCtx st importSpec
   TopLet visibility name rhs -> do
     if topLevelBindingNameTaken st name
       then Left (WireCore.WireDuplicateLetBinding name)
-      else case rhs of
-        LetRhsCorePure expr -> do
-          validateCorePureScope st (WireCore.WireParseError . corePureTopLevelScopeError name) Set.empty expr
-          Right
-            st
-              { lsPureBindings =
-                  st.lsPureBindings
-                    <> [ CorePureBinding
-                           { corePureBindingName = name
-                           , corePureBindingExpr = expr
-                           }
-                       ]
-              }
-        LetRhsWire expr ->
-          lowerWireLetBinding compileEnv visibility st name expr
+      else do
+        st' <- case rhs of
+          LetRhsCorePure expr -> do
+            validateCorePureScope st (WireCore.WireParseError . corePureTopLevelScopeError name) Set.empty expr
+            Right
+              st
+                { lsPureBindings =
+                    st.lsPureBindings
+                      <> [ CorePureBinding
+                             { corePureBindingName = name
+                             , corePureBindingExpr = expr
+                             }
+                         ]
+                }
+          LetRhsWire expr ->
+            lowerWireLetBinding compileEnv visibility st name expr
+        Right $
+          case visibility of
+            LetExported -> st' {lsExportedLetNames = Set.insert name st'.lsExportedLetNames}
+            LetPrivate -> st'
   TopNode nodeDecl -> do
     loweredNode <- lowerNamedNode compileEnv st nodeDecl
     let nodeName = nodeDecl.nodeDeclName
     if topLevelBindingNameTaken st nodeName
       then Left (WireCore.WireDuplicateNodeRef loweredNode.lnRef)
-      else
-        Right
-          st
-            { lsNamedNodes = Map.insert nodeName loweredNode st.lsNamedNodes
-            }
+      else case Map.lookup loweredNode.lnRef st.lsForeignNodeRefs of
+        Just foreignSource ->
+          Left
+            ( WireCore.WireParseError
+                ( "node "
+                    <> nodeName
+                    <> " collides with a node of the same name inside a graph imported from "
+                    <> foreignSource
+                )
+            )
+        Nothing ->
+          Right
+            st
+              { lsNamedNodes = Map.insert nodeName loweredNode st.lsNamedNodes
+              }
 
 topLevelBindingNameTaken :: LoweringState -> Text -> Bool
 topLevelBindingNameTaken state name =
@@ -2877,6 +3361,50 @@ validateCorePureScope st mkError initialLocalNames =
           case nonCorePureTopLevelBindingKind st name of
             Just bindingKind -> Left (corePureScopeError name bindingKind)
             Nothing -> Right ()
+
+{- | Free identifiers of a CorePure expression outside the given local
+binders. Mirrors the traversal of 'validateCorePureScope'; keep the match
+exhaustive so new CorePure constructors classify their identifiers here too.
+-}
+corePureFreeNames :: Set.Set Text -> CorePureExpr -> Set.Set Text
+corePureFreeNames localNames = \case
+  CorePureLit {} ->
+    Set.empty
+  CorePureIdent name
+    | Set.member name localNames -> Set.empty
+    | otherwise -> Set.singleton name
+  CorePureList items ->
+    foldMap (corePureFreeNames localNames) items
+  CorePureRecord fields ->
+    foldMap (corePureFreeNames localNames . (.corePureFieldValue)) fields
+  CorePureFieldAccess baseExpr _fieldName ->
+    corePureFreeNames localNames baseExpr
+  CorePureIndex baseExpr indexExpr ->
+    corePureFreeNames localNames baseExpr <> corePureFreeNames localNames indexExpr
+  CorePureLambda params bodyExpr ->
+    corePureFreeNames (localNames <> Set.fromList (NE.toList params)) bodyExpr
+  CorePureCall functionExpr argumentExprs ->
+    corePureFreeNames localNames functionExpr
+      <> foldMap (corePureFreeNames localNames) argumentExprs
+  CorePureUnary _unaryOp operandExpr ->
+    corePureFreeNames localNames operandExpr
+  CorePureBinary _binaryOp lhsExpr rhsExpr ->
+    corePureFreeNames localNames lhsExpr <> corePureFreeNames localNames rhsExpr
+  CorePureLet bindings bodyExpr ->
+    let (boundNames, bindingFree) =
+          foldl
+            ( \(bound, free) binding ->
+                ( Set.insert binding.corePureBindingName bound
+                , free <> corePureFreeNames bound binding.corePureBindingExpr
+                )
+            )
+            (localNames, Set.empty)
+            (NE.toList bindings)
+     in bindingFree <> corePureFreeNames boundNames bodyExpr
+  CorePureIf conditionExpr thenExpr elseExpr ->
+    corePureFreeNames localNames conditionExpr
+      <> corePureFreeNames localNames thenExpr
+      <> corePureFreeNames localNames elseExpr
 
 inputPortLocalNames :: [LoweredPort] -> Set.Set Text
 inputPortLocalNames =

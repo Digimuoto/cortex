@@ -54,7 +54,6 @@ import Cortex.Wire
   , ExecutorCall (..)
   , Expr (..)
   , Field (..)
-  , LetRhs (..)
   , Literal (..)
   , NodeBody (..)
   , NodeDecl (..)
@@ -75,8 +74,6 @@ import Cortex.Wire
   , WirePorts (..)
   , WireValue (..)
   , WireValueSet (..)
-  , compileWireFile
-  , compileWireFileWithReturn
   , evaluatePureTaskOutputs
   , formatWireSourceWithExpanded
   , parseWireFile
@@ -92,7 +89,15 @@ import Cortex.Wire
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
   )
-import Cortex.Wire.Compile (compileWireFragmentTextWithEnv)
+import Cortex.Wire.Compile
+  ( WireModule (..)
+  , compileWireFragmentTextWithEnv
+  , compileWireModules
+  , compileWireModulesForRun
+  , compileWireModulesWithReturn
+  )
+import Cortex.Wire.Contract (emptyWireCompileEnv)
+import Cortex.Wire.Import (loadWireModuleClosure, renderWireImportError)
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
   ( EmittedFixture (..)
@@ -252,12 +257,20 @@ usageText =
 
 buildWire :: Maybe Text -> FilePath -> IO ()
 buildWire maybeSelectedReturn path = do
-  wireFile <- readAndParseWireFile path
+  modules <- loadWireModules path
   let compile =
-        maybe compileWireFile compileWireFileWithReturn maybeSelectedReturn
-  compiled <- either (dieText . renderWireError) pure (compile wireFile)
+        maybe
+          (compileWireModules emptyWireCompileEnv)
+          (compileWireModulesWithReturn emptyWireCompileEnv)
+          maybeSelectedReturn
+  compiled <- either (dieText . renderWireError) pure (compile modules)
   BSL.putStr (AesonPretty.encodePretty compiled)
   BSL.putStr "\n"
+
+loadWireModules :: FilePath -> IO (NonEmpty WireModule)
+loadWireModules path =
+  loadWireModuleClosure path
+    >>= either (dieText . renderWireImportError) pure
 
 {- | Regenerate the Lean fixture modules for emitted admission artifacts.
 The umbrella module is rewritten alongside the per-fixture modules so lake
@@ -341,14 +354,55 @@ fmtWireFile mode path = do
 
 runWire :: FilePath -> IO ()
 runWire path = do
-  wireFile <- readAndParseWireFile path
-  compiled <- either (dieText . renderWireError) pure (compileWireFile wireFile)
-  useScope <- either dieText pure (useScopeFromWireFile wireFile)
-  nodePlan <- either dieText pure (executionLevels compiled wireFile)
+  modules <- loadWireModules path
+  let rootFile = (NE.last modules).wireModuleFile
+      -- Node declarations from every closure module, so the local runner can
+      -- execute nodes that entered the circuit through an imported graph.
+      closureFile =
+        rootFile
+          { wireFileTopForms =
+              concatMap (.wireModuleFile.wireFileTopForms) (NE.toList modules)
+          }
+  (compiled, pureBindings) <-
+    either
+      (dieText . renderWireError)
+      pure
+      (compileWireModulesForRun emptyWireCompileEnv modules)
+  -- `use` stays source-local: each node resolves executors against the use
+  -- scope of the module that declared it.
+  runnerScopes <- either dieText pure (runnerScopesFromModules modules)
+  nodePlan <- either dieText pure (executionLevels compiled closureFile)
   outputLock <- newMVar ()
-  let pureBindings = topLevelPureBindings wireFile
-  _finalState <- foldM (runNodeLevel outputLock useScope pureBindings compiled) emptyRunState nodePlan
+  _finalState <-
+    foldM (runNodeLevel outputLock runnerScopes pureBindings compiled) emptyRunState nodePlan
   pure ()
+
+data RunnerScopes = RunnerScopes
+  { runnerRootScope :: !WireUseScope
+  , runnerNodeScopes :: !(Map Text WireUseScope)
+  }
+
+scopeForNode :: RunnerScopes -> Text -> WireUseScope
+scopeForNode scopes nodeName =
+  fromMaybe scopes.runnerRootScope (Map.lookup nodeName scopes.runnerNodeScopes)
+
+runnerScopesFromModules :: NonEmpty WireModule -> Either Text RunnerScopes
+runnerScopesFromModules modules = do
+  rootScope <- useScopeFromWireFile (NE.last modules).wireModuleFile
+  nodeScopes <-
+    Map.unions
+      <$> traverse
+        ( \wireModule -> do
+            moduleScope <- useScopeFromWireFile wireModule.wireModuleFile
+            pure
+              ( Map.fromList
+                  [ (nodeDecl.nodeDeclName, moduleScope)
+                  | TopNode nodeDecl <- wireModule.wireModuleFile.wireFileTopForms
+                  ]
+              )
+        )
+        (NE.toList modules)
+  pure RunnerScopes {runnerRootScope = rootScope, runnerNodeScopes = nodeScopes}
 
 readAndParseWireFile :: FilePath -> IO WireFile
 readAndParseWireFile path = do
@@ -364,13 +418,13 @@ emptyRunState =
 
 runNodeLevel
   :: MVar ()
-  -> WireUseScope
+  -> RunnerScopes
   -> [CorePureBinding]
   -> CompiledCircuit
   -> RunState
   -> [RunnableNode]
   -> IO RunState
-runNodeLevel outputLock useScope pureBindings compiled state runnableNodes = do
+runNodeLevel outputLock runnerScopes pureBindings compiled state runnableNodes = do
   levelOutputs <-
     mapConcurrently
       ( \runnableNode -> do
@@ -379,7 +433,7 @@ runNodeLevel outputLock useScope pureBindings compiled state runnableNodes = do
               directPredecessors =
                 Set.toAscList (predecessors compiled.compiledCircuitTopology nodeRef)
           nodeInputs <- either (dieTextLocked outputLock) pure (nodeInputsFromState state directPredecessors)
-          outputs <- runRunnableNode outputLock useScope pureBindings nodeInputs runnableNode
+          outputs <- runRunnableNode outputLock runnerScopes pureBindings nodeInputs runnableNode
           pure (nodeId, outputs)
       )
       runnableNodes
@@ -402,14 +456,19 @@ runnableNodeRef = \case
 
 runRunnableNode
   :: MVar ()
-  -> WireUseScope
+  -> RunnerScopes
   -> [CorePureBinding]
   -> NodeInputs
   -> RunnableNode
   -> IO (Map Text WireValue)
-runRunnableNode outputLock useScope pureBindings nodeInputs = \case
+runRunnableNode outputLock runnerScopes pureBindings nodeInputs = \case
   RunnableSourceNode nodeDecl ->
-    runNode outputLock useScope pureBindings nodeInputs nodeDecl
+    runNode
+      outputLock
+      (scopeForNode runnerScopes nodeDecl.nodeDeclName)
+      pureBindings
+      nodeInputs
+      nodeDecl
   RunnableCompiledPure _taskNode config ->
     runCompiledPureNode outputLock nodeInputs config
 
@@ -957,15 +1016,6 @@ topologyLevels relation =
                   let done' = done <> ready
                       remaining' = remaining `Set.difference` ready
                    in go done' remaining' (Set.toAscList ready : acc)
-
-topLevelPureBindings :: WireFile -> [CorePureBinding]
-topLevelPureBindings wireFile =
-  [ CorePureBinding
-      { corePureBindingName = name
-      , corePureBindingExpr = expr
-      }
-  | TopLet _visibility name (LetRhsCorePure expr) <- wireFile.wireFileTopForms
-  ]
 
 useScopeFromWireFile :: WireFile -> Either Text WireUseScope
 useScopeFromWireFile wireFile =

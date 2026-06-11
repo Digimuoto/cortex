@@ -59,8 +59,9 @@ use std.io.{@command as @shell, CommandSpec as Spec};
 contract selectors do not. Imported aliases lower to canonical executor and contract IDs in compiled
 metadata.
 
-`use` is source-local and explicit. It does not propagate across file imports, and wildcard imports
-such as `use std.io.*;` are not part of v1.
+`use` is source-local and explicit. It does not propagate across file imports — a helper file's
+executors stay resolved against that helper's own `use` scope, and the importer needs its own `use`
+for any executor it names directly. Wildcard imports such as `use std.io.*;` are not part of v1.
 
 File imports use `import`:
 
@@ -69,12 +70,26 @@ import pipeline from "./pipeline.wire";
 import { acceptedItem, analyst } from "./helpers.wire";
 ```
 
-The named file import form imports another file's file-return value. The explicit file import form
-imports named `let` bindings. `export let` marks the intended importable surface; until import
-visibility is fully enforced, it is documentation plus a forward-compatible commitment.
+The named file import form imports another file's file-return value; a declaration-only target (or
+one whose file-return is not graph-valued) is rejected. The explicit file import form imports named
+`let` bindings. `export let` is the enforced importable surface: importing a name that exists but is
+not exported fails with a visibility error.
 
-Contracts are ambient once a file is loaded. Node declarations are not directly importable; expose a
-node by binding it:
+Import paths resolve relative to the importing file, and `include_str` / `include_dir` inside an
+imported file resolve relative to that imported file. Missing files and import cycles are compile
+errors reporting the importing file and the full cycle chain.
+
+Imported names land in the importer's top-level namespace, so a collision with any local binding is
+an error. An exported CorePure binding travels with the module-local bindings its expression
+references, even private ones; a private dependency that collides in the importer is reported as a
+dependency of the imported name. The same module surface reached through two import routes refers to
+the same bindings and merges silently; graph values still consume their ports linearly no matter how
+many routes imported them.
+
+Contracts are ambient once a file is loaded: every import merges the imported file's contract
+surface, identical shapes merge silently, and a shape conflict is an error. A local redeclaration of
+an ambient contract with an identical shape is a readability no-op. Node declarations are not
+directly importable; expose a node by binding it:
 
 ```wire
 node planner

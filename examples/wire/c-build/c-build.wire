@@ -27,6 +27,16 @@
 
 use std.io.{@command, @stdout, CommandSpec, CommandResult};
 
+import {
+  shellSpec,
+  objectPath,
+  executablePath,
+  objectArgs,
+  compileCommand,
+  linkTestCommand,
+  runTestCommand,
+} from "./c-builder.wire";
+
 # ============================================================================
 # 2. Contracts: Typed Build, Audit, And Release Boundaries
 # ============================================================================
@@ -130,16 +140,13 @@ contract FinalResults {
 # 3. Tiny C Builder Vocabulary
 # ============================================================================
 #
-# These helpers are deliberately small. They are the part that should move into
-# a reusable `c-builder.wire` once file imports compile. The build graph below
-# stays readable because command construction is centralized here.
+# The reusable builder vocabulary lives in `c-builder.wire` and arrives through
+# the file import above. The lets below bind that vocabulary to this project's
+# root, flags, and archive so the build graph reads as full applications.
 #
 # The manifest records source discovery and compile flags at elaboration time,
 # then records the packaged binary hash at runtime. The checksum audit verifies
 # that the manifest describes the artifact being promoted.
-
-# A tiny in-file "C builder" library. These are CorePure constructors for
-# std.io.command specs; the executor leaves below remain separate graph nodes.
 let root = "examples/wire/c-build";
 let flags = "-std=c11 -Wall -Wextra -Werror -O2 -Iinclude";
 let smokeInput = "12,18,7,23,15";
@@ -155,18 +162,8 @@ let quality_units = [
   { label = "headers"; },
 ];
 
-let shell = name: command: {
-  inherit name;
-  argv = ["sh", "-c", command];
-  cwd = root;
-  required = true;
-  skip = false;
-  echo = true;
-};
+let shell = name: command: shellSpec root name command;
 
-let objectPath = unit: "build/${unit.label}.o";
-let executablePath = unit: "build/${unit.label}";
-let objectArgs = sources: sources |> map objectPath |> joinWith " ";
 let sourcePaths = [
   lib_sources[0].path,
   lib_sources[1].path,
@@ -177,8 +174,7 @@ let sourcePaths = [
 ] |> joinWith ",";
 
 let compileSpec = unit:
-  shell "compile-${unit.label}"
-    "mkdir -p build dist && cc ${flags} -c ${unit.path} -o ${objectPath unit}";
+  shell "compile-${unit.label}" (compileCommand flags unit);
 
 let qualitySpec = unit:
   if unit.label == "syntax"
@@ -189,12 +185,10 @@ let qualitySpec = unit:
     else shell "header-contracts" "test -f include/metrics.h && test -f include/parse.h && test -f include/render.h";
 
 let linkTestSpec = unit:
-  shell "link-${unit.label}"
-    "cc ${flags} -o ${executablePath unit} ${objectPath unit} build/libmetrics.a";
+  shell "link-${unit.label}" (linkTestCommand flags "build/libmetrics.a" unit);
 
 let runTestSpec = unit:
-  shell "run-${unit.label}"
-    "./${executablePath unit}";
+  shell "run-${unit.label}" (runTestCommand unit);
 
 let archiveSpec =
   shell "archive-libmetrics"

@@ -1,0 +1,40 @@
+# Reusable C builder vocabulary for shell-backed Wire build graphs.
+#
+# Declaration-only helper library: CorePure constructors for std.io.command
+# specs and conventional build paths. Import what the build graph needs:
+#
+#   import { shellSpec, objectPath, executablePath, objectArgs, compileCommand }
+#     from "./c-builder.wire";
+#
+# Everything here is parameterized by the importing graph's configuration
+# (project root, compiler flags); nothing in this file names a specific
+# project artifact.
+
+# Construct a std.io.command spec running `command` through `sh -c` in `root`.
+export let shellSpec = root: name: command: {
+  inherit name;
+  argv = ["sh", "-c", command];
+  cwd = root;
+  required = true;
+  skip = false;
+  echo = true;
+};
+
+# Conventional object and executable paths for a discovered source unit.
+export let objectPath = unit: "build/${unit.label}.o";
+
+export let executablePath = unit: "build/${unit.label}";
+
+# Space-separated object arguments for a discovered source list.
+export let objectArgs = sources: sources |> map objectPath |> joinWith " ";
+
+# Compile one source unit to its conventional object path.
+export let compileCommand = flags: unit:
+  "mkdir -p build dist && cc ${flags} -c ${unit.path} -o ${objectPath unit}";
+
+# Link one test unit against a static archive at its conventional path.
+export let linkTestCommand = flags: archive: unit:
+  "cc ${flags} -o ${executablePath unit} ${objectPath unit} ${archive}";
+
+# Run one linked test unit.
+export let runTestCommand = unit: "./${executablePath unit}";

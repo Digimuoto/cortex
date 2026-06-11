@@ -137,6 +137,7 @@
           "Cortex/Wire/Compile"
           "Cortex/Wire/Contract"
           "Cortex/Wire/Executor"
+          "Cortex/Wire/Import"
           "Cortex/Wire/Include"
           "Cortex/Wire/Format"
           "Cortex/Wire/LeanFixture"
@@ -240,6 +241,7 @@
             (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
             (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
             (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+            (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
             (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
             (hsPkgs."async" or (errorHandler.buildDepError "async"))
           ];
@@ -269,6 +271,7 @@
             "Cortex/Wire/Circuit/IRSpec"
             "Cortex/Wire/CompileSpec"
             "Cortex/Wire/FormatSpec"
+            "Cortex/Wire/ImportSpec"
             "Cortex/Wire/ParserSpec"
             "Cortex/Wire/PureSpec"
             "Cortex/Wire/RuntimeSpec"
