@@ -66,6 +66,7 @@ import Cortex.Wire.Circuit.Artifact
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
 import Cortex.Wire.Compile
   ( compileWireFragmentText
+  , compileWireFragmentTextWithEnv
   , compileWireText
   , compileWireTextWithEnv
   , compileWireTextWithReturn
@@ -89,9 +90,11 @@ import Cortex.Wire.Executor
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
   ( EmittedFixture (..)
+  , compiledWireAdmissionArtifact
   , emittedFixtures
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
+  , renderFixtureModuleText
   )
 import Cortex.Wire.Pure (pureWireExecutorProjection)
 import Cortex.Wire.Std
@@ -3974,6 +3977,184 @@ spec = describe "Cortex.Wire.Compile" $ do
       checkedIn <- TIO.readFile "theory/Cortex/Wire/AdmissionArtifact/Emitted.lean"
       renderEmittedUmbrellaModule emittedFixtures `shouldBe` checkedIn
 
+  describe "Lean fixture renderer sensitivity" $ do
+    -- The drift tests compare the renderer against its own checked-in output,
+    -- so they cannot catch a stable mis-mapping present from birth. These
+    -- mutations pin that every artifact field reaches the rendered text.
+    it "renders every top-level artifact field sensitively" $ do
+      artifact <- emittedArtifactBySlug "Chain"
+      rendersDifferently artifact $ \a ->
+        a {wireAdmissionSchemaVersion = a.wireAdmissionSchemaVersion + 1}
+      rendersDifferently artifact $ \a ->
+        a {wireAdmissionNodes = CircuitNodeRef "mutant" : a.wireAdmissionNodes}
+      rendersDifferently artifact $ \a ->
+        a {wireAdmissionBindingRefs = "mutant" : a.wireAdmissionBindingRefs}
+      rendersDifferently artifact $ \a ->
+        a {wireAdmissionEntries = sensitivityProbeBoundary : a.wireAdmissionEntries}
+      rendersDifferently artifact $ \a ->
+        a {wireAdmissionExits = sensitivityProbeBoundary : a.wireAdmissionExits}
+      rendersDifferently artifact $ \a -> a {wireAdmissionConnections = []}
+      rendersDifferently artifact $ \a ->
+        a {wireAdmissionPrimitiveSteps = PrimitiveEmpty : a.wireAdmissionPrimitiveSteps}
+
+    it "renders boundary port sub-fields sensitively" $ do
+      artifact <- emittedArtifactBySlug "Chain"
+      rendersDifferently artifact $
+        mutateFirstExitRow (\port -> port {admissionBoundaryNode = CircuitNodeRef "mutant"})
+      rendersDifferently artifact $
+        mutateFirstExitRow (\port -> port {admissionBoundaryPort = "mutant"})
+      rendersDifferently artifact $
+        mutateFirstExitRow (\port -> port {admissionBoundaryContract = "Mutant"})
+      rendersDifferently artifact $
+        mutateFirstExitRow (\port -> port {admissionBoundaryLabel = AdmissionNoLabel})
+      rendersDifferently artifact $
+        mutateFirstExitRow
+          (\port -> port {admissionBoundaryExclusiveGroup = Just (CircuitNodeRef "owner", 0)})
+
+    it "renders connection endpoints sensitively, including a from-to swap" $ do
+      artifact <- emittedArtifactBySlug "Chain"
+      rendersDifferently artifact $
+        mutateFirstConnectionRow (\(Connection from to) -> Connection to from)
+      rendersDifferently artifact $
+        mutateFirstConnectionRow
+          (\(Connection from to) -> Connection from {endpointPortName = Nothing} to)
+
+    it "renders each primitive step payload sensitively" $ do
+      makeArtifact <- emittedArtifactBySlug "Make"
+      rendersDifferently makeArtifact $
+        mutateFirstStepWhere
+          ( \case
+              PrimitiveNode _node entries exits ->
+                Just
+                  (PrimitiveNode (CircuitNodeRef "mutant") entries exits)
+              _otherStep -> Nothing
+          )
+      rendersDifferently makeArtifact $
+        mutateFirstStepWhere
+          ( \case
+              PrimitiveOverlay _leftNodes rightNodes leftBindings rightBindings ->
+                Just
+                  (PrimitiveOverlay [] rightNodes leftBindings rightBindings)
+              _otherStep -> Nothing
+          )
+      rendersDifferently makeArtifact $
+        mutateFirstStepWhere
+          ( \case
+              PrimitiveBindingRef _binding ->
+                Just
+                  (PrimitiveBindingRef "mutant")
+              _otherStep -> Nothing
+          )
+      chainArtifact <- emittedArtifactBySlug "Chain"
+      rendersDifferently chainArtifact $
+        mutateFirstStepWhere
+          ( \case
+              PrimitiveConnect leftExits rightEntries matchedPairs unmatchedLeft unmatchedRight ->
+                Just
+                  ( PrimitiveConnect
+                      leftExits
+                      rightEntries
+                      (fmap swapAdmissionConnection matchedPairs)
+                      unmatchedLeft
+                      unmatchedRight
+                  )
+              _otherStep -> Nothing
+          )
+      rendersDifferently chainArtifact $
+        mutateFirstStepWhere
+          ( \case
+              PrimitiveConnect _leftExits rightEntries matchedPairs unmatchedLeft unmatchedRight ->
+                Just
+                  (PrimitiveConnect [] rightEntries matchedPairs unmatchedLeft unmatchedRight)
+              _otherStep -> Nothing
+          )
+
+    it "renders generated-form fields sensitively" $ do
+      artifact <- emittedArtifactBySlug "Make"
+      rendersDifferently artifact $
+        mutateFirstGeneratedRow (\form -> form {generatedFormKind = GeneratedMakeEach})
+      rendersDifferently artifact $
+        mutateFirstGeneratedRow (\form -> form {generatedFormKindName = "mutant"})
+      rendersDifferently artifact $
+        mutateFirstGeneratedRow (\form -> form {generatedFormBinding = "mutant"})
+      rendersDifferently artifact $
+        mutateFirstGeneratedRow
+          ( \form ->
+              form
+                { generatedFormSourceChildren =
+                    fmap
+                      (\child -> child {generatedSourceChildValue = Just (AdmissionStaticString "m")})
+                      form.generatedFormSourceChildren
+                }
+          )
+      rendersDifferently artifact $
+        mutateFirstGeneratedRow
+          ( \form ->
+              form
+                { generatedFormUsedChildren =
+                    fmap
+                      (\child -> child {generatedChildLabel = "mutant"})
+                      form.generatedFormUsedChildren
+                }
+          )
+
+    it "renders phantom adapter fields sensitively" $ do
+      artifact <- emittedArtifactBySlug "RecordScatter"
+      rendersDifferently artifact $
+        mutateFirstPhantomRow (\adapter -> adapter {phantomAdapterDirection = PhantomGather})
+      rendersDifferently artifact $
+        mutateFirstPhantomRow
+          (\adapter -> adapter {phantomAdapterProductShape = ProductIndexed "Mutant" 1})
+      rendersDifferently artifact $
+        mutateFirstPhantomRow
+          (\adapter -> adapter {phantomAdapterSingular = sensitivityProbeBoundary})
+      rendersDifferently artifact $
+        mutateFirstPhantomRow (\adapter -> adapter {phantomAdapterMulti = []})
+      rendersDifferently artifact $
+        mutateFirstPhantomRow
+          ( \adapter ->
+              adapter
+                { phantomAdapterRightBulk =
+                    AdmissionConnection sensitivityProbeBoundary sensitivityProbeBoundary
+                      : adapter.phantomAdapterRightBulk
+                }
+          )
+
+    it "renders select fields sensitively" $ do
+      artifact <- emittedArtifactBySlug "SelectLabel"
+      rendersDifferently artifact $
+        mutateFirstSelectRow (\selectRow -> selectRow {selectAdmissionOwner = CircuitNodeRef "mutant"})
+      rendersDifferently artifact $
+        mutateFirstSelectRow
+          (\selectRow -> selectRow {selectAdmissionConditionNode = CircuitNodeRef "mutant"})
+      rendersDifferently artifact $
+        mutateFirstSelectRow
+          ( \selectRow ->
+              selectRow
+                { selectAdmissionVariants =
+                    fmap
+                      (\variant -> variant {selectVariantKey = "mutant"})
+                      selectRow.selectAdmissionVariants
+                }
+          )
+      rendersDifferently artifact $
+        mutateFirstSelectArm (\arm -> arm {selectArmSourceIndex = arm.selectArmSourceIndex + 1})
+      rendersDifferently artifact $
+        mutateFirstSelectArm (\arm -> arm {selectArmSourceKey = "mutant"})
+      rendersDifferently artifact $
+        mutateFirstSelectArm (\arm -> arm {selectArmCanonicalKey = "mutant"})
+      rendersDifferently artifact $
+        mutateFirstSelectArm (\arm -> arm {selectArmResolutionMode = SelectResolvedByContract})
+      rendersDifferently artifact $
+        mutateFirstSelectArm
+          (\arm -> arm {selectArmBodyNodes = CircuitNodeRef "mutant" : arm.selectArmBodyNodes})
+      rendersDifferently artifact $
+        mutateFirstSelectArm
+          (\arm -> arm {selectArmBodyEntries = sensitivityProbeBoundary : arm.selectArmBodyEntries})
+      rendersDifferently artifact $
+        mutateFirstSelectArm
+          (\arm -> arm {selectArmBodyExits = sensitivityProbeBoundary : arm.selectArmBodyExits})
+
 simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
@@ -5088,6 +5269,111 @@ mutateFirstSelectRow mutate artifact =
   case artifact.wireAdmissionSelects of
     selectRow : restRows -> artifact {wireAdmissionSelects = mutate selectRow : restRows}
     [] -> artifact
+
+-- Renderer sensitivity helpers -----------------------------------------------
+
+emittedArtifactBySlug :: T.Text -> IO WireAdmissionArtifact
+emittedArtifactBySlug slug = do
+  fixture <-
+    maybe
+      (fail ("unknown emitted fixture slug: " <> T.unpack slug))
+      pure
+      (Foldable.find (\candidate -> candidate.emittedFixtureSlug == slug) emittedFixtures)
+  compiled <-
+    requireRight
+      (compileWireFragmentTextWithEnv fixture.emittedFixtureEnv fixture.emittedFixtureSource)
+  maybe
+    (fail "compiled fixture carries no admission artifact")
+    pure
+    (compiledWireAdmissionArtifact compiled)
+
+renderSensitivityText :: WireAdmissionArtifact -> T.Text
+renderSensitivityText =
+  renderFixtureModuleText
+    EmittedFixture
+      { emittedFixtureSlug = "SensitivityProbe"
+      , emittedFixtureDescription = "renderer sensitivity probe"
+      , emittedFixtureSource = ""
+      , emittedFixtureEnv = emptyWireCompileEnv
+      }
+
+rendersDifferently
+  :: WireAdmissionArtifact -> (WireAdmissionArtifact -> WireAdmissionArtifact) -> Expectation
+rendersDifferently artifact mutate =
+  renderSensitivityText (mutate artifact) `shouldNotBe` renderSensitivityText artifact
+
+sensitivityProbeBoundary :: AdmissionBoundaryPort
+sensitivityProbeBoundary =
+  AdmissionBoundaryPort
+    { admissionBoundaryNode = CircuitNodeRef "probe"
+    , admissionBoundaryPort = "probe"
+    , admissionBoundaryContract = "Probe"
+    , admissionBoundaryLabel = AdmissionLabel "probe"
+    , admissionBoundaryExclusiveGroup = Nothing
+    }
+
+swapAdmissionConnection :: AdmissionConnection -> AdmissionConnection
+swapAdmissionConnection connection =
+  AdmissionConnection connection.admissionConnectionTo connection.admissionConnectionFrom
+
+mutateFirstExitRow
+  :: (AdmissionBoundaryPort -> AdmissionBoundaryPort)
+  -> WireAdmissionArtifact
+  -> WireAdmissionArtifact
+mutateFirstExitRow mutate artifact =
+  case artifact.wireAdmissionExits of
+    exitRow : restRows -> artifact {wireAdmissionExits = mutate exitRow : restRows}
+    [] -> artifact
+
+mutateFirstConnectionRow
+  :: (Connection -> Connection) -> WireAdmissionArtifact -> WireAdmissionArtifact
+mutateFirstConnectionRow mutate artifact =
+  case artifact.wireAdmissionConnections of
+    connectionRow : restRows ->
+      artifact {wireAdmissionConnections = mutate connectionRow : restRows}
+    [] -> artifact
+
+mutateFirstStepWhere
+  :: (PrimitiveGraphStep -> Maybe PrimitiveGraphStep)
+  -> WireAdmissionArtifact
+  -> WireAdmissionArtifact
+mutateFirstStepWhere mutate artifact =
+  artifact {wireAdmissionPrimitiveSteps = go artifact.wireAdmissionPrimitiveSteps}
+  where
+    go [] = []
+    go (step : rest) =
+      case mutate step of
+        Just mutated -> mutated : rest
+        Nothing -> step : go rest
+
+mutateFirstGeneratedRow
+  :: (GeneratedFormArtifact -> GeneratedFormArtifact)
+  -> WireAdmissionArtifact
+  -> WireAdmissionArtifact
+mutateFirstGeneratedRow mutate artifact =
+  case artifact.wireAdmissionGeneratedForms of
+    formRow : restRows -> artifact {wireAdmissionGeneratedForms = mutate formRow : restRows}
+    [] -> artifact
+
+mutateFirstPhantomRow
+  :: (PhantomAdapterArtifact -> PhantomAdapterArtifact)
+  -> WireAdmissionArtifact
+  -> WireAdmissionArtifact
+mutateFirstPhantomRow mutate artifact =
+  case artifact.wireAdmissionPhantomAdapters of
+    adapterRow : restRows ->
+      artifact {wireAdmissionPhantomAdapters = mutate adapterRow : restRows}
+    [] -> artifact
+
+mutateFirstSelectArm
+  :: (SelectArmAdmissionArtifact -> SelectArmAdmissionArtifact)
+  -> WireAdmissionArtifact
+  -> WireAdmissionArtifact
+mutateFirstSelectArm mutate =
+  mutateFirstSelectRow $ \selectRow ->
+    case selectRow.selectAdmissionArms of
+      armRow : restArms -> selectRow {selectAdmissionArms = mutate armRow : restArms}
+      [] -> selectRow
 
 wireAdmissionArray :: T.Text -> CompiledCircuit -> Maybe [Aeson.Value]
 wireAdmissionArray fieldName compiled = do

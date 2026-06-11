@@ -20,6 +20,7 @@ module Cortex.Wire.LeanFixture
   , emittedFixtureNamespace
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
+  , renderFixtureModuleText
   , compiledWireAdmissionArtifact
   ) where
 
