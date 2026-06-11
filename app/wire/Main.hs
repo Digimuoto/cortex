@@ -92,10 +92,15 @@ import Cortex.Wire
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
   )
+import Cortex.Wire.Compile (compileWireFragmentTextWithEnv)
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
   ( EmittedFixture (..)
+  , compiledWireAdmissionArtifact
+  , differentialFixtures
   , emittedFixtures
+  , renderDifferentialModuleText
+  , renderDifferentialUmbrellaModule
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
   )
@@ -273,6 +278,26 @@ leanFixturesWire outDir = do
   let umbrellaPath = takeDirectory outDir </> "Emitted.lean"
   TIO.writeFile umbrellaPath (renderEmittedUmbrellaModule emittedFixtures)
   TIO.putStrLn ("wrote " <> T.pack umbrellaPath)
+  let diffDir = takeDirectory outDir </> "Differential"
+  createDirectoryIfMissing True diffDir
+  forM_ differentialFixtures $ \fixture -> do
+    compiled <-
+      either
+        (dieText . renderWireError)
+        pure
+        (compileWireFragmentTextWithEnv fixture.emittedFixtureEnv fixture.emittedFixtureSource)
+    artifact <-
+      maybe
+        (dieText "compiled fixture carries no admission artifact")
+        pure
+        (compiledWireAdmissionArtifact compiled)
+    rendered <- either dieText pure (renderDifferentialModuleText fixture artifact)
+    let path = diffDir </> T.unpack fixture.emittedFixtureSlug <> ".lean"
+    TIO.writeFile path rendered
+    TIO.putStrLn ("wrote " <> T.pack path)
+  let diffUmbrellaPath = takeDirectory outDir </> "Differential.lean"
+  TIO.writeFile diffUmbrellaPath (renderDifferentialUmbrellaModule differentialFixtures)
+  TIO.putStrLn ("wrote " <> T.pack diffUmbrellaPath)
 
 -- | Parse-only acceptance check used by the grammar differential harness.
 parseWireOnly :: FilePath -> IO ()

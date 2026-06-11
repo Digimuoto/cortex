@@ -564,7 +564,7 @@ form), an **implementation check** (an executable, tested gate), or an **open co
 obligation** (stated, tracked, not claimed). The table gives each claim with the Lean declarations
 that carry it and — just as deliberately — the column saying what remains assumed or open. All
 declarations live in the project's public mechanization (Appendix A); the development has **no
-axioms and no incomplete proofs**, with 31 of 31 dashboard claims mechanized and 19 of 31 carrying
+axioms and no incomplete proofs**, with 31 of 31 dashboard claims mechanized and 20 of 31 carrying
 executable Haskell correspondence, as of 2026-06-11.
 
 | Claim (this paper's notation)                                                                                 | Mechanized as                                                                                                                                                                           | What remains assumed or open                                                                                                                                                                                         |

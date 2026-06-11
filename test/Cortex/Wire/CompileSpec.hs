@@ -91,7 +91,10 @@ import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
   ( EmittedFixture (..)
   , compiledWireAdmissionArtifact
+  , differentialFixtures
   , emittedFixtures
+  , renderDifferentialModuleText
+  , renderDifferentialUmbrellaModule
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
   , renderFixtureModuleText
@@ -3976,6 +3979,20 @@ spec = describe "Cortex.Wire.Compile" $ do
     it "matches the checked-in umbrella module" $ do
       checkedIn <- TIO.readFile "theory/Cortex/Wire/AdmissionArtifact/Emitted.lean"
       renderEmittedUmbrellaModule emittedFixtures `shouldBe` checkedIn
+    Foldable.for_ differentialFixtures $ \fixture ->
+      it ("matches the checked-in differential module for " <> T.unpack fixture.emittedFixtureSlug) $ do
+        artifact <- emittedArtifactBySlug fixture.emittedFixtureSlug
+        rendered <- requireRight (renderDifferentialModuleText fixture artifact)
+        checkedIn <-
+          TIO.readFile
+            ( "theory/Cortex/Wire/AdmissionArtifact/Differential/"
+                <> T.unpack fixture.emittedFixtureSlug
+                <> ".lean"
+            )
+        rendered `shouldBe` checkedIn
+    it "matches the checked-in differential umbrella module" $ do
+      checkedIn <- TIO.readFile "theory/Cortex/Wire/AdmissionArtifact/Differential.lean"
+      renderDifferentialUmbrellaModule differentialFixtures `shouldBe` checkedIn
 
   describe "Lean fixture renderer sensitivity" $ do
     -- The drift tests compare the renderer against its own checked-in output,

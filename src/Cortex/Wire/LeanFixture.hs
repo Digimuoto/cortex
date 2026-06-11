@@ -22,12 +22,16 @@ module Cortex.Wire.LeanFixture
   , renderEmittedUmbrellaModule
   , renderFixtureModuleText
   , compiledWireAdmissionArtifact
+  , differentialFixtures
+  , renderDifferentialModuleText
+  , renderDifferentialUmbrellaModule
   ) where
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Numeric.Natural (Natural)
@@ -402,6 +406,7 @@ data LeanValue
   = LeanAtom !Text
   | LeanApp !Text ![LeanValue]
   | LeanList ![LeanValue]
+  | LeanSet ![LeanValue]
   | LeanTuple ![LeanValue]
   | LeanRecord ![(Text, LeanValue)]
 
@@ -430,6 +435,8 @@ inlineLeanValue = \case
     T.unwords (constructor : fmap inlineArgument args)
   LeanList [] -> "[]"
   LeanList values -> "[" <> T.intercalate ", " (fmap inlineLeanValue values) <> "]"
+  LeanSet [] -> "\8709"
+  LeanSet values -> "{" <> T.intercalate ", " (fmap inlineLeanValue values) <> "}"
   LeanTuple values -> "(" <> T.intercalate ", " (fmap inlineLeanValue values) <> ")"
   LeanRecord fields ->
     "{ "
@@ -460,15 +467,37 @@ renderMultiline indent = \case
     [text]
   LeanApp constructor args ->
     constructor
-      : concatMap (indentFirst (indent + 4) . renderLeanValue (indent + 4)) args
+      : concatMap (indentFirst (indent + 4) . renderApplicationArgument (indent + 4)) args
   LeanList [] ->
     ["[]"]
   LeanList values ->
     blockLines indent "[ " ", " "]" (fmap (renderLeanValue (indent + 2)) values)
+  LeanSet [] ->
+    ["\8709"]
+  LeanSet values ->
+    blockLines indent "{ " ", " "}" (fmap (renderLeanValue (indent + 2)) values)
   LeanTuple values ->
     blockLines indent "( " ", " ")" (fmap (renderLeanValue (indent + 2)) values)
   LeanRecord fields ->
     blockLines indent "{ " ", " "}" (fmap (renderRecordField indent) fields)
+
+{- | Nested constructor applications need parentheses when laid out as
+arguments; self-delimited shapes (lists, sets, records, atoms) do not.
+-}
+renderApplicationArgument :: Int -> LeanValue -> [Text]
+renderApplicationArgument indent value =
+  case value of
+    LeanApp _ (_ : _) ->
+      case renderLeanValue (indent + 2) value of
+        [single]
+          | indent + T.length single + 2 <= maxLineWidth ->
+              ["(" <> single <> ")"]
+        valueLines ->
+          case valueLines of
+            [] -> ["()"]
+            firstLine : restLines ->
+              ("( " <> firstLine) : restLines <> [spaces indent <> ")"]
+    _selfDelimited -> renderLeanValue indent value
 
 renderRecordField :: Int -> (Text, LeanValue) -> [Text]
 renderRecordField indent (name, value) =
@@ -694,3 +723,317 @@ recordScatterEnv =
         , wireContractSpecSchema = Nothing
         , wireContractSpecExamples = []
         }
+
+-- Differential oracle rendering ------------------------------------------------
+
+{- | Fixtures covered by the differential oracle. The select fixtures are
+excluded: their synthetic condition node exposes bridge ports sharing a
+(label, contract) signature with variant ports, which signature-keyed kernel
+matching correctly rejects as ambiguous — exclusive-boundary matching is the
+tracked kernel remainder.
+-}
+differentialFixtures :: [EmittedFixture]
+differentialFixtures =
+  filter
+    (\fixture -> fixture.emittedFixtureSlug `notElem` ["SelectLabel", "SelectContract"])
+    emittedFixtures
+
+-- | Core expression skeleton reconstructed from a primitive trace.
+data DiffExpr
+  = DiffEmpty
+  | DiffNode !Text
+  | DiffOverlay !DiffExpr !DiffExpr
+  | DiffConnect !DiffExpr !DiffExpr
+
+{- | Replay the artifact's postorder primitive trace into an expression.
+Binding annotations are skipped: they extend the used-references ledger, not
+the frontier, and the differential is frontier-level by declaration.
+-}
+diffExprOfSteps :: [PrimitiveGraphStep] -> Either Text DiffExpr
+diffExprOfSteps = go []
+  where
+    go stack [] =
+      case stack of
+        [expr] -> Right expr
+        _other -> Left "primitive trace does not reduce to a single expression"
+    go stack (step : rest) =
+      case step of
+        PrimitiveEmpty -> go (DiffEmpty : stack) rest
+        PrimitiveNode ref _entries _exits ->
+          go (DiffNode ref.unCircuitNodeRef : stack) rest
+        PrimitiveBindingRef _binding -> go stack rest
+        PrimitiveOverlay {} ->
+          case stack of
+            right : left : more -> go (DiffOverlay left right : more) rest
+            _other -> Left "primitive trace underflow"
+        PrimitiveConnect {} ->
+          case stack of
+            right : left : more -> go (DiffConnect left right : more) rest
+            _other -> Left "primitive trace underflow"
+
+-- | Signature rendering pair: source label and ContractId expression text.
+data DiffSignature = DiffSignature
+  { diffSignatureLabel :: !Text
+  , diffSignatureContract :: !Text
+  }
+
+diffSignatureOf :: AdmissionBoundaryPort -> Either Text DiffSignature
+diffSignatureOf row =
+  case row.admissionBoundaryExclusiveGroup of
+    Just _group ->
+      Left "exclusive boundary rows are outside the differential corpus"
+    Nothing ->
+      Right
+        DiffSignature
+          { diffSignatureLabel =
+              case row.admissionBoundaryLabel of
+                AdmissionLabel label -> label
+                AdmissionNoLabel -> row.admissionBoundaryPort
+          , diffSignatureContract = renderContractExpr row.admissionBoundaryContract
+          }
+
+{- | Render a contract id, recognizing the bounded-product name shape
+@[Elem;N]@ so the @ClosedBy.boundedIndexed@ constructor unifies syntactically.
+-}
+renderContractExpr :: Text -> Text
+renderContractExpr contract =
+  case boundedIndexedParts contract of
+    Just (element, count) ->
+      "ContractId.boundedIndexed \10216" <> leanStringLit element <> "\10217 " <> count
+    Nothing ->
+      "\10216" <> leanStringLit contract <> "\10217"
+
+boundedIndexedParts :: Text -> Maybe (Text, Text)
+boundedIndexedParts contract = do
+  inner <- T.stripSuffix "]" =<< T.stripPrefix "[" contract
+  let (element, rest) = T.breakOn ";" inner
+  countText <- T.stripPrefix ";" rest
+  if not (T.null element)
+    && not (T.null countText)
+    && T.all (`elem` ("0123456789" :: String)) countText
+    then Just (element, countText)
+    else Nothing
+
+-- | Contracts the shell must declare (bounded products contribute elements).
+diffDeclaredContracts :: [AdmissionBoundaryPort] -> [Text]
+diffDeclaredContracts =
+  foldr (addContract . (.admissionBoundaryContract)) []
+  where
+    addContract contract acc =
+      let declared = maybe contract fst (boundedIndexedParts contract)
+       in if declared `elem` acc then acc else declared : acc
+
+diffSignatureValue :: DiffSignature -> LeanValue
+diffSignatureValue signature =
+  LeanAtom
+    ( "\10216\10216"
+        <> leanStringLit signature.diffSignatureLabel
+        <> "\10217, "
+        <> signature.diffSignatureContract
+        <> "\10217"
+    )
+
+diffInstanceValue :: Text -> DiffSignature -> LeanValue
+diffInstanceValue node signature =
+  LeanAtom
+    ( "\10216\10216"
+        <> leanStringLit node
+        <> "\10217, \10216\10216\10216"
+        <> leanStringLit signature.diffSignatureLabel
+        <> "\10217, "
+        <> signature.diffSignatureContract
+        <> "\10217\10217\10217"
+    )
+
+diffExprValue :: DiffExpr -> LeanValue
+diffExprValue = \case
+  DiffEmpty -> LeanAtom ".empty"
+  DiffNode name -> LeanApp ".node" [anonText name]
+  DiffOverlay left right -> LeanApp ".overlay" [diffExprValue left, diffExprValue right]
+  DiffConnect left right -> LeanApp ".connect" [diffExprValue left, diffExprValue right]
+
+-- | @def <header> := <value>@ with the shared width-aware layout.
+diffDefLines :: Text -> LeanValue -> [Text]
+diffDefLines header value =
+  case renderLeanValue 2 value of
+    [single]
+      | T.length header + T.length single + 8 <= maxLineWidth ->
+          ["def " <> header <> " := " <> single]
+    valueLines ->
+      ("def " <> header <> " :=") : indentFirst 2 valueLines
+
+diffContractDefLines :: Int -> Text -> (Text, [Text])
+diffContractDefLines index name =
+  ( defName
+  ,
+    [ "/-- Declared contract `" <> name <> "` (closure row; fields are not modeled). -/"
+    , "def " <> defName <> " : AcceptedRecordContractDecl where"
+    , "  contract := \10216" <> leanStringLit name <> "\10217"
+    , "  contractValid := by decide"
+    , "  fields := []"
+    , "  fieldsValid := by decide"
+    , "  fieldLabelsUnique := by decide"
+    ]
+  )
+  where
+    defName = "contract" <> T.pack (show index)
+
+diffNodeDeclLines
+  :: (Int, (CircuitNodeRef, [AdmissionBoundaryPort], [AdmissionBoundaryPort]))
+  -> Either Text (Text, [Text])
+diffNodeDeclLines (index, (ref, entries, exits)) = do
+  entrySignatures <- traverse diffSignatureOf entries
+  exitSignatures <- traverse diffSignatureOf exits
+  let defName = "node" <> T.pack (show index)
+  Right
+    ( defName
+    , [ "/-- Accepted declaration for node `" <> ref.unCircuitNodeRef <> "`. -/"
+      , "def " <> defName <> " : AcceptedNodeDecl where"
+      , "  node := \10216" <> leanStringLit ref.unCircuitNodeRef <> "\10217"
+      , "  nodeValid := by decide"
+      ]
+        <> renderArtifactField 2 ("inputs", LeanSet (fmap diffSignatureValue entrySignatures))
+        <> renderArtifactField
+          2
+          ("outputs", LeanList (fmap (\sig -> LeanApp ".single" [diffSignatureValue sig]) exitSignatures))
+        <> [ "  inputPortsValid := by decide"
+           , "  outputShapesAdmissible := by decide"
+           , "  outputPortsListLabelsUnique := by decide"
+           , "  inputLabelsUnique := by decide"
+           , "  body := .corePure"
+           , "  bodyLocalValid := by decide"
+           ]
+    )
+
+diffShellLines :: Bool -> [Text] -> [Text] -> [Text]
+diffShellLines hasBoundedContracts contractNames nodeNames =
+  [ "/-- Module shell assembled from the artifact's node rows. -/"
+  , "def shell : AdmittedModuleShell where"
+  ]
+    <> renderArtifactField 2 ("contracts", LeanList (fmap LeanAtom contractNames))
+    <> ["  contractsUnique := by decide", "  kinds := []", "  kindsUnique := by decide"]
+    <> renderArtifactField 2 ("nodes", LeanList (fmap LeanAtom nodeNames))
+    <> [ "  nodesUnique := by decide"
+       , "  graphs := []"
+       , "  graphsUnique := by decide"
+       , "  graphsValid := fun _ hGraph => nomatch hGraph"
+       , "  recordFieldContractsClosed := by"
+       , "    intro contract hContract"
+       , "    fin_cases hContract <;> exact fun _ hField => nomatch hField"
+       , "  nodeContractsClosed := by"
+       , "    intro node hNode"
+       , "    fin_cases hNode <;>"
+       , "      refine \10216fun port hPort => ?_, fun port hPort => ?_\10217 <;>"
+       , "        fin_cases hPort <;>"
+       ]
+    <> ( if hasBoundedContracts
+           then
+             [ "          first"
+             , "            | exact ContractId.ClosedBy.declared (by decide)"
+             , "            | exact ContractId.ClosedBy.boundedIndexed _ (by decide)"
+             ]
+           else ["          exact ContractId.ClosedBy.declared (by decide)"]
+       )
+    <> [ "  kindContractsClosed := fun _ hKind => nomatch hKind"
+       , "  graphRefsClosed := fun _ hGraph => nomatch hGraph"
+       ]
+
+-- | Render the differential module for one fixture's emitted artifact.
+renderDifferentialModuleText :: EmittedFixture -> WireAdmissionArtifact -> Either Text Text
+renderDifferentialModuleText fixture artifact = do
+  expr <- diffExprOfSteps artifact.wireAdmissionPrimitiveSteps
+  let nodeRows =
+        [ (ref, entries, exits)
+        | PrimitiveNode ref entries exits <- artifact.wireAdmissionPrimitiveSteps
+        ]
+  nodeDecls <- traverse diffNodeDeclLines (zip [0 ..] nodeRows)
+  entryInstances <-
+    traverse
+      (\row -> diffInstanceValue row.admissionBoundaryNode.unCircuitNodeRef <$> diffSignatureOf row)
+      artifact.wireAdmissionEntries
+  exitInstances <-
+    traverse
+      (\row -> diffInstanceValue row.admissionBoundaryNode.unCircuitNodeRef <$> diffSignatureOf row)
+      artifact.wireAdmissionExits
+  let allRows = concatMap (\(_ref, entries, exits) -> entries <> exits) nodeRows
+      contractDefs = zipWith diffContractDefLines [0 ..] (diffDeclaredContracts allRows)
+      namespaceName = "Differential" <> fixture.emittedFixtureSlug
+  Right . T.unlines $
+    [ "import Cortex.Wire.ElaborationIRDecide"
+    , "import Cortex.Wire.GraphElaborationExec"
+    , "import Mathlib.Tactic.FinCases"
+    , ""
+    , "/-!"
+    , "## Overview"
+    , ""
+    , "Differential oracle for the `" <> fixture.emittedFixtureSlug <> "` fixture: the"
+    , "executable admission kernel replays the compiler's composition (reconstructed"
+    , "from the emitted artifact's primitive trace, binding annotations skipped)"
+    , "against a module shell assembled from the artifact's node rows, and must land"
+    , "on the exposed boundary the compiler recorded."
+    , ""
+    , "GENERATED FILE - do not edit by hand. Regenerated by"
+    , "`just wire-lean-fixtures`; the Haskell test suite fails on drift."
+    , "-/"
+    , ""
+    , "namespace Cortex.Wire"
+    , "namespace AdmissionArtifact"
+    , "namespace " <> namespaceName
+    , ""
+    , "open Cortex.Wire.ElaborationIR"
+    , ""
+    ]
+      <> concatMap (\(_name, defLines) -> defLines <> [""]) contractDefs
+      <> concatMap (\(_name, defLines) -> defLines <> [""]) nodeDecls
+      <> diffShellLines
+        (any (\row -> isJust (boundedIndexedParts row.admissionBoundaryContract)) allRows)
+        (fmap fst contractDefs)
+        (fmap fst nodeDecls)
+      <> [""]
+      <> [ "/-- Core expression reconstructed from the artifact's primitive trace"
+         , "(binding annotations skipped; the differential is frontier-level). -/"
+         ]
+      <> diffDefLines "expr : GraphExpr" (diffExprValue expr)
+      <> [""]
+      <> ["/-- Output frontier the compiler exposed for this fixture. -/"]
+      <> diffDefLines
+        "expectedOutputs : Finset (SourcePortInstance NodeId OutputPortSignature)"
+        (LeanSet exitInstances)
+      <> [""]
+      <> ["/-- Input frontier the compiler exposed for this fixture. -/"]
+      <> diffDefLines
+        "expectedInputs : Finset (SourcePortInstance NodeId InputPortSignature)"
+        (LeanSet entryInstances)
+      <> [ ""
+         , "-- The kernel replays the compiler's composition onto the same boundary."
+         , "#guard"
+         , "  match CertifiedGraph.elaborate shell expr with"
+         , "  | .ok result =>"
+         , "      decide (result.val.object.graph.exposedOutputs = expectedOutputs) &&"
+         , "        decide (result.val.object.graph.exposedInputs = expectedInputs)"
+         , "  | .error _ => false"
+         , ""
+         , "end " <> namespaceName
+         , "end AdmissionArtifact"
+         , "end Cortex.Wire"
+         ]
+
+renderDifferentialUmbrellaModule :: [EmittedFixture] -> Text
+renderDifferentialUmbrellaModule fixtures =
+  T.unlines
+    ( fmap
+        ( \fixture ->
+            "import Cortex.Wire.AdmissionArtifact.Differential." <> fixture.emittedFixtureSlug
+        )
+        fixtures
+        <> [ ""
+           , "/-!"
+           , "## Overview"
+           , ""
+           , "Umbrella for the generated differential-oracle modules: per fixture, the"
+           , "executable admission kernel replays the compiler's composition and must"
+           , "land on the same exposed boundary the artifact records. Regenerate with"
+           , "`just wire-lean-fixtures`; the Haskell test suite fails on drift."
+           , "-/"
+           ]
+    )

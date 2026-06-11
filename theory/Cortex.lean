@@ -30,6 +30,7 @@ import Cortex.Wire.NodeBoundary
 import Cortex.Wire.PortLinearity
 import Cortex.Wire.ActualizedBridge
 import Cortex.Wire.ElaborationIR
+import Cortex.Wire.ElaborationIRDecide
 import Cortex.Wire.GraphElaboration
 import Cortex.Wire.GraphElaborationExec
 import Cortex.Wire.FrontierTyping
@@ -41,6 +42,13 @@ import Cortex.Wire.AdmissionArtifact
 import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.Boundary
 import Cortex.Wire.AdmissionArtifact.EmittedFixture
+import Cortex.Wire.AdmissionArtifact.Differential
+import Cortex.Wire.AdmissionArtifact.Differential.Chain
+import Cortex.Wire.AdmissionArtifact.Differential.IndexedGather
+import Cortex.Wire.AdmissionArtifact.Differential.IndexedScatter
+import Cortex.Wire.AdmissionArtifact.Differential.Make
+import Cortex.Wire.AdmissionArtifact.Differential.MakeEach
+import Cortex.Wire.AdmissionArtifact.Differential.RecordScatter
 import Cortex.Wire.AdmissionArtifact.Emitted
 import Cortex.Wire.AdmissionArtifact.Emitted.Chain
 import Cortex.Wire.AdmissionArtifact.Emitted.IndexedGather
