@@ -229,6 +229,35 @@ rows.
   where a selected branch contains a finite-product `*` adapter. The embedding theorem proves the
   persisted adapter node is replayed by the selected branch and pruned from every unselected branch.
 
+## The Emission-Soundness Target
+
+The named target for issue-tracked compiler-emission soundness, stated so each clause carries its
+own evidence class. A Wire-source-path compilation is **emission-sound** when:
+
+1. **An admission artifact exists and is attached** — implementation fact, enforced by
+   `compileLoweredWireFile` (a compilation on this path cannot succeed without attaching one) and
+   exercised by the whole artifact test surface.
+2. **The artifact passes the Lean-owned validator** — executable Lean check: `validatorReadyCheck`
+   runs on generated renderings of real compiler output for the representative fixture set at every
+   `lean-check`, with `validatorReadyCheck_soundness` lifting each pass to
+   `WireAdmissionArtifact.Sound` (formal theorem). Drift between checked-in renderings and current
+   compiler output fails the Haskell suite.
+3. **The artifact binds the compiled circuit** — executable Haskell check:
+   `admissionArtifactBindsCompiledCircuit`, gated in the compiler, mutation-tested per error
+   constructor.
+4. **The kernel replays the composition** — executable Lean differential: per non-select fixture,
+   `CertifiedGraph.elaborate` re-elaborates the core expression reconstructed from the artifact's
+   own primitive trace and `#guard`s that it lands on the artifact's exposed boundary. The emitted
+   artifact is unique for its source on the proof side (`Make.accept_deterministic`,
+   `MakeEach.accept_deterministic`).
+
+**What remains assumed**: the renderer that turns artifacts into Lean source (a structural
+pretty-printer, pinned by field-sensitivity mutation tests, not verified); coverage beyond the
+representative fixture set (programs outside it get clauses 1 and 3 only); select fixtures in clause
+4 (exclusive-boundary matching in the kernel is the tracked remainder); and provenance — none of
+this proves the compiler emitted the artifact it validated, only that the emitted values are sound,
+bound, and replayable.
+
 ## How To Read The Counts
 
 The numerator is the number of dashboard claims at that status. The denominator is the current
