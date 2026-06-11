@@ -131,6 +131,102 @@ theorem BulkContract.finish_exposedInputs
         contract, Finset.mem_erase]
       tauto
 
+/-- A trace pair's output was exposed at the start of the trace. -/
+theorem BulkContract.containsPair_output_exposed
+    {start finish :
+      LinearPortGraph ElaborationIR.NodeId
+        ElaborationIR.OutputPortSignature ElaborationIR.InputPortSignature}
+    (hBulk : BulkContract start finish)
+    {output : SourcePortInstance ElaborationIR.NodeId ElaborationIR.OutputPortSignature}
+    {input : SourcePortInstance ElaborationIR.NodeId ElaborationIR.InputPortSignature}
+    (hPair : ElaborationIR.CertifiedGraph.BulkContractContainsPair hBulk output input) :
+    output ∈ start.exposedOutputs := by
+  induction hBulk with
+  | done graph =>
+      exact absurd hPair (by simp [ElaborationIR.CertifiedGraph.BulkContractContainsPair])
+  | step graph stepOutput stepInput hOutput hInput tail ih =>
+      simp only [ElaborationIR.CertifiedGraph.BulkContractContainsPair] at hPair
+      rcases hPair with ⟨rfl, rfl⟩ | hTail
+      · exact hOutput
+      · exact Finset.mem_of_mem_erase (ih hTail)
+
+/-- A trace pair's input was exposed at the start of the trace. -/
+theorem BulkContract.containsPair_input_exposed
+    {start finish :
+      LinearPortGraph ElaborationIR.NodeId
+        ElaborationIR.OutputPortSignature ElaborationIR.InputPortSignature}
+    (hBulk : BulkContract start finish)
+    {output : SourcePortInstance ElaborationIR.NodeId ElaborationIR.OutputPortSignature}
+    {input : SourcePortInstance ElaborationIR.NodeId ElaborationIR.InputPortSignature}
+    (hPair : ElaborationIR.CertifiedGraph.BulkContractContainsPair hBulk output input) :
+    input ∈ start.exposedInputs := by
+  induction hBulk with
+  | done graph =>
+      exact absurd hPair (by simp [ElaborationIR.CertifiedGraph.BulkContractContainsPair])
+  | step graph stepOutput stepInput hOutput hInput tail ih =>
+      simp only [ElaborationIR.CertifiedGraph.BulkContractContainsPair] at hPair
+      rcases hPair with ⟨rfl, rfl⟩ | hTail
+      · exact hInput
+      · exact Finset.mem_of_mem_erase (ih hTail)
+
+/-- The step discipline makes trace pairs functional on outputs: an output is
+erased the moment it is contracted, so it cannot pair twice. -/
+theorem BulkContract.containsPair_output_functional
+    {start finish :
+      LinearPortGraph ElaborationIR.NodeId
+        ElaborationIR.OutputPortSignature ElaborationIR.InputPortSignature}
+    (hBulk : BulkContract start finish)
+    {output : SourcePortInstance ElaborationIR.NodeId ElaborationIR.OutputPortSignature}
+    {inputOne inputTwo : SourcePortInstance ElaborationIR.NodeId ElaborationIR.InputPortSignature}
+    (hOne : ElaborationIR.CertifiedGraph.BulkContractContainsPair hBulk output inputOne)
+    (hTwo : ElaborationIR.CertifiedGraph.BulkContractContainsPair hBulk output inputTwo) :
+    inputOne = inputTwo := by
+  induction hBulk with
+  | done graph =>
+      exact absurd hOne (by simp [ElaborationIR.CertifiedGraph.BulkContractContainsPair])
+  | step graph stepOutput stepInput hOutput hInput tail ih =>
+      simp only [ElaborationIR.CertifiedGraph.BulkContractContainsPair] at hOne hTwo
+      rcases hOne with ⟨rfl, rfl⟩ | hTailOne
+      · rcases hTwo with ⟨_, rfl⟩ | hTailTwo
+        · rfl
+        · exact absurd
+            (Finset.mem_erase.mp (tail.containsPair_output_exposed hTailTwo)).1
+            (fun h => h rfl)
+      · rcases hTwo with ⟨rfl, rfl⟩ | hTailTwo
+        · exact absurd
+            (Finset.mem_erase.mp (tail.containsPair_output_exposed hTailOne)).1
+            (fun h => h rfl)
+        · exact ih hTailOne hTailTwo
+
+/-- The step discipline makes trace pairs injective on inputs. -/
+theorem BulkContract.containsPair_input_injective
+    {start finish :
+      LinearPortGraph ElaborationIR.NodeId
+        ElaborationIR.OutputPortSignature ElaborationIR.InputPortSignature}
+    (hBulk : BulkContract start finish)
+    {outputOne outputTwo :
+      SourcePortInstance ElaborationIR.NodeId ElaborationIR.OutputPortSignature}
+    {input : SourcePortInstance ElaborationIR.NodeId ElaborationIR.InputPortSignature}
+    (hOne : ElaborationIR.CertifiedGraph.BulkContractContainsPair hBulk outputOne input)
+    (hTwo : ElaborationIR.CertifiedGraph.BulkContractContainsPair hBulk outputTwo input) :
+    outputOne = outputTwo := by
+  induction hBulk with
+  | done graph =>
+      exact absurd hOne (by simp [ElaborationIR.CertifiedGraph.BulkContractContainsPair])
+  | step graph stepOutput stepInput hOutput hInput tail ih =>
+      simp only [ElaborationIR.CertifiedGraph.BulkContractContainsPair] at hOne hTwo
+      rcases hOne with ⟨rfl, rfl⟩ | hTailOne
+      · rcases hTwo with ⟨rfl, _⟩ | hTailTwo
+        · rfl
+        · exact absurd
+            (Finset.mem_erase.mp (tail.containsPair_input_exposed hTailTwo)).1
+            (fun h => h rfl)
+      · rcases hTwo with ⟨rfl, rfl⟩ | hTailTwo
+        · exact absurd
+            (Finset.mem_erase.mp (tail.containsPair_input_exposed hTailOne)).1
+            (fun h => h rfl)
+        · exact ih hTailOne hTailTwo
+
 end LinearPortGraph
 
 namespace ElaborationIR
@@ -141,10 +237,10 @@ open Cortex.Wire.LinearPortGraph
 keyed-frontier rules over node-qualified port-instance frontiers.
 
 The connect rule's `matched` premise is T-Connect's matching condition stated
-extensionally: the match set is exactly the compatible pairs of the operand
-frontiers. Linearity side conditions (operand disjointness) are carried by the
-admission relation this judgment corresponds to; the judgment itself only
-fixes how frontiers compose. -/
+extensionally — the match set is exactly the compatible pairs of the operand
+frontiers — together with the per-key singleton discipline: the match set is
+one-to-one, so no output fans out and no input fans in. Overlay and connect
+both carry the frontier-disjointness side conditions of the paper's rules. -/
 inductive FrontierTyped (mod : AdmittedModuleShell) :
     GraphExpr →
       Finset (SourcePortInstance NodeId OutputPortSignature) →
@@ -169,7 +265,9 @@ inductive FrontierTyped (mod : AdmittedModuleShell) :
       {leftOutputs rightOutputs : Finset (SourcePortInstance NodeId OutputPortSignature)}
       {leftInputs rightInputs : Finset (SourcePortInstance NodeId InputPortSignature)}
       (hLeft : FrontierTyped mod leftExpr leftOutputs leftInputs)
-      (hRight : FrontierTyped mod rightExpr rightOutputs rightInputs) :
+      (hRight : FrontierTyped mod rightExpr rightOutputs rightInputs)
+      (hOutputsDisjoint : Disjoint leftOutputs rightOutputs)
+      (hInputsDisjoint : Disjoint leftInputs rightInputs) :
       FrontierTyped mod (GraphExpr.overlay leftExpr rightExpr)
         (leftOutputs ∪ rightOutputs)
         (leftInputs ∪ rightInputs)
@@ -188,7 +286,19 @@ inductive FrontierTyped (mod : AdmittedModuleShell) :
           (output, input) ∈ matched ↔
             output ∈ leftOutputs ∧
               input ∈ rightInputs ∧
-                output.port.signature = input.port.signature) :
+                output.port.signature = input.port.signature)
+      (hOutputsDisjoint : Disjoint leftOutputs rightOutputs)
+      (hInputsDisjoint : Disjoint leftInputs rightInputs)
+      (hMatchedFunctional :
+        ∀ output inputOne inputTwo,
+          (output, inputOne) ∈ matched →
+            (output, inputTwo) ∈ matched →
+              inputOne = inputTwo)
+      (hMatchedInjective :
+        ∀ outputOne outputTwo input,
+          (outputOne, input) ∈ matched →
+            (outputTwo, input) ∈ matched →
+              outputOne = outputTwo) :
       FrontierTyped mod (GraphExpr.connect leftExpr rightExpr)
         ((leftOutputs ∪ rightOutputs) \ matched.image Prod.fst)
         ((leftInputs ∪ rightInputs) \ matched.image Prod.snd)
@@ -196,6 +306,26 @@ inductive FrontierTyped (mod : AdmittedModuleShell) :
 namespace CertifiedGraph
 
 variable {mod : AdmittedModuleShell}
+
+/-- Domain disjointness of admitted operands restricts to exposed outputs. -/
+theorem exposedOutputs_disjoint
+    {lhs rhs : CertifiedGraph mod}
+    (hDisjoint : CertifiedGraph.Disjoint lhs rhs) :
+    _root_.Disjoint lhs.object.graph.exposedOutputs rhs.object.graph.exposedOutputs :=
+  Finset.disjoint_left.mpr fun candidate hLeft hRight =>
+    hDisjoint.domain.2.1 candidate
+      (lhs.object.graph.exposedOutput_mem candidate hLeft)
+      (rhs.object.graph.exposedOutput_mem candidate hRight)
+
+/-- Domain disjointness of admitted operands restricts to exposed inputs. -/
+theorem exposedInputs_disjoint
+    {lhs rhs : CertifiedGraph mod}
+    (hDisjoint : CertifiedGraph.Disjoint lhs rhs) :
+    _root_.Disjoint lhs.object.graph.exposedInputs rhs.object.graph.exposedInputs :=
+  Finset.disjoint_left.mpr fun candidate hLeft hRight =>
+    hDisjoint.domain.2.2 candidate
+      (lhs.object.graph.exposedInput_mem candidate hLeft)
+      (rhs.object.graph.exposedInput_mem candidate hRight)
 
 /-- Every admitted certified graph is frontier-typed at exactly its exposed
 boundary: the declarative typing rules are realized by the admission
@@ -215,7 +345,10 @@ theorem frontierTyped_of_admits
   | binding hRef =>
       exact FrontierTyped.binding hRef
   | overlay hLeft hRight hDisjoint ihLeft ihRight =>
-      exact FrontierTyped.overlay ihLeft ihRight
+      exact
+        FrontierTyped.overlay ihLeft ihRight
+          (exposedOutputs_disjoint hDisjoint)
+          (exposedInputs_disjoint hDisjoint)
   | connect hLeft hRight hDisjoint matched ihLeft ihRight =>
       rename_i leftGraph rightGraph
       have hOutputs :
@@ -269,6 +402,16 @@ theorem frontierTyped_of_admits
         · rintro ⟨⟨pairOutput, pairInput⟩, ⟨⟨hOut, hIn⟩, hSig⟩, rfl⟩
           exact ⟨pairOutput, (hPairs pairOutput _).mpr ⟨hOut, hIn, hSig⟩⟩
       rw [hMatchedOutputs, hMatchedInputs]
+      have hMemPair :
+          ∀ {output input},
+            (output, input) ∈
+                ((leftGraph.object.graph.exposedOutputs ×ˢ
+                      rightGraph.object.graph.exposedInputs).filter
+                    (fun pair => pair.1.port.signature = pair.2.port.signature)) →
+              BulkContractContainsPair matched.bulk output input := by
+        intro output input hMember
+        rw [Finset.mem_filter, Finset.mem_product] at hMember
+        exact (hPairs output input).mpr ⟨hMember.1.1, hMember.1.2, hMember.2⟩
       exact
         FrontierTyped.connect
           ((leftGraph.object.graph.exposedOutputs ×ˢ
@@ -277,6 +420,12 @@ theorem frontierTyped_of_admits
           ihLeft ihRight
           (fun output input => by
             simp [Finset.mem_filter, Finset.mem_product, and_assoc])
+          (exposedOutputs_disjoint hDisjoint)
+          (exposedInputs_disjoint hDisjoint)
+          (fun output inputOne inputTwo hOne hTwo =>
+            matched.bulk.containsPair_output_functional (hMemPair hOne) (hMemPair hTwo))
+          (fun outputOne outputTwo input hOne hTwo =>
+            matched.bulk.containsPair_input_injective (hMemPair hOne) (hMemPair hTwo))
 
 end CertifiedGraph
 
