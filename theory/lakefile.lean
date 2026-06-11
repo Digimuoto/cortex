@@ -74,6 +74,8 @@ lean_lib «Cortex» where
     `Cortex.Wire.AdmissionArtifact.Differential.Make,
     `Cortex.Wire.AdmissionArtifact.Differential.MakeEach,
     `Cortex.Wire.AdmissionArtifact.Differential.RecordScatter,
+    `Cortex.Wire.AdmissionArtifact.Differential.SelectLabel,
+    `Cortex.Wire.AdmissionArtifact.Differential.SelectContract,
     `Cortex.Wire.AdmissionArtifact.Emitted.Chain,
     `Cortex.Wire.AdmissionArtifact.Emitted.IndexedGather,
     `Cortex.Wire.AdmissionArtifact.Emitted.IndexedScatter,
@@ -109,6 +111,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.PulseSafety,
     `Cortex.Wire.SelectRecovery,
     `Cortex.Wire.SelectAdmission,
+    `Cortex.Wire.AdditiveFragment,
     `Cortex.Wire.RunTrace
   ]
 

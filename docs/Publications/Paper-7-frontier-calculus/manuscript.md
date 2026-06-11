@@ -687,6 +687,22 @@ along wiring patterns — the purest prior account of typed-port composition —
 split; the prohibition of splitting, and partial carrying composition computed per key, are exactly
 this calculus's departures.
 
+**Linear logic's additives.** The lineage runs one level deeper than the multiplicative port
+discipline. `select` is an additive-choice layer over it: an exclusive output sum is the producer's
+internal choice (linear logic's $\oplus$), and a select clause is the consumer's offer of every
+continuation, exactly one of which is actualized — the resource reading of $\with$, whose branches
+share rather than split their context, which is precisely the convergence requirement on arms. The
+mechanized fragment pins the offer obligations (`withRule_offers_every_alternative`: an admitted arm
+table is one-to-one onto the alternatives), and the latent-branch mechanism is an operational,
+topology-level analogue of the additive box: branches admitted and sealed at compile time, exactly
+one opened by certified rewrite at runtime, with provenance recording the opening. We claim the
+analogue, not a solution to additive proof nets: the proof-net additive problem is equally a problem
+of _proof identity_ — commuting conversions, superposed slices — and this calculus refuses
+identification by design, because provenance must distinguish histories that proof-net theory would
+quotient. One terminological caution for readers from session types: there, the party making the
+internal choice performs `select` and the party offering branches performs `branch`; this calculus's
+`select` construct is, in that vocabulary, the branch side.
+
 **Algebraic graphs.** Mokhov's algebra of graphs [\[2\]](#ref-2), and its application to build
 systems [\[3\]](#ref-3), supplies the four-constructor skeleton this calculus inherits — empty,
 vertex, overlay, connect. The delta is precise and theorem-shaped. Vertices carry named, typed
@@ -766,9 +782,11 @@ distributivity — and the deliberate absence — no ambient contraction — are
 as the theorems are: they are what make the admitted diagram a causal explanation rather than a
 drawing. Open problems are stated where they live: a unified dynamics theorem composing reduction
 and admitted substitution with linearity (§4), compiler-produced alignment witnesses for the
-two-layer projection (§3.7), and a categorical statement of key-directed partial composition (§6).
-The artifact — mechanization, compiler, runtime, and example corpus through to quantum hardware — is
-public (Appendix A).
+two-layer projection (§3.7), and a categorical statement of key-directed partial composition (§6),
+now joined by a fourth: a translation of additive ($\oplus$/$\with$) derivations into select clauses
+with the principal additive cut step realized by certified actualization, which would graduate the
+additive reading of §6 from analogue to theorem. The artifact — mechanization, compiler, runtime,
+and example corpus through to quantum hardware — is public (Appendix A).
 
 ## References
 

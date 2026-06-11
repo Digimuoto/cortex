@@ -704,6 +704,29 @@ This chapter intentionally leaves the following open:
 This chapter is intended to make the target semantics and the current implementation subset legible
 alongside the accepted grammar.
 
+## Relation to Linear Logic's Additives
+
+Wire's ordinary port discipline is the multiplicative/resource fragment of a linear composition
+calculus: no implicit copying, no implicit discarding, matched endpoints consumed exactly once.
+`select(...)` is the additive layer over it. An exclusive output sum is the producer's internal
+choice (linear logic's `⊕`); a select clause is the consumer's offer of every continuation (`&`),
+exactly one of which is actualized. The defining additive behavior — branches share, rather than
+split, their surrounding resources — is Wire's convergence requirement on arms.
+
+The latent-branch mechanism is an operational analogue of the additive box from proof-net theory:
+all branches are admitted and sealed at compile time, exactly one is opened by certified rewrite at
+runtime, and provenance records the opening. This is an execution-level analogue, not a solution to
+additive proof nets: the proof-net problem is equally about proof identity (commuting conversions,
+slice superposition), and Wire refuses proof identification by design — provenance must distinguish
+histories that proof-net theory would quotient. The mechanized fragment lives in
+`theory/Cortex/Wire/AdditiveFragment.lean` (`AdditiveChoice.toShape`,
+`withRule_offers_every_alternative`); translating additive derivations and certifying the principal
+cut step against actualization is a named open obligation.
+
+Session-types naming caution: in session-typed calculi the party making the internal choice performs
+`select` and the party offering branches performs `branch`. Wire's `select(...)` is, in that
+vocabulary, the branch/offer side.
+
 ## Related
 
 - [grammar.md](grammar.md) — accepted Wire grammar.

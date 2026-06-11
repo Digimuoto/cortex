@@ -49,6 +49,8 @@ import Cortex.Wire.AdmissionArtifact.Differential.IndexedScatter
 import Cortex.Wire.AdmissionArtifact.Differential.Make
 import Cortex.Wire.AdmissionArtifact.Differential.MakeEach
 import Cortex.Wire.AdmissionArtifact.Differential.RecordScatter
+import Cortex.Wire.AdmissionArtifact.Differential.SelectLabel
+import Cortex.Wire.AdmissionArtifact.Differential.SelectContract
 import Cortex.Wire.AdmissionArtifact.Emitted
 import Cortex.Wire.AdmissionArtifact.Emitted.Chain
 import Cortex.Wire.AdmissionArtifact.Emitted.IndexedGather
@@ -85,6 +87,7 @@ import Cortex.Wire.FrontierReclaim
 import Cortex.Wire.PulseSafety
 import Cortex.Wire.SelectRecovery
 import Cortex.Wire.SelectAdmission
+import Cortex.Wire.AdditiveFragment
 import Cortex.Wire.RunTrace
 
 /-!

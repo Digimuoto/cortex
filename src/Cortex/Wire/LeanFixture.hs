@@ -726,17 +726,16 @@ recordScatterEnv =
 
 -- Differential oracle rendering ------------------------------------------------
 
-{- | Fixtures covered by the differential oracle. The select fixtures are
-excluded: their synthetic condition node exposes bridge ports sharing a
-(label, contract) signature with variant ports, which signature-keyed kernel
-matching correctly rejects as ambiguous — exclusive-boundary matching is the
-tracked kernel remainder.
+{- | Fixtures covered by the differential oracle: the full emitted corpus.
+Select fixtures replay at the source-visible frontier, mirroring the
+validator's trace semantics: select-internal choice exits (condition-node
+ports that echo a variant) are hidden from node declarations exactly as
+`SelectInternalChoiceExit` hides them during validator replay, so signature
+matching stays unambiguous. Exclusivity itself is the validator's and the
+select theorems' job; the differential re-executes composition, not choice.
 -}
 differentialFixtures :: [EmittedFixture]
-differentialFixtures =
-  filter
-    (\fixture -> fixture.emittedFixtureSlug `notElem` ["SelectLabel", "SelectContract"])
-    emittedFixtures
+differentialFixtures = emittedFixtures
 
 -- | Core expression skeleton reconstructed from a primitive trace.
 data DiffExpr
@@ -777,20 +776,40 @@ data DiffSignature = DiffSignature
   , diffSignatureContract :: !Text
   }
 
-diffSignatureOf :: AdmissionBoundaryPort -> Either Text DiffSignature
+-- Replay signatures ignore exclusive-group annotations: the frontier replay
+-- matches by (label, contract) exactly as the trace frames do; exclusivity is
+-- validated elsewhere.
+diffSignatureOf :: AdmissionBoundaryPort -> DiffSignature
 diffSignatureOf row =
-  case row.admissionBoundaryExclusiveGroup of
-    Just _group ->
-      Left "exclusive boundary rows are outside the differential corpus"
-    Nothing ->
-      Right
-        DiffSignature
-          { diffSignatureLabel =
-              case row.admissionBoundaryLabel of
-                AdmissionLabel label -> label
-                AdmissionNoLabel -> row.admissionBoundaryPort
-          , diffSignatureContract = renderContractExpr row.admissionBoundaryContract
-          }
+  DiffSignature
+    { diffSignatureLabel =
+        case row.admissionBoundaryLabel of
+          AdmissionLabel label -> label
+          AdmissionNoLabel -> row.admissionBoundaryPort
+    , diffSignatureContract = renderContractExpr row.admissionBoundaryContract
+    }
+
+{- | Mirror of the validator's @SelectInternalChoiceExit@: an exit is hidden
+from the visible frontier when its exclusive group is owned by a select row's
+condition node and its (label, contract) echoes one of that row's variants.
+-}
+diffSelectInternalExit :: WireAdmissionArtifact -> AdmissionBoundaryPort -> Bool
+diffSelectInternalExit artifact exit =
+  any internalFor artifact.wireAdmissionSelects
+  where
+    internalFor selectRow =
+      case exit.admissionBoundaryExclusiveGroup of
+        Nothing -> False
+        Just (owner, _index) ->
+          owner == selectRow.selectAdmissionConditionNode
+            && any
+              ( \variant ->
+                  variant.selectVariantPort.admissionBoundaryLabel
+                    == exit.admissionBoundaryLabel
+                    && variant.selectVariantPort.admissionBoundaryContract
+                      == exit.admissionBoundaryContract
+              )
+              selectRow.selectAdmissionVariants
 
 {- | Render a contract id, recognizing the bounded-product name shape
 @[Elem;N]@ so the @ClosedBy.boundedIndexed@ constructor unifies syntactically.
@@ -880,30 +899,29 @@ diffContractDefLines index name =
 
 diffNodeDeclLines
   :: (Int, (CircuitNodeRef, [AdmissionBoundaryPort], [AdmissionBoundaryPort]))
-  -> Either Text (Text, [Text])
-diffNodeDeclLines (index, (ref, entries, exits)) = do
-  entrySignatures <- traverse diffSignatureOf entries
-  exitSignatures <- traverse diffSignatureOf exits
-  let defName = "node" <> T.pack (show index)
-  Right
-    ( defName
-    , [ "/-- Accepted declaration for node `" <> ref.unCircuitNodeRef <> "`. -/"
-      , "def " <> defName <> " : AcceptedNodeDecl where"
-      , "  node := \10216" <> leanStringLit ref.unCircuitNodeRef <> "\10217"
-      , "  nodeValid := by decide"
-      ]
-        <> renderArtifactField 2 ("inputs", LeanSet (fmap diffSignatureValue entrySignatures))
-        <> renderArtifactField
-          2
-          ("outputs", LeanList (fmap (\sig -> LeanApp ".single" [diffSignatureValue sig]) exitSignatures))
-        <> [ "  inputPortsValid := by decide"
-           , "  outputShapesAdmissible := by decide"
-           , "  outputPortsListLabelsUnique := by decide"
-           , "  inputLabelsUnique := by decide"
-           , "  body := .corePure"
-           , "  bodyLocalValid := by decide"
-           ]
-    )
+  -> (Text, [Text])
+diffNodeDeclLines (index, (ref, entries, exits)) =
+  let entrySignatures = fmap diffSignatureOf entries
+      exitSignatures = fmap diffSignatureOf exits
+      defName = "node" <> T.pack (show index)
+   in ( defName
+      , [ "/-- Accepted declaration for node `" <> ref.unCircuitNodeRef <> "`. -/"
+        , "def " <> defName <> " : AcceptedNodeDecl where"
+        , "  node := \10216" <> leanStringLit ref.unCircuitNodeRef <> "\10217"
+        , "  nodeValid := by decide"
+        ]
+          <> renderArtifactField 2 ("inputs", LeanSet (fmap diffSignatureValue entrySignatures))
+          <> renderArtifactField
+            2
+            ("outputs", LeanList (fmap (\sig -> LeanApp ".single" [diffSignatureValue sig]) exitSignatures))
+          <> [ "  inputPortsValid := by decide"
+             , "  outputShapesAdmissible := by decide"
+             , "  outputPortsListLabelsUnique := by decide"
+             , "  inputLabelsUnique := by decide"
+             , "  body := .corePure"
+             , "  bodyLocalValid := by decide"
+             ]
+      )
 
 diffShellLines :: Bool -> [Text] -> [Text] -> [Text]
 diffShellLines hasBoundedContracts contractNames nodeNames =
@@ -942,20 +960,17 @@ diffShellLines hasBoundedContracts contractNames nodeNames =
 renderDifferentialModuleText :: EmittedFixture -> WireAdmissionArtifact -> Either Text Text
 renderDifferentialModuleText fixture artifact = do
   expr <- diffExprOfSteps artifact.wireAdmissionPrimitiveSteps
-  let nodeRows =
-        [ (ref, entries, exits)
+  let visibleExits = filter (not . diffSelectInternalExit artifact)
+      nodeRows =
+        [ (ref, entries, visibleExits exits)
         | PrimitiveNode ref entries exits <- artifact.wireAdmissionPrimitiveSteps
         ]
-  nodeDecls <- traverse diffNodeDeclLines (zip [0 ..] nodeRows)
-  entryInstances <-
-    traverse
-      (\row -> diffInstanceValue row.admissionBoundaryNode.unCircuitNodeRef <$> diffSignatureOf row)
-      artifact.wireAdmissionEntries
-  exitInstances <-
-    traverse
-      (\row -> diffInstanceValue row.admissionBoundaryNode.unCircuitNodeRef <$> diffSignatureOf row)
-      artifact.wireAdmissionExits
-  let allRows = concatMap (\(_ref, entries, exits) -> entries <> exits) nodeRows
+      nodeDecls = fmap diffNodeDeclLines (zip [0 ..] nodeRows)
+      instanceOf row =
+        diffInstanceValue row.admissionBoundaryNode.unCircuitNodeRef (diffSignatureOf row)
+      entryInstances = fmap instanceOf artifact.wireAdmissionEntries
+      exitInstances = fmap instanceOf artifact.wireAdmissionExits
+      allRows = concatMap (\(_ref, entries, exits) -> entries <> exits) nodeRows
       contractDefs = zipWith diffContractDefLines [0 ..] (diffDeclaredContracts allRows)
       namespaceName = "Differential" <> fixture.emittedFixtureSlug
   Right . T.unlines $
