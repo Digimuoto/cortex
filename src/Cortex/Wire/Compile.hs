@@ -2974,7 +2974,11 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       runtimePorts = taskWirePortsFromLowered ports
       executorId = configuredExecutor.ceExecutorId
       maybeSignal = lookupMaybeTextField "on" exactFields
-      maybeKind = lookupMaybeTextField "kind" exactFields
+      -- `artifactKind` is the canonical field; `kind` stays accepted as a
+      -- deprecated alias because kinds are already a Wire language concept.
+      maybeArtifactKind =
+        lookupMaybeTextField "artifactKind" exactFields
+          <|> lookupMaybeTextField "kind" exactFields
       maybeTarget = lookupMaybeQNameField "to" exactFields
   validateStdIoExecutorShape nodeRef executorId runtimePorts
   compiledNode <- case () of
@@ -2997,8 +3001,12 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                       (normalFormPorts normalForm)
                       (lookupMaybeInt32Field "timeout" exactFields)
                 }
-      | isJust maybeKind || isJust maybeTarget -> do
-          artifactKind <- requireTextField nodeRef "kind" exactFields
+      | isJust maybeArtifactKind || isJust maybeTarget -> do
+          artifactKind <-
+            maybe
+              (Left (WireCore.WireMissingRequiredField nodeRef "artifactKind"))
+              Right
+              maybeArtifactKind
           targetRef <- requireQNameField nodeRef "to" exactFields
           let normalForm =
                 artifactNodeBoundaryNormalForm
@@ -3093,6 +3101,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       , "maxOutputTokens"
       , "reasoningEnabled"
       , "on"
+      , "artifactKind"
       , "kind"
       , "to"
       ]

@@ -26,7 +26,7 @@ import Numeric.Natural (Natural)
 import Test.Hspec
 
 import Cortex.Algebra.Graph (successors)
-import Cortex.Wire (Connection (..), EndpointRef (..), WirePayloadKind (..))
+import Cortex.Wire (Connection (..), EndpointRef (..), WirePayloadKind (..), renderWireError)
 import Cortex.Wire.AdmissionArtifact
   ( AdmissionBoundaryPort (..)
   , AdmissionConnection (..)
@@ -63,7 +63,11 @@ import Cortex.Wire.Circuit.Artifact
   , CompiledCircuitFragment (..)
   , CompiledCircuitNode (..)
   )
-import Cortex.Wire.Circuit.IR (CircuitNodeRef (..), CircuitTaskNode (..))
+import Cortex.Wire.Circuit.IR
+  ( CircuitArtifactBoundary (..)
+  , CircuitNodeRef (..)
+  , CircuitTaskNode (..)
+  )
 import Cortex.Wire.Compile
   ( compileWireFragmentText
   , compileWireFragmentTextWithEnv
@@ -3272,6 +3276,23 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv knownContractsEnv typoContractSourceText
         `shouldBe` Left (WireUnknownContract "node ports" "PlannerOuput")
 
+  describe "artifact boundary nodes" $ do
+    it "compiles the canonical artifactKind field" $ do
+      compiled <- requireRight (compileWireText (artifactBoundarySourceText "artifactKind"))
+      artifactBoundaryKind compiled `shouldBe` Just "report"
+
+    it "rejects the reserved word kind as a config field name at parse time" $
+      -- `kind` is a Wire keyword (kind declarations), so the legacy field
+      -- spelling was never reachable from source text; the lowering keeps a
+      -- lookup fallback for field maps built outside the parser.
+      compileWireText (artifactBoundarySourceText "kind")
+        `shouldSatisfy` isLeft
+
+    it "names artifactKind in the missing-field error" $
+      case compileWireText (artifactBoundarySourceTextWith "") of
+        Left err -> renderWireError err `shouldSatisfy` T.isInfixOf "artifactKind"
+        Right _compiled -> expectationFailure "expected a missing-field error"
+
   describe "executor projections" $ do
     it "allows a strict registered executor projection with matching ports" $
       compileWireTextWithEnv strictExecutorEnv projectedExecutorSourceText
@@ -5161,6 +5182,27 @@ expectTaskExecutorTarget compiled expectedTarget ref =
     other ->
       expectationFailure ("expected task node " <> show ref <> ", got: " <> show other)
 
+artifactBoundarySourceText :: T.Text -> T.Text
+artifactBoundarySourceText fieldName =
+  artifactBoundarySourceTextWith (fieldName <> " = \"report\";")
+
+artifactBoundarySourceTextWith :: T.Text -> T.Text
+artifactBoundarySourceTextWith kindFields =
+  T.unlines
+    [ "node make_report"
+    , "  -> report: ReportArtifact = @report.build ({}) ;"
+    , "node persist_report"
+    , "  <- report: ReportArtifact ;"
+    , "  = @artifact.store { " <> kindFields <> " to = artifacts.reports; } (report) ;"
+    , "make_report => persist_report"
+    ]
+
+artifactBoundaryKind :: CompiledCircuit -> Maybe T.Text
+artifactBoundaryKind compiled =
+  case [boundary | CompiledCircuitArtifact boundary <- Map.elems compiled.compiledCircuitNodes] of
+    [boundary] -> Just boundary.circuitArtifactKind
+    _boundaries -> Nothing
+
 requireRight :: Show err => Either err a -> IO a
 requireRight = \case
   Left err ->
@@ -6201,6 +6243,9 @@ isRight :: Either err ok -> Bool
 isRight = \case
   Right _ -> True
   Left _ -> False
+
+isLeft :: Either err ok -> Bool
+isLeft = not . isRight
 
 isParseFailure :: Either WireError ok -> Bool
 isParseFailure = \case

@@ -54,6 +54,26 @@ executor is still only staged authority. The node body exists only after a decla
 typed boundary; the executor argument is ingress adaptation, and output validation/wrapping is
 egress adaptation.
 
+## Boundary Node Fields
+
+Two reserved config fields select special boundary node forms instead of plain task nodes:
+
+- `on = "signal-name"` declares a signal boundary: the node parks until the named signal is
+  delivered.
+- `artifactKind = "report"; to = artifacts.reports;` declares an artifact boundary: the node
+  persists its input as an artifact of the given kind at the target reference. Both fields are
+  required together.
+
+```wire
+node persist_report
+  <- report: ReportArtifact;
+  = @artifact.store { artifactKind = "report"; to = artifacts.reports; } (report);
+```
+
+`artifactKind` is the canonical field name. `kind` is a Wire keyword (kind declarations), so it is
+not writable as a config field name in source; the compiler keeps a `kind` lookup fallback only for
+field maps constructed outside the parser.
+
 ## Evaluation Boundary
 
 Wire type-checking admits graph values with open boundaries. Runtime preparation is stricter:
