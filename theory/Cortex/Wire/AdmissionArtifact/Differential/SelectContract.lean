@@ -79,9 +79,9 @@ def node1 : AcceptedNodeDecl where
   body := .corePure
   bodyLocalValid := by decide
 
-/-- Accepted declaration for node `__select:ResearchPlan_PlanIssue:daae5c794e93`. -/
+/-- Accepted declaration for node `__select.ResearchPlan_PlanIssue.daae5c794e93`. -/
 def node2 : AcceptedNodeDecl where
-  node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+  node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
   nodeValid := by decide
   inputs := {⟨⟨"valid"⟩, ⟨"ResearchPlan"⟩⟩, ⟨⟨"issue"⟩, ⟨"PlanIssue"⟩⟩}
   outputs := [.single ⟨⟨"valid"⟩, ⟨"ResearchPlan"⟩⟩]
@@ -134,7 +134,7 @@ def expr : GraphExpr :=
   .connect
       ( .connect
             (.connect (.node ⟨"draft_plan"⟩) (.node ⟨"validate_plan"⟩))
-            (.node ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩)
+            (.node ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩)
       )
       (.node ⟨"publish_report"⟩)
 

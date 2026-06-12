@@ -21,7 +21,7 @@ namespace EmittedSelectLabel
 def artifact : WireAdmissionArtifact where
   schemaVersion := 3
   nodes :=
-    [⟨"__select:ok_issue:4498bc399c9c"⟩, ⟨"draft_plan"⟩, ⟨"publish_report"⟩, ⟨"validate_plan"⟩]
+    [⟨"__select.ok_issue.4498bc399c9c"⟩, ⟨"draft_plan"⟩, ⟨"publish_report"⟩, ⟨"validate_plan"⟩]
   bindingRefs := []
   entries := []
   exits :=
@@ -38,14 +38,14 @@ def artifact : WireAdmissionArtifact where
       }
     , { fromEndpoint := { node := ⟨"validate_plan"⟩, port := some ⟨"ok"⟩ }
       , toEndpoint :=
-          { node := ⟨"__select:ok_issue:4498bc399c9c"⟩, port := some ⟨"variant_in_1"⟩ }
+          { node := ⟨"__select.ok_issue.4498bc399c9c"⟩, port := some ⟨"variant_in_1"⟩ }
       }
     , { fromEndpoint := { node := ⟨"validate_plan"⟩, port := some ⟨"issue"⟩ }
       , toEndpoint :=
-          { node := ⟨"__select:ok_issue:4498bc399c9c"⟩, port := some ⟨"variant_in_2"⟩ }
+          { node := ⟨"__select.ok_issue.4498bc399c9c"⟩, port := some ⟨"variant_in_2"⟩ }
       }
     , { fromEndpoint :=
-          { node := ⟨"__select:ok_issue:4498bc399c9c"⟩, port := some ⟨"bridge_out_1"⟩ }
+          { node := ⟨"__select.ok_issue.4498bc399c9c"⟩, port := some ⟨"bridge_out_1"⟩ }
       , toEndpoint := { node := ⟨"publish_report"⟩, port := some ⟨"ok"⟩ }
       }
     ]
@@ -116,33 +116,33 @@ def artifact : WireAdmissionArtifact where
           []
           []
     , .node
-          ⟨"__select:ok_issue:4498bc399c9c"⟩
-          [ { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          ⟨"__select.ok_issue.4498bc399c9c"⟩
+          [ { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"variant_in_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"ok"⟩
             , exclusiveGroup := none
             }
-          , { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          , { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"variant_in_2"⟩
             , contract := ⟨"PlanIssue"⟩
             , label := .label ⟨"issue"⟩
             , exclusiveGroup := none
             }
           ]
-          [ { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          [ { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"variant_out_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"ok"⟩
-            , exclusiveGroup := some (⟨"__select:ok_issue:4498bc399c9c"⟩, 0)
+            , exclusiveGroup := some (⟨"__select.ok_issue.4498bc399c9c"⟩, 0)
             }
-          , { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          , { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"variant_out_2"⟩
             , contract := ⟨"PlanIssue"⟩
             , label := .label ⟨"issue"⟩
-            , exclusiveGroup := some (⟨"__select:ok_issue:4498bc399c9c"⟩, 0)
+            , exclusiveGroup := some (⟨"__select.ok_issue.4498bc399c9c"⟩, 0)
             }
-          , { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          , { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"bridge_out_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"ok"⟩
@@ -163,13 +163,13 @@ def artifact : WireAdmissionArtifact where
             , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
             }
           ]
-          [ { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          [ { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"variant_in_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"ok"⟩
             , exclusiveGroup := none
             }
-          , { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          , { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"variant_in_2"⟩
             , contract := ⟨"PlanIssue"⟩
             , label := .label ⟨"issue"⟩
@@ -184,7 +184,7 @@ def artifact : WireAdmissionArtifact where
                 , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
                 }
             , toPort :=
-                { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+                { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
                 , port := ⟨"variant_in_1"⟩
                 , contract := ⟨"ResearchPlan"⟩
                 , label := .label ⟨"ok"⟩
@@ -199,7 +199,7 @@ def artifact : WireAdmissionArtifact where
                 , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
                 }
             , toPort :=
-                { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+                { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
                 , port := ⟨"variant_in_2"⟩
                 , contract := ⟨"PlanIssue"⟩
                 , label := .label ⟨"issue"⟩
@@ -226,7 +226,7 @@ def artifact : WireAdmissionArtifact where
             }
           ]
     , .connect
-          [ { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+          [ { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
             , port := ⟨"bridge_out_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"ok"⟩
@@ -241,7 +241,7 @@ def artifact : WireAdmissionArtifact where
             }
           ]
           [ { fromPort :=
-                { node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+                { node := ⟨"__select.ok_issue.4498bc399c9c"⟩
                 , port := ⟨"bridge_out_1"⟩
                 , contract := ⟨"ResearchPlan"⟩
                 , label := .label ⟨"ok"⟩
@@ -262,7 +262,7 @@ def artifact : WireAdmissionArtifact where
   generatedForms := []
   phantomAdapters := []
   selects :=
-    [ { owner := ⟨"__select:ok_issue:4498bc399c9c"⟩
+    [ { owner := ⟨"__select.ok_issue.4498bc399c9c"⟩
       , variants :=
           [ { key := ⟨"ok"⟩
             , port :=
@@ -315,7 +315,7 @@ def artifact : WireAdmissionArtifact where
                 ]
             }
           ]
-      , conditionNode := ⟨"__select:ok_issue:4498bc399c9c"⟩
+      , conditionNode := ⟨"__select.ok_issue.4498bc399c9c"⟩
       }
     ]
 

@@ -2778,10 +2778,14 @@ bridgeOutputPorts =
 
 generatedSelectConditionNodeRef :: [BoundaryPort] -> [BoundaryShape] -> [Text] -> CircuitNodeRef
 generatedSelectConditionNodeRef selectorVariants commonBoundary armKeys =
+  -- The separator must never be ':', the rewrite namespace delimiter:
+  -- a select condition inside a latent branch is a rewrite-local node, and
+  -- namespace discipline rejects local ids containing the delimiter. This is
+  -- what blocked nested selects from materializing.
   CircuitNodeRef
-    ( "__select:"
+    ( "__select."
         <> humanTag
-        <> ":"
+        <> "."
         <> T.take
           12
           ( digestText

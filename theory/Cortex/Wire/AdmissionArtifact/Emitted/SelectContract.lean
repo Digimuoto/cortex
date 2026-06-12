@@ -21,7 +21,7 @@ namespace EmittedSelectContract
 def artifact : WireAdmissionArtifact where
   schemaVersion := 3
   nodes :=
-    [ ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+    [ ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
     , ⟨"draft_plan"⟩
     , ⟨"publish_report"⟩
     , ⟨"validate_plan"⟩
@@ -42,18 +42,18 @@ def artifact : WireAdmissionArtifact where
       }
     , { fromEndpoint := { node := ⟨"validate_plan"⟩, port := some ⟨"valid"⟩ }
       , toEndpoint :=
-          { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
           , port := some ⟨"variant_in_1"⟩
           }
       }
     , { fromEndpoint := { node := ⟨"validate_plan"⟩, port := some ⟨"issue"⟩ }
       , toEndpoint :=
-          { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
           , port := some ⟨"variant_in_2"⟩
           }
       }
     , { fromEndpoint :=
-          { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
           , port := some ⟨"bridge_out_1"⟩
           }
       , toEndpoint := { node := ⟨"publish_report"⟩, port := some ⟨"valid"⟩ }
@@ -126,33 +126,33 @@ def artifact : WireAdmissionArtifact where
           []
           []
     , .node
-          ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
-          [ { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+          [ { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"variant_in_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"valid"⟩
             , exclusiveGroup := none
             }
-          , { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          , { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"variant_in_2"⟩
             , contract := ⟨"PlanIssue"⟩
             , label := .label ⟨"issue"⟩
             , exclusiveGroup := none
             }
           ]
-          [ { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          [ { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"variant_out_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"valid"⟩
-            , exclusiveGroup := some (⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩, 0)
+            , exclusiveGroup := some (⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩, 0)
             }
-          , { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          , { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"variant_out_2"⟩
             , contract := ⟨"PlanIssue"⟩
             , label := .label ⟨"issue"⟩
-            , exclusiveGroup := some (⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩, 0)
+            , exclusiveGroup := some (⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩, 0)
             }
-          , { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          , { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"bridge_out_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"valid"⟩
@@ -173,13 +173,13 @@ def artifact : WireAdmissionArtifact where
             , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
             }
           ]
-          [ { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          [ { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"variant_in_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"valid"⟩
             , exclusiveGroup := none
             }
-          , { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          , { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"variant_in_2"⟩
             , contract := ⟨"PlanIssue"⟩
             , label := .label ⟨"issue"⟩
@@ -194,7 +194,7 @@ def artifact : WireAdmissionArtifact where
                 , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
                 }
             , toPort :=
-                { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+                { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
                 , port := ⟨"variant_in_1"⟩
                 , contract := ⟨"ResearchPlan"⟩
                 , label := .label ⟨"valid"⟩
@@ -209,7 +209,7 @@ def artifact : WireAdmissionArtifact where
                 , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
                 }
             , toPort :=
-                { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+                { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
                 , port := ⟨"variant_in_2"⟩
                 , contract := ⟨"PlanIssue"⟩
                 , label := .label ⟨"issue"⟩
@@ -236,7 +236,7 @@ def artifact : WireAdmissionArtifact where
             }
           ]
     , .connect
-          [ { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+          [ { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
             , port := ⟨"bridge_out_1"⟩
             , contract := ⟨"ResearchPlan"⟩
             , label := .label ⟨"valid"⟩
@@ -251,7 +251,7 @@ def artifact : WireAdmissionArtifact where
             }
           ]
           [ { fromPort :=
-                { node := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+                { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
                 , port := ⟨"bridge_out_1"⟩
                 , contract := ⟨"ResearchPlan"⟩
                 , label := .label ⟨"valid"⟩
@@ -272,7 +272,7 @@ def artifact : WireAdmissionArtifact where
   generatedForms := []
   phantomAdapters := []
   selects :=
-    [ { owner := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+    [ { owner := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
       , variants :=
           [ { key := ⟨"valid"⟩
             , port :=
@@ -325,7 +325,7 @@ def artifact : WireAdmissionArtifact where
                 ]
             }
           ]
-      , conditionNode := ⟨"__select:ResearchPlan_PlanIssue:daae5c794e93"⟩
+      , conditionNode := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
       }
     ]
 

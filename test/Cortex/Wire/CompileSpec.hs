@@ -3276,6 +3276,29 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv knownContractsEnv typoContractSourceText
         `shouldBe` Left (WireUnknownContract "node ports" "PlannerOuput")
 
+  describe "nested select" $ do
+    it "compiles a select inside a select arm with a validator-ready artifact" $ do
+      compiled <- requireRight (compileWireText nestedSelectSourceText)
+      artifact <-
+        maybe
+          (fail "compiled nested select carries no admission artifact")
+          pure
+          (compiledWireAdmissionArtifact compiled)
+      artifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
+
+    it "keeps every latent node id free of the rewrite namespace delimiter" $ do
+      -- Rewrite namespace discipline rejects local ids containing ':'.
+      -- Select condition ids inside latent branches are rewrite-local, so a
+      -- ':' anywhere here is exactly the bug that blocked nested selects
+      -- from materializing.
+      compiled <- requireRight (compileWireText nestedSelectSourceText)
+      let offenders =
+            [ ref.unCircuitNodeRef
+            | ref <- allCompiledNodeRefs compiled
+            , ":" `T.isInfixOf` ref.unCircuitNodeRef
+            ]
+      offenders `shouldBe` []
+
   describe "artifact boundary nodes" $ do
     it "compiles the canonical artifactKind field" $ do
       compiled <- requireRight (compileWireText (artifactBoundarySourceText "artifactKind"))
@@ -5181,6 +5204,53 @@ expectTaskExecutorTarget compiled expectedTarget ref =
       taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget expectedTarget
     other ->
       expectationFailure ("expected task node " <> show ref <> ", got: " <> show other)
+
+nestedSelectSourceText :: T.Text
+nestedSelectSourceText =
+  T.unlines
+    [ "node draft_plan"
+    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "node validate_plan"
+    , "  <- draft: DraftPlan ;"
+    , "  -> ok: ResearchPlan | issue: PlanIssue ;"
+    , "  = @review.validate_plan (draft) ;"
+    , "node triage"
+    , "  <- issue: PlanIssue ;"
+    , "  -> fixable: PlanIssue | fatal: PlanIssue ;"
+    , "  = @review.triage (issue) ;"
+    , "node quick_fix"
+    , "  <- fixable: PlanIssue ;"
+    , "  -> ok: ResearchPlan = @review.quick_fix (fixable) ;"
+    , "node deep_fix"
+    , "  <- fatal: PlanIssue ;"
+    , "  -> ok: ResearchPlan = @review.deep_fix (fatal) ;"
+    , "node publish_report"
+    , "  <- ok: ResearchPlan ;"
+    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "draft_plan => validate_plan select("
+    , "  ok: (),"
+    , "  issue: (triage select("
+    , "    fixable: quick_fix,"
+    , "    fatal: deep_fix"
+    , "  ))"
+    , ") => publish_report"
+    ]
+
+allCompiledNodeRefs :: CompiledCircuit -> [CircuitNodeRef]
+allCompiledNodeRefs compiled =
+  concatMap entryRefs (Map.toList compiled.compiledCircuitNodes)
+  where
+    entryRefs (ref, node) = ref : nestedRefs node
+    nestedRefs = \case
+      CompiledCircuitCondition conditionNode ->
+        fragmentRefs conditionNode.circuitConditionNodeThenFragment
+          <> foldMap fragmentRefs conditionNode.circuitConditionNodeElseFragment
+      CompiledCircuitTask {} -> []
+      CompiledCircuitSignal {} -> []
+      CompiledCircuitArtifact {} -> []
+      CompiledCircuitRewriteBoundary {} -> []
+    fragmentRefs fragment =
+      concatMap entryRefs (Map.toList fragment.compiledCircuitFragmentNodes)
 
 artifactBoundarySourceText :: T.Text -> T.Text
 artifactBoundarySourceText fieldName =

@@ -79,9 +79,9 @@ def node1 : AcceptedNodeDecl where
   body := .corePure
   bodyLocalValid := by decide
 
-/-- Accepted declaration for node `__select:ok_issue:4498bc399c9c`. -/
+/-- Accepted declaration for node `__select.ok_issue.4498bc399c9c`. -/
 def node2 : AcceptedNodeDecl where
-  node := ⟨"__select:ok_issue:4498bc399c9c"⟩
+  node := ⟨"__select.ok_issue.4498bc399c9c"⟩
   nodeValid := by decide
   inputs := {⟨⟨"ok"⟩, ⟨"ResearchPlan"⟩⟩, ⟨⟨"issue"⟩, ⟨"PlanIssue"⟩⟩}
   outputs := [.single ⟨⟨"ok"⟩, ⟨"ResearchPlan"⟩⟩]
@@ -134,7 +134,7 @@ def expr : GraphExpr :=
   .connect
       ( .connect
             (.connect (.node ⟨"draft_plan"⟩) (.node ⟨"validate_plan"⟩))
-            (.node ⟨"__select:ok_issue:4498bc399c9c"⟩)
+            (.node ⟨"__select.ok_issue.4498bc399c9c"⟩)
       )
       (.node ⟨"publish_report"⟩)
 
