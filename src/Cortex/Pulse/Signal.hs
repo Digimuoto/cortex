@@ -16,6 +16,8 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 module Cortex.Pulse.Signal
   ( -- * Signal identity
     SignalName (..)
+  , runTerminalSignalName
+  , parseRunTerminalSignal
 
     -- * Signal records
   , SignalWait (..)
@@ -29,14 +31,30 @@ where
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson qualified as Aeson
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
+import Data.UUID qualified as UUID
 import GHC.Generics (Generic)
 
 -- | Named signal identifier. Scoped to a run.
 newtype SignalName = SignalName {unSignalName :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (FromJSON, ToJSON)
+
+{- | The signal the runtime delivers when the named run reaches a terminal
+status (completed, failed, or cancelled). A run that needs to await another
+run suspends on this name instead of polling; an already-terminal target
+resolves the wait at registration time, so the waiter never parks.
+-}
+runTerminalSignalName :: UUID -> SignalName
+runTerminalSignalName runId =
+  SignalName ("run-terminal:" <> UUID.toText runId)
+
+-- | Recognize a run-terminal signal name and recover the awaited run id.
+parseRunTerminalSignal :: SignalName -> Maybe UUID
+parseRunTerminalSignal (SignalName name) =
+  T.stripPrefix "run-terminal:" name >>= UUID.fromText
 
 -- | A pending signal wait registered by a stage.
 data SignalWait = SignalWait

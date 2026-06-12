@@ -123,7 +123,7 @@ import Cortex.Pulse.Runtime
   , markFailed
   )
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Signal (SignalName (..))
+import Cortex.Pulse.Signal (SignalName (..), runTerminalSignalName)
 import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget, taskEnvelopeVersionOrDefault)
 import Cortex.TestSupport.Database (createTestDB, runSession, runTx)
 import Cortex.Wire
@@ -1697,6 +1697,74 @@ spec = beforeAll setupTestDb $ do
       -- Run should now be pending (woken by deliverSignal)
       status2 <- readRunStatus pool runId
       status2 `shouldBe` Just "pending"
+
+    it "run-terminal signal wakes a cross-run waiter" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-run-terminal-waiter"
+      parentRunId <- createTestRun pool taskId
+      childTaskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-run-terminal-child"
+      childRunId <- createTestRun pool childTaskId
+      task <- loadTaskDef pool taskId
+      let stagePlan =
+            mkLinearStagePlan
+              [ StageDefinition
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (runTerminalSignalName childRunId))
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              ]
+              Aeson.Null
+              1
+              ReplayPolicyWarn
+      outcome <- executeStagePlan taskContext parentRunId task stagePlan
+      outcome `shouldBe` OutcomeSuspended
+      status1 <- readRunStatus pool parentRunId
+      status1 `shouldBe` Just "waiting"
+      -- The child reaches terminal status; delivery crosses runs by name.
+      now <- getCurrentTime
+      woken <- runTx pool $ Q.deliverRunTerminalSignals childRunId "completed" now
+      woken `shouldBe` [parentRunId]
+      status2 <- readRunStatus pool parentRunId
+      status2 `shouldBe` Just "pending"
+
+    it "resolves a wait on an already-terminal run without parking" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-run-terminal-resolved"
+      parentRunId <- createTestRun pool taskId
+      childTaskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-run-terminal-done"
+      childRunId <- createTestRun pool childTaskId
+      now0 <- getCurrentTime
+      _ <- runTx pool $ Q.updateRunCompleted childRunId now0
+      task <- loadTaskDef pool taskId
+      let stagePlan =
+            mkLinearStagePlan
+              [ StageDefinition
+                  { sdStageId = TestStageAlpha
+                  , sdTemplateId = stageTemplateId TestStageAlpha
+                  , sdActionId = stageActionId TestStageAlpha
+                  , sdReplaySafety = SafeToReplay
+                  , sdReplayPolicyOverride = Nothing
+                  , sdTimeoutSeconds = Nothing
+                  , sdRetryPolicy = Nothing
+                  , sdAction = \_ctx -> pure (StageSuspend (runTerminalSignalName childRunId))
+                  , sdMemoryStrategy = defaultMemoryStrategy
+                  }
+              ]
+              Aeson.Null
+              1
+              ReplayPolicyWarn
+      -- The awaited run is already terminal: the wait resolves at
+      -- registration and the parent completes instead of suspending.
+      outcome <- executeStagePlan taskContext parentRunId task stagePlan
+      outcome `shouldBe` OutcomeCompleted
+      status <- readRunStatus pool parentRunId
+      status `shouldBe` Just "completed"
 
     it "suspend→deliver→resume completes the full round-trip" $ \mPool -> withDb mPool $ \pool -> do
       (_, taskContext) <- mkTaskContext pool

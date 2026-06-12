@@ -62,7 +62,13 @@ handleSettled env _gs = \case
     completionResult <-
       requireTx env.sePool env.seRunId "update_run_completed"
         . PulseDB.runTransaction env.sePool
-        $ Q.updateRunCompleted env.seRunId now
+        $ do
+          Q.updateRunCompleted env.seRunId now
+          -- Wake every run suspended on this run's terminal signal in the
+          -- same transaction as the status flip, so there is no window in
+          -- which the run is terminal but its waiters are unsignalled.
+          _wokenRunIds <- Q.deliverRunTerminalSignals env.seRunId "completed" now
+          pure ()
     case completionResult of
       Nothing -> pure OutcomeFailed
       Just () -> do

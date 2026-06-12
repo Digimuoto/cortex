@@ -91,6 +91,28 @@ Attempting to deliver a signal that was never waited on (no matching `pending` r
 structured error. Attempting to deliver an `expired` signal fails with a structured error; the run
 must be retried to produce a fresh wait.
 
+## 4.1 Run-terminal signals
+
+The runtime is itself a signal producer for one reserved name family: `run-terminal:<run-uuid>`
+(constructed with `runTerminalSignalName`, recognized with `parseRunTerminalSignal`). When a run
+reaches a terminal status — completed, failed, or cancelled — the runtime delivers its run-terminal
+signal to **every** pending wait on that name, across runs, in the same transaction as the status
+flip, waking each waiter. The payload carries
+`{"runId": ..., "outcome": "completed" | "failed" | "cancelled"}`.
+
+This is the primitive for awaiting another run without polling: a parent that spawns a child run
+suspends on the child's run-terminal signal and holds no worker slot while waiting. Two race windows
+are closed by construction:
+
+- a wait registered on a run that is **already terminal** resolves at registration time
+  (`registerSignalWaitOrResolve` writes the row as `delivered` and the suspending stage completes
+  with the terminal payload instead of parking);
+- a run that terminates **after** the wait is pending finds the pending row in the cross-run
+  delivery, because the delivery and the terminal status commit together.
+
+Timer-style waits and further runtime-produced signals follow the same pattern (see the durable
+timers issue); operator-delivered signals through the service API are unaffected.
+
 ## 5. Records
 
 ```haskell

@@ -660,7 +660,12 @@ failRun pool runId now errType errMsg retryable = do
           , rfuErrMsg = errMsg
           , rfuRetryable = retryable
           }
-  result <- PulseDB.runTransaction pool $ Q.updateRunFailed update
+  result <- PulseDB.runTransaction pool $ do
+    Q.updateRunFailed update
+    -- Run-terminal signal delivery rides the same transaction as the status
+    -- flip, so waiters and the failed status commit together.
+    _wokenRunIds <- Q.deliverRunTerminalSignals runId "failed" now
+    pure ()
   case result of
     Right () -> pure ()
     Left dbErr ->

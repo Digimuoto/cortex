@@ -115,7 +115,10 @@ module Cortex.Pulse.Query
 
     -- * Signals
   , registerSignalWait
+  , SignalWaitRegistration (..)
+  , registerSignalWaitOrResolve
   , deliverSignal
+  , deliverRunTerminalSignals
   , lookupDeliveredSignal
   , lookupSignalStatus
   , updateRunWaiting
@@ -131,9 +134,12 @@ where
 
 import Control.Monad (when)
 import Data.Aeson (Value)
+import Data.Aeson qualified as Aeson
 import Data.ByteString (ByteString)
+import Data.Foldable (traverse_)
 import Data.Functor.Contravariant ((>$<))
 import Data.Int (Int32, Int64)
+import Data.List (nub)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text (Text)
 import Data.Time (UTCTime)
@@ -158,7 +164,7 @@ import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Schema
-import Cortex.Pulse.Signal (SignalName (..))
+import Cortex.Pulse.Signal (SignalName (..), parseRunTerminalSignal, runTerminalSignalName)
 
 import Platform.Database qualified as DB
 import Platform.Database.Encode qualified as Enc
@@ -1760,6 +1766,107 @@ registerSignalWait runId (NodeId nodeId) (SignalName signalName) now expiresAt =
       )
       D.noResult
       False
+
+-- | Result of registering a signal wait through the resolve-aware path.
+data SignalWaitRegistration
+  = -- | A pending wait row exists; the stage should suspend.
+    SignalWaitRegistered
+  | {- | The awaited condition already holds; the wait row was written as
+    delivered and the stage should complete with this payload instead of
+    suspending. Closes the lost-wakeup window for waits on runs that
+    reached a terminal status before the wait was registered.
+    -}
+    SignalWaitAlreadyDelivered Value
+  deriving stock (Eq, Show)
+
+{- | Register a signal wait, resolving run-terminal waits against the awaited
+run's current status in the same transaction. A wait on
+'Cortex.Pulse.Signal.runTerminalSignalName' for a run that is already
+completed, failed, or cancelled is written as delivered immediately, so the
+waiting stage never parks on an event that has already happened.
+-}
+registerSignalWaitOrResolve
+  :: UUID -> NodeId -> SignalName -> UTCTime -> Maybe UTCTime -> Transaction SignalWaitRegistration
+registerSignalWaitOrResolve runId nodeId signalName now expiresAt =
+  case parseRunTerminalSignal signalName of
+    Nothing -> registered
+    Just awaitedRunId -> do
+      awaitedStatus <- runStatusTx awaitedRunId
+      case awaitedStatus of
+        Just status
+          | status `elem` (["completed", "failed", "cancelled"] :: [Text]) -> do
+              let payload = runTerminalPayload awaitedRunId status
+              registerDeliveredSignal runId nodeId signalName payload now
+              pure (SignalWaitAlreadyDelivered payload)
+        _notTerminal -> registered
+  where
+    registered = do
+      registerSignalWait runId nodeId signalName now expiresAt
+      pure SignalWaitRegistered
+
+-- | Run status lookup usable inside a transaction.
+runStatusTx :: UUID -> Transaction (Maybe Text)
+runStatusTx rId =
+  Tx.statement rId $
+    Statement
+      "SELECT status FROM pulse.runs WHERE run_id = $1"
+      (E.param (E.nonNullable E.uuid))
+      (D.rowMaybe (D.column (D.nonNullable D.text)))
+      True
+
+-- | Payload carried by a run-terminal signal delivery.
+runTerminalPayload :: UUID -> Text -> Value
+runTerminalPayload terminalRunId status =
+  Aeson.object
+    [ "runId" Aeson..= terminalRunId
+    , "outcome" Aeson..= status
+    ]
+
+-- | Insert a signal row that is already delivered, with payload.
+registerDeliveredSignal :: UUID -> NodeId -> SignalName -> Value -> UTCTime -> Transaction ()
+registerDeliveredSignal runId (NodeId nodeId) (SignalName signalName) payload now =
+  Tx.statement (runId, nodeId, signalName, payload, now) $
+    Statement
+      "INSERT INTO pulse.signals \
+      \  (run_id, node_id, signal_name, status, payload, created_at, delivered_at) \
+      \VALUES ($1, $2, $3, 'delivered', $4, $5, $5)"
+      ( Enc.encode5
+          ((\(a, _, _, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _, _, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c, _, _) -> c), Enc.nonNullable Enc.text)
+          ((\(_, _, _, d, _) -> d), Enc.nonNullable Enc.jsonb)
+          ((\(_, _, _, _, e) -> e), Enc.nonNullable Enc.timestamptz)
+      )
+      D.noResult
+      False
+
+{- | Deliver a run-terminal signal to every run waiting on it, across runs,
+and wake each one. Called by the runtime when a run reaches a terminal
+status; every database error path is the caller's to handle through the
+transaction result.
+-}
+deliverRunTerminalSignals :: UUID -> Text -> UTCTime -> Transaction [UUID]
+deliverRunTerminalSignals terminalRunId status now = do
+  let SignalName signalName = runTerminalSignalName terminalRunId
+      payload = runTerminalPayload terminalRunId status
+  wokenRunIds <-
+    Tx.statement (signalName, payload, now) $
+      Statement
+        "UPDATE pulse.signals SET \
+        \  status = 'delivered', \
+        \  payload = $2, \
+        \  delivered_at = $3 \
+        \WHERE signal_name = $1 AND status = 'pending' \
+        \RETURNING run_id"
+        ( Enc.encode3
+            ((\(a, _, _) -> a), Enc.nonNullable Enc.text)
+            ((\(_, b, _) -> b), Enc.nonNullable Enc.jsonb)
+            ((\(_, _, c) -> c), Enc.nonNullable Enc.timestamptz)
+        )
+        (D.rowList (D.column (D.nonNullable D.uuid)))
+        False
+  traverse_ wakeRunFromWaiting (nub wokenRunIds)
+  pure wokenRunIds
 
 {- | Deliver a signal and wake the run. Atomically:
  1. Mark the signal as delivered with payload

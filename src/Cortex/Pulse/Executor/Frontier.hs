@@ -237,7 +237,7 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
           now <- getCurrentTime
           suspendResult <-
             PulseDB.runTransaction env.sePool $
-              Q.registerSignalWait env.seRunId nid signalName now Nothing
+              Q.registerSignalWaitOrResolve env.seRunId nid signalName now Nothing
           case suspendResult of
             Left err -> do
               emitObsEvent $ EvtSuspendWriteFailed env.seRunId (unSignalName signalName) (T.pack err)
@@ -257,8 +257,14 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
                     )
                 , Nothing
                 )
-            Right () ->
+            Right Q.SignalWaitRegistered ->
               pure (NodeResult nid (OutcomeSuspendedOn (unSignalName signalName)), Nothing)
+            Right (Q.SignalWaitAlreadyDelivered payload) -> do
+              -- The awaited run was already terminal when the wait was
+              -- registered: the node completes with the terminal payload
+              -- instead of parking on an event that has already happened.
+              emitObsEvent $ EvtSignalResolved env.seRunId (unSignalName signalName) (unNodeId nid)
+              pure (NodeResult nid (OutcomeSucceeded payload), Nothing)
         StageTerminal outcome ->
           pure (NodeResult nid (runOutcomeToNodeOutcome outcome), Nothing)
         StageRewriteRejected {} -> do
