@@ -62,17 +62,18 @@ Common `details` fields observed across events (present when applicable):
 
 ### Run lifecycle
 
-| `event_type`                     | Severity | Emitted when                                                         |
-| -------------------------------- | -------- | -------------------------------------------------------------------- |
-| `run.completed`                  | info     | All stages completed successfully.                                   |
-| `run.failed`                     | error    | Scheduler observed an executor exception.                            |
-| `run.failed.settled`             | error    | Graph settled with failures at the end of execution.                 |
-| `run.suspended`                  | info     | Run suspended waiting on an external signal.                         |
-| `run.cancelled`                  | info     | Task cancelled by operator request.                                  |
-| `run.shutdown`                   | info     | Shutdown requested; executor stopping at a stage boundary.           |
-| `run.stuck`                      | error    | Frontier empty but not all nodes settled (blocked-graph diagnostic). |
-| `run.graph_state_persist_failed` | error    | Graph-state persistence write failed mid-run.                        |
-| `run.graph_state_stale_write`    | warn     | Executor lost a graph-state CAS race and stopped without overwrite.  |
+| `event_type`                     | Severity | Emitted when                                                                                                                                 |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run.claimed`                    | info     | Scheduler claimed the run; details carry `queue_seconds`, the pending wait before claim (queue time and execution time are distinct clocks). |
+| `run.completed`                  | info     | All stages completed successfully.                                                                                                           |
+| `run.failed`                     | error    | Scheduler observed an executor exception.                                                                                                    |
+| `run.failed.settled`             | error    | Graph settled with failures at the end of execution.                                                                                         |
+| `run.suspended`                  | info     | Run suspended waiting on an external signal.                                                                                                 |
+| `run.cancelled`                  | info     | Task cancelled by operator request.                                                                                                          |
+| `run.shutdown`                   | info     | Shutdown requested; executor stopping at a stage boundary.                                                                                   |
+| `run.stuck`                      | error    | Frontier empty but not all nodes settled (blocked-graph diagnostic).                                                                         |
+| `run.graph_state_persist_failed` | error    | Graph-state persistence write failed mid-run.                                                                                                |
+| `run.graph_state_stale_write`    | warn     | Executor lost a graph-state CAS race and stopped without overwrite.                                                                          |
 
 ### Stage
 

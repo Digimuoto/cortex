@@ -113,6 +113,11 @@ module Cortex.Pulse.Query
   , readGraphRewritesForAdmin
   , writeGraphRewrite
 
+    -- * Scheduler observability
+  , BackpressureSnapshot (..)
+  , readBackpressureSnapshot
+  , recordRunClaimedEvent
+
     -- * Signals
   , registerSignalWait
   , SignalWaitRegistration (..)
@@ -133,7 +138,7 @@ module Cortex.Pulse.Query
 where
 
 import Control.Monad (when)
-import Data.Aeson (Value)
+import Data.Aeson (ToJSON, Value)
 import Data.Aeson qualified as Aeson
 import Data.ByteString (ByteString)
 import Data.Foldable (traverse_)
@@ -144,6 +149,7 @@ import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
+import GHC.Generics (Generic)
 import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
 import Hasql.Session (Session)
@@ -1749,6 +1755,56 @@ readGraphRewritesForAdmin runId =
 -- --------------------------------------------------------------------------
 -- Signals
 -- --------------------------------------------------------------------------
+
+{- | Scheduler-facing queue pressure aggregate: how many runs are runnable
+but unclaimed, how stale the oldest of them is, and how many are parked on
+signals. One cheap aggregate per poll tick; the scheduler surfaces it on the
+health endpoint and warns when saturation starves the pending queue.
+-}
+data BackpressureSnapshot = BackpressureSnapshot
+  { bpsPendingRuns :: Int32
+  , bpsOldestPendingAgeSeconds :: Maybe Double
+  , bpsWaitingRuns :: Int32
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
+readBackpressureSnapshot :: UTCTime -> Session BackpressureSnapshot
+readBackpressureSnapshot now =
+  Session.statement now $
+    Statement
+      "SELECT count(*) FILTER (WHERE status = 'pending')::int4, \
+      \  EXTRACT(EPOCH FROM ($1 - min(created_at) FILTER (WHERE status = 'pending')))::float8, \
+      \  count(*) FILTER (WHERE status = 'waiting')::int4 \
+      \FROM pulse.runs WHERE status IN ('pending', 'waiting')"
+      (E.param (E.nonNullable E.timestamptz))
+      ( D.singleRow
+          ( BackpressureSnapshot
+              <$> D.column (D.nonNullable D.int4)
+              <*> D.column (D.nullable D.float8)
+              <*> D.column (D.nonNullable D.int4)
+          )
+      )
+      True
+
+{- | Record a run.claimed event carrying the run's queue wait. Queue time
+(created to claimed) and execution time are distinct clocks; this is the
+per-run record of the first one, derived in SQL from the run row itself.
+-}
+recordRunClaimedEvent :: UUID -> UTCTime -> Transaction ()
+recordRunClaimedEvent runId now =
+  Tx.statement (runId, now) $
+    Statement
+      "INSERT INTO pulse.run_events (run_id, event_type, severity, message, details, created_at) \
+      \SELECT run_id, 'run.claimed', 'info', 'Run claimed by scheduler', \
+      \  jsonb_build_object('queue_seconds', EXTRACT(EPOCH FROM ($2 - created_at))), $2 \
+      \FROM pulse.runs WHERE run_id = $1"
+      ( Enc.encode2
+          (fst, Enc.nonNullable Enc.uuid)
+          (snd, Enc.nonNullable Enc.timestamptz)
+      )
+      D.noResult
+      False
 
 -- | Register a signal wait for a run/node.
 registerSignalWait :: UUID -> NodeId -> SignalName -> UTCTime -> Maybe UTCTime -> Transaction ()

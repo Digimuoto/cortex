@@ -38,6 +38,14 @@ data PulseHealthState = PulseHealthState
   , phsActiveRunCount :: Int
   , phsMaxConcurrent :: Int
   , phsActiveRunsByType :: Map Text Int
+  , phsPendingRunCount :: Int
+  -- ^ Runnable-but-unclaimed runs at the last poll tick.
+  , phsOldestPendingAgeSeconds :: Maybe Double
+  {- ^ Queue age of the oldest pending run — the starvation indicator: a
+  saturated pool with this climbing means queued work is not progressing.
+  -}
+  , phsWaitingRunCount :: Int
+  -- ^ Runs parked on signals (not occupying slots).
   }
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON)
@@ -53,6 +61,9 @@ initialHealthState leaseOwner maxConcurrent =
     , phsActiveRunCount = 0
     , phsMaxConcurrent = maxConcurrent
     , phsActiveRunsByType = Map.empty
+    , phsPendingRunCount = 0
+    , phsOldestPendingAgeSeconds = Nothing
+    , phsWaitingRunCount = 0
     }
 
 -- | Run the health server on the given port, bound to localhost only.

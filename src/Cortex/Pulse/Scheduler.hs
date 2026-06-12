@@ -111,7 +111,7 @@ runSchedulerLoop registry taskContext healthState = do
   -- Persists across poll ticks so round-robin works even when only 1 slot
   -- frees per tick. Contains the type of the last successfully launched task.
   lastClaimedTypeVar <- newTVarIO (Nothing :: Maybe Text)
-  loop now runPool runMeta lastClaimedTypeVar
+  loop now now runPool runMeta lastClaimedTypeVar
   where
     pool = taskContext.tcPool
     config = taskContext.tcConfig
@@ -123,8 +123,14 @@ runSchedulerLoop registry taskContext healthState = do
     taskTypeLimits = pulseTaskTypeLimits config
     -- Run expired-run recovery on a fixed ~30s cadence regardless of poll interval
     recoveryIntervalSeconds = 30 :: NominalDiffTime
+    -- Starvation warning threshold and re-warn cadence. Pending age beyond
+    -- the threshold while the pool is saturated is a backpressure condition
+    -- worth an operator-visible warning; the cadence keeps it from spamming
+    -- every poll tick. Configurable thresholds belong to the full #259 work.
+    starvationWarnAfterSeconds = 60 :: Double
+    starvationWarnIntervalSeconds = 60 :: NominalDiffTime
 
-    loop lastRecoveryAt runPool runMeta lastClaimedTypeVar = do
+    loop lastRecoveryAt lastStarvationWarnAt runPool runMeta lastClaimedTypeVar = do
       now <- getCurrentTime
 
       -- 1. Reap completed runs (finalize via metadata lookup)
@@ -185,6 +191,47 @@ runSchedulerLoop registry taskContext healthState = do
       when (not shouldStop && slots > 0) $
         fillAvailableSlots runPool runMeta lastClaimedTypeVar slots now
 
+      -- 3.5. Backpressure visibility: one aggregate per tick. Pending runs
+      -- aging while the pool is saturated is the starvation signature that
+      -- previously produced no signal anywhere (issue #259); it now updates
+      -- the health surface every tick and warns on a fixed cadence.
+      backpressure <- do
+        snapshotResult <- PulseDB.withConnection pool $ Q.readBackpressureSnapshot now
+        case snapshotResult of
+          Right snapshot -> pure (Just snapshot)
+          Left err -> do
+            emitSchedulerEvent
+              ObsWarn
+              "pulse.scheduler.backpressure.read_error"
+              ("Backpressure snapshot failed: " <> T.pack err)
+              []
+            pure Nothing
+      slotsAfterFill <- Pool.availableSlots runPool
+      let starved = case backpressure of
+            Just snapshot ->
+              slotsAfterFill == 0
+                && snapshot.bpsPendingRuns > 0
+                && maybe False (>= starvationWarnAfterSeconds) snapshot.bpsOldestPendingAgeSeconds
+            Nothing -> False
+      nextStarvationWarnAt <-
+        if starved && diffUTCTime now lastStarvationWarnAt >= starvationWarnIntervalSeconds
+          then do
+            emitSchedulerEvent
+              ObsWarn
+              "pulse.scheduler.backpressure.starved"
+              "Worker pool saturated while pending runs age without progress"
+              ( case backpressure of
+                  Just snapshot ->
+                    [ ("pending_runs", Aeson.toJSON snapshot.bpsPendingRuns)
+                    , ("oldest_pending_age_seconds", Aeson.toJSON snapshot.bpsOldestPendingAgeSeconds)
+                    , ("waiting_runs", Aeson.toJSON snapshot.bpsWaitingRuns)
+                    , ("max_concurrent", Aeson.toJSON maxConcurrent)
+                    ]
+                  Nothing -> []
+              )
+            pure now
+          else pure lastStarvationWarnAt
+
       -- 4. Update health state after reap + fill for accurate reporting.
       -- Both total and per-type counts derive from runMeta so they are
       -- always consistent (sum of per-type == total).
@@ -195,7 +242,15 @@ runSchedulerLoop registry taskContext healthState = do
         hs <- readTVar healthState
         writeTVar
           healthState
-          hs {phsHeartbeatAt = Just now, phsActiveRunCount = finalCount, phsActiveRunsByType = perTypeCounts}
+          hs
+            { phsHeartbeatAt = Just now
+            , phsActiveRunCount = finalCount
+            , phsActiveRunsByType = perTypeCounts
+            , phsPendingRunCount = maybe hs.phsPendingRunCount (fromIntegral . (.bpsPendingRuns)) backpressure
+            , phsOldestPendingAgeSeconds =
+                maybe hs.phsOldestPendingAgeSeconds (.bpsOldestPendingAgeSeconds) backpressure
+            , phsWaitingRunCount = maybe hs.phsWaitingRunCount (fromIntegral . (.bpsWaitingRuns)) backpressure
+            }
 
       -- 5. Check shutdown: exit when draining is complete
       if shouldStop && finalCount == 0
@@ -210,7 +265,7 @@ runSchedulerLoop registry taskContext healthState = do
           -- promptly once active runs finish.
           let sleepMicros = if shouldStop then min pollIntervalMicros 100_000 else pollIntervalMicros
           Polling.threadDelayWithJitter sleepMicros 0.2
-          loop nextRecoveryAt runPool runMeta lastClaimedTypeVar
+          loop nextRecoveryAt nextStarvationWarnAt runPool runMeta lastClaimedTypeVar
 
     schedulerFinalizerErrorHandler :: UUID -> SomeException -> IO ()
     schedulerFinalizerErrorHandler runId err =
@@ -249,9 +304,23 @@ runSchedulerLoop registry taskContext healthState = do
             Just (runId, task, triggerSource, runAction) -> do
               launchResult <- try (Pool.tryLaunch runPool runId runAction)
               case launchResult of
-                Right Pool.LaunchAccepted -> atomically $ do
-                  modifyTVar' runMeta (Map.insert runId (RunMetadata task triggerSource))
-                  writeTVar lastClaimedTypeVar (Just task.taskType)
+                Right Pool.LaunchAccepted -> do
+                  atomically $ do
+                    modifyTVar' runMeta (Map.insert runId (RunMetadata task triggerSource))
+                    writeTVar lastClaimedTypeVar (Just task.taskType)
+                  -- Best-effort queue-time record: queue wait (created to
+                  -- claimed) and execution time are distinct clocks, and the
+                  -- per-run record of the first one lives in run events.
+                  claimEventResult <-
+                    PulseDB.runTransaction pool $ Q.recordRunClaimedEvent runId now
+                  case claimEventResult of
+                    Right () -> pure ()
+                    Left err ->
+                      emitSchedulerEvent
+                        ObsWarn
+                        "pulse.scheduler.claim_event.write_failed"
+                        ("run.claimed event write failed: " <> T.pack err)
+                        [("run_id", Aeson.toJSON runId)]
                 Right other -> do
                   failAndDiscard pool runId now "launch_failed" "Pool rejected task launch after claim" True
                   finalizeTaskSchedule pool (Just runId) task triggerSource now OutcomeFailed
