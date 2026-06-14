@@ -15,63 +15,65 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 
 ## Current ADRs
 
-| #                                                               | Title                                                               | Status     |
-| --------------------------------------------------------------- | ------------------------------------------------------------------- | ---------- |
-| [0001](0001-structured-report-ir.md)                            | Structured Document IR                                              | superseded |
-| [0002](0002-cortex-downstream-ownership-boundary.md)            | Cortex and Downstream Ownership Boundary                            | accepted   |
-| [0003](0003-pulse-service-and-host-action-boundary.md)          | Pulse Service and Host-Action Boundary                              | accepted   |
-| [0004](0004-graph-native-pulse-execution.md)                    | Graph-Native Pulse Execution                                        | accepted   |
-| [0005](0005-budgeted-rewrite-admission-and-materialization.md)  | Budgeted Rewrite Admission and Materialization                      | accepted   |
-| [0006](0006-compiled-workflow-artifact-boundary.md)             | Compiled Workflow Artifact Boundary                                 | accepted   |
-| [0007](0007-latent-branch-conditional-lowering.md)              | Latent-Branch Conditional Lowering                                  | accepted   |
-| [0008](0008-pulse-operator-visibility-surfaces.md)              | Pulse Operator Visibility Surfaces                                  | accepted   |
-| [0009](0009-rewrite-provenance-and-topology-integrity.md)       | Rewrite Provenance and Topology Integrity                           | accepted   |
-| [0010](0010-wire-closed-authority-and-three-layer-stack.md)     | Wire as Closed-Authority Language over the Graph/Circuit/Wire Stack | accepted   |
-| [0011](0011-compatibility-barriers-and-fresh-run-recovery.md)   | Compatibility Barriers and Fresh-Run Recovery                       | accepted   |
-| [0012](0012-topological-memory-as-deterministic-graph-query.md) | Topological Memory as Deterministic Graph Query                     | accepted   |
-| [0013](0013-report-provenance-artifact-contract.md)             | Artifact Provenance Contract                                        | accepted   |
-| [0014](0014-executor-taxonomy-model-vs-external-call.md)        | Model vs External Call                                              | proposed   |
-| [0015](0015-canonical-logos-archetypes.md)                      | Canonical Logos Archetypes                                          | proposed   |
-| [0016](0016-cortex-roots-and-logos-pattern-extraction.md)       | Cortex Roots and Logos Pattern Extraction                           | proposed   |
-| [0017](0017-wire-executor-and-port-catalog-boundary.md)         | Wire Executor and Port Catalog Boundary                             | proposed   |
-| [0018](0018-canonical-haskell-module-tree.md)                   | Canonical Haskell Module Tree                                       | proposed   |
-| [0019](0019-executor-registration-and-binding.md)               | Executor Registration and Binding                                   | proposed   |
-| [0020](0020-wire-pure-output-equations.md)                      | Wire Pure Output Equations                                          | accepted   |
-| [0021](0021-wire-source-elaborates-to-circuits.md)              | Wire Source Elaborates to Circuits                                  | proposed   |
-| [0022](0022-wire-node-clause-grammar.md)                        | Wire Node Clause Grammar                                            | proposed   |
-| [0023](0023-corepure-expression-surface.md)                     | CorePure Expression Surface                                         | proposed   |
-| [0024](0024-typed-executor-node-interface.md)                   | Typed Executor Node Interface                                       | proposed   |
-| [0025](0025-configured-executor-values.md)                      | Configured Executor Values                                          | proposed   |
-| [0026](0026-wire-failure-taxonomy.md)                           | Wire Failure Taxonomy                                               | proposed   |
-| [0027](0027-typed-llm-output-binding.md)                        | Typed LLM Output Binding                                            | proposed   |
-| [0028](0028-wire-topology-composition-and-boundary-labels.md)   | Wire Topology Composition and Boundary Labels                       | proposed   |
-| [0029](0029-corepure-structured-serialization.md)               | CorePure Structured Serialization                                   | proposed   |
-| [0030](0030-wire-node-implementation-forms.md)                  | Wire Node Implementation Forms                                      | proposed   |
-| [0031](0031-wire-binding-forms-and-where-clauses.md)            | Wire Binding Forms and Node Where Clauses                           | proposed   |
-| [0032](0032-wire-boundary-contract-resources.md)                | Wire Boundary Contracts as Planning Resources                       | proposed   |
-| [0033](0033-wire-select-guarded-affine-collapse.md)             | Wire Select as Guarded Affine Collapse                              | proposed   |
-| [0034](0034-wire-pure-select-actualization-authority.md)        | Pure Selectors and Restricted Actualization Authority               | proposed   |
-| [0035](0035-wire-rewrite-algebra-forms.md)                      | Wire Rewrite Algebra Forms                                          | proposed   |
-| [0036](0036-wire-latent-branch-budget-recovery.md)              | Latent Branch Budget and Recovery Policy                            | proposed   |
-| [0037](0037-wire-latent-structural-control.md)                  | Wire Latent Structural Control Operators                            | proposed   |
-| [0038](0038-wire-proof-track-theorem-ledger.md)                 | Wire Proof-Track Theorem Ledger                                     | proposed   |
-| [0039](0039-wire-node-boundary-transform-normal-form.md)        | Wire Node Boundary Transform Normal Form                            | proposed   |
-| [0040](0040-logos-owned-reasoning-surfaces.md)                  | Logos-Owned Reasoning Surfaces                                      | accepted   |
-| [0041](0041-wire-cli-command-surface.md)                        | Wire CLI Command Surface                                            | proposed   |
-| [0042](0042-wire-standard-effect-executors.md)                  | Wire Standard Effect Executors                                      | proposed   |
-| [0043](0043-pulse-in-memory-runner.md)                          | Pulse In-Memory Runner                                              | proposed   |
-| [0044](0044-wire-namespace-use-imports.md)                      | Wire Namespace Use Imports                                          | proposed   |
-| [0045](0045-wire-compile-time-node-body-kinds.md)               | Wire Compile-Time Node-Body Kinds                                   | proposed   |
-| [0046](0046-wire-compile-time-graph-forms.md)                   | Wire Compile-Time Graph Forms                                       | proposed   |
-| [0047](0047-wire-frontier-linearity-and-precedence.md)          | Wire Frontier Linearity and Topology Operator Precedence            | proposed   |
-| [0048](0048-wire-make-bounded-node-generation.md)               | Wire Compile-Time Make for Bounded Node Generation                  | proposed   |
-| [0049](0049-wire-fan-phantom-adapter.md)                        | Wire Phantom Record↔Ports Adapter for Topology Fans                | proposed   |
-| [0050](0050-wire-corepure-output-residue.md)                    | Wire CorePure Output Residue                                        | proposed   |
-| [0051](0051-wire-source-includes-and-item-generation.md)        | Wire Source Includes and Item Generation                            | proposed   |
-| [0052](0052-wire-bounded-indexed-boundary-products.md)          | Wire Bounded Indexed Boundary Products                              | proposed   |
-| [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)   | Executor Catalog Manifests and Pulse Runtime Bindings               | proposed   |
-| [0054](0054-downstream-wire-packages-and-host-bindings.md)      | Downstream Wire Packages and Host Runtime Bindings                  | proposed   |
-| [0055](0055-pulse-runtime-bounded-iteration.md)                 | Pulse Runtime-Bounded Iteration                                     | proposed   |
+| #                                                                  | Title                                                               | Status     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------- |
+| [0001](0001-structured-report-ir.md)                               | Structured Document IR                                              | superseded |
+| [0002](0002-cortex-downstream-ownership-boundary.md)               | Cortex and Downstream Ownership Boundary                            | accepted   |
+| [0003](0003-pulse-service-and-host-action-boundary.md)             | Pulse Service and Host-Action Boundary                              | accepted   |
+| [0004](0004-graph-native-pulse-execution.md)                       | Graph-Native Pulse Execution                                        | accepted   |
+| [0005](0005-budgeted-rewrite-admission-and-materialization.md)     | Budgeted Rewrite Admission and Materialization                      | accepted   |
+| [0006](0006-compiled-workflow-artifact-boundary.md)                | Compiled Workflow Artifact Boundary                                 | accepted   |
+| [0007](0007-latent-branch-conditional-lowering.md)                 | Latent-Branch Conditional Lowering                                  | accepted   |
+| [0008](0008-pulse-operator-visibility-surfaces.md)                 | Pulse Operator Visibility Surfaces                                  | accepted   |
+| [0009](0009-rewrite-provenance-and-topology-integrity.md)          | Rewrite Provenance and Topology Integrity                           | accepted   |
+| [0010](0010-wire-closed-authority-and-three-layer-stack.md)        | Wire as Closed-Authority Language over the Graph/Circuit/Wire Stack | accepted   |
+| [0011](0011-compatibility-barriers-and-fresh-run-recovery.md)      | Compatibility Barriers and Fresh-Run Recovery                       | accepted   |
+| [0012](0012-topological-memory-as-deterministic-graph-query.md)    | Topological Memory as Deterministic Graph Query                     | accepted   |
+| [0013](0013-report-provenance-artifact-contract.md)                | Artifact Provenance Contract                                        | accepted   |
+| [0014](0014-executor-taxonomy-model-vs-external-call.md)           | Model vs External Call                                              | proposed   |
+| [0015](0015-canonical-logos-archetypes.md)                         | Canonical Logos Archetypes                                          | proposed   |
+| [0016](0016-cortex-roots-and-logos-pattern-extraction.md)          | Cortex Roots and Logos Pattern Extraction                           | proposed   |
+| [0017](0017-wire-executor-and-port-catalog-boundary.md)            | Wire Executor and Port Catalog Boundary                             | proposed   |
+| [0018](0018-canonical-haskell-module-tree.md)                      | Canonical Haskell Module Tree                                       | proposed   |
+| [0019](0019-executor-registration-and-binding.md)                  | Executor Registration and Binding                                   | proposed   |
+| [0020](0020-wire-pure-output-equations.md)                         | Wire Pure Output Equations                                          | accepted   |
+| [0021](0021-wire-source-elaborates-to-circuits.md)                 | Wire Source Elaborates to Circuits                                  | proposed   |
+| [0022](0022-wire-node-clause-grammar.md)                           | Wire Node Clause Grammar                                            | proposed   |
+| [0023](0023-corepure-expression-surface.md)                        | CorePure Expression Surface                                         | proposed   |
+| [0024](0024-typed-executor-node-interface.md)                      | Typed Executor Node Interface                                       | proposed   |
+| [0025](0025-configured-executor-values.md)                         | Configured Executor Values                                          | proposed   |
+| [0026](0026-wire-failure-taxonomy.md)                              | Wire Failure Taxonomy                                               | proposed   |
+| [0027](0027-typed-llm-output-binding.md)                           | Typed LLM Output Binding                                            | proposed   |
+| [0028](0028-wire-topology-composition-and-boundary-labels.md)      | Wire Topology Composition and Boundary Labels                       | proposed   |
+| [0029](0029-corepure-structured-serialization.md)                  | CorePure Structured Serialization                                   | proposed   |
+| [0030](0030-wire-node-implementation-forms.md)                     | Wire Node Implementation Forms                                      | proposed   |
+| [0031](0031-wire-binding-forms-and-where-clauses.md)               | Wire Binding Forms and Node Where Clauses                           | proposed   |
+| [0032](0032-wire-boundary-contract-resources.md)                   | Wire Boundary Contracts as Planning Resources                       | proposed   |
+| [0033](0033-wire-select-guarded-affine-collapse.md)                | Wire Select as Guarded Affine Collapse                              | proposed   |
+| [0034](0034-wire-pure-select-actualization-authority.md)           | Pure Selectors and Restricted Actualization Authority               | proposed   |
+| [0035](0035-wire-rewrite-algebra-forms.md)                         | Wire Rewrite Algebra Forms                                          | proposed   |
+| [0036](0036-wire-latent-branch-budget-recovery.md)                 | Latent Branch Budget and Recovery Policy                            | proposed   |
+| [0037](0037-wire-latent-structural-control.md)                     | Wire Latent Structural Control Operators                            | proposed   |
+| [0038](0038-wire-proof-track-theorem-ledger.md)                    | Wire Proof-Track Theorem Ledger                                     | proposed   |
+| [0039](0039-wire-node-boundary-transform-normal-form.md)           | Wire Node Boundary Transform Normal Form                            | proposed   |
+| [0040](0040-logos-owned-reasoning-surfaces.md)                     | Logos-Owned Reasoning Surfaces                                      | accepted   |
+| [0041](0041-wire-cli-command-surface.md)                           | Wire CLI Command Surface                                            | proposed   |
+| [0042](0042-wire-standard-effect-executors.md)                     | Wire Standard Effect Executors                                      | proposed   |
+| [0043](0043-pulse-in-memory-runner.md)                             | Pulse In-Memory Runner                                              | proposed   |
+| [0044](0044-wire-namespace-use-imports.md)                         | Wire Namespace Use Imports                                          | proposed   |
+| [0045](0045-wire-compile-time-node-body-kinds.md)                  | Wire Compile-Time Node-Body Kinds                                   | proposed   |
+| [0046](0046-wire-compile-time-graph-forms.md)                      | Wire Compile-Time Graph Forms                                       | proposed   |
+| [0047](0047-wire-frontier-linearity-and-precedence.md)             | Wire Frontier Linearity and Topology Operator Precedence            | proposed   |
+| [0048](0048-wire-make-bounded-node-generation.md)                  | Wire Compile-Time Make for Bounded Node Generation                  | proposed   |
+| [0049](0049-wire-fan-phantom-adapter.md)                           | Wire Phantom Record↔Ports Adapter for Topology Fans                | proposed   |
+| [0050](0050-wire-corepure-output-residue.md)                       | Wire CorePure Output Residue                                        | proposed   |
+| [0051](0051-wire-source-includes-and-item-generation.md)           | Wire Source Includes and Item Generation                            | proposed   |
+| [0052](0052-wire-bounded-indexed-boundary-products.md)             | Wire Bounded Indexed Boundary Products                              | proposed   |
+| [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)      | Executor Catalog Manifests and Pulse Runtime Bindings               | proposed   |
+| [0054](0054-downstream-wire-packages-and-host-bindings.md)         | Downstream Wire Packages and Host Runtime Bindings                  | proposed   |
+| [0055](0055-pulse-runtime-bounded-iteration.md)                    | Pulse Runtime-Bounded Iteration                                     | proposed   |
+| [0056](0056-admission-modes-witnessed-and-gas.md)                  | Admission Modes: Witnessed Materialization and Open Rewrite Gas     | proposed   |
+| [0057](0057-wire-latent-branch-witnessing-and-closure-charging.md) | Latent Branch Witnessing and Proposal Closure Charging              | proposed   |
 
 ## Writing a new ADR
 

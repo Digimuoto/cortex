@@ -10,6 +10,8 @@ status: proposed
 date: 2026-04-29
 superseded_by: null
 related:
+  - docs/ADRs/0057-wire-latent-branch-witnessing-and-closure-charging.md
+  - docs/ADRs/0056-admission-modes-witnessed-and-gas.md
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/Reference/rewrites.md
   - docs/Reference/Wire/conditionality.md
@@ -30,8 +32,12 @@ related:
 
 ## Status
 
-Proposed - documents the current selected-branch policy and separates it from possible reserved
-capacity policies.
+Proposed - documents the current selected-branch gas policy and separates it from possible reserved
+capacity policies. A proposed successor,
+[ADR 0057 - Latent Branch Witnessing and Proposal Closure Charging](0057-wire-latent-branch-witnessing-and-closure-charging.md),
+would replace this policy by witnessing author selects and charging open-introduced selects to gas
+at the admission boundary; that supersession takes effect only when ADR 0057 is accepted. Until then
+this ADR remains the active selected-cost policy.
 
 ## Context
 
