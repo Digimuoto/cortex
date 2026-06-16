@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import heapq
 import json
+import math
 import os
 import subprocess
 import sys
@@ -807,7 +808,8 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
         if gate == "h":
             circuit.h(operation["wire"])
         elif gate == "rz":
-            circuit.rz(operation["angle"], operation["wire"])
+            if not math.isclose(operation["angle"], 0.0, abs_tol=1e-15):
+                circuit.rz(operation["angle"], operation["wire"])
         elif gate == "sx":
             circuit.sx(operation["wire"])
         elif gate == "x":
@@ -845,6 +847,8 @@ def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | N
         "complete_counts": complete,
         "labeled_counts": labeled_counts(counts, measurements),
         "complete_labeled_counts": labeled_counts(complete, measurements),
+        "output_counts": output_counts(counts, measurements),
+        "complete_output_counts": output_counts(complete, measurements),
     }
 
 
@@ -859,6 +863,22 @@ def labeled_counts(counts: dict[str, int], measurements: list[JSON]) -> dict[str
     labeled: dict[str, int] = {}
     for raw_bits, count in counts.items():
         labeled[label_bits(raw_bits, measurements)] = count
+    return dict(sorted(labeled.items()))
+
+
+def output_counts(counts: dict[str, int], measurements: list[JSON]) -> dict[str, dict[str, int]]:
+    labeled: dict[str, dict[str, int]] = {
+        measurement["output"]: {"0": 0, "1": 0} for measurement in measurements
+    }
+    width = len(measurements)
+    for raw_bits, count in counts.items():
+        bits = raw_bits.replace(" ", "")
+        if len(bits) != width:
+            raise WireQuantumError(f"unexpected Qiskit bitstring width: {raw_bits}")
+        for measurement in measurements:
+            classical_bit = measurement["classical_bit"]
+            bit = bits[width - classical_bit - 1]
+            labeled[measurement["output"]][bit] += count
     return dict(sorted(labeled.items()))
 
 

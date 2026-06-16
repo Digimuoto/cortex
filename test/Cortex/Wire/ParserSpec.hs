@@ -115,6 +115,9 @@ spec = describe "Cortex.Wire.Parser" $ do
     it "parses the full quantum eraser experiment scaffold" $
       parseWireFixture "examples/wire/quantum-eraser-experiment.wire"
 
+    it "parses the QEC repetition-code experiment scaffold" $
+      parseWireFixture "examples/wire/qec-repetition-code-forced-errors.wire"
+
     it "parses the quantum eraser sweep circuit examples" $
       mapM_ parseWireFixture quantumEraserSweepFixtures
 

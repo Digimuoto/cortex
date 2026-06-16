@@ -3675,6 +3675,55 @@ spec = describe "Cortex.Wire.Compile" $ do
       successors compiled.compiledCircuitTopology (CircuitNodeRef "render_experiment_report")
         `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
 
+    it "compiles the QEC repetition-code experiment scaffold" $ do
+      source <- TIO.readFile "examples/wire/qec-repetition-code-forced-errors.wire"
+      compiled <- requireRight (compileWireText source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "start_experiment"]
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
+      let phantomRefs =
+            Set.filter
+              (("__star:gather:" `T.isPrefixOf`) . (.unCircuitNodeRef))
+              (Map.keysSet compiled.compiledCircuitNodes)
+      Set.size phantomRefs `shouldBe` 1
+      let resultsPhantom = Set.findMin phantomRefs
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "run_none/run")
+        `shouldBe` Set.singleton (CircuitNodeRef "run_x0/gate")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "run_x0/gate")
+        `shouldBe` Set.fromList [resultsPhantom, CircuitNodeRef "run_x0/run"]
+      successors compiled.compiledCircuitTopology resultsPhantom
+        `shouldBe` Set.singleton (CircuitNodeRef "analyze_qec")
+      successors compiled.compiledCircuitTopology (CircuitNodeRef "render_qec_report")
+        `shouldBe` Set.fromList [CircuitNodeRef "print_report", CircuitNodeRef "write_report"]
+
+    it "compiles each selected QEC repetition-code circuit export" $ do
+      source <- TIO.readFile "examples/wire/qec-repetition-code-forced-errors.wire"
+      Foldable.for_
+        [ "qec_repetition_none"
+        , "qec_repetition_x0"
+        , "qec_repetition_x1"
+        , "qec_repetition_x2"
+        ]
+        $ \selected -> do
+          compiled <- requireRight (compileWireTextWithReturn selected source)
+          Set.fromList compiled.compiledCircuitEntryNodes
+            `shouldBe` Set.fromList
+              [ CircuitNodeRef (selected <> "/encode/prepare_d0")
+              , CircuitNodeRef (selected <> "/encode/prepare_d1")
+              , CircuitNodeRef (selected <> "/encode/prepare_d2")
+              , CircuitNodeRef (selected <> "/encode/prepare_a01")
+              , CircuitNodeRef (selected <> "/encode/prepare_a12")
+              ]
+          Set.fromList compiled.compiledCircuitExitNodes
+            `shouldBe` Set.fromList
+              [ CircuitNodeRef (selected <> "/readout/measure_s01")
+              , CircuitNodeRef (selected <> "/readout/measure_s12")
+              , CircuitNodeRef (selected <> "/readout/measure_d0")
+              , CircuitNodeRef (selected <> "/readout/measure_d1")
+              , CircuitNodeRef (selected <> "/readout/measure_d2")
+              ]
+
     it "compiles the quantum eraser sweep circuit examples with primitive executors" $
       mapM_ compileQuantumEraserFixture quantumEraserSweepFixtures
 

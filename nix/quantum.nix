@@ -46,6 +46,20 @@
       '';
     };
 
+    wire-quantum-qec-repetition = pkgs.writeShellApplication {
+      name = "wire-quantum-qec-repetition";
+      text = ''
+        set -euo pipefail
+        if [ "$#" -ne 0 ]; then
+          echo "usage: wire-quantum-qec-repetition" >&2
+          echo "runs the Wire-authored distance-3 repetition-code workbench through local Qiskit Aer" >&2
+          exit 64
+        fi
+        export PATH="${wire-quantum-qiskit}/bin:$PATH"
+        exec ${config.packages.wire}/bin/wire run examples/wire/qec-repetition-code-forced-errors.wire
+      '';
+    };
+
     wire-quantum-eraser = pkgs.writeShellApplication {
       name = "wire-quantum-eraser";
       text = ''
@@ -68,6 +82,7 @@
       // lib.optionalAttrs qiskitSupported {
         wire-quantum-qiskit = wire-quantum-qiskit;
         wire-quantum-ipea = wire-quantum-ipea;
+        wire-quantum-qec-repetition = wire-quantum-qec-repetition;
       };
 
     apps =
@@ -93,6 +108,11 @@
           type = "app";
           program = "${wire-quantum-ipea}/bin/wire-quantum-ipea";
           meta.description = "Run iterative phase estimation as composed Wire quantum rounds";
+        };
+        wire-quantum-qec-repetition = {
+          type = "app";
+          program = "${wire-quantum-qec-repetition}/bin/wire-quantum-qec-repetition";
+          meta.description = "Run the distance-3 repetition-code QEC workbench through a local Qiskit Aer simulator";
         };
       };
   };

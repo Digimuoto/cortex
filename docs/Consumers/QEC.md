@@ -1,0 +1,126 @@
+---
+title: QEC Repetition-Code Consumer Example
+description:
+  A small Wire-authored quantum error-correction workbench over the quantum consumer binding.
+sidebar:
+  label: QEC repetition code
+  order: 4
+status: draft
+---
+
+# QEC Repetition-Code Consumer Example
+
+This page is a consumer binding example. It shows how Wire can host a small quantum
+error-correction-shaped workflow without making Cortex a QEC platform.
+
+The workbench source is
+[`../../examples/wire/qec-repetition-code-forced-errors.wire`](../../examples/wire/qec-repetition-code-forced-errors.wire).
+It is a single Wire file with two roles:
+
+- a catalog of four exported circuit graph values;
+- a default experiment graph that runs those circuits and renders the report in pure Wire.
+
+## Boundary
+
+The ownership split follows the quantum consumer binding:
+
+| Cortex / Wire owns                                                    | Quantum or QEC host owns                                              |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Wire parsing, graph composition, typed ports, selected graph returns. | Gate semantics, simulator/hardware binding, provider credentials.     |
+| `std.io.command` orchestration and pure `fromJson` report rendering.  | Backend result production and any future real-time decoding policy.   |
+| The checked-in experiment topology and expected forced-error table.   | General QEC research semantics beyond this repetition-code workbench. |
+
+The local execution path uses the existing `wire-quantum-qiskit` bridge. There is no QEC-specific
+Python analyzer: the bridge produces JSON counts, and Wire computes the syndrome-table report with
+pure expressions.
+
+## Circuit Shape
+
+The circuit is the distance-3 bit-flip repetition-code memory check for logical zero:
+
+```text
+|0_L> = |000>
+S01 = Z0 Z1
+S12 = Z1 Z2
+```
+
+The file exports four graph values:
+
+- `qec_repetition_none`
+- `qec_repetition_x0`
+- `qec_repetition_x1`
+- `qec_repetition_x2`
+
+Each selected graph prepares three data qubits and two fresh syndrome ancillas, injects at most one
+forced `X` error, measures the two parity checks, and measures the final data bits. The pure Wire
+analyzer expects this lookup table:
+
+| case | raw data | syndrome | correction |
+| ---- | -------- | -------- | ---------- |
+| none | `000`    | `00`     | none       |
+| x0   | `100`    | `10`     | `X d0`     |
+| x1   | `010`    | `11`     | `X d1`     |
+| x2   | `001`    | `01`     | `X d2`     |
+
+## Local Run
+
+Run the full Wire experiment:
+
+```sh
+nix run .#wire-quantum-qec-repetition
+```
+
+The app places `wire-quantum-qiskit` on `PATH` and then runs:
+
+```sh
+wire run examples/wire/qec-repetition-code-forced-errors.wire
+```
+
+The Wire graph creates four `std.io.command` leaves, one per exported circuit graph. Each command
+selects its circuit with `wire build --return`, executes it on local Qiskit Aer with `--json`, and
+returns a `CommandResult`. The final Wire nodes parse those JSON payloads with `fromJson`, check the
+forced-error table, print the report, and write `./wire-qec-repetition-report.txt`.
+
+To inspect one circuit directly:
+
+```sh
+nix run .#wire-quantum-qiskit -- \
+  examples/wire/qec-repetition-code-forced-errors.wire \
+  --return qec_repetition_x1 \
+  --shots 128 \
+  --seed 7 \
+  --json
+```
+
+## OpenQASM Dry-Run
+
+The same exported graphs can be lowered through the IBM Runtime REST dry-run path. The dry-run
+builds the OpenQASM 3 request locally and does not submit a hardware job:
+
+```sh
+nix run .#wire-quantum-ibm-rest -- \
+  examples/wire/qec-repetition-code-forced-errors.wire \
+  --return qec_repetition_x1 \
+  --dry-run \
+  --config examples/wire/quantum-ibm-runtime.config.example.json
+```
+
+Hardware submission remains explicitly gated by the IBM runner's credentials and
+`--confirm-hardware` policy. This example should remain a local workbench until reset, layout,
+timing, and real-time/feedforward semantics are designed.
+
+## Limitations
+
+This is a forced-error repetition-code workbench, not a full QEC stack:
+
+- decoding is offline report logic, not active mid-circuit feedforward;
+- ancillas are fresh, not reset and reused;
+- no stochastic noise model or repeated syndrome rounds are included yet;
+- the report checks a deterministic forced-error table rather than estimating thresholds;
+- hardware execution should be treated as an inspection path, not an endorsed QEC experiment.
+
+## Related
+
+- [Quantum Consumer Binding Example](Quantum.md)
+- [../Reference/Wire/executors-and-alphabet.md](../Reference/Wire/executors-and-alphabet.md)
+- [../Reference/Wire/configured-executors-and-execution-boundary.md](../Reference/Wire/configured-executors-and-execution-boundary.md)

@@ -404,21 +404,16 @@ def build_openqasm3(plan: JSON, quantum: Any) -> str:
         if gate == "prepare_zero":
             continue
         if gate == "h":
-            raise quantum.WireQuantumError(
-                "IBM hardware runner requires primitive Wire gates; decompose "
-                "quantum.h as quantum.rz(pi/2) => quantum.sx => quantum.rz(pi/2)"
-            )
+            append_h_decomposition(lines, operation["wire"])
         elif gate == "rz":
-            lines.append(f"rz({operation['angle']}) q[{operation['wire']}];")
+            if not math.isclose(operation["angle"], 0.0, abs_tol=1e-15):
+                lines.append(f"rz({operation['angle']}) q[{operation['wire']}];")
         elif gate == "sx":
             lines.append(f"sx q[{operation['wire']}];")
         elif gate == "x":
             lines.append(f"x q[{operation['wire']}];")
         elif gate == "cnot":
-            raise quantum.WireQuantumError(
-                "IBM hardware runner requires primitive Wire gates; decompose "
-                "quantum.cnot as h(target) => quantum.cz => h(target)"
-            )
+            append_cnot_decomposition(lines, operation["control"], operation["target"])
         elif gate == "cz":
             lines.append(f"cz q[{operation['control']}], q[{operation['target']}];")
         elif gate == "rzz":

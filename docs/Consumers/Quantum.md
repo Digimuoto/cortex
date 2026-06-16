@@ -97,6 +97,10 @@ The runner:
 - executes it on Qiskit Aer `aer_simulator`;
 - prints a concise run summary with label-decoded counts.
 
+JSON output includes raw bitstring counts, label-ordered counts, and per-output counts keyed by
+measurement output name. The per-output shape lets pure Wire analyzers consume backend JSON without
+depending on topology-specific measurement label ordering.
+
 Machine-readable output is available with `--json`:
 
 ```sh
@@ -134,9 +138,10 @@ The runner treats that node as the source of the provider config path. The confi
 relative to the `.wire` file. The example threads the config token into the first prepare node only
 to make the Wire graph connected; the runner treats it as orchestration data, not quantum state. The
 hardware example authors the Bell circuit from backend primitive gates: `h` is decomposed as
-`rz(pi/2) => sx => rz(pi/2)`, and `cnot` as `h(target) => cz => h(target)`. `*.local.json` files are
-ignored by git, so real credentials should live in `examples/wire/quantum-ibm-runtime.local.json`.
-The tracked template at
+`rz(pi/2) => sx => rz(pi/2)`, and `cnot` as `h(target) => cz => h(target)`. The runner also applies
+those decompositions while lowering `@quantum.h` and `@quantum.cnot`, and omits zero-angle `rz`
+wiring identities from emitted OpenQASM 3. `*.local.json` files are ignored by git, so real
+credentials should live in `examples/wire/quantum-ibm-runtime.local.json`. The tracked template at
 [`../../examples/wire/quantum-ibm-runtime.config.example.json`](../../examples/wire/quantum-ibm-runtime.config.example.json)
 shows the expected shape:
 
@@ -217,6 +222,23 @@ nix run .#wire-quantum-ipea -- --hardware --shots 100 --confirm-hardware
 
 Because each round is a separate provider job, this demo spends hardware budget per measured phase
 bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
+
+## QEC Repetition-Code Workbench
+
+[`QEC.md`](QEC.md) documents a small distance-3 repetition-code forced-error workbench. The example
+keeps QEC analysis in Wire: command leaves run four exported circuit graph values through the
+generic local Qiskit bridge, then pure Wire expressions parse JSON output counts, apply the lookup
+decoder table, render the report, and write `./wire-qec-repetition-report.txt`.
+
+Run it locally with:
+
+```sh
+nix run .#wire-quantum-qec-repetition
+```
+
+The same exported circuit graphs can be inspected through the IBM REST OpenQASM dry-run path with
+`--dry-run --config`, but hardware execution remains explicitly gated and is not the default QEC
+workflow.
 
 ## Quantum Eraser Wire Experiment
 

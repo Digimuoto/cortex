@@ -1,0 +1,458 @@
+# Distance-3 repetition-code forced-error workbench.
+#
+# Run:
+#
+#   nix run .#wire-quantum-qec-repetition
+#
+# This file is both the circuit catalog and the executable experiment scaffold.
+# The four exported graph values are selected by std.io.command leaves below and
+# run through the generic local Qiskit bridge. The final analyzer is pure Wire:
+# it parses JSON stdout with fromJson, checks the syndrome table, renders a
+# report, and writes it to ./wire-qec-repetition-report.txt.
+
+use std.io.{@stdout, @command, @writeFile, CommandSpec, CommandResult};
+
+# `@quantum.*` executors are host-provided configured executor ids. They are not
+# imported from a Wire stdlib module; the generic quantum bridges admit this
+# namespace when they compile a selected circuit graph.
+
+contract ExperimentStart;
+contract QecRunResults {
+  none: CommandResult;
+  x0: CommandResult;
+  x1: CommandResult;
+  x2: CommandResult;
+};
+contract QecAnalysis;
+contract QecReport;
+contract Qubit;
+contract Bit;
+
+let quantum_x = @quantum.x {};
+let quantum_cnot = @quantum.cnot {};
+
+kind prepare_qubit(label: PortLabel, index: Value) =
+  -> label: Qubit = @quantum.prepare_zero { inherit index; } (null);
+
+kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit;
+  = gate (label);
+
+kind carry_qubit(label: PortLabel) =
+  <- label: Qubit;
+  -> label: Qubit = @quantum.rz { angle = 0.0; } (label);
+
+kind relabel_qubit(input: PortLabel, output: PortLabel) =
+  <- input: Qubit;
+  -> output: Qubit = @quantum.rz { angle = 0.0; } (input);
+
+kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecutor) =
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = gate ({ inherit control; inherit target; });
+
+kind qubit_measure(input: PortLabel, output: PortLabel) =
+  <- input: Qubit;
+  -> output: Bit;
+  = @quantum.measure_z {} (input);
+
+kind run_command(spec: PortLabel, result: PortLabel) =
+  <- spec: CommandSpec;
+  -> result: CommandResult = @command {} (spec);
+
+kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
+  <- spec: CommandSpec;
+  <- previous: CommandResult;
+  -> previous: CommandResult = previous;
+  -> ready: CommandSpec = spec;
+
+form first_command(spec: PortLabel, result: PortLabel) = {
+  node run = run_command(spec, result);
+
+  run;
+};
+
+form gated_command(spec: PortLabel, previous: PortLabel, ready: PortLabel, result: PortLabel) = {
+  node gate = command_gate(spec, previous, ready);
+  node run = run_command(ready, result);
+
+  gate
+    => run;
+};
+
+form prepare_all() = {
+  node prepare_d0 = prepare_qubit(d0, 0);
+  node prepare_d1 = prepare_qubit(d1, 1);
+  node prepare_d2 = prepare_qubit(d2, 2);
+  node prepare_a01 = prepare_qubit(a01, 3);
+  node prepare_a12 = prepare_qubit(a12, 4);
+
+  prepare_d0
+    <> prepare_d1
+    <> prepare_d2
+    <> prepare_a01
+    <> prepare_a12;
+};
+
+form no_error_layer() = {
+  node carry_d0 = carry_qubit(d0);
+  node carry_d1 = carry_qubit(d1);
+  node carry_d2 = carry_qubit(d2);
+  node carry_a01 = carry_qubit(a01);
+  node carry_a12 = carry_qubit(a12);
+
+  carry_d0
+    <> carry_d1
+    <> carry_d2
+    <> carry_a01
+    <> carry_a12;
+};
+
+form x_error_layer(target: PortLabel, carryA: PortLabel, carryB: PortLabel, carryC: PortLabel, carryD: PortLabel) = {
+  node x_target = qubit_gate(target, quantum_x);
+  node carry_a = carry_qubit(carryA);
+  node carry_b = carry_qubit(carryB);
+  node carry_c = carry_qubit(carryC);
+  node carry_d = carry_qubit(carryD);
+
+  x_target
+    <> carry_a
+    <> carry_b
+    <> carry_c
+    <> carry_d;
+};
+
+form cnot_live5(controlIn: PortLabel, targetIn: PortLabel, carryA: PortLabel, carryB: PortLabel, carryC: PortLabel) = {
+  node control_to_gate = relabel_qubit(controlIn, control);
+  node target_to_gate = relabel_qubit(targetIn, target);
+  node carry_a_pre = carry_qubit(carryA);
+  node carry_b_pre = carry_qubit(carryB);
+  node carry_c_pre = carry_qubit(carryC);
+  node cnot = two_qubit_gate(control, target, quantum_cnot);
+  node carry_a_mid = carry_qubit(carryA);
+  node carry_b_mid = carry_qubit(carryB);
+  node carry_c_mid = carry_qubit(carryC);
+  node control_from_gate = relabel_qubit(control, controlIn);
+  node target_from_gate = relabel_qubit(target, targetIn);
+  node carry_a_post = carry_qubit(carryA);
+  node carry_b_post = carry_qubit(carryB);
+  node carry_c_post = carry_qubit(carryC);
+
+  (control_to_gate
+    <> target_to_gate
+    <> carry_a_pre
+    <> carry_b_pre
+    <> carry_c_pre)
+    => (cnot
+        <> carry_a_mid
+        <> carry_b_mid
+        <> carry_c_mid)
+    => (control_from_gate
+        <> target_from_gate
+        <> carry_a_post
+        <> carry_b_post
+        <> carry_c_post);
+};
+
+form readout_all() = {
+  node measure_s01 = qubit_measure(a01, s01);
+  node measure_s12 = qubit_measure(a12, s12);
+  node measure_d0 = qubit_measure(d0, final_d0);
+  node measure_d1 = qubit_measure(d1, final_d1);
+  node measure_d2 = qubit_measure(d2, final_d2);
+
+  measure_s01
+    <> measure_s12
+    <> measure_d0
+    <> measure_d1
+    <> measure_d2;
+};
+
+form repetition_case(error_layer: Graph) = {
+  let encode = prepare_all();
+  let check_d0_a01 = cnot_live5(d0, a01, d1, d2, a12);
+  let check_d1_a01 = cnot_live5(d1, a01, d0, d2, a12);
+  let check_d1_a12 = cnot_live5(d1, a12, d0, d2, a01);
+  let check_d2_a12 = cnot_live5(d2, a12, d0, d1, a01);
+  let readout = readout_all();
+
+  encode
+    => error_layer
+    => check_d0_a01
+    => check_d1_a01
+    => check_d1_a12
+    => check_d2_a12
+    => readout;
+};
+
+let no_error = no_error_layer();
+let x0_error = x_error_layer(d0, d1, d2, a01, a12);
+let x1_error = x_error_layer(d1, d0, d2, a01, a12);
+let x2_error = x_error_layer(d2, d0, d1, a01, a12);
+
+export let qec_repetition_none = repetition_case(no_error);
+export let qec_repetition_x0 = repetition_case(x0_error);
+export let qec_repetition_x1 = repetition_case(x1_error);
+export let qec_repetition_x2 = repetition_case(x2_error);
+
+let experiment_source = "examples/wire/qec-repetition-code-forced-errors.wire";
+let experiment_report_path = "./wire-qec-repetition-report.txt";
+let experiment_shots = "1024";
+let experiment_seed = "7";
+let emptyText = "";
+let spaceText = " ";
+let noneText = "none";
+let noStderrText = "(empty)";
+
+let qiskitSpec = name: returnName: {
+  inherit name;
+  target = "${experiment_source}#${returnName}";
+  argv = [
+    "wire-quantum-qiskit",
+    experiment_source,
+    "--return",
+    returnName,
+    "--shots",
+    experiment_shots,
+    "--seed",
+    experiment_seed,
+    "--json"
+  ];
+  cwd = ".";
+  required = true;
+  skip = false;
+  echo = false;
+};
+
+let commandRuns = results: [
+  results.none,
+  results.x0,
+  results.x1,
+  results.x2
+];
+
+let runStatuses = runs:
+  runs |> map (run: "${run.name}=${run.status}") |> joinWith ", ";
+
+let runTargets = runs:
+  runs |> map (run: run.target) |> joinWith "\n  ";
+
+let failureDetails = failures:
+  failures
+    |> map (run: ''
+      ${run.name}
+        exit: ${if run.exitCode == null then noneText else run.exitCode}
+        target: ${run.target}
+        argv: ${run.argv |> joinWith spaceText}
+        stderr: ${if run.stderr == emptyText then noStderrText else run.stderr}
+
+    '')
+    |> joinWith "";
+
+let min2 = left: right:
+  if left < right then left else right;
+
+let min5 = a: b: c: d: e:
+  min2 (min2 (min2 (min2 a b) c) d) e;
+
+let outputHits = decoded: output: bit:
+  decoded.complete_output_counts[output][bit];
+
+let caseRow = name: expectedSyndrome: correction: d0: d1: d2: s01: s12: decoded:
+  let
+    shots = decoded.shots;
+    d0Hits = outputHits decoded "final_d0" d0;
+    d1Hits = outputHits decoded "final_d1" d1;
+    d2Hits = outputHits decoded "final_d2" d2;
+    s01Hits = outputHits decoded "s01" s01;
+    s12Hits = outputHits decoded "s12" s12;
+    hits = min5 d0Hits d1Hits d2Hits s01Hits s12Hits;
+    logicalFailures = shots - hits;
+  in
+  {
+    inherit name expectedSyndrome correction shots hits logicalFailures;
+    expected = "${d0}${d1}${d2}/${s01}${s12}";
+  };
+
+let qecRows = decoded: [
+  caseRow
+    "none"
+    "00"
+    "none"
+    "0"
+    "0"
+    "0"
+    "0"
+    "0"
+    decoded[0],
+  caseRow
+    "x0"
+    "10"
+    "X d0"
+    "1"
+    "0"
+    "0"
+    "1"
+    "0"
+    decoded[1],
+  caseRow
+    "x1"
+    "11"
+    "X d1"
+    "0"
+    "1"
+    "0"
+    "1"
+    "1"
+    decoded[2],
+  caseRow
+    "x2"
+    "01"
+    "X d2"
+    "0"
+    "0"
+    "1"
+    "0"
+    "1"
+    decoded[3]
+];
+
+let analyzeQec = results:
+  let
+    runs = commandRuns results;
+    failures = runs |> filter (run: !run.ok);
+    success = length failures == 0;
+    statuses = runStatuses runs;
+    targets = runTargets runs;
+  in
+  if success then
+    let
+      decoded = runs |> map (run: fromJson(run.stdout));
+      rows = qecRows decoded;
+      complete = rows |> all (row: row.logicalFailures == 0);
+    in
+    { inherit runs failures success statuses targets decoded rows complete; }
+  else
+    {
+      inherit runs failures success statuses targets;
+      decoded = [];
+      rows = [];
+      complete = false;
+    };
+
+let reportTitle = ''
+  Wire QEC repetition-code experiment
+  ===================================
+
+'';
+
+let runBlock = targets: ''
+  Run
+    source: ${experiment_source}
+    execution: one Wire orchestration graph + std.io.command leaves
+    backend: local Qiskit Aer through the generic wire-quantum-qiskit bridge
+    shots: ${experiment_shots} per circuit
+    seed: ${experiment_seed}
+    circuits: 4 exported graph values selected from this same Wire file
+    report file: ${experiment_report_path}
+
+  Circuit graph values submitted
+    ${targets}
+
+'';
+
+let resultRow = row:
+  "  ${row.name} | ${row.expectedSyndrome} | ${row.expected} | ${row.correction} | ${row.hits}/${row.shots} | ${row.logicalFailures}/${row.shots}\n";
+
+let resultRows = rows:
+  rows |> map resultRow |> joinWith "";
+
+let successReport = analysis: ''
+  ${reportTitle}${runBlock analysis.targets}What Wire did
+    Wire authored the repetition-code circuit catalog, selected each
+    exported graph with wire build --return through command leaves,
+    parsed each simulator JSON result with fromJson, applied the
+    distance-3 lookup table as pure Wire dataflow, and rendered this
+    report in a pure Wire node.
+
+  Results
+    case | expected syndrome | expected data/syndrome | correction | matching shots | logical failures
+    ---- | ----------------- | ---------------------- | ---------- | -------------- | ----------------
+  ${resultRows analysis.rows}
+
+  Lookup table
+    00 -> no correction
+    10 -> X d0
+    11 -> X d1
+    01 -> X d2
+
+  Run gate: ${if analysis.complete then "complete" else "incomplete"}
+'';
+
+let failureReport = analysis: ''
+  ${reportTitle}${runBlock analysis.targets}At least one simulator command failed before analysis, so the pure Wire analyzer did not parse stdout.
+
+  Results
+    ${analysis.statuses}
+
+  Failed rows
+  ${failureDetails analysis.failures}Run gate: failed
+'';
+
+let renderQecReport = analysis:
+  if analysis.success then successReport analysis else failureReport analysis;
+
+node start_experiment
+  -> start: ExperimentStart = "start";
+
+node plan_experiment
+  <- start: ExperimentStart;
+  -> noneSpec: CommandSpec = qiskitSpec "clean memory" "qec_repetition_none";
+  -> x0Spec: CommandSpec = qiskitSpec "forced X on d0" "qec_repetition_x0";
+  -> x1Spec: CommandSpec = qiskitSpec "forced X on d1" "qec_repetition_x1";
+  -> x2Spec: CommandSpec = qiskitSpec "forced X on d2" "qec_repetition_x2";
+
+let run_none = first_command(noneSpec, none);
+let run_x0 = gated_command(x0Spec, none, x0Ready, x0);
+let run_x1 = gated_command(x1Spec, x0, x1Ready, x1);
+let run_x2 = gated_command(x2Spec, x1, x2Ready, x2);
+
+node analyze_qec
+  <- results: QecRunResults;
+  -> analysis: QecAnalysis = analyzeQec results;
+
+node render_qec_report
+  <- analysis: QecAnalysis;
+  -> print_summary: QecReport = summary;
+  -> write_summary: QecReport = summary;
+  where let
+    summary = renderQecReport analysis;
+  in
+  { inherit summary; };
+
+node print_report
+  <- print_summary: QecReport;
+  = @stdout { newline = true; } (print_summary);
+
+node write_report
+  <- write_summary: QecReport;
+  = @writeFile { path = "./wire-qec-repetition-report.txt"; } (write_summary);
+
+let command_sequence =
+  run_none
+    => run_x0
+    => run_x1
+    => run_x2;
+
+let analyzed_sequence =
+  command_sequence
+    * analyze_qec;
+
+start_experiment
+  => plan_experiment
+  => analyzed_sequence
+  => render_qec_report
+  => print_report <> write_report
