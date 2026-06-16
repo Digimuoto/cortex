@@ -28,6 +28,10 @@
 !theory/**
 theory/.lake/
 
+# formal/ — TLA+ protocol models (model-checked with TLC)
+!formal/
+!formal/**
+
 # docs/ — flat markdown tree consumed by repo-docs
 !docs/
 !docs/**

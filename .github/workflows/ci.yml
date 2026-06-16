@@ -476,8 +476,12 @@ jobs:
         with:
           clean: false
 
-      - name: Run Haskell test suites
-        run: nix run '.#cortex-tests' --print-build-logs
+      - name: Run Haskell test suites (with ephemeral Pulse test DB)
+        # Boot an ephemeral Postgres + the cortex-owned Pulse schema fixture so
+        # the DB-backed Pulse tests actually run (they self-skip when PGHOST is
+        # unset). The self-hosted runner has nix; postgresql comes from the
+        # binary cache.
+        run: nix shell nixpkgs#postgresql -c scripts/with-test-db.sh nix run '.#cortex-tests' --print-build-logs
 
   docs-lint:
     name: Lint Docs

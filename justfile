@@ -179,6 +179,18 @@ lean-check:
     @echo "🔍 Checking Cortex theory through Nix..."
     nix run .#_check-theory
 
+# Model-check the Pulse run-terminal signal protocol (TLC) through the flake surface
+tla-check:
+    @echo "🔍 Model-checking the run-terminal signal protocol (TLC)..."
+    nix run .#_check-tla
+
+# Run the test suite against an ephemeral Postgres with the Pulse schema fixture.
+# Without this, DB-backed Pulse tests skip themselves (PGHOST unset). Extra args
+# pass through to hspec, e.g. `just test-db -m "run-terminal"`.
+test-db *ARGS:
+    @echo "🧪 Running tests against an ephemeral Pulse test database..."
+    nix shell nixpkgs#postgresql -c scripts/with-test-db.sh nix run .#cortex-tests -- {{ ARGS }}
+
 # Build and run the smoke executable
 lean-run: lean-build
     cd theory && ./.lake/build/bin/cortex-theory

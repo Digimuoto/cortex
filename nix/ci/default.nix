@@ -105,6 +105,22 @@
       '';
     };
 
+    check-tla = pkgs.writeShellApplication {
+      name = "check-tla";
+      runtimeInputs = [pkgs.tlaplus];
+      text = ''
+        set -euo pipefail
+        exec scripts/check-tla.sh
+      '';
+    };
+
+    check-tla-flake = pkgs.runCommand "check-tla" {nativeBuildInputs = [pkgs.tlaplus];} ''
+      set -euo pipefail
+      cd ${../..}
+      ${pkgs.bash}/bin/bash scripts/check-tla.sh
+      touch "$out"
+    '';
+
     ci-check = pkgs.writeShellApplication {
       name = "ci-check";
       runtimeInputs = [
@@ -118,6 +134,7 @@
         lean-lint
         lint-haskell
         check-theory
+        check-tla
         pkgs.nix
       ];
       text = ''
@@ -163,7 +180,11 @@
         check-theory
         echo
 
-        echo "Step 11: flake checks"
+        echo "Step 11: TLA+ protocol model"
+        check-tla
+        echo
+
+        echo "Step 12: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -171,6 +192,7 @@
     packages = {
       _check-format = check-format;
       _check-theory = check-theory;
+      _check-tla = check-tla;
       _ci-check = ci-check;
       check-haskell-format = check-haskell-format;
       check-logos-boundary = check-logos-boundary;
@@ -180,6 +202,10 @@
       docs-lint = docs-lint;
       lean-lint = lean-lint;
       lint-haskell = lint-haskell;
+    };
+
+    checks = {
+      tla-protocol = check-tla-flake;
     };
 
     apps = {
@@ -193,6 +219,12 @@
         type = "app";
         program = "${check-theory}/bin/check-theory";
         meta.description = "Build the Lean theory through the flake surface";
+      };
+
+      _check-tla = {
+        type = "app";
+        program = "${check-tla}/bin/check-tla";
+        meta.description = "Model-check the Pulse run-terminal signal protocol with TLC";
       };
 
       check-haskell-format = {

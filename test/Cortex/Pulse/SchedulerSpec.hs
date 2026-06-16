@@ -623,6 +623,24 @@ dbSpec = beforeAll setupTestDb $ do
       lastRunStatus task `shouldBe` Just "failed"
       schedulerClaimed task `shouldBe` False
 
+    it "enters the run-terminal protocol before marking expired runs failed" $ \mPool -> withDb mPool $ \pool -> do
+      let claimTime = testTime
+          recoveryTime = testTimePlus60
+      taskId <-
+        insertTaskDefAt pool "paper_portfolio_cycle" "test-recover-lock-order" "" (Just claimTime) claimTime
+      runId <-
+        expectCreatedRun "create scheduled run for recovery lock order"
+          =<< runTx pool (Q.claimAndCreateRun taskId "expired-owner" TriggerSchedule claimTime 60)
+      setRunLeaseExpiry pool runId (addUTCTime (-1) recoveryTime)
+      withAsync (holdRunTerminalProtocolLock pool) $ \lockHolder -> do
+        threadDelay 100000
+        withAsync (recoverExpiredRuns pool "recovery-owner" recoveryTime) $ \recovery -> do
+          threadDelay 200000
+          runSession pool (Q.readRunStatus runId) `shouldReturn` Just "running"
+          wait lockHolder
+          wait recovery `shouldReturn` Right 1
+      runSession pool (Q.readRunStatus runId) `shouldReturn` Just "failed"
+
     it "drains on shutdown, resumes exactly once, and advances a recurring schedule once" $ \mPool -> withDb mPool $ \pool -> do
       let claimTime = testTime
           reclaimTime = testTimePlus60
@@ -743,6 +761,19 @@ setRunLeaseExpiry pool runId leaseExpiry =
       (Enc.encode2 (fst, Enc.nonNullable Enc.uuid) (snd, Enc.nonNullable Enc.timestamptz))
       D.noResult
       False
+
+holdRunTerminalProtocolLock :: Pool -> IO ()
+holdRunTerminalProtocolLock pool =
+  runSession pool $ do
+    Session.sql "BEGIN"
+    Session.sql
+      "DO $$ \
+      \BEGIN \
+      \  PERFORM pg_advisory_xact_lock(5600058); \
+      \  PERFORM pg_sleep(0.75); \
+      \END \
+      \$$"
+    Session.sql "COMMIT"
 
 -- | Delete test task definitions and their runs to avoid polluting other tests.
 cleanupTestTasks :: Pool -> [UUID] -> IO ()
