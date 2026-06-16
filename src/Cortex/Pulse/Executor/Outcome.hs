@@ -13,7 +13,6 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 module Cortex.Pulse.Executor.Outcome
   ( handleGraphOutcome
   , handleSettled
-  , handleSuspended
   , handleStuck
   )
 where
@@ -35,7 +34,7 @@ import Cortex.Pulse.GraphRuntime
   ( GraphState
   , StuckDiagnostic (..)
   )
-import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Node (unNodeId)
 import Cortex.Pulse.Query qualified as Q
 
 import Platform.DurableTask.Types (RunOutcome (..))
@@ -43,7 +42,7 @@ import Platform.Observability (emitObsEvent)
 
 handleGraphOutcome :: StageEnv -> GraphState Aeson.Value -> RunOutcome -> IO RunOutcome
 handleGraphOutcome env gs = \case
-  OutcomeSuspended -> handleSuspended env gs
+  OutcomeSuspended -> pure OutcomeSuspended
   OutcomeFailed -> handleSettled env gs OutcomeFailed
   OutcomeCompleted -> handleSettled env gs OutcomeCompleted
   OutcomeTimedOut -> handleSettled env gs OutcomeTimedOut
@@ -62,13 +61,7 @@ handleSettled env _gs = \case
     completionResult <-
       requireTx env.sePool env.seRunId "update_run_completed"
         . PulseDB.runTransaction env.sePool
-        $ do
-          Q.updateRunCompleted env.seRunId now
-          -- Wake every run suspended on this run's terminal signal in the
-          -- same transaction as the status flip, so there is no window in
-          -- which the run is terminal but its waiters are unsignalled.
-          _wokenRunIds <- Q.deliverRunTerminalSignals env.seRunId "completed" now
-          pure ()
+        $ Q.updateRunCompleted env.seRunId now
     case completionResult of
       Nothing -> pure OutcomeFailed
       Just () -> do
@@ -79,24 +72,6 @@ handleSettled env _gs = \case
   OutcomeShutdown -> pure OutcomeShutdown
   OutcomeCancelled -> pure OutcomeCancelled
   OutcomeSuspended -> pure OutcomeSuspended
-
-handleSuspended :: StageEnv -> GraphState Aeson.Value -> IO RunOutcome
-handleSuspended env _gs = do
-  waitResult <-
-    requireTx env.sePool env.seRunId "update_run_waiting"
-      . PulseDB.runTransaction env.sePool
-      $ Q.updateRunWaiting env.seRunId
-  case waitResult of
-    Nothing -> pure OutcomeFailed
-    Just () -> do
-      emitObsEvent $ EvtRunSuspended env.seRunId
-      recordRunEvent
-        env
-        "run.suspended"
-        Q.RunEventInfo
-        "Run suspended, waiting on external signal"
-        Nothing
-      pure OutcomeSuspended
 
 handleStuck :: StageEnv -> UUID -> GraphState Aeson.Value -> StuckDiagnostic -> IO RunOutcome
 handleStuck env runId _gs diag = do

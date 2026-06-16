@@ -12,9 +12,11 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 -}
 module Cortex.Pulse.Executor.Persistence
   ( GraphStatePersistError (..)
+  , SuspendSettlementResult (..)
   , persistGraphState
   , requireGraphStatePersist
   , requireGraphStatePersistVar
+  , settleSuspend
   , handleGraphStatePersistError
   , persistStageSuccess
   , persistStageRewrite
@@ -44,7 +46,7 @@ where
 import Control.Concurrent.MVar (withMVar)
 import Control.Concurrent.STM (atomically, modifyTVar', readTVarIO, writeTVar)
 import Control.Concurrent.STM.TVar (TVar)
-import Control.Monad (when)
+import Control.Monad (forM, when)
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Map.Strict (Map)
@@ -53,6 +55,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Data.UUID (UUID)
+import Hasql.Transaction (Transaction)
 
 import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor.Events
@@ -72,6 +75,7 @@ import Cortex.Pulse.Executor.Types
   , StageEnv (..)
   )
 import Cortex.Pulse.GraphRuntime (GraphState (..))
+import Cortex.Pulse.GraphRuntime qualified as GraphRuntime
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Materialization
   ( PersistedGraphState (..)
@@ -107,6 +111,7 @@ import Cortex.Pulse.Rewrite
   , admittedRemainingBudget
   , exceededDimensions
   )
+import Cortex.Pulse.Signal (SignalName (..))
 
 import Platform.Database qualified as DB
 import Platform.DurableTask.Checkpoint (buildCheckpointEnvelope)
@@ -120,6 +125,23 @@ data GraphStatePersistError
   | -- | The row revision no longer matches; another owner wrote newer state.
     GraphStatePersistStaleWrite
   deriving stock (Eq, Show)
+
+data SuspendSettlementResult
+  = SuspendSettlementParked !PersistedGraphState
+  | SuspendSettlementResolved !PersistedGraphState ![(NodeId, Text)]
+
+data SuspendSettlementTxResult
+  = SuspendSettlementTxParked !PersistedGraphState
+  | SuspendSettlementTxResolved !PersistedGraphState ![(NodeId, Text)]
+  | SuspendSettlementTxStaleWrite
+  | SuspendSettlementTxMissingRun !NodeId !UUID
+  | SuspendSettlementTxInvalidWait !NodeId !Q.SignalWaitInvalid
+
+data PlannedSignalWait = PlannedSignalWait
+  { pswNodeId :: !NodeId
+  , pswSignalName :: !Text
+  , pswSettlement :: !Q.SignalWaitSettlement
+  }
 
 -- | Persist graph state and return the same state annotated with its new revision.
 persistGraphState
@@ -179,6 +201,221 @@ requireGraphStatePersistVar env gsVar persistedState = do
     Left _ ->
       pure ()
   pure result
+
+settleSuspend
+  :: StageEnv
+  -> PersistedGraphState
+  -> IO (Either RunOutcome SuspendSettlementResult)
+settleSuspend env suspendedState = do
+  now <- nextGraphStateRevision suspendedState.pgsRevision <$> getCurrentTime
+  result <-
+    PulseDB.runTransaction env.sePool $
+      settleSuspendTx env suspendedState now
+  case result of
+    Left err ->
+      Left <$> handleGraphStatePersistError env (GraphStatePersistDbError (T.pack err))
+    Right SuspendSettlementTxStaleWrite ->
+      Left <$> handleGraphStatePersistError env GraphStatePersistStaleWrite
+    Right (SuspendSettlementTxMissingRun node missingRunId) -> do
+      let errMsg =
+            "Run-terminal signal for node "
+              <> unNodeId node
+              <> " targets missing run "
+              <> T.pack (show missingRunId)
+      rejectSuspend
+        env
+        suspendedState
+        "run.signal_target_missing"
+        "run_terminal_target_missing"
+        errMsg
+    Right (SuspendSettlementTxInvalidWait node invalid) -> do
+      let (errType, errMsg) = renderSignalWaitInvalid node invalid
+      rejectSuspend env suspendedState "run.signal_wait_invalid" errType errMsg
+    Right (SuspendSettlementTxParked persistedState) ->
+      pure (Right (SuspendSettlementParked persistedState))
+    Right (SuspendSettlementTxResolved persistedState resolvedSignals) ->
+      pure (Right (SuspendSettlementResolved persistedState resolvedSignals))
+
+settleSuspendTx
+  :: StageEnv
+  -> PersistedGraphState
+  -> UTCTime
+  -> Transaction SuspendSettlementTxResult
+settleSuspendTx env suspendedState now = do
+  planned <- forM waitingNodeSignals $ \(node, signalName) -> do
+    settlement <- Q.planSignalWaitSettlement env.seRunId node (SignalName signalName)
+    pure
+      PlannedSignalWait
+        { pswNodeId = node
+        , pswSignalName = signalName
+        , pswSettlement = settlement
+        }
+  let missingTargets =
+        [ (node, missingRunId)
+        | PlannedSignalWait {pswSettlement = Q.SignalWaitSettlementMissingRun missingRunId, pswNodeId = node} <-
+            planned
+        ]
+  case missingTargets of
+    (node, missingRunId) : _ ->
+      pure (SuspendSettlementTxMissingRun node missingRunId)
+    [] -> do
+      let invalidWaits =
+            [ (node, invalid)
+            | PlannedSignalWait {pswSettlement = Q.SignalWaitSettlementInvalid invalid, pswNodeId = node} <-
+                planned
+            ]
+              <> duplicatePlannedPendingWaits planned
+      case invalidWaits of
+        (node, invalid) : _ ->
+          pure (SuspendSettlementTxInvalidWait node invalid)
+        [] -> do
+          let resolvedSignals =
+                [ (node, signalName)
+                | PlannedSignalWait {pswSettlement = settlement, pswNodeId = node, pswSignalName = signalName} <-
+                    planned
+                , signalWaitResolved settlement
+                ]
+              settledGraphState =
+                foldl'
+                  ( \state PlannedSignalWait {pswNodeId = node, pswSettlement = settlement} ->
+                      case signalWaitPayload settlement of
+                        Nothing -> state
+                        Just payload -> GraphRuntime.markCompleted node payload state
+                  )
+                  suspendedState.pgsGraphState
+                  planned
+              settledState = suspendedState {pgsGraphState = settledGraphState}
+          writeResult <- Q.writeGraphState (graphStateWriteFor env settledState now)
+          case writeResult of
+            Q.GraphStateWriteStale ->
+              pure SuspendSettlementTxStaleWrite
+            Q.GraphStateWriteApplied revision -> do
+              let persistedState = settledState {pgsRevision = Just revision}
+              mapM_ (commitPlannedWait now) planned
+              if null resolvedSignals && any (signalWaitPending . pswSettlement) planned
+                then do
+                  Q.updateRunWaiting env.seRunId
+                  pure (SuspendSettlementTxParked persistedState)
+                else
+                  pure (SuspendSettlementTxResolved persistedState resolvedSignals)
+  where
+    waitingNodeSignals =
+      [ (node, signalName)
+      | (node, GraphRuntime.NodeWaiting signalName) <-
+          Map.toList suspendedState.pgsGraphState.gsNodeStatuses
+      ]
+
+    commitPlannedWait timestamp PlannedSignalWait {pswNodeId = node, pswSignalName = signalName, pswSettlement = settlement} =
+      Q.commitSignalWaitSettlement env.seRunId node (SignalName signalName) timestamp Nothing settlement
+
+duplicatePlannedPendingWaits :: [PlannedSignalWait] -> [(NodeId, Q.SignalWaitInvalid)]
+duplicatePlannedPendingWaits planned =
+  concatMap duplicateGroup (Map.toList pendingBySignal)
+  where
+    pendingBySignal =
+      Map.fromListWith
+        (flip (<>))
+        [ (signalName, [node])
+        | PlannedSignalWait {pswNodeId = node, pswSignalName = signalName, pswSettlement = settlement} <-
+            planned
+        , signalWaitPending settlement
+        ]
+
+    duplicateGroup (signalName, owner : duplicateNodes) =
+      [ (node, Q.SignalWaitInvalidDuplicatePending signalName owner)
+      | node <- duplicateNodes
+      ]
+    duplicateGroup _ =
+      []
+
+signalWaitResolved :: Q.SignalWaitSettlement -> Bool
+signalWaitResolved = \case
+  Q.SignalWaitSettlementAlreadyDelivered {} -> True
+  Q.SignalWaitSettlementResolveNow {} -> True
+  Q.SignalWaitSettlementPending {} -> False
+  Q.SignalWaitSettlementMissingRun {} -> False
+  Q.SignalWaitSettlementInvalid {} -> False
+
+signalWaitPending :: Q.SignalWaitSettlement -> Bool
+signalWaitPending = \case
+  Q.SignalWaitSettlementPending {} -> True
+  Q.SignalWaitSettlementAlreadyDelivered {} -> False
+  Q.SignalWaitSettlementResolveNow {} -> False
+  Q.SignalWaitSettlementMissingRun {} -> False
+  Q.SignalWaitSettlementInvalid {} -> False
+
+signalWaitPayload :: Q.SignalWaitSettlement -> Maybe Aeson.Value
+signalWaitPayload = \case
+  Q.SignalWaitSettlementAlreadyDelivered payload -> Just payload
+  Q.SignalWaitSettlementResolveNow payload -> Just payload
+  Q.SignalWaitSettlementPending {} -> Nothing
+  Q.SignalWaitSettlementMissingRun {} -> Nothing
+  Q.SignalWaitSettlementInvalid {} -> Nothing
+
+rejectSuspend
+  :: StageEnv -> PersistedGraphState -> Text -> Text -> Text -> IO (Either RunOutcome a)
+rejectSuspend env suspendedState eventType errType errMsg = do
+  repairResult <- repairRejectedSuspendGraph env suspendedState
+  case repairResult of
+    Left outcome ->
+      pure (Left outcome)
+    Right _repairedState -> do
+      recordRunEvent env eventType Q.RunEventError errMsg Nothing
+      failureNow <- getCurrentTime
+      failRun env.sePool env.seRunId failureNow errType errMsg False
+      pure (Left OutcomeFailed)
+
+repairRejectedSuspendGraph
+  :: StageEnv -> PersistedGraphState -> IO (Either RunOutcome PersistedGraphState)
+repairRejectedSuspendGraph env suspendedState = do
+  topology <- readTVarIO env.seTopologyVar
+  let failedWaitingState =
+        foldl'
+          (flip GraphRuntime.markFailed)
+          suspendedState.pgsGraphState
+          [ node
+          | (node, GraphRuntime.NodeWaiting _) <-
+              Map.toList suspendedState.pgsGraphState.gsNodeStatuses
+          ]
+      repairedState =
+        suspendedState
+          { pgsGraphState = GraphRuntime.propagateFailure topology failedWaitingState
+          }
+  requireGraphStatePersist env repairedState
+
+renderSignalWaitInvalid :: NodeId -> Q.SignalWaitInvalid -> (Text, Text)
+renderSignalWaitInvalid node = \case
+  Q.SignalWaitInvalidSelfRunTerminal runId ->
+    ( "run_terminal_self_wait"
+    , "Run-terminal signal for node "
+        <> unNodeId node
+        <> " targets its own run "
+        <> T.pack (show runId)
+    )
+  Q.SignalWaitInvalidDuplicatePending signalName owner ->
+    ( "signal_wait_duplicate_pending"
+    , "Signal wait for node "
+        <> unNodeId node
+        <> " on signal "
+        <> signalName
+        <> " duplicates pending wait owned by node "
+        <> unNodeId owner
+    )
+
+graphStateWriteFor :: StageEnv -> PersistedGraphState -> UTCTime -> Q.GraphStateWrite
+graphStateWriteFor env persistedState now =
+  Q.GraphStateWrite
+    { Q.gswRunId = env.seRunId
+    , Q.gswNodeStatuses = Aeson.toJSON persistedState.pgsGraphState.gsNodeStatuses
+    , Q.gswNodeOutputs = Aeson.toJSON persistedState.pgsGraphState.gsNodeOutputs
+    , Q.gswRemainingRewriteBudget = Just (Aeson.toJSON persistedState.pgsRemainingRewriteBudget)
+    , Q.gswRuntimeVersion = Just (fromIntegral env.seCheckpointRuntimeVersion)
+    , Q.gswAppliedRewriteId = persistedState.pgsAppliedRewriteId
+    , Q.gswNodeProvenance = Just (Aeson.toJSON persistedState.pgsNodeProvenance)
+    , Q.gswTopologyHash = persistedState.pgsTopologyHash
+    , Q.gswUpdatedAt = now
+    , Q.gswExpectedRevision = persistedState.pgsRevision
+    }
 
 {- | Choose the next graph-state revision for production writes.
 
@@ -660,12 +897,7 @@ failRun pool runId now errType errMsg retryable = do
           , rfuErrMsg = errMsg
           , rfuRetryable = retryable
           }
-  result <- PulseDB.runTransaction pool $ do
-    Q.updateRunFailed update
-    -- Run-terminal signal delivery rides the same transaction as the status
-    -- flip, so waiters and the failed status commit together.
-    _wokenRunIds <- Q.deliverRunTerminalSignals runId "failed" now
-    pure ()
+  result <- PulseDB.runTransaction pool $ Q.updateRunFailed update
   case result of
     Right () -> pure ()
     Left dbErr ->

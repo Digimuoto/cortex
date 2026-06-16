@@ -233,38 +233,8 @@ executeNodeWorker env task stagePlan rewriteAdmission remainingBudget nid inputs
             )
         StageSkip ->
           pure (NodeResult nid OutcomeSkipped, Nothing)
-        StageSuspended signalName -> do
-          now <- getCurrentTime
-          suspendResult <-
-            PulseDB.runTransaction env.sePool $
-              Q.registerSignalWaitOrResolve env.seRunId nid signalName now Nothing
-          case suspendResult of
-            Left err -> do
-              emitObsEvent $ EvtSuspendWriteFailed env.seRunId (unSignalName signalName) (T.pack err)
-              now' <- getCurrentTime
-              failRun
-                env.sePool
-                env.seRunId
-                now'
-                "signal_registration_failed"
-                ("Failed to register signal wait: " <> T.pack err)
-                True
-              pure
-                ( NodeResult
-                    nid
-                    ( OutcomeNodeFailed
-                        (FailureDetail "signal_registration_failed" ("Failed to register signal wait: " <> T.pack err) True)
-                    )
-                , Nothing
-                )
-            Right Q.SignalWaitRegistered ->
-              pure (NodeResult nid (OutcomeSuspendedOn (unSignalName signalName)), Nothing)
-            Right (Q.SignalWaitAlreadyDelivered payload) -> do
-              -- The awaited run was already terminal when the wait was
-              -- registered: the node completes with the terminal payload
-              -- instead of parking on an event that has already happened.
-              emitObsEvent $ EvtSignalResolved env.seRunId (unSignalName signalName) (unNodeId nid)
-              pure (NodeResult nid (OutcomeSucceeded payload), Nothing)
+        StageSuspended signalName ->
+          pure (NodeResult nid (OutcomeSuspendedOn (unSignalName signalName)), Nothing)
         StageTerminal outcome ->
           pure (NodeResult nid (runOutcomeToNodeOutcome outcome), Nothing)
         StageRewriteRejected {} -> do

@@ -410,11 +410,8 @@ withPreAttemptGuards env stageName continue = do
         Right True -> do
           now <- getCurrentTime
           cancelWriteResult <-
-            PulseDB.runTransaction env.sePool $ do
+            PulseDB.runTransaction env.sePool $
               Q.updateRunCancelled env.seRunId now "cancel_requested_at was set"
-              -- Cancellation is terminal: wake waiters with the status flip.
-              _wokenRunIds <- Q.deliverRunTerminalSignals env.seRunId "cancelled" now
-              pure ()
           case cancelWriteResult of
             Left err ->
               emitObsEvent $ EvtCancelWriteFailed env.seRunId (T.pack err)

@@ -304,23 +304,11 @@ runSchedulerLoop registry taskContext healthState = do
             Just (runId, task, triggerSource, runAction) -> do
               launchResult <- try (Pool.tryLaunch runPool runId runAction)
               case launchResult of
-                Right Pool.LaunchAccepted -> do
-                  atomically $ do
-                    modifyTVar' runMeta (Map.insert runId (RunMetadata task triggerSource))
-                    writeTVar lastClaimedTypeVar (Just task.taskType)
-                  -- Best-effort queue-time record: queue wait (created to
-                  -- claimed) and execution time are distinct clocks, and the
-                  -- per-run record of the first one lives in run events.
-                  claimEventResult <-
-                    PulseDB.runTransaction pool $ Q.recordRunClaimedEvent runId now
-                  case claimEventResult of
-                    Right () -> pure ()
-                    Left err ->
-                      emitSchedulerEvent
-                        ObsWarn
-                        "pulse.scheduler.claim_event.write_failed"
-                        ("run.claimed event write failed: " <> T.pack err)
-                        [("run_id", Aeson.toJSON runId)]
+                Right Pool.LaunchAccepted -> atomically $ do
+                  -- The run.claimed event (with queue_seconds) is written by
+                  -- the claim transaction itself, atomically with the claim.
+                  modifyTVar' runMeta (Map.insert runId (RunMetadata task triggerSource))
+                  writeTVar lastClaimedTypeVar (Just task.taskType)
                 Right other -> do
                   failAndDiscard pool runId now "launch_failed" "Pool rejected task launch after claim" True
                   finalizeTaskSchedule pool (Just runId) task triggerSource now OutcomeFailed

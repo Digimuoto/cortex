@@ -31,8 +31,10 @@ runs is two different signals. Within a run, at most one wait per signal name ma
 time — a partial unique index on `(run_id, signal_name) WHERE status = 'pending'` enforces this. A
 name may be reused for a second wait once the prior wait has been delivered or expired.
 
-The `node_id` on a signal row is informational — it records which node registered the wait — and
-does not participate in uniqueness. It is nullable for cases where a wait is not attributable to a
+The `node_id` on a signal row records which node registered the wait, but it does not participate in
+uniqueness. Settlement still treats it as the pending row's owner: a same-node re-settlement is
+idempotent, while a second waiting node in the same run cannot reuse the same pending signal name
+and is rejected before the run parks. It is nullable for cases where a wait is not attributable to a
 single node.
 
 ## 2. State machine
@@ -59,12 +61,11 @@ Only Pulse mutates these states. External callers observe them through the servi
 
 A stage action signals a wait by returning `StageSuspend SignalName`. The executor:
 
-1. Persists a pending signal row.
-2. Transitions the stage's node to `NodeWaiting`.
-3. Writes a checkpoint reflecting the suspension.
-4. Yields the run back to the scheduler. When no node is runnable, the run transitions to the
-   `waiting` run-status and the executor emits a `run.suspended` event
-   ([`events.md`](./events.md#3-catalog)).
+1. Transitions the stage's node to `NodeWaiting` in graph state.
+2. Settles the suspend in one database transaction: write the graph state, persist the signal wait
+   row, and transition the run to `waiting` if no waiting node was already satisfied.
+3. Yields the run back to the scheduler. If the run parks, the executor emits a `run.suspended`
+   event ([`events.md`](./events.md#3-catalog)).
 
 The stage action does not return a value on suspension. When the signal is delivered and the stage
 re-enters, the delivery payload is available to the stage through its memory handle.
@@ -95,23 +96,52 @@ must be retried to produce a fresh wait.
 
 The runtime is itself a signal producer for one reserved name family: `run-terminal:<run-uuid>`
 (constructed with `runTerminalSignalName`, recognized with `parseRunTerminalSignal`). When a run
-reaches a terminal status — completed, failed, or cancelled — the runtime delivers its run-terminal
-signal to **every** pending wait on that name, across runs, in the same transaction as the status
-flip, waking each waiter. The payload carries
-`{"runId": ..., "outcome": "completed" | "failed" | "cancelled"}`.
+reaches a terminal status — completed, failed, cancelled, or timeout (a retry, if any, is a fresh
+run under a new run id) — the runtime delivers its run-terminal signal to **every** pending wait on
+that name, across runs, waking each waiter. The payload carries
+`{"runId": ..., "outcome": "completed" | "failed" | "cancelled" | "timeout"}`.
+
+Delivery is centralized inside the terminal status writers themselves (`updateRunCompleted`,
+`updateRunFailed`, `updateRunCancelled`, `updateRunTimedOut`, and expired-lease recovery), so the
+terminal status and its waiters' wake-ups commit in the same transaction regardless of which code
+path wrote the status — executor settlement, failure persistence, scheduler discard, timeout, and
+recovery all funnel through them.
 
 This is the primitive for awaiting another run without polling: a parent that spawns a child run
-suspends on the child's run-terminal signal and holds no worker slot while waiting. Two race windows
-are closed by construction:
+suspends on the child's run-terminal signal and holds no worker slot while waiting. The protocol
+closes these race windows:
 
-- a wait registered on a run that is **already terminal** resolves at registration time
-  (`registerSignalWaitOrResolve` writes the row as `delivered` and the suspending stage completes
-  with the terminal payload instead of parking);
-- a run that terminates **after** the wait is pending finds the pending row in the cross-run
-  delivery, because the delivery and the terminal status commit together.
+- run-terminal settlement and terminal status delivery both enter the same transaction-scoped
+  protocol lock before touching `pulse.runs` rows, so mutual awaits cannot form cross-run row-lock
+  cycles while one side parks and the other terminalizes;
+- a wait on a run that is **already terminal** resolves during suspend settlement; the wait is
+  recorded as `delivered`, the waiting node completes with the terminal payload, and the parent does
+  not park;
+- settlement **serializes against a concurrent termination** by share-locking the awaited run's row
+  before it writes graph state, signal rows, and any `waiting` run-status; a terminal writer blocks
+  until the pending wait row is committed and then finds it, or commits first and is visible to the
+  locked status read;
+- the wait row and the run's `waiting` status are committed by the same settlement transaction, so
+  there is no durable interval where a terminal delivery can mark a wait `delivered` while the
+  waiter later parks. If settlement sees an already-delivered row for a waiting node, it completes
+  that node instead of parking.
+
+A run-terminal wait whose target run does not exist is rejected during settlement and fails the
+parent run with `run_terminal_target_missing`; it never registers a pending signal row. Only the
+target run's terminal status writer can deliver this namespace, so a missing target would otherwise
+be an undeliverable wait.
+
+A run-terminal wait targeting the current run is also rejected during settlement and fails the run
+with `run_terminal_self_wait`; once parked, the run would have no worker left to drive itself to a
+terminal status and deliver the signal.
 
 Timer-style waits and further runtime-produced signals follow the same pattern (see the durable
 timers issue); operator-delivered signals through the service API are unaffected.
+
+The `run-terminal:` name family is **reserved for the runtime**. External/host delivery
+(`deliverSignal`) refuses any name in this family, so a caller cannot forge `run-terminal:<child>`
+to wake or complete a waiter while the awaited run is still live — run-terminal delivery flows only
+through the terminal status writers.
 
 ## 5. Records
 

@@ -190,6 +190,9 @@ pulse.signals
   -- At most one pending signal per (run, name); the same name may be reused
   -- across stages within a run once a prior wait has been delivered or expired.
   unique index (run_id, signal_name) where status = 'pending'
+  -- Run-terminal delivery updates pending signals by signal_name across runs;
+  -- this partial index keeps that off a full pending-signal scan.
+  index (signal_name) where status = 'pending'
 ```
 
 Durable external-event storage. The signal protocol, delivery semantics, and `StageSuspend`

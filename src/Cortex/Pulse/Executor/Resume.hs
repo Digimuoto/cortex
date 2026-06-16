@@ -17,7 +17,7 @@ module Cortex.Pulse.Executor.Resume
 where
 
 import Control.Concurrent.STM (TVar, newTVarIO)
-import Control.Monad (foldM, when)
+import Control.Monad (foldM, forM_, when)
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Int (Int32, Int64)
@@ -36,17 +36,20 @@ import Cortex.Pulse.Executor.Frontier (resolveDeliveredSignals)
 import Cortex.Pulse.Executor.Outcome
   ( handleSettled
   , handleStuck
-  , handleSuspended
   )
 import Cortex.Pulse.Executor.Persistence
-  ( failRun
+  ( SuspendSettlementResult (..)
+  , failRun
+  , recordRunEvent
   , requireGraphStatePersist
+  , settleSuspend
   )
 import Cortex.Pulse.Executor.ReplayPolicy (enforceGraphReplayPolicy)
 import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
 import Cortex.Pulse.GraphRuntime
   ( GraphState (..)
   , StepResult (..)
+  , classifyGraphState
   , recoverPersistedGraphState
   , renderRecoveryPreconditionErrors
   , stepResultState
@@ -64,7 +67,7 @@ import Cortex.Pulse.Materialization
   , reconcileGraphState
   , resolveRewriteDeltaAndCost
   )
-import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Node (NodeId, unNodeId)
 import Cortex.Pulse.Plan
 import Cortex.Pulse.PlanHydration
   ( RewriteError (..)
@@ -269,5 +272,25 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
       case recoveryStep of
         Progressing _ frontier -> continueAfterReplay stagePlan persistedState frontier
         Settled gs outcome -> handleSettled env gs outcome
-        Suspended gs -> handleSuspended env gs
+        Suspended _gs -> do
+          settlement <- settleSuspend env persistedState
+          case settlement of
+            Left outcome -> pure outcome
+            Right (SuspendSettlementParked _persistedState') -> do
+              emitObsEvent $ EvtRunSuspended runId
+              recordRunEvent
+                env
+                "run.suspended"
+                Q.RunEventInfo
+                "Run suspended, waiting on external signal"
+                Nothing
+              pure OutcomeSuspended
+            Right (SuspendSettlementResolved persistedState' resolvedSignals) -> do
+              forM_ resolvedSignals $ \(nodeId, signalName) ->
+                emitObsEvent $ EvtSignalResolved runId signalName (unNodeId nodeId)
+              continueAfterRecovery
+                env
+                stagePlan
+                persistedState'
+                (classifyGraphState (spTopology stagePlan) persistedState'.pgsGraphState)
         Stuck gs diag -> handleStuck env runId gs diag

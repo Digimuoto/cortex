@@ -19,6 +19,11 @@ module Cortex.Pulse.Query
   , claimNextPendingRun
   , createPendingRun
   , getRunStatusForUpdate
+  , TerminalRunStatus (..)
+  , terminalStatusText
+  , parseTerminalStatus
+  , isTerminalStatus
+  , allTerminalStatuses
   , updateRunStarted
   , updateRunCompleted
   , updateRunFailed
@@ -116,17 +121,24 @@ module Cortex.Pulse.Query
     -- * Scheduler observability
   , BackpressureSnapshot (..)
   , readBackpressureSnapshot
-  , recordRunClaimedEvent
 
     -- * Signals
   , registerSignalWait
+  , SignalWaitInvalid (..)
+  , SignalWaitPendingMode (..)
   , SignalWaitRegistration (..)
+  , SignalWaitSettlement (..)
+  , planSignalWaitSettlement
+  , commitSignalWaitSettlement
   , registerSignalWaitOrResolve
+  , orderWokenRunIdsForUpdate
   , deliverSignal
   , deliverRunTerminalSignals
   , lookupDeliveredSignal
+  , lookupDeliveredSignalTx
   , lookupSignalStatus
   , updateRunWaiting
+  , wakeRunFromWaiting
 
     -- * Test support
   , claimTestTaskDef
@@ -144,8 +156,9 @@ import Data.ByteString (ByteString)
 import Data.Foldable (traverse_)
 import Data.Functor.Contravariant ((>$<))
 import Data.Int (Int32, Int64)
-import Data.List (nub)
+import Data.List (find, nub, sort)
 import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
@@ -484,8 +497,14 @@ claimNextPendingRun
 claimNextPendingRun leaseOwner now leaseDurationSec excludedTypes deprioritized =
   Tx.statement (leaseOwner, now, leaseDurationSec, excludedTypes, deprioritized) $
     Statement
+      -- The claim_event CTE reads the pre-update row (next_run), which is
+      -- the only place a requeued run is distinguishable from a first claim:
+      -- the claim itself overwrites started_at, and created_at is not the
+      -- time a woken run became pending again. First claims record exact
+      -- queue_seconds from created_at; requeued claims record requeued=true
+      -- and omit queue_seconds until a pending_since column exists (#259).
       "WITH next_run AS ( \
-      \  SELECT r.run_id \
+      \  SELECT r.run_id, r.created_at, r.started_at \
       \  FROM pulse.runs r \
       \  INNER JOIN pulse.task_definitions td ON r.task_id = td.task_id \
       \  WHERE r.status = 'pending'::pulse.run_status \
@@ -506,6 +525,14 @@ claimNextPendingRun leaseOwner now leaseDurationSec excludedTypes deprioritized 
       \  WHERE r.run_id = nr.run_id \
       \    AND r.status = 'pending'::pulse.run_status \
       \  RETURNING r.run_id, r.trigger_source \
+      \), claim_event AS ( \
+      \  INSERT INTO pulse.run_events (run_id, event_type, severity, message, details, created_at) \
+      \  SELECT c.run_id, 'run.claimed', 'info', 'Run claimed by scheduler', \
+      \    CASE WHEN nr.started_at IS NULL \
+      \      THEN jsonb_build_object('queue_seconds', EXTRACT(EPOCH FROM ($2 - nr.created_at)), 'requeued', false) \
+      \      ELSE jsonb_build_object('requeued', true) \
+      \    END, $2 \
+      \  FROM claimed c INNER JOIN next_run nr ON nr.run_id = c.run_id \
       \) \
       \SELECT run_id, trigger_source FROM claimed"
       ( Enc.encode5
@@ -557,6 +584,78 @@ getRunStatusForUpdate runId =
 -- Note: run status updates use raw SQL to avoid GHC 9.10 ambiguous record
 -- field issues (PulseRunRow and PulseStageLogRow share field names).
 
+{- | The run-status values that end a run and trigger run-terminal signal
+delivery. This is the single source of truth for "terminal": the terminal
+status writers and the registration-time resolution set both derive their
+status strings from here, so the two cannot drift (a drift between them is
+exactly how a wait registered after a timeout previously parked forever).
+-}
+data TerminalRunStatus
+  = RunCompleted
+  | RunFailed
+  | RunCancelled
+  | RunTimedOut
+  deriving stock (Eq, Show)
+
+{- | All terminal statuses; the closed set delivery and resolution agree on.
+Exhaustive by construction: every constructor must appear here, so adding a
+terminal status is a single edit that both delivery and resolution inherit.
+-}
+allTerminalStatuses :: [TerminalRunStatus]
+allTerminalStatuses = [RunCompleted, RunFailed, RunCancelled, RunTimedOut]
+
+-- | The wire/SQL string for a terminal status (the @pulse.run_status@ value).
+terminalStatusText :: TerminalRunStatus -> Text
+terminalStatusText status = case status of
+  RunCompleted -> "completed"
+  RunFailed -> "failed"
+  RunCancelled -> "cancelled"
+  RunTimedOut -> "timeout"
+
+-- | Parse a run-status string into a terminal status, if it is one.
+parseTerminalStatus :: Text -> Maybe TerminalRunStatus
+parseTerminalStatus t = find (\s -> terminalStatusText s == t) allTerminalStatuses
+
+-- | Whether a run-status string is terminal (drives registration-time resolution).
+isTerminalStatus :: Text -> Bool
+isTerminalStatus = isJust . parseTerminalStatus
+
+{- | Every terminal status writer delivers the run-terminal signal inside the
+same transaction, so the terminal status and its waiters' wake-ups commit
+together regardless of which code path wrote the status — executor
+settlement, failure persistence, scheduler discard, timeout, cancellation,
+and expired-lease recovery all funnel through these writers.
+-}
+deliverTerminalFor :: UUID -> TerminalRunStatus -> UTCTime -> Transaction ()
+deliverTerminalFor rId status now = do
+  _wokenRunIds <- deliverRunTerminalSignals rId status now
+  pure ()
+
+{- | Serialize the reserved run-terminal protocol inside the current
+transaction.
+
+Run-terminal settlement deliberately share-locks the awaited run row so a
+terminal writer cannot pass between "observed as non-terminal" and "pending
+wait row committed". Terminal writers also update their own run row and then
+wake other runs. Mutual awaits therefore form cross-run row-lock cycles unless
+all run-terminal wait planning and terminal delivery enter one common critical
+section before touching run rows. The advisory lock is transaction-scoped, so
+commit/rollback releases it with the same atomicity as the signal rows.
+-}
+lockRunTerminalProtocolTx :: Transaction ()
+lockRunTerminalProtocolTx = do
+  _ <-
+    Tx.statement runTerminalProtocolLockKey $
+      Statement
+        "WITH locked AS (SELECT pg_advisory_xact_lock($1)) SELECT 1::int4 FROM locked"
+        (E.param (E.nonNullable E.int8))
+        (D.singleRow (D.column (D.nonNullable D.int4)))
+        False
+  pure ()
+
+runTerminalProtocolLockKey :: Int64
+runTerminalProtocolLockKey = 5600058
+
 -- | Mark a run as started.
 updateRunStarted :: UUID -> UTCTime -> Transaction ()
 updateRunStarted rId now =
@@ -567,19 +666,22 @@ updateRunStarted rId now =
       D.noResult
       False
 
--- | Mark a run as completed.
+-- | Mark a run as completed and wake its run-terminal waiters.
 updateRunCompleted :: UUID -> UTCTime -> Transaction ()
-updateRunCompleted rId now =
+updateRunCompleted rId now = do
+  lockRunTerminalProtocolTx
   Tx.statement (rId, now) $
     Statement
       "UPDATE pulse.runs SET status = 'completed'::pulse.run_status, completed_at = $2 WHERE run_id = $1"
       (Enc.encode2 (fst, Enc.nonNullable Enc.uuid) (snd, Enc.nonNullable Enc.timestamptz))
       D.noResult
       False
+  deliverTerminalFor rId RunCompleted now
 
--- | Mark a run as failed with error details.
+-- | Mark a run as failed with error details and wake its run-terminal waiters.
 updateRunFailed :: RunFailureUpdate -> Transaction ()
-updateRunFailed input =
+updateRunFailed input = do
+  lockRunTerminalProtocolTx
   Tx.statement input $
     Statement
       "UPDATE pulse.runs SET status = 'failed'::pulse.run_status, completed_at = $2, \
@@ -596,12 +698,15 @@ updateRunFailed input =
       )
       D.noResult
       False
+  deliverTerminalFor input.rfuRunId RunFailed input.rfuCompletedAt
 
 {- | Mark a run as cancelled. Preserves the operator-provided cancel_reason
-from requestCancellation; only sets it if not already present.
+from requestCancellation; only sets it if not already present. Wakes the
+run's run-terminal waiters.
 -}
 updateRunCancelled :: UUID -> UTCTime -> Text -> Transaction ()
-updateRunCancelled rId now reason =
+updateRunCancelled rId now reason = do
+  lockRunTerminalProtocolTx
   Tx.statement (rId, now, reason) $
     Statement
       "UPDATE pulse.runs SET status = 'cancelled'::pulse.run_status, completed_at = $2, \
@@ -613,9 +718,15 @@ updateRunCancelled rId now reason =
       )
       D.noResult
       False
+  deliverTerminalFor rId RunCancelled now
 
+{- | Mark a run as timed out and wake its run-terminal waiters. A retry, if
+any, is a fresh run under a new run id (parent_run_id lineage), so timeout is
+terminal for this run id.
+-}
 updateRunTimedOut :: RunTimeoutUpdate -> Transaction ()
-updateRunTimedOut input =
+updateRunTimedOut input = do
+  lockRunTerminalProtocolTx
   Tx.statement input $
     Statement
       "UPDATE pulse.runs SET status = 'timeout'::pulse.run_status, completed_at = $2, \
@@ -631,6 +742,7 @@ updateRunTimedOut input =
       )
       D.noResult
       False
+  deliverTerminalFor input.rtuRunId RunTimedOut input.rtuCompletedAt
 
 getRunStartedAt :: UUID -> Session (Maybe UTCTime)
 getRunStartedAt rId =
@@ -1050,7 +1162,21 @@ and returns enough task context for the caller to apply normal schedule
 finalization semantics in the same transaction.
 -}
 recoverExpiredRuns :: Text -> UTCTime -> Transaction [PulseExpiredRunRecovery]
-recoverExpiredRuns currentLeaseOwner now =
+recoverExpiredRuns currentLeaseOwner now = do
+  -- Recovery is also a terminal-status writer. It must enter the
+  -- run-terminal protocol before the bulk status UPDATE owns any run rows;
+  -- otherwise a recovered run waiting on another concurrently terminalizing
+  -- run can recreate the mutual row-lock cycle closed for the ordinary
+  -- terminal writers above.
+  lockRunTerminalProtocolTx
+  recoveredRuns <- recoverExpiredRunsStatement currentLeaseOwner now
+  -- Expired-lease recovery marks runs failed outside the regular status
+  -- writers; their run-terminal waiters wake in the same transaction.
+  traverse_ (\recovered -> deliverTerminalFor recovered.perrRunId RunFailed now) recoveredRuns
+  pure recoveredRuns
+
+recoverExpiredRunsStatement :: Text -> UTCTime -> Transaction [PulseExpiredRunRecovery]
+recoverExpiredRunsStatement currentLeaseOwner now =
   Tx.statement (now, currentLeaseOwner) $
     Statement
       "WITH recovered AS ( \
@@ -1773,8 +1899,14 @@ readBackpressureSnapshot :: UTCTime -> Session BackpressureSnapshot
 readBackpressureSnapshot now =
   Session.statement now $
     Statement
+      -- Age is measured over never-started pending runs only: created_at is
+      -- not the time a resumed run became pending again, so a woken waiter
+      -- would otherwise report its full lifetime as queue age and trip false
+      -- starvation warnings. Requeued-run queue age needs a pending_since
+      -- column (tracked with the rest of #259).
       "SELECT count(*) FILTER (WHERE status = 'pending')::int4, \
-      \  EXTRACT(EPOCH FROM ($1 - min(created_at) FILTER (WHERE status = 'pending')))::float8, \
+      \  EXTRACT(EPOCH FROM ($1 - min(created_at) \
+      \    FILTER (WHERE status = 'pending' AND started_at IS NULL)))::float8, \
       \  count(*) FILTER (WHERE status = 'waiting')::int4 \
       \FROM pulse.runs WHERE status IN ('pending', 'waiting')"
       (E.param (E.nonNullable E.timestamptz))
@@ -1786,25 +1918,6 @@ readBackpressureSnapshot now =
           )
       )
       True
-
-{- | Record a run.claimed event carrying the run's queue wait. Queue time
-(created to claimed) and execution time are distinct clocks; this is the
-per-run record of the first one, derived in SQL from the run row itself.
--}
-recordRunClaimedEvent :: UUID -> UTCTime -> Transaction ()
-recordRunClaimedEvent runId now =
-  Tx.statement (runId, now) $
-    Statement
-      "INSERT INTO pulse.run_events (run_id, event_type, severity, message, details, created_at) \
-      \SELECT run_id, 'run.claimed', 'info', 'Run claimed by scheduler', \
-      \  jsonb_build_object('queue_seconds', EXTRACT(EPOCH FROM ($2 - created_at))), $2 \
-      \FROM pulse.runs WHERE run_id = $1"
-      ( Enc.encode2
-          (fst, Enc.nonNullable Enc.uuid)
-          (snd, Enc.nonNullable Enc.timestamptz)
-      )
-      D.noResult
-      False
 
 -- | Register a signal wait for a run/node.
 registerSignalWait :: UUID -> NodeId -> SignalName -> UTCTime -> Maybe UTCTime -> Transaction ()
@@ -1823,6 +1936,22 @@ registerSignalWait runId (NodeId nodeId) (SignalName signalName) now expiresAt =
       D.noResult
       False
 
+-- | Invalid signal-wait shapes rejected before a run is parked.
+data SignalWaitInvalid
+  = -- | A run cannot wait on its own terminal signal; it would have no worker left to reach terminal status.
+    SignalWaitInvalidSelfRunTerminal UUID
+  | -- | Another node already owns the one pending row for this run/signal.
+    SignalWaitInvalidDuplicatePending Text NodeId
+  deriving stock (Eq, Show)
+
+-- | How a pending settlement should be committed.
+data SignalWaitPendingMode
+  = -- | No pending row exists yet; settlement should insert one.
+    SignalWaitPendingInsert
+  | -- | The same node already owns the pending row; settlement is idempotent.
+    SignalWaitPendingAlreadyRegistered
+  deriving stock (Eq, Show)
+
 -- | Result of registering a signal wait through the resolve-aware path.
 data SignalWaitRegistration
   = -- | A pending wait row exists; the stage should suspend.
@@ -1833,42 +1962,162 @@ data SignalWaitRegistration
     reached a terminal status before the wait was registered.
     -}
     SignalWaitAlreadyDelivered Value
+  | -- | A runtime-owned run-terminal wait targeted a run that does not exist.
+    SignalWaitMissingRun UUID
+  | -- | The requested wait cannot be delivered correctly.
+    SignalWaitRegistrationInvalid SignalWaitInvalid
   deriving stock (Eq, Show)
+
+{- | Settlement-time decision for a waiting node. Planning is read/lock-only;
+committing happens after graph-state CAS so stale owners do not leave signal
+rows behind.
+-}
+data SignalWaitSettlement
+  = SignalWaitSettlementPending SignalWaitPendingMode
+  | SignalWaitSettlementAlreadyDelivered Value
+  | SignalWaitSettlementResolveNow Value
+  | SignalWaitSettlementMissingRun UUID
+  | SignalWaitSettlementInvalid SignalWaitInvalid
+  deriving stock (Eq, Show)
+
+{- | Decide how a waiting node should settle without writing signal rows.
+
+Delivered rows win first: this covers idempotent re-settlement and signals that
+arrived while the run was executing after a mixed resolve/park settlement.
+Run-terminal waits then lock the awaited run row and either resolve, park, or
+fail on a missing target. Ordinary external signals remain pending.
+-}
+planSignalWaitSettlement :: UUID -> NodeId -> SignalName -> Transaction SignalWaitSettlement
+planSignalWaitSettlement runId nodeId signalName@(SignalName signalNameText) = do
+  when (isJust (parseRunTerminalSignal signalName)) lockRunTerminalProtocolTx
+  delivered <- lookupDeliveredSignalTx runId signalNameText (unNodeId nodeId)
+  case delivered of
+    Just mPayload -> pure (SignalWaitSettlementAlreadyDelivered (fromMaybe Aeson.Null mPayload))
+    Nothing -> do
+      pendingMode <- pendingSettlementMode
+      case parseRunTerminalSignal signalName of
+        Nothing -> pure pendingMode
+        Just awaitedRunId
+          | awaitedRunId == runId ->
+              pure (SignalWaitSettlementInvalid (SignalWaitInvalidSelfRunTerminal awaitedRunId))
+          | otherwise -> do
+              awaitedStatus <- runStatusForShareTx awaitedRunId
+              case awaitedStatus of
+                Nothing -> pure (SignalWaitSettlementMissingRun awaitedRunId)
+                Just status
+                  | isTerminalStatus status ->
+                      pure (SignalWaitSettlementResolveNow (runTerminalPayload awaitedRunId status))
+                  | otherwise -> pure pendingMode
+  where
+    pendingSettlementMode = do
+      pendingOwner <- lookupPendingSignalOwnerTx runId signalNameText
+      pure $
+        case pendingOwner of
+          Nothing ->
+            SignalWaitSettlementPending SignalWaitPendingInsert
+          Just owner
+            | owner == nodeId ->
+                SignalWaitSettlementPending SignalWaitPendingAlreadyRegistered
+            | otherwise ->
+                SignalWaitSettlementInvalid (SignalWaitInvalidDuplicatePending signalNameText owner)
+
+commitSignalWaitSettlement
+  :: UUID
+  -> NodeId
+  -> SignalName
+  -> UTCTime
+  -> Maybe UTCTime
+  -> SignalWaitSettlement
+  -> Transaction ()
+commitSignalWaitSettlement runId nodeId signalName now expiresAt = \case
+  SignalWaitSettlementPending SignalWaitPendingInsert ->
+    registerSignalWait runId nodeId signalName now expiresAt
+  SignalWaitSettlementPending SignalWaitPendingAlreadyRegistered ->
+    pure ()
+  SignalWaitSettlementAlreadyDelivered {} ->
+    pure ()
+  SignalWaitSettlementResolveNow payload ->
+    registerDeliveredSignal runId nodeId signalName payload now
+  SignalWaitSettlementMissingRun {} ->
+    pure ()
+  SignalWaitSettlementInvalid {} ->
+    pure ()
 
 {- | Register a signal wait, resolving run-terminal waits against the awaited
 run's current status in the same transaction. A wait on
 'Cortex.Pulse.Signal.runTerminalSignalName' for a run that is already
-completed, failed, or cancelled is written as delivered immediately, so the
-waiting stage never parks on an event that has already happened.
+completed, failed, cancelled, or timed out is written as delivered
+immediately, so the waiting stage never parks on an event that has already
+happened. The status set here must match the terminal writers that deliver
+('updateRunCompleted'/'updateRunFailed'/'updateRunCancelled'/'updateRunTimedOut'):
+'updateRunTimedOut' emits its only delivery before a late wait exists, so
+omitting timeout here would park such a waiter forever.
+
+If the run-terminal target is missing, no pending row is registered. Only the
+runtime terminal writers may deliver this namespace, so a missing target would
+otherwise create an undeliverable wait.
 -}
 registerSignalWaitOrResolve
   :: UUID -> NodeId -> SignalName -> UTCTime -> Maybe UTCTime -> Transaction SignalWaitRegistration
-registerSignalWaitOrResolve runId nodeId signalName now expiresAt =
-  case parseRunTerminalSignal signalName of
-    Nothing -> registered
-    Just awaitedRunId -> do
-      awaitedStatus <- runStatusTx awaitedRunId
-      case awaitedStatus of
-        Just status
-          | status `elem` (["completed", "failed", "cancelled"] :: [Text]) -> do
-              let payload = runTerminalPayload awaitedRunId status
-              registerDeliveredSignal runId nodeId signalName payload now
-              pure (SignalWaitAlreadyDelivered payload)
-        _notTerminal -> registered
-  where
-    registered = do
+registerSignalWaitOrResolve runId nodeId signalName now expiresAt = do
+  settlement <- planSignalWaitSettlement runId nodeId signalName
+  case settlement of
+    SignalWaitSettlementPending SignalWaitPendingInsert -> do
       registerSignalWait runId nodeId signalName now expiresAt
       pure SignalWaitRegistered
+    SignalWaitSettlementPending SignalWaitPendingAlreadyRegistered ->
+      pure SignalWaitRegistered
+    SignalWaitSettlementAlreadyDelivered payload ->
+      pure (SignalWaitAlreadyDelivered payload)
+    SignalWaitSettlementResolveNow payload -> do
+      registerDeliveredSignal runId nodeId signalName payload now
+      pure (SignalWaitAlreadyDelivered payload)
+    SignalWaitSettlementMissingRun missingRunId ->
+      pure (SignalWaitMissingRun missingRunId)
+    SignalWaitSettlementInvalid invalid ->
+      pure (SignalWaitRegistrationInvalid invalid)
 
--- | Run status lookup usable inside a transaction.
-runStatusTx :: UUID -> Transaction (Maybe Text)
-runStatusTx rId =
+-- | Owner of the current pending wait row for a run/signal, if one exists.
+lookupPendingSignalOwnerTx :: UUID -> Text -> Transaction (Maybe NodeId)
+lookupPendingSignalOwnerTx runId signalName =
+  fmap NodeId
+    <$> Tx.statement
+      (runId, signalName)
+      ( Statement
+          "SELECT node_id \
+          \FROM pulse.signals \
+          \WHERE run_id = $1 \
+          \  AND signal_name = $2 \
+          \  AND status = 'pending' \
+          \  AND node_id IS NOT NULL \
+          \ORDER BY signal_id DESC \
+          \LIMIT 1"
+          ( Enc.encode2
+              (fst, Enc.nonNullable Enc.uuid)
+              (snd, Enc.nonNullable Enc.text)
+          )
+          (D.rowMaybe (D.column (D.nonNullable D.text)))
+          True
+      )
+
+{- | Run status lookup that share-locks the run row for the rest of the
+transaction. Registration must serialize against the awaited run's terminal
+status writer: with the share lock held, the terminal UPDATE (row-exclusive)
+blocks until this transaction commits its pending wait row, so the
+subsequent same-transaction delivery finds the row; conversely, a terminal
+update that committed first is visible to this read and the wait resolves
+immediately. Without the lock, a plain read can see 'running' while the
+terminal commit and its delivery slip between the read and the wait insert —
+a parked waiter no delivery will ever find.
+-}
+runStatusForShareTx :: UUID -> Transaction (Maybe Text)
+runStatusForShareTx rId =
   Tx.statement rId $
     Statement
-      "SELECT status FROM pulse.runs WHERE run_id = $1"
+      "SELECT status FROM pulse.runs WHERE run_id = $1 FOR SHARE"
       (E.param (E.nonNullable E.uuid))
       (D.rowMaybe (D.column (D.nonNullable D.text)))
-      True
+      False
 
 -- | Payload carried by a run-terminal signal delivery.
 runTerminalPayload :: UUID -> Text -> Value
@@ -1883,9 +2132,18 @@ registerDeliveredSignal :: UUID -> NodeId -> SignalName -> Value -> UTCTime -> T
 registerDeliveredSignal runId (NodeId nodeId) (SignalName signalName) payload now =
   Tx.statement (runId, nodeId, signalName, payload, now) $
     Statement
-      "INSERT INTO pulse.signals \
+      "WITH updated AS ( \
+      \  UPDATE pulse.signals SET \
+      \    status = 'delivered', \
+      \    payload = $4, \
+      \    delivered_at = $5 \
+      \  WHERE run_id = $1 AND node_id = $2 AND signal_name = $3 AND status = 'pending' \
+      \  RETURNING signal_id \
+      \) \
+      \INSERT INTO pulse.signals \
       \  (run_id, node_id, signal_name, status, payload, created_at, delivered_at) \
-      \VALUES ($1, $2, $3, 'delivered', $4, $5, $5)"
+      \SELECT $1, $2, $3, 'delivered', $4, $5, $5 \
+      \WHERE NOT EXISTS (SELECT 1 FROM updated)"
       ( Enc.encode5
           ((\(a, _, _, _, _) -> a), Enc.nonNullable Enc.uuid)
           ((\(_, b, _, _, _) -> b), Enc.nonNullable Enc.text)
@@ -1901,10 +2159,11 @@ and wake each one. Called by the runtime when a run reaches a terminal
 status; every database error path is the caller's to handle through the
 transaction result.
 -}
-deliverRunTerminalSignals :: UUID -> Text -> UTCTime -> Transaction [UUID]
+deliverRunTerminalSignals :: UUID -> TerminalRunStatus -> UTCTime -> Transaction [UUID]
 deliverRunTerminalSignals terminalRunId status now = do
+  lockRunTerminalProtocolTx
   let SignalName signalName = runTerminalSignalName terminalRunId
-      payload = runTerminalPayload terminalRunId status
+      payload = runTerminalPayload terminalRunId (terminalStatusText status)
   wokenRunIds <-
     Tx.statement (signalName, payload, now) $
       Statement
@@ -1921,8 +2180,12 @@ deliverRunTerminalSignals terminalRunId status now = do
         )
         (D.rowList (D.column (D.nonNullable D.uuid)))
         False
-  traverse_ wakeRunFromWaiting (nub wokenRunIds)
+  traverse_ wakeRunFromWaiting (orderWokenRunIdsForUpdate wokenRunIds)
   pure wokenRunIds
+
+-- | Deterministic run-row update order for terminal signal fanout.
+orderWokenRunIdsForUpdate :: [UUID] -> [UUID]
+orderWokenRunIdsForUpdate = sort . nub
 
 {- | Deliver a signal and wake the run. Atomically:
  1. Mark the signal as delivered with payload
@@ -1937,10 +2200,20 @@ guarantee that "delivery cannot arrive during a frontier wave" is an
 assumption about callers, not enforced by this function.
 -}
 deliverSignal :: UUID -> Text -> Value -> UTCTime -> Transaction Bool
-deliverSignal runId signalName payload now = do
-  delivered <- deliverSignalOnly runId signalName payload now
-  when delivered $ wakeRunFromWaiting runId
-  pure delivered
+deliverSignal runId signalName payload now =
+  -- The run-terminal:<uuid> namespace is reserved for the runtime's terminal
+  -- status writers (deliverRunTerminalSignals, driven by the run's own terminal
+  -- transition). External/host delivery must not be able to forge it: otherwise
+  -- the await-a-run primitive is spoofable — a caller could deliver
+  -- run-terminal:<child> with an arbitrary payload and wake/complete the waiter
+  -- while the child is still running. Refuse reserved names here; legitimate
+  -- run-terminal delivery never flows through this path.
+  case parseRunTerminalSignal (SignalName signalName) of
+    Just _ -> pure False
+    Nothing -> do
+      delivered <- deliverSignalOnly runId signalName payload now
+      when delivered $ wakeRunFromWaiting runId
+      pure delivered
 
 -- | Mark a signal as delivered (without waking the run).
 deliverSignalOnly :: UUID -> Text -> Value -> UTCTime -> Transaction Bool
@@ -1993,21 +2266,35 @@ lookupSignalStatus runId signalName =
 Scoped to node_id to prevent a later wait on the same signal name
 from consuming a stale delivery from an earlier stage.
 -}
+
+-- | Shared statement: the latest delivered signal for a (run, signal, node).
+deliveredSignalStatement :: Statement (UUID, Text, Text) (Maybe (Maybe Value))
+deliveredSignalStatement =
+  Statement
+    "SELECT payload FROM pulse.signals \
+    \WHERE run_id = $1 AND signal_name = $2 AND node_id = $3 AND status = 'delivered' \
+    \ORDER BY signal_id DESC \
+    \LIMIT 1"
+    ( Enc.encode3
+        ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
+        ((\(_, b, _) -> b), Enc.nonNullable Enc.text)
+        ((\(_, _, c) -> c), Enc.nonNullable Enc.text)
+    )
+    (D.rowMaybe (D.column (D.nullable D.jsonb)))
+    True
+
 lookupDeliveredSignal :: UUID -> Text -> Text -> Session (Maybe (Maybe Value))
 lookupDeliveredSignal runId signalName nodeId =
-  Session.statement (runId, signalName, nodeId) $
-    Statement
-      "SELECT payload FROM pulse.signals \
-      \WHERE run_id = $1 AND signal_name = $2 AND node_id = $3 AND status = 'delivered' \
-      \ORDER BY signal_id DESC \
-      \LIMIT 1"
-      ( Enc.encode3
-          ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
-          ((\(_, b, _) -> b), Enc.nonNullable Enc.text)
-          ((\(_, _, c) -> c), Enc.nonNullable Enc.text)
-      )
-      (D.rowMaybe (D.column (D.nullable D.jsonb)))
-      True
+  Session.statement (runId, signalName, nodeId) deliveredSignalStatement
+
+{- | Transaction-level variant of 'lookupDeliveredSignal'. Suspend settlement
+checks for an already-delivered row before it decides whether to park the run,
+so a re-settlement or mixed pending/resolved suspend completes the node instead
+of committing a waiter on an already-satisfied signal.
+-}
+lookupDeliveredSignalTx :: UUID -> Text -> Text -> Transaction (Maybe (Maybe Value))
+lookupDeliveredSignalTx runId signalName nodeId =
+  Tx.statement (runId, signalName, nodeId) deliveredSignalStatement
 
 -- | Transition a run to 'waiting' status.
 updateRunWaiting :: UUID -> Transaction ()

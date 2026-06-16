@@ -43,9 +43,9 @@ newtype SignalName = SignalName {unSignalName :: Text}
   deriving newtype (FromJSON, ToJSON)
 
 {- | The signal the runtime delivers when the named run reaches a terminal
-status (completed, failed, or cancelled). A run that needs to await another
-run suspends on this name instead of polling; an already-terminal target
-resolves the wait at registration time, so the waiter never parks.
+status (completed, failed, cancelled, or timeout). A run that needs to await
+another run suspends on this name instead of polling; an already-terminal
+target resolves the wait at registration time, so the waiter never parks.
 -}
 runTerminalSignalName :: UUID -> SignalName
 runTerminalSignalName runId =
