@@ -74,6 +74,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0055](0055-pulse-runtime-bounded-iteration.md)                    | Pulse Runtime-Bounded Iteration                                     | proposed   |
 | [0056](0056-admission-modes-witnessed-and-gas.md)                  | Admission Modes: Witnessed Materialization and Open Rewrite Gas     | proposed   |
 | [0057](0057-wire-latent-branch-witnessing-and-closure-charging.md) | Latent Branch Witnessing and Proposal Closure Charging              | proposed   |
+| [0058](0058-pulse-atomic-suspend-settlement.md)                    | Pulse Atomic Suspend Settlement                                     | proposed   |
 
 ## Writing a new ADR
 
