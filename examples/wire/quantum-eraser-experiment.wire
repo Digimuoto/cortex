@@ -1,11 +1,12 @@
-# Full delayed-choice quantum eraser experiment scaffold over IBM Runtime REST.
+# Full delayed-choice quantum eraser experiment scaffold over a quantum hardware runner.
 #
 # Run:
 #
 #   nix run .#wire-quantum-eraser -- --confirm-hardware
+#   nix run .#wire-quantum-eraser-braket -- --confirm-hardware
 #
 # The experiment graph is Wire. Each command leaf selects one exported circuit
-# graph value from this file and submits it through the IBM Runtime REST bridge.
+# graph value from this file and submits it through the selected quantum bridge.
 # The final analyzer is a short pure Wire subgraph that parses JSON stdout with fromJson.
 
 use std.io.{@stdout, @command, @writeFile, CommandSpec, CommandResult};
@@ -94,7 +95,7 @@ let hardwareSpec = name: returnName: {
   inherit name;
   target = "${experiment_source}#${returnName}";
   argv = [
-    "wire-quantum-ibm-rest",
+    "wire-quantum-runner",
     experiment_source,
     "--return",
     returnName,
@@ -229,7 +230,7 @@ let runBlock = targets: ''
   Run
     source: ${experiment_source}
     execution: one Wire orchestration graph + std.io.command leaves
-    backend: IBM Quantum Runtime REST hardware
+    backend: selected quantum runner
     shots: ${experiment_shots} per circuit
     circuits: 9 exported graph values selected from this same Wire file
     report file: ${experiment_report_path}

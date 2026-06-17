@@ -30,9 +30,9 @@ The ownership split follows the quantum consumer binding:
 | `std.io.command` orchestration and pure `fromJson` report rendering.  | Backend result production and any future real-time decoding policy.   |
 | The checked-in experiment topology and expected forced-error table.   | General QEC research semantics beyond this repetition-code workbench. |
 
-The hardware execution path uses the existing `wire-quantum-ibm-rest` bridge. There is no
-QEC-specific Python analyzer: the bridge produces JSON counts, and Wire computes the syndrome-table
-report with pure expressions.
+The hardware execution path uses the selected quantum runner. There is no QEC-specific Python
+analyzer: the runner produces JSON counts, and Wire computes the syndrome-table report with pure
+expressions.
 
 ## Circuit Shape
 
@@ -70,16 +70,28 @@ Run the full Wire experiment on IBM Quantum Runtime hardware:
 nix run .#wire-quantum-qec-repetition -- --confirm-hardware
 ```
 
-The app places `wire-quantum-ibm-rest` on `PATH` and then runs:
+Run the same Wire experiment on Amazon Braket:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware
+```
+
+The provider app places a `wire-quantum-runner` command on `PATH` and then runs:
 
 ```sh
 wire run examples/wire/qec-repetition-code-forced-errors.wire
 ```
 
 The Wire graph creates four `std.io.command` leaves, one per exported circuit graph. Each command
-selects its circuit with `wire build --return`, submits it through IBM Runtime REST with `--json`,
-and returns a `CommandResult`. The final Wire nodes parse those JSON payloads with `fromJson`, check
-the forced-error table, print the report, and write `./wire-qec-repetition-report.txt`.
+selects its circuit with `wire build --return`, submits it through the selected runner with
+`--json`, and returns a `CommandResult`. The final Wire nodes parse those JSON payloads with
+`fromJson`, check the forced-error table, print the report, and write
+`./wire-qec-repetition-report.txt`.
+
+When every selected runner result includes `estimated_cost_usd`, the pure Wire report also sums the
+four task estimates and prints a `Cost estimate` section. The Braket runner provides this field for
+known QPU pricing and SV1 simulator runs. The value is an estimate, not an AWS billing record, and
+excludes S3, taxes, discounts, credits, reservations, and billing adjustments.
 
 Each selected circuit carries:
 
@@ -102,6 +114,10 @@ of `least_busy`:
 If the Runtime service CRN is regional, keep `api_base_url` in the same region as the CRN. For
 example, `eu-de` service instances should use `https://eu-de.quantum.cloud.ibm.com/api/v1`.
 
+The Braket runner ignores the IBM config node as orchestration data and instead reads AWS settings
+from `CORTEX_BRAKET_BUCKET`, `CORTEX_BRAKET_PREFIX`, `CORTEX_BRAKET_REGION`, and `AWS_PROFILE`, or
+from equivalent command-line flags.
+
 ## Local Inspection
 
 To inspect one circuit through the local simulator instead of hardware:
@@ -117,8 +133,8 @@ nix run .#wire-quantum-qiskit -- \
 
 ## OpenQASM Dry-Run
 
-The same exported graphs can be lowered through the IBM Runtime REST dry-run path. The dry-run
-builds the OpenQASM 3 request locally and does not submit a hardware job:
+The same exported graphs can be lowered through the IBM Runtime REST or Braket dry-run paths. The
+dry-run builds the OpenQASM 3 request locally and does not submit a hardware job:
 
 ```sh
 nix run .#wire-quantum-ibm-rest -- \
@@ -128,7 +144,17 @@ nix run .#wire-quantum-ibm-rest -- \
   --config examples/wire/quantum-ibm-runtime.config.example.json
 ```
 
-Hardware submission remains explicitly gated by the IBM runner's credentials and
+For Braket:
+
+```sh
+nix run .#wire-quantum-braket -- \
+  examples/wire/qec-repetition-code-forced-errors.wire \
+  --return qec_repetition_x1 \
+  --dry-run \
+  --json
+```
+
+Hardware submission remains explicitly gated by each provider runner's credentials and
 `--confirm-hardware` policy. This example remains a forced-error workbench until reset, layout,
 timing, and real-time/feedforward semantics are designed.
 

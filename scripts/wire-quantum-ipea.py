@@ -45,7 +45,13 @@ def main() -> int:
     parser.add_argument(
         "--hardware",
         action="store_true",
-        help="Run on IBM Quantum hardware instead of the local Aer simulator.",
+        help="Run on a provider backend instead of the local Aer simulator.",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=["ibm", "braket"],
+        default="ibm",
+        help="Hardware provider used with --hardware.",
     )
     parser.add_argument(
         "--config",
@@ -54,7 +60,42 @@ def main() -> int:
     )
     parser.add_argument(
         "--backend",
-        help="IBM backend override. Use 'least_busy' to auto-select online hardware.",
+        help="IBM backend override or Braket backend alias/device ARN.",
+    )
+    parser.add_argument(
+        "--device-arn",
+        default=os.environ.get("CORTEX_BRAKET_DEVICE_ARN"),
+        help="Braket device ARN used with --provider braket.",
+    )
+    parser.add_argument(
+        "--s3-bucket",
+        default=os.environ.get("CORTEX_BRAKET_BUCKET"),
+        help="Braket result bucket used with --provider braket.",
+    )
+    parser.add_argument(
+        "--s3-prefix",
+        default=os.environ.get("CORTEX_BRAKET_PREFIX", "cortex/dev"),
+        help="Braket result prefix used with --provider braket.",
+    )
+    parser.add_argument(
+        "--region",
+        default=(
+            os.environ.get("CORTEX_BRAKET_REGION")
+            or os.environ.get("AWS_REGION")
+            or os.environ.get("AWS_DEFAULT_REGION")
+            or "us-east-1"
+        ),
+        help="AWS region used with --provider braket.",
+    )
+    parser.add_argument(
+        "--profile",
+        default=os.environ.get("AWS_PROFILE", "cortex-braket"),
+        help="AWS profile used with --provider braket.",
+    )
+    parser.add_argument(
+        "--aws-bin",
+        default=os.environ.get("AWS_BIN", "aws"),
+        help="AWS CLI executable used with --provider braket.",
     )
     parser.add_argument(
         "--confirm-hardware",
@@ -94,10 +135,11 @@ def main() -> int:
         )
         quantum = load_module(scripts_dir / "wire-quantum-qiskit.py", "wire_quantum_qiskit")
         ibm = load_module(scripts_dir / "wire-quantum-ibm-rest.py", "wire_quantum_ibm_rest")
+        braket = load_module(scripts_dir / "wire-quantum-braket.py", "wire_quantum_braket")
         phase = normalize_phase(parse_phase(args.phase))
         if args.hardware and not args.dry_run and not args.confirm_hardware:
             raise IpeaError(
-                "refusing to submit IBM Quantum jobs without --confirm-hardware; "
+                f"refusing to submit {args.provider} quantum jobs without --confirm-hardware; "
                 "use --dry-run to inspect generated rounds"
             )
 
@@ -105,8 +147,12 @@ def main() -> int:
         if emit_dir is not None:
             emit_dir.mkdir(parents=True, exist_ok=True)
 
-        hardware = prepare_hardware(args, ibm, quantum) if args.hardware and not args.dry_run else None
-        result = run_ipea(args, phase, quantum, ibm, emit_dir, hardware)
+        hardware = (
+            prepare_hardware(args, ibm, braket, quantum)
+            if args.hardware and not args.dry_run
+            else None
+        )
+        result = run_ipea(args, phase, quantum, ibm, braket, emit_dir, hardware)
         if args.json_output:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
@@ -153,11 +199,30 @@ def normalize_phase(phase: Fraction) -> Fraction:
     return phase % 1
 
 
-def prepare_hardware(args: argparse.Namespace, ibm: Any, quantum: Any) -> JSON:
+def prepare_hardware(args: argparse.Namespace, ibm: Any, braket: Any, quantum: Any) -> JSON:
+    if args.provider == "braket":
+        device_arn = braket.resolve_device_arn(args.backend, args.device_arn)
+        return {
+            "provider": "braket",
+            "device_arn": device_arn,
+            "backend": braket.device_label(device_arn),
+            "s3_bucket": braket.required_s3_bucket(args.s3_bucket, quantum),
+            "s3_prefix": args.s3_prefix,
+            "region": args.region,
+            "profile": args.profile,
+            "aws_bin": args.aws_bin,
+        }
+
     config_path = Path(args.config).expanduser().resolve()
     config = ibm.load_runtime_config(config_path, require_credentials=True, quantum=quantum)
     token = ibm.fetch_iam_token(config, quantum)
-    return {"config_path": config_path, "config": config, "token": token, "backend": None}
+    return {
+        "provider": "ibm",
+        "config_path": config_path,
+        "config": config,
+        "token": token,
+        "backend": None,
+    }
 
 
 def run_ipea(
@@ -165,12 +230,14 @@ def run_ipea(
     phase: Fraction,
     quantum: Any,
     ibm: Any,
+    braket: Any,
     emit_dir: Path | None,
     hardware: JSON | None,
 ) -> JSON:
     rounds: list[JSON] = []
     measured_bits: dict[int, int] = {}
     total_qpu_usage = 0.0
+    total_estimated_cost = 0.0
     config_path = Path(args.config).expanduser().resolve()
 
     with tempfile.TemporaryDirectory(prefix="wire-ipea-") as tmpdir:
@@ -191,7 +258,7 @@ def run_ipea(
             round_path = write_round_source(wire_source, tmp_path, emit_dir, ix, bit_position)
             compiled = quantum.load_compiled_circuit(str(round_path), args.wire_bin)
             plan = quantum.build_quantum_plan(compiled)
-            qasm = ibm.build_openqasm3(plan, quantum)
+            qasm = build_round_openqasm(args, hardware, ibm, braket, plan, quantum)
 
             round_result: JSON = {
                 "round": ix,
@@ -217,14 +284,20 @@ def run_ipea(
                 hw_result = execute_hardware_round(
                     args,
                     ibm,
+                    braket,
                     quantum,
                     hardware,
                     plan,
                     qasm,
+                    round_path,
                 )
                 bit = choose_majority_bit(hw_result["counts"])
-                usage = hw_result["qpu_usage_seconds"]
-                total_qpu_usage += usage
+                usage = hw_result.get("qpu_usage_seconds")
+                if isinstance(usage, (int, float)):
+                    total_qpu_usage += usage
+                estimated_cost = hw_result.get("estimated_cost_usd")
+                if isinstance(estimated_cost, (int, float)):
+                    total_estimated_cost += float(estimated_cost)
                 round_result.update(hw_result)
                 round_result.update({"chosen_bit": bit})
             else:
@@ -263,18 +336,39 @@ def run_ipea(
         "estimated_phase_decimal": float(estimated),
         "absolute_error": abs(float(phase) - float(estimated)),
         "rounds": rounds,
-        "qpu_usage_seconds": total_qpu_usage if hardware is not None else None,
+        "qpu_usage_seconds": total_qpu_usage if total_qpu_usage > 0 else None,
+        "estimated_cost_usd": (
+            total_estimated_cost if total_estimated_cost > 0 else None
+        ),
     }
+
+
+def build_round_openqasm(
+    args: argparse.Namespace,
+    hardware: JSON | None,
+    ibm: Any,
+    braket: Any,
+    plan: JSON,
+    quantum: Any,
+) -> str:
+    if args.hardware and args.provider == "braket":
+        return braket.build_openqasm3(plan, quantum)
+    return ibm.build_openqasm3(plan, quantum)
 
 
 def execute_hardware_round(
     args: argparse.Namespace,
     ibm: Any,
+    braket: Any,
     quantum: Any,
     hardware: JSON,
     plan: JSON,
     qasm: str,
+    round_path: Path,
 ) -> JSON:
+    if hardware["provider"] == "braket":
+        return execute_braket_round(args, braket, quantum, hardware, plan, qasm, round_path)
+
     config = hardware["config"]
     token = hardware["token"]
     if hardware["backend"] is None:
@@ -305,6 +399,49 @@ def execute_hardware_round(
         "counts": counts,
         "labeled_counts": quantum.labeled_counts(counts, plan["measurements"]),
         "qpu_usage_seconds": qpu_usage_seconds(ibm, metrics),
+    }
+
+
+def execute_braket_round(
+    args: argparse.Namespace,
+    braket: Any,
+    quantum: Any,
+    hardware: JSON,
+    plan: JSON,
+    qasm: str,
+    round_path: Path,
+) -> JSON:
+    result = braket.execute_braket_plan(
+        plan,
+        qasm,
+        source=str(round_path),
+        device_arn=hardware["device_arn"],
+        s3_bucket=hardware["s3_bucket"],
+        s3_prefix=hardware["s3_prefix"],
+        region=hardware["region"],
+        profile=hardware["profile"],
+        aws_bin=hardware["aws_bin"],
+        shots=args.shots,
+        poll_interval=args.poll_interval or 5,
+        timeout_seconds=args.timeout or 900,
+        submit_only=False,
+        quiet=args.json_output,
+        quantum=quantum,
+    )
+    return {
+        "execution": "amazon_braket",
+        "backend": result["backend"],
+        "backend_family": result["backend_family"],
+        "device_arn": result["device_arn"],
+        "task_arn": result["task_arn"],
+        "status": result["status"],
+        "counts": result["counts"],
+        "complete_counts": result["complete_counts"],
+        "labeled_counts": result["labeled_counts"],
+        "result_s3_uri": result["result_s3_uri"],
+        "qpu_usage_seconds": result["qpu_usage_seconds"],
+        "estimated_cost_usd": result["estimated_cost_usd"],
+        "cost_estimate": result["cost_estimate"],
     }
 
 
@@ -430,18 +567,12 @@ let feedback_and_readout =
 
 ibm_runtime_config
   => (
-    (
-      prepare_control
-        => h_control
-        => controlled_phase
-        => feedback_and_readout
-    )
-    <>
-    (
-      prepare_eigenstate
-        => controlled_phase
-    )
-)
+    (prepare_control
+      => h_control)
+    <> prepare_eigenstate
+  )
+  => controlled_phase
+  => feedback_and_readout
 """
 
 
@@ -494,7 +625,7 @@ def execution_label(args: argparse.Namespace) -> str:
     if args.dry_run:
         return "dry_run"
     if args.hardware:
-        return "ibm_quantum_hardware"
+        return "amazon_braket" if args.provider == "braket" else "ibm_quantum_hardware"
     return "local_simulation"
 
 
@@ -506,6 +637,8 @@ def print_summary(result: JSON) -> None:
     print(f"shots per round: {result['shots']}")
     if result.get("qpu_usage_seconds") is not None:
         print(f"qpu usage: {result['qpu_usage_seconds']:.3f}s")
+    if result.get("estimated_cost_usd") is not None:
+        print(f"estimated cost: ${result['estimated_cost_usd']:.6f} USD")
     print()
     print("Rounds:")
     rows = []

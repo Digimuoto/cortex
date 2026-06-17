@@ -22,6 +22,8 @@ runtimes. These pages show binding patterns without making any consumer the fram
 - **[Quantum](Quantum.md)** - consumer binding example. Shows how Wire can author quantum circuit
   topology while a host owns gate semantics and backend execution, including a local Qiskit
   simulator bridge.
+- **[Amazon Braket](Braket.md)** - consumer setup guide. Shows how to prepare AWS IAM, S3, Braket
+  roles, and an OpenQASM smoke test for a Braket host binding.
 - **[QEC repetition code](QEC.md)** - quantum consumer workbench. Shows a Wire-authored distance-3
   repetition-code forced-error experiment with pure Wire JSON analysis and reporting.
 

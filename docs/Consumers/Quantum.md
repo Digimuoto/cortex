@@ -170,6 +170,32 @@ builds the OpenQASM 3 sampler request locally without requesting an IAM token an
 job. `backend = "least_busy"` asks the runner to choose an online non-simulator backend with enough
 qubits; a concrete backend can be selected with the config `backend` field or the `--backend` flag.
 
+## Amazon Braket OpenQASM Runner
+
+The repository includes a second explicit hardware runner for Amazon Braket. It uses AWS CLI v2
+through the Nix app, lowers the same admitted Wire quantum plan to Braket OpenQASM 3, submits a
+Braket task, polls it, reads `results.json` from S3, and normalizes counts into the same JSON shape
+used by the other runners.
+
+Inspect the Bell circuit locally:
+
+```sh
+nix run .#wire-quantum-braket -- examples/wire/quantum-bell-state-ibm-rest.wire --dry-run --json
+```
+
+Submit it to the default managed simulator `SV1`:
+
+```sh
+nix run .#wire-quantum-braket -- examples/wire/quantum-bell-state-ibm-rest.wire --shots 100 --confirm-hardware --json
+```
+
+The runner reads `CORTEX_BRAKET_BUCKET`, `CORTEX_BRAKET_PREFIX`, `CORTEX_BRAKET_REGION`, and
+`AWS_PROFILE` unless equivalent command-line flags are provided. See [`Braket.md`](Braket.md) for
+the AWS setup checklist.
+
+Braket lowering differs from the IBM lowering where the provider gate vocabulary differs: Wire `sx`
+is emitted as Braket `v`, and Wire `rzz` is decomposed into `cnot/rz/cnot`.
+
 ## Iterative Phase Estimation Runner
 
 The `wire-quantum-ipea` app demonstrates adaptive phase estimation as a sequence of fresh Wire
@@ -186,9 +212,10 @@ nix run .#wire-quantum-ipea -- --shots 100 --seed 7
 The default target phase is `5/8` with `3` measured bits, so an ideal run estimates bitstring `101`.
 The generated round shape is represented by
 [`../../examples/wire/quantum-ipea-round.wire`](../../examples/wire/quantum-ipea-round.wire). The
-Wire round uses `rz`, `sx`, `x`, and `rzz` executor nodes. For IBM Runtime REST, the OpenQASM
-lowerer expands `rzz` into `rz/sx/cz` operations because IBM's current standard QASM loaders do not
-define an `rzz` gate name. The Wire file binds the round fragments with graph-valued `let`s:
+Wire round uses `rz`, `sx`, `x`, and `rzz` executor nodes. The provider lowerers expand that shared
+plan into the target gate vocabulary: IBM Runtime REST lowers `rzz` through `rz/sx/cz`, while Amazon
+Braket lowers `sx` to `v` and lowers `rzz` through `cnot/rz/cnot`. The Wire file binds the round
+fragments with graph-valued `let`s:
 
 ```wire
 let h_control =
@@ -220,6 +247,16 @@ requires explicit confirmation:
 nix run .#wire-quantum-ipea -- --hardware --shots 100 --confirm-hardware
 ```
 
+The Braket app uses the same generated rounds with AWS credentials and S3 result storage:
+
+```sh
+nix run .#wire-quantum-ipea-braket -- --dry-run --bits 3 --json
+```
+
+```sh
+nix run .#wire-quantum-ipea-braket -- --bits 3 --shots 100 --confirm-hardware
+```
+
 Because each round is a separate provider job, this demo spends hardware budget per measured phase
 bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
@@ -227,8 +264,8 @@ bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
 [`QEC.md`](QEC.md) documents a small distance-3 repetition-code forced-error workbench. The example
 keeps QEC analysis in Wire: command leaves run four exported circuit graph values through the
-generic IBM Runtime REST bridge, then pure Wire expressions parse JSON output counts, apply the
-lookup decoder table, render the report, and write `./wire-qec-repetition-report.txt`.
+selected quantum runner, then pure Wire expressions parse JSON output counts, apply the lookup
+decoder table, render the report, and write `./wire-qec-repetition-report.txt`.
 
 Run it on hardware with the same explicit confirmation pattern as the eraser example:
 
@@ -236,8 +273,14 @@ Run it on hardware with the same explicit confirmation pattern as the eraser exa
 nix run .#wire-quantum-qec-repetition -- --confirm-hardware
 ```
 
+or on Braket:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware
+```
+
 The same exported circuit graphs can still be inspected locally through `wire-quantum-qiskit`, or
-through the IBM REST OpenQASM dry-run path with `--dry-run --config`.
+through the IBM REST or Braket OpenQASM dry-run paths.
 
 ## Quantum Eraser Wire Experiment
 
@@ -254,17 +297,23 @@ experiment rather than retrocausality: the later marker-basis choice does not ch
 unconditional screen statistics. Interference is recovered only after sorting the results by the
 marker outcome.
 
-The full scaffold is a hardware sweep and queues nine IBM Runtime sampler jobs:
+The full scaffold is a hardware sweep. The IBM app queues nine IBM Runtime sampler jobs:
 
 ```sh
 nix run .#wire-quantum-eraser -- --confirm-hardware
 ```
 
-The app runs the Wire file through `wire run` and places `wire-quantum-ibm-rest` on `PATH` for the
-command leaves. The command leaves request JSON output, and the final pure Wire analyzer renders a
-compact table framed around the three-circular-polarizer analogy: path marking flattens the
-unconditional screen, while eraser-basis marker slices recover complementary fringes. The experiment
-executes these exported graph values from the same Wire source:
+The Braket app queues nine Braket tasks:
+
+```sh
+nix run .#wire-quantum-eraser-braket -- --confirm-hardware
+```
+
+Each app runs the Wire file through `wire run` and places a provider-specific `wire-quantum-runner`
+on `PATH` for the command leaves. The command leaves request JSON output, and the final pure Wire
+analyzer renders a compact table framed around the three-circular-polarizer analogy: path marking
+flattens the unconditional screen, while eraser-basis marker slices recover complementary fringes.
+The experiment executes these exported graph values from the same Wire source:
 
 - `open_phase_{0,1_4,1_2}`
 - `which_path_phase_{0,1_4,1_2}`
@@ -296,11 +345,21 @@ request without provider submission:
 nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-experiment.wire --return eraser_phase_0 --dry-run --config examples/wire/quantum-ibm-runtime.config.example.json
 ```
 
+For the Braket path:
+
+```sh
+nix run .#wire-quantum-braket -- examples/wire/quantum-eraser-experiment.wire --return eraser_phase_0 --dry-run --json
+```
+
 Hardware execution of an individual row submits the selected Wire-authored circuit as one provider
 job:
 
 ```sh
 nix run .#wire-quantum-ibm-rest -- examples/wire/quantum-eraser-experiment.wire --return eraser_phase_0 --shots 100 --confirm-hardware
+```
+
+```sh
+nix run .#wire-quantum-braket -- examples/wire/quantum-eraser-experiment.wire --return eraser_phase_0 --shots 100 --confirm-hardware --json
 ```
 
 ## Linearity Caveat
@@ -316,6 +375,7 @@ rewrite and `select(...)` surfaces rather than through hidden backend callbacks.
 
 ## Related
 
+- [Amazon Braket Consumer Setup](Braket.md)
 - [../Architecture/02-ownership-and-boundaries.md](../Architecture/02-ownership-and-boundaries.md)
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md)
 - [../Reference/Wire/executors-and-alphabet.md](../Reference/Wire/executors-and-alphabet.md)

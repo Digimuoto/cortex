@@ -3,10 +3,11 @@
 # Run:
 #
 #   nix run .#wire-quantum-qec-repetition -- --confirm-hardware
+#   nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware
 #
 # This file is both the circuit catalog and the executable experiment scaffold.
 # The four exported graph values are selected by std.io.command leaves below and
-# run through the generic IBM Runtime REST bridge. The final analyzer is pure Wire:
+# run through the selected quantum bridge. The final analyzer is pure Wire:
 # it parses JSON stdout with fromJson, checks the syndrome table, renders a
 # report, and writes it to ./wire-qec-repetition-report.txt.
 
@@ -207,6 +208,7 @@ export let qec_repetition_x2 = repetition_case(x2_error);
 let experiment_source = "examples/wire/qec-repetition-code-forced-errors.wire";
 let experiment_report_path = "./wire-qec-repetition-report.txt";
 let experiment_shots = "100";
+let acceptanceMinHits = 90;
 let emptyText = "";
 let spaceText = " ";
 let noneText = "none";
@@ -216,7 +218,7 @@ let hardwareSpec = name: returnName: {
   inherit name;
   target = "${experiment_source}#${returnName}";
   argv = [
-    "wire-quantum-ibm-rest",
+    "wire-quantum-runner",
     experiment_source,
     "--return",
     returnName,
@@ -275,9 +277,10 @@ let caseRow = name: expectedSyndrome: correction: d0: d1: d2: s01: s12: decoded:
     s12Hits = outputHits decoded "s12" s12;
     hits = min5 d0Hits d1Hits d2Hits s01Hits s12Hits;
     logicalFailures = shots - hits;
+    gatePass = hits >= acceptanceMinHits;
   in
   {
-    inherit name expectedSyndrome correction shots hits logicalFailures;
+    inherit name expectedSyndrome correction shots hits logicalFailures gatePass;
     expected = "${d0}${d1}${d2}/${s01}${s12}";
   };
 
@@ -324,6 +327,12 @@ let qecRows = decoded: [
     decoded[3]
 ];
 
+let hasCostEstimate = decoded:
+  decoded |> all (result: result.estimated_cost_usd != null);
+
+let totalEstimatedCost = decoded:
+  decoded |> map (result: result.estimated_cost_usd) |> sum;
+
 let analyzeQec = results:
   let
     runs = commandRuns results;
@@ -336,15 +345,32 @@ let analyzeQec = results:
     let
       decoded = runs |> map (run: fromJson(run.stdout));
       hasCounts = decoded |> all (result: result.complete_output_counts != null);
+      hasCost = hasCostEstimate decoded;
+      estimatedCostUsd = if hasCost then totalEstimatedCost decoded else null;
       rows = if hasCounts then qecRows decoded else [];
-      complete = hasCounts && (rows |> all (row: row.logicalFailures == 0));
+      complete = hasCounts && (rows |> all (row: row.gatePass));
     in
-    { inherit runs failures success statuses targets decoded hasCounts rows complete; }
+    {
+      inherit
+        runs
+        failures
+        success
+        statuses
+        targets
+        decoded
+        hasCounts
+        hasCost
+        estimatedCostUsd
+        rows
+        complete;
+    }
   else
     {
       inherit runs failures success statuses targets;
       decoded = [];
       hasCounts = false;
+      hasCost = false;
+      estimatedCostUsd = null;
       rows = [];
       complete = false;
     };
@@ -359,7 +385,7 @@ let runBlock = targets: ''
   Run
     source: ${experiment_source}
     execution: one Wire orchestration graph + std.io.command leaves
-    backend: IBM Quantum Runtime REST hardware through the generic wire-quantum-ibm-rest bridge
+    backend: selected quantum runner
     shots: ${experiment_shots} per circuit
     circuits: 4 exported graph values selected from this same Wire file
     report file: ${experiment_report_path}
@@ -375,15 +401,29 @@ let resultRow = row:
 let resultRows = rows:
   rows |> map resultRow |> joinWith "";
 
+let costBlock = analysis:
+  if analysis.hasCost then ''
+  Cost estimate
+    estimated total: $${analysis.estimatedCostUsd} USD
+    scope: Braket quantum-task estimates reported by the selected runner
+    note: estimate excludes S3, taxes, discounts, credits, reservations, and later AWS billing adjustments
+
+  '' else ''
+  Cost estimate
+    unavailable: selected runner did not report estimated_cost_usd for every circuit
+
+  '';
+
 let successReport = analysis: ''
   ${reportTitle}${runBlock analysis.targets}What Wire did
     Wire authored the repetition-code circuit catalog, selected each
     exported graph with wire build --return through command leaves,
-    submitted each selected circuit through IBM Runtime REST, parsed
+    submitted each selected circuit through the selected runner, parsed
     each hardware JSON result with fromJson, applied the
     distance-3 lookup table as pure Wire dataflow, and rendered this
     report in a pure Wire node.
 
+  ${costBlock analysis}
   Results
     case | expected syndrome | expected data/syndrome | correction | matching shots | logical failures
     ---- | ----------------- | ---------------------- | ---------- | -------------- | ----------------
@@ -394,6 +434,9 @@ let successReport = analysis: ''
     10 -> X d0
     11 -> X d1
     01 -> X d2
+
+  Acceptance threshold
+    per circuit: at least ${acceptanceMinHits}/${experiment_shots} matching shots
 
   Run gate: ${if analysis.complete then "complete" else "incomplete"}
 '';

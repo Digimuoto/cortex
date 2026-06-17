@@ -54,6 +54,10 @@
           # Wire DSL
           tree-sitter
           hl-wire
+          config.packages.wire-quantum-braket
+          config.packages.wire-quantum-qec-repetition-braket
+          config.packages.wire-quantum-ipea-braket
+          config.packages.wire-quantum-eraser-braket
 
           # Lean 4 mechanization track (theory/).
           # `elan` resolves the toolchain version pinned in
@@ -93,6 +97,8 @@
 
         Cloud tooling:
           aws --version          # AWS CLI v2
+          wire-quantum-braket --help
+          wire-quantum-qec-repetition-braket --confirm-hardware
 
         Lean 4 theory:
           just lean-build       # Build the proof tree
