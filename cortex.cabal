@@ -143,6 +143,7 @@ library
         Cortex.Capability.Catalog.AwaitStrategy
         Cortex.Capability.Catalog.ExecutorManifest
         Cortex.Capability.Catalog.RuntimeBindingRecord
+        Cortex.Capability.BindingPack
         Cortex.Capability.Executor
         Cortex.Capability.Executor.Pure
         Cortex.Pulse
@@ -183,6 +184,7 @@ library
         Cortex.Wire.Pure
         Cortex.Wire.Std
         Cortex.Wire.Syntax
+        Cortex.Wire.Package
         Cortex.Wire.Use
         Cortex.Wire.Circuit
         Cortex.Wire.Circuit.Artifact
@@ -278,6 +280,7 @@ test-suite cortex-test
         Cortex.Algebra.GraphSpec
         Cortex.CanonicalModuleTreeSpec
         Cortex.Capability.CatalogSpec
+        Cortex.Wire.PackageSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec

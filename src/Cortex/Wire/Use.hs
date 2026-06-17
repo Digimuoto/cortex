@@ -33,12 +33,14 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 
+import Cortex.Wire.Package
+  ( NamespaceEntry (..)
+  , NamespaceRegistry
+  , lookupNamespace
+  )
 import Cortex.Wire.Std
-  ( stdIoContractIdForName
-  , stdIoExecutorIdForLeaf
-  , stdIoExecutorIds
+  ( stdIoExecutorIds
   , stdIoExecutorLeaves
-  , stdIoNamespace
   )
 import Cortex.Wire.Syntax
   ( QName (..)
@@ -68,20 +70,31 @@ emptyWireUseScope =
     , wireUseStdExecutorsInScope = Set.empty
     }
 
-applyWireUseSpecs :: (Text -> Bool) -> [UseSpec] -> Either WireUseError WireUseScope
-applyWireUseSpecs externalNameTaken =
-  foldM (applyWireUseSpec externalNameTaken) emptyWireUseScope
+applyWireUseSpecs
+  :: NamespaceRegistry -> (Text -> Bool) -> [UseSpec] -> Either WireUseError WireUseScope
+applyWireUseSpecs registry externalNameTaken =
+  foldM (applyWireUseSpec registry externalNameTaken) emptyWireUseScope
 
 applyWireUseSpec
-  :: (Text -> Bool) -> WireUseScope -> UseSpec -> Either WireUseError WireUseScope
-applyWireUseSpec externalNameTaken scope useSpec = do
-  when (renderQName useSpec.useSpecNamespace /= stdIoNamespace) $
-    Left (WireUseUnknownNamespace (renderQName useSpec.useSpecNamespace))
-  foldM lowerUseItem scope (NE.toList useSpec.useSpecItems)
+  :: NamespaceRegistry
+  -> (Text -> Bool)
+  -> WireUseScope
+  -> UseSpec
+  -> Either WireUseError WireUseScope
+applyWireUseSpec registry externalNameTaken scope useSpec = do
+  entry <-
+    maybe (Left (WireUseUnknownNamespace namespace)) Right (lookupNamespace namespace registry)
+  foldM (lowerUseItem entry) scope (NE.toList useSpec.useSpecItems)
   where
-    lowerUseItem state = \case
+    namespace = renderQName useSpec.useSpecNamespace
+
+    lowerUseItem entry state = \case
       UseExecutor itemName maybeAlias -> do
-        canonical <- stdIoExecutorId itemName
+        canonical <-
+          maybe
+            (Left (WireUseUnknownItem namespace ("@" <> itemName)))
+            Right
+            (nsResolveExecutorLeaf entry itemName)
         let localName = fromMaybe itemName maybeAlias
         ensureUseNameFresh localName state
         Right
@@ -91,7 +104,11 @@ applyWireUseSpec externalNameTaken scope useSpec = do
                 Set.insert canonical state.wireUseStdExecutorsInScope
             }
       UseContract itemName maybeAlias -> do
-        canonical <- stdIoContractId itemName
+        canonical <-
+          maybe
+            (Left (WireUseUnknownItem namespace itemName))
+            Right
+            (nsResolveContract entry itemName)
         let localName = fromMaybe itemName maybeAlias
         ensureUseNameFresh localName state
         Right
@@ -108,20 +125,6 @@ wireUseLocalNameTaken externalNameTaken scope localName =
   externalNameTaken localName
     || Map.member localName scope.wireUseExecutors
     || Map.member localName scope.wireUseContracts
-
-stdIoExecutorId :: Text -> Either WireUseError Text
-stdIoExecutorId itemName =
-  maybe
-    (Left (WireUseUnknownItem stdIoNamespace ("@" <> itemName)))
-    Right
-    (stdIoExecutorIdForLeaf itemName)
-
-stdIoContractId :: Text -> Either WireUseError Text
-stdIoContractId itemName =
-  maybe
-    (Left (WireUseUnknownItem stdIoNamespace itemName))
-    Right
-    (stdIoContractIdForName itemName)
 
 wireUseDeclaredContracts :: WireUseScope -> Set Text
 wireUseDeclaredContracts scope =

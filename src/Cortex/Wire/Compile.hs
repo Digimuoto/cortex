@@ -138,6 +138,7 @@ import Cortex.Wire.NodeBoundary
   , signalNodeBoundaryNormalForm
   , validateNodeBoundaryNormalForm
   )
+import Cortex.Wire.Package qualified as Package
 import Cortex.Wire.Parser
   ( GeneratedFamilyChild (..)
   , GeneratedFamilyKind (..)
@@ -1398,7 +1399,7 @@ lowerUseSpec :: LoweringState -> UseSpec -> Either WireCore.WireError LoweringSt
 lowerUseSpec st useSpec = do
   useScope <-
     mapLeft wireUseErrorToWireError $
-      applyWireUseSpec (topLevelBindingNameTaken st) st.lsUseScope useSpec
+      applyWireUseSpec Package.stdOnlyRegistry (topLevelBindingNameTaken st) st.lsUseScope useSpec
   Right
     st
       { lsUseScope = useScope
