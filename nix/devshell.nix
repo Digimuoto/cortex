@@ -44,6 +44,7 @@
           ripgrep
           fd
           just
+          awscli2
 
           # Formatters
           alejandra
@@ -89,6 +90,9 @@
 
         Wire DSL:
           hl-wire <path.wire>   # Terminal-highlight a .wire file
+
+        Cloud tooling:
+          aws --version          # AWS CLI v2
 
         Lean 4 theory:
           just lean-build       # Build the proof tree
