@@ -154,6 +154,7 @@ import Cortex.Wire.Pure
   , renderPureEvalError
   , validatePureTaskConfig
   )
+import Cortex.Wire.Quantum qualified as Quantum
 import Cortex.Wire.Std
   ( stdIoCommandExecutorId
   , stdIoCommandShapeMessage
@@ -1399,7 +1400,11 @@ lowerUseSpec :: LoweringState -> UseSpec -> Either WireCore.WireError LoweringSt
 lowerUseSpec st useSpec = do
   useScope <-
     mapLeft wireUseErrorToWireError $
-      applyWireUseSpec Package.stdOnlyRegistry (topLevelBindingNameTaken st) st.lsUseScope useSpec
+      applyWireUseSpec
+        (Package.packageNamespaceRegistry Quantum.quantumPackages)
+        (topLevelBindingNameTaken st)
+        st.lsUseScope
+        useSpec
   Right
     st
       { lsUseScope = useScope

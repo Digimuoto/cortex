@@ -109,6 +109,8 @@ import Cortex.Wire.LeanFixture
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
   )
+import Cortex.Wire.Package (packageNamespaceRegistry)
+import Cortex.Wire.Quantum (quantumPackages)
 import Cortex.Wire.Use
   ( WireUseError (..)
   , WireUseScope
@@ -1019,7 +1021,7 @@ topologyLevels relation =
 
 useScopeFromWireFile :: WireFile -> Either Text WireUseScope
 useScopeFromWireFile wireFile =
-  case applyWireUseSpecs (const False) useSpecs of
+  case applyWireUseSpecs (packageNamespaceRegistry quantumPackages) (const False) useSpecs of
     Left err -> Left (renderRunUseError err)
     Right scope -> Right scope
   where

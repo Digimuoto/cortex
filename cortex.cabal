@@ -290,6 +290,7 @@ test-suite cortex-test
         Cortex.Capability.BindingPack.BraketSpec
         Cortex.Wire.PackageSpec
         Cortex.Wire.QuantumPackageSpec
+        Cortex.Wire.RealizeCompileSpec
         Cortex.Pulse.FrontierContractionSpec
         Cortex.Pulse.Executor.ExternalCallAttemptSpec
         Cortex.Pulse.Executor.ExternalCallSpec
