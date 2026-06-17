@@ -185,6 +185,7 @@ library
         Cortex.Wire.Std
         Cortex.Wire.Syntax
         Cortex.Wire.Package
+        Cortex.Wire.Quantum
         Cortex.Wire.Use
         Cortex.Wire.Circuit
         Cortex.Wire.Circuit.Artifact
@@ -281,6 +282,7 @@ test-suite cortex-test
         Cortex.CanonicalModuleTreeSpec
         Cortex.Capability.CatalogSpec
         Cortex.Wire.PackageSpec
+        Cortex.Wire.QuantumPackageSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
