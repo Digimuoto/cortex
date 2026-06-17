@@ -198,6 +198,31 @@ pulse.signals
 Durable external-event storage. The signal protocol, delivery semantics, and `StageSuspend`
 interaction are in [`signals.md`](./signals.md).
 
+## 10. External-call attempts
+
+```
+pulse.external_call_attempts
+  attempt_id          bigserial primary key
+  run_id              uuid not null
+  node_id             text not null            -- the realize stage node
+  runtime_binding_id  text not null
+  frontier_id         text not null            -- canonical hash of the frozen frontier
+  idempotency_key     text not null
+  frozen_plan         jsonb not null           -- the canonical fused sub-plan
+  job_handle          jsonb                     -- null until the provider submit is recorded
+  signal_name         text                      -- the ordinary durable signal woken on completion
+  status              text not null default 'reserved'   -- reserved | submitted | settled | failed
+  created_at, submitted_at, settled_at  timestamptz
+
+  unique index (run_id, node_id, runtime_binding_id, frontier_id)
+```
+
+The Pulse-owned durable home for a `submit_park_resume` external call's executor metadata (ADR 0059
+§3). ADR 0058 suspend settlement commits only graph state, signal wait rows, and run status, so this
+record — not the signal rows — carries the idempotency key, frozen fused plan, and provider job
+handle. Reserve is idempotent on the key, so crash recovery re-entry never creates a duplicate
+provider task; provider fields are opaque JSON that Pulse does not interpret.
+
 ## Appendix A — Ownership
 
 The `pulse` DB role has full ownership of every table in this schema and no access to host tables.
