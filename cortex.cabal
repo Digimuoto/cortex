@@ -200,6 +200,7 @@ library
         Cortex.Wire.Circuit.NodeKind
         Cortex.Pulse.GraphRuntime
         Cortex.Pulse.Health
+        Cortex.Pulse.Lowering.FusedPlan
         Cortex.Pulse.Materialization
         Cortex.Pulse.Memory
         Cortex.Pulse.Memory.Query
@@ -289,6 +290,7 @@ test-suite cortex-test
         Cortex.Pulse.FrontierContractionSpec
         Cortex.Pulse.Executor.ExternalCallAttemptSpec
         Cortex.Pulse.Executor.ExternalCallSpec
+        Cortex.Pulse.Lowering.FusedPlanSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
