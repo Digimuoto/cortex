@@ -236,6 +236,18 @@ Mechanized results now include:
   overlay preservation under node-and-endpoint-domain disjointness, certified single-pair and bulk
   source contraction, contraction lowering, bulk-contraction lowering, and a certified
   operation/node-port interface that exposes bundled source-linearity proofs.
+- **OPEN OBLIGATION — `realize_preserves_portLinear` (ADR 0059 §2).** The realize frontier
+  contraction (collecting a same-authority external-call frontier into one realize node, ADR 0059)
+  must preserve `PortLinear`. It does **not** reduce to `bulkContract_preserves_portLinear`:
+  `BulkContract` monotonically _erases_ exposed outputs as it consumes endpoints, whereas realize
+  erases the collected frontier's exposed outputs _and re-introduces_ one fresh exposed output per
+  named measurement on the surviving realize node. The discharge is therefore a genuinely new lemma
+  over a `realizeContract` construction
+  (`exposedOutputs := (graph.exposedOutputs \ collected) ∪ measurements`), governed by ADR 0035's
+  rewrite boundary laws with the collected external-call resource accounted under ADR 0032. Tracked,
+  not yet discharged; the decidable admission gate that makes the contraction legal is implemented
+  and tested in `Cortex.Pulse.Rewrite.Contract` (`admitFrontierContraction`). No `sorry` is
+  committed (the Lean gate is sorry-free); this entry is the obligation of record.
 - `LinearPortGraph.MakeWitness`, `LinearPortGraph.MakeWitness.toObject`,
   `LinearPortGraph.MakeWitness.make_disjoint_of_distinctBindings`,
   `LinearPortGraph.PhantomDirection`, `LinearPortGraph.ProductAdapterKind`,
