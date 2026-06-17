@@ -210,6 +210,7 @@ library
         Cortex.Pulse.PlanHydration
         Cortex.Pulse.Query
         Cortex.Pulse.Rewrite
+        Cortex.Pulse.Rewrite.Contract
         Cortex.Pulse.Schema
         Cortex.Pulse.Signal
         Cortex.Pulse.Scheduler
@@ -281,6 +282,7 @@ test-suite cortex-test
         Cortex.CanonicalModuleTreeSpec
         Cortex.Capability.CatalogSpec
         Cortex.Wire.PackageSpec
+        Cortex.Pulse.FrontierContractionSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
