@@ -144,6 +144,7 @@ library
         Cortex.Capability.Catalog.ExecutorManifest
         Cortex.Capability.Catalog.RuntimeBindingRecord
         Cortex.Capability.BindingPack
+        Cortex.Capability.BindingPack.Braket
         Cortex.Capability.Executor
         Cortex.Capability.Executor.Pure
         Cortex.Pulse
@@ -286,6 +287,7 @@ test-suite cortex-test
         Cortex.Algebra.GraphSpec
         Cortex.CanonicalModuleTreeSpec
         Cortex.Capability.CatalogSpec
+        Cortex.Capability.BindingPack.BraketSpec
         Cortex.Wire.PackageSpec
         Cortex.Wire.QuantumPackageSpec
         Cortex.Wire.RealizeCompileSpec
