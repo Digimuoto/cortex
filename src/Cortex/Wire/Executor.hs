@@ -48,6 +48,7 @@ import Cortex.Wire.AST
 
 newtype WireExecutorId = WireExecutorId {unWireExecutorId :: Text}
   deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (Aeson.ToJSON, Aeson.FromJSON)
 
 wireExecutorIdToText :: WireExecutorId -> Text
 wireExecutorIdToText = unWireExecutorId

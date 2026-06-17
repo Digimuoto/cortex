@@ -139,6 +139,10 @@ library
         Cortex.Algebra.Graph.Search
         Cortex.Algebra.Graph.Validate
         Cortex.Capability
+        Cortex.Capability.Catalog.AdmissionProjection
+        Cortex.Capability.Catalog.AwaitStrategy
+        Cortex.Capability.Catalog.ExecutorManifest
+        Cortex.Capability.Catalog.RuntimeBindingRecord
         Cortex.Capability.Executor
         Cortex.Capability.Executor.Pure
         Cortex.Pulse
@@ -273,6 +277,7 @@ test-suite cortex-test
     other-modules:
         Cortex.Algebra.GraphSpec
         Cortex.CanonicalModuleTreeSpec
+        Cortex.Capability.CatalogSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
