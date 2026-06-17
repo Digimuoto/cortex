@@ -283,6 +283,7 @@ test-suite cortex-test
         Cortex.Capability.CatalogSpec
         Cortex.Wire.PackageSpec
         Cortex.Wire.QuantumPackageSpec
+        Cortex.Wire.RealizeCompileSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
