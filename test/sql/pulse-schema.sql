@@ -706,3 +706,29 @@ ALTER TABLE ONLY pulse.stage_log
 
 \unrestrict DOlga0R2I8dGBjDPPixbHVuE2Odt9zBedCgHJMt1barnnDbmVmzS3Nz4JmmmMgr
 
+
+
+--
+-- Name: external_call_attempts; Type: TABLE; Schema: pulse; Owner: -
+-- ADR 0059 §3: durable home for a submit/park/resume external call's idempotency
+-- key, frozen fused plan, provider job handle, and completion signal name.
+--
+
+CREATE TABLE pulse.external_call_attempts (
+    attempt_id bigserial PRIMARY KEY,
+    run_id uuid NOT NULL,
+    node_id text NOT NULL,
+    runtime_binding_id text NOT NULL,
+    frontier_id text NOT NULL,
+    idempotency_key text NOT NULL,
+    frozen_plan jsonb NOT NULL,
+    job_handle jsonb,
+    signal_name text,
+    status text DEFAULT 'reserved'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    submitted_at timestamp with time zone,
+    settled_at timestamp with time zone
+);
+
+CREATE UNIQUE INDEX idx_pulse_external_call_attempts_key
+    ON pulse.external_call_attempts USING btree (run_id, node_id, runtime_binding_id, frontier_id);
