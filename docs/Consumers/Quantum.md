@@ -227,18 +227,17 @@ bit. Use `--dry-run` first to inspect the generated rounds and OpenQASM 3.
 
 [`QEC.md`](QEC.md) documents a small distance-3 repetition-code forced-error workbench. The example
 keeps QEC analysis in Wire: command leaves run four exported circuit graph values through the
-generic local Qiskit bridge, then pure Wire expressions parse JSON output counts, apply the lookup
-decoder table, render the report, and write `./wire-qec-repetition-report.txt`.
+generic IBM Runtime REST bridge, then pure Wire expressions parse JSON output counts, apply the
+lookup decoder table, render the report, and write `./wire-qec-repetition-report.txt`.
 
-Run it locally with:
+Run it on hardware with the same explicit confirmation pattern as the eraser example:
 
 ```sh
-nix run .#wire-quantum-qec-repetition
+nix run .#wire-quantum-qec-repetition -- --confirm-hardware
 ```
 
-The same exported circuit graphs can be inspected through the IBM REST OpenQASM dry-run path with
-`--dry-run --config`, but hardware execution remains explicitly gated and is not the default QEC
-workflow.
+The same exported circuit graphs can still be inspected locally through `wire-quantum-qiskit`, or
+through the IBM REST OpenQASM dry-run path with `--dry-run --config`.
 
 ## Quantum Eraser Wire Experiment
 

@@ -224,6 +224,14 @@ def main() -> int:
                 if complete_counts
                 else None
             ),
+            "output_counts": (
+                quantum.output_counts(counts, plan["measurements"]) if counts else None
+            ),
+            "complete_output_counts": (
+                quantum.output_counts(complete_counts, plan["measurements"])
+                if complete_counts
+                else None
+            ),
             "qpu_usage_seconds": qpu_usage_seconds(metrics),
         }
         if args.json_output:

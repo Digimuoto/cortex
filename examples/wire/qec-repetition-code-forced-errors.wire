@@ -2,11 +2,11 @@
 #
 # Run:
 #
-#   nix run .#wire-quantum-qec-repetition
+#   nix run .#wire-quantum-qec-repetition -- --confirm-hardware
 #
 # This file is both the circuit catalog and the executable experiment scaffold.
 # The four exported graph values are selected by std.io.command leaves below and
-# run through the generic local Qiskit bridge. The final analyzer is pure Wire:
+# run through the generic IBM Runtime REST bridge. The final analyzer is pure Wire:
 # it parses JSON stdout with fromJson, checks the syndrome table, renders a
 # report, and writes it to ./wire-qec-repetition-report.txt.
 
@@ -25,6 +25,7 @@ contract QecRunResults {
 };
 contract QecAnalysis;
 contract QecReport;
+contract IBMQuantumConfig;
 contract Qubit;
 contract Bit;
 
@@ -84,17 +85,22 @@ form gated_command(spec: PortLabel, previous: PortLabel, ready: PortLabel, resul
 };
 
 form prepare_all() = {
-  node prepare_d0 = prepare_qubit(d0, 0);
+  node ibm_runtime_config
+    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+  node prepare_d0
+    <- config: IBMQuantumConfig;
+    -> d0: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
   node prepare_d1 = prepare_qubit(d1, 1);
   node prepare_d2 = prepare_qubit(d2, 2);
   node prepare_a01 = prepare_qubit(a01, 3);
   node prepare_a12 = prepare_qubit(a12, 4);
 
-  prepare_d0
-    <> prepare_d1
-    <> prepare_d2
-    <> prepare_a01
-    <> prepare_a12;
+  ibm_runtime_config
+    => (prepare_d0
+        <> prepare_d1
+        <> prepare_d2
+        <> prepare_a01
+        <> prepare_a12);
 };
 
 form no_error_layer() = {
@@ -200,25 +206,23 @@ export let qec_repetition_x2 = repetition_case(x2_error);
 
 let experiment_source = "examples/wire/qec-repetition-code-forced-errors.wire";
 let experiment_report_path = "./wire-qec-repetition-report.txt";
-let experiment_shots = "1024";
-let experiment_seed = "7";
+let experiment_shots = "100";
 let emptyText = "";
 let spaceText = " ";
 let noneText = "none";
 let noStderrText = "(empty)";
 
-let qiskitSpec = name: returnName: {
+let hardwareSpec = name: returnName: {
   inherit name;
   target = "${experiment_source}#${returnName}";
   argv = [
-    "wire-quantum-qiskit",
+    "wire-quantum-ibm-rest",
     experiment_source,
     "--return",
     returnName,
     "--shots",
     experiment_shots,
-    "--seed",
-    experiment_seed,
+    "--confirm-hardware",
     "--json"
   ];
   cwd = ".";
@@ -331,14 +335,16 @@ let analyzeQec = results:
   if success then
     let
       decoded = runs |> map (run: fromJson(run.stdout));
-      rows = qecRows decoded;
-      complete = rows |> all (row: row.logicalFailures == 0);
+      hasCounts = decoded |> all (result: result.complete_output_counts != null);
+      rows = if hasCounts then qecRows decoded else [];
+      complete = hasCounts && (rows |> all (row: row.logicalFailures == 0));
     in
-    { inherit runs failures success statuses targets decoded rows complete; }
+    { inherit runs failures success statuses targets decoded hasCounts rows complete; }
   else
     {
       inherit runs failures success statuses targets;
       decoded = [];
+      hasCounts = false;
       rows = [];
       complete = false;
     };
@@ -353,9 +359,8 @@ let runBlock = targets: ''
   Run
     source: ${experiment_source}
     execution: one Wire orchestration graph + std.io.command leaves
-    backend: local Qiskit Aer through the generic wire-quantum-qiskit bridge
+    backend: IBM Quantum Runtime REST hardware through the generic wire-quantum-ibm-rest bridge
     shots: ${experiment_shots} per circuit
-    seed: ${experiment_seed}
     circuits: 4 exported graph values selected from this same Wire file
     report file: ${experiment_report_path}
 
@@ -374,7 +379,8 @@ let successReport = analysis: ''
   ${reportTitle}${runBlock analysis.targets}What Wire did
     Wire authored the repetition-code circuit catalog, selected each
     exported graph with wire build --return through command leaves,
-    parsed each simulator JSON result with fromJson, applied the
+    submitted each selected circuit through IBM Runtime REST, parsed
+    each hardware JSON result with fromJson, applied the
     distance-3 lookup table as pure Wire dataflow, and rendered this
     report in a pure Wire node.
 
@@ -392,8 +398,18 @@ let successReport = analysis: ''
   Run gate: ${if analysis.complete then "complete" else "incomplete"}
 '';
 
+let decodeWarningReport = analysis: ''
+  ${reportTitle}${runBlock analysis.targets}The IBM REST runner completed, but at least one result did not contain decoded output counts.
+  Re-run the failed circuit directly with --json and inspect raw_result.
+
+  Results
+    ${analysis.statuses}
+
+  Run gate: result decoder needs attention
+'';
+
 let failureReport = analysis: ''
-  ${reportTitle}${runBlock analysis.targets}At least one simulator command failed before analysis, so the pure Wire analyzer did not parse stdout.
+  ${reportTitle}${runBlock analysis.targets}At least one hardware command failed before analysis, so the pure Wire analyzer did not parse stdout.
 
   Results
     ${analysis.statuses}
@@ -403,17 +419,20 @@ let failureReport = analysis: ''
 '';
 
 let renderQecReport = analysis:
-  if analysis.success then successReport analysis else failureReport analysis;
+  if analysis.success then
+    if analysis.hasCounts then successReport analysis else decodeWarningReport analysis
+  else
+    failureReport analysis;
 
 node start_experiment
   -> start: ExperimentStart = "start";
 
 node plan_experiment
   <- start: ExperimentStart;
-  -> noneSpec: CommandSpec = qiskitSpec "clean memory" "qec_repetition_none";
-  -> x0Spec: CommandSpec = qiskitSpec "forced X on d0" "qec_repetition_x0";
-  -> x1Spec: CommandSpec = qiskitSpec "forced X on d1" "qec_repetition_x1";
-  -> x2Spec: CommandSpec = qiskitSpec "forced X on d2" "qec_repetition_x2";
+  -> noneSpec: CommandSpec = hardwareSpec "clean memory" "qec_repetition_none";
+  -> x0Spec: CommandSpec = hardwareSpec "forced X on d0" "qec_repetition_x0";
+  -> x1Spec: CommandSpec = hardwareSpec "forced X on d1" "qec_repetition_x1";
+  -> x2Spec: CommandSpec = hardwareSpec "forced X on d2" "qec_repetition_x2";
 
 let run_none = first_command(noneSpec, none);
 let run_x0 = gated_command(x0Spec, none, x0Ready, x0);

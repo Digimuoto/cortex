@@ -3709,7 +3709,7 @@ spec = describe "Cortex.Wire.Compile" $ do
           compiled <- requireRight (compileWireTextWithReturn selected source)
           Set.fromList compiled.compiledCircuitEntryNodes
             `shouldBe` Set.fromList
-              [ CircuitNodeRef (selected <> "/encode/prepare_d0")
+              [ CircuitNodeRef (selected <> "/encode/ibm_runtime_config")
               , CircuitNodeRef (selected <> "/encode/prepare_d1")
               , CircuitNodeRef (selected <> "/encode/prepare_d2")
               , CircuitNodeRef (selected <> "/encode/prepare_a01")

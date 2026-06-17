@@ -30,9 +30,9 @@ The ownership split follows the quantum consumer binding:
 | `std.io.command` orchestration and pure `fromJson` report rendering.  | Backend result production and any future real-time decoding policy.   |
 | The checked-in experiment topology and expected forced-error table.   | General QEC research semantics beyond this repetition-code workbench. |
 
-The local execution path uses the existing `wire-quantum-qiskit` bridge. There is no QEC-specific
-Python analyzer: the bridge produces JSON counts, and Wire computes the syndrome-table report with
-pure expressions.
+The hardware execution path uses the existing `wire-quantum-ibm-rest` bridge. There is no
+QEC-specific Python analyzer: the bridge produces JSON counts, and Wire computes the syndrome-table
+report with pure expressions.
 
 ## Circuit Shape
 
@@ -62,26 +62,36 @@ analyzer expects this lookup table:
 | x1   | `010`    | `11`     | `X d1`     |
 | x2   | `001`    | `01`     | `X d2`     |
 
-## Local Run
+## Hardware Run
 
-Run the full Wire experiment:
+Run the full Wire experiment on IBM Quantum Runtime hardware:
 
 ```sh
-nix run .#wire-quantum-qec-repetition
+nix run .#wire-quantum-qec-repetition -- --confirm-hardware
 ```
 
-The app places `wire-quantum-qiskit` on `PATH` and then runs:
+The app places `wire-quantum-ibm-rest` on `PATH` and then runs:
 
 ```sh
 wire run examples/wire/qec-repetition-code-forced-errors.wire
 ```
 
 The Wire graph creates four `std.io.command` leaves, one per exported circuit graph. Each command
-selects its circuit with `wire build --return`, executes it on local Qiskit Aer with `--json`, and
-returns a `CommandResult`. The final Wire nodes parse those JSON payloads with `fromJson`, check the
-forced-error table, print the report, and write `./wire-qec-repetition-report.txt`.
+selects its circuit with `wire build --return`, submits it through IBM Runtime REST with `--json`,
+and returns a `CommandResult`. The final Wire nodes parse those JSON payloads with `fromJson`, check
+the forced-error table, print the report, and write `./wire-qec-repetition-report.txt`.
 
-To inspect one circuit directly:
+Each selected circuit carries:
+
+```wire
+@quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; }
+```
+
+so real credentials should live in the ignored file `examples/wire/quantum-ibm-runtime.local.json`.
+
+## Local Inspection
+
+To inspect one circuit through the local simulator instead of hardware:
 
 ```sh
 nix run .#wire-quantum-qiskit -- \
@@ -106,7 +116,7 @@ nix run .#wire-quantum-ibm-rest -- \
 ```
 
 Hardware submission remains explicitly gated by the IBM runner's credentials and
-`--confirm-hardware` policy. This example should remain a local workbench until reset, layout,
+`--confirm-hardware` policy. This example remains a forced-error workbench until reset, layout,
 timing, and real-time/feedforward semantics are designed.
 
 ## Limitations
@@ -117,7 +127,7 @@ This is a forced-error repetition-code workbench, not a full QEC stack:
 - ancillas are fresh, not reset and reused;
 - no stochastic noise model or repeated syndrome rounds are included yet;
 - the report checks a deterministic forced-error table rather than estimating thresholds;
-- hardware execution should be treated as an inspection path, not an endorsed QEC experiment.
+- hardware execution submits four independent sampler jobs, not a live QEC control loop.
 
 ## Related
 
