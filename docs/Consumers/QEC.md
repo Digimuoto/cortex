@@ -88,6 +88,19 @@ Each selected circuit carries:
 ```
 
 so real credentials should live in the ignored file `examples/wire/quantum-ibm-runtime.local.json`.
+For accounts that cannot list provider backends, set a concrete backend in that local config instead
+of `least_busy`:
+
+```json
+{
+  "api_key_env": "QISKIT_IBM_API_KEY",
+  "instance_crn": "crn:v1:...",
+  "backend": "ibm_backend_name"
+}
+```
+
+If the Runtime service CRN is regional, keep `api_base_url` in the same region as the CRN. For
+example, `eu-de` service instances should use `https://eu-de.quantum.cloud.ibm.com/api/v1`.
 
 ## Local Inspection
 

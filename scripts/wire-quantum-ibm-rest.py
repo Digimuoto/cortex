@@ -503,12 +503,19 @@ def resolve_backend(
     if backend_request != "least_busy":
         return backend_request
 
-    response = request_json(
-        "GET",
-        api_url(config, "backends"),
-        runtime_headers(config, token),
-        quantum=quantum,
-    )
+    try:
+        response = request_json(
+            "GET",
+            api_url(config, "backends"),
+            runtime_headers(config, token),
+            quantum=quantum,
+        )
+    except quantum.WireQuantumError as exc:
+        raise quantum.WireQuantumError(
+            f"{exc}; failed while resolving backend = \"least_busy\". "
+            "Set a concrete backend in the IBM Runtime config, or pass --backend "
+            "for direct single-circuit runs, to avoid listing backends."
+        ) from exc
     devices = response.get("devices") if isinstance(response, dict) else response
     if not isinstance(devices, list):
         raise quantum.WireQuantumError("IBM backends response did not include a devices list")
@@ -627,9 +634,10 @@ def request_json(
         with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
+        detail = http_error_detail(exc)
+        suffix = f"; response: {detail}" if detail else "; response body omitted"
         raise quantum.WireQuantumError(
-            f"IBM Runtime REST {method} {url} failed with HTTP {exc.code}; "
-            "response body omitted"
+            f"IBM Runtime REST {method} {url} failed with HTTP {exc.code}{suffix}"
         ) from exc
     except urllib.error.URLError as exc:
         raise quantum.WireQuantumError(
@@ -643,6 +651,18 @@ def request_json(
         raise quantum.WireQuantumError(
             f"IBM Runtime REST {method} {url} returned non-JSON response"
         ) from exc
+
+
+def http_error_detail(exc: urllib.error.HTTPError) -> str | None:
+    try:
+        raw = exc.read(2048)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    text = raw.decode("utf-8", errors="replace")
+    compact = " ".join(text.split())
+    return compact[:500] if compact else None
 
 
 def api_url(config: JSON, path: str) -> str:
