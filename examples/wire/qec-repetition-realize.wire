@@ -1,0 +1,158 @@
+# Native distance-3 repetition-code circuit catalog for ADR 0059.
+#
+# The four exported graph values are authored directly against the quantum Wire
+# packages and terminate in a single `@realize` collect node. Runtime authority is
+# supplied later by a host binding pack such as Braket; this file has no
+# std.io.command runner scaffold and no provider credentials.
+
+use quantum.core.{@prepare_zero, @x, @cnot, @rz, Qubit, Bit};
+use quantum.braket.{@realize};
+
+let quantum_x = @x {};
+let quantum_cnot = @cnot {};
+
+kind prepare_qubit(label: PortLabel, index: Value) =
+  -> label: Qubit = @prepare_zero { inherit index; } (null);
+
+kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
+  <- label: Qubit;
+  -> label: Qubit;
+  = gate (label);
+
+kind carry_qubit(label: PortLabel) =
+  <- label: Qubit;
+  -> label: Qubit = @rz { angle = 0.0; } (label);
+
+kind relabel_qubit(input: PortLabel, output: PortLabel) =
+  <- input: Qubit;
+  -> output: Qubit = @rz { angle = 0.0; } (input);
+
+kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecutor) =
+  <- control: Qubit;
+  <- target: Qubit;
+  -> control: Qubit;
+  -> target: Qubit;
+  = gate ({ inherit control target; });
+
+form prepare_all() = {
+  node prepare_d0 = prepare_qubit(d0, 0);
+  node prepare_d1 = prepare_qubit(d1, 1);
+  node prepare_d2 = prepare_qubit(d2, 2);
+  node prepare_a01 = prepare_qubit(a01, 3);
+  node prepare_a12 = prepare_qubit(a12, 4);
+
+  prepare_d0
+    <> prepare_d1
+    <> prepare_d2
+    <> prepare_a01
+    <> prepare_a12;
+};
+
+form no_error_layer() = {
+  node carry_d0 = carry_qubit(d0);
+  node carry_d1 = carry_qubit(d1);
+  node carry_d2 = carry_qubit(d2);
+  node carry_a01 = carry_qubit(a01);
+  node carry_a12 = carry_qubit(a12);
+
+  carry_d0
+    <> carry_d1
+    <> carry_d2
+    <> carry_a01
+    <> carry_a12;
+};
+
+form x_error_layer(target: PortLabel, carryA: PortLabel, carryB: PortLabel, carryC: PortLabel, carryD: PortLabel) = {
+  node x_target = qubit_gate(target, quantum_x);
+  node carry_a = carry_qubit(carryA);
+  node carry_b = carry_qubit(carryB);
+  node carry_c = carry_qubit(carryC);
+  node carry_d = carry_qubit(carryD);
+
+  x_target
+    <> carry_a
+    <> carry_b
+    <> carry_c
+    <> carry_d;
+};
+
+form cnot_live5(controlIn: PortLabel, targetIn: PortLabel, carryA: PortLabel, carryB: PortLabel, carryC: PortLabel) = {
+  node control_to_gate = relabel_qubit(controlIn, control);
+  node target_to_gate = relabel_qubit(targetIn, target);
+  node carry_a_pre = carry_qubit(carryA);
+  node carry_b_pre = carry_qubit(carryB);
+  node carry_c_pre = carry_qubit(carryC);
+  node cnot = two_qubit_gate(control, target, quantum_cnot);
+  node carry_a_mid = carry_qubit(carryA);
+  node carry_b_mid = carry_qubit(carryB);
+  node carry_c_mid = carry_qubit(carryC);
+  node control_from_gate = relabel_qubit(control, controlIn);
+  node target_from_gate = relabel_qubit(target, targetIn);
+  node carry_a_post = carry_qubit(carryA);
+  node carry_b_post = carry_qubit(carryB);
+  node carry_c_post = carry_qubit(carryC);
+
+  (control_to_gate
+    <> target_to_gate
+    <> carry_a_pre
+    <> carry_b_pre
+    <> carry_c_pre)
+    => (cnot
+        <> carry_a_mid
+        <> carry_b_mid
+        <> carry_c_mid)
+    => (control_from_gate
+        <> target_from_gate
+        <> carry_a_post
+        <> carry_b_post
+        <> carry_c_post);
+};
+
+form collect_repetition_result() = {
+  node collect
+    <- d0: Qubit;
+    <- d1: Qubit;
+    <- d2: Qubit;
+    <- a01: Qubit;
+    <- a12: Qubit;
+    -> final_d0: Bit;
+    -> final_d1: Bit;
+    -> final_d2: Bit;
+    -> s01: Bit;
+    -> s12: Bit;
+    = @realize ({
+      inherit d0 d1 d2 a01 a12;
+      shots = 100;
+    });
+
+  collect;
+};
+
+form repetition_case(errorLayer: Graph) = {
+  let encode = prepare_all();
+  let check_d0_a01 = cnot_live5(d0, a01, d1, d2, a12);
+  let check_d1_a01 = cnot_live5(d1, a01, d0, d2, a12);
+  let check_d1_a12 = cnot_live5(d1, a12, d0, d2, a01);
+  let check_d2_a12 = cnot_live5(d2, a12, d0, d1, a01);
+  let collect = collect_repetition_result();
+
+  encode
+    => errorLayer
+    => check_d0_a01
+    => check_d1_a01
+    => check_d1_a12
+    => check_d2_a12
+    => collect;
+};
+
+let no_error = no_error_layer();
+let x0_error = x_error_layer(d0, d1, d2, a01, a12);
+let x1_error = x_error_layer(d1, d0, d2, a01, a12);
+let x2_error = x_error_layer(d2, d0, d1, a01, a12);
+
+export let qec_repetition_none = repetition_case(no_error);
+export let qec_repetition_x0 = repetition_case(x0_error);
+export let qec_repetition_x1 = repetition_case(x1_error);
+export let qec_repetition_x2 = repetition_case(x2_error);
+
+qec_repetition_none

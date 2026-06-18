@@ -15,10 +15,12 @@ host binding pack present; only runnable lowering needs one).
 module Cortex.Wire.RealizeCompileSpec (spec) where
 
 import Data.Either (isRight)
+import Data.Foldable (traverse_)
 import Data.Text (Text)
+import Data.Text.IO qualified as TIO
 import Test.Hspec
 
-import Cortex.Wire.Compile (compileWireText)
+import Cortex.Wire.Compile (compileWireText, compileWireTextWithReturn)
 
 realizeCircuit :: Text
 realizeCircuit =
@@ -47,6 +49,16 @@ realizeCircuit =
 
 spec :: Spec
 spec =
-  describe "realize collect-node compilation"
-    . it "compiles a circuit collected into @realize using the quantum packages"
-    $ compileWireText realizeCircuit `shouldSatisfy` isRight
+  describe "realize collect-node compilation" $ do
+    it "compiles a circuit collected into @realize using the quantum packages" $
+      compileWireText realizeCircuit `shouldSatisfy` isRight
+
+    it "compiles the native QEC repetition-code realize catalog" $ do
+      source <- TIO.readFile "examples/wire/qec-repetition-realize.wire"
+      traverse_
+        (\selected -> compileWireTextWithReturn selected source `shouldSatisfy` isRight)
+        [ "qec_repetition_none"
+        , "qec_repetition_x0"
+        , "qec_repetition_x1"
+        , "qec_repetition_x2"
+        ]
