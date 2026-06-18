@@ -3719,6 +3719,16 @@ spec = describe "Cortex.Wire.Compile" $ do
       compiled <- requireRight (compileWireText selectSourceText)
       expectArtifactBindsCircuit compiled
 
+    it "binds source-reordered select arms with non-identity bodies" $ do
+      compiled <- requireRight (compileWireText selectReorderedNonIdentityArmsSourceText)
+      expectArtifactBindsCircuit compiled
+      artifact <- requireWireAdmissionArtifact compiled
+      case artifact.wireAdmissionSelects of
+        [selectRow] ->
+          fmap selectArmSourceKey selectRow.selectAdmissionArms `shouldBe` ["killed", "survived"]
+        otherRows ->
+          expectationFailure ("expected exactly one select row, got: " <> show otherRows)
+
     it "binds the contract-fallback select artifact to its compiled circuit" $ do
       compiled <- requireRight (compileWireText selectContractFallbackSourceText)
       expectArtifactBindsCircuit compiled
@@ -4659,6 +4669,30 @@ selectReorderedArmsSourceText =
     , "  issue: (gather_missing_constraints => repair_plan),"
     , "  ok: ()"
     , ") => publish_report"
+    ]
+
+selectReorderedNonIdentityArmsSourceText :: T.Text
+selectReorderedNonIdentityArmsSourceText =
+  T.unlines
+    [ "node decide"
+    , "  -> survived: SurvivedClaims | killed: CandidateRejection ;"
+    , "  = @demo.decide ({}) ;"
+    , "node kill_note_momentum"
+    , "  <- killed: CandidateRejection ;"
+    , "  -> out: Momentum = @demo.kill_note_momentum (killed) ;"
+    , "node themis_momentum"
+    , "  <- survived: SurvivedClaims ;"
+    , "  -> themis: ThemisMomentum = @demo.themis_momentum (survived) ;"
+    , "node techne_momentum"
+    , "  <- themis: ThemisMomentum ;"
+    , "  -> out: Momentum = @demo.techne_momentum (themis) ;"
+    , "node publish"
+    , "  <- out: Momentum ;"
+    , "  -> report: Report = @demo.publish (out) ;"
+    , "decide select("
+    , "  killed: kill_note_momentum,"
+    , "  survived: (themis_momentum => techne_momentum)"
+    , ") => publish"
     ]
 
 selectContractFallbackSourceText :: T.Text

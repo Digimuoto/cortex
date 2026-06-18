@@ -70,6 +70,7 @@ import Cortex.Wire.AST (Connection (..), EndpointRef (..))
 import Cortex.Wire.AdmissionArtifact
   ( SelectAdmissionArtifact (..)
   , SelectArmAdmissionArtifact (..)
+  , SelectVariantArtifact (..)
   , WireAdmissionArtifact (..)
   , wireAdmissionCurrentSchemaVersion
   , wireAdmissionMetadataKey
@@ -253,10 +254,19 @@ bindsSelectBodies artifact circuit =
           Nothing -> Left (BindingSelectConditionNodeMissing conditionRef)
           Just (CompiledCircuitCondition conditionNode) -> Right conditionNode
           Just _otherNode -> Left (BindingSelectConditionNodeNotCondition conditionRef)
-      -- Emitted rows are already ordered by source index; sorting makes the
-      -- replay independent of row order for artifacts that arrive decoded.
-      let orderedArms = sortOn (.selectArmSourceIndex) selectRow.selectAdmissionArms
+      let orderedArms = selectArmsInVariantOrder selectRow
       checkConditionTree conditionRef orderedArms conditionNode
+
+    selectArmsInVariantOrder selectRow =
+      sortOn armOrder selectRow.selectAdmissionArms
+      where
+        variantOrder =
+          Map.fromList
+            (zip (fmap (.selectVariantKey) selectRow.selectAdmissionVariants) [0 :: Int ..])
+        armOrder arm =
+          ( Map.findWithDefault maxBound arm.selectArmCanonicalKey variantOrder
+          , arm.selectArmSourceIndex
+          )
 
     -- Mirrors buildSelectConditionTree: the first arm forms the then group,
     -- the remaining arms the else group, recursing for nested groups.
