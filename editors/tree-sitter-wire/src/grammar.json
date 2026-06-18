@@ -1013,8 +1013,43 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "FIELD",
+              "name": "signature",
+              "content": {
+                "type": "SYMBOL",
+                "name": "node_signature"
+              }
             }
           ]
+        }
+      ]
+    },
+    "node_signature": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "inputs",
+          "content": {
+            "type": "REPEAT",
+            "content": {
+              "type": "SYMBOL",
+              "name": "input_clause"
+            }
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "outputs",
+          "content": {
+            "type": "REPEAT1",
+            "content": {
+              "type": "SYMBOL",
+              "name": "executor_output_clause"
+            }
+          }
         }
       ]
     },
@@ -1986,6 +2021,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "ellipsis"
+        },
+        {
+          "type": "SYMBOL",
           "name": "number"
         },
         {
@@ -2941,6 +2980,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "ellipsis"
+        },
+        {
+          "type": "SYMBOL",
           "name": "number"
         },
         {
@@ -2986,6 +3029,10 @@
           "value": "core_pure_ident"
         }
       ]
+    },
+    "ellipsis": {
+      "type": "STRING",
+      "value": "..."
     },
     "core_pure_record": {
       "type": "SEQ",

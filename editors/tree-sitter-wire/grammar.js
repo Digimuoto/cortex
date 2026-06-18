@@ -13,6 +13,7 @@
  *                  Overlay binds tighter than connect and star.
  * Value operators: // (record merge), ++ (string/list concat)
  * Port clauses:    <- label: Contract ; | -> label: Contract ;
+ * Paper examples:  ... placeholders are accepted for highlighting only.
  * Literals:        "..." single-line, ''...'' indented multi-line,
  *                  decimal numbers, true/false/null, ()
  * Line comments:   #
@@ -260,7 +261,13 @@ module.exports = grammar({
           )),
           optional(field('where', $.where_clause)),
         ),
+        field('signature', $.node_signature),
       ),
+    ),
+
+    node_signature: $ => seq(
+      field('inputs', repeat($.input_clause)),
+      field('outputs', repeat1($.executor_output_clause)),
     ),
 
     kind_application: $ => seq(
@@ -449,6 +456,7 @@ module.exports = grammar({
       $.list,
       $.string,
       $.indented_string,
+      $.ellipsis,
       $.number,
       $.boolean,
       $.unit,
@@ -643,6 +651,7 @@ module.exports = grammar({
     _core_pure_atom: $ => choice(
       $.string,
       $.indented_string,
+      $.ellipsis,
       $.number,
       $.boolean,
       $.null,
@@ -651,6 +660,8 @@ module.exports = grammar({
       seq('(', $.core_pure_expr, ')'),
       alias($.identifier, $.core_pure_ident),
     ),
+
+    ellipsis: _ => '...',
 
     core_pure_record: $ => seq(
       '{',

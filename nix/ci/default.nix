@@ -4,7 +4,11 @@
     ./pre-commit.nix
   ];
 
-  perSystem = {pkgs, ...}: let
+  perSystem = {
+    config,
+    pkgs,
+    ...
+  }: let
     check-format = pkgs.writeShellApplication {
       name = "check-format";
       runtimeInputs = [pkgs.nix];
@@ -96,6 +100,35 @@
       '';
     };
 
+    check-doc-wire-examples = pkgs.writeShellApplication {
+      name = "check-doc-wire-examples";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.tree-sitter
+      ];
+      text = ''
+        set -euo pipefail
+        exec python3 scripts/check-doc-wire-examples
+      '';
+    };
+
+    check-doc-wire-examples-flake =
+      pkgs.runCommand "check-doc-wire-examples" {
+        nativeBuildInputs = [
+          pkgs.python3
+          pkgs.tree-sitter
+        ];
+      } ''
+        set -euo pipefail
+        cp -R ${../..} repo
+        chmod -R u+w repo
+        cd repo
+        python3 scripts/check-doc-wire-examples \
+          --parser-lib ${config.packages.tree-sitter-wire}/parser \
+          --skip-highlight
+        touch "$out"
+      '';
+
     check-theory = pkgs.writeShellApplication {
       name = "check-theory";
       runtimeInputs = [pkgs.nix];
@@ -130,6 +163,7 @@
         check-logos-boundary
         check-module-haddock
         docs-lint
+        check-doc-wire-examples
         check-wire-style
         lean-lint
         lint-haskell
@@ -176,15 +210,19 @@
         check-wire-style
         echo
 
-        echo "Step 10: Lean theory"
+        echo "Step 10: docs Wire examples"
+        check-doc-wire-examples
+        echo
+
+        echo "Step 11: Lean theory"
         check-theory
         echo
 
-        echo "Step 11: TLA+ protocol model"
+        echo "Step 12: TLA+ protocol model"
         check-tla
         echo
 
-        echo "Step 12: flake checks"
+        echo "Step 13: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -198,6 +236,7 @@
       check-logos-boundary = check-logos-boundary;
       check-language-pragmas = check-language-pragmas;
       check-module-haddock = check-module-haddock;
+      check-doc-wire-examples = check-doc-wire-examples;
       check-wire-style = check-wire-style;
       docs-lint = docs-lint;
       lean-lint = lean-lint;
@@ -205,6 +244,7 @@
     };
 
     checks = {
+      doc-wire-examples = check-doc-wire-examples-flake;
       tla-protocol = check-tla-flake;
     };
 
@@ -249,6 +289,12 @@
         type = "app";
         program = "${check-logos-boundary}/bin/check-logos-boundary";
         meta.description = "Reject Cortex imports of Logos";
+      };
+
+      check-doc-wire-examples = {
+        type = "app";
+        program = "${check-doc-wire-examples}/bin/check-doc-wire-examples";
+        meta.description = "Parse and highlight Wire code fences embedded in Markdown docs";
       };
 
       check-wire-style = {

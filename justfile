@@ -97,6 +97,11 @@ wire-style-check:
     @echo "🔍 Running Wire style checks..."
     nix run .#check-wire-style
 
+# Parse and highlight Wire fences embedded in Markdown docs
+doc-wire-examples:
+    @echo "🔍 Checking docs Wire examples..."
+    nix run .#check-doc-wire-examples
+
 # ============================================================================
 # DOCUMENTATION SITE
 # ============================================================================

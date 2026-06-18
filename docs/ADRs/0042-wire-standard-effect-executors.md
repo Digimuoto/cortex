@@ -55,7 +55,7 @@ example. The right surface is the one Wire already uses for authority: registere
 Cortex should provide a small standard executor pack for host-local effects. The first standard
 effects are:
 
-```wire
+```text
 use std.io.{@stdin, @stdout, @command, @readFile, @writeFile, CommandSpec, CommandResult};
 
 @stdin

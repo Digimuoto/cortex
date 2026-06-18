@@ -253,6 +253,9 @@ jobs:
       - name: Check Wire style
         run: nix run '.#check-wire-style' --print-build-logs
 
+      - name: Check docs Wire examples
+        run: nix run '.#check-doc-wire-examples' --print-build-logs
+
   supported-build:
     name: Build Supported Outputs
     runs-on: [self-hosted, nix, mercury, cortex]

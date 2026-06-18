@@ -52,7 +52,7 @@ authority.
 - **[ADR 0050](../../ADRs/0050-wire-corepure-output-residue.md)** - removal of the source-level
   `pure (...)` wrapper and the static/runtime residue split.
 - **[ADR 0031](../../ADRs/0031-wire-binding-forms-and-where-clauses.md)** - node-local
-  `where <record-expr> ;` binding surface.
+  `where <record-expr>;` binding surface.
 
 ## Syntax
 
@@ -67,7 +67,7 @@ node <name>
 
 A pure output equation declares one output port and its value:
 
-```wire
+```text
 -> label: Contract = <corepure_expr>;
 ```
 
@@ -77,7 +77,7 @@ no `pure` wrapper, and no separate map from result names to ports in source.
 Rules:
 
 - Only input ports may appear before pure output equations.
-- The optional trailing `where <record-expr> ;` clause opens its record fields into all output
+- The optional trailing `where <record-expr>;` clause opens its record fields into all output
   equations.
 - The `where` field set must be statically determinable: record literals, `let ... in { ... }`,
   references to let-bound records, and `//` merges of those shapes are admitted. Dynamic record

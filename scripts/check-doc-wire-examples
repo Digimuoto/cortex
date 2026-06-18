@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""Validate Wire code fences embedded in Markdown docs."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+GRAMMAR_DIR = ROOT / "editors" / "tree-sitter-wire"
+FENCE_RE = re.compile(r"^```([A-Za-z0-9_-]+)?(?:\s.*)?$")
+
+
+@dataclass(frozen=True)
+class WireBlock:
+    path: Path
+    start_line: int
+    index: int
+    text: str
+
+
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def docs_markdown_files() -> list[Path]:
+    return sorted(path for path in DOCS.rglob("*.md") if path.is_file())
+
+
+def extract_wire_blocks(path: Path) -> tuple[list[WireBlock], list[str]]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    blocks: list[WireBlock] = []
+    errors: list[str] = []
+    in_wire_block = False
+    block_start = 0
+    block_index = 0
+    block_lines: list[str] = []
+
+    for line_number, line in enumerate(lines, start=1):
+        fence_match = FENCE_RE.match(line)
+        if fence_match:
+            if in_wire_block:
+                blocks.append(
+                    WireBlock(
+                        path=path,
+                        start_line=block_start,
+                        index=block_index,
+                        text="\n".join(block_lines) + "\n",
+                    )
+                )
+                in_wire_block = False
+                block_lines = []
+                continue
+
+            info = fence_match.group(1) or ""
+            if info == "wire":
+                block_index += 1
+                in_wire_block = True
+                block_start = line_number + 1
+                block_lines = []
+            continue
+
+        if in_wire_block:
+            block_lines.append(line)
+
+    if in_wire_block:
+        errors.append(f"{rel(path)}:{block_start - 1}: unterminated wire code fence")
+
+    return blocks, errors
+
+
+def diagnostic_lines(output: str, limit: int = 12) -> list[str]:
+    return output.splitlines()[:limit]
+
+
+def run_tree_sitter(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+
+def parse_command(block_file: Path, parser_lib: Path | None, grammar_dir: Path) -> list[str]:
+    if parser_lib is not None:
+        return [
+            "tree-sitter",
+            "parse",
+            "-q",
+            "--lib-path",
+            str(parser_lib),
+            "--lang-name",
+            "wire",
+            str(block_file),
+        ]
+
+    return [
+        "tree-sitter",
+        "parse",
+        "-q",
+        "--scope",
+        "source.wire",
+        "-p",
+        str(grammar_dir),
+        str(block_file),
+    ]
+
+
+def parse_diagnostic_command(
+    block_file: Path,
+    parser_lib: Path | None,
+    grammar_dir: Path,
+) -> list[str]:
+    command = parse_command(block_file, parser_lib, grammar_dir)
+    return [part for part in command if part != "-q"]
+
+
+def validate_block(
+    block: WireBlock,
+    tmp_dir: Path,
+    parser_lib: Path | None,
+    grammar_dir: Path,
+    check_highlight: bool,
+) -> list[str]:
+    block_file = tmp_dir / f"{block.path.stem}-{block.index}.wire"
+    block_file.write_text(block.text, encoding="utf-8")
+
+    location = f"{rel(block.path)}:{block.start_line}: wire block #{block.index}"
+    parse_result = run_tree_sitter(parse_command(block_file, parser_lib, grammar_dir))
+    if parse_result.returncode != 0:
+        detail = run_tree_sitter(parse_diagnostic_command(block_file, parser_lib, grammar_dir))
+        output = detail.stdout + detail.stderr
+        lines = [f"{location}: failed tree-sitter parse"]
+        lines.extend(f"  {line}" for line in diagnostic_lines(output))
+        return lines
+
+    if not check_highlight:
+        return []
+
+    highlight_result = run_tree_sitter(
+        [
+            "tree-sitter",
+            "highlight",
+            "--check",
+            "--scope",
+            "source.wire",
+            "-p",
+            str(grammar_dir),
+            str(block_file),
+        ]
+    )
+    if highlight_result.returncode != 0:
+        output = highlight_result.stdout + highlight_result.stderr
+        lines = [f"{location}: failed tree-sitter highlight"]
+        lines.extend(f"  {line}" for line in diagnostic_lines(output))
+        return lines
+
+    return []
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--parser-lib",
+        type=Path,
+        help="Prebuilt tree-sitter parser library to use for parse validation.",
+    )
+    parser.add_argument(
+        "--grammar-dir",
+        type=Path,
+        default=GRAMMAR_DIR,
+        help="Tree-sitter grammar directory used for local parse/highlight validation.",
+    )
+    parser.add_argument(
+        "--skip-highlight",
+        action="store_true",
+        help="Only parse examples; useful for hermetic checks that use --parser-lib.",
+    )
+    args = parser.parse_args()
+    check_highlight = not args.skip_highlight and args.parser_lib is None
+
+    blocks: list[WireBlock] = []
+    errors: list[str] = []
+    for path in docs_markdown_files():
+        path_blocks, path_errors = extract_wire_blocks(path)
+        blocks.extend(path_blocks)
+        errors.extend(path_errors)
+
+    with tempfile.TemporaryDirectory(prefix="doc-wire-") as tmp:
+        tmp_dir = Path(tmp)
+        for block in blocks:
+            errors.extend(
+                validate_block(
+                    block,
+                    tmp_dir,
+                    parser_lib=args.parser_lib,
+                    grammar_dir=args.grammar_dir,
+                    check_highlight=check_highlight,
+                )
+            )
+
+    if errors:
+        print("Docs Wire example failures:", file=sys.stderr)
+        for error in errors:
+            print(f"  {error}", file=sys.stderr)
+        return 1
+
+    print(f"checked {len(blocks)} docs Wire example(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

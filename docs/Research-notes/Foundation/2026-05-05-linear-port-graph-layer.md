@@ -256,7 +256,7 @@ Wire source lowering preserves/forgets into Mokhov relation equality.
 
 Authors want compact expressions such as:
 
-```wire
+```text
 make(8, worker) * summarize
 ```
 

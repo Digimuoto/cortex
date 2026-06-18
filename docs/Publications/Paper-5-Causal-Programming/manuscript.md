@@ -622,8 +622,8 @@ node compute_score
 
 node fan_out
   <- score: Score;
-  -> for_audit: Score;
-  -> for_decision: Score = pure ({ for_audit = score; for_decision = score; });
+  -> for_audit: Score = score;
+  -> for_decision: Score = score;
 
 node log_score
   <- for_audit: Score;
@@ -1060,7 +1060,7 @@ The experiment's central structural claim is encoded directly as fragment compos
 parameterized form takes another graph as a parameter:
 
 ```wire
-form marked_circuit(phase_angle: Value, marker_readout: Graph) = { ... };
+form marked_circuit(phase_angle: Value, marker_readout: Graph) = { ...; };
 ```
 
 The two specializations differ in exactly what subgraph they pass for `marker_readout`. The
@@ -1544,23 +1544,23 @@ node reserve_inventory
 
 node fan_reservation
   <- reservation: Reservation;
-  -> for_charge: Reservation;
-  -> for_recovery: Reservation = pure ({ for_charge = reservation; for_recovery = reservation; });
+  -> for_charge: Reservation = reservation;
+  -> for_recovery: Reservation = reservation;
 
 node charge_card
   <- for_charge: Reservation;
-  -> success: Charge | failure: ChargeError
+  -> success: Charge | failure: ChargeError;
   = @payments.charge { idempotency_key = ...; } (for_charge);
 
 node issue_receipt
   <- success: Charge;
   <- for_recovery: Reservation;
-  -> receipt: Receipt = pure (build_receipt(success, for_recovery));
+  -> receipt: Receipt = pure (build_receipt success for_recovery);
 
 node release_inventory_on_failure
   <- failure: ChargeError;
   <- for_recovery: Reservation;
-  -> compensation: Compensation = @inventory.release { ... } (for_recovery);
+  -> compensation: Compensation = @inventory.release {} (for_recovery);
 
 # Composition. The postfix select is the latent branch family.
 receive_order
@@ -1708,7 +1708,7 @@ two-qubit circuit whose marker readout is _passed in as a graph_:
 ```wire
 form marked_circuit(phase_angle: Value, marker_readout: Graph) = {
   node ibm_runtime_config
-    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { ... } (null);
+    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config {} (null);
   node prepare_screen
     <- config: IBMQuantumConfig;
     -> control: Qubit = @quantum.prepare_zero { index = 0; } (...);

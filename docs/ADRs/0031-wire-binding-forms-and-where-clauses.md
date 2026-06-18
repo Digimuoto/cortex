@@ -1,7 +1,7 @@
 ---
 title: "ADR 0031 - Wire Binding Forms and Node Where Clauses"
 description:
-  "Restricts `let ... in` to expression position, retains module-level `let X = e ;` as a
+  "Restricts `let ... in` to expression position, retains module-level `let X = e;` as a
   declaration, and introduces node-local `where <record-expr>` clauses that open a record's fields
   into the node body's lexical scope."
 sidebar:
@@ -37,7 +37,7 @@ Wire currently uses `let ... in` in three places that look like one construct bu
 things:
 
 1. As a CorePure expression form, exactly as in ADR 0023's expression surface.
-2. As a module-level binding, written without `in` (`let analyst = @review.analyst { ... } ;`).
+2. As a module-level binding, written without `in` (`let analyst = @review.analyst { ... };`).
 3. As a node-local block placed between input clauses and pure output equations, scoping
    intermediate CorePure bindings across every output equation in that node.
 
@@ -80,7 +80,7 @@ The body is a CorePure expression in CorePure position and a Wire value expressi
 position. Bindings are non-recursive and evaluated in declaration order. This matches ADR 0023's
 CorePure semantics and applies uniformly at the Wire-value level. `let ... in` may nest:
 
-```wire
+```text
 let y = let x = 1 in x + 1 in y * 2
 ```
 
@@ -88,7 +88,7 @@ Legal positions are exactly the expression positions defined elsewhere: the righ
 CorePure output equation, the argument of an executor call, the right-hand side of a `where`
 binding, and the body of another `let ... in`.
 
-### 2. Module-level `let X = e ;`
+### 2. Module-level `let X = e;`
 
 Module-level binding is a declaration without `in`. The bound name is in scope for the rest of the
 module. The right-hand side is a graph expression, an ordinary Wire value expression, or a CorePure
@@ -150,7 +150,7 @@ of the identifier. The where-clause's trailing `;` then closes the clause.
 
 #### Why a record, not a binding list
 
-A bare-binding form (`where x = e1 ; y = e2 ;`) forces a scope choice. Recursive scope is a known
+A bare-binding form (`where x = e1; y = e2;`) forces a scope choice. Recursive scope is a known
 footgun (Nix's `rec`). Non-recursive scope produces independent-fields semantics that already exist
 in CorePure record literals. Taking a record value reuses what is already specified in ADR 0023 and
 pushes any sequential intermediate computation into a `let ... in` that produces the record - an
@@ -163,13 +163,13 @@ literal:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = filtered_high ;
-  -> rejected: RejectedSet = filtered_low ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = filtered_high;
+  -> rejected: RejectedSet = filtered_low;
   where {
-    filtered_high = evidence.items |> filter (x: x.score >= 0.7) ;
-    filtered_low  = evidence.items |> filter (x: x.score <  0.7) ;
-  } ;
+    filtered_high = evidence.items |> filter (x: x.score >= 0.7);
+    filtered_low  = evidence.items |> filter (x: x.score <  0.7);
+  };
 ```
 
 #### Shared intermediates: `let ... in { ... }`
@@ -179,15 +179,15 @@ record literal:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = accepted ;
-  -> rejected: RejectedSet = rejected ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = accepted;
+  -> rejected: RejectedSet = rejected;
   where let
-    items          = evidence.items ;
-    accepted_items = items |> filter (x: x.score >= 0.7) ;
-    rejected_items = items |> filter (x: x.score <  0.7) ;
+    items          = evidence.items;
+    accepted_items = items |> filter (x: x.score >= 0.7);
+    rejected_items = items |> filter (x: x.score <  0.7);
   in
-  { accepted = accepted_items ; rejected = rejected_items ; } ;
+  { accepted = accepted_items; rejected = rejected_items; };
 ```
 
 The `let` is sequential CorePure (ADR 0023). The record literal exposes the public names. `where`
@@ -199,17 +199,17 @@ ends the let-in body, and the where-clause's trailing `;` closes the clause.
 Any authority-free pure-data record value works, including a let-bound one:
 
 ```wire
-let defaults = { factor = 0.7 ; threshold = 100 ; } ;
+let defaults = { factor = 0.7; threshold = 100; };
 
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= factor) ;
-  where defaults ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= factor);
+  where defaults;
 
 node strict
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= factor + 0.1) ;
-  where defaults ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= factor + 0.1);
+  where defaults;
 ```
 
 Both nodes see `factor` and `threshold` during delayed pure evaluation. No parameter threading, no
@@ -221,17 +221,17 @@ The same `where <record-expr>` form attaches to executor nodes:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = @review.analyze (payload) ;
-  where { payload = { items = evidence.items |> filter (x: x.score >= 0.5) ; } ; } ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = @review.analyze (payload);
+  where { payload = { items = evidence.items |> filter (x: x.score >= 0.5); }; };
 ```
 
 ```wire
 node logEvent
-  <- event: Event ;
-  = @artifact.log (decorated) ;
-  where { decorated = { event = event ; ts = event.timestamp ; } ; } ;
+  <- event: Event;
+  = @artifact.log (decorated);
+  where { decorated = { event = event; ts = event.timestamp; }; };
 ```
 
 #### Invariant: where-records have a statically determinable field set
@@ -239,14 +239,14 @@ node logEvent
 The where-record's field set must be resolvable at elaboration time. This is a normative admission
 rule, not an idiom:
 
-> **WHERE-STATIC-FIELDS** — for every `where <expr> ;` clause, the elaborator must determine the set
+> **WHERE-STATIC-FIELDS** — for every `where <expr>;` clause, the elaborator must determine the set
 > of field names produced by `<expr>` without runtime evaluation. Admission rejects any
 > where-expression whose field set is not statically determinable, with a typed diagnostic naming
 > the offending clause.
 
 In practice the where-expression is one of:
 
-- a record literal `{ a = … ; b = … ; }`,
+- a record literal `{ a = …; b = …; }`,
 - a `let ... in` whose body is a record literal,
 - a bare reference to a let-bound record literal (or chain thereof),
 - a record-merge `R1 // R2` whose constituents satisfy WHERE-STATIC-FIELDS.
@@ -265,7 +265,7 @@ out of scope for this ADR; revisit only if a concrete authoring need surfaces.
   surfaces win without informing the reader.
 
 - **Forward references inside a where-record.** Record fields are independent (ADR 0023). A
-  where-expression `where { x = y ; y = 1 ; } ;` does not see `y` from inside `x`. Authors who need
+  where-expression `where { x = y; y = 1; };` does not see `y` from inside `x`. Authors who need
   sequential dependency wrap in `let ... in { ... }` per the shared-intermediates pattern.
 
 - **Multiple where-clauses on one node.** Forbidden by the grammar (`(where_clause)?` is optional
@@ -279,11 +279,11 @@ out of scope for this ADR; revisit only if a concrete authoring need surfaces.
 
 The grammar rule that closes the loop:
 
-> Top-level positions accept declarations only: `contract`, `node`, and `let X = e ;`. A
-> `let ... in` cannot appear in a top-level position.
+> Top-level positions accept declarations only: `contract`, `node`, and `let X = e;`. A `let ... in`
+> cannot appear in a top-level position.
 
 `let bindings in node X <- ...` is therefore a parse error at the module top level. Authors who want
-a name shared across nodes use a module-level `let X = e ;` declaration; authors who want a name
+a name shared across nodes use a module-level `let X = e;` declaration; authors who want a name
 local to a single node use a `where` clause; authors who want a CorePure local inside a single
 expression use expression-level `let ... in` in that expression.
 
@@ -296,27 +296,27 @@ The prior node-local `let ... in` form between input clauses and pure output equ
 (Reference/Wire/grammar.md §6.1, ADR 0022 clause grammar) is removed. Existing examples that use it
 are rewritten by moving the let-block inside a where-record. Mechanical rewrite:
 
-```wire
+```text
 -- before
 node score
-  <- evidence: EvidenceSet ;
-  <- weights: WeightSet ;
+  <- evidence: EvidenceSet;
+  <- weights: WeightSet;
   let
-    scores   = map (item: item.score) evidence.items ;
-    weighted = zipWith (s: w: s * w) scores weights.values ;
+    scores   = map (item: item.score) evidence.items;
+    weighted = zipWith (s: w: s * w) scores weights.values;
   in
-  -> score: ScoreSet = { total = sum weighted ; count = length weighted ; } ;
+  -> score: ScoreSet = { total = sum weighted; count = length weighted; };
 
 -- after
 node score
-  <- evidence: EvidenceSet ;
-  <- weights: WeightSet ;
-  -> score: ScoreSet = { total = sum weighted ; count = length weighted ; } ;
+  <- evidence: EvidenceSet;
+  <- weights: WeightSet;
+  -> score: ScoreSet = { total = sum weighted; count = length weighted; };
   where let
-    scores   = map (item: item.score) evidence.items ;
-    weighted = zipWith (s: w: s * w) scores weights.values ;
+    scores   = map (item: item.score) evidence.items;
+    weighted = zipWith (s: w: s * w) scores weights.values;
   in
-  { scores = scores ; weighted = weighted ; } ;
+  { scores = scores; weighted = weighted; };
 ```
 
 The `let` preserves CorePure's sequential binding semantics; the record literal exposes the public
@@ -331,7 +331,7 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
   that one specific `let ... in` does not behave like an expression-level `let ... in`.
 
 - **Allow top-level `let ... in <node-decl>` and lint it.** Rejected. The form provides nothing that
-  module-level `let X = e ;` and node-local `where` together do not already cover. A lint rule lets
+  module-level `let X = e;` and node-local `where` together do not already cover. A lint rule lets
   the smell compile, get copied, and become cargo cult; making the form ungrammatical at the parse
   level removes the failure mode entirely. The cost is one extra "this position is a declaration,
   not an expression" sentence in the grammar reference.
@@ -347,7 +347,7 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
   node declarations. Keeping anonymous node values out of this slice prevents `let` from becoming
   declaration-shaped again, which is the ambiguity this ADR removes.
 
-- **Make `where` a bare-binding form (`where x = e1 ; y = e2 ;`).** Rejected. A bare-binding form
+- **Make `where` a bare-binding form (`where x = e1; y = e2;`).** Rejected. A bare-binding form
   forces a scope choice between recursive and non-recursive bindings. Recursive scope is a known
   footgun (Nix's `rec`); non-recursive scope produces independent-fields semantics that already
   exist in CorePure record literals (ADR 0023). Treating the where-expression as a record value
@@ -365,7 +365,7 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
 ### Positive
 
 - Each binding surface has a syntactic form that matches what it actually does. Expression-level
-  bindings use `let ... in`; module-level declarations use `let X = e ;`; node-local intermediates
+  bindings use `let ... in`; module-level declarations use `let X = e;`; node-local intermediates
   use `where <record-expr>`.
 - `where` introduces no new construct: it reuses CorePure's existing record literal, `let ... in`,
   and let-bound name forms. The new specification work is the lexical-scoping rule (open the
@@ -386,7 +386,7 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
 
 ### Negative
 
-- The shared-intermediates case requires explicit `where let ... in { ... } ;` wrapping. A few extra
+- The shared-intermediates case requires explicit `where let ... in { ... };` wrapping. A few extra
   tokens are the price of separating _computation_ (sequential `let`) from _exposed names_ (record
   fields).
 - Existing `.wire` examples and tests that use node-local `let ... in` must be rewritten with the

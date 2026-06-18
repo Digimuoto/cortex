@@ -27,7 +27,7 @@ Semicolons are terminators or separators. They are not operator tokens.
 
 Use no whitespace before a semicolon:
 
-```wire
+```text
 prompt = "Planning mode (high/safe): ";
 ```
 
@@ -145,7 +145,7 @@ node summarize
 
 For lists of records, put each record on its own line:
 
-```wire
+```text
 tasks = [
   { name = "write ADRs"; score = 0.95; hours = 1; },
   { name = "implement stdin/stdout executors"; score = 0.88; hours = 3; },
@@ -195,7 +195,7 @@ authority.
 
 Inside a quoted string, `#` is ordinary string content and does not need escaping:
 
-```wire
+```text
 argv = ["nix", "run", ".#cortex-tests", "--", "-m", "Cortex.Wire.Parser"];
 ```
 

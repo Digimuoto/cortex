@@ -158,19 +158,16 @@ as a disambiguation tool rather than as the primary model.
 For example, a simple typed path can remain visually close to the graph it denotes:
 
 ```wire
-node planner :
-  -> ReportPlan
-= @review.planner {};
+node planner
+  -> plan: ReportPlan = @review.planner {} (null);
 
-node analyst :
-  <- ReportPlan
-  -> AnalysisFragment
-= @review.analyst {};
+node analyst
+  <- plan: ReportPlan;
+  -> analysis: AnalysisFragment = @review.analyst {} (plan);
 
-node report :
-  <- AnalysisFragment
-  -> ReportArtifact
-= @review.report_writer {};
+node report
+  <- analysis: AnalysisFragment;
+  -> artifact: ReportArtifact = @review.report_writer {} (analysis);
 
 let deep_report = planner => analyst => report;
 ```
@@ -183,16 +180,15 @@ labels are required to disambiguate; the label becomes part of the port key and 
 matching.
 
 ```wire
-node splitter :
-  <- Report
-  -> primary: Claim
-  -> fallback: Claim
-= @review.splitter {};
+node splitter
+  <- report: Report;
+  -> primary: Claim;
+  -> fallback: Claim;
+  = @review.splitter {} (report);
 
-node consumer :
-  <- primary: Claim
-  -> Decision
-= @review.consumer {};
+node consumer
+  <- primary: Claim;
+  -> decision: Decision = @review.consumer {} (primary);
 
 let decide = splitter => consumer;
 ```
@@ -203,27 +199,26 @@ available but is not the default: unlabeled composition suffices for the common 
 
 ## 5. Reuse Without a Second Language
 
-Wire reuses graph structure through the same value layer it uses for ordinary nodes. The key
-mechanism is the **partial node**: a configured executor value whose remaining structural choices
-are pinned later.
+Wire reuses execution configuration through the same value layer it uses for ordinary compile-time
+data. The key mechanism is the **configured executor value**: reusable executor authority plus inert
+configuration, applied behind an explicit node boundary.
 
 ```wire
-let analyst_base = @review.analyst {
+let critic_executor = @review.analyst {
   memory = topological { preset = "analyst"; };
-};
-
-node critic :
-  <- AnalysisFragment
-  -> ReviewFragment
-= analyst_base // {
   instructions = "Critique the draft and call out weak claims.";
 };
+
+node critic
+  <- analysis: AnalysisFragment;
+  -> review: ReviewFragment;
+  = critic_executor (analysis);
 ```
 
 This matters because it avoids a common DSL failure mode: one language for graphs, another for
 templates, and a third for runtime configuration. In Wire, reuse stays inside the same algebra. The
 same mechanism also gives rewrite proposals a disciplined instantiation path: proposals can
-introduce new nodes by applying bounded configuration deltas to already-registered authority.
+introduce new nodes by applying registered executor authority behind explicit typed boundaries.
 
 The current design intentionally stops short of full composition-level lambdas. That is a real
 future direction, but only if variable-arity or abstraction-emitting rewrites become load-bearing.

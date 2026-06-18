@@ -24,6 +24,7 @@
 
 (boolean) @constant.builtin
 (null)    @constant.builtin
+(ellipsis) @comment
 
 ; ── Operators ───────────────────────────────────────────────────────────
 

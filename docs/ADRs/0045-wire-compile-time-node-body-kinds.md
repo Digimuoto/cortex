@@ -71,7 +71,7 @@ author the repeated declaration pattern once while preserving the expanded graph
 Wire should add **compile-time node-body kinds**.
 
 A node-body kind is a source-level declaration that supplies the typed boundary and body of one
-node, but not the node head. It is instantiated only by an ordinary `node <name> = ... ;`
+node, but not the node head. It is instantiated only by an ordinary `node <name> = ...;`
 declaration. During elaboration, that declaration expands into one ordinary `node` declaration whose
 name comes from the call site and whose boundary/body comes from the kind.
 
@@ -127,7 +127,7 @@ calls, Pulse state, or materialized artifacts. A kind cannot inspect or modify t
 ### Identity and hygiene
 
 Expanded nodes must have stable source identities. The node name is always supplied by the
-instantiating `node <name> = ... ;` declaration, never by a kind parameter or generated-name rule. A
+instantiating `node <name> = ...;` declaration, never by a kind parameter or generated-name rule. A
 duplicate node name after kind expansion is the same compile-time error as a duplicate handwritten
 node.
 

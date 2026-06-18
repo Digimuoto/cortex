@@ -143,8 +143,8 @@ classifies the right-hand side by phase:
 - graph expressions are elaborated at compile time and bind graph values;
 - configured executor values and ordinary scalar, record, list, or string expressions bind
   compile-time values;
-- CorePure helper functions, such as `let pred = item: item.score >= 0.7 ;`, bind delayed helpers
-  for pure evaluation;
+- CorePure helper functions, such as `let pred = item: item.score >= 0.7;`, bind delayed helpers for
+  pure evaluation;
 - bound form applications, such as `let open_phase_0 = open_arm(0.0);`, elaborate at compile time to
   graph values with scoped internal node identities. Form-local `let` bindings may also bind nested
   form applications.
@@ -180,14 +180,14 @@ executors.
 ## 4. Contracts And Ports
 
 Contracts are named typed interfaces. Contract names are equal iff their names are equal. A contract
-is known if an executor registry declares it or the program asserts it with `contract Name ;`.
+is known if an executor registry declares it or the program asserts it with `contract Name;`.
 `[T; N]` is a bounded indexed product contract with static non-negative count `N`; it is a
 topology-shaping contract only when an explicit `*` adapter folds or unfolds it. `N = 0` is the
 empty finite product and exposes no indexed leaves.
 
 Port clauses:
 
-```wire
+```text
 <- label: Contract;
 -> label: Contract;
 -> label_a: ContractA | label_b: ContractB;
@@ -335,7 +335,7 @@ specified by the kind.
 
 An indexed binding marks the generated family as addressable by static source projection:
 
-```wire
+```text
 let workers[] = make(3, sample);
 
 workers[0]
@@ -385,7 +385,7 @@ Rules:
 - `pure (...)`, `@pure`, `pure { ... }`, and string-valued `expr = ...` configs are rejected;
 - every pure equation declares exactly one output port;
 - pure equations do not declare sum groups;
-- an optional trailing `where <record-expr> ;` clause opens statically known record fields into all
+- an optional trailing `where <record-expr>;` clause opens statically known record fields into all
   equations in the node;
 - node-local `let ... in` blocks before the body are rejected;
 - top-level delayed bindings and captured pure-data constants are visible to later pure nodes.
@@ -473,7 +473,7 @@ Record fields support Nix-style `inherit name;` sugar, which desugars to `name =
 
 ## 7. Graph Composition
 
-```wire
+```ebnf
 wire_expr    ::= connect_expr
                | connect_expr "select" "(" arm ("," arm)* ","? ")"
 connect_expr ::= overlay_expr (("=>" | "*") overlay_expr)*
@@ -563,7 +563,7 @@ rightmost operand.
 
 String interpolation is CorePure syntax:
 
-```wire
+```text
 "Score: ${item.score}"
 ''Threshold: ${threshold}''
 ```
@@ -581,8 +581,8 @@ construction. Division by zero and non-finite float results are typed CorePure f
 
 ## 9. Imports And File Returns
 
-`import name from "path.wire" ;` imports the file-return value from another file.
-`import { a, b } from "path.wire" ;` imports exported names. Contract assertions are ambient once a
+`import name from "path.wire";` imports the file-return value from another file.
+`import { a, b } from "path.wire";` imports exported names. Contract assertions are ambient once a
 file is loaded.
 
 A file without a file-return expression is declaration-only: it contributes contract assertions and

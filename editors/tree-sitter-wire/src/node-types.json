@@ -284,6 +284,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -355,6 +359,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -431,6 +439,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -559,6 +571,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -742,6 +758,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -812,6 +832,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -872,6 +896,10 @@
         },
         {
           "type": "core_pure_record",
+          "named": true
+        },
+        {
+          "type": "ellipsis",
           "named": true
         },
         {
@@ -1071,6 +1099,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1142,6 +1174,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -1218,6 +1254,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -1350,6 +1390,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -1537,6 +1581,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1604,6 +1652,10 @@
           },
           {
             "type": "core_pure_record",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -1754,6 +1806,10 @@
         },
         {
           "type": "constructor_expr",
+          "named": true
+        },
+        {
+          "type": "ellipsis",
           "named": true
         },
         {
@@ -2445,6 +2501,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "family_projection",
             "named": true
           },
@@ -2514,6 +2574,10 @@
           },
           {
             "type": "constructor_expr",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -2608,12 +2672,48 @@
           }
         ]
       },
+      "signature": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "node_signature",
+            "named": true
+          }
+        ]
+      },
       "where": {
         "multiple": false,
         "required": false,
         "types": [
           {
             "type": "where_clause",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "node_signature",
+    "named": true,
+    "fields": {
+      "inputs": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "input_clause",
+            "named": true
+          }
+        ]
+      },
+      "outputs": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "executor_output_clause",
             "named": true
           }
         ]
@@ -2814,6 +2914,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "family_projection",
             "named": true
           },
@@ -2989,6 +3093,10 @@
             "named": true
           },
           {
+            "type": "ellipsis",
+            "named": true
+          },
+          {
             "type": "family_projection",
             "named": true
           },
@@ -3070,6 +3178,10 @@
           },
           {
             "type": "constructor_expr",
+            "named": true
+          },
+          {
+            "type": "ellipsis",
             "named": true
           },
           {
@@ -3401,6 +3513,10 @@
   },
   {
     "type": "core_pure_ident",
+    "named": true
+  },
+  {
+    "type": "ellipsis",
     "named": true
   },
   {

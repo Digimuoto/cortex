@@ -644,7 +644,7 @@ So the migration stance should be:
 
 A typical migration shape is:
 
-```wire
+```text
 if required_evidence_missing between gatherer analyst {
   repair;
 } else {

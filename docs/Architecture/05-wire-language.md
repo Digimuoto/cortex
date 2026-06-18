@@ -246,7 +246,7 @@ policy such as tools, memory authority, model choice, timeouts, budgets, and dom
 
 ```wire
 let sectionWriter = @native.report_section_writer {
-  memory = topological { preset = "analyst" };
+  memory = topological { preset = "analyst"; };
   model = "gpt-5.4";
 };
 
@@ -296,18 +296,18 @@ General loops, host scripts, dynamic languages, IO, tools, and model calls belon
 The binding story is deliberately split by surface:
 
 - expression-local names use `let ... in` inside CorePure or Wire value expressions;
-- module-level names use `let name = value ;` and are classified by the value they bind;
-- node-local shared values use a trailing `where <record-expr> ;` clause whose fields are opened
-  into the node body.
+- module-level names use `let name = value;` and are classified by the value they bind;
+- node-local shared values use a trailing `where <record-expr>;` clause whose fields are opened into
+  the node body.
 
 That split keeps `let ... in` expression-shaped. Node-local sharing is attached to the node as a
 record of local names, not as a structural decoration between ports and body.
 
 Module-level `let` is phase-neutral syntax. Graph-valued lets are elaborated at compile time, for
-example `let pipeline = planner => analyst ;`. Configured executor values and ordinary scalar,
+example `let pipeline = planner => analyst;`. Configured executor values and ordinary scalar,
 record, list, or string values are also compile-time module values. Delayed CorePure evaluation may
 capture module lets only when their values are authority-free pure data, or when the binding is a
-CorePure helper function such as `let pred = item: item.score >= 0.7 ;`. It may not capture graph
+CorePure helper function such as `let pred = item: item.score >= 0.7;`. It may not capture graph
 values or configured executor authority.
 
 ## Rewrites and runtime handoff

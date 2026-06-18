@@ -116,6 +116,16 @@
             pass_filenames = false;
             files = "^.*\\.wire$|^docs/(Architecture|Reference|Usage)/.*\\.md$|^docs/index\\.md$|^scripts/check-wire-style$|^nix/ci/.*$|^justfile$";
           };
+
+          doc-wire-examples = {
+            enable = true;
+            name = "doc-wire-examples";
+            description = "Parse and highlight Wire code fences embedded in Markdown docs";
+            entry = "${config.packages.check-doc-wire-examples}/bin/check-doc-wire-examples";
+            language = "system";
+            pass_filenames = false;
+            files = "^docs/.*\\.md$|^editors/tree-sitter-wire/.*|^scripts/check-doc-wire-examples$|^nix/ci/.*$|^justfile$";
+          };
         };
       };
     };

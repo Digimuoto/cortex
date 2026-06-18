@@ -96,7 +96,7 @@ execution.
 
 Executor config may grant memory or retrieval authority:
 
-```wire
+```text
 memory = topological { preset = "analyst"; };
 ```
 

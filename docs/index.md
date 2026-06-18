@@ -61,7 +61,7 @@ node plan
 node run
   <- outline: Outline;
   -> result: Result = @workflow.execute {
-    retry = { max_attempts = 2 };
+    retry = { max_attempts = 2; };
   } (outline);
 
 node publish

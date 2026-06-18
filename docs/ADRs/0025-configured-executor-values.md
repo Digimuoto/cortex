@@ -39,7 +39,7 @@ derive a port boundary from surrounding topology.
 That leaves a useful authoring question: what does this mean?
 
 ```wire
-let analyst = @review.analyst { temperature = 0.2 } ;
+let analyst = @review.analyst { temperature = 0.2; };
 ```
 
 Without a source-level answer, authors must either repeat executor config at every call site or fall
@@ -51,14 +51,14 @@ Wire should support configured executor values as inert source values.
 
 ```wire
 let analyst = @review.analyst {
-  temperature = 0.2 ;
-  model = "gpt-5.4" ;
-} ;
+  temperature = 0.2;
+  model = "gpt-5.4";
+};
 
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = analyst (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = analyst (evidence);
 ```
 
 A configured executor value has an executor kind, not a CorePure value type and not a circuit type.
@@ -75,26 +75,26 @@ It carries no runnable host action, provider credential, tool handle, or Pulse `
 
 The reusable form is:
 
-```wire
-let <name> = @<executor> { <config> } ;
+```text
+let <name> = @<executor> { <config> };
 ```
 
 The direct call form is:
 
-```wire
--> output: T = @<executor> { <config> } (<input-expr>) ;
+```text
+-> output: T = @<executor> { <config> } (<input-expr>);
 ```
 
 The empty-config shorthand remains valid:
 
-```wire
--> output: T = @<executor> (<input-expr>) ;
+```text
+-> output: T = @<executor> (<input-expr>);
 ```
 
 and is equivalent to:
 
-```wire
--> output: T = @<executor> {} (<input-expr>) ;
+```text
+-> output: T = @<executor> {} (<input-expr>);
 ```
 
 Applying a configured executor value is valid only in the executor-call implementation positions
@@ -102,9 +102,9 @@ defined by ADR 0030: a node-level executor body after the output boundary has be
 
 ```wire
 node analyze
-  <- input: AnalysisInput ;
-  -> output: AnalysisRecord ;
-  = analyst (input) ;
+  <- input: AnalysisInput;
+  -> output: AnalysisRecord;
+  = analyst (input);
 ```
 
 The single-output inline shorthand is reserved for registered executor authority with `@`. It is not
@@ -113,8 +113,8 @@ application syntax after ADR 0050.
 
 It is not valid inside CorePure, so this output equation is rejected:
 
-```wire
--> output: T = analyst input ;
+```text
+-> output: T = analyst input;
 ```
 
 ### Scoping And Export
@@ -123,14 +123,14 @@ File-level `let` may bind configured executor values. The binding is private unl
 `export let`.
 
 ```wire
-export let analyst = @review.analyst { temperature = 0.2 } ;
+export let analyst = @review.analyst { temperature = 0.2; };
 ```
 
 Exporting a configured executor value exports inert source data only. It does not grant authority.
 An importing host still needs a registered projection and Capability binding for the referenced
 executor id.
 
-Node-local `where <record-expr> ;` clauses remain CorePure-only. They may depend on input values and
+Node-local `where <record-expr>;` clauses remain CorePure-only. They may depend on input values and
 are subject to the pure evaluator's determinism and authority-freedom rules. Allowing executor
 values there would mix input-dependent pure computation with authority selection.
 

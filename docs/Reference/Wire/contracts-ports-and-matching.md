@@ -41,7 +41,6 @@ The graph edge operator connects already-declared ports:
 ```wire
 source
   => classify
-classify
   => reviewer
 ```
 
@@ -58,7 +57,7 @@ flowchart LR
 
 ## Port Syntax
 
-```wire
+```text
 <- label: Contract;
 -> label: Contract;
 -> ok: Value | error: ExecutorError;
@@ -122,7 +121,7 @@ node merge
 
 Sum groups are output-only:
 
-```wire
+```text
 -> value: AnalysisFragment | error: ExecutorError;
 ```
 

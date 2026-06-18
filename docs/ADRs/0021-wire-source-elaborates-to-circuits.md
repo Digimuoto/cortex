@@ -102,7 +102,7 @@ Runtime pure execution may evaluate values, but it may not create new topology.
 ADR 0050 resolves the runtime residue spelling: CorePure output expressions are written directly and
 are delayed only when they depend on input ports.
 
-```wire
+```text
 -> port: T = <corepure-expr>
 -> port: T = @executor (<expr>)
 ```

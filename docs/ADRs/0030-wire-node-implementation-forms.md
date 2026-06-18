@@ -40,8 +40,8 @@ ADR 0022 defines the next node clause grammar around per-output RHS equations:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = accepted ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = accepted;
 ```
 
 That is the right shape for CorePure residue, because each output port naturally owns the expression
@@ -92,7 +92,7 @@ executor_call   ::= @<executor> (<expr>)
 ```
 
 The earlier `let_block` production - `let <bindings> in` between input clauses and the body - is
-removed. Node-local CorePure intermediates are introduced via the trailing `where <record-expr> ;`
+removed. Node-local CorePure intermediates are introduced via the trailing `where <record-expr>;`
 clause defined in [ADR 0031](./0031-wire-binding-forms-and-where-clauses.md).
 
 In this form, output declarations state the node's typed output boundary, while the executor body
@@ -108,14 +108,14 @@ Pure computations remain per-output equations:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet ;
-  -> accepted: AcceptedSet = accepted ;
-  -> rejected: RejectedSet = rejected ;
+  <- evidence: EvidenceSet;
+  -> accepted: AcceptedSet = accepted;
+  -> rejected: RejectedSet = rejected;
   where let
-    accepted = evidence.items |> filter (x: x.score >= 0.7) ;
-    rejected = evidence.items |> filter (x: x.score < 0.7) ;
+    accepted = evidence.items |> filter (x: x.score >= 0.7);
+    rejected = evidence.items |> filter (x: x.score < 0.7);
   in
-  { accepted = accepted ; rejected = rejected ; } ;
+  { accepted = accepted; rejected = rejected; };
 ```
 
 The declared output label, contract, and expression stay visibly tied together. A pure node with no
@@ -128,9 +128,9 @@ External executors use a node-level body:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = @review.analyze (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = @review.analyze (evidence);
 ```
 
 The executor projection must match the declared input and output boundary. On success, the executor
@@ -140,12 +140,12 @@ does not match those labels and contracts, the failure is classified by ADR 0026
 Configured executor values from ADR 0025 apply in the same body position:
 
 ```wire
-let analyst = @review.analyst { temperature = 0.2 } ;
+let analyst = @review.analyst { temperature = 0.2; };
 
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = analyst (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = analyst (evidence);
 ```
 
 ### Zero-Output Executors
@@ -154,8 +154,8 @@ A zero-output executor body has no output declarations:
 
 ```wire
 node logEvent
-  <- event: Event ;
-  = @artifact.log (event) ;
+  <- event: Event;
+  = @artifact.log (event);
 ```
 
 Successful execution materializes completion with an empty output set. It does not create a fake
@@ -168,10 +168,10 @@ A multi-output external executor declares every output port before the body:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  -> usage: UsageMetadata ;
-  = @review.analyzeWithUsage (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  -> usage: UsageMetadata;
+  = @review.analyzeWithUsage (evidence);
 ```
 
 The executor must produce both declared outputs or fail with a typed executor/output-validation
@@ -187,14 +187,14 @@ The executor call takes one CorePure expression as its input argument:
 
 ```wire
 node compare
-  <- baseline: Report ;
-  <- candidate: Report ;
-  -> result: Comparison ;
-  = @review.compare ({ baseline = baseline ; candidate = candidate }) ;
+  <- baseline: Report;
+  <- candidate: Report;
+  -> result: Comparison;
+  = @review.compare ({ baseline = baseline; candidate = candidate; });
 
 node seed
-  -> request: Request ;
-  = @artifact.seed ({}) ;
+  -> request: Request;
+  = @artifact.seed ({});
 ```
 
 This keeps executor calls first-order and avoids inventing unit syntax in this slice.
@@ -205,17 +205,17 @@ The per-output external RHS from ADR 0022 remains a single-output shorthand:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord = @review.analyze (evidence);
 ```
 
 It desugars to the node-level body:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet ;
-  -> analysis: AnalysisRecord ;
-  = @review.analyze (evidence) ;
+  <- evidence: EvidenceSet;
+  -> analysis: AnalysisRecord;
+  = @review.analyze (evidence);
 ```
 
 The shorthand is valid only when the node has exactly one output clause and that RHS is an external

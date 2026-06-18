@@ -122,7 +122,7 @@ output ports is not topology fan-out. It is egress projection: the node's egress
 values into the declared output frontier. The language lacks a name for that distinction, so the
 source must currently spell every projection:
 
-```wire
+```text
 -> linkAppSpec: CommandSpec = linkAppCommandSpec;
 -> smokeSpec: CommandSpec = smokeCommandSpec;
 where let
@@ -197,7 +197,7 @@ elaboration, build systems, and string-diagram languages.
 | Option                                            | Sketch                                                                                             | Fit                                                                 | Risk                                                                                  | Verdict                                                                 |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **A. Top-level plan record**                      | `let build_plan = let ... in { ... }; node n -> x = build_plan.x;`                                 | Works today; phase is explicit; no grammar change.                  | Plan is detached from the node boundary; output list is repetitive.                   | Useful fallback, but weaker than node-attached `where`.                 |
-| **B. Trailing `where let`**                       | Output equations, then `where let ... in { exposed = value; } ;`                                   | Already decided by ADR 0031; keeps local data attached to the node. | Declarations appear after uses, which can feel backward in large source-driven nodes. | Canonical current surface; test it before changing syntax.              |
+| **B. Trailing `where let`**                       | Output equations, then `where let ... in { exposed = value; };`                                    | Already decided by ADR 0031; keeps local data attached to the node. | Declarations appear after uses, which can feel backward in large source-driven nodes. | Canonical current surface; test it before changing syntax.              |
 | **C. Pre-output frontier `let`**                  | Inputs, then `let ...`, then output equations.                                                     | Visually localizes dependencies before use.                         | Direct conflict with ADR 0031; reopens a rejected placement decision.                 | Do not pursue without a superseding ADR and strong example evidence.    |
 | **D. Egress projection block**                    | `expose plan { libMetricsSpec -> lib_objects_metrics: CommandSpec; ... }`                          | Names projection as egress work rather than topology fan-out.       | Another block form; could duplicate output-equation syntax.                           | Best new semantic/vocabulary direction.                                 |
 | **E. Record-spread output declaration**           | `-> ...BuildPlan = plan;` or `-> { lib_objects_metrics: CommandSpec = plan.libMetricsSpec; ... };` | Compact for large records; powerful for generated plan records.     | High risk of implicit copying unless field use is checked linearly.                   | Worth prototyping only after projection vocabulary is settled.          |

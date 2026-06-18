@@ -578,3 +578,70 @@ render
   file_return: (expression
     (ident_ref
       (identifier))))
+
+==================
+paper boundary-only nodes and ellipsis placeholders
+==================
+
+node source -> src: Sources;
+node build <- src: Sources; -> bin: Binary; -> log: BuildLog;
+node placeholder
+  -> out: Value = ...;
+
+source => build => placeholder
+
+---
+
+(source_file
+  (node_decl
+    name: (identifier)
+    signature: (node_signature
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))))
+  (node_decl
+    name: (identifier)
+    signature: (node_signature
+      inputs: (input_clause
+        label: (identifier)
+        contract: (contract_ref
+          (contract_name
+            (contract))))
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))))
+  (node_decl
+    name: (identifier)
+    body: (pure_body
+      (pure_output_equation
+        output: (output_variant
+          label: (identifier)
+          contract: (contract_ref
+            (contract_name
+              (contract))))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            (ellipsis))))))
+  file_return: (expression
+    (topology_expression
+      left: (ident_ref
+        (identifier))
+      right: (ident_ref
+        (identifier))
+      right: (ident_ref
+        (identifier)))))
