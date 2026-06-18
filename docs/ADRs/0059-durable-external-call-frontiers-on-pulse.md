@@ -101,8 +101,8 @@ dependency direction is one-way:
 - A **Wire package** — inert compile-time vocabulary, imported with `use`. It exports contracts
   (`QuantumResult`, `MeasurementCounts`, `ShotCount`, `BackendConfig`), executor admission
   projections (`quantum.prepare_zero`, `quantum.x`, `quantum.cnot`, `quantum.measure_z`,
-  `quantum.realize`), and reusable `.wire` modules (repetition-code helpers). It carries **no**
-  credentials, SDK authority, or `StageAction`.
+  `quantum.realize`), and can later host reusable `.wire` modules such as repetition-code helpers.
+  It carries **no** credentials, SDK authority, or `StageAction`.
 - A **host runtime binding pack** — the only artifact with runtime authority. It resolves
   `quantum.realize` (or `quantum.braket.realize`) to a Pulse `StageAction`, injects the AWS
   profile/region/device ARN/S3 bucket, performs OpenQASM lowering, Braket submit, park/resume, and
@@ -122,14 +122,14 @@ use quantum.qec.{RepetitionResult, Syndrome};
 ```
 
 ```sh
-wire pulse run examples/wire/qec-repetition-code.wire \
+wire pulse run examples/wire/qec-repetition-realize.wire \
   --wire-package quantum --binding-pack braket --config braket-local.json
 ```
 
 This makes the quantum surface the **first real downstream Wire package**: `quantum.core` (generic
-circuit vocabulary), `quantum.qec` (reusable QEC modules/contracts), `quantum.braket` (the Braket
-realization projection, until realization can be kept fully generic), and a Braket host binding pack
-(the AWS/Pulse implementation).
+circuit vocabulary), `quantum.qec` (QEC contracts now, reusable QEC modules when the package grows),
+`quantum.braket` (the Braket realization projection, until realization can be kept fully generic),
+and a Braket host binding pack (the AWS/Pulse implementation).
 
 ### 2. Frontier projection via an explicit realize node
 
