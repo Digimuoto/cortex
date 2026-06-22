@@ -108,7 +108,9 @@
       ];
       text = ''
         set -euo pipefail
-        exec python3 scripts/check-doc-wire-examples
+        exec python3 scripts/check-doc-wire-examples \
+          --parser-lib ${config.packages.tree-sitter-wire}/parser \
+          --skip-highlight
       '';
     };
 

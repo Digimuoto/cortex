@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
 import subprocess
 import sys
@@ -30,8 +32,20 @@ def rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
-def docs_markdown_files() -> list[Path]:
-    return sorted(path for path in DOCS.rglob("*.md") if path.is_file())
+def is_adr_doc(path: Path) -> bool:
+    try:
+        path.relative_to(DOCS / "ADRs")
+    except ValueError:
+        return False
+    return True
+
+
+def docs_markdown_files(*, include_adrs: bool) -> list[Path]:
+    return sorted(
+        path
+        for path in DOCS.rglob("*.md")
+        if path.is_file() and (include_adrs or not is_adr_doc(path))
+    )
 
 
 def extract_wire_blocks(path: Path) -> tuple[list[WireBlock], list[str]]:
@@ -80,15 +94,45 @@ def diagnostic_lines(output: str, limit: int = 12) -> list[str]:
     return output.splitlines()[:limit]
 
 
-def run_tree_sitter(command: list[str]) -> subprocess.CompletedProcess[str]:
+def run_tree_sitter(
+    command: list[str],
+    *,
+    cache_dir: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = None
+    if cache_dir is not None:
+        env = os.environ.copy()
+        env["XDG_CACHE_HOME"] = str(cache_dir)
+
     return subprocess.run(
         command,
         cwd=ROOT,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         check=False,
     )
+
+
+def build_parser_lib(tmp_dir: Path, grammar_dir: Path) -> tuple[Path | None, list[str]]:
+    parser_lib = tmp_dir / "wire.so"
+    result = run_tree_sitter(
+        [
+            "tree-sitter",
+            "build",
+            "-o",
+            str(parser_lib),
+            str(grammar_dir),
+        ]
+    )
+    if result.returncode == 0:
+        return parser_lib, []
+
+    output = result.stdout + result.stderr
+    lines = ["failed to build tree-sitter Wire parser"]
+    lines.extend(f"  {line}" for line in diagnostic_lines(output))
+    return None, lines
 
 
 def parse_command(block_file: Path, parser_lib: Path | None, grammar_dir: Path) -> list[str]:
@@ -116,6 +160,22 @@ def parse_command(block_file: Path, parser_lib: Path | None, grammar_dir: Path) 
     ]
 
 
+def parse_paths_command(paths_file: Path, parser_lib: Path, quiet: bool) -> list[str]:
+    command = [
+        "tree-sitter",
+        "parse",
+        "--paths",
+        str(paths_file),
+        "--lib-path",
+        str(parser_lib),
+        "--lang-name",
+        "wire",
+    ]
+    if quiet:
+        command.insert(2, "-q")
+    return command
+
+
 def parse_diagnostic_command(
     block_file: Path,
     parser_lib: Path | None,
@@ -125,28 +185,66 @@ def parse_diagnostic_command(
     return [part for part in command if part != "-q"]
 
 
-def validate_block(
+def highlight_paths_command(paths_file: Path, config_path: Path, quiet: bool) -> list[str]:
+    command = [
+        "tree-sitter",
+        "highlight",
+        "--check",
+        "--scope",
+        "source.wire",
+        "--config-path",
+        str(config_path),
+        "--paths",
+        str(paths_file),
+    ]
+    if quiet:
+        command.insert(2, "-q")
+    return command
+
+
+def write_block_files(blocks: list[WireBlock], tmp_dir: Path) -> list[tuple[WireBlock, Path]]:
+    block_files: list[tuple[WireBlock, Path]] = []
+    for block in blocks:
+        block_file = tmp_dir / f"{block.path.stem}-{block.index}.wire"
+        block_file.write_text(block.text, encoding="utf-8")
+        block_files.append((block, block_file))
+    return block_files
+
+
+def write_tree_sitter_config(tmp_dir: Path, grammar_dir: Path) -> Path:
+    config_path = tmp_dir / "tree-sitter-config.json"
+    config_path.write_text(
+        json.dumps({"parser-directories": [str(grammar_dir.parent)]}),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def validate_block_diagnostic(
     block: WireBlock,
-    tmp_dir: Path,
+    block_file: Path,
     parser_lib: Path | None,
     grammar_dir: Path,
-    check_highlight: bool,
 ) -> list[str]:
-    block_file = tmp_dir / f"{block.path.stem}-{block.index}.wire"
-    block_file.write_text(block.text, encoding="utf-8")
-
     location = f"{rel(block.path)}:{block.start_line}: wire block #{block.index}"
     parse_result = run_tree_sitter(parse_command(block_file, parser_lib, grammar_dir))
-    if parse_result.returncode != 0:
-        detail = run_tree_sitter(parse_diagnostic_command(block_file, parser_lib, grammar_dir))
-        output = detail.stdout + detail.stderr
-        lines = [f"{location}: failed tree-sitter parse"]
-        lines.extend(f"  {line}" for line in diagnostic_lines(output))
-        return lines
-
-    if not check_highlight:
+    if parse_result.returncode == 0:
         return []
 
+    detail = run_tree_sitter(parse_diagnostic_command(block_file, parser_lib, grammar_dir))
+    output = detail.stdout + detail.stderr
+    lines = [f"{location}: failed tree-sitter parse"]
+    lines.extend(f"  {line}" for line in diagnostic_lines(output))
+    return lines
+
+
+def validate_highlight_diagnostic(
+    block: WireBlock,
+    block_file: Path,
+    config_path: Path,
+    cache_dir: Path,
+) -> list[str]:
+    location = f"{rel(block.path)}:{block.start_line}: wire block #{block.index}"
     highlight_result = run_tree_sitter(
         [
             "tree-sitter",
@@ -154,18 +252,71 @@ def validate_block(
             "--check",
             "--scope",
             "source.wire",
-            "-p",
-            str(grammar_dir),
+            "--config-path",
+            str(config_path),
             str(block_file),
-        ]
+        ],
+        cache_dir=cache_dir,
     )
-    if highlight_result.returncode != 0:
-        output = highlight_result.stdout + highlight_result.stderr
-        lines = [f"{location}: failed tree-sitter highlight"]
-        lines.extend(f"  {line}" for line in diagnostic_lines(output))
-        return lines
+    if highlight_result.returncode == 0:
+        return []
 
-    return []
+    output = highlight_result.stdout + highlight_result.stderr
+    lines = [f"{location}: failed tree-sitter highlight"]
+    lines.extend(f"  {line}" for line in diagnostic_lines(output))
+    return lines
+
+
+def validate_blocks(
+    blocks: list[WireBlock],
+    tmp_dir: Path,
+    parser_lib: Path | None,
+    grammar_dir: Path,
+    check_highlight: bool,
+) -> list[str]:
+    if not blocks:
+        return []
+
+    errors: list[str] = []
+    block_files = write_block_files(blocks, tmp_dir)
+    paths_file = tmp_dir / "wire-block-paths.txt"
+    paths_file.write_text(
+        "".join(f"{block_file}\n" for _, block_file in block_files),
+        encoding="utf-8",
+    )
+    tree_sitter_config = write_tree_sitter_config(tmp_dir, grammar_dir)
+    tree_sitter_cache = tmp_dir / "tree-sitter-cache"
+    tree_sitter_cache.mkdir()
+
+    parse_lib = parser_lib
+    if parse_lib is None:
+        parse_lib, build_errors = build_parser_lib(tmp_dir, grammar_dir)
+        if build_errors:
+            return build_errors
+        assert parse_lib is not None
+
+    parse_result = run_tree_sitter(parse_paths_command(paths_file, parse_lib, quiet=True))
+    if parse_result.returncode != 0:
+        for block, block_file in block_files:
+            errors.extend(validate_block_diagnostic(block, block_file, parse_lib, grammar_dir))
+
+    if check_highlight:
+        highlight_result = run_tree_sitter(
+            highlight_paths_command(paths_file, tree_sitter_config, quiet=True),
+            cache_dir=tree_sitter_cache,
+        )
+        if highlight_result.returncode != 0:
+            for block, block_file in block_files:
+                errors.extend(
+                    validate_highlight_diagnostic(
+                        block,
+                        block_file,
+                        tree_sitter_config,
+                        tree_sitter_cache,
+                    )
+                )
+
+    return errors
 
 
 def main() -> int:
@@ -186,28 +337,32 @@ def main() -> int:
         action="store_true",
         help="Only parse examples; useful for hermetic checks that use --parser-lib.",
     )
+    parser.add_argument(
+        "--include-adrs",
+        action="store_true",
+        help="Also validate docs/ADRs historical decision records.",
+    )
     args = parser.parse_args()
-    check_highlight = not args.skip_highlight and args.parser_lib is None
+    check_highlight = not args.skip_highlight
 
     blocks: list[WireBlock] = []
     errors: list[str] = []
-    for path in docs_markdown_files():
+    for path in docs_markdown_files(include_adrs=args.include_adrs):
         path_blocks, path_errors = extract_wire_blocks(path)
         blocks.extend(path_blocks)
         errors.extend(path_errors)
 
     with tempfile.TemporaryDirectory(prefix="doc-wire-") as tmp:
         tmp_dir = Path(tmp)
-        for block in blocks:
-            errors.extend(
-                validate_block(
-                    block,
-                    tmp_dir,
-                    parser_lib=args.parser_lib,
-                    grammar_dir=args.grammar_dir,
-                    check_highlight=check_highlight,
-                )
+        errors.extend(
+            validate_blocks(
+                blocks,
+                tmp_dir,
+                parser_lib=args.parser_lib,
+                grammar_dir=args.grammar_dir,
+                check_highlight=check_highlight,
             )
+        )
 
     if errors:
         print("Docs Wire example failures:", file=sys.stderr)
