@@ -1,0 +1,22 @@
+[package]
+id = "quantum.braket"
+
+[[namespace]]
+name = "quantum.braket"
+
+[namespace.executors]
+realize = "quantum.realize"
+
+[[executor]]
+id = "quantum.realize"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"

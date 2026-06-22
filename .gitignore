@@ -40,6 +40,10 @@ theory/.lake/
 !examples/
 !examples/**
 
+# extensions/ — in-repo downstream extension workbenches
+!extensions/
+!extensions/**
+
 # nix/ — includes materialized/ for reproducible builds
 !nix/
 !nix/**

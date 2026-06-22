@@ -1,0 +1,19 @@
+[package]
+id = "quantum.qec"
+
+[[namespace]]
+name = "quantum.qec"
+
+[namespace.contracts]
+RepetitionResult = "quantum.RepetitionResult"
+Syndrome = "quantum.Syndrome"
+
+[[contract]]
+id = "quantum.RepetitionResult"
+payload_kind = "json"
+description = "Quantum QEC contract quantum.RepetitionResult"
+
+[[contract]]
+id = "quantum.Syndrome"
+payload_kind = "json"
+description = "Quantum QEC contract quantum.Syndrome"

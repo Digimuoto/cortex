@@ -38,6 +38,7 @@ import Data.Text qualified as T
 
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Executor (WireExecutorRegistry, emptyWireExecutorRegistry)
+import Cortex.Wire.Package.Registry (NamespaceRegistry)
 import Cortex.Wire.Syntax
 import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
 
@@ -86,6 +87,7 @@ data WireCompileEnv = WireCompileEnv
   { wireCompileEnvExecutorRegistry :: WireExecutorRegistry
   , wireCompileEnvProjectionMode :: WireProjectionMode
   , wireCompileEnvContractRegistry :: Maybe WireContractRegistry
+  , wireCompileEnvNamespaceRegistry :: !(Maybe NamespaceRegistry)
   }
   deriving stock (Eq, Show)
 
@@ -100,6 +102,7 @@ emptyWireCompileEnv =
     { wireCompileEnvExecutorRegistry = emptyWireExecutorRegistry
     , wireCompileEnvProjectionMode = WireProjectionPermissive
     , wireCompileEnvContractRegistry = Nothing
+    , wireCompileEnvNamespaceRegistry = Nothing
     }
 
 wireCompileEnvWithContractRegistry :: WireContractRegistry -> WireCompileEnv
@@ -116,6 +119,7 @@ strictWireCompileEnv executorRegistry contractRegistry =
     { wireCompileEnvExecutorRegistry = executorRegistry
     , wireCompileEnvProjectionMode = WireProjectionStrict
     , wireCompileEnvContractRegistry = Just contractRegistry
+    , wireCompileEnvNamespaceRegistry = Nothing
     }
 
 portsMetadataValue :: WirePorts -> Aeson.Value

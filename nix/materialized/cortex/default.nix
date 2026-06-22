@@ -37,6 +37,7 @@
         base64-bytestring.revision = import ./cabal-files/base64-bytestring.nix;
         iproute.revision = import ./cabal-files/iproute.nix;
         bytestring-strict-builder.revision = import ./cabal-files/bytestring-strict-builder.nix;
+        toml-parser.revision = import ./cabal-files/toml-parser.nix;
         unordered-containers.revision = import ./cabal-files/unordered-containers.nix;
         unordered-containers.flags.debug = false;
         unix-time.revision = import ./cabal-files/unix-time.nix;
@@ -280,6 +281,7 @@
         cassava.revision = import ./cabal-files/cassava.nix;
         old-locale.revision = import ./cabal-files/old-locale.nix;
         asn1-parse.revision = import ./cabal-files/asn1-parse.nix;
+        alex.revision = import ./cabal-files/alex.nix;
         conduit-extra.revision = import ./cabal-files/conduit-extra.nix;
         binary.revision = hackage.binary."0.8.9.3".revisions.default;
         monad-loops.revision = import ./cabal-files/monad-loops.nix;
@@ -489,6 +491,7 @@
     ({ lib, ... }:
       {
         packages = {
+          "alex".components.exes."alex".planned = lib.mkOverride 900 true;
           "data-fix".components.library.planned = lib.mkOverride 900 true;
           "Cabal-syntax".components.library.planned = lib.mkOverride 900 true;
           "adjunctions".components.library.planned = lib.mkOverride 900 true;
@@ -689,6 +692,7 @@
           "happy".components.exes."happy".planned = lib.mkOverride 900 true;
           "http-semantics".components.library.planned = lib.mkOverride 900 true;
           "statistics".components.library.planned = lib.mkOverride 900 true;
+          "toml-parser".components.library.planned = lib.mkOverride 900 true;
           "cryptohash-sha1".components.library.planned = lib.mkOverride 900 true;
           "network-control".components.library.planned = lib.mkOverride 900 true;
           "ghc-internal".components.library.planned = lib.mkOverride 900 true;

@@ -33,7 +33,9 @@ import Cortex.Capability.Catalog.AwaitStrategy
 import Cortex.Capability.Catalog.ExecutorManifest (AbiKind (..), ContentAddress (..))
 import Cortex.Capability.Catalog.RuntimeBindingRecord
 import Cortex.Wire.Executor (WireExecutorId (..))
-import Cortex.Wire.Quantum (realizeExecutorId)
+
+realizeExecutorId :: Text
+realizeExecutorId = "quantum.realize"
 
 {- | AWS Braket binding configuration, loaded from @--config@. Inert until the
 runnable driver consumes it.

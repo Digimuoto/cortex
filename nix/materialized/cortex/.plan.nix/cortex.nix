@@ -25,7 +25,11 @@
       detailLevel = "FullDetails";
       licenseFiles = [ "LICENSE" ];
       dataDir = ".";
-      dataFiles = [];
+      dataFiles = [
+        "extensions/quantum/packages/quantum-braket/cortex.toml"
+        "extensions/quantum/packages/quantum-core/cortex.toml"
+        "extensions/quantum/packages/quantum-qec/cortex.toml"
+      ];
       extraSrcFiles = [ "README.md" "NOTICE" ];
       extraTmpFiles = [];
       extraDocFiles = [];
@@ -60,6 +64,7 @@
           (hsPkgs."process" or (errorHandler.buildDepError "process"))
           (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
           (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
+          (hsPkgs."toml-parser" or (errorHandler.buildDepError "toml-parser"))
           (hsPkgs."yaml" or (errorHandler.buildDepError "yaml"))
           (hsPkgs."rel8" or (errorHandler.buildDepError "rel8"))
           (hsPkgs."hasql" or (errorHandler.buildDepError "hasql"))
@@ -105,6 +110,12 @@
           "Cortex/Algebra/Graph/Search"
           "Cortex/Algebra/Graph/Validate"
           "Cortex/Capability"
+          "Cortex/Capability/Catalog/AdmissionProjection"
+          "Cortex/Capability/Catalog/AwaitStrategy"
+          "Cortex/Capability/Catalog/ExecutorManifest"
+          "Cortex/Capability/Catalog/RuntimeBindingRecord"
+          "Cortex/Capability/BindingPack"
+          "Cortex/Capability/BindingPack/Braket"
           "Cortex/Capability/Executor"
           "Cortex/Capability/Executor/Pure"
           "Cortex/Pulse"
@@ -116,6 +127,7 @@
           "Cortex/Pulse/Executor/Attempt"
           "Cortex/Pulse/Executor/Events"
           "Cortex/Pulse/Executor/Frontier"
+          "Cortex/Pulse/Executor/ExternalCall"
           "Cortex/Pulse/Executor/Loop"
           "Cortex/Pulse/Executor/Outcome"
           "Cortex/Pulse/Executor/Persistence"
@@ -145,6 +157,9 @@
           "Cortex/Wire/Pure"
           "Cortex/Wire/Std"
           "Cortex/Wire/Syntax"
+          "Cortex/Wire/Package"
+          "Cortex/Wire/Package/Manifest"
+          "Cortex/Wire/Package/Registry"
           "Cortex/Wire/Use"
           "Cortex/Wire/Circuit"
           "Cortex/Wire/Circuit/Artifact"
@@ -158,6 +173,8 @@
           "Cortex/Wire/Circuit/NodeKind"
           "Cortex/Pulse/GraphRuntime"
           "Cortex/Pulse/Health"
+          "Cortex/Pulse/Lowering/Circuit"
+          "Cortex/Pulse/Lowering/FusedPlan"
           "Cortex/Pulse/Materialization"
           "Cortex/Pulse/Memory"
           "Cortex/Pulse/Memory/Query"
@@ -169,7 +186,9 @@
           "Cortex/Pulse/Plan"
           "Cortex/Pulse/PlanHydration"
           "Cortex/Pulse/Query"
+          "Cortex/Pulse/Query/ExternalCall"
           "Cortex/Pulse/Rewrite"
+          "Cortex/Pulse/Rewrite/Contract"
           "Cortex/Pulse/Schema"
           "Cortex/Pulse/Signal"
           "Cortex/Pulse/Scheduler"
@@ -207,6 +226,7 @@
             (hsPkgs."text" or (errorHandler.buildDepError "text"))
           ];
           buildable = true;
+          modules = [ "Paths_cortex" ];
           hsSourceDirs = [ "app/wire" ];
           mainPath = [ "Main.hs" ];
         };
@@ -252,6 +272,16 @@
           modules = [
             "Cortex/Algebra/GraphSpec"
             "Cortex/CanonicalModuleTreeSpec"
+            "Cortex/Capability/CatalogSpec"
+            "Cortex/Capability/BindingPack/BraketSpec"
+            "Cortex/Wire/PackageSpec"
+            "Cortex/Wire/QuantumPackageSpec"
+            "Cortex/Wire/RealizeCompileSpec"
+            "Cortex/Pulse/FrontierContractionSpec"
+            "Cortex/Pulse/Executor/ExternalCallAttemptSpec"
+            "Cortex/Pulse/Executor/ExternalCallSpec"
+            "Cortex/Pulse/Lowering/FusedPlanSpec"
+            "Cortex/Pulse/Lowering/CircuitSpec"
             "Cortex/Capability/Executor/PureSpec"
             "Cortex/PublicPreludeSpec"
             "Cortex/Pulse/CheckpointSpec"

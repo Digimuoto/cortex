@@ -1,0 +1,135 @@
+[package]
+id = "quantum.core"
+
+[[namespace]]
+name = "quantum.core"
+
+[namespace.executors]
+prepare_zero = "quantum.prepare_zero"
+x = "quantum.x"
+cnot = "quantum.cnot"
+measure_z = "quantum.measure_z"
+rz = "quantum.rz"
+h = "quantum.h"
+
+[namespace.contracts]
+Qubit = "quantum.Qubit"
+Bit = "quantum.Bit"
+QuantumResult = "quantum.QuantumResult"
+MeasurementCounts = "quantum.MeasurementCounts"
+ShotCount = "quantum.ShotCount"
+BackendConfig = "quantum.BackendConfig"
+
+[[executor]]
+id = "quantum.prepare_zero"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.x"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.cnot"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.measure_z"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.rz"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.h"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[contract]]
+id = "quantum.Qubit"
+payload_kind = "json"
+description = "Quantum core contract quantum.Qubit"
+
+[[contract]]
+id = "quantum.Bit"
+payload_kind = "json"
+description = "Quantum core contract quantum.Bit"
+
+[[contract]]
+id = "quantum.QuantumResult"
+payload_kind = "json"
+description = "Quantum core contract quantum.QuantumResult"
+
+[[contract]]
+id = "quantum.MeasurementCounts"
+payload_kind = "json"
+description = "Quantum core contract quantum.MeasurementCounts"
+
+[[contract]]
+id = "quantum.ShotCount"
+payload_kind = "json"
+description = "Quantum core contract quantum.ShotCount"
+
+[[contract]]
+id = "quantum.BackendConfig"
+payload_kind = "json"
+description = "Quantum core contract quantum.BackendConfig"

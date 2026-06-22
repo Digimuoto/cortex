@@ -18,6 +18,11 @@ extra-source-files:
     README.md
     NOTICE
 
+data-files:
+    extensions/quantum/packages/quantum-braket/cortex.toml
+    extensions/quantum/packages/quantum-core/cortex.toml
+    extensions/quantum/packages/quantum-qec/cortex.toml
+
 common shared-properties
     default-language: GHC2024
     default-extensions:
@@ -75,6 +80,7 @@ common runtime-library-deps
         -- JSON / YAML
         aeson >=2.1,
         aeson-pretty >=0.8,
+        toml-parser >=2.0,
         yaml >=0.11,
 
         -- Database (used by Cortex persistence and the external Platform package)
@@ -187,7 +193,8 @@ library
         Cortex.Wire.Std
         Cortex.Wire.Syntax
         Cortex.Wire.Package
-        Cortex.Wire.Quantum
+        Cortex.Wire.Package.Manifest
+        Cortex.Wire.Package.Registry
         Cortex.Wire.Use
         Cortex.Wire.Circuit
         Cortex.Wire.Circuit.Artifact
@@ -243,6 +250,8 @@ executable wire
     import:           shared-properties
     hs-source-dirs:   app/wire
     main-is:          Main.hs
+    autogen-modules:  Paths_cortex
+    other-modules:    Paths_cortex
     build-depends:
         base >=4.16 && <5,
         cortex,

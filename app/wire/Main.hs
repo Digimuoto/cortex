@@ -26,16 +26,17 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
-import System.Directory (createDirectoryIfMissing)
-import System.Environment (getArgs)
+import Paths_cortex qualified as Paths
+import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Environment (getArgs, lookupEnv)
 import System.Exit (ExitCode (..), exitFailure)
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath (splitSearchPath, takeDirectory, (</>))
 import System.IO (hFlush, stderr, stdout)
 import System.Process (CreateProcess (cwd), proc, readCreateProcessWithExitCode)
 
@@ -96,7 +97,7 @@ import Cortex.Wire.Compile
   , compileWireModulesForRun
   , compileWireModulesWithReturn
   )
-import Cortex.Wire.Contract (emptyWireCompileEnv)
+import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
 import Cortex.Wire.Import (loadWireModuleClosure, renderWireImportError)
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
@@ -109,8 +110,15 @@ import Cortex.Wire.LeanFixture
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
   )
-import Cortex.Wire.Package (packageNamespaceRegistry)
-import Cortex.Wire.Quantum (quantumPackages)
+import Cortex.Wire.Package
+  ( NamespaceRegistry
+  , stdOnlyRegistry
+  , wireCompileEnvWithPackages
+  )
+import Cortex.Wire.Package.Manifest
+  ( loadWirePackageManifests
+  , renderWirePackageManifestError
+  )
 import Cortex.Wire.Use
   ( WireUseError (..)
   , WireUseScope
@@ -259,11 +267,12 @@ usageText =
 
 buildWire :: Maybe Text -> FilePath -> IO ()
 buildWire maybeSelectedReturn path = do
+  compileEnv <- loadCliWireCompileEnv
   modules <- loadWireModules path
   let compile =
         maybe
-          (compileWireModules emptyWireCompileEnv)
-          (compileWireModulesWithReturn emptyWireCompileEnv)
+          (compileWireModules compileEnv)
+          (compileWireModulesWithReturn compileEnv)
           maybeSelectedReturn
   compiled <- either (dieText . renderWireError) pure (compile modules)
   BSL.putStr (AesonPretty.encodePretty compiled)
@@ -356,7 +365,10 @@ fmtWireFile mode path = do
 
 runWire :: FilePath -> IO ()
 runWire path = do
+  compileEnv <- loadCliWireCompileEnv
   modules <- loadWireModules path
+  let namespaceRegistry =
+        fromMaybe stdOnlyRegistry compileEnv.wireCompileEnvNamespaceRegistry
   let rootFile = (NE.last modules).wireModuleFile
       -- Node declarations from every closure module, so the local runner can
       -- execute nodes that entered the circuit through an imported graph.
@@ -369,10 +381,10 @@ runWire path = do
     either
       (dieText . renderWireError)
       pure
-      (compileWireModulesForRun emptyWireCompileEnv modules)
+      (compileWireModulesForRun compileEnv modules)
   -- `use` stays source-local: each node resolves executors against the use
   -- scope of the module that declared it.
-  runnerScopes <- either dieText pure (runnerScopesFromModules modules)
+  runnerScopes <- either dieText pure (runnerScopesFromModules namespaceRegistry modules)
   nodePlan <- either dieText pure (executionLevels compiled closureFile)
   outputLock <- newMVar ()
   _finalState <-
@@ -388,14 +400,14 @@ scopeForNode :: RunnerScopes -> Text -> WireUseScope
 scopeForNode scopes nodeName =
   fromMaybe scopes.runnerRootScope (Map.lookup nodeName scopes.runnerNodeScopes)
 
-runnerScopesFromModules :: NonEmpty WireModule -> Either Text RunnerScopes
-runnerScopesFromModules modules = do
-  rootScope <- useScopeFromWireFile (NE.last modules).wireModuleFile
+runnerScopesFromModules :: NamespaceRegistry -> NonEmpty WireModule -> Either Text RunnerScopes
+runnerScopesFromModules namespaceRegistry modules = do
+  rootScope <- useScopeFromWireFile namespaceRegistry (NE.last modules).wireModuleFile
   nodeScopes <-
     Map.unions
       <$> traverse
         ( \wireModule -> do
-            moduleScope <- useScopeFromWireFile wireModule.wireModuleFile
+            moduleScope <- useScopeFromWireFile namespaceRegistry wireModule.wireModuleFile
             pure
               ( Map.fromList
                   [ (nodeDecl.nodeDeclName, moduleScope)
@@ -405,6 +417,48 @@ runnerScopesFromModules modules = do
         )
         (NE.toList modules)
   pure RunnerScopes {runnerRootScope = rootScope, runnerNodeScopes = nodeScopes}
+
+loadCliWireCompileEnv :: IO WireCompileEnv
+loadCliWireCompileEnv = do
+  manifestPaths <- cliWirePackageManifestPaths
+  loadedPackages <- loadWirePackageManifests manifestPaths
+  packages <- either (dieText . renderWirePackageManifestError) pure loadedPackages
+  pure (wireCompileEnvWithPackages packages emptyWireCompileEnv)
+
+cliWirePackageManifestPaths :: IO [FilePath]
+cliWirePackageManifestPaths = do
+  configured <- lookupEnv "CORTEX_WIRE_PACKAGE_MANIFESTS"
+  case configured of
+    Just raw
+      | not (null raw) ->
+          pure (splitSearchPath raw)
+    _ ->
+      defaultWirePackageManifestPaths
+
+defaultWirePackageManifestPaths :: IO [FilePath]
+defaultWirePackageManifestPaths =
+  catMaybes <$> traverse resolveDefaultWirePackageManifestPath defaultWirePackageManifestRelativePaths
+
+defaultWirePackageManifestRelativePaths :: [FilePath]
+defaultWirePackageManifestRelativePaths =
+  [ "extensions/quantum/packages/quantum-core/cortex.toml"
+  , "extensions/quantum/packages/quantum-qec/cortex.toml"
+  , "extensions/quantum/packages/quantum-braket/cortex.toml"
+  ]
+
+resolveDefaultWirePackageManifestPath :: FilePath -> IO (Maybe FilePath)
+resolveDefaultWirePackageManifestPath relativePath = do
+  dataPath <- Paths.getDataFileName relativePath
+  firstExistingFile [dataPath, relativePath]
+
+firstExistingFile :: [FilePath] -> IO (Maybe FilePath)
+firstExistingFile [] =
+  pure Nothing
+firstExistingFile (path : paths) = do
+  exists <- doesFileExist path
+  if exists
+    then pure (Just path)
+    else firstExistingFile paths
 
 readAndParseWireFile :: FilePath -> IO WireFile
 readAndParseWireFile path = do
@@ -1019,9 +1073,9 @@ topologyLevels relation =
                       remaining' = remaining `Set.difference` ready
                    in go done' remaining' (Set.toAscList ready : acc)
 
-useScopeFromWireFile :: WireFile -> Either Text WireUseScope
-useScopeFromWireFile wireFile =
-  case applyWireUseSpecs (packageNamespaceRegistry quantumPackages) (const False) useSpecs of
+useScopeFromWireFile :: NamespaceRegistry -> WireFile -> Either Text WireUseScope
+useScopeFromWireFile namespaceRegistry wireFile =
+  case applyWireUseSpecs namespaceRegistry (const False) useSpecs of
     Left err -> Left (renderRunUseError err)
     Right scope -> Right scope
   where

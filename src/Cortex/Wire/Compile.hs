@@ -154,7 +154,6 @@ import Cortex.Wire.Pure
   , renderPureEvalError
   , validatePureTaskConfig
   )
-import Cortex.Wire.Quantum qualified as Quantum
 import Cortex.Wire.Std
   ( stdIoCommandExecutorId
   , stdIoCommandShapeMessage
@@ -1339,7 +1338,7 @@ lowerTopForm compileEnv importCtx st = \case
                       Just _ -> Map.insert contractName resolvedFields st.lsDeclaredRecordContracts
                 }
   TopUse useSpec ->
-    lowerUseSpec st useSpec
+    lowerUseSpec compileEnv st useSpec
   TopImport importSpec ->
     lowerImportSpec importCtx st importSpec
   TopLet visibility name rhs -> do
@@ -1396,12 +1395,13 @@ topLevelBindingNameTaken state name =
     || Set.member name state.lsDeclaredContracts
     || any (\existing -> existing.corePureBindingName == name) state.lsPureBindings
 
-lowerUseSpec :: LoweringState -> UseSpec -> Either WireCore.WireError LoweringState
-lowerUseSpec st useSpec = do
+lowerUseSpec
+  :: WireCompileEnv -> LoweringState -> UseSpec -> Either WireCore.WireError LoweringState
+lowerUseSpec compileEnv st useSpec = do
   useScope <-
     mapLeft wireUseErrorToWireError $
       applyWireUseSpec
-        (Package.packageNamespaceRegistry Quantum.quantumPackages)
+        (compileEnvNamespaceRegistry compileEnv)
         (topLevelBindingNameTaken st)
         st.lsUseScope
         useSpec
@@ -1410,6 +1410,10 @@ lowerUseSpec st useSpec = do
       { lsUseScope = useScope
       , lsDeclaredContracts = st.lsDeclaredContracts <> wireUseDeclaredContracts useScope
       }
+
+compileEnvNamespaceRegistry :: WireCompileEnv -> Package.NamespaceRegistry
+compileEnvNamespaceRegistry compileEnv =
+  fromMaybe Package.stdOnlyRegistry compileEnv.wireCompileEnvNamespaceRegistry
 
 wireUseErrorToWireError :: WireUseError -> WireCore.WireError
 wireUseErrorToWireError = \case

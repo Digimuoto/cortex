@@ -17,6 +17,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Test.Hspec
 
+import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
 import Cortex.Wire.Package
 import Cortex.Wire.Syntax (QName (..), UseItem (..), UseSpec (..))
 import Cortex.Wire.Use
@@ -46,6 +47,40 @@ useStdOut =
   UseSpec
     { useSpecNamespace = QName ("std" :| ["io"])
     , useSpecItems = UseExecutor "stdout" Nothing :| []
+    }
+
+alphaCore :: NamespaceEntry
+alphaCore =
+  NamespaceEntry
+    { nsNamespace = "alpha.core"
+    , nsResolveExecutorLeaf = \leaf ->
+        if leaf == "ping" then Just "alpha.ping" else Nothing
+    , nsResolveContract = \name ->
+        if name == "Token" then Just "alpha.Token" else Nothing
+    }
+
+betaCore :: NamespaceEntry
+betaCore =
+  NamespaceEntry
+    { nsNamespace = "beta.core"
+    , nsResolveExecutorLeaf = \leaf ->
+        if leaf == "pong" then Just "beta.pong" else Nothing
+    , nsResolveContract = \name ->
+        if name == "BetaToken" then Just "beta.Token" else Nothing
+    }
+
+useAlpha :: UseSpec
+useAlpha =
+  UseSpec
+    { useSpecNamespace = QName ("alpha" :| ["core"])
+    , useSpecItems = UseExecutor "ping" Nothing :| [UseContract "Token" Nothing]
+    }
+
+useBeta :: UseSpec
+useBeta =
+  UseSpec
+    { useSpecNamespace = QName ("beta" :| ["core"])
+    , useSpecItems = UseExecutor "pong" Nothing :| [UseContract "BetaToken" Nothing]
     }
 
 notTaken :: Text -> Bool
@@ -81,3 +116,28 @@ spec = do
   describe "packageNamespaceRegistry" . it "composes std.io with package namespaces" $ do
     let reg = packageNamespaceRegistry [WirePackage "quantum" [quantumCore] [] []]
     namespaceRegistryNamespaces reg `shouldMatchList` ["std.io", "quantum.core"]
+
+  describe "wireCompileEnvWithPackages"
+    . it "preserves existing package namespaces when adding more packages"
+    $ do
+      let envWithAlpha =
+            wireCompileEnvWithPackages
+              [WirePackage "alpha" [alphaCore] [] []]
+              emptyWireCompileEnv
+          envWithAlphaBeta =
+            wireCompileEnvWithPackages
+              [WirePackage "beta" [betaCore] [] []]
+              envWithAlpha
+
+      case envWithAlphaBeta.wireCompileEnvNamespaceRegistry of
+        Nothing -> expectationFailure "missing namespace registry"
+        Just reg -> do
+          namespaceRegistryNamespaces reg `shouldMatchList` ["std.io", "alpha.core", "beta.core"]
+
+          case applyWireUseSpecs reg notTaken [useAlpha, useBeta] of
+            Left err -> expectationFailure ("unexpected: " <> show err)
+            Right scope -> do
+              Map.lookup "ping" (wireUseExecutors scope) `shouldBe` Just "alpha.ping"
+              Map.lookup "pong" (wireUseExecutors scope) `shouldBe` Just "beta.pong"
+              Map.lookup "Token" (wireUseContracts scope) `shouldBe` Just "alpha.Token"
+              Map.lookup "BetaToken" (wireUseContracts scope) `shouldBe` Just "beta.Token"
