@@ -3,9 +3,10 @@
 Status: draft design note.
 
 This is not a Cortex ADR. It is an in-repo downstream extension design for a quantum capability
-library and Braket runtime binding. The goal is to prove the extension model inside the monorepo
-first, with tests and showcase examples, while preserving the same dependency direction an
-out-of-tree downstream project would have.
+library and Braket runtime binding. The generic manifest and authority rules are defined by ADR
+0060; this document is only the first downstream-style consumer of that mechanism. The goal is to
+prove the extension model inside the monorepo first, with tests and showcase examples, while
+preserving the same dependency direction an out-of-tree downstream project would have.
 
 ## Placement
 
@@ -29,9 +30,17 @@ the Cortex substrate contract.
 
 ## Proposed Tree
 
+This is the target layout, not the current on-disk state. Today `extensions/quantum/` contains
+`DESIGN.md`, `packages/{quantum-core,quantum-qec,quantum-braket}/cortex.toml`, and `src/` — the
+`cortex-quantum` library that holds the Braket host binding pack and depends on Cortex core, not the
+other way round. The `wire/`, `binding-packs/`, `examples/`, and `test/` entries below are planned
+additions.
+
 ```text
 extensions/quantum/
   DESIGN.md
+  src/
+    Cortex/Capability/BindingPack/Braket.hs   (the cortex-quantum library)
   packages/
     quantum-core/
       wire/
@@ -60,6 +69,27 @@ encoding. The important naming split should not change:
 - `binding-packs/` contains host authority and backend bindings.
 - `examples/` contains downstream examples that consume those packages.
 
+## Relationship To ADR 0060
+
+The quantum extension must not define a quantum-specific package system. Its manifests are ordinary
+ADR 0060 manifests:
+
+- `quantum.core`, `quantum.qec`, and `quantum.braket` are Wire package manifests. They register
+  namespaces, contracts, and executor projections (`WireExecutorProjection`). Capability requirement
+  slots are a later ADR 0060 slice; no quantum manifest declares one yet. They do not register
+  credentials, SDK clients, queues, or Pulse actions.
+- `binding-packs/braket/cortex.toml` is the target host runtime material: it will resolve the
+  capability requirements declared by the package manifests into an AWS Braket `StageAction`,
+  runtime binding record, authority fingerprints, and compatibility policy. Today that resolution is
+  a hand-built stub in the `cortex-quantum` extension library (`extensions/quantum/src`, module
+  `Cortex.Capability.BindingPack.Braket`), pending the binding-manifest slice.
+- `use quantum.*` is therefore the same operation as `use logos.*` or any future downstream
+  namespace: it imports compile-time vocabulary only.
+
+This distinction is especially important for `quantum.braket`. It may export Braket-specific source
+vocabulary, such as a provider-specific `@realize` leaf, but the exported executor remains inert
+until the host selects a Braket binding pack.
+
 ## Package Boundary
 
 The quantum extension should publish at least three Wire packages.
@@ -68,8 +98,10 @@ The quantum extension should publish at least three Wire packages.
 
 Generic quantum circuit vocabulary:
 
-- contracts: `Qubit`, `Bit`, `ShotCount`, `QuantumResult`, `MeasurementCounts`
-- executors: `@prepare_zero`, `@x`, `@h`, `@rz`, `@sx`, `@cnot`, `@cz`, `@measure_z`
+- contracts: `Qubit`, `Bit`, `ShotCount`, `QuantumResult`, `MeasurementCounts`, `BackendConfig`
+- target executor alphabet: `@prepare_zero`, `@x`, `@h`, `@rz`, `@sx`, `@cnot`, `@cz`, `@measure_z`.
+  The current `quantum-core/cortex.toml` declares the subset `@prepare_zero`, `@x`, `@h`, `@rz`,
+  `@cnot`, `@measure_z`; `@sx` and `@cz` are not yet declared.
 - no AWS, Braket, Qiskit, credentials, queue policy, or Pulse action
 
 `Bit` is a symbolic measurement token before realization. It is not a realized multi-shot value by
@@ -108,6 +140,11 @@ The Braket binding pack is the first authority-bearing runtime pack:
 - reports task ARN, S3 result URI, backend metadata, shot count, and a cost estimate
 
 The binding pack is host/runtime material. A Wire package must not depend on it.
+
+The package side declares only the requirement for a quantum backend capability. The binding side
+satisfies that requirement by choosing AWS Braket and recording the concrete authority fingerprints.
+If the package is present but the Braket binding pack is absent, Wire compilation may still succeed;
+Pulse lowering must fail with a missing runtime binding.
 
 ## Native Wire Shape
 
@@ -193,5 +230,14 @@ owning provider execution.
 
 - Whether `@realize` should live canonically as `quantum.realize` with `quantum.braket` exporting a
   provider-specific alias, or whether Braket should own the only initial realization executor id.
+  The implementation has provisionally settled this as the core-shaped id `quantum.realize` (bound
+  by the Braket pack and exported by `quantum-braket/cortex.toml`). Because the host binding lookup
+  keys on the bare executor id, a second backend (e.g. `quantum.qiskit`) binding the same
+  `quantum.realize` would collide; resolving this open point — provider-namespaced realize ids
+  and/or version-keyed binding lookup — is a prerequisite for a second realization backend.
 - The first minimal `QuantumResult` schema that supports QEC without overfitting to Braket.
-- The host binding-pack manifest format for Braket runtime authority.
+- The host binding-pack manifest format for Braket runtime authority, following ADR 0060's generic
+  binding-manifest shape rather than a quantum-only configuration file.
+- The CLI/project-discovery path for selecting package manifests explicitly. The current showcase
+  can rely on repo-local defaults while the extension is in-tree, but the stable shape should use
+  explicit package selection or project-level discovery.
