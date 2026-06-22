@@ -36,6 +36,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
+import Cortex.Algebra.Graph (relVertices)
 import Cortex.Pulse.Node
   ( NodeId (..)
   )
@@ -230,9 +231,11 @@ planRewriteDelta
   -> StagePlan stageId
   -> Either [RewriteValidationError] (PlannedRewriteDelta (StageDefinition stageId))
 planRewriteDelta rewrite plan = do
+  first (pure . RewriteDuplicateTemplate) (buildStageTemplateRegistry plan.spDefinitions) $> ()
+  let activeDefinitions = Map.restrictKeys plan.spDefinitions (relVertices plan.spTopology)
   delta <-
     first (fmap RewritePlanningIssue) $
-      planGraphRewrite rewrite plan.spTopology plan.spDefinitions
+      planGraphRewrite rewrite plan.spTopology activeDefinitions
   first (pure . RewriteDuplicateTemplate) (buildStageTemplateRegistry delta.prdDefinitions) $> ()
   pure delta
 

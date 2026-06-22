@@ -336,8 +336,8 @@ runFrontierSequential env task stagePlan gsVar (nid : rest) = do
       runFrontierSequential env task stagePlan gsVar rest
 
 {- | Spawn a semaphore-bounded async worker for a single node.  The worker
-checks the terminal flag before running and sets it when the node produces
-a terminal outcome (failed, timed-out, shutdown, cancelled).
+checks the start gate before running and closes it before releasing the
+semaphore when the node produces a terminal outcome.
 -}
 spawnNodeWorker
   :: StableStageId stageId
@@ -351,7 +351,7 @@ spawnNodeWorker
   -> Map NodeId (Map NodeId Aeson.Value)
   -> NodeId
   -> IO (WorkerHandle stageId)
-spawnNodeWorker env task stagePlan rewriteAdmission budget terminalFlag sem inputsMap nid = do
+spawnNodeWorker env task stagePlan rewriteAdmission budget startGateFlag sem inputsMap nid = do
   let nodeInputs' = Map.findWithDefault Map.empty nid inputsMap
   -- Mask startup so cancellation cannot land before the outer try is installed.
   -- That keeps worker exceptions reified as node results even when cancel races
@@ -362,22 +362,23 @@ spawnNodeWorker env task stagePlan rewriteAdmission budget terminalFlag sem inpu
           outerResult <-
             (try . restore)
               ( bracket_ (waitQSem sem) (signalQSem sem) $ do
-                  cancelled <- readTVarIO terminalFlag
+                  cancelled <- readTVarIO startGateFlag
                   if cancelled
                     then pure (NodeResult nid OutcomeNodeCancelled, Nothing)
                     else do
                       result <- try (executeNodeWorker env task stagePlan rewriteAdmission budget nid nodeInputs')
-                      pure $
-                        case result of
-                          Left (e :: SomeException) -> workerExceptionResult nid e
-                          Right r -> r
+                      let workerResult =
+                            case result of
+                              Left (e :: SomeException) -> workerExceptionResult nid e
+                              Right r -> r
+                          (nr, _) = workerResult
+                      markTerminalOutcome startGateFlag nr.nrOutcome
+                      pure workerResult
               )
           let workerResult =
                 case outerResult of
                   Right r -> r
                   Left (e :: SomeException) -> workerExceptionResult nid e
-              (nr, _) = workerResult
-          markTerminalOutcome terminalFlag nr.nrOutcome
           pure workerResult
       )
   pure WorkerHandle {whNodeId = nid, whAsync = workerAsync}
@@ -393,12 +394,13 @@ collectWorkerResults
   :: StageEnv
   -> TVar PersistedGraphState
   -> TVar Bool
+  -> TVar Bool
   -> TVar (Maybe GraphStatePersistError)
   -> [WorkerHandle stageId]
   -> [(NodeResult, Maybe (PersistedRewrite stageId))]
   -> IO [(NodeResult, Maybe (PersistedRewrite stageId))]
-collectWorkerResults _ _ _ _ [] acc = pure (reverse acc)
-collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
+collectWorkerResults _ _ _ _ _ [] acc = pure (reverse acc)
+collectWorkerResults env gsVar startGateFlag cancelRunningFlag persistFailRef remaining acc = do
   (completed, result) <- waitAnyCatch (fmap whAsync remaining)
   let (mCompletedWorker, remaining') = takeCompletedWorker completed remaining
   case result of
@@ -411,9 +413,19 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
       case persistResult of
         Left err -> do
           atomically $ writeTVar persistFailRef (Just err)
-          atomically $ writeTVar terminalFlag True
-        Right persistedState -> atomically $ writeTVar gsVar persistedState
-      collectWorkerResults env gsVar terminalFlag persistFailRef remaining' ((nr, mRewrite) : acc)
+          atomically $ writeTVar startGateFlag True >> writeTVar cancelRunningFlag True
+        Right persistedState -> do
+          atomically $ writeTVar gsVar persistedState
+          markTerminalOutcome startGateFlag nr.nrOutcome
+          markTerminalOutcome cancelRunningFlag nr.nrOutcome
+      collectWorkerResults
+        env
+        gsVar
+        startGateFlag
+        cancelRunningFlag
+        persistFailRef
+        remaining'
+        ((nr, mRewrite) : acc)
     Left ex ->
       case mCompletedWorker of
         Just worker -> do
@@ -428,7 +440,6 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
                 <> T.pack (displayException ex)
             )
             Nothing
-          markTerminalOutcome terminalFlag nr.nrOutcome
           atomically . modifyTVar' gsVar $
             \s -> s {pgsGraphState = applyNodeFact nr s.pgsGraphState}
           currentState <- readTVarIO gsVar
@@ -436,9 +447,19 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
           case persistResult of
             Left err -> do
               atomically $ writeTVar persistFailRef (Just err)
-              atomically $ writeTVar terminalFlag True
-            Right persistedState -> atomically $ writeTVar gsVar persistedState
-          collectWorkerResults env gsVar terminalFlag persistFailRef remaining' ((nr, mRewrite) : acc)
+              atomically $ writeTVar startGateFlag True >> writeTVar cancelRunningFlag True
+            Right persistedState -> do
+              atomically $ writeTVar gsVar persistedState
+              markTerminalOutcome startGateFlag nr.nrOutcome
+              markTerminalOutcome cancelRunningFlag nr.nrOutcome
+          collectWorkerResults
+            env
+            gsVar
+            startGateFlag
+            cancelRunningFlag
+            persistFailRef
+            remaining'
+            ((nr, mRewrite) : acc)
         Nothing -> do
           recordRunEvent
             env
@@ -448,8 +469,8 @@ collectWorkerResults env gsVar terminalFlag persistFailRef remaining acc = do
                 <> T.pack (displayException ex)
             )
             Nothing
-          atomically $ writeTVar terminalFlag True
-          collectWorkerResults env gsVar terminalFlag persistFailRef remaining' acc
+          atomically $ writeTVar startGateFlag True >> writeTVar cancelRunningFlag True
+          collectWorkerResults env gsVar startGateFlag cancelRunningFlag persistFailRef remaining' acc
 
 {- | Classify the graph after a concurrent frontier completes.  Persists the
 classified state when it differs from the raw accumulated state, then
@@ -571,7 +592,8 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
                   { rasRemainingBudget = budgetRef
                   , rasAdmissionLock = admissionLock
                   }
-          terminalFlag <- newTVarIO False
+          startGateFlag <- newTVarIO False
+          cancelRunningFlag <- newTVarIO False
           asyncHandles <-
             forM pendingNodeIds $
               spawnNodeWorker
@@ -580,14 +602,15 @@ runFrontierConcurrent env task stagePlan gsVar readyNodeIds = do
                 stagePlan
                 rewriteAdmission
                 markRunningState'.pgsRemainingRewriteBudget
-                terminalFlag
+                startGateFlag
                 sem
                 inputsMap
           monitor <- async $ do
-            atomically $ readTVar terminalFlag >>= check
+            atomically $ readTVar cancelRunningFlag >>= check
             forM_ asyncHandles (cancel . whAsync)
           persistFailRef <- newTVarIO Nothing
-          results <- collectWorkerResults env gsVar terminalFlag persistFailRef asyncHandles []
+          results <-
+            collectWorkerResults env gsVar startGateFlag cancelRunningFlag persistFailRef asyncHandles []
           cancel monitor
           mPersistFail <- readTVarIO persistFailRef
           case mPersistFail of

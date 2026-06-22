@@ -2832,13 +2832,12 @@ spec = beforeAll setupTestDb $ do
           Map.lookup nodeDelta m `shouldBe` Just NodeFailed
 
     it "prefers a settled failure over a sibling rewrite in the same frontier" $ \mPool -> withDb mPool $ \pool -> do
-      pendingWith "Pre-existing rewrite-subsystem failure (not run-terminal); tracked in #266"
       (_, taskContext) <- mkTaskContextWith pool 4
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-concurrent-rewrite-failure"
       runId <- createTestRun pool taskId
       task <- loadTaskDef pool taskId
       betaRewrote <- newEmptyMVar
-      let mkDynStage stageId action =
+      let mkDynStage stageId stageAction =
             StageDefinition
               { sdStageId = DynStageId stageId
               , sdTemplateId = stageTemplateId (DynStageId stageId)
@@ -2847,7 +2846,7 @@ spec = beforeAll setupTestDb $ do
               , sdReplayPolicyOverride = Nothing
               , sdTimeoutSeconds = Nothing
               , sdRetryPolicy = Nothing
-              , sdAction = action
+              , sdAction = stageAction
               , sdMemoryStrategy = defaultMemoryStrategy
               }
           nodeAlpha = NodeId "alpha"
@@ -2974,12 +2973,80 @@ spec = beforeAll setupTestDb $ do
       peak <- readIORef peakRef
       peak `shouldSatisfy` (<= 2)
 
+    it "blocks semaphore-queued workers after a terminal sibling finishes" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContextWith pool 2
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-terminal-blocks-queued-worker"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      roleRef <- newIORef (0 :: Int)
+      blockerStarted <- newEmptyMVar
+      blockerGate <- newEmptyMVar
+      blockerCancelled <- newEmptyMVar
+      lateStarts <- newIORef (0 :: Int)
+      let mkDynStage stageId stageAction =
+            StageDefinition
+              { sdStageId = DynStageId stageId
+              , sdTemplateId = stageTemplateId (DynStageId stageId)
+              , sdActionId = stageActionId (DynStageId stageId)
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = stageAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          roleAction _ = do
+            role <- atomicModifyIORef' roleRef (\n -> let n' = n + 1 in (n', n'))
+            case role of
+              1 ->
+                flip finally (void (tryPutMVar blockerCancelled ())) $ do
+                  putMVar blockerStarted ()
+                  _ <- readMVar blockerGate
+                  pure (StageComplete (Aeson.String "blocker"))
+              2 -> do
+                mBlocker <- timeout 2_000_000 (readMVar blockerStarted)
+                case mBlocker of
+                  Nothing -> throwIO (userError "timed out waiting for blocker worker")
+                  Just () -> throwIO (userError "terminal worker fails after blocker starts")
+              _ -> do
+                atomicModifyIORef' lateStarts (\c -> (c + 1, ()))
+                pure (StageComplete (Aeson.String "late"))
+          nodes = [NodeId "a", NodeId "b", NodeId "c", NodeId "d"]
+          topology = toRelation (mconcat [Vertex n | n <- nodes])
+          defs =
+            Map.fromList
+              [ (NodeId "a", mkDynStage "a" roleAction)
+              , (NodeId "b", mkDynStage "b" roleAction)
+              , (NodeId "c", mkDynStage "c" roleAction)
+              , (NodeId "d", mkDynStage "d" roleAction)
+              ]
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = 1
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = topology
+              , spDefinitions = defs
+              , spTemplateRegistry = mkTemplateRegistry defs
+              }
+      result <- timeout 5_000_000 $ executeStagePlan taskContext runId task stagePlan
+      case result of
+        Nothing -> expectationFailure "Timed out waiting for terminal frontier"
+        Just outcome -> outcome `shouldBe` OutcomeFailed
+      starts <- readIORef lateStarts
+      starts `shouldBe` 0
+      cancelled <- timeout 2_000_000 (readMVar blockerCancelled)
+      cancelled `shouldSatisfy` isJust
+
     it "cancels semaphore-queued workers without leaving stale NodeRunning statuses" $ \mPool -> withDb mPool $ \pool -> do
-      -- cap=1 means only one worker runs at a time; the other two are blocked
-      -- on waitQSem.  When the first worker fails, the monitor cancels the
-      -- queued workers.  They must produce NodeResult (not escape as Left
-      -- through waitAnyCatch) so the graph state is clean.
-      (_, taskContext) <- mkTaskContextWith pool 1
+      -- cap=2 with three ready roots leaves one worker blocked on waitQSem.
+      -- When the first worker fails, the queued worker must produce NodeResult
+      -- (not escape as Left through waitAnyCatch) so the graph state is clean.
+      (_, taskContext) <- mkTaskContextWith pool 2
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-semaphore-cancel"
       runId <- createTestRun pool taskId
       task <- loadTaskDef pool taskId
@@ -4618,7 +4685,6 @@ spec = beforeAll setupTestDb $ do
                 )
 
     it "materializes admitted rewrites from lineage when graph_state watermark lags" $ \mPool -> withDb mPool $ \pool -> do
-      pendingWith "Pre-existing rewrite-subsystem failure (not run-terminal); tracked in #266"
       (shutdownFlag, taskContext) <- mkTaskContext pool
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-rewrite-watermark-gap"
       runId <- createTestRun pool taskId
@@ -4835,7 +4901,6 @@ spec = beforeAll setupTestDb $ do
           successors topology (NodeId "alpha") `shouldBe` Set.singleton (NodeId "alpha:sub1")
 
     it "repairs missing rewritten node statuses from the materialized watermark topology on resume" $ \mPool -> withDb mPool $ \pool -> do
-      pendingWith "Pre-existing rewrite-subsystem failure (not run-terminal); tracked in #266"
       (shutdownFlag, taskContext) <- mkTaskContext pool
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-rewrite-resume-repair"
       runId <- createTestRun pool taskId
@@ -5304,7 +5369,6 @@ spec = beforeAll setupTestDb $ do
       fmap Q.pravErrorType runView `shouldBe` Just (Just "invalid_rewrite")
 
     it "hydrates rewritten stages by template id even when semantic stage ids are reused" $ \mPool -> withDb mPool $ \pool -> do
-      pendingWith "Pre-existing rewrite-subsystem failure (not run-terminal); tracked in #266"
       (shutdownFlag, taskContext) <- mkTaskContext pool
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-rewrite-template-identity"
       runId <- createTestRun pool taskId
