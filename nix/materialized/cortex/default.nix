@@ -752,6 +752,7 @@
           "hspec-expectations".components.library.planned = lib.mkOverride 900 true;
           "serialise".components.library.planned = lib.mkOverride 900 true;
           "wai-app-static".components.library.planned = lib.mkOverride 900 true;
+          "cortex".components.sublibs."cortex-quantum".planned = lib.mkOverride 900 true;
           "happy-lib".components.sublibs."backend-lalr".planned = lib.mkOverride 900 true;
           "crypton-connection".components.library.planned = lib.mkOverride 900 true;
           "base16".components.library.planned = lib.mkOverride 900 true;

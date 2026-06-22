@@ -25,11 +25,7 @@
       detailLevel = "FullDetails";
       licenseFiles = [ "LICENSE" ];
       dataDir = ".";
-      dataFiles = [
-        "extensions/quantum/packages/quantum-braket/cortex.toml"
-        "extensions/quantum/packages/quantum-core/cortex.toml"
-        "extensions/quantum/packages/quantum-qec/cortex.toml"
-      ];
+      dataFiles = [];
       extraSrcFiles = [ "README.md" "NOTICE" ];
       extraTmpFiles = [];
       extraDocFiles = [];
@@ -115,7 +111,6 @@
           "Cortex/Capability/Catalog/ExecutorManifest"
           "Cortex/Capability/Catalog/RuntimeBindingRecord"
           "Cortex/Capability/BindingPack"
-          "Cortex/Capability/BindingPack/Braket"
           "Cortex/Capability/Executor"
           "Cortex/Capability/Executor/Pure"
           "Cortex/Pulse"
@@ -196,6 +191,18 @@
         ];
         hsSourceDirs = [ "src" ];
       };
+      sublibs = {
+        "cortex-quantum" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+          ];
+          buildable = true;
+          modules = [ "Cortex/Capability/BindingPack/Braket" ];
+          hsSourceDirs = [ "extensions/quantum/src" ];
+        };
+      };
       exes = {
         "cortex-pulse" = {
           depends = [
@@ -236,6 +243,7 @@
           depends = [
             (hsPkgs."base" or (errorHandler.buildDepError "base"))
             (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."cortex".components.sublibs.cortex-quantum or (errorHandler.buildDepError "cortex:cortex-quantum"))
             (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
             (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
             (hsPkgs."hspec-discover" or (errorHandler.buildDepError "hspec-discover"))

@@ -18,11 +18,6 @@ extra-source-files:
     README.md
     NOTICE
 
-data-files:
-    extensions/quantum/packages/quantum-braket/cortex.toml
-    extensions/quantum/packages/quantum-core/cortex.toml
-    extensions/quantum/packages/quantum-qec/cortex.toml
-
 common shared-properties
     default-language: GHC2024
     default-extensions:
@@ -150,7 +145,6 @@ library
         Cortex.Capability.Catalog.ExecutorManifest
         Cortex.Capability.Catalog.RuntimeBindingRecord
         Cortex.Capability.BindingPack
-        Cortex.Capability.BindingPack.Braket
         Cortex.Capability.Executor
         Cortex.Capability.Executor.Pure
         Cortex.Pulse
@@ -228,6 +222,20 @@ library
         Cortex.Pulse.Signal
         Cortex.Pulse.Scheduler
         Cortex.Pulse.Types
+
+-- In-repo downstream quantum extension (ADR 0060). The vendor, authority-bearing
+-- AWS Braket host runtime binding pack lives here, depending on Cortex core rather
+-- than being exposed by it. Cortex core ships no downstream package identity.
+library cortex-quantum
+    import:           shared-properties
+    visibility:       public
+    hs-source-dirs:   extensions/quantum/src
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        text >=2.0
+    exposed-modules:
+        Cortex.Capability.BindingPack.Braket
 
 -- Pulse executor binary: substrate shell.
 -- Ships with an empty task registry; downstream consumers link their own.
@@ -331,6 +339,7 @@ test-suite cortex-test
     build-depends:
         base >=4.16 && <5,
         cortex,
+        cortex:cortex-quantum,
         haskell-platform,
         -- Test frameworks
         hspec >=2.10,
