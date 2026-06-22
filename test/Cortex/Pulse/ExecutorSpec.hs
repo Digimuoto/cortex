@@ -2836,7 +2836,6 @@ spec = beforeAll setupTestDb $ do
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-concurrent-rewrite-failure"
       runId <- createTestRun pool taskId
       task <- loadTaskDef pool taskId
-      betaRewrote <- newEmptyMVar
       let mkDynStage stageId stageAction =
             StageDefinition
               { sdStageId = DynStageId stageId
@@ -2874,21 +2873,28 @@ spec = beforeAll setupTestDb $ do
               , sgsEntryNodes = [NodeId "sub1"]
               , sgsExitNodes = [NodeId "sub1"]
               }
+          waitForBetaRewritten = do
+            maybeStatuses <- readGraphNodeStatuses pool runId
+            case maybeStatuses >>= Map.lookup nodeBeta of
+              Just NodeRewritten -> pure ()
+              _ -> do
+                threadDelay 10000
+                waitForBetaRewritten
           defs =
             Map.fromList
               [ (nodeAlpha, mkDynStage "alpha" (\_ -> pure (StageComplete Aeson.Null)))
               ,
                 ( nodeBeta
-                , mkDynStage "beta" $ \_ -> do
-                    putMVar betaRewrote ()
-                    pure (StageRewrite (Aeson.String "beta-output") (ExpandNode nodeBeta ExpandReplaceNode rewriteSpec))
+                , mkDynStage "beta" $
+                    \_ ->
+                      pure (StageRewrite (Aeson.String "beta-output") (ExpandNode nodeBeta ExpandReplaceNode rewriteSpec))
                 )
               ,
                 ( nodeGamma
                 , mkDynStage "gamma" $ \_ -> do
-                    maybeBetaRewrote <- timeout 2_000_000 (readMVar betaRewrote)
-                    case maybeBetaRewrote of
-                      Nothing -> throwIO (userError "timed out waiting for beta rewrite")
+                    maybeBetaRewritten <- timeout 2_000_000 waitForBetaRewritten
+                    case maybeBetaRewritten of
+                      Nothing -> throwIO (userError "timed out waiting for beta rewrite persistence")
                       Just () -> pure ()
                     throwIO (userError "gamma fails after sibling rewrite")
                 )
