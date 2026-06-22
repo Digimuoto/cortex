@@ -90,18 +90,18 @@ The duplicate-name rule applies to:
 Within a record literal, two field declarations conflict when their paths are equal or when one path
 is a strict prefix of the other. The following are parse errors:
 
-```text
-{ a = 1; a = 2; }                        -- equal paths
-{ a.b = 1; a.b = 2; }                    -- equal paths
-{ a = 1; a.b = 2; }                      -- `a` is a strict prefix of `a.b`
-{ a.b = 1; a = { b = 2; }; }            -- `a` is a strict prefix of `a.b`
+```wire
+{ a = 1 ; a = 2 ; }                        -- equal paths
+{ a.b = 1 ; a.b = 2 ; }                    -- equal paths
+{ a = 1 ; a.b = 2 ; }                      -- `a` is a strict prefix of `a.b`
+{ a.b = 1 ; a = { b = 2 ; } ; }            -- `a` is a strict prefix of `a.b`
 ```
 
 The following is permitted because neither path is a prefix of the other; the distinct leaves
 combine into one nested record:
 
-```text
-{ a.b = 1; a.c = 2; }                    -- equivalent to { a = { b = 1; c = 2; }; }
+```wire
+{ a.b = 1 ; a.c = 2 ; }                    -- equivalent to { a = { b = 1 ; c = 2 ; } ; }
 ```
 
 The runtime evaluator never observes duplicate names within one scope, because the parser and
@@ -116,7 +116,7 @@ split for the same reason: a silent in-literal override would let one of two vis
 authoring intents win without telling the reader, while explicit `//` makes the override visible at
 the call site.
 
-Authors who want override behavior write `defaults // { field = newValue; }` rather than declaring
+Authors who want override behavior write `defaults // { field = newValue ; }` rather than declaring
 `field` twice in one record literal.
 
 ### Pipe Sugar
@@ -127,25 +127,25 @@ comparison, and boolean operators.
 
 The parser desugars:
 
-```text
+```wire
 lhs |> rhs
 ```
 
 to:
 
-```text
+```wire
 rhs lhs
 ```
 
 Pipes do not add a CorePure AST node and do not change evaluator semantics. For example:
 
-```text
+```wire
 xs |> filter pred |> map f |> sum
 ```
 
 desugars to:
 
-```text
+```wire
 sum (map f (filter pred xs))
 ```
 
@@ -179,7 +179,7 @@ deterministic on numbers and booleans.
 
 For `zip` and `zipWith`, the piped list is the rightmost operand:
 
-```text
+```wire
 scores |> zipWith (score: weight: score * weight) weights
 ```
 
@@ -188,7 +188,7 @@ scores |> zipWith (score: weight: score * weight) weights
 
 `clamp` is ordered as `clamp lo hi value`, preserving data-last use:
 
-```text
+```wire
 score |> clamp 0 1
 ```
 
@@ -203,8 +203,8 @@ same convention when intended for pipe use, but the evaluator does not enforce t
 CorePure strings support Nix-style interpolation:
 
 ```wire
-let name = "Julius";
-let greeting = "Hello, ${name}!";
+let name = "Julius" ;
+let greeting = "Hello, ${name}!" ;
 ```
 
 The parser desugars interpolation into ordinary string concatenation:
@@ -215,7 +215,7 @@ The parser desugars interpolation into ordinary string concatenation:
 
 becomes equivalent to:
 
-```text
+```wire
 concat ["foo", toString expr, "bar"]
 ```
 
@@ -263,24 +263,24 @@ ports are bound to runtime values, so interpolation works normally over those co
 ## Worked example
 
 ```wire
-let scoreThreshold = 0.7;
+let scoreThreshold = 0.7 ;
 
 node classify
-  <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = accepted;
-  -> rejected: RejectedSet = rejected;
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
   -> summary: Report = ''
     Classification complete.
     Accepted: ${length accepted} items
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
-  '';
+  '' ;
   where let
-    items = evidence.items;
-    accepted = items |> filter (x: x.score >= scoreThreshold);
-    rejected = items |> filter (x: x.score < scoreThreshold);
+    items = evidence.items ;
+    accepted = items |> filter (x: x.score >= scoreThreshold) ;
+    rejected = items |> filter (x: x.score < scoreThreshold) ;
   in
-  { accepted = accepted; rejected = rejected; };
+  { accepted = accepted ; rejected = rejected ; } ;
 ```
 
 The `summary` output is the primary reason interpolation belongs in the first slice: typed values

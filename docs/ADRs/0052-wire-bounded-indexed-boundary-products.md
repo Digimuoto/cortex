@@ -93,7 +93,7 @@ let workers[] = make(3, worker);
 
 The binding introduces the family `workers` and static projections:
 
-```text
+```wire
 workers[0]
 workers[1]
 workers[2]

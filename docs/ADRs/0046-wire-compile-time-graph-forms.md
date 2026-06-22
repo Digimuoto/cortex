@@ -134,7 +134,7 @@ form instantiation.
 Inline, unbound form applications in graph position are rejected in v1 because they have no source
 name from which to derive a stable identity prefix:
 
-```text
+```wire
 # Rejected in v1.
 open_arm(0.0) => measure;
 ```
@@ -144,7 +144,7 @@ Authors can bind the form first and then compose it normally:
 ```wire
 let open_phase_0 = open_arm(0.0);
 
-open_phase_0 => measure
+open_phase_0 => measure;
 ```
 
 Nested form instantiations inherit a hierarchical prefix from their containing instantiation and

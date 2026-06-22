@@ -43,7 +43,7 @@ surface.
 
 Forward note: ADR 0031 supersedes the node-local `let ... in` block originally defined here. The
 `let_block` production and its scope rules are removed; node-local intermediates are now expressed
-via the `where <record-expr>;` clause defined in 0031.
+via the `where <record-expr> ;` clause defined in 0031.
 
 ## Context
 
@@ -93,7 +93,7 @@ Node declarations do not use a colon after `node <name>`. Legal continuations al
 Each input and output clause is terminated by `;`. This keeps clauses symmetric and avoids a body
 delimiter.
 
-A node may carry at most one trailing `where <record-expr>;` clause for node-local intermediates.
+A node may carry at most one trailing `where <record-expr> ;` clause for node-local intermediates.
 Scope rules, the static-field-set invariant, the input-port collision rule, and the supported
 where-expression shapes are specified in [ADR 0031](./0031-wire-binding-forms-and-where-clauses.md).
 The original node-local `let ... in` block defined here has been superseded; this section is
@@ -104,13 +104,13 @@ retained only to record that supersession.
 File-level `let` bindings are private by default:
 
 ```wire
-let acceptedItem = x: x.score >= 0.7;
+let acceptedItem = x: x.score >= 0.7 ;
 ```
 
 `export let` opts a binding into the future import surface:
 
 ```wire
-export let scoreThreshold = 0.7;
+export let scoreThreshold = 0.7 ;
 ```
 
 Until imports land, `export` has no runtime effect. It is accepted to give the grammar the correct
@@ -129,10 +129,10 @@ composition use case needs them. Current style guidance is:
 
 Output equations bind routing labels directly:
 
-```text
--> accepted: AcceptedSet = accepted;
--> rejected: RejectedSet = rejected;
--> report: Report = @review.summarize (prompt);
+```wire
+-> accepted: AcceptedSet = accepted ;
+-> rejected: RejectedSet = rejected ;
+-> report: Report = @review.summarize (prompt) ;
 ```
 
 The declared output port name is the routing key. There is no `return accepted = ...` syntax and no
@@ -159,24 +159,24 @@ evaluation is unknown authority.
 ## Worked example
 
 ```wire
-let scoreThreshold = 0.7;
+let scoreThreshold = 0.7 ;
 
 node classify
-  <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = accepted;
-  -> rejected: RejectedSet = rejected;
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
   -> summary:  Report      = ''
     Classification complete.
     Accepted: ${length accepted} items
     Rejected: ${length rejected} items
     Threshold: ${scoreThreshold}
-  '';
+  '' ;
   where let
-    items    = evidence.items;
-    accepted = items |> filter (x: x.score >= scoreThreshold);
-    rejected = items |> filter (x: x.score <  scoreThreshold);
+    items    = evidence.items ;
+    accepted = items |> filter (x: x.score >= scoreThreshold) ;
+    rejected = items |> filter (x: x.score <  scoreThreshold) ;
   in
-  { accepted = accepted; rejected = rejected; };
+  { accepted = accepted ; rejected = rejected ; } ;
 ```
 
 ## Alternatives considered

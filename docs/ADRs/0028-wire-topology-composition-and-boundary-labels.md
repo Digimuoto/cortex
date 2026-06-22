@@ -41,7 +41,7 @@ topology inside executor config or prompt text. The same decision must settle wh
 file-level values such as:
 
 ```wire
-let greeting = "Hello";
+let greeting = "Hello" ;
 ```
 
 If such a binding implicitly creates a circuit with an inferred output label, composition becomes
@@ -57,7 +57,7 @@ Wire should add two topology composition operators over graph values:
   left circuit to compatible exposed inputs on the right circuit.
 
 ```wire
-let review = (analystA <> analystB) => reviewer;
+let review = (analystA <> analystB) => reviewer ;
 ```
 
 Both operators are topology-only. They do not call executors, evaluate CorePure, or create runtime
@@ -142,7 +142,7 @@ File-level `let` has kinded RHSs:
 The binding name is never automatically an output port label.
 
 ```wire
-let greeting = "Hello";
+let greeting = "Hello" ;
 ```
 
 binds an ordinary pure-data value. It does not create a circuit, an anonymous output, or an output
@@ -152,7 +152,7 @@ To create a constant circuit, authors use an explicit node with an explicit outp
 
 ```wire
 node greeting
-  -> text: String = "Hello";
+  -> text: String = "Hello" ;
 ```
 
 The circuit's boundary label is `text`, not the file-level binding name. This keeps labels tied to

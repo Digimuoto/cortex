@@ -67,11 +67,11 @@ serializable unless a later ADR admits them.
 
 String interpolation remains scalar-only. Authors serialize structured values explicitly:
 
-```text
+```wire
 -> prompt: Prompt = ''
   Analyze these items:
   ${toJson evidence.items}
-'';
+'' ;
 ```
 
 ### Canonical JSON

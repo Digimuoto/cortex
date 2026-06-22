@@ -42,7 +42,7 @@ Current Wire already has the pieces of a three-phase node model:
 - typed input and output ports define the node boundary;
 - an executor call takes one CorePure expression argument, so multi-input nodes already author
   ingress packing explicitly;
-- `where <record-expr>;` opens node-local CorePure fields into the body scope;
+- `where <record-expr> ;` opens node-local CorePure fields into the body scope;
 - pure output equations bind declared output ports directly;
 - executor nodes declare the full output boundary before a node-level body;
 - contract validation and runtime wrapping decide whether produced values satisfy output ports.
@@ -100,13 +100,13 @@ Current executor-call arguments already implement ingress:
 
 ```wire
 node compare
-  <- baseline: Report;
-  <- candidate: Report;
-  -> result: Comparison;
+  <- baseline: Report ;
+  <- candidate: Report ;
+  -> result: Comparison ;
   = @review.compare ({
-    baseline = baseline;
-    candidate = candidate;
-  });
+    baseline = baseline ;
+    candidate = candidate ;
+  }) ;
 ```
 
 The record expression is the boundary adapter from two typed input ports to one body argument.
@@ -151,15 +151,15 @@ For current pure nodes, the egress adapter is visible as output equations:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = accepted;
-  -> rejected: RejectedSet = rejected;
+  <- evidence: EvidenceSet ;
+  -> accepted: AcceptedSet = accepted ;
+  -> rejected: RejectedSet = rejected ;
   where let
-    items = evidence.items;
-    accepted = items |> filter (x: x.score >= 0.7);
-    rejected = items |> filter (x: x.score < 0.7);
+    items = evidence.items ;
+    accepted = items |> filter (x: x.score >= 0.7) ;
+    rejected = items |> filter (x: x.score < 0.7) ;
   in
-  { accepted = accepted; rejected = rejected; };
+  { accepted = accepted ; rejected = rejected ; } ;
 ```
 
 For current executor nodes, egress is implicit in the executor projection (the registered mapping

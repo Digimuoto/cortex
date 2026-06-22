@@ -34,7 +34,7 @@ decision on pure output equations remains in force.
 
 Forward note: ADR 0031 supersedes this ADR's node-local `let ... in` block and `localBindings`
 lowering detail. Pure output equations remain the accepted decision; node-local shared work now uses
-the trailing `where <record-expr>;` clause and lowers through the `where` config field.
+the trailing `where <record-expr> ;` clause and lowers through the `where` config field.
 
 Forward note: ADR 0050 supersedes this ADR's required `pure (...)` source wrapper. CorePure output
 equations remain the accepted decision, but the expression is now written directly after `=`.
@@ -44,7 +44,7 @@ equations remain the accepted decision, but the expression is now written direct
 Early pure-node sketches treated deterministic Wire-authored computation as a registered pure
 evaluator and used the existing executor surface:
 
-```text
+```wire
 node score :
   <- evidence_score: Float
   <- recency_score: Float
@@ -69,17 +69,16 @@ Wire should add **pure output equations** as the next pure-node authoring surfac
 equation attaches a CorePure expression directly to an output port declaration:
 
 ```wire
-let acceptedItem = x: x.score >= 0.7;
+let acceptedItem = x: x.score >= 0.7 ;
 
 node classify
-  <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet = acceptedItems;
-  -> rejected: RejectedSet = filter (x: !(acceptedItem x)) items;
-  where let
-    items = evidence.items;
-    acceptedItems = filter acceptedItem items;
+  <- evidence: EvidenceSet ;
+  let
+    items = evidence.items ;
+    acceptedItems = filter acceptedItem items
   in
-  { inherit items acceptedItems; };
+  -> accepted: AcceptedSet = pure (acceptedItems) ;
+  -> rejected: RejectedSet = pure (filter (x: !(acceptedItem x)) items) ;
 ```
 
 The output port label is the routing label. There is no separate `return accepted = ...` syntax:
@@ -179,7 +178,7 @@ circuit. Existing Wire values and ordinary values remain distinct for this decis
 This ADR also does not generalize executor syntax. Other registered executors continue to use the
 existing executor application form:
 
-```text
+```wire
 @qualified.name { config }
 ```
 

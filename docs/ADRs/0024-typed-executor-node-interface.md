@@ -120,8 +120,8 @@ skips the node declaration:
 
 ```wire
 node analyst
-  <- input: AnalysisInput;
-  -> analysis: AnalysisRecord = @review.analyst (input);
+  <- input: AnalysisInput ;
+  -> analysis: AnalysisRecord = @review.analyst (input) ;
 ```
 
 The node declaration is the vertex. The executor RHS is the implementation body behind that typed
@@ -145,8 +145,8 @@ An LLM executor is structurally identical to any other executor:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord = @review.analyze (evidence);
+  <- evidence: EvidenceSet ;
+  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
 ```
 
 The executor knows that it calls a model. The topology does not. From Wire's perspective, the node
@@ -191,14 +191,14 @@ expose fields as separate ports:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord = @review.analyze (evidence);
+  <- evidence: EvidenceSet ;
+  -> analysis: AnalysisRecord = @review.analyze (evidence) ;
 
 node distribute
-  <- analysis: AnalysisRecord;
-  -> summary: String = analysis.summary;
-  -> recommendations: Recommendations = analysis.recommendations;
-  -> riskScore: RiskScore = analysis.riskScore;
+  <- analysis: AnalysisRecord ;
+  -> summary: String = analysis.summary ;
+  -> recommendations: List String = analysis.recommendations ;
+  -> riskScore: Number = analysis.riskScore ;
 ```
 
 This keeps the topology auditable:
@@ -220,17 +220,17 @@ input contracts, and output contracts:
 
 ```wire
 node prepareReviews
-  <- report: DraftReport;
-  -> valuationPrompt: ReviewInput = makeReviewInput "valuation" report;
-  -> legalPrompt: ReviewInput = makeReviewInput "legal" report;
+  <- report: DraftReport ;
+  -> valuationPrompt: ReviewInput = makeReviewInput "valuation" report ;
+  -> legalPrompt: ReviewInput = makeReviewInput "legal" report ;
 
 node valuationReview
-  <- input: ReviewInput;
-  -> review: ReviewResult = @review.gpt54_reviewer (input);
+  <- input: ReviewInput ;
+  -> review: ReviewResult = @review.gpt54-reviewer (input) ;
 
 node legalReview
-  <- input: ReviewInput;
-  -> review: ReviewResult = @review.qwen3_reviewer (input);
+  <- input: ReviewInput ;
+  -> review: ReviewResult = @review.qwen3-reviewer (input) ;
 ```
 
 No special model-selection syntax is needed at the Wire level. Model choice is executor
