@@ -28,15 +28,23 @@ module Cortex.Wire.Package
   , WirePackage (..)
   , packageNamespaceRegistry
   , wireCompileEnvWithPackages
+  , PackageConflict (..)
+  , packageConflicts
+  , renderPackageConflict
   )
 where
 
+import Data.List (nub)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 
 import Cortex.Wire.Contract (WireCompileEnv (..), WireContractRegistry (..), WireContractSpec (..))
-import Cortex.Wire.Executor (WireExecutorProjection (..), WireExecutorRegistry (..))
+import Cortex.Wire.Executor
+  ( WireExecutorProjection (..)
+  , WireExecutorRegistry (..)
+  , wireExecutorIdToText
+  )
 import Cortex.Wire.Package.Registry
 import Cortex.Wire.Std (stdIoContractIdForName, stdIoExecutorIdForLeaf, stdIoNamespace)
 
@@ -94,25 +102,75 @@ wireCompileEnvWithPackages packages env =
       packageNamespaceRegistry packages
     packageExecutorRegistry =
       WireExecutorRegistry
-        ( Map.fromList
+        ( firstWins
             [ (projection.wireExecutorProjectionId, projection)
             | projection <- concatMap wpExecutorProjections packages
             ]
         )
     packageContractRegistry =
       WireContractRegistry
-        ( Map.fromList
+        ( firstWins
             [ (spec.wireContractSpecId, spec)
             | spec <- concatMap wpContractSpecs packages
             ]
         )
 
+{- | Keep the first binding for a duplicate key, matching the namespace registry's
+@Map.fromListWith (\\_ existing -> existing)@. Composition uses one precedence
+direction across namespaces, executor projections, and contract specs; real
+collisions are surfaced by 'packageConflicts', not silently last-write-wins.
+-}
+firstWins :: Ord k => [(k, v)] -> Map.Map k v
+firstWins = Map.fromListWith (\_ existing -> existing)
+
 mergeExecutorRegistry :: WireExecutorRegistry -> WireExecutorRegistry -> WireExecutorRegistry
 mergeExecutorRegistry (WireExecutorRegistry existing) (WireExecutorRegistry packageEntries) =
-  WireExecutorRegistry (packageEntries <> existing)
+  WireExecutorRegistry (existing <> packageEntries)
 
 mergeContractRegistry :: Maybe WireContractRegistry -> WireContractRegistry -> WireContractRegistry
 mergeContractRegistry maybeExisting (WireContractRegistry packageEntries) =
   case maybeExisting of
     Nothing -> WireContractRegistry packageEntries
-    Just (WireContractRegistry existing) -> WireContractRegistry (packageEntries <> existing)
+    Just (WireContractRegistry existing) -> WireContractRegistry (existing <> packageEntries)
+
+{- | A composition conflict: one identifier claimed by more than one Wire package.
+Composition is left-biased (existing wins) and would otherwise silently drop the
+loser, so a caller composing externally loaded manifests should reject a non-empty
+'packageConflicts' result rather than pick a winner (ADR 0060 conflict-detection slice).
+-}
+data PackageConflict
+  = DuplicatePackageId !Text
+  | DuplicateNamespace !Text
+  | DuplicateExecutorId !Text
+  | DuplicateContractId !Text
+  deriving stock (Eq, Show)
+
+renderPackageConflict :: PackageConflict -> Text
+renderPackageConflict = \case
+  DuplicatePackageId packageId -> "duplicate package id " <> packageId
+  DuplicateNamespace namespace -> "duplicate namespace " <> namespace
+  DuplicateExecutorId executorId -> "duplicate executor id " <> executorId
+  DuplicateContractId contractId -> "duplicate contract id " <> contractId
+
+{- | Every identifier claimed by more than one package among @packages@: package ids,
+exported namespaces, executor projection ids, and contract ids. An empty result means
+the packages compose without collision.
+-}
+packageConflicts :: [WirePackage] -> [PackageConflict]
+packageConflicts packages =
+  concat
+    [ DuplicatePackageId <$> duplicates [package.wpId | package <- packages]
+    , DuplicateNamespace
+        <$> duplicates [entry.nsNamespace | package <- packages, entry <- package.wpNamespaceEntries]
+    , DuplicateExecutorId
+        <$> duplicates
+          [ wireExecutorIdToText projection.wireExecutorProjectionId
+          | package <- packages
+          , projection <- package.wpExecutorProjections
+          ]
+    , DuplicateContractId
+        <$> duplicates [spec.wireContractSpecId | package <- packages, spec <- package.wpContractSpecs]
+    ]
+  where
+    duplicates :: Eq a => [a] -> [a]
+    duplicates xs = nub [x | x <- xs, length (filter (== x) xs) > 1]

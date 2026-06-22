@@ -43,7 +43,7 @@ instance Show NamespaceEntry where
   show entry = "NamespaceEntry " <> show entry.nsNamespace
 
 {- | The set of importable namespaces, keyed by namespace text such as @std.io@
-or @quantum.core@. Later entries do not override earlier ones.
+or @example.core@. Later entries do not override earlier ones.
 -}
 newtype NamespaceRegistry = NamespaceRegistry (Map Text NamespaceEntry)
   deriving stock (Eq, Show)

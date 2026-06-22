@@ -14,10 +14,21 @@
         qiskitAer
       ]);
 
+    # The wire CLI defaults to Cortex's standard namespaces only (ADR 0060): the
+    # quantum showcase packages are opt-in. These runners therefore select the
+    # in-tree quantum manifests explicitly via CORTEX_WIRE_PACKAGE_MANIFESTS so
+    # `use quantum.*` resolves regardless of the working directory.
+    quantumWirePackages = lib.concatStringsSep ":" [
+      "${../extensions/quantum/packages/quantum-core/cortex.toml}"
+      "${../extensions/quantum/packages/quantum-qec/cortex.toml}"
+      "${../extensions/quantum/packages/quantum-braket/cortex.toml}"
+    ];
+
     wire-quantum-qiskit = pkgs.writeShellApplication {
       name = "wire-quantum-qiskit";
       text = ''
         set -euo pipefail
+        export CORTEX_WIRE_PACKAGE_MANIFESTS="${quantumWirePackages}"
         exec ${qiskitPython}/bin/python ${../scripts/wire-quantum-qiskit.py} \
           --wire-bin ${config.packages.wire}/bin/wire \
           "$@"
@@ -28,6 +39,7 @@
       name = "wire-quantum-ibm-rest";
       text = ''
         set -euo pipefail
+        export CORTEX_WIRE_PACKAGE_MANIFESTS="${quantumWirePackages}"
         scripts_dir="${../scripts}"
         exec ${pkgs.python313}/bin/python "$scripts_dir/wire-quantum-ibm-rest.py" \
           --wire-bin ${config.packages.wire}/bin/wire \
@@ -39,6 +51,7 @@
       name = "wire-quantum-ipea";
       text = ''
         set -euo pipefail
+        export CORTEX_WIRE_PACKAGE_MANIFESTS="${quantumWirePackages}"
         scripts_dir="${../scripts}"
         exec ${qiskitPython}/bin/python "$scripts_dir/wire-quantum-ipea.py" \
           --wire-bin ${config.packages.wire}/bin/wire \
@@ -56,6 +69,7 @@
           exit 64
         fi
         export PATH="${wire-quantum-ibm-rest}/bin:$PATH"
+        export CORTEX_WIRE_PACKAGE_MANIFESTS="${quantumWirePackages}"
         exec ${config.packages.wire}/bin/wire run examples/wire/quantum-eraser-experiment.wire
       '';
     };

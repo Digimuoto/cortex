@@ -19,8 +19,14 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Test.Hspec
 
+import Cortex.Capability.BindingPack (HostBindingPack (..), lookupBinding)
 import Cortex.Wire.Executor (WireExecutorId (..), WireExecutorProjection (..))
-import Cortex.Wire.Package (WirePackage (..), packageNamespaceRegistry)
+import Cortex.Wire.Package
+  ( PackageConflict (..)
+  , WirePackage (..)
+  , packageConflicts
+  , packageNamespaceRegistry
+  )
 import Cortex.Wire.Package.Manifest (loadWirePackageManifests, renderWirePackageManifestError)
 import Cortex.Wire.Syntax (QName (..), UseItem (..), UseSpec (..))
 import Cortex.Wire.Use
@@ -76,7 +82,30 @@ spec =
             Just quantumBraketPackage ->
               fmap (unWireExecutorId . wireExecutorProjectionId) (wpExecutorProjections quantumBraketPackage)
                 `shouldBe` ["quantum.realize"]
+
+        it "composes without conflicts, and reports duplicates when a package is loaded twice" $ \quantumPackages -> do
+          packageConflicts quantumPackages `shouldBe` []
+          let doubled = quantumPackages <> quantumPackages
+          packageConflicts doubled `shouldContain` [DuplicatePackageId "quantum.core"]
+          packageConflicts doubled `shouldContain` [DuplicateNamespace "quantum.core"]
+          packageConflicts doubled `shouldContain` [DuplicateExecutorId "quantum.realize"]
+          packageConflicts doubled `shouldContain` [DuplicateContractId "quantum.Qubit"]
+
+        -- The ADR 0054 invariant: `use` is compile-time vocabulary only. Resolving
+        -- @quantum.braket.{@realize}@ makes the name available, but no runtime binding
+        -- exists until a host binding pack is explicitly composed.
+        it "resolves a realize name but grants no runtime binding without a host pack" $ \quantumPackages -> do
+          let registry = packageNamespaceRegistry quantumPackages
+          case applyWireUseSpecs registry notTaken [useSpec ["quantum", "braket"] [UseExecutor "realize" Nothing]] of
+            Left err -> expectationFailure (show err)
+            Right scope ->
+              Map.lookup "realize" (wireUseExecutors scope) `shouldBe` Just realizeExecutorId
+          lookupBinding (WireExecutorId realizeExecutorId) emptyHostBindingPack `shouldBe` Nothing
     )
+
+emptyHostBindingPack :: HostBindingPack
+emptyHostBindingPack =
+  HostBindingPack {hbpIdentity = "none", hbpWirePackageDeps = [], hbpRuntimeBindings = []}
 
 realizeExecutorId :: Text
 realizeExecutorId = "quantum.realize"

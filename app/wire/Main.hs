@@ -26,14 +26,13 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
-import Paths_cortex qualified as Paths
-import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Directory (createDirectoryIfMissing)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (splitSearchPath, takeDirectory, (</>))
@@ -112,6 +111,8 @@ import Cortex.Wire.LeanFixture
   )
 import Cortex.Wire.Package
   ( NamespaceRegistry
+  , packageConflicts
+  , renderPackageConflict
   , stdOnlyRegistry
   , wireCompileEnvWithPackages
   )
@@ -199,15 +200,27 @@ data CommandRunResult = CommandRunResult
 
 main :: IO ()
 main = do
-  command <- parseCommand <$> getArgs
-  case command of
+  (packagePaths, commandArgs) <- extractWirePackageFlags <$> getArgs
+  case parseCommand commandArgs of
     Left errText -> dieText errText
     Right CommandHelp -> TIO.putStr usageText
-    Right (CommandBuild maybeSelectedReturn path) -> buildWire maybeSelectedReturn path
+    Right (CommandBuild maybeSelectedReturn path) -> buildWire packagePaths maybeSelectedReturn path
     Right (CommandFmt mode paths) -> fmtWire mode paths
-    Right (CommandRun path) -> runWire path
+    Right (CommandRun path) -> runWire packagePaths path
     Right (CommandLeanFixtures outDir) -> leanFixturesWire outDir
     Right (CommandParse path) -> parseWireOnly path
+
+{- | Pull repeatable @--wire-package PATH@ options out of the raw argv, returning the
+collected manifest paths and the remaining command arguments. These flags select which
+Wire packages compile-time @use@ resolves against; without them (and without
+@CORTEX_WIRE_PACKAGE_MANIFESTS@) the CLI knows only Cortex's standard namespaces.
+-}
+extractWirePackageFlags :: [String] -> ([FilePath], [String])
+extractWirePackageFlags = go [] []
+  where
+    go paths rest [] = (reverse paths, reverse rest)
+    go paths rest ("--wire-package" : path : more) = go (path : paths) rest more
+    go paths rest (arg : more) = go paths (arg : rest) more
 
 parseCommand :: [String] -> Either Text Command
 parseCommand = \case
@@ -262,12 +275,17 @@ usageText =
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
     , ""
+    , "global options:"
+    , "  --wire-package PATH         compose a Wire package manifest (repeatable)."
+    , "                              Default: Cortex standard namespaces only."
+    , "                              CORTEX_WIRE_PACKAGE_MANIFESTS (search path) is an alternative."
+    , ""
     , "The local runner currently supports stdin/stdout executors plus CorePure DAG frontiers."
     ]
 
-buildWire :: Maybe Text -> FilePath -> IO ()
-buildWire maybeSelectedReturn path = do
-  compileEnv <- loadCliWireCompileEnv
+buildWire :: [FilePath] -> Maybe Text -> FilePath -> IO ()
+buildWire packagePaths maybeSelectedReturn path = do
+  compileEnv <- loadCliWireCompileEnv packagePaths
   modules <- loadWireModules path
   let compile =
         maybe
@@ -363,9 +381,9 @@ fmtWireFile mode path = do
             TIO.putStr formatted
             pure True
 
-runWire :: FilePath -> IO ()
-runWire path = do
-  compileEnv <- loadCliWireCompileEnv
+runWire :: [FilePath] -> FilePath -> IO ()
+runWire packagePaths path = do
+  compileEnv <- loadCliWireCompileEnv packagePaths
   modules <- loadWireModules path
   let namespaceRegistry =
         fromMaybe stdOnlyRegistry compileEnv.wireCompileEnvNamespaceRegistry
@@ -418,47 +436,32 @@ runnerScopesFromModules namespaceRegistry modules = do
         (NE.toList modules)
   pure RunnerScopes {runnerRootScope = rootScope, runnerNodeScopes = nodeScopes}
 
-loadCliWireCompileEnv :: IO WireCompileEnv
-loadCliWireCompileEnv = do
-  manifestPaths <- cliWirePackageManifestPaths
+loadCliWireCompileEnv :: [FilePath] -> IO WireCompileEnv
+loadCliWireCompileEnv explicitPaths = do
+  manifestPaths <- cliWirePackageManifestPaths explicitPaths
   loadedPackages <- loadWirePackageManifests manifestPaths
   packages <- either (dieText . renderWirePackageManifestError) pure loadedPackages
-  pure (wireCompileEnvWithPackages packages emptyWireCompileEnv)
+  case packageConflicts packages of
+    [] -> pure (wireCompileEnvWithPackages packages emptyWireCompileEnv)
+    conflicts ->
+      dieText
+        ( "conflicting Wire packages:\n"
+            <> T.intercalate "\n" (fmap (("  - " <>) . renderPackageConflict) conflicts)
+        )
 
-cliWirePackageManifestPaths :: IO [FilePath]
-cliWirePackageManifestPaths = do
-  configured <- lookupEnv "CORTEX_WIRE_PACKAGE_MANIFESTS"
-  case configured of
-    Just raw
-      | not (null raw) ->
-          pure (splitSearchPath raw)
-    _ ->
-      defaultWirePackageManifestPaths
-
-defaultWirePackageManifestPaths :: IO [FilePath]
-defaultWirePackageManifestPaths =
-  catMaybes <$> traverse resolveDefaultWirePackageManifestPath defaultWirePackageManifestRelativePaths
-
-defaultWirePackageManifestRelativePaths :: [FilePath]
-defaultWirePackageManifestRelativePaths =
-  [ "extensions/quantum/packages/quantum-core/cortex.toml"
-  , "extensions/quantum/packages/quantum-qec/cortex.toml"
-  , "extensions/quantum/packages/quantum-braket/cortex.toml"
-  ]
-
-resolveDefaultWirePackageManifestPath :: FilePath -> IO (Maybe FilePath)
-resolveDefaultWirePackageManifestPath relativePath = do
-  dataPath <- Paths.getDataFileName relativePath
-  firstExistingFile [dataPath, relativePath]
-
-firstExistingFile :: [FilePath] -> IO (Maybe FilePath)
-firstExistingFile [] =
-  pure Nothing
-firstExistingFile (path : paths) = do
-  exists <- doesFileExist path
-  if exists
-    then pure (Just path)
-    else firstExistingFile paths
+{- | Wire package manifests to compose, in precedence order: explicit @--wire-package@
+flags, else the @CORTEX_WIRE_PACKAGE_MANIFESTS@ search path, else none. The default
+compile environment knows only Cortex's standard namespaces (ADR 0060); downstream
+packages such as the quantum showcase are opt-in, not auto-loaded by the CLI.
+-}
+cliWirePackageManifestPaths :: [FilePath] -> IO [FilePath]
+cliWirePackageManifestPaths explicitPaths
+  | not (null explicitPaths) = pure explicitPaths
+  | otherwise = do
+      configured <- lookupEnv "CORTEX_WIRE_PACKAGE_MANIFESTS"
+      pure $ case configured of
+        Just raw | not (null raw) -> splitSearchPath raw
+        _ -> []
 
 readAndParseWireFile :: FilePath -> IO WireFile
 readAndParseWireFile path = do

@@ -95,11 +95,14 @@ decodeWirePackageManifest path source =
   case Toml.decode source of
     Toml.Failure errs ->
       Left (WirePackageManifestDecodeError path (renderTomlMessages errs))
-    Toml.Success warnings manifest
-      | null warnings ->
-          Right (manifestToWirePackage manifest)
-      | otherwise ->
-          Left (WirePackageManifestDecodeError path (renderTomlMessages warnings))
+    -- toml-parser reports unmatched keys as non-fatal warnings. A Wire package
+    -- manifest is a forward-compatible artifact (ADR 0060): an older binary must
+    -- accept a manifest that carries keys from a later slice — versioning,
+    -- dependencies, requirement slots — rather than reject the whole file. So we
+    -- ignore warnings and decode the keys this loader understands; only a hard
+    -- Toml.Failure is an error.
+    Toml.Success _warnings manifest ->
+      Right (manifestToWirePackage manifest)
 
 renderTomlMessages :: [String] -> Text
 renderTomlMessages =

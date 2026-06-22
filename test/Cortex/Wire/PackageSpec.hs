@@ -141,3 +141,14 @@ spec = do
               Map.lookup "pong" (wireUseExecutors scope) `shouldBe` Just "beta.pong"
               Map.lookup "Token" (wireUseContracts scope) `shouldBe` Just "alpha.Token"
               Map.lookup "BetaToken" (wireUseContracts scope) `shouldBe` Just "beta.Token"
+
+  describe "packageConflicts" $ do
+    it "is empty for packages with disjoint ids and namespaces" $
+      packageConflicts [WirePackage "alpha" [alphaCore] [] [], WirePackage "beta" [betaCore] [] []]
+        `shouldBe` []
+
+    it "reports duplicate package ids and namespaces" $ do
+      let conflicts =
+            packageConflicts [WirePackage "dup" [alphaCore] [] [], WirePackage "dup" [alphaCore] [] []]
+      conflicts `shouldContain` [DuplicatePackageId "dup"]
+      conflicts `shouldContain` [DuplicateNamespace "alpha.core"]
