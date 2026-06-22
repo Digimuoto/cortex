@@ -16,8 +16,9 @@ import Test.Hspec
 
 import Cortex.Capability.BindingPack (HostBindingPack (..), lookupBinding)
 import Cortex.Capability.BindingPack.Braket
+import Cortex.Capability.Catalog.AdmissionProjection (ContentDigest (..))
 import Cortex.Capability.Catalog.AwaitStrategy (AwaitStrategy (..))
-import Cortex.Capability.Catalog.ExecutorManifest (AbiKind (..))
+import Cortex.Capability.Catalog.ExecutorManifest (AbiKind (..), ContentAddress (..))
 import Cortex.Capability.Catalog.RuntimeBindingRecord
 import Cortex.Wire.Executor (WireExecutorId (..))
 
@@ -46,14 +47,30 @@ spec = describe "braketBindingPack" $ do
       Nothing -> expectationFailure "expected a binding for quantum.realize"
       Just record -> do
         rbrAcceptedAwaitStrategy record `shouldBe` SubmitParkResume
-        rbrAbiKind record `shouldBe` AbiSubprocessJsonl
+        rbrAbiKind record `shouldBe` AbiHostActionV1
         rbrStageActionRef record `shouldBe` RuntimeStageActionRef "quantum.realize.braket"
+        rbrManifestContentAddress record
+          `shouldBe` ContentAddress "host-action:quantum.realize.braket"
+        rbrArtifactDigest record
+          `shouldBe` ContentDigest "host-action:quantum.realize.braket:v1"
 
-  it "records the configured device as a resolved authority fingerprint" $
+  it "records configured AWS resources as resolved authority fingerprints" $
     case lookupBinding realizeId (braketBindingPack config) of
       Nothing -> expectationFailure "expected a binding"
       Just record ->
-        fmap rafName (rbrResolvedAuthorities record) `shouldContain` [deviceArn]
+        fmap rafName (rbrResolvedAuthorities record)
+          `shouldContain` [deviceArn, "us-east-1", "amazon-braket-results", "research"]
+
+  it "distinguishes result buckets in resolved authority fingerprints" $ do
+    let otherConfig = config {braketS3Bucket = "amazon-braket-other-results"}
+        authorities bindingConfig =
+          foldMap rbrResolvedAuthorities (lookupBinding realizeId (braketBindingPack bindingConfig))
+
+    fmap rafName (authorities config)
+      `shouldContain` ["amazon-braket-results"]
+    fmap rafName (authorities otherConfig)
+      `shouldContain` ["amazon-braket-other-results"]
+    authorities config `shouldNotBe` authorities otherConfig
 
   it "does not resolve an unrelated executor" $
     lookupBinding (WireExecutorId "quantum.prepare_zero") (braketBindingPack config)
