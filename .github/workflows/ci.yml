@@ -32,9 +32,9 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    # Pull requests may contain untrusted code, so this workflow keeps PR jobs on
-    # GitHub-hosted runners. Self-hosted Nix jobs below are gated to trusted
-    # push/workflow_dispatch events before runner allocation.
+    # Pull requests may contain untrusted code. The self-hosted Nix jobs below
+    # only allocate runners for trusted contexts: pushes, manual dispatches, and
+    # pull requests whose source branch is in this repository.
     runs-on: ubuntu-24.04
     outputs:
       code: ${{ steps.filter.outputs.code }}
@@ -44,6 +44,7 @@ jobs:
       editor: ${{ steps.filter.outputs.editor }}
       nix: ${{ steps.filter.outputs.nix }}
       site: ${{ steps.filter.outputs.site }}
+      trusted: ${{ steps.trust.outputs.trusted }}
     steps:
       - name: Restore workspace permissions
         run: chmod -R u+w "$GITHUB_WORKSPACE" 2>/dev/null || true
@@ -63,6 +64,7 @@ jobs:
               - '!docs/**'
             docs:
               - 'docs/**'
+              - '.github/workflows/ci.yml'
               - 'nix/agent-*.nix'
               - 'nix/docs.nix'
               - 'scripts/docs-lint'
@@ -79,11 +81,13 @@ jobs:
               - 'flake.lock'
               - 'flake.nix'
               - 'nix/**'
+              - '.github/workflows/ci.yml'
               - 'scripts/check-language-pragma-allowlist.sh'
               - 'scripts/check-logos-boundary.sh'
               - 'scripts/check-module-haddock.sh'
             theory:
               - 'theory/**'
+              - '.github/workflows/ci.yml'
               - 'nix/agent-*.nix'
               - 'nix/lean.nix'
               - 'scripts/lean-lint'
@@ -91,10 +95,12 @@ jobs:
               - 'flake.nix'
             editor:
               - 'editors/**'
+              - '.github/workflows/ci.yml'
               - 'nix/editors.nix'
               - 'flake.lock'
               - 'flake.nix'
             nix:
+              - '.github/workflows/ci.yml'
               - 'flake.lock'
               - 'flake.nix'
               - 'nix/**'
@@ -110,7 +116,21 @@ jobs:
               - 'flake.lock'
               - 'flake.nix'
               - 'nix/**'
+              - '.github/workflows/ci.yml'
               - '.github/workflows/docs.yml'
+
+      - name: Classify trusted full-CI context
+        id: trust
+        env:
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" || "${PR_HEAD_REPOSITORY:-}" == "$GITHUB_REPOSITORY" ]]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+          fi
 
   commit-provenance:
     name: Commit Provenance
@@ -219,7 +239,7 @@ jobs:
     runs-on: [self-hosted, nix, mercury, cortex]
     needs: [changes]
     if: |
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (
         github.event_name == 'workflow_dispatch' ||
         needs.changes.outputs.code != 'false' ||
@@ -262,7 +282,7 @@ jobs:
     needs: [changes, format-check]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.format-check.result == 'success' || needs.format-check.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -331,7 +351,7 @@ jobs:
     needs: [changes, supported-build]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -365,7 +385,7 @@ jobs:
     needs: [changes, supported-build]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -391,7 +411,7 @@ jobs:
     needs: [changes, supported-build, lean-lint]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
       (needs.lean-lint.result == 'success' || needs.lean-lint.result == 'skipped') &&
       (
@@ -418,7 +438,7 @@ jobs:
     needs: [changes, supported-build]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -463,7 +483,7 @@ jobs:
     needs: [changes, supported-build]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.supported-build.result == 'success' || needs.supported-build.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -491,7 +511,7 @@ jobs:
     runs-on: [self-hosted, nix, mercury, cortex]
     needs: [changes]
     if: |
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (
         github.event_name == 'workflow_dispatch' ||
         needs.changes.outputs.docs != 'false' ||
@@ -516,7 +536,7 @@ jobs:
     needs: [changes, docs-lint]
     if: |
       always() &&
-      github.event_name != 'pull_request' &&
+      needs.changes.outputs.trusted == 'true' &&
       (needs.docs-lint.result == 'success' || needs.docs-lint.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -559,6 +579,11 @@ jobs:
       - name: Check all jobs
         run: |
           set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" && "${{ needs.changes.outputs.trusted }}" != "true" ]]; then
+            echo "::error::Full CI is not allowed to run on this fork pull request. A maintainer must move the branch into the repository or run the workflow manually from a trusted ref before merging."
+            exit 1
+          fi
 
           results=(
             "${{ needs.changes.result }}"
