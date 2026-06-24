@@ -26,6 +26,7 @@ module Cortex.Quantum.Qec
   , ReportInputs (..)
   , renderReport
   , reportExitCode
+  , reportDeviceInvariant
   , rowsValue
   )
 where
@@ -36,6 +37,17 @@ import Data.Text (Text)
 import Data.Text qualified as T
 
 import Cortex.Quantum.Cost (formatUsd)
+import Cortex.Quantum.Provenance
+  ( CaseProvenance
+  , RedactionMode (..)
+  , RunProvenance
+  , cpDeviceId
+  , cpResultSha256
+  , cpTaskArn
+  , redactCaseProvenance
+  , renderCaseProvenanceBlock
+  , renderRunProvenanceBlock
+  )
 import Cortex.Quantum.Result (QuantumResult, matchingShots, quantumResultShots)
 
 -- | One repetition-code case: a named export plus its expected corrected outcome.
@@ -92,12 +104,14 @@ data CaseRow = CaseRow
   , rowCostAmount :: !(Maybe Rational)
   , rowDiagram :: !(Maybe Text)
   , rowOpenQasm :: !(Maybe Text)
+  , rowProvenance :: !(Maybe CaseProvenance)
   }
   deriving stock (Eq, Show)
 
 -- | A completed case row: count matching shots and gate on the threshold.
-completedRow :: QecCase -> Int -> Int -> QuantumResult -> Maybe Rational -> CaseRow
-completedRow qec threshold fallbackShots result cost =
+completedRow
+  :: QecCase -> Int -> Int -> QuantumResult -> Maybe Rational -> Maybe CaseProvenance -> CaseRow
+completedRow qec threshold fallbackShots result cost provenance =
   CaseRow
     { rowCase = qec
     , rowStatus = RowCompleted
@@ -109,6 +123,7 @@ completedRow qec threshold fallbackShots result cost =
     , rowCostAmount = cost
     , rowDiagram = Nothing
     , rowOpenQasm = Nothing
+    , rowProvenance = provenance
     }
   where
     matching = matchingShots result (qcExpectedLabel qec)
@@ -119,12 +134,12 @@ completedRow qec threshold fallbackShots result cost =
 -- | A dry-run case row.
 dryRunRow :: QecCase -> Maybe Rational -> CaseRow
 dryRunRow qec cost =
-  CaseRow qec RowDryRun 0 0 0 False "" cost Nothing Nothing
+  CaseRow qec RowDryRun 0 0 0 False "" cost Nothing Nothing Nothing
 
 -- | A failed case row carrying the error detail.
 failedRow :: QecCase -> Text -> CaseRow
 failedRow qec err =
-  CaseRow qec RowFailed 0 0 0 False err Nothing Nothing Nothing
+  CaseRow qec RowFailed 0 0 0 False err Nothing Nothing Nothing Nothing
 
 -- | The inputs the report is rendered from.
 data ReportInputs = ReportInputs
@@ -136,6 +151,8 @@ data ReportInputs = ReportInputs
   , riOutputPath :: !(Maybe Text)
   , riDryRun :: !Bool
   , riRows :: ![CaseRow]
+  , riRunProvenance :: !(Maybe RunProvenance)
+  , riRedaction :: !RedactionMode
   }
   deriving stock (Show)
 
@@ -143,7 +160,16 @@ data ReportInputs = ReportInputs
 renderReport :: ReportInputs -> Text
 renderReport inputs =
   T.unlines
-    (headerBlock inputs <> verdictBlock inputs <> costBlock (riRows inputs) <> circuitsBlock inputs)
+    ( headerBlock inputs
+        <> verdictBlock inputs
+        <> costBlock (riRows inputs)
+        <> runProvenanceBlock inputs
+        <> circuitsBlock inputs
+    )
+
+-- The redacted provenance a row renders from, or Nothing for non-hardware rows.
+rowProvenanceRedacted :: RedactionMode -> CaseRow -> Maybe CaseProvenance
+rowProvenanceRedacted redaction row = redactCaseProvenance redaction <$> rowProvenance row
 
 headerBlock :: ReportInputs -> [Text]
 headerBlock inputs =
@@ -224,6 +250,7 @@ verdictBlock inputs
       , "correction"
       , "ideal shots"
       , "deviating shots"
+      , "result sha256"
       ]
     summaryRow row =
       let qec = rowCase row
@@ -234,6 +261,7 @@ verdictBlock inputs
           , qcCorrection qec
           , tshow (rowMatching row) <> "/" <> tshow (rowShots row)
           , tshow (rowLogicalFailures row) <> "/" <> tshow (rowShots row)
+          , maybe "—" (\p -> "`" <> cpResultSha256 p <> "`") (rowProvenanceRedacted (riRedaction inputs) row)
           ]
     errorRow row =
       let qec = rowCase row
@@ -255,6 +283,47 @@ costBlock rows =
       , ""
       ]
 
+-- The run-level provenance and reproduction block, when provenance is present.
+runProvenanceBlock :: ReportInputs -> [Text]
+runProvenanceBlock inputs =
+  case riRunProvenance inputs of
+    Nothing -> []
+    Just run -> renderRunProvenanceBlock (riRedaction inputs) run firstArn
+  where
+    firstArn =
+      case [ cpTaskArn p
+           | row <- riRows inputs
+           , rowStatus row == RowCompleted
+           , Just p <- [rowProvenanceRedacted (riRedaction inputs) row]
+           ] of
+        (arn : _) -> Just arn
+        [] -> Nothing
+
+{- | The single-source-of-truth device check: every completed case must report the
+backend device the runner submitted to. A mismatch fails the report rather than
+letting it claim a device it did not use.
+-}
+reportDeviceInvariant :: ReportInputs -> Either Text ()
+reportDeviceInvariant inputs =
+  case [ (qcKey (rowCase row), cpDeviceId p)
+       | row <- riRows inputs
+       , rowStatus row == RowCompleted
+       , Just p <- [rowProvenance row]
+       , cpDeviceId p /= backend
+       ] of
+    [] -> Right ()
+    ((caseKey, deviceId) : _) ->
+      Left
+        ( "device invariant violated: report backend is "
+            <> backend
+            <> " but case "
+            <> caseKey
+            <> " ran on "
+            <> deviceId
+        )
+  where
+    backend = riBackend inputs
+
 -- One `### case` section per row, each with the circuit diagram and the OpenQASM
 -- in a collapsible block, plus the closing note.
 circuitsBlock :: ReportInputs -> [Text]
@@ -271,11 +340,14 @@ circuitsBlock inputs
        in ["### " <> qcKey qec <> " — " <> qcLabel qec <> ideal, ""]
             <> diagramBlock (rowDiagram row)
             <> qasmBlock (rowOpenQasm row)
+            <> provenanceBlock (rowProvenanceRedacted (riRedaction inputs) row)
     diagramBlock Nothing = []
     diagramBlock (Just d) = ["```text", d, "```", ""]
     qasmBlock Nothing = []
     qasmBlock (Just q) =
       ["<details><summary>OpenQASM 3</summary>", "", "```text", T.stripEnd q, "```", "", "</details>", ""]
+    provenanceBlock Nothing = []
+    provenanceBlock (Just prov) = renderCaseProvenanceBlock prov
     closingNote =
       [ "## What Wire did"
       , ""

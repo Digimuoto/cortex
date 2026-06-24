@@ -250,6 +250,7 @@ library cortex-quantum
         Cortex.Quantum.Diagram
         Cortex.Quantum.OpenQASM
         Cortex.Quantum.Plan
+        Cortex.Quantum.Provenance
         Cortex.Quantum.Qec
         Cortex.Quantum.ReportPath
         Cortex.Quantum.Result
@@ -366,6 +367,7 @@ test-suite cortex-test
         Cortex.Quantum.CostSpec
         Cortex.Quantum.DiagramSpec
         Cortex.Quantum.ReportPathSpec
+        Cortex.Quantum.ProvenanceSpec
         Cortex.Quantum.QecReportSpec
         Cortex.Quantum.BraketRunnerSpec
         Cortex.Pulse.FrontierContractionSpec

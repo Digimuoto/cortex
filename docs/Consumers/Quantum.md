@@ -199,6 +199,71 @@ The app is an extension-owned runner around native `@realize`; the future durabl
 binding-pack run where Braket submission, park, resume, and result fetch are owned by the runtime
 frontier.
 
+### Provenance and verification
+
+Every hardware report is self-authenticating: it carries enough AWS-generated evidence to confirm
+the run independently. The device the report names is the single source of truth — it is read back
+from the result's `taskMetadata.deviceId` and checked against the device the runner submitted to, so
+the report (and its filename) can never claim a device the run did not use. A mismatch fails the
+report rather than writing it.
+
+Each completed case carries a `Provenance` block:
+
+- the quantum-task ARN and its UUID, status, the result `deviceId`, requested vs. observed shots,
+  and the `createdAt`/`endedAt` timestamps;
+- the Braket schema headers (`braket.task_result.gate_model_task_result/1`, the IQM
+  `iqm_device_parameters` and `iqm_metadata` headers) and `paradigmParameters`;
+- integrity hashes — `sha256` of the raw `results.json` artifact, of the submitted OpenQASM 3
+  source, and of the compiled program;
+- the IQM `prx` `compiledProgram` (the native `#pragma braket verbatim` program), which a managed
+  simulator never emits — so its presence is itself hardware evidence;
+- the request-scoped `clientToken` and the S3 result location.
+
+A run-level **Provenance & reproduction** block records the cortex commit, the Wire source path and
+its `sha256`, the region, the AWS CLI/SDK version, and a freshly generated report UUID, followed by
+the verification steps:
+
+1. `aws braket get-quantum-task --quantum-task-arn <ARN>` — AWS confirms the `deviceArn`,
+   `COMPLETED` status, shots, and timestamps.
+2. `aws s3 cp <outputS3Directory>/results.json - | sha256sum` — must equal the recorded result
+   `sha256`.
+3. The `compiledProgram` (IQM `prx` verbatim) demonstrates native-hardware compilation.
+
+### Redaction
+
+Because this repository is public, report output is redacted by default — whether written to a file
+or printed to stdout: the 12-digit AWS account id, the S3 bucket, and the S3 key are masked (`***`).
+The task UUID, region, device ARN, all `sha256` hashes, the OpenQASM source, and the compiled
+program are kept, because they are independently verifiable through the task ARN. The recorded
+result `sha256` is taken over the exact bytes Braket returned, so it reproduces
+`aws s3 cp <uri> - | sha256sum` byte for byte. Pass `--no-redact` to render the full AWS identifiers
+locally:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware --output reports --no-redact
+```
+
+### Regenerate from existing tasks
+
+To regenerate a report from runs that already completed — without paying to resubmit — use
+`--reconstruct` with one `--task <case>=<quantum-task-arn>` per case. The runner fetches each task's
+metadata and result from AWS, captures provenance, and renders the provenance-complete report:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- \
+  --reconstruct \
+  --device-arn arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald \
+  --region eu-north-1 \
+  --task none=arn:aws:braket:eu-north-1:<account>:quantum-task/<uuid> \
+  --task x0=arn:aws:braket:eu-north-1:<account>:quantum-task/<uuid> \
+  --task x1=arn:aws:braket:eu-north-1:<account>:quantum-task/<uuid> \
+  --task x2=arn:aws:braket:eu-north-1:<account>:quantum-task/<uuid> \
+  --output reports
+```
+
+Reconstruction reads only AWS metadata and result objects (no task is created), so it is the
+supported way to replace a committed report rather than editing the Markdown by hand.
+
 ## IBM Quantum Runtime REST Runner
 
 The repository also includes an explicit hardware runner that talks to IBM Quantum Runtime through

@@ -75,7 +75,7 @@ decodeBraketResult measurements raw
       case columns of
         Nothing -> Left "Braket result column ordering does not cover the measured qubits"
         Just cols ->
-          case asum [findRows raw >>= countsFromRows cols, findDirectCounts width raw] of
+          case asum [findRows raw >>= countsFromRows cols, findDirectCounts cols width raw] of
             Just counts -> Right counts
             Nothing -> Left "Braket task returned an unsupported result shape"
   where
@@ -122,12 +122,15 @@ findMeasuredQubits _ = Nothing
 
 -- Find the first direct histogram under a known key, checking every key at each
 -- nesting level before recursing into children.
-findDirectCounts :: Int -> Value -> Maybe (Map Text Int)
-findDirectCounts width = go
+findDirectCounts :: [Int] -> Int -> Value -> Maybe (Map Text Int)
+findDirectCounts cols width = go
   where
     go (Object km) =
       asum
-        [normalizeCounts width v | key <- directCountKeys, Just v <- [KeyMap.lookup (Key.fromText key) km]]
+        [ normalizeCounts cols width v
+        | key <- directCountKeys
+        , Just v <- [KeyMap.lookup (Key.fromText key) km]
+        ]
         <|> asum (map go (KeyMap.elems km))
     go (Array a) = asum (map go (toList a))
     go _ = Nothing
@@ -141,17 +144,22 @@ asIntValue _ = Nothing
 sortNub :: [Int] -> [Int]
 sortNub = Set.toAscList . Set.fromList
 
-normalizeCounts :: Int -> Value -> Maybe (Map Text Int)
-normalizeCounts width (Object km)
+normalizeCounts :: [Int] -> Int -> Value -> Maybe (Map Text Int)
+normalizeCounts cols width (Object km)
   | KeyMap.null km = Nothing
   | otherwise = fmap Map.fromList (traverse entry (KeyMap.toList km))
   where
     entry (key, value) =
       let bits = T.filter (/= ' ') (Key.toText key)
        in if T.length bits == width && T.all (\c -> c == '0' || c == '1') bits
-            then (,) bits <$> asCount value
+            then (,) <$> directKey cols bits <*> asCount value
             else Nothing
-normalizeCounts _ _ = Nothing
+normalizeCounts _ _ _ = Nothing
+
+directKey :: [Int] -> Text -> Maybe Text
+directKey cols bits
+  | any (>= T.length bits) cols = Nothing
+  | otherwise = Just (T.reverse (T.pack [T.index bits col | col <- cols]))
 
 asBit :: Value -> Maybe Int
 asBit (Number n) =

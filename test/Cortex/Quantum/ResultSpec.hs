@@ -46,7 +46,7 @@ spec =
 
     it "decodes a direct measurementCounts histogram" $
       decodeBraketResult measurements countsResult
-        `shouldBe` Right (Map.fromList [("01", 5), ("10", 3)])
+        `shouldBe` Right (Map.fromList [("10", 5), ("01", 3)])
 
     it "rejects a histogram whose bitstring width does not match the measurements" $
       decodeBraketResult measurements badWidthResult `shouldSatisfy` isLeft
@@ -66,3 +66,21 @@ spec =
        in case decodeBraketResult permuted rows of
             Left err -> expectationFailure (T.unpack err)
             Right counts -> matchingShots (QuantumResult 1 permuted counts) "a=0,b=1" `shouldBe` 1
+
+    it "maps direct histogram keys by measuredQubits before labeling" $
+      -- Direct histograms use the provider's measuredQubits column order just
+      -- like per-shot rows. This nontrivial permutation would decode as "100"
+      -- if the fallback kept the provider key unchanged; the internal bitstring
+      -- is "010", with classical bit 0 on the right.
+      let permuted =
+            [ Measurement "ma" 2 0 "a"
+            , Measurement "mb" 0 1 "b"
+            , Measurement "mc" 1 2 "c"
+            ]
+          counts =
+            object
+              [ "measuredQubits" .= ([0, 1, 2] :: [Int])
+              , "counts" .= object ["100" .= (7 :: Int)]
+              ]
+       in decodeBraketResult permuted counts
+            `shouldBe` Right (Map.fromList [("010", 7)])
