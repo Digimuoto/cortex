@@ -85,28 +85,38 @@ read_target
   => print_report
 ```
 
-`<>` expands the current frontier. Keep small frontiers grouped horizontally:
+`<>` expands the current frontier and binds tighter than `=>`, so a frontier inside a `=>` chain
+needs no parentheses. Keep small frontiers inline:
 
 ```wire
 plan_build
-  => (compile_check <> test_check <> docs_check <> lint_check)
+  => compile_check <> test_check <> docs_check <> lint_check
   => summarize_build
 ```
 
-Break large frontiers vertically with leading `<>` so each line reads as another member of the same
-frontier:
+Break large frontiers vertically with a leading `<>` on each member, aligned with the `=>` stages so
+each line reads as another member of the same frontier:
 
 ```wire
 plan_build
-  => (
-    compile_check
-    <> test_check
-    <> docs_check
-    <> lint_check
-    <> audit_check
-    <> package_check
-  )
+  => compile_check
+  <> test_check
+  <> docs_check
+  <> lint_check
+  <> audit_check
+  <> package_check
   => summarize_build
+```
+
+Reserve parentheses for the load-bearing case: grouping a `=>` sub-sequence so it acts as a single
+frontier member. Because `<>` binds tighter than `=>`, these parentheses change the topology and are
+not optional:
+
+```wire
+(prepare_control
+  => hadamard_control)
+  <> prepare_target
+  => entangle
 ```
 
 Prefer named frontiers once the topology stops scanning cleanly:
@@ -126,7 +136,8 @@ read_target
 ```
 
 The rule is semantic: formatting follows topology. `=>` moves forward in causal time; `<>` expands
-the current frontier.
+the current frontier. Drop precedence-redundant parentheses; keep only the parentheses that change
+the parse.
 
 ## Indentation
 

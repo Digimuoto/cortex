@@ -109,6 +109,6 @@ node print_report
 
 read_target
   => plan_build
-  => (compile_check <> test_check <> docs_check <> lint_check)
+  => compile_check <> test_check <> docs_check <> lint_check
   => summarize_build
   => print_report

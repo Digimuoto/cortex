@@ -79,7 +79,7 @@ let h_control =
     => h_control_rz_b;
 
 let controlled_phase =
-  (phase_control_rz <> phase_target_rz)
+  phase_control_rz <> phase_target_rz
     => phase_rzz;
 
 let readout_h =
@@ -93,10 +93,8 @@ let feedback_and_readout =
     => measure_phase;
 
 ibm_runtime_config
-  => (
-    (prepare_control
-      => h_control)
-    <> prepare_eigenstate
-  )
+  => (prepare_control
+    => h_control)
+  <> prepare_eigenstate
   => controlled_phase
   => feedback_and_readout

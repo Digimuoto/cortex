@@ -109,15 +109,11 @@ let marker_which_path_readout =
   z_measure_marker;
 
 ibm_runtime_config
-  => (
-    (prepare_screen
-      => split_path)
-    <> (prepare_marker
-      => mark_marker_pre)
-  )
+  => (prepare_screen
+    => split_path)
+  <> (prepare_marker
+    => mark_marker_pre)
   => mark_cz
-  => (
-    recombine_screen
-    <> (mark_marker_post
-      => marker_which_path_readout)
-  )
+  => recombine_screen
+  <> (mark_marker_post
+    => marker_which_path_readout)

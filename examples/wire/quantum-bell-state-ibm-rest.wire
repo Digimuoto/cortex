@@ -70,22 +70,22 @@ node measure_target
 
 ibm_runtime_config
   => (
-    ( prepare_control
-        => h_control_rz_a
-        => h_control_sx
-        => h_control_rz_b
-    )
-    <> ( prepare_target
-           => cnot_target_h_pre_rz_a
-           => cnot_target_h_pre_sx
-           => cnot_target_h_pre_rz_b
-       )
-)
+    prepare_control
+      => h_control_rz_a
+      => h_control_sx
+      => h_control_rz_b
+  )
+  <> (
+    prepare_target
+      => cnot_target_h_pre_rz_a
+      => cnot_target_h_pre_sx
+      => cnot_target_h_pre_rz_b
+  )
   => entangle_cz
-  => ( measure_control
-       <> ( cnot_target_h_post_rz_a
-              => cnot_target_h_post_sx
-              => cnot_target_h_post_rz_b
-              => measure_target
-          )
-     )
+  => measure_control
+  <> (
+    cnot_target_h_post_rz_a
+      => cnot_target_h_post_sx
+      => cnot_target_h_post_rz_b
+      => measure_target
+  )

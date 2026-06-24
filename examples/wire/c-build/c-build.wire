@@ -331,16 +331,14 @@ form audit_package(package: PortLabel, binaryAudit: PortLabel, manifestAudit: Po
   node checksum = run_command(checksumReady, checksumAudit);
 
   fanout
-    => (
-      (binary_gate
-        => binary)
-      <> (manifest_gate
-        => manifest)
-      <> (size_gate
-        => size)
-      <> (checksum_gate
-        => checksum)
-    );
+    => (binary_gate
+      => binary)
+    <> (manifest_gate
+      => manifest)
+    <> (size_gate
+      => size)
+    <> (checksum_gate
+      => checksum);
 };
 
 # ============================================================================
