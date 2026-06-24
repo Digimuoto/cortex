@@ -1,11 +1,13 @@
 # Native distance-3 repetition-code circuit catalog for ADR 0059.
 #
 # The four exported graph values are authored directly against the quantum Wire
-# packages and terminate in a single `@realize` collect node. Runtime authority is
+# packages. Each data and ancilla qubit is measured by its own native `@measure_z`
+# node, and the resulting symbolic measurement bits are collected into a single
+# `@realize` node that returns one correlated `QuantumResult`. Runtime authority is
 # supplied later by a host binding pack such as Braket; this file has no
 # std.io.command runner scaffold and no provider credentials.
 
-use quantum.core.{@prepare_zero, @x, @cnot, @rz, Qubit, Bit};
+use quantum.core.{@prepare_zero, @x, @cnot, @rz, @measure_z, Qubit, Bit, QuantumResult};
 use quantum.braket.{@realize};
 
 let quantum_x = @x {};
@@ -33,6 +35,10 @@ kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecu
   -> control: Qubit;
   -> target: Qubit;
   = gate ({ inherit control target; });
+
+kind measure_qubit(input: PortLabel, bit: PortLabel) =
+  <- input: Qubit;
+  -> bit: Bit = @measure_z {} (input);
 
 form prepare_all() = {
   node prepare_d0 = prepare_qubit(d0, 0);
@@ -92,40 +98,47 @@ form cnot_live5(controlIn: PortLabel, targetIn: PortLabel, carryA: PortLabel, ca
   node carry_b_post = carry_qubit(carryB);
   node carry_c_post = carry_qubit(carryC);
 
-  (control_to_gate
+  control_to_gate
     <> target_to_gate
     <> carry_a_pre
     <> carry_b_pre
-    <> carry_c_pre)
-    => (cnot
-        <> carry_a_mid
-        <> carry_b_mid
-        <> carry_c_mid)
-    => (control_from_gate
-        <> target_from_gate
-        <> carry_a_post
-        <> carry_b_post
-        <> carry_c_post);
+    <> carry_c_pre
+    => cnot
+    <> carry_a_mid
+    <> carry_b_mid
+    <> carry_c_mid
+    => control_from_gate
+    <> target_from_gate
+    <> carry_a_post
+    <> carry_b_post
+    <> carry_c_post;
 };
 
 form collect_repetition_result() = {
-  node collect
-    <- d0: Qubit;
-    <- d1: Qubit;
-    <- d2: Qubit;
-    <- a01: Qubit;
-    <- a12: Qubit;
-    -> final_d0: Bit;
-    -> final_d1: Bit;
-    -> final_d2: Bit;
-    -> s01: Bit;
-    -> s12: Bit;
+  node measure_d0 = measure_qubit(d0, final_d0);
+  node measure_d1 = measure_qubit(d1, final_d1);
+  node measure_d2 = measure_qubit(d2, final_d2);
+  node measure_a01 = measure_qubit(a01, s01);
+  node measure_a12 = measure_qubit(a12, s12);
+
+  node realize
+    <- final_d0: Bit;
+    <- final_d1: Bit;
+    <- final_d2: Bit;
+    <- s01: Bit;
+    <- s12: Bit;
+    -> result: QuantumResult
     = @realize ({
-      inherit d0 d1 d2 a01 a12;
+      inherit final_d0 final_d1 final_d2 s01 s12;
       shots = 100;
     });
 
-  collect;
+  measure_d0
+    <> measure_d1
+    <> measure_d2
+    <> measure_a01
+    <> measure_a12
+    => realize;
 };
 
 form repetition_case(errorLayer: Graph) = {

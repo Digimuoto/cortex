@@ -532,6 +532,36 @@ def build_quantum_plan(compiled: JSON) -> JSON:
             node_outputs[node_ref] = {
                 output["name"]: QuantumValue("bit", None, "Bit", node_ref, output["name"])
             }
+        elif target == "quantum.realize":
+            realize_inputs = ordered_realize_qubit_inputs(node_ref, config, inputs, metadata)
+            if len(output_ports) != len(realize_inputs):
+                raise WireQuantumError(
+                    f"{node_ref}: quantum.realize expects one Bit output per realized Qubit input"
+                )
+            bit_outputs = {}
+            for output, (input_name, input_value) in zip(output_ports, realize_inputs):
+                require_contract(node_ref, output, "Bit")
+                qubit_wire = require_wire(node_ref, input_value)
+                classical_bit = len(measurements)
+                measurement = {
+                    "node": node_ref,
+                    "executor": target,
+                    "gate": "measure_z",
+                    "wire": qubit_wire,
+                    "classical_bit": classical_bit,
+                    "output": output["name"],
+                    "input": input_name,
+                }
+                measurements.append(measurement)
+                operations.append(measurement)
+                bit_outputs[output["name"]] = QuantumValue(
+                    "bit",
+                    None,
+                    "Bit",
+                    node_ref,
+                    output["name"],
+                )
+            node_outputs[node_ref] = bit_outputs
         else:
             raise WireQuantumError(f"node {node_ref} uses unsupported quantum executor @{target}")
 
@@ -636,7 +666,7 @@ def resolve_inputs(
         matches = []
         for pred in predecessor_refs:
             for output_name, value in node_outputs.get(pred, {}).items():
-                if output_name == input_name and value.contract in accepts:
+                if output_name == input_name and contract_accepted(value.contract, accepts):
                     matches.append(value)
         if len(matches) != 1:
             raise WireQuantumError(
@@ -653,13 +683,13 @@ def validate_qubit_linearity(nodes: dict[str, Any], edges: list[tuple[str, str]]
         src_outputs = metadata_ports(task_metadata(nodes, src), "outputs")
         dst_inputs = metadata_ports(task_metadata(nodes, dst), "inputs")
         for output in src_outputs:
-            if output.get("contract") != "Qubit":
+            if not contract_matches(output.get("contract"), "Qubit"):
                 continue
             output_name = output.get("name")
             for input_port in dst_inputs:
                 if (
                     input_port.get("name") == output_name
-                    and "Qubit" in input_port.get("accepts", [])
+                    and accepts_contract(input_port.get("accepts", []), "Qubit")
                 ):
                     consumers.setdefault((src, output_name), []).append(dst)
 
@@ -709,7 +739,7 @@ def allocate_qubit(node_ref: str, wire: int, allocated_qubits: dict[int, str]) -
 
 
 def require_contract(node_ref: str, port: JSON, contract: str) -> None:
-    if port.get("contract") != contract:
+    if not contract_matches(port.get("contract"), contract):
         raise WireQuantumError(
             f"node {node_ref} output {port.get('name')} must have contract {contract}"
         )
@@ -723,7 +753,7 @@ def single_qubit_input(
     if len(inputs) != 1:
         raise WireQuantumError(f"{node_ref}: {executor} expects exactly one Qubit input")
     value = next(iter(inputs.values()))
-    if value.contract != "Qubit" or value.kind != "qubit":
+    if not contract_matches(value.contract, "Qubit") or value.kind != "qubit":
         raise WireQuantumError(f"{node_ref}: {executor} input must be a Qubit")
     return value
 
@@ -735,7 +765,7 @@ def named_qubit_input(
     executor: str,
 ) -> QuantumValue:
     value = inputs.get(name)
-    if value is None or value.contract != "Qubit" or value.kind != "qubit":
+    if value is None or not contract_matches(value.contract, "Qubit") or value.kind != "qubit":
         raise WireQuantumError(f"{node_ref}: {executor} expects Qubit input {name}")
     return value
 
@@ -746,7 +776,7 @@ def allow_only_config_inputs(
     executor: str,
 ) -> None:
     for name, value in inputs.items():
-        if value.contract != "IBMQuantumConfig" or value.kind != "config":
+        if not contract_matches(value.contract, "IBMQuantumConfig") or value.kind != "config":
             raise WireQuantumError(
                 f"{node_ref}: {executor} input {name} must be IBMQuantumConfig "
                 "when used as a hardware orchestration dependency"
@@ -779,6 +809,83 @@ def require_wire(node_ref: str, value: QuantumValue) -> int:
     if value.wire is None:
         raise WireQuantumError(f"node {node_ref} expected a qubit wire")
     return value.wire
+
+
+def ordered_realize_qubit_inputs(
+    node_ref: str,
+    config: JSON,
+    inputs: dict[str, QuantumValue],
+    metadata: JSON,
+) -> list[tuple[str, QuantumValue]]:
+    ordered_names = realize_input_record_order(config)
+    if not ordered_names:
+        ordered_names = [
+            str(port["name"])
+            for port in metadata_ports(metadata, "inputs")
+            if isinstance(port.get("name"), str)
+        ]
+
+    realized = []
+    seen = set()
+    for name in ordered_names:
+        value = inputs.get(name)
+        if value is None:
+            continue
+        if value.kind != "qubit" or not contract_matches(value.contract, "Qubit"):
+            raise WireQuantumError(f"{node_ref}: quantum.realize input {name} must be a Qubit")
+        realized.append((name, value))
+        seen.add(name)
+
+    missing = sorted(name for name in inputs if name not in seen)
+    if missing:
+        raise WireQuantumError(
+            f"{node_ref}: quantum.realize config does not order input(s) {', '.join(missing)}"
+        )
+    return realized
+
+
+def realize_input_record_order(config: JSON) -> list[str]:
+    raw_input = config.get("input")
+    if not isinstance(raw_input, dict) or raw_input.get("tag") != "CorePureRecord":
+        return []
+    fields = raw_input.get("contents")
+    if not isinstance(fields, list):
+        return []
+
+    names = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        path = field.get("corePureFieldPath")
+        value = field.get("corePureFieldValue")
+        if not isinstance(path, list) or len(path) != 1 or not isinstance(path[0], str):
+            continue
+        if not isinstance(value, dict):
+            continue
+        if value.get("tag") == "CorePureIdent" and value.get("contents") == path[0]:
+            names.append(path[0])
+    return names
+
+
+def contract_leaf(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value.rsplit(".", maxsplit=1)[-1]
+
+
+def contract_matches(actual: Any, expected: str) -> bool:
+    return actual == expected or contract_leaf(actual) == expected
+
+
+def accepts_contract(accepts: Any, expected: str) -> bool:
+    if not isinstance(accepts, list):
+        return False
+    return any(contract_matches(value, expected) for value in accepts)
+
+
+def contract_accepted(contract: str, accepts: Any) -> bool:
+    leaf = contract_leaf(contract)
+    return leaf is not None and accepts_contract(accepts, leaf)
 
 
 def execute_qiskit_plan(plan: JSON, backend_name: str, shots: int, seed: int | None) -> JSON:

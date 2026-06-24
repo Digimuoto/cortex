@@ -233,9 +233,26 @@ library cortex-quantum
     build-depends:
         base >=4.16 && <5,
         cortex,
-        text >=2.0
+        aeson >=2.1,
+        bytestring >=0.11,
+        containers >=0.6,
+        crypton >=0.34 && <1,
+        filepath >=1.4,
+        process >=1.6,
+        scientific >=0.3,
+        text >=2.0,
+        time >=1.12
     exposed-modules:
         Cortex.Capability.BindingPack.Braket
+        Cortex.Quantum.Braket
+        Cortex.Quantum.Compile
+        Cortex.Quantum.Cost
+        Cortex.Quantum.Diagram
+        Cortex.Quantum.OpenQASM
+        Cortex.Quantum.Plan
+        Cortex.Quantum.Qec
+        Cortex.Quantum.ReportPath
+        Cortex.Quantum.Result
 
 -- Pulse executor binary: substrate shell.
 -- Ships with an empty task registry; downstream consumers link their own.
@@ -274,6 +291,40 @@ executable wire
         text >=2.0
     ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
+-- Native Wire -> Amazon Braket OpenQASM single-circuit runner (ADR 0060 quantum
+-- showcase). Shells out to the AWS CLI; the CLI path arrives via CORTEX_AWS_BIN.
+executable wire-quantum-braket
+    import:           shared-properties
+    hs-source-dirs:   app/wire-quantum-braket
+    main-is:          Main.hs
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        cortex:cortex-quantum,
+        aeson >=2.1,
+        aeson-pretty >=0.8,
+        bytestring >=0.11,
+        text >=2.0
+    ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+
+-- Native distance-3 repetition-code QEC sweep over the Braket runner.
+executable wire-quantum-qec-repetition-braket
+    import:           shared-properties
+    hs-source-dirs:   app/wire-quantum-qec-repetition-braket
+    main-is:          Main.hs
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        cortex:cortex-quantum,
+        aeson >=2.1,
+        aeson-pretty >=0.8,
+        bytestring >=0.11,
+        directory >=1.3,
+        filepath >=1.4,
+        text >=2.0,
+        time >=1.12
+    ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+
 -- Criterion benchmarks for the CorePure evaluator.
 benchmark pure-wire-bench
     import:           shared-properties
@@ -308,6 +359,15 @@ test-suite cortex-test
         Cortex.Wire.PackageSpec
         Cortex.Wire.QuantumPackageSpec
         Cortex.Wire.RealizeCompileSpec
+        Cortex.Quantum.TestSupport
+        Cortex.Quantum.PlanSpec
+        Cortex.Quantum.OpenQASMSpec
+        Cortex.Quantum.ResultSpec
+        Cortex.Quantum.CostSpec
+        Cortex.Quantum.DiagramSpec
+        Cortex.Quantum.ReportPathSpec
+        Cortex.Quantum.QecReportSpec
+        Cortex.Quantum.BraketRunnerSpec
         Cortex.Pulse.FrontierContractionSpec
         Cortex.Pulse.Executor.ExternalCallAttemptSpec
         Cortex.Pulse.Executor.ExternalCallSpec

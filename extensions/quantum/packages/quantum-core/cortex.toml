@@ -11,6 +11,8 @@ cnot = "quantum.cnot"
 measure_z = "quantum.measure_z"
 rz = "quantum.rz"
 h = "quantum.h"
+sx = "quantum.sx"
+cz = "quantum.cz"
 
 [namespace.contracts]
 Qubit = "quantum.Qubit"
@@ -92,6 +94,34 @@ port_policy = "author_declared"
 
 [[executor]]
 id = "quantum.h"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.sx"
+vocabulary = [
+  "quantum.Qubit",
+  "quantum.Bit",
+  "quantum.QuantumResult",
+  "quantum.MeasurementCounts",
+  "quantum.ShotCount",
+  "quantum.BackendConfig",
+]
+effect = "host_effect"
+config_shape = "unchecked"
+port_policy = "author_declared"
+
+[[executor]]
+id = "quantum.cz"
 vocabulary = [
   "quantum.Qubit",
   "quantum.Bit",

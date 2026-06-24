@@ -196,10 +196,29 @@
           depends = [
             (hsPkgs."base" or (errorHandler.buildDepError "base"))
             (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."crypton" or (errorHandler.buildDepError "crypton"))
+            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
+            (hsPkgs."process" or (errorHandler.buildDepError "process"))
+            (hsPkgs."scientific" or (errorHandler.buildDepError "scientific"))
             (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."time" or (errorHandler.buildDepError "time"))
           ];
           buildable = true;
-          modules = [ "Cortex/Capability/BindingPack/Braket" ];
+          modules = [
+            "Cortex/Capability/BindingPack/Braket"
+            "Cortex/Quantum/Braket"
+            "Cortex/Quantum/Compile"
+            "Cortex/Quantum/Cost"
+            "Cortex/Quantum/Diagram"
+            "Cortex/Quantum/OpenQASM"
+            "Cortex/Quantum/Plan"
+            "Cortex/Quantum/Qec"
+            "Cortex/Quantum/ReportPath"
+            "Cortex/Quantum/Result"
+          ];
           hsSourceDirs = [ "extensions/quantum/src" ];
         };
       };
@@ -235,6 +254,37 @@
           buildable = true;
           modules = [ "Paths_cortex" ];
           hsSourceDirs = [ "app/wire" ];
+          mainPath = [ "Main.hs" ];
+        };
+        "wire-quantum-braket" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."cortex".components.sublibs.cortex-quantum or (errorHandler.buildDepError "cortex:cortex-quantum"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+          ];
+          buildable = true;
+          hsSourceDirs = [ "app/wire-quantum-braket" ];
+          mainPath = [ "Main.hs" ];
+        };
+        "wire-quantum-qec-repetition-braket" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."cortex".components.sublibs.cortex-quantum or (errorHandler.buildDepError "cortex:cortex-quantum"))
+            (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+            (hsPkgs."aeson-pretty" or (errorHandler.buildDepError "aeson-pretty"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+            (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."time" or (errorHandler.buildDepError "time"))
+          ];
+          buildable = true;
+          hsSourceDirs = [ "app/wire-quantum-qec-repetition-braket" ];
           mainPath = [ "Main.hs" ];
         };
       };
@@ -285,6 +335,15 @@
             "Cortex/Wire/PackageSpec"
             "Cortex/Wire/QuantumPackageSpec"
             "Cortex/Wire/RealizeCompileSpec"
+            "Cortex/Quantum/TestSupport"
+            "Cortex/Quantum/PlanSpec"
+            "Cortex/Quantum/OpenQASMSpec"
+            "Cortex/Quantum/ResultSpec"
+            "Cortex/Quantum/CostSpec"
+            "Cortex/Quantum/DiagramSpec"
+            "Cortex/Quantum/ReportPathSpec"
+            "Cortex/Quantum/QecReportSpec"
+            "Cortex/Quantum/BraketRunnerSpec"
             "Cortex/Pulse/FrontierContractionSpec"
             "Cortex/Pulse/Executor/ExternalCallAttemptSpec"
             "Cortex/Pulse/Executor/ExternalCallSpec"

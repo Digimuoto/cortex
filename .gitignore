@@ -111,3 +111,7 @@ dist/
 
 # Tree-sitter cache
 .cache/
+
+# Local quantum runner outputs and credentials
+wire-qec-repetition-report.txt
+braket-env.local.sh

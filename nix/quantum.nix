@@ -47,6 +47,29 @@
       '';
     };
 
+    # Native Wire -> Amazon Braket runner: a Haskell extension binary that compiles
+    # the selected graph, lowers its @quantum.realize frontier, and submits OpenQASM
+    # to Braket. The AWS CLI path is handed over via CORTEX_AWS_BIN; no Python.
+    wire-quantum-braket = pkgs.writeShellApplication {
+      name = "wire-quantum-braket";
+      text = ''
+        set -euo pipefail
+        export CORTEX_WIRE_PACKAGE_MANIFESTS="${quantumWirePackages}"
+        export CORTEX_AWS_BIN="${pkgs.awscli2}/bin/aws"
+        exec ${config.packages.wire-quantum-braket-bin}/bin/wire-quantum-braket "$@"
+      '';
+    };
+
+    wire-quantum-qec-repetition-braket = pkgs.writeShellApplication {
+      name = "wire-quantum-qec-repetition-braket";
+      text = ''
+        set -euo pipefail
+        export CORTEX_WIRE_PACKAGE_MANIFESTS="${quantumWirePackages}"
+        export CORTEX_AWS_BIN="${pkgs.awscli2}/bin/aws"
+        exec ${config.packages.wire-quantum-qec-repetition-braket-bin}/bin/wire-quantum-qec-repetition-braket "$@"
+      '';
+    };
+
     wire-quantum-ipea = pkgs.writeShellApplication {
       name = "wire-quantum-ipea";
       text = ''
@@ -76,6 +99,8 @@
   in {
     packages =
       {
+        wire-quantum-braket = wire-quantum-braket;
+        wire-quantum-qec-repetition-braket = wire-quantum-qec-repetition-braket;
         wire-quantum-ibm-rest = wire-quantum-ibm-rest;
         wire-quantum-eraser = wire-quantum-eraser;
       }
@@ -90,6 +115,16 @@
           type = "app";
           program = "${wire-quantum-ibm-rest}/bin/wire-quantum-ibm-rest";
           meta.description = "Submit Wire quantum examples to IBM Quantum Runtime REST";
+        };
+        wire-quantum-braket = {
+          type = "app";
+          program = "${wire-quantum-braket}/bin/wire-quantum-braket";
+          meta.description = "Submit native Wire quantum examples to Amazon Braket OpenQASM";
+        };
+        wire-quantum-qec-repetition-braket = {
+          type = "app";
+          program = "${wire-quantum-qec-repetition-braket}/bin/wire-quantum-qec-repetition-braket";
+          meta.description = "Run the native distance-3 repetition-code QEC example on Amazon Braket";
         };
         wire-quantum-eraser = {
           type = "app";

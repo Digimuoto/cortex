@@ -114,6 +114,91 @@ or provider credentials cannot accidentally queue hardware jobs. Hardware execut
 as a separate explicit binding with provider, credential, queue, cost, and audit policy in its own
 config path.
 
+The local Qiskit runner targets examples whose qubits terminate in per-qubit `@quantum.measure_z`
+outputs (such as the Bell example). The native `@quantum.realize` catalog — where measurement bits
+are collected into one realized frontier — is exercised by the Haskell Braket runner below, whose
+dry-run path works offline.
+
+## Native Braket QEC Runner
+
+[`../../examples/wire/qec-repetition-realize.wire`](../../examples/wire/qec-repetition-realize.wire)
+is the native distance-3 repetition-code catalog. It imports the quantum extension manifests with
+`use quantum.core` and `use quantum.braket`. Each data and ancilla qubit is measured by its own
+native `@measure_z` node, and the resulting symbolic measurement bits are collected into a single
+`@realize` node that returns one correlated `QuantumResult`. There is no `std.io.command` scaffold
+in the reviewed QEC shape.
+
+The runner is a Haskell extension binary in the `cortex-quantum` library. It compiles the selected
+graph in-process, walks the upstream quantum frontier feeding `@quantum.realize`, drives the shared
+realize-frontier lowering (admission, host-binding resolution, and the idempotency digest), emits
+OpenQASM 3, and submits through the AWS CLI. No Python is on the reviewed path.
+
+Dry-run compiles all four exported cases and lowers each realized frontier to Braket OpenQASM
+without queueing AWS work:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --dry-run
+```
+
+To inspect a single circuit request:
+
+```sh
+nix run .#wire-quantum-braket -- \
+  examples/wire/qec-repetition-realize.wire \
+  --return qec_repetition_x1 \
+  --dry-run
+```
+
+Hardware execution is explicit and requires AWS/Braket environment configuration:
+
+```sh
+export AWS_PROFILE="cortex-braket"
+export CORTEX_BRAKET_REGION="eu-north-1"
+export CORTEX_BRAKET_DEVICE_ARN="arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald"
+export CORTEX_BRAKET_BUCKET="amazon-braket-cortex-results-<account-id>-<region>"
+export CORTEX_BRAKET_PREFIX="cortex/dev"
+```
+
+Then run:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware
+```
+
+Before creating any task the runner runs one `get-device` preflight, so an offline device fails once
+rather than after spawning four tasks. The batch command executes:
+
+- `qec_repetition_none`
+- `qec_repetition_x0`
+- `qec_repetition_x1`
+- `qec_repetition_x2`
+
+It prints a Markdown report to stdout — a summary table (expected syndrome, ideal shots, deviating
+shots), the run verdict (`accepted` / `rejected` / `error` / `dry-run`) against the per-circuit
+acceptance criterion, the Braket cost estimate, and a Qiskit-style circuit diagram plus collapsible
+OpenQASM for each case. Add `--output DIR` to also write the report under that directory with a
+runner-generated filename:
+
+```text
+<completion-timestamp>-qec-repetition-<hardware>.md
+```
+
+For example, Emerald writes a name such as `20260623T182217Z-qec-repetition-iqm-emerald.md`. When
+the IQM device is offline, an SV1 simulator run validates the same native catalog end to end:
+
+```sh
+CORTEX_BRAKET_REGION=us-east-1 \
+AWS_REGION=us-east-1 \
+AWS_DEFAULT_REGION=us-east-1 \
+nix run .#wire-quantum-qec-repetition-braket -- \
+  --device-arn arn:aws:braket:::device/quantum-simulator/amazon/sv1 \
+  --confirm-hardware
+```
+
+The app is an extension-owned runner around native `@realize`; the future durable form is a Pulse
+binding-pack run where Braket submission, park, resume, and result fetch are owned by the runtime
+frontier.
+
 ## IBM Quantum Runtime REST Runner
 
 The repository also includes an explicit hardware runner that talks to IBM Quantum Runtime through

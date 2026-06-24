@@ -509,6 +509,7 @@
           "http-types".components.library.planned = lib.mkOverride 900 true;
           "iproute".components.library.planned = lib.mkOverride 900 true;
           "cortex".components.exes."cortex-pulse".planned = lib.mkOverride 900 true;
+          "cortex".components.exes."wire-quantum-qec-repetition-braket".planned = lib.mkOverride 900 true;
           "code-page".components.library.planned = lib.mkOverride 900 true;
           "aeson-qq".components.library.planned = lib.mkOverride 900 true;
           "monad-logger".components.library.planned = lib.mkOverride 900 true;
@@ -737,6 +738,7 @@
           "uuid-types".components.library.planned = lib.mkOverride 900 true;
           "vector".components.sublibs."benchmarks-O2".planned = lib.mkOverride 900 true;
           "testcontainers".components.library.planned = lib.mkOverride 900 true;
+          "cortex".components.exes."wire-quantum-braket".planned = lib.mkOverride 900 true;
           "servant-server".components.exes."greet".planned = lib.mkOverride 900 true;
           "word8".components.library.planned = lib.mkOverride 900 true;
           "mime-types".components.library.planned = lib.mkOverride 900 true;

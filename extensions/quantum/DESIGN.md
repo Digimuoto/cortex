@@ -30,11 +30,16 @@ the Cortex substrate contract.
 
 ## Proposed Tree
 
-This is the target layout, not the current on-disk state. Today `extensions/quantum/` contains
-`DESIGN.md`, `packages/{quantum-core,quantum-qec,quantum-braket}/cortex.toml`, and `src/` — the
-`cortex-quantum` library that holds the Braket host binding pack and depends on Cortex core, not the
-other way round. The `wire/`, `binding-packs/`, `examples/`, and `test/` entries below are planned
-additions.
+This is the target layout, not the complete current on-disk state. Today `extensions/quantum/`
+contains `DESIGN.md`, `packages/{quantum-core,quantum-qec,quantum-braket}/cortex.toml`, and `src/` —
+the `cortex-quantum` library that depends on Cortex core, not the other way round. That library
+holds the Braket host binding pack plus the `Cortex.Quantum.*` runner modules: the compiled-circuit
+walker (`Plan`), the OpenQASM 3 lowering (`OpenQASM`), the result decoder (`Result`), the cost
+estimator (`Cost`), the Amazon Braket transport (`Braket`), and the QEC catalog and report (`Qec`).
+The runnable QEC showcase lives at `examples/wire/qec-repetition-realize.wire` and is driven by two
+Haskell extension executables exposed through Nix apps while the extension tree is still in-repo.
+The `wire/`, `binding-packs/`, `examples/`, and `test/` entries below are the eventual
+self-contained extension layout.
 
 ```text
 extensions/quantum/
@@ -219,12 +224,35 @@ wire pulse run extensions/quantum/examples/qec-repetition/qec-repetition-realize
 The exact CLI flags can change, but the separation cannot: package imports are compile-time
 vocabulary; binding packs are runtime authority.
 
+Current runnable showcase:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --dry-run
+```
+
+Hardware execution uses the same native Wire catalog and requires explicit AWS/Braket authority:
+
+```sh
+nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware
+```
+
+This app is a Haskell extension runner around the native `@realize` source shape. It compiles each
+selected graph against the quantum package manifests in-process, walks the upstream quantum frontier
+feeding `@quantum.realize`, drives the shared realize-frontier lowering for admission, host-binding
+resolution, and the idempotency digest, lowers the fused plan to OpenQASM, and submits or dry-runs
+the task through the AWS CLI (handed in via `CORTEX_AWS_BIN`). It renders a Markdown experiment
+report with a per-case Qiskit-style circuit diagram and collapsible OpenQASM, and `--output DIR`
+writes it to a runner-generated `<timestamp>-qec-repetition-<hardware>.md` file. It deliberately
+avoids the older `std.io.command` Wire scaffold and uses no Python, but it is not the final durable
+Pulse binding-pack CLI.
+
 ## Compatibility With Current Bridges
 
-The existing Python/runner bridge can remain as compatibility and development tooling while this
-extension grows. It should not be the reviewed native shape for the QEC showcase. The native shape
-is `use quantum.*` plus `@realize`, with Pulse owning durable scheduling and the Braket binding pack
-owning provider execution.
+The reviewed Braket/QEC path is the Haskell extension runner above; the prior Python Braket bridge
+has been removed. The remaining Python runners (`wire-quantum-qiskit` for local Aer simulation,
+`wire-quantum-ibm-rest`, and `wire-quantum-ipea`) stay as compatibility and development tooling and
+are not extended for the Braket path. The native shape is `use quantum.*` plus `@realize`, with
+Pulse owning durable scheduling and the Braket binding pack owning provider execution.
 
 ## Open Design Points
 

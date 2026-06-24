@@ -85,6 +85,10 @@
       cortex-pulse = projectFlake.packages."cortex:exe:cortex-pulse" or null;
       # Wire source CLI — local build/run workflows for .wire files.
       wire = projectFlake.packages."cortex:exe:wire" or null;
+      # Native Wire -> Amazon Braket runners (wrapped by nix/quantum.nix under the
+      # public wire-quantum-* names; kept under -bin keys to avoid a name clash).
+      wire-quantum-braket-bin = projectFlake.packages."cortex:exe:wire-quantum-braket" or null;
+      wire-quantum-qec-repetition-braket-bin = projectFlake.packages."cortex:exe:wire-quantum-qec-repetition-braket" or null;
       # Opt-in Criterion benchmark for Wire pure evaluation.
       pure-wire-bench = projectFlake.packages."cortex:bench:pure-wire-bench" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).

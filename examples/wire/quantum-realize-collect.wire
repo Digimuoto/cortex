@@ -1,23 +1,16 @@
 # Minimal demonstration of the ADR 0059 realize collect-node on the ADR 0054
 # quantum Wire packages.
 #
-# The gate frontier is authored as native Wire topology and *collected* into a
-# single `@realize` node whose outputs are the named measurements (ADR 0059 §2).
-# `use quantum.core` / `use quantum.braket` bring the vocabulary into scope but
-# grant no runtime authority: `wire build`/check succeed with no host binding
-# pack present, and only `wire pulse run --binding-pack braket` lowers this to a
+# The gate frontier is authored as native Wire topology. Each qubit is measured by
+# its own native `@measure_z` node, and the resulting symbolic measurement bits are
+# *collected* into a single `@realize` node that returns one correlated
+# `QuantumResult` (ADR 0059 §2). `use quantum.core` / `use quantum.braket` bring the
+# vocabulary into scope but grant no runtime authority: `wire build`/check succeed
+# with no host binding pack present, and only a host Braket binding lowers this to a
 # durable submit/park/resume stage (the ADR 0054 invariant).
-#
-# A larger crossing-qubit circuit (the distance-3 repetition code) needs the same
-# identity-threading the generator emits; this file keeps the topology linear so
-# it reads as a clean realize example. The standalone-bridge QEC workbench remains
-# qec-repetition-code-forced-errors.wire.
 
-use quantum.core.{@prepare_zero, @cnot};
+use quantum.core.{@prepare_zero, @cnot, @measure_z, Qubit, Bit, QuantumResult};
 use quantum.braket.{@realize};
-
-contract Qubit;
-contract Bit;
 
 node prep_control
   -> control: Qubit = @prepare_zero { index = 0; } (null);
@@ -31,15 +24,22 @@ node entangle
   -> target: Qubit;
   = @cnot ({ inherit control; inherit target; });
 
-# Collect the frontier: realize consumes the final qubits and produces the named
-# measurement outputs the offline analyzer reads.
-node collect
+node measure_control
   <- control: Qubit;
+  -> m_control: Bit = @measure_z {} (control);
+node measure_target
   <- target: Qubit;
-  -> m_control: Bit;
-  -> m_target: Bit;
-  = @realize ({ inherit control; inherit target; });
+  -> m_target: Bit = @measure_z {} (target);
 
-(prep_control <> prep_target)
+# Collect the frontier: realize consumes the symbolic measurement bits and produces
+# one correlated QuantumResult the offline analyzer reads.
+node collect
+  <- m_control: Bit;
+  <- m_target: Bit;
+  -> result: QuantumResult
+  = @realize ({ inherit m_control; inherit m_target; });
+
+prep_control <> prep_target
   => entangle
+  => measure_control <> measure_target
   => collect
