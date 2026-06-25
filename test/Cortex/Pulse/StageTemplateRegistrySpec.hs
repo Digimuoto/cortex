@@ -80,6 +80,7 @@ spec = do
             , spTopology = initialTopo
             , spDefinitions = initialDefs
             , spTemplateRegistry = templateRegistry initialDefs
+            , spLoopRegistrations = Map.empty
             }
 
     it "rejects rewrite if it introduces a conflicting template id" $ do

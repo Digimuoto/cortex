@@ -316,6 +316,7 @@ data GraphRewriteInsert = GraphRewriteInsert
   , griRejectionReason :: Maybe Text
   , griExceededDimensions :: Maybe Value
   , griCreatedAt :: UTCTime
+  , griAdmissionMode :: Text
   }
   deriving stock (Eq, Show)
 
@@ -1784,8 +1785,8 @@ writeGraphRewrite input =
       "INSERT INTO pulse.graph_rewrites \
       \(run_id, source_node_id, source_node_output, rewrite_cost, rewrite_delta, \
       \ budget_before, budget_after, rewrite_spec, status, rejection_reason, \
-      \ exceeded_dimensions, created_at) \
-      \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
+      \ exceeded_dimensions, created_at, admission_mode) \
+      \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
       \RETURNING rewrite_id"
       ( Enc.encodeParams
           ( Enc.col (.griRunId) (Enc.nonNullable Enc.uuid)
@@ -1800,6 +1801,7 @@ writeGraphRewrite input =
                  , Enc.col (.griRejectionReason) (Enc.nullable Enc.text)
                  , Enc.col (.griExceededDimensions) (Enc.nullable Enc.jsonb)
                  , Enc.col (.griCreatedAt) (Enc.nonNullable Enc.timestamptz)
+                 , Enc.col (.griAdmissionMode) (Enc.nonNullable Enc.text)
                  ]
           )
       )
@@ -1807,32 +1809,36 @@ writeGraphRewrite input =
       False
 
 -- | Read admitted rewrite events for a run, oldest first.
-readGraphRewrites :: UUID -> Session [(Int64, Text, Maybe Value, Maybe Value, Value)]
+readGraphRewrites
+  :: UUID -> Session [(Int64, Text, Maybe Value, Maybe Value, Maybe Value, Value, Text)]
 readGraphRewrites runId =
   Session.statement runId $
     Statement
-      "SELECT rewrite_id, source_node_id, source_node_output, rewrite_cost, rewrite_spec \
+      "SELECT rewrite_id, source_node_id, source_node_output, rewrite_cost, rewrite_delta, rewrite_spec, admission_mode \
       \FROM pulse.graph_rewrites \
       \WHERE run_id = $1 AND status = 'admitted' \
       \ORDER BY rewrite_id ASC"
       (Enc.encode1 (Prelude.id, Enc.nonNullable Enc.uuid))
       ( D.rowList
-          ( (,,,,)
+          ( (,,,,,,)
               <$> D.column (D.nonNullable D.int8) -- rewrite_id
               <*> D.column (D.nonNullable D.text) -- source_node_id
               <*> D.column (D.nullable D.jsonb) -- source_node_output
               <*> D.column (D.nullable D.jsonb) -- rewrite_cost
+              <*> D.column (D.nullable D.jsonb) -- rewrite_delta
               <*> D.column (D.nonNullable D.jsonb) -- rewrite_spec
+              <*> D.column (D.nonNullable D.text) -- admission_mode
           )
       )
       True
 
 -- | Read admitted rewrite events for a run up to the given watermark, oldest first.
-readGraphRewritesUpTo :: UUID -> Int64 -> Session [(Int64, Text, Maybe Value, Maybe Value, Value)]
+readGraphRewritesUpTo
+  :: UUID -> Int64 -> Session [(Int64, Text, Maybe Value, Maybe Value, Maybe Value, Value, Text)]
 readGraphRewritesUpTo runId maxRewriteId =
   Session.statement (runId, maxRewriteId) $
     Statement
-      "SELECT rewrite_id, source_node_id, source_node_output, rewrite_cost, rewrite_spec \
+      "SELECT rewrite_id, source_node_id, source_node_output, rewrite_cost, rewrite_delta, rewrite_spec, admission_mode \
       \FROM pulse.graph_rewrites \
       \WHERE run_id = $1 AND rewrite_id <= $2 AND status = 'admitted' \
       \ORDER BY rewrite_id ASC"
@@ -1841,12 +1847,14 @@ readGraphRewritesUpTo runId maxRewriteId =
           (snd, Enc.nonNullable Enc.int8)
       )
       ( D.rowList
-          ( (,,,,)
+          ( (,,,,,,)
               <$> D.column (D.nonNullable D.int8) -- rewrite_id
               <*> D.column (D.nonNullable D.text) -- source_node_id
               <*> D.column (D.nullable D.jsonb) -- source_node_output
               <*> D.column (D.nullable D.jsonb) -- rewrite_cost
+              <*> D.column (D.nullable D.jsonb) -- rewrite_delta
               <*> D.column (D.nonNullable D.jsonb) -- rewrite_spec
+              <*> D.column (D.nonNullable D.text) -- admission_mode
           )
       )
       True

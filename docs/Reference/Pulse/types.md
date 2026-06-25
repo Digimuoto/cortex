@@ -185,12 +185,16 @@ data StageResult
   = StageComplete Aeson.Value
   | StageSuspend  SignalName
   | StageRewrite  Aeson.Value GraphRewrite
+  | StageLoopStep Aeson.Value LoopStepWitness GraphRewrite
 ```
 
 `StageComplete` is the ordinary case. `StageSuspend` parks the stage's node in `NodeWaiting` until a
 named signal is delivered. `StageRewrite` carries both the node's durable output and a proposed
 rewrite; the runtime admits the rewrite under the rules in
-[chapter 07](../../Architecture/07-rewrites-and-materialization.md).
+[chapter 07](../../Architecture/07-rewrites-and-materialization.md). `StageLoopStep` is the
+witnessed runtime-iteration self-append path; the executor verifies the supplied frontier witness,
+certified kernel, namespace, admitted effective bound, and remaining loop control against the
+registered loop declaration before admitting it gas-neutral.
 
 ## Related
 

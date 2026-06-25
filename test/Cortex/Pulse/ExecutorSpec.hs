@@ -27,6 +27,7 @@ import Control.Exception
   )
 import Control.Monad (forM_, void, when)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
 import Data.Int (Int32, Int64)
 import Data.Map.Strict qualified as Map
@@ -59,7 +60,8 @@ import Cortex.Algebra.Graph
   , vertices
   )
 import Cortex.Pulse.Executor
-  ( ReplayPolicy (..)
+  ( LoopInstanceKey (..)
+  , ReplayPolicy (..)
   , RewriteExhaustionPolicy (..)
   , SomeStagePlan (..)
   , StableStageId (..)
@@ -81,17 +83,36 @@ import Cortex.Pulse.Executor
   , buildStageTemplateRegistry
   , executeStagePlan
   , executeTask
+  , initialLoopControls
   , liftChainAction
+  , loopRegistrationForStage
   , resumeStagePlan
   , resumeTask
   , retryDelayMicros
   , stageActionId
   , stageTemplateId
+  , toSerializableStageDefinition
   )
 import Cortex.Pulse.Executor qualified as Executor
 import Cortex.Pulse.Executor.Persistence (requireGraphStatePersist)
 import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
+import Cortex.Pulse.Iteration
+  ( EffectiveBound (..)
+  , EmittedAggregationPolicy (..)
+  , FrontierShapeWitness (..)
+  , FrontierStateRole (..)
+  , FrontierWitnessAlgorithm (..)
+  , IterationExhaustionPolicy (..)
+  , KernelBoundary (..)
+  , LoopKernelWitness
+  , LoopOutcome (..)
+  , LoopPolicy (..)
+  , LoopRegistration (..)
+  , LoopRewriteInteraction (..)
+  , LoopStepWitness (..)
+  , kernelWitnessForLocalSpec
+  )
 import Cortex.Pulse.Materialize
   ( NodeProvenanceEntry (..)
   , PersistedGraphState (..)
@@ -406,6 +427,54 @@ nodeStage nodeId action =
     , sdMemoryStrategy = defaultMemoryStrategy
     }
 
+runtimeIterationPolicy :: Int -> FrontierShapeWitness -> LoopKernelWitness -> LoopPolicy
+runtimeIterationPolicy cap frontierWitness kernelWitness =
+  LoopPolicy
+    { lpMaxIterations = fromIntegral cap
+    , lpExhaustion = IterationExhaustionFail
+    , lpCheckpointCadence = 1
+    , lpCancellationPoints = Set.empty
+    , lpNamespaceRoot = NodeId "loop"
+    , lpMaxSegmentLen = 64
+    , lpMaxKernelNodes = 8
+    , lpMaxKernelEdges = 8
+    , lpMaxKernelDepth = 8
+    , lpAggregation = AggregateDiscard
+    , lpMaxAggregatedItems = Nothing
+    , lpRewriteInteraction = LoopKernelRewriteClosed
+    , lpKernelBoundary =
+        KernelBoundary
+          { kbWitness = frontierWitness
+          , kbStateInRole = FrontierStateRole "state"
+          , kbStateOutRole = FrontierStateRole "state"
+          }
+    , lpKernelWitness = kernelWitness
+    , lpPolicyVersion = 1
+    }
+
+runtimeIterationRegistration :: LoopPolicy -> LoopRegistration
+runtimeIterationRegistration policy =
+  LoopRegistration policy (EffectiveBound policy.lpMaxIterations)
+
+runtimeIterationInstance :: StageTemplateId -> LoopPolicy -> LoopInstanceKey
+runtimeIterationInstance templateId policy =
+  LoopInstanceKey
+    { likTemplateId = templateId
+    , likNamespaceRoot = policy.lpNamespaceRoot
+    }
+
+singleStageKernelWitness :: StageDefinition NodeId -> LoopKernelWitness
+singleStageKernelWitness stageDef =
+  let localId = stageDef.sdStageId
+      localSpec =
+        SubgraphSpec
+          { sgsTopology = toRelation (path [localId])
+          , sgsDefinitions = Map.singleton localId (toSerializableStageDefinition stageDef)
+          , sgsEntryNodes = [localId]
+          , sgsExitNodes = [localId]
+          }
+   in kernelWitnessForLocalSpec localSpec
+
 signalStage :: TestStage -> SignalName -> StageDefinition TestStage
 signalStage stageId signalName =
   StageDefinition
@@ -462,6 +531,7 @@ parallelSignalWaitPlan waits =
         , spTopology = topology
         , spDefinitions = definitions
         , spTemplateRegistry = mkTemplateRegistry definitions
+        , spLoopRegistrations = Map.empty
         }
 
 nodeIdFromCircuitRef :: CircuitNodeRef -> NodeId
@@ -2587,6 +2657,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -2737,6 +2808,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       -- If concurrent: both barriers release and the run completes.
       -- If sequential: deadlock (beta waits for gamma which never starts).
@@ -2807,6 +2879,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -2912,6 +2985,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -2973,6 +3047,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -3038,6 +3113,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       result <- timeout 5_000_000 $ executeStagePlan taskContext runId task stagePlan
       case result of
@@ -3088,6 +3164,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -3171,6 +3248,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeSuspended
@@ -3224,6 +3302,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -3273,6 +3352,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -3343,6 +3423,7 @@ spec = beforeAll setupTestDb $ do
                 , spTopology = topology
                 , spDefinitions = defs
                 , spTemplateRegistry = mkTemplateRegistry defs
+                , spLoopRegistrations = Map.empty
                 }
         outcome <- executeStagePlan taskContext runId task stagePlan
         outcome `shouldBe` OutcomeFailed
@@ -3487,6 +3568,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       result <- timeout 3000000 $ executeStagePlan taskContext runId task stagePlan
       case result of
@@ -3559,6 +3641,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       withAsync (executeStagePlan taskContext runId task stagePlan) $ \planAsync -> do
         -- Wait for fast node to complete
@@ -3669,11 +3752,13 @@ spec = beforeAll setupTestDb $ do
       gsVar <- newTVarIO stalePersistedState
       nodeCompletedAtVar <- newTVarIO Map.empty
       topologyVar <- newTVarIO stagePlan.spTopology
+      loopControlsVar <- newTVarIO Map.empty
       let tvars =
             RunTVars
               { rvGsVar = gsVar
               , rvNodeCompletedAtVar = nodeCompletedAtVar
               , rvTopologyVar = topologyVar
+              , rvLoopControlsVar = loopControlsVar
               }
           env = mkStageEnv pool testPulseConfig shutdownFlag runId task stagePlan tvars
 
@@ -3770,6 +3855,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = topology
               , spDefinitions = defs
               , spTemplateRegistry = mkTemplateRegistry defs
+              , spLoopRegistrations = Map.empty
               }
       -- The trigger fires once per accepted graph_state write.  The first
       -- call is an insert, and subsequent CAS writes are update-only:
@@ -3844,6 +3930,7 @@ spec = beforeAll setupTestDb $ do
                     , spTopology = topology
                     , spDefinitions = defs
                     , spTemplateRegistry = mkTemplateRegistry defs
+                    , spLoopRegistrations = Map.empty
                     }
 
         (_, resumeTaskContext) <- mkTaskContextWith pool 4
@@ -4254,6 +4341,7 @@ spec = beforeAll setupTestDb $ do
                               )
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -4323,6 +4411,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = toRelation (edge analystId reviewerId)
               , spDefinitions = definitions
               , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -4372,6 +4461,645 @@ spec = beforeAll setupTestDb $ do
                   , NodeId "analyst:stress_beta"
                   ]
               successors topology (NodeId "analyst:stress_beta") `shouldBe` Set.singleton reviewerId
+
+    it "runtime-bounded iteration evidence: two loop instances can share one kernel template" $ \_mPool -> do
+      let kernelTemplate = StageTemplateId "shared_loop_kernel"
+          frontierWitness = FrontierShapeWitness FrontierWitnessV1 "shared-loop-kernel-v1"
+          loopKernel = (nodeStage (NodeId "k") (\_ -> pure (StageComplete Aeson.Null))) {sdTemplateId = kernelTemplate}
+          kernelWitness = singleStageKernelWitness loopKernel
+          policyA = (runtimeIterationPolicy 3 frontierWitness kernelWitness) {lpNamespaceRoot = NodeId "loop_a"}
+          policyB = (runtimeIterationPolicy 4 frontierWitness kernelWitness) {lpNamespaceRoot = NodeId "loop_b"}
+          keyA = runtimeIterationInstance kernelTemplate policyA
+          keyB = runtimeIterationInstance kernelTemplate policyB
+          definitions =
+            Map.fromList
+              [ (NodeId "loop_a:iter_0:k", loopKernel)
+              , (NodeId "loop_b:iter_0:k", loopKernel)
+              ]
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path (Map.keys definitions))
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.fromList
+                    [ (keyA, runtimeIterationRegistration policyA)
+                    , (keyB, runtimeIterationRegistration policyB)
+                    ]
+              }
+      Map.keysSet (initialLoopControls stagePlan) `shouldBe` Set.fromList [keyA, keyB]
+      fmap fst (loopRegistrationForStage stagePlan kernelTemplate (NodeId "loop_a:iter_0:k"))
+        `shouldBe` Just keyA
+      fmap fst (loopRegistrationForStage stagePlan kernelTemplate (NodeId "loop_b:iter_0:k"))
+        `shouldBe` Just keyB
+
+    it "runtime-bounded iteration evidence: gas-neutral cap loop" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-witnessed-loop"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      -- A loop of `cap` body executions. iter_0 is the seed body, so the run admits
+      -- cap - 1 self-appends. That still exceeds the default rewrite-gas ops budget
+      -- (4), proving each AppendAfter is admitted witnessed (gas-neutral). The
+      -- kernel uses a STABLE template id so a single spLoopRegistrations entry
+      -- authorizes every iteration.
+      let cap = 6 :: Int
+          kernelTemplate = StageTemplateId "loop_kernel"
+          loopFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "loop-kernel-v1"
+          readCounter ctx = case Map.elems ctx.scInputs of
+            (Aeson.Number n : _) -> round n
+            _ -> 0 :: Int
+          loopKernel :: StageDefinition NodeId
+          loopKernel =
+            StageDefinition
+              { sdStageId = NodeId "k"
+              , sdTemplateId = kernelTemplate
+              , sdActionId = stageActionId (NodeId "k")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = loopAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          loopAction ctx = do
+            let i = readCounter ctx
+            if i >= cap - 1
+              then pure (StageComplete (Aeson.toJSON i))
+              else do
+                let nid = NodeId ("loop:iter_" <> T.pack (show (i + 1)) <> ":k")
+                    nextSpec =
+                      SubgraphSpec
+                        { sgsTopology = toRelation (path [nid])
+                        , sgsDefinitions = Map.singleton nid loopKernel
+                        , sgsEntryNodes = [nid]
+                        , sgsExitNodes = [nid]
+                        }
+                    stepWitness =
+                      LoopStepWitness
+                        { lswFrontierWitness = loopFrontierWitness
+                        , lswLoopStateExits = [ctx.scNodeId]
+                        }
+                pure (StageLoopStep (Aeson.toJSON (i + 1)) stepWitness (AppendAfter ctx.scNodeId nextSpec))
+          initialId = NodeId "loop:iter_0:k"
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy = runtimeIterationPolicy cap loopFrontierWitness (singleStageKernelWitness loopKernel)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (runtimeIterationRegistration loopPolicy)
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeCompleted
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      length rewriteRows `shouldBe` cap - 1
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` replicate (cap - 1) "witnessed"
+      let witnessedDeltas =
+            [ rewriteDelta
+            | (_, _, _, _, Just (Aeson.Object rewriteDelta), _, "witnessed") <- rewriteRows
+            ]
+      length witnessedDeltas `shouldBe` cap - 1
+      forM_ witnessedDeltas $ \rewriteDelta -> do
+        rewriteDelta `shouldSatisfy` KeyMap.member "witnessed_loop_step"
+        case KeyMap.lookup "witnessed_loop_step" rewriteDelta of
+          Just (Aeson.Object metadata) -> do
+            metadata `shouldSatisfy` KeyMap.member "policy_version"
+            metadata `shouldSatisfy` KeyMap.member "effective_bound"
+            metadata `shouldSatisfy` KeyMap.member "remaining_before"
+            metadata `shouldSatisfy` KeyMap.member "remaining_after"
+            metadata `shouldSatisfy` KeyMap.member "step_witness"
+          _ -> expectationFailure "Expected witnessed loop-step replay metadata object"
+      maybeStatuses <- readGraphNodeStatuses pool runId
+      case maybeStatuses of
+        Nothing -> expectationFailure "Expected persisted graph state after witnessed loop"
+        Just statuses -> do
+          Map.lookup (NodeId "loop:iter_0:k") statuses `shouldBe` Just NodeRewritten
+          Map.lookup (NodeId "loop:iter_5:k") statuses `shouldBe` Just NodeCompleted
+
+    it "runtime-bounded iteration evidence: paginated ingest" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-witnessed-loop-paginated-ingest"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let cap = 4 :: Int
+          terminalCursor = 2 :: Int
+          pages :: Map.Map Int [Text]
+          pages =
+            Map.fromList
+              [ (0, ["alpha", "beta"])
+              , (1, ["gamma"])
+              , (2, ["delta", "epsilon"])
+              ]
+          kernelTemplate = StageTemplateId "loop_kernel_paginated_ingest"
+          loopFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "paginated-ingest-state-v1"
+          readNumberField field ctx =
+            case Map.elems ctx.scInputs of
+              (Aeson.Object input : _) ->
+                case KeyMap.lookup field input of
+                  Just (Aeson.Number n) -> round n
+                  _ -> 0 :: Int
+              _ -> 0 :: Int
+          pageAt cursor = Map.findWithDefault [] cursor pages
+          stateOutput :: Int -> Int -> [Text] -> Aeson.Value
+          stateOutput nextCursor seen page =
+            Aeson.object
+              [ "next_cursor" Aeson..= nextCursor
+              , "seen" Aeson..= seen
+              , "page" Aeson..= page
+              ]
+          terminalOutput :: Int -> Int -> [Text] -> Aeson.Value
+          terminalOutput cursor seen page =
+            Aeson.object
+              [ "terminal" Aeson..= True
+              , "pages" Aeson..= (cursor + 1)
+              , "seen" Aeson..= seen
+              , "last_page" Aeson..= page
+              ]
+          loopKernel :: StageDefinition NodeId
+          loopKernel =
+            StageDefinition
+              { sdStageId = NodeId "k"
+              , sdTemplateId = kernelTemplate
+              , sdActionId = stageActionId (NodeId "k")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = loopAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          loopAction ctx = do
+            let cursor = readNumberField "next_cursor" ctx
+                seenBefore = readNumberField "seen" ctx
+                page = pageAt cursor
+                seenAfter = seenBefore + length page
+            if cursor >= terminalCursor
+              then pure (StageComplete (terminalOutput cursor seenAfter page))
+              else do
+                let nextCursor = cursor + 1
+                    nextNode = NodeId ("loop:iter_" <> T.pack (show nextCursor) <> ":k")
+                    nextSpec =
+                      SubgraphSpec
+                        { sgsTopology = toRelation (path [nextNode])
+                        , sgsDefinitions = Map.singleton nextNode loopKernel
+                        , sgsEntryNodes = [nextNode]
+                        , sgsExitNodes = [nextNode]
+                        }
+                    stepWitness =
+                      LoopStepWitness
+                        { lswFrontierWitness = loopFrontierWitness
+                        , lswLoopStateExits = [ctx.scNodeId]
+                        }
+                pure
+                  ( StageLoopStep
+                      (stateOutput nextCursor seenAfter page)
+                      stepWitness
+                      (AppendAfter ctx.scNodeId nextSpec)
+                  )
+          initialId = NodeId "loop:iter_0:k"
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy = runtimeIterationPolicy cap loopFrontierWitness (singleStageKernelWitness loopKernel)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (runtimeIterationRegistration loopPolicy)
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeCompleted
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      length rewriteRows `shouldBe` terminalCursor
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` replicate terminalCursor "witnessed"
+      forM_ (zip [1 :: Int ..] rewriteRows) $ \(iter, (_, _, _, _, mRewriteDelta, _, mode)) -> do
+        mode `shouldBe` "witnessed"
+        case mRewriteDelta of
+          Just (Aeson.Object rewriteDelta) -> do
+            let expectedNode = "loop:iter_" <> T.pack (show iter) <> ":k"
+            KeyMap.lookup "entry_nodes" rewriteDelta `shouldBe` Just (Aeson.toJSON [expectedNode])
+            KeyMap.lookup "exit_nodes" rewriteDelta `shouldBe` Just (Aeson.toJSON [expectedNode])
+            KeyMap.lookup "witnessed_loop_step" rewriteDelta `shouldSatisfy` isJust
+          other -> expectationFailure $ "Expected witnessed rewrite delta object, got " <> show other
+      maybeStatuses <- readGraphNodeStatuses pool runId
+      case maybeStatuses of
+        Nothing -> expectationFailure "Expected persisted graph state after paginated loop"
+        Just statuses -> do
+          Map.lookup (NodeId "loop:iter_0:k") statuses `shouldBe` Just NodeRewritten
+          Map.lookup (NodeId "loop:iter_1:k") statuses `shouldBe` Just NodeRewritten
+          Map.lookup (NodeId "loop:iter_2:k") statuses `shouldBe` Just NodeCompleted
+      maybeOutputs <- readGraphNodeOutputs pool runId
+      case maybeOutputs of
+        Nothing -> expectationFailure "Expected persisted graph outputs after paginated loop"
+        Just (outputs, appliedRewriteId) -> do
+          appliedRewriteId `shouldSatisfy` isJust
+          Map.lookup (NodeId "loop:iter_0:k") outputs
+            `shouldBe` Just (stateOutput 1 2 ["alpha", "beta"])
+          Map.lookup (NodeId "loop:iter_1:k") outputs
+            `shouldBe` Just (stateOutput 2 3 ["gamma"])
+          Map.lookup (NodeId "loop:iter_2:k") outputs
+            `shouldBe` Just (terminalOutput 2 5 ["delta", "epsilon"])
+          adminTopologyResult <-
+            Executor.materializedTopologyForAdmin
+              (Just (SomeStagePlan stagePlan []))
+              pool
+              runId
+              (Just (fromIntegral rewriteRuntimeVersion :: Int32))
+              appliedRewriteId
+          case adminTopologyResult of
+            Left err ->
+              expectationFailure ("Expected admin topology materialization to succeed, got: " <> T.unpack err)
+            Right Nothing ->
+              expectationFailure "Expected admin topology materialization to return topology"
+            Right (Just topology) -> do
+              successors topology (NodeId "loop:iter_0:k") `shouldBe` Set.singleton (NodeId "loop:iter_1:k")
+              successors topology (NodeId "loop:iter_1:k") `shouldBe` Set.singleton (NodeId "loop:iter_2:k")
+
+    it "runtime-bounded iteration evidence: effective bound" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-witnessed-loop-effective-bound"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let policyCap = 6 :: Int
+          effectiveCap = 3 :: Int
+          kernelTemplate = StageTemplateId "loop_kernel_effective_bound"
+          loopFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "loop-kernel-effective-bound-v1"
+          readCounter ctx = case Map.elems ctx.scInputs of
+            (Aeson.Number n : _) -> round n
+            _ -> 0 :: Int
+          loopKernel :: StageDefinition NodeId
+          loopKernel =
+            StageDefinition
+              { sdStageId = NodeId "k"
+              , sdTemplateId = kernelTemplate
+              , sdActionId = stageActionId (NodeId "k")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = loopAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          loopAction ctx = do
+            let i = readCounter ctx
+            if i >= policyCap - 1
+              then pure (StageComplete (Aeson.toJSON i))
+              else do
+                let nid = NodeId ("loop:iter_" <> T.pack (show (i + 1)) <> ":k")
+                    nextSpec =
+                      SubgraphSpec
+                        { sgsTopology = toRelation (path [nid])
+                        , sgsDefinitions = Map.singleton nid loopKernel
+                        , sgsEntryNodes = [nid]
+                        , sgsExitNodes = [nid]
+                        }
+                    stepWitness =
+                      LoopStepWitness
+                        { lswFrontierWitness = loopFrontierWitness
+                        , lswLoopStateExits = [ctx.scNodeId]
+                        }
+                pure (StageLoopStep (Aeson.toJSON (i + 1)) stepWitness (AppendAfter ctx.scNodeId nextSpec))
+          initialId = NodeId "loop:iter_0:k"
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy = runtimeIterationPolicy policyCap loopFrontierWitness (singleStageKernelWitness loopKernel)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (LoopRegistration loopPolicy (EffectiveBound (fromIntegral effectiveCap)))
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeFailed
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      length rewriteRows `shouldBe` effectiveCap - 1
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows
+        `shouldBe` replicate (effectiveCap - 1) "witnessed"
+      runView <- runSession pool $ Q.getRunAdminView runId
+      fmap Q.pravErrorType runView `shouldBe` Just (Just "loop_iteration_budget_exhausted")
+
+    it "runtime-bounded iteration evidence: partial exhaustion completes with typed loop outcome" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-witnessed-loop-partial-bound"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let policyCap = 5 :: Int
+          effectiveCap = 2 :: Int
+          kernelTemplate = StageTemplateId "loop_kernel_partial_bound"
+          loopFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "loop-kernel-partial-bound-v1"
+          readCounter ctx = case Map.elems ctx.scInputs of
+            (Aeson.Number n : _) -> round n
+            _ -> 0 :: Int
+          loopKernel :: StageDefinition NodeId
+          loopKernel =
+            StageDefinition
+              { sdStageId = NodeId "k"
+              , sdTemplateId = kernelTemplate
+              , sdActionId = stageActionId (NodeId "k")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = loopAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          loopAction ctx = do
+            let i = readCounter ctx
+                nid = NodeId ("loop:iter_" <> T.pack (show (i + 1)) <> ":k")
+                nextSpec =
+                  SubgraphSpec
+                    { sgsTopology = toRelation (path [nid])
+                    , sgsDefinitions = Map.singleton nid loopKernel
+                    , sgsEntryNodes = [nid]
+                    , sgsExitNodes = [nid]
+                    }
+                stepWitness =
+                  LoopStepWitness
+                    { lswFrontierWitness = loopFrontierWitness
+                    , lswLoopStateExits = [ctx.scNodeId]
+                    }
+            pure (StageLoopStep (Aeson.toJSON (i + 1)) stepWitness (AppendAfter ctx.scNodeId nextSpec))
+          initialId = NodeId "loop:iter_0:k"
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy =
+            (runtimeIterationPolicy policyCap loopFrontierWitness (singleStageKernelWitness loopKernel))
+              { lpExhaustion = IterationExhaustionPartial
+              , lpAggregation = AggregateAccumulate
+              }
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (LoopRegistration loopPolicy (EffectiveBound (fromIntegral effectiveCap)))
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeCompleted
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      length rewriteRows `shouldBe` effectiveCap - 1
+      maybeOutputs <- readGraphNodeOutputs pool runId
+      case maybeOutputs of
+        Nothing -> expectationFailure "Expected persisted graph outputs after partial loop exhaustion"
+        Just (outputs, _appliedRewriteId) ->
+          Map.lookup (NodeId "loop:iter_1:k") outputs
+            `shouldBe` Just (Aeson.toJSON (LoopPartial (Aeson.toJSON effectiveCap) (fromIntegral effectiveCap)))
+
+    it "runtime-bounded iteration evidence: unauthorized loop step" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-unauthorized-loop"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      -- A stage emits StageLoopStep but its template is NOT registered in
+      -- spLoopRegistrations, so it is not authorized for gas-neutral admission. It must
+      -- route to the gassed path, which is fail-closed for a flat-namespaced spec
+      -- (the gassed path re-namespaces under the anchor and rejects ':' ids), so
+      -- the run fails rather than getting a free witnessed append.
+      let driverId = NodeId "loop:iter_0:k"
+          nextNode = NodeId "loop:iter_1:k"
+          driverAction ctx =
+            let nextSpec =
+                  SubgraphSpec
+                    { sgsTopology = toRelation (path [nextNode])
+                    , sgsDefinitions = Map.singleton nextNode (nodeStage nextNode (\_ -> pure (StageComplete Aeson.Null)))
+                    , sgsEntryNodes = [nextNode]
+                    , sgsExitNodes = [nextNode]
+                    }
+                stepWitness =
+                  LoopStepWitness
+                    { lswFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "unauthorized-loop"
+                    , lswLoopStateExits = [ctx.scNodeId]
+                    }
+             in pure (StageLoopStep Aeson.Null stepWitness (AppendAfter ctx.scNodeId nextSpec))
+          definitions = Map.singleton driverId (nodeStage driverId driverAction)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [driverId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations = Map.empty
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeFailed
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` []
+
+    it "runtime-bounded iteration evidence: bad frontier witness" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-loop-frontier-witness-rejected"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let cap = 2 :: Int
+          kernelTemplate = StageTemplateId "loop_kernel_bad_witness"
+          expectedWitness = FrontierShapeWitness FrontierWitnessV1 "loop-kernel-v1"
+          badWitness = FrontierShapeWitness FrontierWitnessV1 "changed-frontier"
+          initialId = NodeId "loop:iter_0:k"
+          nextNode = NodeId "loop:iter_1:k"
+          loopAction ctx =
+            let nextSpec =
+                  SubgraphSpec
+                    { sgsTopology = toRelation (path [nextNode])
+                    , sgsDefinitions = Map.singleton nextNode loopKernel
+                    , sgsEntryNodes = [nextNode]
+                    , sgsExitNodes = [nextNode]
+                    }
+                stepWitness =
+                  LoopStepWitness
+                    { lswFrontierWitness = badWitness
+                    , lswLoopStateExits = [ctx.scNodeId]
+                    }
+             in pure (StageLoopStep Aeson.Null stepWitness (AppendAfter ctx.scNodeId nextSpec))
+          loopKernel = (nodeStage (NodeId "k") loopAction) {sdTemplateId = kernelTemplate}
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy = runtimeIterationPolicy cap expectedWitness (singleStageKernelWitness loopKernel)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (runtimeIterationRegistration loopPolicy)
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeFailed
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` []
+      runView <- runSession pool $ Q.getRunAdminView runId
+      fmap Q.pravErrorType runView `shouldBe` Just (Just "witnessed_step_violation")
+
+    it "runtime-bounded iteration evidence: bad kernel witness" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-loop-kernel-witness-rejected"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let cap = 2 :: Int
+          kernelTemplate = StageTemplateId "loop_kernel_bad_kernel"
+          expectedWitness = FrontierShapeWitness FrontierWitnessV1 "loop-kernel-v1"
+          initialId = NodeId "loop:iter_0:k"
+          unexpectedNode = NodeId "loop:iter_1:other"
+          loopAction ctx =
+            let nextSpec =
+                  SubgraphSpec
+                    { sgsTopology = toRelation (path [unexpectedNode])
+                    , sgsDefinitions = Map.singleton unexpectedNode loopKernel
+                    , sgsEntryNodes = [unexpectedNode]
+                    , sgsExitNodes = [unexpectedNode]
+                    }
+                stepWitness =
+                  LoopStepWitness
+                    { lswFrontierWitness = expectedWitness
+                    , lswLoopStateExits = [ctx.scNodeId]
+                    }
+             in pure (StageLoopStep Aeson.Null stepWitness (AppendAfter ctx.scNodeId nextSpec))
+          loopKernel = (nodeStage (NodeId "k") loopAction) {sdTemplateId = kernelTemplate}
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy = runtimeIterationPolicy cap expectedWitness (singleStageKernelWitness loopKernel)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (runtimeIterationRegistration loopPolicy)
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeFailed
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` []
+      runView <- runSession pool $ Q.getRunAdminView runId
+      fmap Q.pravErrorType runView `shouldBe` Just (Just "witnessed_step_violation")
+
+    it "runtime-bounded iteration evidence: rewrite-closed kernel" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-loop-open-rewrite-rejected"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      let cap = 2 :: Int
+          kernelTemplate = StageTemplateId "loop_kernel_open_rewrite"
+          expectedWitness = FrontierShapeWitness FrontierWitnessV1 "loop-kernel-v1"
+          initialId = NodeId "loop:iter_0:k"
+          nextNode = NodeId "loop:iter_1:k"
+          nextSpec =
+            SubgraphSpec
+              { sgsTopology = toRelation (path [nextNode])
+              , sgsDefinitions = Map.singleton nextNode loopKernel
+              , sgsEntryNodes = [nextNode]
+              , sgsExitNodes = [nextNode]
+              }
+          loopAction ctx =
+            pure (StageRewrite Aeson.Null (AppendAfter ctx.scNodeId nextSpec))
+          loopKernel = (nodeStage (NodeId "k") loopAction) {sdTemplateId = kernelTemplate}
+          definitions = Map.singleton initialId loopKernel
+          loopPolicy = runtimeIterationPolicy cap expectedWitness (singleStageKernelWitness loopKernel)
+          stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [initialId])
+              , spDefinitions = definitions
+              , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations =
+                  Map.singleton
+                    (runtimeIterationInstance kernelTemplate loopPolicy)
+                    (runtimeIterationRegistration loopPolicy)
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeFailed
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` []
+      adminRows <- runSession pool $ Q.readGraphRewritesForAdmin runId
+      case adminRows of
+        [row] -> do
+          row.pgravSourceNodeId `shouldBe` "loop:iter_0:k"
+          row.pgravStatus `shouldBe` "rejected"
+          row.pgravRejectionReason
+            `shouldSatisfy` maybe False (T.isInfixOf "ordinary StageRewrite is not admissible")
+          row.pgravRewriteSpec
+            `shouldBe` Aeson.toJSON (fmap toSerializableStageDefinition (AppendAfter initialId nextSpec))
+          row.pgravBudgetBefore `shouldBe` Just (Aeson.toJSON defaultRewriteBudget)
+          row.pgravBudgetAfter `shouldBe` Nothing
+        rows ->
+          expectationFailure
+            ("Expected exactly one rejected loop-body rewrite row, got " <> show (length rows))
+      runView <- runSession pool $ Q.getRunAdminView runId
+      fmap Q.pravErrorType runView `shouldBe` Just (Just "loop_kernel_open_rewrite_rejected")
 
     it "allows concurrent sibling rewrites to consume shared gas in admission order" $ \mPool -> withDb mPool $ \pool -> do
       (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
@@ -4491,6 +5219,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = toRelation (edge anchorId reviewerId)
               , spDefinitions = definitions
               , spTemplateRegistry = mkTemplateRegistry definitions
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -4640,6 +5369,7 @@ spec = beforeAll setupTestDb $ do
                 , spTopology = toRelation (edge analystId reviewerId)
                 , spDefinitions = definitions
                 , spTemplateRegistry = mkTemplateRegistry definitions
+                , spLoopRegistrations = Map.empty
                 }
         outcome <- executeStagePlan taskContext runId task stagePlan
         outcome `shouldBe` OutcomeCompleted
@@ -4789,13 +5519,14 @@ spec = beforeAll setupTestDb $ do
                             (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
       outcome1 `shouldBe` OutcomeShutdown
       rewriteRows <- runSession pool $ Q.readGraphRewrites runId
       rewriteId <-
         case rewriteRows of
-          (rid, _, _, _, _) : _ -> pure rid
+          (rid, _, _, _, _, _, _) : _ -> pure rid
           [] -> expectationFailure "Expected persisted rewrite lineage" >> pure 0
       let staleStatuses = Aeson.toJSON (Map.singleton (NodeId "alpha") NodeRewritten)
           staleOutputs =
@@ -4868,6 +5599,7 @@ spec = beforeAll setupTestDb $ do
               , spTopology = toRelation (Vertex (NodeId "alpha"))
               , spDefinitions = visibleDefinitions
               , spTemplateRegistry = mkTemplateRegistry templateDefinitions
+              , spLoopRegistrations = Map.empty
               }
           serializableRewrite =
             Aeson.toJSON $
@@ -4888,6 +5620,7 @@ spec = beforeAll setupTestDb $ do
               , griRejectionReason = Nothing
               , griExceededDimensions = Nothing
               , griCreatedAt = now
+              , griAdmissionMode = "gassed"
               }
       topologyResult <-
         Executor.materializedTopologyForAdmin
@@ -4997,13 +5730,14 @@ spec = beforeAll setupTestDb $ do
                             (\_ state -> pure (Aeson.object ["sub2" Aeson..= state]))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
       outcome1 `shouldBe` OutcomeShutdown
       rewriteRows <- runSession pool $ Q.readGraphRewrites runId
       rewriteId <-
         case rewriteRows of
-          [(rid, _, _, _, _)] -> pure rid
+          [(rid, _, _, _, _, _, _)] -> pure rid
           rows ->
             expectationFailure ("Expected exactly one persisted rewrite, got " <> show (length rows)) >> pure 0
       writeGraphStateCompat
@@ -5052,6 +5786,7 @@ spec = beforeAll setupTestDb $ do
                     Map.singleton
                       (NodeId "alpha")
                       (mkDynLinearStage "alpha" (\_ state -> pure (Aeson.object ["alpha" Aeson..= state])))
+              , spLoopRegistrations = Map.empty
               }
       _ <-
         runTx pool $
@@ -5069,6 +5804,7 @@ spec = beforeAll setupTestDb $ do
               , griRejectionReason = Just "rewrite anchor missing from snapshot"
               , griExceededDimensions = Nothing
               , griCreatedAt = now
+              , griAdmissionMode = "gassed"
               }
       writeGraphStateCompat
         pool
@@ -5127,6 +5863,7 @@ spec = beforeAll setupTestDb $ do
                       ( mkDynStage "alpha" $ \_ ->
                           pure (StageRewrite Aeson.Null (ExpandNode (NodeId "missing-anchor") ExpandReplaceNode rewriteSpec))
                       )
+              , spLoopRegistrations = Map.empty
               }
       outcome <-
         withInjectedRunFailedWriteFailure pool runId $
@@ -5186,6 +5923,7 @@ spec = beforeAll setupTestDb $ do
                         , mkDynLinearStage "beta" (\_ state -> pure (Aeson.object ["beta" Aeson..= state]))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -5267,6 +6005,7 @@ spec = beforeAll setupTestDb $ do
                             pure (StageRewrite Aeson.Null (ExpandNode (NodeId "alpha") ExpandReplaceNode rewriteSpec))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
       outcome1 `shouldBe` OutcomeShutdown
@@ -5368,6 +6107,7 @@ spec = beforeAll setupTestDb $ do
                       , duplicateRegistryA
                       , duplicateRegistryB
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
       outcome1 `shouldBe` OutcomeFailed
@@ -5503,6 +6243,7 @@ spec = beforeAll setupTestDb $ do
                       , sharedTemplateA
                       , sharedTemplateB
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome1 <- executeStagePlan taskContext runId task stagePlan
       outcome1 `shouldBe` OutcomeShutdown
@@ -5622,6 +6363,7 @@ spec = beforeAll setupTestDb $ do
                                 pure (StageRewrite (Aeson.String "alpha-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -5704,6 +6446,7 @@ spec = beforeAll setupTestDb $ do
                 , spTopology = toRelation (edge leftId reviewerId <> edge rightId reviewerId)
                 , spDefinitions = definitions
                 , spTemplateRegistry = mkTemplateRegistry definitions
+                , spLoopRegistrations = Map.empty
                 }
             decodeBudget label = \case
               Just value ->
@@ -5780,6 +6523,7 @@ spec = beforeAll setupTestDb $ do
                             pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -5873,6 +6617,7 @@ spec = beforeAll setupTestDb $ do
                                   )
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted
@@ -5939,6 +6684,7 @@ spec = beforeAll setupTestDb $ do
                             pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeFailed
@@ -5997,6 +6743,7 @@ spec = beforeAll setupTestDb $ do
                             pure (StageRewrite (Aeson.String "stubborn-output") (AppendAfter (NodeId "alpha") rewriteSpec))
                         )
                       ]
+              , spLoopRegistrations = Map.empty
               }
       outcome <- executeStagePlan taskContext runId task stagePlan
       outcome `shouldBe` OutcomeCompleted

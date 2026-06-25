@@ -12,10 +12,12 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 -}
 module Cortex.Pulse.Materialization
   ( PersistedRewrite (..)
+  , PersistedRewriteRow
   , PersistedGraphState (..)
   , NodeProvenanceEntry (..)
   , NodeProvenance
   , applyPlannedRewrite
+  , authorizeWitnessedReplayWithControl
   , computeTopologyHash
   , decodeOptionalJsonValue
   , hydratePersistedRewriteRow
@@ -24,6 +26,9 @@ module Cortex.Pulse.Materialization
   , resolveRewriteDeltaAndCost
   , reconcileGraphState
   , rewriteDeltaSummaryJson
+  , witnessedRewriteDeltaSummaryJson
+  , MaterializationHashMode (..)
+  , materializePlannedRewrite
   , materializeRewrite
   )
 where
@@ -32,6 +37,7 @@ import Control.Monad (when)
 import Crypto.Hash (SHA256, hashlazy)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Types (Pair)
 import Data.Bifunctor (bimap, first)
 import Data.Int (Int64)
 import Data.Map.Strict qualified as Map
@@ -40,6 +46,7 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Numeric.Natural (Natural)
 
 import Cortex.Algebra.Graph
   ( Relation (..)
@@ -53,22 +60,39 @@ import Cortex.Pulse.Hydrate
   , decodeSerializableRewrite
   , hydrateRewrite
   , planRewriteDelta
+  , planRewriteDeltaNamespaced
+  , toSerializableStageDefinition
+  )
+import Cortex.Pulse.Iteration
+  ( EffectiveBound (..)
+  , LoopControl (..)
+  , LoopPolicy (..)
+  , LoopRegistration (..)
+  , LoopStepWitness (..)
+  , authorizeWitnessedStep
+  , authorizeWitnessedStepWithControl
+  , renderWitnessedStepViolation
   )
 import Cortex.Pulse.Memory.Types (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
-  ( StableStageId
+  ( LoopInstanceKey
+  , StableStageId
   , StageAction
   , StageDefinition (..)
   , StagePlan (..)
+  , loopRegistrationForStage
   )
 import Cortex.Pulse.Rewrite
-  ( GraphRewrite (..)
+  ( AdmissionMode (..)
+  , GraphRewrite (..)
   , PlannedRewriteDelta (..)
   , RewriteAnchorDisposition (..)
   , RewriteBudget
   , RewriteCost
+  , admissionModeFromText
   , admitRewriteDelta
+  , admitWitnessedDelta
   , admittedDelta
   , admittedRemainingBudget
   )
@@ -82,8 +106,63 @@ data PersistedRewrite stageId = PersistedRewrite
   , prSourceNodeId :: NodeId
   , prSourceNodeOutput :: Maybe Aeson.Value
   , prRewriteCost :: Maybe RewriteCost
+  , prRewriteDelta :: Maybe Aeson.Value
   , prRewrite :: GraphRewrite NodeId (StageDefinition stageId)
+  , prAdmissionMode :: AdmissionMode
   }
+
+data MaterializationHashMode
+  = UpdateTopologyHash
+  | DeferTopologyHash
+  deriving stock (Eq, Show)
+
+data WitnessedReplayMetadata = WitnessedReplayMetadata
+  { wrmPolicyVersion :: !Int
+  , wrmEffectiveBound :: !EffectiveBound
+  , wrmRemainingBefore :: !Natural
+  , wrmRemainingAfter :: !Natural
+  , wrmStepWitness :: !LoopStepWitness
+  }
+  deriving stock (Eq, Show, Generic)
+
+instance ToJSON WitnessedReplayMetadata where
+  toJSON metadata =
+    Aeson.object
+      [ "policy_version" Aeson..= metadata.wrmPolicyVersion
+      , "effective_bound" Aeson..= metadata.wrmEffectiveBound
+      , "remaining_before" Aeson..= metadata.wrmRemainingBefore
+      , "remaining_after" Aeson..= metadata.wrmRemainingAfter
+      , "step_witness" Aeson..= metadata.wrmStepWitness
+      ]
+
+instance FromJSON WitnessedReplayMetadata where
+  parseJSON =
+    Aeson.withObject "WitnessedReplayMetadata" $ \object ->
+      WitnessedReplayMetadata
+        <$> object Aeson..: "policy_version"
+        <*> object Aeson..: "effective_bound"
+        <*> object Aeson..: "remaining_before"
+        <*> object Aeson..: "remaining_after"
+        <*> object Aeson..: "step_witness"
+
+newtype WitnessedReplayEnvelope = WitnessedReplayEnvelope
+  { wreWitnessedLoopStep :: WitnessedReplayMetadata
+  }
+
+instance FromJSON WitnessedReplayEnvelope where
+  parseJSON =
+    Aeson.withObject "WitnessedReplayEnvelope" $ \object ->
+      WitnessedReplayEnvelope <$> object Aeson..: "witnessed_loop_step"
+
+type PersistedRewriteRow =
+  ( Int64
+  , Text
+  , Maybe Aeson.Value
+  , Maybe Aeson.Value
+  , Maybe Aeson.Value
+  , Aeson.Value
+  , Text
+  )
 
 {- | Per-node provenance entry tracking which rewrite introduced a node.
 Initial plan nodes have 'Nothing' for both fields.
@@ -151,9 +230,17 @@ decodeOptionalJsonValue label = traverse (decodeJsonValue label)
 hydratePersistedRewriteRow
   :: StableStageId stageId
   => StagePlan stageId
-  -> (Int64, Text, Maybe Aeson.Value, Maybe Aeson.Value, Aeson.Value)
+  -> PersistedRewriteRow
   -> Either RewriteError (PersistedRewrite stageId)
-hydratePersistedRewriteRow plan (rewriteId, sourceNodeIdText, sourceNodeOutput, rewriteCostJson, rewriteValue) = do
+hydratePersistedRewriteRow plan row = do
+  let ( rewriteId
+        , sourceNodeIdText
+        , sourceNodeOutput
+        , rewriteCostJson
+        , rewriteDeltaJson
+        , rewriteValue
+        , admissionModeRaw
+        ) = row
   serializableRewrite <- first RewriteHydrationFailed $ decodeSerializableRewrite rewriteValue
   hydratedRewrite <-
     first RewriteHydrationFailed $ hydrateRewrite plan.spTemplateRegistry serializableRewrite
@@ -165,7 +252,9 @@ hydratePersistedRewriteRow plan (rewriteId, sourceNodeIdText, sourceNodeOutput, 
       , prSourceNodeId = NodeId sourceNodeIdText
       , prSourceNodeOutput = sourceNodeOutput
       , prRewriteCost = rewriteCost
+      , prRewriteDelta = rewriteDeltaJson
       , prRewrite = hydratedRewrite
+      , prAdmissionMode = admissionModeFromText admissionModeRaw
       }
 
 {- | Hydrate a rewrite for admin topology materialization only.
@@ -177,9 +266,17 @@ executable template registry. These placeholder actions are never executed.
 -}
 hydratePersistedRewriteRowForAdmin
   :: StableStageId stageId
-  => (Int64, Text, Maybe Aeson.Value, Maybe Aeson.Value, Aeson.Value)
+  => PersistedRewriteRow
   -> Either RewriteError (PersistedRewrite stageId)
-hydratePersistedRewriteRowForAdmin (rewriteId, sourceNodeIdText, sourceNodeOutput, rewriteCostJson, rewriteValue) = do
+hydratePersistedRewriteRowForAdmin row = do
+  let ( rewriteId
+        , sourceNodeIdText
+        , sourceNodeOutput
+        , rewriteCostJson
+        , rewriteDeltaJson
+        , rewriteValue
+        , admissionModeRaw
+        ) = row
   serializableRewrite <- first RewriteHydrationFailed $ decodeSerializableRewrite rewriteValue
   rewriteCost <-
     first RewriteHydrationFailed $ decodeOptionalJsonValue "persisted rewrite cost" rewriteCostJson
@@ -189,7 +286,9 @@ hydratePersistedRewriteRowForAdmin (rewriteId, sourceNodeIdText, sourceNodeOutpu
       , prSourceNodeId = NodeId sourceNodeIdText
       , prSourceNodeOutput = sourceNodeOutput
       , prRewriteCost = rewriteCost
+      , prRewriteDelta = rewriteDeltaJson
       , prRewrite = fmap adminStageDefinition serializableRewrite
+      , prAdmissionMode = admissionModeFromText admissionModeRaw
       }
   where
     adminStageDefinition ssd =
@@ -216,7 +315,12 @@ resolveRewriteDeltaAndCost
   -> StagePlan stageId
   -> Either RewriteError (PlannedRewriteDelta (StageDefinition stageId), RewriteCost)
 resolveRewriteDeltaAndCost persistedRewrite plan = do
-  delta <- first RewriteValidationFailed (planRewriteDelta persistedRewrite.prRewrite plan)
+  -- Witnessed loop-step specs are already flat-namespaced under the loop seed, so
+  -- they must be planned without re-namespacing under the anchor.
+  let planFn = case persistedRewrite.prAdmissionMode of
+        AdmissionWitnessed -> planRewriteDeltaNamespaced
+        AdmissionGassed -> planRewriteDelta
+  delta <- first RewriteValidationFailed (planFn persistedRewrite.prRewrite plan)
   pure (delta, fromMaybe delta.prdCost persistedRewrite.prRewriteCost)
 
 resolveRewriteSourceOutput
@@ -230,19 +334,59 @@ resolveRewriteSourceOutput persistedRewrite gs =
 
 rewriteDeltaSummaryJson :: PlannedRewriteDelta def -> Aeson.Value
 rewriteDeltaSummaryJson delta =
-  Aeson.object
-    [ "anchor_node" Aeson..= unNodeId delta.prdAnchorNode
-    , "anchor_disposition" Aeson..= show delta.prdAnchorDisposition
-    , "new_nodes" Aeson..= fmap unNodeId (Set.toList delta.prdNewNodes)
-    , "removed_nodes" Aeson..= fmap unNodeId (Set.toList delta.prdRemovedNodes)
-    , "added_edges"
-        Aeson..= fmap
-          ( \(fromNode, toNode) -> Aeson.object ["from" Aeson..= unNodeId fromNode, "to" Aeson..= unNodeId toNode]
-          )
-          (Set.toList delta.prdAddedEdges)
-    , "entry_nodes" Aeson..= fmap unNodeId delta.prdEntryNodes
-    , "exit_nodes" Aeson..= fmap unNodeId delta.prdExitNodes
-    ]
+  Aeson.object (rewriteDeltaSummaryFields delta)
+
+witnessedRewriteDeltaSummaryJson
+  :: LoopPolicy
+  -> LoopStepWitness
+  -> LoopControl
+  -> LoopControl
+  -> PlannedRewriteDelta def
+  -> Aeson.Value
+witnessedRewriteDeltaSummaryJson policy witness control nextControl delta =
+  Aeson.object $
+    rewriteDeltaSummaryFields delta
+      <> [ "witnessed_loop_step"
+             Aeson..= WitnessedReplayMetadata
+               { wrmPolicyVersion = lpPolicyVersion policy
+               , wrmEffectiveBound = lcEffectiveBound control
+               , wrmRemainingBefore = lcRemainingIterations control
+               , wrmRemainingAfter = lcRemainingIterations nextControl
+               , wrmStepWitness = witness
+               }
+         ]
+
+rewriteDeltaSummaryFields :: PlannedRewriteDelta def -> [Pair]
+rewriteDeltaSummaryFields delta =
+  [ "anchor_node" Aeson..= unNodeId delta.prdAnchorNode
+  , "anchor_disposition" Aeson..= show delta.prdAnchorDisposition
+  , "new_nodes" Aeson..= fmap unNodeId (Set.toList delta.prdNewNodes)
+  , "removed_nodes" Aeson..= fmap unNodeId (Set.toList delta.prdRemovedNodes)
+  , "added_edges"
+      Aeson..= fmap
+        ( \(fromNode, toNode) -> Aeson.object ["from" Aeson..= unNodeId fromNode, "to" Aeson..= unNodeId toNode]
+        )
+        (Set.toList delta.prdAddedEdges)
+  , "entry_nodes" Aeson..= fmap unNodeId delta.prdEntryNodes
+  , "exit_nodes" Aeson..= fmap unNodeId delta.prdExitNodes
+  ]
+
+decodeWitnessedReplayMetadata
+  :: PersistedRewrite stageId -> Either RewriteError WitnessedReplayMetadata
+decodeWitnessedReplayMetadata persistedRewrite =
+  case persistedRewrite.prRewriteDelta of
+    Nothing ->
+      Left . RewriteHydrationFailed $
+        "Witnessed rewrite "
+          <> T.pack (show persistedRewrite.prRewriteId)
+          <> " is missing persisted witnessed replay metadata"
+    Just rewriteDeltaJson -> do
+      let decodedEnvelope :: Either Text WitnessedReplayEnvelope
+          decodedEnvelope =
+            decodeJsonValue "persisted witnessed replay metadata" rewriteDeltaJson
+      envelope <-
+        first RewriteHydrationFailed decodedEnvelope
+      pure envelope.wreWitnessedLoopStep
 
 reconcileGraphState
   :: Relation NodeId
@@ -266,17 +410,168 @@ reconcileGraphState topology gs =
                     <> Map.fromSet (const NodePending) missingNodes
               }
 
+{- | Re-run the static witnessed-admission gate on a persisted rewrite row.
+This private helper is used only by 'materializeRewrite' after live admission or
+after resume has already run 'authorizeWitnessedReplayWithControl'. The producer
+is the persisted @source_node_id@ (NOT the rewrite's own anchor), so the
+self-append check verifies the rewrite anchor matches the stored producer.
+Authorization keys on that producer's registered loop template; an unregistered
+producer is rejected.
+-}
+authorizeWitnessedReplay
+  :: Aeson.ToJSON stageId
+  => StagePlan stageId
+  -> PersistedRewrite stageId
+  -> PlannedRewriteDelta (StageDefinition stageId)
+  -> Either RewriteError ()
+authorizeWitnessedReplay stagePlan persistedRewrite delta = do
+  (producer, _templateId, policy) <- witnessedReplayPolicy stagePlan persistedRewrite
+  metadata <- decodeWitnessedReplayMetadata persistedRewrite
+  when (metadata.wrmPolicyVersion /= lpPolicyVersion policy) $
+    Left
+      (RewriteHydrationFailed (witnessedPolicyVersionMismatchMessage persistedRewrite policy metadata))
+  let serializableRewrite = fmap toSerializableStageDefinition persistedRewrite.prRewrite
+  first (RewriteHydrationFailed . renderWitnessedStepViolation) $
+    authorizeWitnessedStep policy producer metadata.wrmStepWitness serializableRewrite delta.prdCost
+
+{- | Control-aware replay validation for witnessed rows. This is used by resume
+when reconstructing topology from persisted lineage. It verifies that the row's
+admitted replay metadata matches the reconstructed run-local loop control, then
+advances that control exactly once.
+-}
+authorizeWitnessedReplayWithControl
+  :: Aeson.ToJSON stageId
+  => StagePlan stageId
+  -> PersistedRewrite stageId
+  -> PlannedRewriteDelta (StageDefinition stageId)
+  -> Map.Map LoopInstanceKey LoopControl
+  -> Either RewriteError (Map.Map LoopInstanceKey LoopControl)
+authorizeWitnessedReplayWithControl stagePlan persistedRewrite delta controls = do
+  (producer, loopKey, policy) <- witnessedReplayPolicy stagePlan persistedRewrite
+  control <-
+    maybe
+      ( Left . RewriteHydrationFailed $
+          "Witnessed rewrite at producer "
+            <> unNodeId producer
+            <> " has no reconstructed loop control for template "
+            <> T.pack (show loopKey)
+      )
+      Right
+      (Map.lookup loopKey controls)
+  metadata <- decodeWitnessedReplayMetadata persistedRewrite
+  when (metadata.wrmPolicyVersion /= lpPolicyVersion policy) $
+    Left
+      (RewriteHydrationFailed (witnessedPolicyVersionMismatchMessage persistedRewrite policy metadata))
+  when (metadata.wrmEffectiveBound /= lcEffectiveBound control) $
+    Left
+      ( RewriteHydrationFailed $
+          witnessedControlMismatchMessage
+            persistedRewrite
+            "effective_bound"
+            (Aeson.toJSON (lcEffectiveBound control))
+            (Aeson.toJSON metadata.wrmEffectiveBound)
+      )
+  when (metadata.wrmRemainingBefore /= lcRemainingIterations control) $
+    Left
+      ( RewriteHydrationFailed $
+          witnessedControlMismatchMessage
+            persistedRewrite
+            "remaining_before"
+            (Aeson.toJSON (lcRemainingIterations control))
+            (Aeson.toJSON metadata.wrmRemainingBefore)
+      )
+  let serializableRewrite = fmap toSerializableStageDefinition persistedRewrite.prRewrite
+  nextControl <-
+    first (RewriteHydrationFailed . renderWitnessedStepViolation) $
+      authorizeWitnessedStepWithControl
+        policy
+        control
+        producer
+        metadata.wrmStepWitness
+        persistedRewrite.prSourceNodeOutput
+        serializableRewrite
+        delta.prdCost
+  when (metadata.wrmRemainingAfter /= lcRemainingIterations nextControl) $
+    Left
+      ( RewriteHydrationFailed $
+          witnessedControlMismatchMessage
+            persistedRewrite
+            "remaining_after"
+            (Aeson.toJSON (lcRemainingIterations nextControl))
+            (Aeson.toJSON metadata.wrmRemainingAfter)
+      )
+  pure (Map.insert loopKey nextControl controls)
+
+witnessedReplayPolicy
+  :: StagePlan stageId
+  -> PersistedRewrite stageId
+  -> Either RewriteError (NodeId, LoopInstanceKey, LoopPolicy)
+witnessedReplayPolicy stagePlan persistedRewrite = do
+  let producer = persistedRewrite.prSourceNodeId
+  case Map.lookup producer stagePlan.spDefinitions of
+    Just producerDef
+      | Just (loopKey, registration) <- loopRegistrationForStage stagePlan producerDef.sdTemplateId producer ->
+          Right (producer, loopKey, registration.lrPolicy)
+    _ ->
+      Left . RewriteHydrationFailed $
+        "Witnessed rewrite at producer " <> unNodeId producer <> " is not an authorized loop kernel"
+
+witnessedPolicyVersionMismatchMessage
+  :: PersistedRewrite stageId -> LoopPolicy -> WitnessedReplayMetadata -> Text
+witnessedPolicyVersionMismatchMessage persistedRewrite policy metadata =
+  "Witnessed rewrite "
+    <> T.pack (show persistedRewrite.prRewriteId)
+    <> " was admitted with loop policy version "
+    <> T.pack (show metadata.wrmPolicyVersion)
+    <> " but the registered policy is version "
+    <> T.pack (show (lpPolicyVersion policy))
+
+witnessedControlMismatchMessage
+  :: PersistedRewrite stageId -> Text -> Aeson.Value -> Aeson.Value -> Text
+witnessedControlMismatchMessage persistedRewrite field expected actual =
+  "Witnessed rewrite "
+    <> T.pack (show persistedRewrite.prRewriteId)
+    <> " replay metadata field "
+    <> field
+    <> " does not match reconstructed loop control (expected "
+    <> T.pack (show expected)
+    <> ", got "
+    <> T.pack (show actual)
+    <> ")"
+
 materializeRewrite
-  :: Eq stageId
+  :: (Aeson.ToJSON stageId, Eq stageId)
   => PersistedRewrite stageId
   -> StagePlan stageId
   -> PersistedGraphState
   -> Either RewriteError (StagePlan stageId, PersistedGraphState)
 materializeRewrite persistedRewrite stagePlan persistedState = do
   (delta, _rewriteCost) <- resolveRewriteDeltaAndCost persistedRewrite stagePlan
-  admitted <-
-    first RewriteBudgetExhausted $
-      admitRewriteDelta persistedState.pgsRemainingRewriteBudget delta
+  materializePlannedRewrite UpdateTopologyHash True persistedRewrite delta stagePlan persistedState
+
+materializePlannedRewrite
+  :: Aeson.ToJSON stageId
+  => MaterializationHashMode
+  -> Bool
+  -> PersistedRewrite stageId
+  -> PlannedRewriteDelta (StageDefinition stageId)
+  -> StagePlan stageId
+  -> PersistedGraphState
+  -> Either RewriteError (StagePlan stageId, PersistedGraphState)
+materializePlannedRewrite hashMode validateWitnessed persistedRewrite delta stagePlan persistedState = do
+  -- Witnessed self-append steps are gas-neutral: the cost is recorded but does
+  -- not gate, so the remaining rewrite budget is left unchanged on replay.
+  admitted <- case persistedRewrite.prAdmissionMode of
+    AdmissionWitnessed -> do
+      -- Re-validate witnessed rows on replay; never trust the stored admission
+      -- tag. A row that fails the same security gate as the live path is
+      -- rejected, not admitted gas-neutral.
+      when validateWitnessed $
+        authorizeWitnessedReplay stagePlan persistedRewrite delta
+      Right (admitWitnessedDelta persistedState.pgsRemainingRewriteBudget delta)
+    AdmissionGassed ->
+      first RewriteBudgetExhausted $
+        admitRewriteDelta persistedState.pgsRemainingRewriteBudget delta
   let admDelta = admittedDelta admitted
       gs = persistedState.pgsGraphState
       sourceOutput = resolveRewriteSourceOutput persistedRewrite gs
@@ -320,6 +615,9 @@ materializeRewrite persistedRewrite stagePlan persistedState = do
           , pgsRemainingRewriteBudget = admittedRemainingBudget admitted
           , pgsAppliedRewriteId = Just persistedRewrite.prRewriteId
           , pgsNodeProvenance = updatedProvenance
-          , pgsTopologyHash = Just (computeTopologyHash stagePlan'.spTopology)
+          , pgsTopologyHash =
+              case hashMode of
+                UpdateTopologyHash -> Just (computeTopologyHash stagePlan'.spTopology)
+                DeferTopologyHash -> persistedState.pgsTopologyHash
           }
   pure (stagePlan', persistedState')

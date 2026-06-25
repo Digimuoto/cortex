@@ -54,16 +54,20 @@ import Cortex.Pulse.GraphRuntime
   , renderRecoveryPreconditionErrors
   , stepResultState
   )
+import Cortex.Pulse.Iteration (LoopControl)
 import Cortex.Pulse.Materialization
-  ( NodeProvenance
+  ( MaterializationHashMode (..)
+  , NodeProvenance
   , PersistedGraphState (..)
+  , PersistedRewrite (..)
   , applyPlannedRewrite
+  , authorizeWitnessedReplayWithControl
   , computeTopologyHash
   , decodeOptionalJsonValue
   , hydratePersistedRewriteRow
   , hydratePersistedRewriteRowForAdmin
   , initialProvenance
-  , materializeRewrite
+  , materializePlannedRewrite
   , reconcileGraphState
   , resolveRewriteDeltaAndCost
   )
@@ -75,7 +79,12 @@ import Cortex.Pulse.PlanHydration
   , rewriteErrorType
   )
 import Cortex.Pulse.Query qualified as Q
-import Cortex.Pulse.Rewrite (admitRewriteDelta, admittedDelta, admittedRemainingBudget)
+import Cortex.Pulse.Rewrite
+  ( AdmissionMode (..)
+  , admitRewriteDelta
+  , admittedDelta
+  , admittedRemainingBudget
+  )
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
 import Cortex.Pulse.Types (PulseConfig)
 
@@ -129,7 +138,12 @@ resumeFromPersistedState
   -> PulseTaskDefinitionRow Result
   -> StagePlan stageId
   -> Q.PulseGraphStateSnapshot
-  -> (StagePlan stageId -> PersistedGraphState -> [NodeId] -> IO RunOutcome)
+  -> ( StagePlan stageId
+       -> PersistedGraphState
+       -> Map.Map LoopInstanceKey LoopControl
+       -> [NodeId]
+       -> IO RunOutcome
+     )
   -> IO RunOutcome
 resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePlan persistedSnapshot continueWithResumedState = do
   let expectedRuntimeVersion = initialStagePlan.spCheckpointRuntimeVersion
@@ -141,17 +155,30 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
        ) of
     (Right rewriteRows, Aeson.Success statuses, Aeson.Success outputs) -> do
       let watermark = fromMaybe 0 persistedSnapshot.pgssAppliedRewriteId
-          (materializedRows, pendingRows) = span (\(rewriteId, _, _, _, _) -> rewriteId <= watermark) rewriteRows
-          applyOne (plan, remainingBudget) rewriteRow = do
+          (materializedRows, pendingRows) = span (\(rewriteId, _, _, _, _, _, _) -> rewriteId <= watermark) rewriteRows
+          applyOne (plan, remainingBudget, loopControls) rewriteRow = do
             persistedRewrite <- hydratePersistedRewriteRow plan rewriteRow
             (delta, _rewriteCost) <- resolveRewriteDeltaAndCost persistedRewrite plan
-            admitted <-
-              first RewriteBudgetExhausted $
-                admitRewriteDelta remainingBudget delta
-            pure (applyPlannedRewrite (admittedDelta admitted) plan, admittedRemainingBudget admitted)
-      case foldM applyOne (initialStagePlan, initialStagePlan.spInitialRewriteBudget) materializedRows of
+            case persistedRewrite.prAdmissionMode of
+              -- Witnessed self-append steps replay gas-neutral, but are re-run
+              -- through the same authorization gate as the live/pending paths so a
+              -- mislabeled or invalid pre-watermark row cannot reconstruct
+              -- unauthorized topology on resume.
+              AdmissionWitnessed -> do
+                loopControls' <- authorizeWitnessedReplayWithControl plan persistedRewrite delta loopControls
+                pure (applyPlannedRewrite delta plan, remainingBudget, loopControls')
+              AdmissionGassed -> do
+                admitted <-
+                  first RewriteBudgetExhausted $
+                    admitRewriteDelta remainingBudget delta
+                pure
+                  (applyPlannedRewrite (admittedDelta admitted) plan, admittedRemainingBudget admitted, loopControls)
+      case foldM
+        applyOne
+        (initialStagePlan, initialStagePlan.spInitialRewriteBudget, initialLoopControls initialStagePlan)
+        materializedRows of
         Left rewriteErr -> failResume (rewriteErrorType rewriteErr) (renderRewriteError rewriteErr)
-        Right (materializedStagePlan, reconstructedRemainingBudget) -> do
+        Right (materializedStagePlan, reconstructedRemainingBudget, materializedLoopControls) -> do
           let versionOk = case persistedSnapshot.pgssRuntimeVersion of
                 Just rv -> fromIntegral rv == expectedRuntimeVersion
                 Nothing -> True
@@ -199,12 +226,29 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                     Left rewriteErr -> failResume (rewriteErrorType rewriteErr) (renderRewriteError rewriteErr)
                     Right gsReconciled -> do
                       let reconciledState = persistedState0 {pgsGraphState = gsReconciled}
-                          materializePending (plan, persistedState) rewriteRow = do
+                          materializePending (plan, persistedState, loopControls) rewriteRow = do
                             persistedRewrite <- hydratePersistedRewriteRow plan rewriteRow
-                            materializeRewrite persistedRewrite plan persistedState
-                      case foldM materializePending (materializedStagePlan, reconciledState) pendingRows of
+                            (delta, _rewriteCost) <- resolveRewriteDeltaAndCost persistedRewrite plan
+                            loopControls' <- case persistedRewrite.prAdmissionMode of
+                              AdmissionWitnessed ->
+                                authorizeWitnessedReplayWithControl plan persistedRewrite delta loopControls
+                              AdmissionGassed ->
+                                Right loopControls
+                            (plan', persistedState') <-
+                              materializePlannedRewrite
+                                DeferTopologyHash
+                                False
+                                persistedRewrite
+                                delta
+                                plan
+                                persistedState
+                            pure (plan', persistedState', loopControls')
+                      case foldM
+                        materializePending
+                        (materializedStagePlan, reconciledState, materializedLoopControls)
+                        pendingRows of
                         Left rewriteErr -> failResume (rewriteErrorType rewriteErr) (renderRewriteError rewriteErr)
-                        Right (stagePlan, materializedState) -> do
+                        Right (stagePlan, materializedState, loopControls) -> do
                           -- The env built here is only used for
                           -- 'requireGraphStatePersist' below; the
                           -- memory factory is driven from transient
@@ -212,17 +256,21 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                           -- The real memory handle is constructed by
                           -- the 'continueWithResumedState' callback
                           -- against its own TVars.
-                          transientGs <- newTVarIO materializedState
+                          let expectedHash = computeTopologyHash (spTopology stagePlan)
+                              materializedStateWithHash =
+                                materializedState {pgsTopologyHash = Just expectedHash}
+                          transientGs <- newTVarIO materializedStateWithHash
                           transientCompletedAt <- newTVarIO Map.empty
                           transientTopology <- newTVarIO (spTopology stagePlan)
+                          transientLoopControls <- newTVarIO loopControls
                           let transientTVars =
                                 RunTVars
                                   { rvGsVar = transientGs
                                   , rvNodeCompletedAtVar = transientCompletedAt
                                   , rvTopologyVar = transientTopology
+                                  , rvLoopControlsVar = transientLoopControls
                                   }
                               env = mkStageEnv pool pulseConfig shutdownFlag runId task stagePlan transientTVars
-                              expectedHash = computeTopologyHash (spTopology stagePlan)
                           -- Compare against the DB-persisted hash, not the replayed
                           -- materializedState hash (which was recomputed during replay
                           -- and would always match).
@@ -231,7 +279,7 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                               | dbHash /= expectedHash ->
                                   emitObsEvent $ EvtResumeIntegrityMismatch runId expectedHash dbHash
                             _ -> pure ()
-                          gs1 <- resolveDeliveredSignals pool runId materializedState.pgsGraphState
+                          gs1 <- resolveDeliveredSignals pool runId materializedStateWithHash.pgsGraphState
                           case recoverPersistedGraphState (spTopology stagePlan) gs1 of
                             Left validationErrors ->
                               failResume
@@ -239,7 +287,7 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                                 (renderRecoveryPreconditionErrors validationErrors)
                             Right recoveryStep -> do
                               let persistedState =
-                                    materializedState
+                                    materializedStateWithHash
                                       { pgsGraphState = stepResultState recoveryStep
                                       }
                               if persistedState /= persistedState0
@@ -247,9 +295,9 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                                   persistFailed <- requireGraphStatePersist env persistedState
                                   case persistFailed of
                                     Left outcome -> pure outcome
-                                    Right persistedState' -> continueAfterRecovery env stagePlan persistedState' recoveryStep
+                                    Right persistedState' -> continueAfterRecovery env stagePlan loopControls persistedState' recoveryStep
                                 else
-                                  continueAfterRecovery env stagePlan persistedState recoveryStep
+                                  continueAfterRecovery env stagePlan loopControls persistedState recoveryStep
     _ ->
       failResume
         "graph_state_parse_failed"
@@ -261,16 +309,16 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
       failRun pool runId now errType errMsg True
       pure OutcomeFailed
 
-    continueAfterReplay stagePlan persistedState frontier = do
+    continueAfterReplay stagePlan loopControls persistedState frontier = do
       blocked <- enforceGraphReplayPolicy pool runId stagePlan frontier
       case blocked of
         Just outcome -> pure outcome
-        Nothing -> continueWithResumedState stagePlan persistedState frontier
+        Nothing -> continueWithResumedState stagePlan persistedState loopControls frontier
 
-    continueAfterRecovery env stagePlan persistedState recoveryStep = do
+    continueAfterRecovery env stagePlan loopControls persistedState recoveryStep = do
       emitObsEvent $ EvtResumeGraph runId
       case recoveryStep of
-        Progressing _ frontier -> continueAfterReplay stagePlan persistedState frontier
+        Progressing _ frontier -> continueAfterReplay stagePlan loopControls persistedState frontier
         Settled gs outcome -> handleSettled env gs outcome
         Suspended _gs -> do
           settlement <- settleSuspend env persistedState
@@ -291,6 +339,7 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
               continueAfterRecovery
                 env
                 stagePlan
+                loopControls
                 persistedState'
                 (classifyGraphState (spTopology stagePlan) persistedState'.pgsGraphState)
         Stuck gs diag -> handleStuck env runId gs diag

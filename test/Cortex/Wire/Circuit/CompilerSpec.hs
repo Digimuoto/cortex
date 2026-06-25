@@ -307,6 +307,8 @@ spec = do
           expectationFailure "Expected selected branch StageRewrite, got suspension."
         StageRejectRewrite {} ->
           expectationFailure "Expected selected branch StageRewrite, got rewrite rejection."
+        StageLoopStep {} ->
+          expectationFailure "Expected selected branch StageRewrite, got loop step."
 
     it "completes without a rewrite when the implicit else branch is selected" $ do
       compiled <- requireCompiled sampleCircuitIR

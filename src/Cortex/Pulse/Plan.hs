@@ -26,7 +26,10 @@ module Cortex.Pulse.Plan
   , StageLatentDeltaSignature (..)
   , StageLatentBranch (..)
   , StageLatentCondition (..)
+  , LoopInstanceKey (..)
   , StagePlan (..)
+  , initialLoopControls
+  , loopRegistrationForStage
   , SomeStagePlan (..)
   , StageDefinition (..)
   , StageReplaySafety (..)
@@ -45,6 +48,7 @@ where
 import Control.Exception (SomeException)
 import Data.Aeson qualified as Aeson
 import Data.Int (Int32)
+import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
@@ -59,6 +63,14 @@ import Cortex.Algebra.Graph
   , path
   , toRelation
   , validateDAG
+  )
+import Cortex.Pulse.Iteration
+  ( LoopControl
+  , LoopPolicy (..)
+  , LoopRegistration (..)
+  , LoopStepWitness
+  , initLoopControl
+  , loopProducerMatchesPolicy
   )
 import Cortex.Pulse.Memory.Types (MemoryHandle, MemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
@@ -85,6 +97,13 @@ data StageResult stageId
   | StageSuspend SignalName
   | StageRewrite Aeson.Value (GraphRewrite NodeId (StageDefinition stageId))
   | StageRejectRewrite Aeson.Value StageRejectedRewrite
+  | {- | A runtime-bounded-iteration self-append step (ADR 0055). Carries the
+    stage output, the live frontier witness to certify, and the @AppendAfter@ of
+    the next, already-flat-namespaced kernel instance. Distinct from
+    'StageRewrite' so the executor admits it gas-neutral (witnessed, ADR 0056)
+    rather than against rewrite gas.
+    -}
+    StageLoopStep Aeson.Value LoopStepWitness (GraphRewrite NodeId (StageDefinition stageId))
 
 -- | Execution context provided to every stage action.
 data StageContext = StageContext
@@ -282,6 +301,17 @@ data StageLatentCondition = StageLatentCondition
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
+{- | A runtime-bounded loop instance is identified by the finite kernel template
+and the flat namespace root that owns its materialized iterations. Multiple loop
+nodes may reuse the same kernel template as long as they have distinct roots.
+-}
+data LoopInstanceKey = LoopInstanceKey
+  { likTemplateId :: !StageTemplateId
+  , likNamespaceRoot :: !NodeId
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
 -- | What to do when a node exhausts its re-execution attempts after budget rejection.
 data RewriteExhaustionPolicy
   = -- | Hard fail after max re-executions (default, backward compat)
@@ -302,7 +332,34 @@ data StagePlan stageId = StagePlan
   , spTopology :: Relation NodeId
   , spDefinitions :: Map NodeId (StageDefinition stageId)
   , spTemplateRegistry :: Map StageTemplateId (StageDefinition stageId)
+  , spLoopRegistrations :: Map LoopInstanceKey LoopRegistration
+  {- ^ Loop kernels authorized for witnessed (gas-neutral) self-append in this
+  run (ADR 0055), keyed by the kernel's 'StageTemplateId' plus namespace root.
+  Each registration carries both the static policy and the admitted effective
+  bound. A 'StageLoopStep' whose producer template/namespace pair is not
+  registered here is admitted on the ordinary gassed path instead (fail-closed).
+  Empty authorizes no loops.
+  -}
   }
+
+initialLoopControls :: StagePlan stageId -> Map LoopInstanceKey LoopControl
+initialLoopControls stagePlan =
+  fmap
+    (\registration -> initLoopControl registration.lrPolicy registration.lrEffectiveBound)
+    stagePlan.spLoopRegistrations
+
+loopRegistrationForStage
+  :: StagePlan stageId
+  -> StageTemplateId
+  -> NodeId
+  -> Maybe (LoopInstanceKey, LoopRegistration)
+loopRegistrationForStage stagePlan templateId producer =
+  List.find matches (Map.toList stagePlan.spLoopRegistrations)
+  where
+    matches (key, registration) =
+      key.likTemplateId == templateId
+        && key.likNamespaceRoot == registration.lrPolicy.lpNamespaceRoot
+        && loopProducerMatchesPolicy registration.lrPolicy producer
 
 data SomeStagePlan where
   SomeStagePlan
@@ -346,6 +403,7 @@ mkLinearStagePlan stages initialState runtimeVersion replayPolicy rewriteBudget 
                   , spTopology = topology
                   , spDefinitions = definitions
                   , spTemplateRegistry = templateRegistry
+                  , spLoopRegistrations = Map.empty
                   }
 
 buildStageTemplateRegistry

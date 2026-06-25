@@ -18,6 +18,8 @@ Consultable normative material for the Pulse runtime. Architectural framing live
   attempt log, run events, signals.
 - **[types.md](types.md)** — task envelope, checkpoint envelope, stage plan, retry policy, memory
   strategy, stage result.
+- **[runtime-bounded-iteration.md](runtime-bounded-iteration.md)** — evidence matrix and runnable
+  examples for ADR 0055 witnessed self-append iteration.
 - **[service-api.md](service-api.md)** — inbound HTTP endpoints, authentication, idempotency,
   cancellation protocol, error taxonomy.
 - **[host-actions.md](host-actions.md)** — outbound contract for Pulse → host callouts.

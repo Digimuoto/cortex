@@ -332,6 +332,7 @@ showStageResult = \case
   StageComplete {} -> "StageComplete"
   StageSuspend {} -> "StageSuspend"
   StageRewrite {} -> "StageRewrite"
+  StageLoopStep {} -> "StageLoopStep"
   StageRejectRewrite {} -> "StageRejectRewrite"
 
 num :: Scientific -> CorePureExpr

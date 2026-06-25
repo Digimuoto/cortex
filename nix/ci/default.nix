@@ -131,6 +131,34 @@
         touch "$out"
       '';
 
+    check-runtime-iteration-wire-example = pkgs.writeShellApplication {
+      name = "check-runtime-iteration-wire-example";
+      runtimeInputs = [
+        pkgs.python3
+        config.packages.wire
+      ];
+      text = ''
+        set -euo pipefail
+        export WIRE_BIN="${config.packages.wire}/bin/wire"
+        exec scripts/check-runtime-iteration-wire-example
+      '';
+    };
+
+    check-runtime-iteration-wire-example-flake =
+      pkgs.runCommand "check-runtime-iteration-wire-example" {
+        nativeBuildInputs = [
+          pkgs.python3
+        ];
+      } ''
+        set -euo pipefail
+        cp -R ${../..} repo
+        chmod -R u+w repo
+        cd repo
+        WIRE_BIN=${config.packages.wire}/bin/wire \
+          ${pkgs.bash}/bin/bash scripts/check-runtime-iteration-wire-example
+        touch "$out"
+      '';
+
     check-theory = pkgs.writeShellApplication {
       name = "check-theory";
       runtimeInputs = [pkgs.nix];
@@ -167,6 +195,7 @@
         docs-lint
         check-doc-wire-examples
         check-wire-style
+        check-runtime-iteration-wire-example
         lean-lint
         lint-haskell
         check-theory
@@ -216,15 +245,19 @@
         check-doc-wire-examples
         echo
 
-        echo "Step 11: Lean theory"
+        echo "Step 11: runtime iteration Wire example"
+        check-runtime-iteration-wire-example
+        echo
+
+        echo "Step 12: Lean theory"
         check-theory
         echo
 
-        echo "Step 12: TLA+ protocol model"
+        echo "Step 13: TLA+ protocol model"
         check-tla
         echo
 
-        echo "Step 13: flake checks"
+        echo "Step 14: flake checks"
         nix flake check --print-build-logs
       '';
     };
@@ -239,6 +272,7 @@
       check-language-pragmas = check-language-pragmas;
       check-module-haddock = check-module-haddock;
       check-doc-wire-examples = check-doc-wire-examples;
+      check-runtime-iteration-wire-example = check-runtime-iteration-wire-example;
       check-wire-style = check-wire-style;
       docs-lint = docs-lint;
       lean-lint = lean-lint;
@@ -247,6 +281,7 @@
 
     checks = {
       doc-wire-examples = check-doc-wire-examples-flake;
+      runtime-iteration-wire-example = check-runtime-iteration-wire-example-flake;
       tla-protocol = check-tla-flake;
     };
 
@@ -303,6 +338,12 @@
         type = "app";
         program = "${check-wire-style}/bin/check-wire-style";
         meta.description = "Reject non-canonical Wire source layout";
+      };
+
+      check-runtime-iteration-wire-example = {
+        type = "app";
+        program = "${check-runtime-iteration-wire-example}/bin/check-runtime-iteration-wire-example";
+        meta.description = "Run the runtime-bounded iteration Wire provisioning example check";
       };
 
       _ci-check = {

@@ -39,11 +39,17 @@ import Data.UUID (UUID)
 import Rel8 (Result)
 
 import Cortex.Algebra.Graph (Relation)
+import Cortex.Pulse.Iteration (LoopControl)
 import Cortex.Pulse.Materialization (PersistedGraphState, PersistedRewrite)
 import Cortex.Pulse.Memory (captureMemorySnapshot, newMemoryHandle)
 import Cortex.Pulse.Memory.Types (MemoryHandle)
 import Cortex.Pulse.Node (NodeId)
-import Cortex.Pulse.Plan (StageDefinition, StagePlan (..), StageRetryFailureContext)
+import Cortex.Pulse.Plan
+  ( LoopInstanceKey
+  , StageDefinition
+  , StagePlan (..)
+  , StageRetryFailureContext
+  )
 import Cortex.Pulse.Query (GraphRewriteInsert)
 import Cortex.Pulse.Rewrite (RewriteBudget, RewriteRejectionContext)
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
@@ -121,6 +127,11 @@ data RunTVars = RunTVars
    relation itself.  Updated by 'Cortex.Pulse.Executor.Loop' when
    a rewrite is admitted.
   -}
+  , rvLoopControlsVar :: TVar (Map LoopInstanceKey LoopControl)
+  {- ^ Run-local control carriers for witnessed runtime-bounded loops. Updated
+   when a loop self-append row is admitted and reconstructed from witnessed
+   lineage on resume.
+  -}
   }
 
 data StageEnv = StageEnv
@@ -148,6 +159,8 @@ data StageEnv = StageEnv
   -}
   , seTopologyVar :: TVar (Relation NodeId)
   -- ^ Projection of 'RunTVars.rvTopologyVar' for the loop layer.
+  , seLoopControlsVar :: TVar (Map LoopInstanceKey LoopControl)
+  -- ^ Projection of 'RunTVars.rvLoopControlsVar' for witnessed loop admission.
   }
 
 mkStageEnv
@@ -173,6 +186,7 @@ mkStageEnv pool config shutdownFlag runId task stagePlan tvars =
           <$> captureMemorySnapshot tvars.rvGsVar tvars.rvNodeCompletedAtVar tvars.rvTopologyVar
     , seNodeCompletedAtVar = tvars.rvNodeCompletedAtVar
     , seTopologyVar = tvars.rvTopologyVar
+    , seLoopControlsVar = tvars.rvLoopControlsVar
     }
 
 isWorkerCancellation :: SomeException -> Bool

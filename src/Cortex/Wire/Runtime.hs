@@ -158,6 +158,9 @@ wrapWireStageResult maybeRegistry producer runId ports = \case
     StageComplete <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
   StageRewrite outputValue rewrite ->
     (`StageRewrite` rewrite) <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
+  StageLoopStep outputValue witness rewrite ->
+    (\wrapped -> StageLoopStep wrapped witness rewrite)
+      <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
   StageRejectRewrite outputValue rejectedRewrite ->
     (`StageRejectRewrite` rejectedRewrite)
       <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue

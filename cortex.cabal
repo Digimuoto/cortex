@@ -166,6 +166,7 @@ library
         Cortex.Pulse.Frontier
         Cortex.Pulse.GraphStateRevision
         Cortex.Pulse.Hydrate
+        Cortex.Pulse.Iteration
         Cortex.Pulse.Materialize
         Cortex.Pulse.Outcome
         Cortex.Pulse.Persistence
@@ -384,6 +385,7 @@ test-suite cortex-test
         Cortex.Pulse.Executor.EventsSpec
         Cortex.Pulse.ExecutorSpec
         Cortex.Pulse.GraphRewriteSpec
+        Cortex.Pulse.IterationSpec
         Cortex.Pulse.MemoryIntegrationSpec
         Cortex.Pulse.MemorySpec
         Cortex.Pulse.MemoryToolSpec

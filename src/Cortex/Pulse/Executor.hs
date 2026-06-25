@@ -151,11 +151,13 @@ executeStagePlan taskContext runId task stagePlan = do
       gsVar <- newTVarIO initialPersistedState
       nodeCompletedAtVar <- newTVarIO Map.empty
       topologyVar <- newTVarIO stagePlan.spTopology
+      loopControlsVar <- newTVarIO (initialLoopControls stagePlan)
       let tvars =
             RunTVars
               { rvGsVar = gsVar
               , rvNodeCompletedAtVar = nodeCompletedAtVar
               , rvTopologyVar = topologyVar
+              , rvLoopControlsVar = loopControlsVar
               }
           env =
             mkStageEnv
@@ -199,7 +201,7 @@ resumeStagePlan taskContext runId task stagePlan = do
         task
         stagePlan
         row
-        ( \resumedPlan persistedState _frontier -> do
+        ( \resumedPlan persistedState loopControls _frontier -> do
             gsVar <- newTVarIO persistedState
             -- Repopulate per-node completion timestamps from
             -- pulse.stage_log so the topological-memory temporal
@@ -211,11 +213,13 @@ resumeStagePlan taskContext runId task stagePlan = do
             hydratedCompletedAt <- hydrateNodeCompletedAtVar taskContext.tcPool runId
             nodeCompletedAtVar <- newTVarIO hydratedCompletedAt
             topologyVar <- newTVarIO resumedPlan.spTopology
+            loopControlsVar <- newTVarIO loopControls
             let tvars =
                   RunTVars
                     { rvGsVar = gsVar
                     , rvNodeCompletedAtVar = nodeCompletedAtVar
                     , rvTopologyVar = topologyVar
+                    , rvLoopControlsVar = loopControlsVar
                     }
             runGraphPlan
               taskContext.tcPool

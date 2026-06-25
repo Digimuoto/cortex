@@ -3529,6 +3529,22 @@ spec = describe "Cortex.Wire.Compile" $ do
       successors compiled.compiledCircuitTopology (Set.findMin gatherPhantoms)
         `shouldBe` Set.singleton (CircuitNodeRef "reduce_findings")
 
+    it "runtime-bounded iteration Wire example: compiles the paginated ingest kernel" $ do
+      source <- TIO.readFile "examples/wire/runtime-bounded-paginated-ingest/page-kernel.wire"
+      compiled <- requireRight (compileWireText source)
+      Set.fromList compiled.compiledCircuitEntryNodes
+        `shouldBe` Set.singleton (CircuitNodeRef "page_kernel")
+      Set.fromList compiled.compiledCircuitExitNodes
+        `shouldBe` Set.singleton (CircuitNodeRef "page_kernel")
+      case Map.lookup (CircuitNodeRef "page_kernel") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) -> do
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasExecutorTarget "ingest.fetch_page"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasInputContract "state" "PageState"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasOutputContract "state" "PageState"
+          taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasOutputContract "terminal" "PageTerminal"
+        other ->
+          expectationFailure ("expected page_kernel task node, got: " <> show other)
+
     it "preserves the C build example as a structured shell graph" $ do
       -- The example imports its builder vocabulary from c-builder.wire, so
       -- compilation goes through the module-closure loader.

@@ -231,6 +231,7 @@ lowerCompiledCircuitInternal pulseConfig binder compiledCircuit = do
             , spTopology = topology
             , spDefinitions = actualDefinitions
             , spTemplateRegistry = templateRegistry
+            , spLoopRegistrations = Map.empty
             }
         , latentConditions
         )

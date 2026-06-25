@@ -123,7 +123,9 @@ CREATE TABLE pulse.graph_rewrites (
     status text DEFAULT 'admitted'::text NOT NULL,
     rejection_reason text,
     exceeded_dimensions jsonb,
-    CONSTRAINT graph_rewrites_status_check CHECK ((status = ANY (ARRAY['admitted'::text, 'rejected'::text])))
+    admission_mode text DEFAULT 'gassed'::text NOT NULL,
+    CONSTRAINT graph_rewrites_status_check CHECK ((status = ANY (ARRAY['admitted'::text, 'rejected'::text]))),
+    CONSTRAINT graph_rewrites_admission_mode_check CHECK ((admission_mode = ANY (ARRAY['gassed'::text, 'witnessed'::text])))
 );
 
 

@@ -98,6 +98,7 @@ spec = do
               , spTopology = initialTopo
               , spDefinitions = initialDefs
               , spTemplateRegistry = templateRegistry initialDefs
+              , spLoopRegistrations = Map.empty
               }
 
           -- 2. Rewrite StageA into Sub1

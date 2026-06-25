@@ -131,6 +131,7 @@ spec = do
             , spTopology = initialTopo
             , spDefinitions = initialDefs
             , spTemplateRegistry = templateRegistry initialDefs
+            , spLoopRegistrations = Map.empty
             }
 
     describe "ExpandNode (ExpandReplaceNode)" $ do

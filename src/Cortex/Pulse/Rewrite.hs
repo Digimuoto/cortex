@@ -39,16 +39,25 @@ module Cortex.Pulse.Rewrite
   , admittedGraphRewriteDelta
   , admittedBoundaryResourceUse
   , AdmittedRewriteDelta
+  , AdmissionMode (..)
+  , admissionModeText
+  , admissionModeFromText
   , admitRewriteDelta
+  , admitWitnessedDelta
   , admittedDelta
   , admittedRemainingBudget
+  , admittedAdmissionMode
   , runtimePlannerRewrite
+  , rewriteAnchor
+  , namespaceSubgraph
+  , namespaceNodeId
   , rewriteBoundaryResourceUse
   , budgetedBoundaryResourceUse
   , validatePlannedRewriteDelta
   , validateAdmittedRewriteDelta
   , planGraphRewriteWithAdmissionWitness
   , planGraphRewrite
+  , planGraphRewriteNamespaced
   , consumeRewriteBudget
   , BudgetContext (..)
   , budgetFraction
@@ -512,31 +521,84 @@ data RewriteAdmissionWitness def = RewriteAdmissionWitness
   }
   deriving stock (Show, Generic)
 
+{- | Admission mode for a rewrite (ADR 0056). 'AdmissionGassed' rewrites debit
+the run-global 'RewriteBudget' at admission; 'AdmissionWitnessed' rewrites are
+compile-bounded, asserted shapes (e.g. a runtime-bounded-iteration self-append
+step under ADR 0055) whose structural cost is recorded but does not gate against
+the budget. Recovery is mode-aware: witnessed rows replay gas-neutral.
+-}
+data AdmissionMode
+  = AdmissionGassed
+  | AdmissionWitnessed
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+-- | Serialized form of an admission mode, persisted per rewrite row.
+admissionModeText :: AdmissionMode -> Text
+admissionModeText = \case
+  AdmissionGassed -> "gassed"
+  AdmissionWitnessed -> "witnessed"
+
+{- | Decode a persisted admission mode. Unknown values default to 'AdmissionGassed'
+so pre-existing rows (and any forward-compatible additions) stay on the metered
+path rather than being silently treated as gas-neutral.
+-}
+admissionModeFromText :: Text -> AdmissionMode
+admissionModeFromText t
+  | t == "witnessed" = AdmissionWitnessed
+  | otherwise = AdmissionGassed
+
 {- | Witness that a rewrite delta has been admitted against a budget.
 The constructor is not exported — the only way to obtain an
-'AdmittedRewriteDelta' is through 'admitRewriteDelta'.
+'AdmittedRewriteDelta' is through 'admitRewriteDelta' (gassed) or
+'admitWitnessedDelta' (gas-neutral).
 -}
 data AdmittedRewriteDelta def = AdmittedRewriteDelta
   { ardDelta :: PlannedRewriteDelta def
   , ardRemainingBudget :: RewriteBudget
+  , ardAdmissionMode :: AdmissionMode
   }
   deriving stock (Eq, Show, Generic)
 
 {- | Validate that a planned rewrite delta fits within the remaining budget.
 On success, returns an 'AdmittedRewriteDelta' witness bundling the delta
-with the decremented budget.
+with the decremented budget. This is the gassed admission path: it debits
+the budget on every dimension.
 -}
 admitRewriteDelta
   :: RewriteBudget -> PlannedRewriteDelta def -> Either RewriteBudgetError (AdmittedRewriteDelta def)
 admitRewriteDelta budget delta = do
   remaining <- consumeRewriteBudget budget delta.prdCost
-  pure AdmittedRewriteDelta {ardDelta = delta, ardRemainingBudget = remaining}
+  pure
+    AdmittedRewriteDelta
+      { ardDelta = delta
+      , ardRemainingBudget = remaining
+      , ardAdmissionMode = AdmissionGassed
+      }
+
+{- | Gas-neutral admission for a compile-bounded, witnessed rewrite (ADR 0056).
+Structural validation has already happened in 'planGraphRewrite', so this cannot
+fail on budget: the cost is carried for provenance via @delta.prdCost@ but the
+budget is returned unchanged. A caller must establish the witness (e.g. the
+runtime-iteration frontier-shape law) before calling this; the budget is not the
+gate. Compare 'admitRewriteDelta', which debits.
+-}
+admitWitnessedDelta :: RewriteBudget -> PlannedRewriteDelta def -> AdmittedRewriteDelta def
+admitWitnessedDelta budget delta =
+  AdmittedRewriteDelta
+    { ardDelta = delta
+    , ardRemainingBudget = budget
+    , ardAdmissionMode = AdmissionWitnessed
+    }
 
 admittedDelta :: AdmittedRewriteDelta def -> PlannedRewriteDelta def
 admittedDelta = ardDelta
 
 admittedRemainingBudget :: AdmittedRewriteDelta def -> RewriteBudget
 admittedRemainingBudget = ardRemainingBudget
+
+admittedAdmissionMode :: AdmittedRewriteDelta def -> AdmissionMode
+admittedAdmissionMode = ardAdmissionMode
 
 consumeRewriteBudget :: RewriteBudget -> RewriteCost -> Either RewriteBudgetError RewriteBudget
 consumeRewriteBudget budget cost
@@ -577,40 +639,81 @@ planGraphRewrite rewrite topology defs = do
       topoFinal = plannedFinalTopology rewrite' topology
       defs' = plannedFinalDefinitions rewrite' defs
   first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
-    pure (mkPlannedDelta rewrite' topology defs' topoFinal)
-  where
-    mkPlannedDelta rewrite' oldTopology defs' topoFinal =
-      let (newNodes, removedNodes, addedEdges, _removedEdges) = relationDiff oldTopology topoFinal
-          spec' = rewriteSpec rewrite'
-          anchorDisposition = rewriteAnchorDisposition rewrite'
-          insertedDepthNodes =
-            longestInsertedPathNodeCount
-              spec'.sgsTopology
-              spec'.sgsEntryNodes
-              spec'.sgsExitNodes
-          addedDepth = case anchorDisposition of
-            RewriteAnchorRemoved -> max 0 (insertedDepthNodes - 1)
-            RewriteAnchorRetained -> insertedDepthNodes
-          cost =
-            RewriteCost
-              { rcAddedNodes = fromIntegral (Set.size newNodes)
-              , rcAddedEdges = fromIntegral (Set.size addedEdges)
-              , rcAddedDepth = fromIntegral addedDepth
-              , rcFrontierDelta = fromIntegral (max 0 (length spec'.sgsEntryNodes - 1))
-              , rcRewriteOps = 1
-              }
-       in PlannedRewriteDelta
-            { prdTopology = topoFinal
-            , prdDefinitions = defs'
-            , prdNewNodes = newNodes
-            , prdRemovedNodes = removedNodes
-            , prdAddedEdges = addedEdges
-            , prdEntryNodes = spec'.sgsEntryNodes
-            , prdExitNodes = spec'.sgsExitNodes
-            , prdAnchorNode = rewriteAnchor rewrite'
-            , prdAnchorDisposition = anchorDisposition
-            , prdCost = cost
-            }
+    pure (mkPlannedRewriteDelta rewrite' topology defs' topoFinal)
+
+{- | Plan a rewrite whose subgraph node ids are already fully namespaced — for
+example a runtime-bounded iteration self-append step that
+'Cortex.Pulse.Iteration.planLoopStep' has namespaced under a flat
+@loop_root:iter_<i>@ seed. Unlike 'planGraphRewrite' this does NOT re-namespace
+the spec under the anchor (which would nest each loop instance under the prior
+iteration's materialized id and grow ids O(n) in the iteration count). The
+already-namespaced inserted ids must instead be fresh against the current
+topology.
+-}
+planGraphRewriteNamespaced
+  :: GraphRewrite NodeId def
+  -> Relation NodeId
+  -> Map NodeId def
+  -> Either [RewritePlanningError NodeId] (PlannedRewriteDelta def)
+planGraphRewriteNamespaced rewrite topology defs = do
+  validateRewriteAnchor topology defs (rewriteAnchor rewrite)
+  validateSubgraphSpec (rewriteSpec rewrite)
+  validatePreNamespacedFreshness topology (rewriteSpec rewrite)
+  let topoFinal = plannedFinalTopology rewrite topology
+      defs' = plannedFinalDefinitions rewrite defs
+  first (pure . RewriteInvalidTopology) (validateDAG topoFinal) >>= \() ->
+    pure (mkPlannedRewriteDelta rewrite topology defs' topoFinal)
+
+{- | The inserted ids of an already-namespaced spec must not collide with the
+current topology. This is the freshness half of 'validateNamespaceDiscipline'
+without the local-segment check, since the ids are intentionally structured
+(they carry the namespace delimiter).
+-}
+validatePreNamespacedFreshness
+  :: Relation NodeId -> SubgraphSpec NodeId def -> Either [RewritePlanningError NodeId] ()
+validatePreNamespacedFreshness topology spec =
+  let inserted = relVertices spec.sgsTopology
+      collisions = Set.toList (Set.intersection inserted (relVertices topology))
+   in if null collisions then Right () else Left [RewriteNamespacedNodeCollision collisions]
+
+mkPlannedRewriteDelta
+  :: GraphRewrite NodeId def
+  -> Relation NodeId
+  -> Map NodeId def
+  -> Relation NodeId
+  -> PlannedRewriteDelta def
+mkPlannedRewriteDelta rewrite' oldTopology defs' topoFinal =
+  let (newNodes, removedNodes, addedEdges, _removedEdges) = relationDiff oldTopology topoFinal
+      spec' = rewriteSpec rewrite'
+      anchorDisposition = rewriteAnchorDisposition rewrite'
+      insertedDepthNodes =
+        longestInsertedPathNodeCount
+          spec'.sgsTopology
+          spec'.sgsEntryNodes
+          spec'.sgsExitNodes
+      addedDepth = case anchorDisposition of
+        RewriteAnchorRemoved -> max 0 (insertedDepthNodes - 1)
+        RewriteAnchorRetained -> insertedDepthNodes
+      cost =
+        RewriteCost
+          { rcAddedNodes = fromIntegral (Set.size newNodes)
+          , rcAddedEdges = fromIntegral (Set.size addedEdges)
+          , rcAddedDepth = fromIntegral addedDepth
+          , rcFrontierDelta = fromIntegral (max 0 (length spec'.sgsEntryNodes - 1))
+          , rcRewriteOps = 1
+          }
+   in PlannedRewriteDelta
+        { prdTopology = topoFinal
+        , prdDefinitions = defs'
+        , prdNewNodes = newNodes
+        , prdRemovedNodes = removedNodes
+        , prdAddedEdges = addedEdges
+        , prdEntryNodes = spec'.sgsEntryNodes
+        , prdExitNodes = spec'.sgsExitNodes
+        , prdAnchorNode = rewriteAnchor rewrite'
+        , prdAnchorDisposition = anchorDisposition
+        , prdCost = cost
+        }
 
 runtimePlannerRewrite :: GraphRewrite NodeId def -> GraphRewrite NodeId def
 runtimePlannerRewrite = \case
@@ -659,13 +762,19 @@ validateAdmittedRewriteDelta
   -> AdmittedRewriteDelta def
   -> Either [RewriteWitnessError] ()
 validateAdmittedRewriteDelta budget delta admitted =
-  case consumeRewriteBudget budget delta.prdCost of
-    Left err ->
-      Left [RewriteWitnessBudgetRejected err]
-    Right expectedRemaining
-      | expectedRemaining == admittedRemainingBudget admitted ->
-          Right ()
-      | otherwise ->
+  case admittedAdmissionMode admitted of
+    -- Witnessed (e.g. a runtime-iteration self-append step) is gas-neutral:
+    -- the cost is recorded but does not gate, so the budget is unchanged.
+    AdmissionWitnessed -> expectRemaining budget
+    -- Gassed admission debits every dimension.
+    AdmissionGassed ->
+      case consumeRewriteBudget budget delta.prdCost of
+        Left err -> Left [RewriteWitnessBudgetRejected err]
+        Right expectedRemaining -> expectRemaining expectedRemaining
+  where
+    expectRemaining expectedRemaining
+      | expectedRemaining == admittedRemainingBudget admitted = Right ()
+      | otherwise =
           Left
             [ RewriteWitnessRemainingBudgetMismatch $
                 ExpectedActual

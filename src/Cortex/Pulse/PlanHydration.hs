@@ -22,6 +22,7 @@ module Cortex.Pulse.PlanHydration
   , renderRewriteValidationError
   , renderRewriteBudgetError
   , planRewriteDelta
+  , planRewriteDeltaNamespaced
   , toSerializableStageDefinition
   )
 where
@@ -59,6 +60,7 @@ import Cortex.Pulse.Rewrite
   , SubgraphSpec (..)
   , exceededDimensions
   , planGraphRewrite
+  , planGraphRewriteNamespaced
   )
 
 data RewriteValidationError
@@ -236,6 +238,25 @@ planRewriteDelta rewrite plan = do
   delta <-
     first (fmap RewritePlanningIssue) $
       planGraphRewrite rewrite plan.spTopology activeDefinitions
+  first (pure . RewriteDuplicateTemplate) (buildStageTemplateRegistry delta.prdDefinitions) $> ()
+  pure delta
+
+{- | Like 'planRewriteDelta' but for an already-namespaced rewrite (a
+runtime-bounded iteration self-append step whose kernel instance was namespaced
+under a flat @loop_root:iter_<i>@ seed). Plans via 'planGraphRewriteNamespaced',
+which does not re-namespace the spec under the anchor.
+-}
+planRewriteDeltaNamespaced
+  :: Eq stageId
+  => GraphRewrite NodeId (StageDefinition stageId)
+  -> StagePlan stageId
+  -> Either [RewriteValidationError] (PlannedRewriteDelta (StageDefinition stageId))
+planRewriteDeltaNamespaced rewrite plan = do
+  first (pure . RewriteDuplicateTemplate) (buildStageTemplateRegistry plan.spDefinitions) $> ()
+  let activeDefinitions = Map.restrictKeys plan.spDefinitions (relVertices plan.spTopology)
+  delta <-
+    first (fmap RewritePlanningIssue) $
+      planGraphRewriteNamespaced rewrite plan.spTopology activeDefinitions
   first (pure . RewriteDuplicateTemplate) (buildStageTemplateRegistry delta.prdDefinitions) $> ()
   pure delta
 

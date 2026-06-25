@@ -1,0 +1,59 @@
+# Runtime-bounded iteration kernel for a paginated ingest workload.
+#
+# Important: this file is NOT a recursive Wire program. Wire currently compiles
+# fixed topology. The loop is provisioned by Pulse/host registration after this
+# kernel has compiled.
+#
+# What Wire owns here:
+#
+#   1. the node interface:
+#
+#        PageState -> page_kernel -> PageState | PageTerminal
+#
+#   2. the executor target:
+#
+#        @ingest.fetch_page
+#
+#   3. the frontier shape Pulse will later certify:
+#
+#        `state` is the single loop-carried continuation value.
+#        `terminal` is an output that stops the loop.
+#
+# What Wire does not own yet:
+#
+#   * a `loop` keyword;
+#   * the iteration namespace (`ingest_loop:iter_<i>:...`);
+#   * the maximum/effective iteration bound;
+#   * the self-append rewrite;
+#   * durable replay/recovery of admitted loop steps.
+#
+# Those are provided by the downstream Pulse binding described in README.md and
+# sketched by provision-loop.sh. At runtime that binding registers this compiled
+# kernel under a LoopPolicy and turns a non-terminal `state` result into a
+# StageLoopStep. Pulse then verifies the witness and appends the next copy of
+# this same kernel as ordinary graph growth.
+
+contract PageState;
+contract PageTerminal;
+
+node page_kernel
+  <- state: PageState;
+  -> state: PageState | terminal: PageTerminal;
+  = @ingest.fetch_page ({
+    # The executor receives the prior continuation state. A typical state value
+    # would contain `next_cursor`, an accumulation summary, and any idempotency
+    # key seed the host needs for external page fetches.
+    inherit state;
+
+    # These config fields are ordinary executor configuration. They do not grant
+    # loop authority. They only tell @ingest.fetch_page how to interpret its
+    # input and output values.
+    page_size = 100;
+    cursor_field = "next_cursor";
+    emitted_field = "items";
+  });
+
+# The file return is the open kernel fragment. Because it has an input port, it
+# is not a closed standalone workflow. `wire build` can still compile it so a
+# host binding can lower/register the kernel with Pulse.
+page_kernel

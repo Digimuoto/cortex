@@ -15,6 +15,7 @@ module Cortex.Pulse
   , module Cortex.Pulse.Checkpoint
   , module Cortex.Pulse.Executor
   , module Cortex.Pulse.Hydrate
+  , module Cortex.Pulse.Iteration
   , module Cortex.Pulse.Materialize
   , module Cortex.Pulse.Memory
   , module Cortex.Pulse.Memory.Tool
@@ -47,6 +48,7 @@ import Cortex.Pulse.Executor (TaskContext (..), TaskRegistry)
 import Cortex.Pulse.Executor qualified as Executor
 import Cortex.Pulse.Health (PulseHealthState (..), initialHealthState, runHealthServer)
 import Cortex.Pulse.Hydrate
+import Cortex.Pulse.Iteration
 import Cortex.Pulse.Materialize
 import Cortex.Pulse.Memory
 import Cortex.Pulse.Memory.Tool

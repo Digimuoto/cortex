@@ -80,6 +80,7 @@ spec = do
             , spTopology = initialTopo
             , spDefinitions = initialDefs
             , spTemplateRegistry = templateRegistry initialDefs
+            , spLoopRegistrations = Map.empty
             }
 
     it "rejects ExpandNode if anchor node is missing from topology" $ do

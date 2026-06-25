@@ -40,6 +40,7 @@ import Cortex.Pulse.Executor.Persistence
   , handleTerminalFailure
   , persistStageRewrite
   , persistStageSuccess
+  , persistWitnessedLoopStep
   , recordRunEvent
   , rejectedRewriteInsertValue
   , requireTx
@@ -61,7 +62,9 @@ import Cortex.Pulse.Executor.Types
   , StageFailureResolution (..)
   , isWorkerCancellation
   )
+import Cortex.Pulse.Iteration (LoopPolicy (..), LoopRegistration (..), LoopRewriteInteraction (..))
 import Cortex.Pulse.Plan
+import Cortex.Pulse.PlanHydration (toSerializableStageDefinition)
 import Cortex.Pulse.Query qualified as Q
 import Cortex.Pulse.Rewrite (BudgetContext (..), RewriteBudget, RewriteRejectionContext (..))
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
@@ -195,8 +198,55 @@ attemptStage env task stagePlan stageCall = do
                 }
         handleRejectedRewrite attemptRef budgetCtx ctx reExecCount deferredRejections stageEnd rejection
       Right (StageRewrite newOutput rewrite) -> do
-        result <- persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrite
+        case rejectLoopBodyRewrite stagePlan stageCall of
+          Just failureSpec -> do
+            let rejectionCtx =
+                  RewriteRejectionContext
+                    { rrcRejectionType = failureSpec.rfsErrType
+                    , rrcMessage = failureSpec.rfsErrMsg
+                    , rrcExceededDimensions = []
+                    , rrcBudgetContext = budgetCtx
+                    , rrcAttemptedCost = Nothing
+                    , rrcAttemptNumber = 0
+                    }
+                rejectedRewrite =
+                  rejectedRewriteInsertValue
+                    env
+                    stageCall
+                    budgetCtx.bcRemainingBudget
+                    (Aeson.toJSON (fmap toSerializableStageDefinition rewrite))
+                    stageEnd
+                    rejectionCtx
+            handleRewriteAdmissionFailure
+              env
+              attemptRef
+              stageCall.scStageName
+              stageEnd
+              failureSpec
+              ( Just
+                  ( Aeson.object
+                      [ "stage" Aeson..= stageCall.scStageName
+                      , "template_id" Aeson..= unStageTemplateId stageCall.scStageDef.sdTemplateId
+                      ]
+                  )
+              )
+              (reverse deferredRejections <> [rejectedRewrite])
+          Nothing -> do
+            result <- persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrite
+            case result of
+              StageRewriteRejected rejection ->
+                handleRejectedRewrite attemptRef budgetCtx ctx reExecCount deferredRejections stageEnd rejection
+              other -> do
+                flushDeferredRejections env (reverse deferredRejections)
+                pure other
+      Right (StageLoopStep newOutput witness rewrite) -> do
+        result <-
+          persistWitnessedLoopStep env stagePlan stageCall attemptRef stageEnd newOutput witness rewrite
         case result of
+          -- An unauthorized loop step routes to the gassed path, which may reject
+          -- (e.g. over budget). Apply the configured re-execution/degrade policy
+          -- like an ordinary StageRewrite rejection rather than leaking the
+          -- StageRewriteRejected result to the frontier as an internal bug.
           StageRewriteRejected rejection ->
             handleRejectedRewrite attemptRef budgetCtx ctx reExecCount deferredRejections stageEnd rejection
           other -> do
@@ -312,6 +362,7 @@ attemptStage env task stagePlan stageCall = do
       Right (StageComplete _) -> "complete"
       Right (StageSuspend _) -> "suspend"
       Right (StageRewrite _ _) -> "rewrite"
+      Right StageLoopStep {} -> "loop_step"
       Right (StageRejectRewrite _ _) -> "reject_rewrite"
 
 applyExhaustionPolicy
@@ -389,6 +440,26 @@ exhaustionPolicyForRejection stagePlan rejection
       fromMaybe stagePlan.spRewriteExhaustionPolicy stagePlan.spBudgetExceededExhaustionPolicy
   | otherwise =
       stagePlan.spRewriteExhaustionPolicy
+
+rejectLoopBodyRewrite :: StagePlan stageId -> StageCall stageId -> Maybe RunFailureSpec
+rejectLoopBodyRewrite stagePlan stageCall =
+  case loopRegistrationForStage stagePlan stageCall.scStageDef.sdTemplateId stageCall.scNodeId of
+    Nothing -> Nothing
+    Just (_loopKey, registration) ->
+      case registration.lrPolicy.lpRewriteInteraction of
+        LoopKernelRewriteClosed -> Just failureSpec
+        LoopKernelRewriteOpenRejected -> Just failureSpec
+  where
+    templateText = unStageTemplateId stageCall.scStageDef.sdTemplateId
+    failureSpec =
+      RunFailureSpec
+        { rfsErrType = "loop_kernel_open_rewrite_rejected"
+        , rfsErrMsg =
+            "Loop kernel "
+              <> templateText
+              <> " is rewrite-closed; ordinary StageRewrite is not admissible inside a runtime-bounded loop kernel"
+        , rfsRetryable = False
+        }
 
 withPreAttemptGuards
   :: StageEnv -> Text -> IO (StageAttemptResult stageId) -> IO (StageAttemptResult stageId)

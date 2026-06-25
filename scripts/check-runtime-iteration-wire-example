@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# CI check for the runtime-bounded paginated-ingest Wire example.
+#
+# The example's provisioning script is intentionally a handoff sketch rather
+# than a durable runner. This check still makes the sketch executable: it builds
+# the Wire kernel into a compiled artifact, writes the loop-registration sketch,
+# and verifies both JSON files.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXAMPLE_DIR="$ROOT/examples/wire/runtime-bounded-paginated-ingest"
+OUT_DIR="$(mktemp -d)"
+
+cleanup() {
+  rm -rf "$OUT_DIR"
+}
+trap cleanup EXIT
+
+"${BASH:-bash}" "$EXAMPLE_DIR/provision-loop.sh" "$OUT_DIR" >/dev/null
+
+COMPILED_KERNEL="$OUT_DIR/page-kernel.compiled.json"
+LOOP_REGISTRATION="$OUT_DIR/loop-registration.sketch.json"
+
+test -s "$COMPILED_KERNEL"
+test -s "$LOOP_REGISTRATION"
+
+python3 - "$COMPILED_KERNEL" "$LOOP_REGISTRATION" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+compiled_path = Path(sys.argv[1])
+registration_path = Path(sys.argv[2])
+
+compiled = json.loads(compiled_path.read_text())
+registration = json.loads(registration_path.read_text())
+
+nodes = compiled.get("compiledCircuitNodes", {})
+if "page_kernel" not in nodes:
+    raise SystemExit("compiled kernel is missing page_kernel")
+
+if compiled.get("compiledCircuitEntryNodes") != ["page_kernel"]:
+    raise SystemExit("compiled kernel has the wrong entry frontier")
+
+if compiled.get("compiledCircuitExitNodes") != ["page_kernel"]:
+    raise SystemExit("compiled kernel has the wrong exit frontier")
+
+if registration.get("kernelNode") != "page_kernel":
+    raise SystemExit("registration sketch does not name page_kernel")
+
+if registration.get("frontierWitness", {}).get("token") != "paginated-ingest-state-v1":
+    raise SystemExit("registration sketch has the wrong frontier witness")
+
+handoff = registration.get("runtimeHandoff", {})
+if handoff.get("seedNodeId") != "ingest_loop:iter_0:page_kernel":
+    raise SystemExit("registration sketch has the wrong seed node")
+
+if handoff.get("continueOutput") != "state" or handoff.get("terminalOutput") != "terminal":
+    raise SystemExit("registration sketch does not document continuation/terminal outputs")
+PY
+
+echo "runtime-bounded paginated-ingest Wire example provisioning check passed"

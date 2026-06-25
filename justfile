@@ -102,6 +102,11 @@ doc-wire-examples:
     @echo "🔍 Checking docs Wire examples..."
     nix run .#check-doc-wire-examples
 
+# Build and validate the runtime-bounded iteration Wire provisioning example
+runtime-iteration-wire-example:
+    @echo "🔍 Checking runtime iteration Wire example..."
+    nix run .#check-runtime-iteration-wire-example
+
 # ============================================================================
 # DOCUMENTATION SITE
 # ============================================================================

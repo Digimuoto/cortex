@@ -48,6 +48,10 @@ theory/.lake/
 !nix/
 !nix/**
 
+# migrations/ — forward DDL for deployed pulse DBs (no in-repo runner; applied out of band)
+!migrations/
+!migrations/**
+
 # editors/ — tree-sitter-wire grammar + editor integrations
 !editors/
 !editors/**

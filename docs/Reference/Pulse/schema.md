@@ -230,6 +230,15 @@ Cross-boundary reads are mediated by Pulse's HTTP API. Running Pulse and a host 
 same PostgreSQL cluster is an operational shortcut; the architectural boundary is service-API-first
 so migrating to a separate database is cheap.
 
+## Appendix B — Migrations
+
+This file is a generated dump of the applied `pulse` schema, and there is no in-repo migration
+runner; the schema is applied out of band. Forward, idempotent DDL for bringing **deployed**
+databases up to the current shape lives in the repo-root `migrations/` directory (see
+`migrations/README.md`). Apply the relevant migration before rolling out code that depends on the
+new shape — e.g. `migrations/0001_graph_rewrites_admission_mode.sql` adds
+`pulse.graph_rewrites.admission_mode` (ADR 0055 / 0056), backfilling existing rows to `gassed`.
+
 ## Related
 
 - [../../Architecture/06-pulse-runtime.md](../../Architecture/06-pulse-runtime.md) — architectural

@@ -20,6 +20,7 @@ module Cortex.Pulse.Executor.Persistence
   , handleGraphStatePersistError
   , persistStageSuccess
   , persistStageRewrite
+  , persistWitnessedLoopStep
   , flushDeferredRejections
   , rejectedRewriteInsertValue
   , handleRewriteAdmissionFailure
@@ -51,6 +52,7 @@ import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
@@ -77,36 +79,57 @@ import Cortex.Pulse.Executor.Types
 import Cortex.Pulse.GraphRuntime (GraphState (..))
 import Cortex.Pulse.GraphRuntime qualified as GraphRuntime
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
+import Cortex.Pulse.Iteration
+  ( EffectiveBound (..)
+  , IterationExhaustionPolicy (..)
+  , LoopControl (..)
+  , LoopOutcome (..)
+  , LoopPolicy (..)
+  , LoopRegistration (..)
+  , LoopStepWitness
+  , WitnessedStepViolation (..)
+  , authorizeWitnessedStepWithControl
+  , exhaustLoopControl
+  , renderWitnessedStepViolation
+  )
 import Cortex.Pulse.Materialization
   ( PersistedGraphState (..)
   , PersistedRewrite (..)
   , rewriteDeltaSummaryJson
+  , witnessedRewriteDeltaSummaryJson
   )
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
-  ( StableStageId
+  ( LoopInstanceKey
+  , StableStageId
   , StageDefinition (..)
   , StageFailure (..)
   , StagePlan (..)
   , StageReplaySafety (..)
   , StageRetryBackoff (..)
+  , loopRegistrationForStage
   )
 import Cortex.Pulse.PlanHydration
   ( RewriteError (..)
+  , SerializableStageDefinition
   , planRewriteDelta
+  , planRewriteDeltaNamespaced
   , renderRewriteError
   , rewriteErrorType
   , toSerializableStageDefinition
   )
 import Cortex.Pulse.Query qualified as Q
 import Cortex.Pulse.Rewrite
-  ( BudgetContext (..)
+  ( AdmissionMode (..)
+  , BudgetContext (..)
   , GraphRewrite
   , PlannedRewriteDelta (..)
   , RewriteBudget (..)
   , RewriteCost (..)
   , RewriteRejectionContext (..)
+  , admissionModeText
   , admitRewriteDelta
+  , admitWitnessedDelta
   , admittedDelta
   , admittedRemainingBudget
   , exceededDimensions
@@ -580,6 +603,7 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
           Right admitted -> do
             let admDelta = admittedDelta admitted
                 remainingBudget = admittedRemainingBudget admitted
+                rewriteDeltaJson = rewriteDeltaSummaryJson admDelta
             cpResult <-
               requireTx env.sePool env.seRunId "write_checkpoint"
                 . PulseDB.runTransaction env.sePool
@@ -591,7 +615,7 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                         , griSourceNodeId = unNodeId stageCall.scNodeId
                         , griSourceNodeOutput = Just newOutput
                         , griRewriteCost = Just (Aeson.toJSON admDelta.prdCost)
-                        , griRewriteDelta = Just (rewriteDeltaSummaryJson admDelta)
+                        , griRewriteDelta = Just rewriteDeltaJson
                         , griBudgetBefore = Just (Aeson.toJSON currentBudget)
                         , griBudgetAfter = Just (Aeson.toJSON remainingBudget)
                         , griRewriteSpec = Aeson.toJSON serializableRewrite
@@ -599,6 +623,7 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                         , griRejectionReason = Nothing
                         , griExceededDimensions = Nothing
                         , griCreatedAt = stageEnd
+                        , griAdmissionMode = admissionModeText AdmissionGassed
                         }
                   Q.writeCheckpoint
                     env.seRunId
@@ -646,9 +671,351 @@ persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrit
                         , prSourceNodeId = stageCall.scNodeId
                         , prSourceNodeOutput = Just newOutput
                         , prRewriteCost = Just admDelta.prdCost
+                        , prRewriteDelta = Just rewriteDeltaJson
                         , prRewrite = rewrite
+                        , prAdmissionMode = AdmissionGassed
                         }
                   )
+
+{- | Persist a runtime-bounded-iteration self-append step (ADR 0055). The step is
+admitted witnessed (gas-neutral, ADR 0056): its already-flat-namespaced spec is
+planned without re-namespacing, its structural cost is recorded but does not gate
+the rewrite budget, and the row is tagged 'AdmissionWitnessed' so replay
+reconstructs it gas-neutral. A spec that fails structural validation fails the run
+with a typed error.
+-}
+
+{- | Route a @StageLoopStep@. Only a registered loop kernel — its 'StageTemplateId'
+present in @stagePlan.spLoopRegistrations@ — is admitted gas-neutral through the
+authorized witnessed path ('admitWitnessedLoopStepInner'). Any other
+@StageLoopStep@ falls back to the ordinary gassed rewrite path, which is
+fail-closed for an already-flat-namespaced loop spec (it re-namespaces under the
+anchor and rejects ids containing the delimiter). This is the first half of the
+fix that prevents an arbitrary stage from bypassing rewrite gas.
+-}
+persistWitnessedLoopStep
+  :: StableStageId stageId
+  => StageEnv
+  -> StagePlan stageId
+  -> StageCall stageId
+  -> StageAttemptRef
+  -> UTCTime
+  -> Aeson.Value
+  -> LoopStepWitness
+  -> GraphRewrite NodeId (StageDefinition stageId)
+  -> IO (StageAttemptResult stageId)
+persistWitnessedLoopStep env stagePlan stageCall attemptRef stageEnd newOutput witness rewrite =
+  case loopRegistrationForStage stagePlan stageCall.scStageDef.sdTemplateId stageCall.scNodeId of
+    Nothing -> persistStageRewrite env stagePlan stageCall attemptRef stageEnd newOutput rewrite
+    Just (loopKey, registration) ->
+      admitWitnessedLoopStepInner
+        loopKey
+        registration
+        env
+        stagePlan
+        stageCall
+        attemptRef
+        stageEnd
+        newOutput
+        witness
+        rewrite
+
+witnessedViolationFailure :: WitnessedStepViolation -> (Text, Text)
+witnessedViolationFailure violation =
+  case violation of
+    StepIterationBudgetExhausted {} ->
+      ("loop_iteration_budget_exhausted", renderWitnessedStepViolation violation)
+    _ ->
+      ("witnessed_step_violation", renderWitnessedStepViolation violation)
+
+{- | Admit a self-append step witnessed (gas-neutral) for an authorized loop
+kernel. Before admission it runs the control-aware security gate
+'authorizeWitnessedStepWithControl' (AppendAfter-only, self-append anchor,
+per-append size envelope, in-namespace iteration cap, and per-run effective
+bound); a failure fails the run with a typed rejection rather than admitting.
+The same gate is re-run on resume in 'Cortex.Pulse.Materialization'.
+-}
+admitWitnessedLoopStepInner
+  :: StableStageId stageId
+  => LoopInstanceKey
+  -> LoopRegistration
+  -> StageEnv
+  -> StagePlan stageId
+  -> StageCall stageId
+  -> StageAttemptRef
+  -> UTCTime
+  -> Aeson.Value
+  -> LoopStepWitness
+  -> GraphRewrite NodeId (StageDefinition stageId)
+  -> IO (StageAttemptResult stageId)
+admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attemptRef stageEnd newOutput witness rewrite = do
+  let policy = registration.lrPolicy
+  let completionSummary = attemptSummary attemptRef.sarAttempt
+      serializableRewrite = fmap toSerializableStageDefinition rewrite
+      checkpointState = buildCheckpointState env stageCall.scStageName newOutput
+  withMVar stageCall.scRewriteAdmission.rasAdmissionLock $ \_ -> do
+    currentBudget <- readTVarIO stageCall.scRewriteAdmission.rasRemainingBudget
+    loopControls <- readTVarIO env.seLoopControlsVar
+    let budgetCtx = budgetContextFromBudget stagePlan currentBudget
+    let controlResult =
+          maybe
+            (Left ("loop_control_missing" :: Text, "Registered loop kernel has no run-local control state"))
+            Right
+            (Map.lookup loopKey loopControls)
+        admissionResult control = do
+          delta <-
+            first
+              (\errs -> let e = RewriteValidationFailed errs in Left (rewriteErrorType e, renderRewriteError e))
+              (planRewriteDeltaNamespaced rewrite stagePlan)
+          -- Security gate: only a genuine, frontier-certified, bounded,
+          -- in-namespace self-append may be admitted gas-neutral, else an
+          -- arbitrary rewrite would bypass rewrite gas.
+          nextControl <-
+            first
+              (Right . witnessedViolationFailure)
+              ( authorizeWitnessedStepWithControl
+                  policy
+                  control
+                  stageCall.scNodeId
+                  witness
+                  (Just newOutput)
+                  serializableRewrite
+                  delta.prdCost
+              )
+          pure (delta, control, nextControl)
+    case controlResult of
+      Left (rejType, rejMsg) -> do
+        persistWitnessedAdmissionFailure
+          env
+          stageCall
+          attemptRef
+          stageEnd
+          serializableRewrite
+          currentBudget
+          budgetCtx
+          rejType
+          rejMsg
+      Right control
+        | control.lcRemainingIterations == 0 ->
+            persistLoopBudgetExhaustion
+              loopKey
+              registration
+              env
+              attemptRef
+              stageCall
+              stageEnd
+              newOutput
+              serializableRewrite
+              currentBudget
+              budgetCtx
+              control
+      Right control ->
+        case admissionResult control of
+          Left (Left (rejType, rejMsg)) ->
+            persistWitnessedAdmissionFailure
+              env
+              stageCall
+              attemptRef
+              stageEnd
+              serializableRewrite
+              currentBudget
+              budgetCtx
+              rejType
+              rejMsg
+          Left (Right (rejType, rejMsg)) ->
+            persistWitnessedAdmissionFailure
+              env
+              stageCall
+              attemptRef
+              stageEnd
+              serializableRewrite
+              currentBudget
+              budgetCtx
+              rejType
+              rejMsg
+          Right (delta, controlBefore, nextControl) -> do
+            let admitted = admitWitnessedDelta currentBudget delta
+                admDelta = admittedDelta admitted
+                rewriteDeltaJson = witnessedRewriteDeltaSummaryJson policy witness controlBefore nextControl admDelta
+            cpResult <-
+              requireTx env.sePool env.seRunId "write_checkpoint"
+                . PulseDB.runTransaction env.sePool
+                $ do
+                  rewriteId <-
+                    Q.writeGraphRewrite
+                      Q.GraphRewriteInsert
+                        { griRunId = env.seRunId
+                        , griSourceNodeId = unNodeId stageCall.scNodeId
+                        , griSourceNodeOutput = Just newOutput
+                        , griRewriteCost = Just (Aeson.toJSON admDelta.prdCost)
+                        , griRewriteDelta = Just rewriteDeltaJson
+                        , griBudgetBefore = Just (Aeson.toJSON currentBudget)
+                        , -- gas-neutral: budget is unchanged across a witnessed step
+                          griBudgetAfter = Just (Aeson.toJSON currentBudget)
+                        , griRewriteSpec = Aeson.toJSON serializableRewrite
+                        , griStatus = "admitted"
+                        , griRejectionReason = Nothing
+                        , griExceededDimensions = Nothing
+                        , griCreatedAt = stageEnd
+                        , griAdmissionMode = admissionModeText AdmissionWitnessed
+                        }
+                  Q.writeCheckpoint
+                    env.seRunId
+                    env.seTaskType
+                    stageCall.scStageName
+                    checkpointState
+                    completionSummary
+                    stageEnd
+                  Q.updateStageAttemptCompleted
+                    attemptRef.sarAttemptLogId
+                    StageCompleted
+                    (Just (Aeson.object ["rewritten" Aeson..= True]))
+                    stageEnd
+                  Q.updateStageCompleted attemptRef.sarLogId StageCompleted completionSummary stageEnd
+                  pure rewriteId
+            case cpResult of
+              Nothing -> pure (StageTerminal OutcomeFailed)
+              Just rewriteId -> do
+                -- Gas-neutral: the rewrite budget TVar is intentionally left unchanged.
+                atomically $ do
+                  modifyTVar' env.seNodeCompletedAtVar (Map.insert stageCall.scNodeId stageEnd)
+                  modifyTVar' env.seLoopControlsVar (Map.insert loopKey nextControl)
+                emitObsEvent $ EvtStageCompleted env.seRunId stageCall.scStageName attemptRef.sarAttempt
+                emitObsEvent $
+                  EvtRewriteAdmitted
+                    env.seRunId
+                    stageCall.scStageName
+                    RewriteAdmissionInfo
+                      { raiRewriteId = rewriteId
+                      , raiCostNodes = admDelta.prdCost.rcAddedNodes
+                      , raiCostEdges = admDelta.prdCost.rcAddedEdges
+                      , raiRewriteOpsRemaining = currentBudget.rbRewriteOpsMax
+                      }
+                recordRunEvent
+                  env
+                  "stage.loop_step"
+                  Q.RunEventInfo
+                  ("Loop step admitted: " <> stageCall.scStageName)
+                  (Just (Aeson.object ["stage" Aeson..= stageCall.scStageName]))
+                pure
+                  ( StageAdvanceWithRewrite
+                      newOutput
+                      PersistedRewrite
+                        { prRewriteId = rewriteId
+                        , prSourceNodeId = stageCall.scNodeId
+                        , prSourceNodeOutput = Just newOutput
+                        , prRewriteCost = Just admDelta.prdCost
+                        , prRewriteDelta = Just rewriteDeltaJson
+                        , prRewrite = rewrite
+                        , prAdmissionMode = AdmissionWitnessed
+                        }
+                  )
+
+persistLoopBudgetExhaustion
+  :: StableStageId stageId
+  => LoopInstanceKey
+  -> LoopRegistration
+  -> StageEnv
+  -> StageAttemptRef
+  -> StageCall stageId
+  -> UTCTime
+  -> Aeson.Value
+  -> GraphRewrite NodeId (SerializableStageDefinition stageId)
+  -> RewriteBudget
+  -> BudgetContext
+  -> LoopControl
+  -> IO (StageAttemptResult stageId)
+persistLoopBudgetExhaustion loopKey registration env attemptRef stageCall stageEnd newOutput serializableRewrite currentBudget budgetCtx control = do
+  let policy = registration.lrPolicy
+      nextControl = exhaustLoopControl policy control newOutput
+      EffectiveBound effectiveBound = control.lcEffectiveBound
+      outcome =
+        fromMaybe
+          (LoopBudgetExhausted effectiveBound)
+          nextControl.lcOutcome
+      outcomeJson = Aeson.toJSON outcome
+  atomically $
+    modifyTVar' env.seLoopControlsVar (Map.insert loopKey nextControl)
+  case policy.lpExhaustion of
+    IterationExhaustionFail ->
+      persistWitnessedAdmissionFailure
+        env
+        stageCall
+        attemptRef
+        stageEnd
+        serializableRewrite
+        currentBudget
+        budgetCtx
+        "loop_iteration_budget_exhausted"
+        ( "Runtime-bounded loop exhausted its admitted iteration budget after "
+            <> T.pack (show effectiveBound)
+            <> " body executions"
+        )
+    IterationExhaustionPartial ->
+      persistLoopTypedStop outcomeJson "partial"
+    IterationExhaustionFallback ->
+      persistLoopTypedStop outcomeJson "fallback"
+  where
+    persistLoopTypedStop outcomeJson outcomeTag = do
+      result <-
+        persistStageSuccess
+          env
+          attemptRef
+          stageCall.scNodeId
+          stageCall.scStageName
+          stageEnd
+          outcomeJson
+      case result of
+        StageAdvance {} -> do
+          recordRunEvent
+            env
+            "stage.loop_budget_exhausted"
+            Q.RunEventWarn
+            ("Loop budget exhausted with " <> outcomeTag <> " outcome: " <> stageCall.scStageName)
+            (Just (Aeson.object ["stage" Aeson..= stageCall.scStageName, "outcome" Aeson..= outcomeJson]))
+          pure result
+        other -> pure other
+
+persistWitnessedAdmissionFailure
+  :: StableStageId stageId
+  => StageEnv
+  -> StageCall stageId
+  -> StageAttemptRef
+  -> UTCTime
+  -> GraphRewrite NodeId (SerializableStageDefinition stageId)
+  -> RewriteBudget
+  -> BudgetContext
+  -> Text
+  -> Text
+  -> IO (StageAttemptResult stageId)
+persistWitnessedAdmissionFailure env stageCall attemptRef stageEnd serializableRewrite currentBudget budgetCtx rejType rejMsg = do
+  let rejectionCtx =
+        RewriteRejectionContext
+          { rrcRejectionType = rejType
+          , rrcMessage = rejMsg
+          , rrcExceededDimensions = []
+          , rrcBudgetContext = budgetCtx
+          , rrcAttemptedCost = Nothing
+          , rrcAttemptNumber = 0
+          }
+      rejectedRewrite =
+        rejectedRewriteInsertValue
+          env
+          stageCall
+          currentBudget
+          (Aeson.toJSON serializableRewrite)
+          stageEnd
+          rejectionCtx
+  emitObsEvent $
+    EvtRewriteRejected env.seRunId stageCall.scStageName (rewriteRejectionInfo rejectionCtx Nothing)
+  handleRewriteAdmissionFailure
+    env
+    attemptRef
+    stageCall.scStageName
+    stageEnd
+    (RunFailureSpec rejectionCtx.rrcRejectionType rejectionCtx.rrcMessage False)
+    Nothing
+    [rejectedRewrite]
 
 handleRewriteAdmissionFailure
   :: StageEnv
@@ -765,6 +1132,7 @@ rejectedRewriteInsertValue env stageCall remainingBudget rewriteSpec stageEnd re
           then Nothing
           else Just (Aeson.toJSON rejectionCtx.rrcExceededDimensions)
     , griCreatedAt = stageEnd
+    , griAdmissionMode = admissionModeText AdmissionGassed
     }
 
 budgetContextFromBudget :: StagePlan stageId -> RewriteBudget -> BudgetContext
