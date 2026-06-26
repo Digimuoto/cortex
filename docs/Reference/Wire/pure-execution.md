@@ -16,6 +16,8 @@ related:
   - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
+  - docs/ADRs/0023-corepure-expression-surface.md
+  - docs/ADRs/0061-corepure-bounded-iteration-primitives.md
 ---
 
 # Wire Reference — Pure Execution
@@ -244,8 +246,79 @@ The implemented builtin environment is closed:
 | `toJson`   | 1     | Canonical compact JSON serialization for structured values.          |
 | `fromJson` | 1     | Parses a JSON string into a structured CorePure value.               |
 
+List, search, string, record, and bounded-iteration builtins (issue #295 batch 1):
+
+| Builtin       | Arity | Meaning                                                             |
+| ------------- | ----- | ------------------------------------------------------------------- |
+| `reverse`     | 1     | Reverses an array.                                                  |
+| `sort`        | 1     | Sorts an array by a fixed total order over JSON values.             |
+| `sortBy`      | 2     | `sortBy keyFn list`, stable sort by `keyFn item` under that order.  |
+| `take`        | 2     | `take n list`, the first `n` items, clamped to length.              |
+| `drop`        | 2     | `drop n list`, dropping the first `n` items, clamped.               |
+| `enumerate`   | 1     | Pairs each item with its index as `{index, value}`.                 |
+| `mapIndexed`  | 2     | `mapIndexed f list`, applying `f index value` to each item.         |
+| `find`        | 2     | First item matching the predicate, or `null`.                       |
+| `findIndex`   | 2     | Index of the first matching item, or `-1`.                          |
+| `contains`    | 2     | `contains x list`, whether `x` equals some array element.           |
+| `indexOf`     | 2     | Index of the first element equal to `x`, or `-1`.                   |
+| `count`       | 2     | Number of array items matching the predicate.                       |
+| `split`       | 2     | `split sep s`; an empty separator splits into characters.           |
+| `replace`     | 3     | `replace old new s`, replacing every `old`; empty `old` is a no-op. |
+| `substring`   | 3     | `substring start end s`, a half-open code-point slice, clamped.     |
+| `trim`        | 1     | Removes leading and trailing whitespace.                            |
+| `toLower`     | 1     | Lowercases a string.                                                |
+| `toUpper`     | 1     | Uppercases a string.                                                |
+| `startsWith`  | 2     | `startsWith prefix s`, whether `s` begins with `prefix`.            |
+| `endsWith`    | 2     | `endsWith suffix s`, whether `s` ends with `suffix`.                |
+| `strLength`   | 1     | Code-point length of a string.                                      |
+| `lines`       | 1     | Splits a string into an array of lines.                             |
+| `unlines`     | 1     | Joins an array of strings with newlines, with no trailing newline.  |
+| `keys`        | 1     | Object keys as a key-sorted array of strings.                       |
+| `values`      | 1     | Object values, in key-sorted order.                                 |
+| `entries`     | 1     | Object fields as a key-sorted array of `{key, value}`.              |
+| `withDefault` | 2     | `withDefault default x`, returning `x` unless it is `null`.         |
+| `isNull`      | 1     | Whether a value is `null`.                                          |
+| `range`       | 2     | `range start end`, the half-open integer sequence `[start, end)`.   |
+| `fold`        | 3     | `fold f init list`, left reduction applying `f acc item`.           |
+| `foldRight`   | 3     | `foldRight f init list`, right reduction applying `f item acc`.     |
+
 Every builtin is ordinary CorePure function application. Builtins do not receive host authority.
 Functions intended for pipe use are data-last.
+
+### Conventions
+
+- Functions are data-last: the collection or string carried by the pipe is the final argument, so
+  `items |> filter keep |> take 5` reads left to right.
+- Absent-result builtins use in-band sentinels: `find` returns `null`, while `findIndex` and
+  `indexOf` return `-1`.
+- `take`, `drop`, and `substring` clamp out-of-range indices instead of failing.
+- `range` is half-open, so `range 0 n` yields `[0, 1, ..., n - 1]`.
+- `keys`, `values`, `entries`, and `sort` produce a deterministic key/value order, independent of
+  the host hash-map layout.
+
+### Bounded iteration
+
+`range`, `fold`, and `foldRight` are the bounded-iteration primitives. CorePure stays total, so they
+are bounded by a fixed deterministic cap rather than an operator budget, per
+[ADR 0061](../../ADRs/0061-corepure-bounded-iteration-primitives.md): `range` rejects a span beyond
+the cap (its direction is decided first, so a backwards or equal range is empty at any magnitude,
+and the span is then computed in unbounded integers so endpoints near the machine word bounds cannot
+overflow the check), and `fold`/`foldRight` reject when the accumulator exceeds the cap measured as
+value cost (JSON nodes plus string lengths, number magnitudes, and object key lengths). Exhaustion
+is the typed `PureBoundExceeded` failure. A `fold` accumulator must reduce to a JSON value; a
+function-valued accumulator is rejected, since a closure can capture a chain that only explodes when
+applied.
+
+`range` also bounds its endpoints, not only its span: a forward range whose endpoint magnitude
+exceeds a fixed decimal-digit bound (far above the Int range) is rejected as over-cap even when its
+span is small, so the emitted numbers — whose total size is the span times the endpoint width — stay
+bounded. Equal and backwards endpoints remain an empty range at any magnitude.
+
+The cap is per-operation, not a global allocation budget: it bounds each `range` and each `fold`,
+but not the combined cost of composed or nested expressions (for example a `range` feeding `map`, or
+a generator nested inside `map`), which stay bounded by input structure but can be large. CorePure
+is not the place for very large iteration; runtime-sized work belongs to Pulse-admitted bounded
+iteration (ADR 0055).
 
 ## Failure Surface
 
@@ -267,6 +340,8 @@ Pure execution fails deterministically. The evaluator reports typed failures, in
 - duplicate binding names within one scope;
 - duplicate lambda parameters;
 - invalid JSON passed to `fromJson`;
+- exceeding the fixed CorePure bounded-iteration cap (a `range` span or `fold` accumulator past the
+  ceiling);
 - `where` expressions that do not evaluate to records.
 
 These failures are runtime pure-task failures after the graph has been admitted. Source and binding

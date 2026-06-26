@@ -1,5 +1,6 @@
 import Mathlib.Data.Finset.Basic
 import Mathlib.Data.Int.Basic
+import Mathlib.Tactic.FinCases
 
 /-!
 ## Overview
@@ -159,6 +160,37 @@ def closedBuiltinEnv : List BuiltinSpec :=
   , { name := "joinWith", arity := 2, authority := BuiltinAuthority.pureValue }
   , { name := "toJson", arity := 1, authority := BuiltinAuthority.pureValue }
   , { name := "fromJson", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "reverse", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "sort", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "sortBy", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "take", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "drop", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "enumerate", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "mapIndexed", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "find", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "findIndex", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "contains", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "indexOf", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "count", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "split", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "replace", arity := 3, authority := BuiltinAuthority.pureValue }
+  , { name := "substring", arity := 3, authority := BuiltinAuthority.pureValue }
+  , { name := "trim", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "toLower", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "toUpper", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "startsWith", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "endsWith", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "strLength", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "lines", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "unlines", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "keys", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "values", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "entries", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "withDefault", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "isNull", arity := 1, authority := BuiltinAuthority.pureValue }
+  , { name := "range", arity := 2, authority := BuiltinAuthority.pureValue }
+  , { name := "fold", arity := 3, authority := BuiltinAuthority.pureValue }
+  , { name := "foldRight", arity := 3, authority := BuiltinAuthority.pureValue }
   ]
 
 /-- Name/arity projection of the proof-side closed builtin mirror. -/
@@ -186,6 +218,37 @@ theorem closedBuiltinSignature_eq :
       , ("joinWith", 2)
       , ("toJson", 1)
       , ("fromJson", 1)
+      , ("reverse", 1)
+      , ("sort", 1)
+      , ("sortBy", 2)
+      , ("take", 2)
+      , ("drop", 2)
+      , ("enumerate", 1)
+      , ("mapIndexed", 2)
+      , ("find", 2)
+      , ("findIndex", 2)
+      , ("contains", 2)
+      , ("indexOf", 2)
+      , ("count", 2)
+      , ("split", 2)
+      , ("replace", 3)
+      , ("substring", 3)
+      , ("trim", 1)
+      , ("toLower", 1)
+      , ("toUpper", 1)
+      , ("startsWith", 2)
+      , ("endsWith", 2)
+      , ("strLength", 1)
+      , ("lines", 1)
+      , ("unlines", 1)
+      , ("keys", 1)
+      , ("values", 1)
+      , ("entries", 1)
+      , ("withDefault", 2)
+      , ("isNull", 1)
+      , ("range", 2)
+      , ("fold", 3)
+      , ("foldRight", 3)
       ] :=
   rfl
 
@@ -193,46 +256,9 @@ theorem closedBuiltinSignature_eq :
 theorem closedBuiltinEnv_authorityFree :
     ∀ spec, spec ∈ closedBuiltinEnv → spec.authorityFree := by
   intro spec hSpec
-  simp [closedBuiltinEnv] at hSpec
-  rcases hSpec with
-    hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec |
-      hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec | hSpec
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
-  · cases hSpec
-    rfl
+  -- `fin_cases` enumerates every concrete entry of `closedBuiltinEnv`, so this
+  -- proof stays correct as the closed builtin table grows without per-entry edits.
+  fin_cases hSpec <;> rfl
 
 /-- Unary operators in the modeled CorePure subset. -/
 inductive UnaryOp : Type where

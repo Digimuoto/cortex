@@ -48,6 +48,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Scientific (Scientific, toBoundedInteger)
 import Data.Scientific qualified as Scientific
 import Data.Set (Set)
@@ -64,6 +65,16 @@ import Cortex.Wire.Executor
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
+  )
+import Cortex.Wire.Pure.Bounds
+  ( FoldAccumulator
+  , clampIndex
+  , clampedIndexValue
+  , corePureBoundedIterationCap
+  , foldAccumulatorValue
+  , foldRangePlan
+  , mkFoldAccumulator
+  , planRange
   )
 import Cortex.Wire.Runtime (WireInputBundle (..))
 import Cortex.Wire.Syntax
@@ -100,6 +111,7 @@ data PureEvalError
   | PureDuplicateLambdaParam !Text
   | PureDuplicateRecordFieldPath ![Text] ![Text]
   | PureJsonParseError !Text
+  | PureBoundExceeded !Text
   | PureWhereExpectedRecord !Text
   | PureStaticFieldSetUndeterminable
   | PureStaticBindingCycle !Text
@@ -218,6 +230,8 @@ renderPureEvalError = \case
       <> "."
   PureJsonParseError reason ->
     "Pure expression could not parse JSON: " <> reason <> "."
+  PureBoundExceeded boundName ->
+    "Pure expression exceeded the fixed CorePure " <> boundName <> " bound."
   PureWhereExpectedRecord actual ->
     "Pure where-clause must evaluate to a record, but received " <> actual <> "."
   PureStaticFieldSetUndeterminable ->
@@ -1120,6 +1134,46 @@ corePureBuiltinSpecs =
   , builtin "joinWith" 2 corePureJoinWith
   , builtin "toJson" 1 corePureToJson
   , builtin "fromJson" 1 corePureFromJson
+  , -- List-shape builtins (issue #295, batch 1).
+    builtin "reverse" 1 corePureReverse
+  , builtin "sort" 1 corePureSort
+  , builtin "sortBy" 2 corePureSortBy
+  , builtin "take" 2 corePureTake
+  , builtin "drop" 2 corePureDrop
+  , builtin "enumerate" 1 corePureEnumerate
+  , builtin "mapIndexed" 2 corePureMapIndexed
+  , -- List-search builtins.
+    builtin "find" 2 corePureFind
+  , builtin "findIndex" 2 corePureFindIndex
+  , builtin "contains" 2 corePureContains
+  , builtin "indexOf" 2 corePureIndexOf
+  , builtin "count" 2 corePureCount
+  , -- String builtins.
+    builtin "split" 2 corePureSplit
+  , builtin "replace" 3 corePureReplace
+  , builtin "substring" 3 corePureSubstring
+  , builtin "trim" 1 (stringUnaryBuiltin "trim" (Aeson.String . T.strip))
+  , builtin "toLower" 1 (stringUnaryBuiltin "toLower" (Aeson.String . T.toLower))
+  , builtin "toUpper" 1 (stringUnaryBuiltin "toUpper" (Aeson.String . T.toUpper))
+  , builtin "startsWith" 2 (stringBinaryBoolBuiltin "startsWith" T.isPrefixOf)
+  , builtin "endsWith" 2 (stringBinaryBoolBuiltin "endsWith" T.isSuffixOf)
+  , builtin "strLength" 1 (stringUnaryBuiltin "strLength" (Aeson.Number . fromIntegral . T.length))
+  , builtin
+      "lines"
+      1
+      (stringUnaryBuiltin "lines" (Aeson.Array . Vector.fromList . fmap Aeson.String . T.lines))
+  , builtin "unlines" 1 corePureUnlines
+  , -- Record builtins.
+    builtin "keys" 1 corePureKeys
+  , builtin "values" 1 corePureValues
+  , builtin "entries" 1 corePureEntries
+  , -- Null / option builtins.
+    builtin "withDefault" 2 corePureWithDefault
+  , builtin "isNull" 1 corePureIsNull
+  , -- Bounded-iteration builtins (capped; see ADR on CorePure bounded iteration).
+    builtin "range" 2 corePureRange
+  , builtin "fold" 3 corePureFold
+  , builtin "foldRight" 3 corePureFoldRight
   ]
   where
     builtin name arity implementation =
@@ -1379,6 +1433,332 @@ corePureFromJson [value] = do
     Right jsonValue -> Right (CorePureJson jsonValue)
     Left reason -> Left (PureJsonParseError (T.pack reason))
 corePureFromJson args = impossibleBuiltinArity "fromJson" 1 args
+
+corePureReverse :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureReverse [listValue] = do
+  values <- corePureArray listValue
+  Right (CorePureJson (Aeson.Array (Vector.reverse values)))
+corePureReverse args = impossibleBuiltinArity "reverse" 1 args
+
+corePureSort :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureSort [listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  Right (CorePureJson (Aeson.Array (Vector.fromList (List.sortBy compareJsonValues values))))
+corePureSort args = impossibleBuiltinArity "sort" 1 args
+
+corePureSortBy :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureSortBy [keyFunction, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  keyed <-
+    traverse
+      ( \value -> do
+          key <- applyJsonFunction keyFunction value >>= corePureValueToJson
+          Right (key, value)
+      )
+      values
+  let sorted = List.sortBy (\lhs rhs -> compareJsonValues (fst lhs) (fst rhs)) keyed
+  Right (CorePureJson (Aeson.Array (Vector.fromList (fmap snd sorted))))
+corePureSortBy args = impossibleBuiltinArity "sortBy" 2 args
+
+corePureTake :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureTake [countValue, listValue] = do
+  values <- corePureArray listValue
+  count <- boundedIndex (Vector.length values) countValue
+  Right (CorePureJson (Aeson.Array (Vector.take count values)))
+corePureTake args = impossibleBuiltinArity "take" 2 args
+
+corePureDrop :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureDrop [countValue, listValue] = do
+  values <- corePureArray listValue
+  count <- boundedIndex (Vector.length values) countValue
+  Right (CorePureJson (Aeson.Array (Vector.drop count values)))
+corePureDrop args = impossibleBuiltinArity "drop" 2 args
+
+corePureEnumerate :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureEnumerate [listValue] = do
+  values <- corePureArray listValue
+  let indexed =
+        Vector.imap
+          (\index value -> Aeson.object ["index" Aeson..= index, "value" Aeson..= value])
+          values
+  Right (CorePureJson (Aeson.Array indexed))
+corePureEnumerate args = impossibleBuiltinArity "enumerate" 1 args
+
+corePureMapIndexed :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureMapIndexed [functionValue, listValue] = do
+  values <- corePureArray listValue
+  mapped <-
+    Vector.imapM
+      ( \index value ->
+          applyCorePureValue
+            functionValue
+            [CorePureJson (Aeson.Number (fromIntegral index)), CorePureJson value]
+            >>= corePureValueToJson
+      )
+      values
+  Right (CorePureJson (Aeson.Array mapped))
+corePureMapIndexed args = impossibleBuiltinArity "mapIndexed" 2 args
+
+corePureFind :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFind [predicateValue, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  findFirst values
+  where
+    findFirst [] = Right (CorePureJson Aeson.Null)
+    findFirst (value : rest) = do
+      keep <- applyJsonFunction predicateValue value >>= corePureBool
+      if keep then Right (CorePureJson value) else findFirst rest
+corePureFind args = impossibleBuiltinArity "find" 2 args
+
+corePureFindIndex :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFindIndex [predicateValue, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  findFrom (0 :: Int) values
+  where
+    findFrom _ [] = Right (CorePureJson (Aeson.Number (-1)))
+    findFrom index (value : rest) = do
+      keep <- applyJsonFunction predicateValue value >>= corePureBool
+      if keep
+        then Right (CorePureJson (Aeson.Number (fromIntegral index)))
+        else findFrom (index + 1) rest
+corePureFindIndex args = impossibleBuiltinArity "findIndex" 2 args
+
+corePureContains :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureContains [needleValue, listValue] = do
+  needle <- corePureValueToJson needleValue
+  values <- corePureArray listValue
+  Right (CorePureJson (Aeson.Bool (Vector.elem needle values)))
+corePureContains args = impossibleBuiltinArity "contains" 2 args
+
+corePureIndexOf :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureIndexOf [needleValue, listValue] = do
+  needle <- corePureValueToJson needleValue
+  values <- corePureArray listValue
+  let foundIndex = fromMaybe (-1) (Vector.elemIndex needle values)
+  Right (CorePureJson (Aeson.Number (fromIntegral foundIndex)))
+corePureIndexOf args = impossibleBuiltinArity "indexOf" 2 args
+
+corePureCount :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureCount [predicateValue, listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  results <- traverse (applyJsonFunction predicateValue >=> corePureBool) values
+  Right (CorePureJson (Aeson.Number (fromIntegral (length (filter id results)))))
+corePureCount args = impossibleBuiltinArity "count" 2 args
+
+corePureSplit :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureSplit [separatorValue, stringValue] = do
+  separator <- corePureStringValue separatorValue
+  text <- corePureStringValue stringValue
+  let parts = if T.null separator then T.chunksOf 1 text else T.splitOn separator text
+  Right (CorePureJson (Aeson.Array (Vector.fromList (fmap Aeson.String parts))))
+corePureSplit args = impossibleBuiltinArity "split" 2 args
+
+corePureReplace :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureReplace [oldValue, newValue, stringValue] = do
+  oldText <- corePureStringValue oldValue
+  newText <- corePureStringValue newValue
+  text <- corePureStringValue stringValue
+  let result = if T.null oldText then text else T.replace oldText newText text
+  Right (CorePureJson (Aeson.String result))
+corePureReplace args = impossibleBuiltinArity "replace" 3 args
+
+corePureSubstring :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureSubstring [startValue, endValue, stringValue] = do
+  text <- corePureStringValue stringValue
+  let len = T.length text
+  lo <- boundedIndex len startValue
+  hi0 <- boundedIndex len endValue
+  let hi = max lo hi0
+  Right (CorePureJson (Aeson.String (T.take (hi - lo) (T.drop lo text))))
+corePureSubstring args = impossibleBuiltinArity "substring" 3 args
+
+{- | Clamp a CorePure number to a @[0, upper]@ index, mapping a non-integer to a
+typed error and unwrapping the guarded 'ClampedIndex' from "Cortex.Wire.Pure.Bounds".
+-}
+boundedIndex :: Int -> CorePureValue -> Either PureEvalError Int
+boundedIndex upper value = do
+  number <- corePureNumber value
+  case clampIndex upper number of
+    Just clamped -> Right (clampedIndexValue clamped)
+    Nothing -> Left (PureTypeMismatch "integer" "number")
+
+corePureUnlines :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureUnlines [listValue] = do
+  values <- Vector.toList <$> corePureArray listValue
+  strings <- traverse corePureJsonString values
+  Right (CorePureJson (Aeson.String (T.intercalate "\n" strings)))
+corePureUnlines args = impossibleBuiltinArity "unlines" 1 args
+
+stringUnaryBuiltin
+  :: Text -> (Text -> Aeson.Value) -> [CorePureValue] -> Either PureEvalError CorePureValue
+stringUnaryBuiltin _ render [stringValue] = do
+  text <- corePureStringValue stringValue
+  Right (CorePureJson (render text))
+stringUnaryBuiltin name _ args = impossibleBuiltinArity name 1 args
+
+stringBinaryBoolBuiltin
+  :: Text -> (Text -> Text -> Bool) -> [CorePureValue] -> Either PureEvalError CorePureValue
+stringBinaryBoolBuiltin _ predicate [firstValue, stringValue] = do
+  firstText <- corePureStringValue firstValue
+  text <- corePureStringValue stringValue
+  Right (CorePureJson (Aeson.Bool (predicate firstText text)))
+stringBinaryBoolBuiltin name _ args = impossibleBuiltinArity name 2 args
+
+corePureKeys :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureKeys [objectValue] = do
+  object <- corePureObject objectValue
+  let sortedKeys =
+        [Aeson.String (Key.toText key) | (key, _value) <- List.sortOn fst (KeyMap.toList object)]
+  Right (CorePureJson (Aeson.Array (Vector.fromList sortedKeys)))
+corePureKeys args = impossibleBuiltinArity "keys" 1 args
+
+corePureValues :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureValues [objectValue] = do
+  object <- corePureObject objectValue
+  let sortedValues = [value | (_key, value) <- List.sortOn fst (KeyMap.toList object)]
+  Right (CorePureJson (Aeson.Array (Vector.fromList sortedValues)))
+corePureValues args = impossibleBuiltinArity "values" 1 args
+
+corePureEntries :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureEntries [objectValue] = do
+  object <- corePureObject objectValue
+  let entries =
+        [ Aeson.object ["key" Aeson..= Key.toText key, "value" Aeson..= value]
+        | (key, value) <- List.sortOn fst (KeyMap.toList object)
+        ]
+  Right (CorePureJson (Aeson.Array (Vector.fromList entries)))
+corePureEntries args = impossibleBuiltinArity "entries" 1 args
+
+corePureWithDefault :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureWithDefault [defaultValue, value] =
+  case value of
+    CorePureJson Aeson.Null -> Right defaultValue
+    _ -> Right value
+corePureWithDefault args = impossibleBuiltinArity "withDefault" 2 args
+
+corePureIsNull :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureIsNull [value] =
+  Right
+    ( CorePureJson
+        ( Aeson.Bool
+            ( case value of
+                CorePureJson Aeson.Null -> True
+                _ -> False
+            )
+        )
+    )
+corePureIsNull args = impossibleBuiltinArity "isNull" 1 args
+
+corePureRange :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureRange [startValue, endValue] = do
+  startNumber <- corePureNumber startValue
+  endNumber <- corePureNumber endValue
+  case planRange corePureBoundedIterationCap startNumber endNumber of
+    Nothing -> Left (PureTypeMismatch "integer" "number")
+    Just plan ->
+      foldRangePlan
+        (Right (CorePureJson (Aeson.Array Vector.empty)))
+        ( \start end ->
+            let elements = [Aeson.Number (fromInteger index) | index <- [start .. end - 1]]
+             in Right (CorePureJson (Aeson.Array (Vector.fromList elements)))
+        )
+        (Left (PureBoundExceeded "range span"))
+        plan
+corePureRange args = impossibleBuiltinArity "range" 2 args
+
+corePureFold :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFold [functionValue, initialValue, listValue] = do
+  values <- corePureArray listValue
+  -- The accumulator is a guarded FoldAccumulator throughout: the seed and every
+  -- step result pass through foldAccumulatorOf (JSON shape and cost cap), so a
+  -- function-valued or over-cap accumulator cannot slip in or out.
+  seed <- foldAccumulatorOf initialValue
+  result <- Vector.foldM' step seed values
+  Right (CorePureJson (foldAccumulatorValue result))
+  where
+    step accumulator item =
+      applyCorePureValue
+        functionValue
+        [CorePureJson (foldAccumulatorValue accumulator), CorePureJson item]
+        >>= foldAccumulatorOf
+corePureFold args = impossibleBuiltinArity "fold" 3 args
+
+corePureFoldRight :: [CorePureValue] -> Either PureEvalError CorePureValue
+corePureFoldRight [functionValue, initialValue, listValue] = do
+  values <- corePureArray listValue
+  -- Right fold expressed as a strict left fold over the reversed vector, so it
+  -- stays iterative while preserving the f(item, acc) application order; the
+  -- accumulator stays a guarded FoldAccumulator, bounded before any reducer call.
+  seed <- foldAccumulatorOf initialValue
+  result <- Vector.foldM' step seed (Vector.reverse values)
+  Right (CorePureJson (foldAccumulatorValue result))
+  where
+    step accumulator item =
+      applyCorePureValue
+        functionValue
+        [CorePureJson item, CorePureJson (foldAccumulatorValue accumulator)]
+        >>= foldAccumulatorOf
+corePureFoldRight args = impossibleBuiltinArity "foldRight" 3 args
+
+{- | Guard a reducer result or seed into a 'FoldAccumulator': reject a
+function-valued accumulator, then enforce the JSON cost cap. This is the only way
+the fold builtins obtain an accumulator, so the guard cannot be skipped.
+-}
+foldAccumulatorOf :: CorePureValue -> Either PureEvalError FoldAccumulator
+foldAccumulatorOf value =
+  case value of
+    CorePureJson json ->
+      maybe
+        (Left (PureBoundExceeded "fold accumulator"))
+        Right
+        (mkFoldAccumulator corePureBoundedIterationCap json)
+    _ ->
+      Left (PureTypeMismatch "JSON fold accumulator" (corePureValueKind value))
+
+{- | Total order over JSON values for @sort@ and @sortBy@. Aeson @Value@ has @Eq@
+but no @Ord@; this ranks by type then orders within a type, recursing into
+arrays and key-sorted objects, so the result is deterministic across builds.
+-}
+compareJsonValues :: Aeson.Value -> Aeson.Value -> Ordering
+compareJsonValues left right =
+  case (left, right) of
+    (Aeson.Null, Aeson.Null) -> EQ
+    (Aeson.Bool lhs, Aeson.Bool rhs) -> compare lhs rhs
+    (Aeson.Number lhs, Aeson.Number rhs) -> compare lhs rhs
+    (Aeson.String lhs, Aeson.String rhs) -> compare lhs rhs
+    (Aeson.Array lhs, Aeson.Array rhs) ->
+      compareJsonList (Vector.toList lhs) (Vector.toList rhs)
+    (Aeson.Object lhs, Aeson.Object rhs) ->
+      compareJsonFields (List.sortOn fst (KeyMap.toList lhs)) (List.sortOn fst (KeyMap.toList rhs))
+    _ -> compare (jsonTypeRank left) (jsonTypeRank right)
+  where
+    compareJsonList [] [] = EQ
+    compareJsonList [] _ = LT
+    compareJsonList _ [] = GT
+    compareJsonList (lhs : lhsRest) (rhs : rhsRest) =
+      case compareJsonValues lhs rhs of
+        EQ -> compareJsonList lhsRest rhsRest
+        ordering -> ordering
+
+    compareJsonFields [] [] = EQ
+    compareJsonFields [] _ = LT
+    compareJsonFields _ [] = GT
+    compareJsonFields ((lhsKey, lhsValue) : lhsRest) ((rhsKey, rhsValue) : rhsRest) =
+      case compare lhsKey rhsKey of
+        EQ ->
+          case compareJsonValues lhsValue rhsValue of
+            EQ -> compareJsonFields lhsRest rhsRest
+            ordering -> ordering
+        ordering -> ordering
+
+jsonTypeRank :: Aeson.Value -> Int
+jsonTypeRank = \case
+  Aeson.Null -> 0
+  Aeson.Bool {} -> 1
+  Aeson.Number {} -> 2
+  Aeson.String {} -> 3
+  Aeson.Array {} -> 4
+  Aeson.Object {} -> 5
 
 applyJsonFunction :: CorePureValue -> Aeson.Value -> Either PureEvalError CorePureValue
 applyJsonFunction functionValue value =

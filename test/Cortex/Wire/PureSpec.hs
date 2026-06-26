@@ -13,6 +13,7 @@ Tests may import the surface they exercise, but they do not define downstream pr
 module Cortex.Wire.PureSpec (spec) where
 
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific, scientific)
@@ -21,6 +22,19 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Test.Hspec
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck
+  ( Gen
+  , NonNegative (..)
+  , Property
+  , arbitrary
+  , choose
+  , forAll
+  , listOf
+  , oneof
+  , (.&&.)
+  , (===)
+  )
 
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
@@ -52,6 +66,19 @@ import Cortex.Wire
   , preparePureTaskOutputs
   , validatePurePorts
   , wireInputBundleFromStageInputs
+  )
+import Cortex.Wire.Pure.Bounds
+  ( CostCheck (..)
+  , RangePlan
+  , checkValueCost
+  , clampIndex
+  , clampedIndexValue
+  , corePureBoundedIterationCap
+  , foldAccumulatorValue
+  , foldRangePlan
+  , iterationCapValue
+  , mkFoldAccumulator
+  , planRange
   )
 
 spec :: Spec
@@ -933,6 +960,37 @@ spec = describe "Cortex.Wire.Pure" $ do
                  , ("joinWith", 2)
                  , ("toJson", 1)
                  , ("fromJson", 1)
+                 , ("reverse", 1)
+                 , ("sort", 1)
+                 , ("sortBy", 2)
+                 , ("take", 2)
+                 , ("drop", 2)
+                 , ("enumerate", 1)
+                 , ("mapIndexed", 2)
+                 , ("find", 2)
+                 , ("findIndex", 2)
+                 , ("contains", 2)
+                 , ("indexOf", 2)
+                 , ("count", 2)
+                 , ("split", 2)
+                 , ("replace", 3)
+                 , ("substring", 3)
+                 , ("trim", 1)
+                 , ("toLower", 1)
+                 , ("toUpper", 1)
+                 , ("startsWith", 2)
+                 , ("endsWith", 2)
+                 , ("strLength", 1)
+                 , ("lines", 1)
+                 , ("unlines", 1)
+                 , ("keys", 1)
+                 , ("values", 1)
+                 , ("entries", 1)
+                 , ("withDefault", 2)
+                 , ("isNull", 1)
+                 , ("range", 2)
+                 , ("fold", 3)
+                 , ("foldRight", 3)
                  ]
 
   it "keeps the CorePure builtin authority report closed and authority-free" $ do
@@ -963,6 +1021,37 @@ spec = describe "Cortex.Wire.Pure" $ do
                  , ("joinWith", 2, CorePureBuiltinPureValue)
                  , ("toJson", 1, CorePureBuiltinPureValue)
                  , ("fromJson", 1, CorePureBuiltinPureValue)
+                 , ("reverse", 1, CorePureBuiltinPureValue)
+                 , ("sort", 1, CorePureBuiltinPureValue)
+                 , ("sortBy", 2, CorePureBuiltinPureValue)
+                 , ("take", 2, CorePureBuiltinPureValue)
+                 , ("drop", 2, CorePureBuiltinPureValue)
+                 , ("enumerate", 1, CorePureBuiltinPureValue)
+                 , ("mapIndexed", 2, CorePureBuiltinPureValue)
+                 , ("find", 2, CorePureBuiltinPureValue)
+                 , ("findIndex", 2, CorePureBuiltinPureValue)
+                 , ("contains", 2, CorePureBuiltinPureValue)
+                 , ("indexOf", 2, CorePureBuiltinPureValue)
+                 , ("count", 2, CorePureBuiltinPureValue)
+                 , ("split", 2, CorePureBuiltinPureValue)
+                 , ("replace", 3, CorePureBuiltinPureValue)
+                 , ("substring", 3, CorePureBuiltinPureValue)
+                 , ("trim", 1, CorePureBuiltinPureValue)
+                 , ("toLower", 1, CorePureBuiltinPureValue)
+                 , ("toUpper", 1, CorePureBuiltinPureValue)
+                 , ("startsWith", 2, CorePureBuiltinPureValue)
+                 , ("endsWith", 2, CorePureBuiltinPureValue)
+                 , ("strLength", 1, CorePureBuiltinPureValue)
+                 , ("lines", 1, CorePureBuiltinPureValue)
+                 , ("unlines", 1, CorePureBuiltinPureValue)
+                 , ("keys", 1, CorePureBuiltinPureValue)
+                 , ("values", 1, CorePureBuiltinPureValue)
+                 , ("entries", 1, CorePureBuiltinPureValue)
+                 , ("withDefault", 2, CorePureBuiltinPureValue)
+                 , ("isNull", 1, CorePureBuiltinPureValue)
+                 , ("range", 2, CorePureBuiltinPureValue)
+                 , ("fold", 3, CorePureBuiltinPureValue)
+                 , ("foldRight", 3, CorePureBuiltinPureValue)
                  ]
 
   it "establishes CorePure static context from top-level record bindings" $ do
@@ -1168,6 +1257,350 @@ spec = describe "Cortex.Wire.Pure" $ do
     validatePurePorts scorePorts (Map.singleton "confidence" (num 1))
       `shouldBe` Left (PureOutputPortsMismatch ["score"] ["confidence"])
 
+  describe "batch 1 list, string, record, and bounded-iteration builtins" $ do
+    it "reshapes lists with reverse, sort, sortBy, take, and drop" $ do
+      evalBuiltin (call (var "reverse") [nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.toJSON ([3, 2, 1] :: [Int]))
+      evalBuiltin
+        (call (var "sort") [CorePureList [num 3, str "a", bool True, num 1, nullLit]])
+        `shouldBe` Right
+          ( Aeson.toJSON
+              [Aeson.Null, Aeson.Bool True, Aeson.Number 1, Aeson.Number 3, Aeson.String "a"]
+          )
+      evalBuiltin
+        ( call
+            (var "sortBy")
+            [ lambda ("x" :| []) (field (var "x") "k")
+            , CorePureList [record [("k", num 2)], record [("k", num 1)]]
+            ]
+        )
+        `shouldBe` Right
+          (Aeson.toJSON [Aeson.object ["k" Aeson..= (1 :: Int)], Aeson.object ["k" Aeson..= (2 :: Int)]])
+      evalBuiltin (call (var "take") [num 2, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.toJSON ([1, 2] :: [Int]))
+      evalBuiltin (call (var "take") [num 9, nums [1, 2]])
+        `shouldBe` Right (Aeson.toJSON ([1, 2] :: [Int]))
+      evalBuiltin (call (var "drop") [num 5, nums [1, 2]])
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+
+    it "indexes lists with enumerate and mapIndexed" $ do
+      evalBuiltin (call (var "enumerate") [strs ["a", "b"]])
+        `shouldBe` Right
+          ( Aeson.toJSON
+              [ Aeson.object ["index" Aeson..= (0 :: Int), "value" Aeson..= ("a" :: Text)]
+              , Aeson.object ["index" Aeson..= (1 :: Int), "value" Aeson..= ("b" :: Text)]
+              ]
+          )
+      evalBuiltin
+        (call (var "mapIndexed") [lambda ("i" :| ["x"]) (var "i"), strs ["a", "b", "c"]])
+        `shouldBe` Right (Aeson.toJSON ([0, 1, 2] :: [Int]))
+
+    it "searches lists with find, findIndex, contains, indexOf, and count" $ do
+      let greaterThanOne = lambda ("x" :| []) (bin CorePureGreaterThan (var "x") (num 1))
+      evalBuiltin (call (var "find") [greaterThanOne, nums [0, 2, 3]])
+        `shouldBe` Right (Aeson.Number 2)
+      evalBuiltin (call (var "find") [greaterThanOne, nums [0, 1]])
+        `shouldBe` Right Aeson.Null
+      evalBuiltin (call (var "findIndex") [greaterThanOne, nums [0, 2, 3]])
+        `shouldBe` Right (Aeson.Number 1)
+      evalBuiltin (call (var "findIndex") [greaterThanOne, nums [0, 1]])
+        `shouldBe` Right (Aeson.Number (-1))
+      evalBuiltin (call (var "contains") [num 2, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.Bool True)
+      evalBuiltin (call (var "contains") [num 9, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.Bool False)
+      evalBuiltin (call (var "indexOf") [num 2, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.Number 1)
+      evalBuiltin (call (var "indexOf") [num 9, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.Number (-1))
+      evalBuiltin (call (var "count") [greaterThanOne, nums [0, 2, 3]])
+        `shouldBe` Right (Aeson.Number 2)
+
+    it "processes strings with split, replace, substring, and case folds" $ do
+      evalBuiltin (call (var "split") [str ",", str "a,b,c"])
+        `shouldBe` Right (Aeson.toJSON (["a", "b", "c"] :: [Text]))
+      evalBuiltin (call (var "split") [str "", str "ab"])
+        `shouldBe` Right (Aeson.toJSON (["a", "b"] :: [Text]))
+      evalBuiltin (call (var "replace") [str "a", str "X", str "banana"])
+        `shouldBe` Right (Aeson.String "bXnXnX")
+      evalBuiltin (call (var "replace") [str "", str "X", str "ab"])
+        `shouldBe` Right (Aeson.String "ab")
+      evalBuiltin (call (var "substring") [num 1, num 3, str "hello"])
+        `shouldBe` Right (Aeson.String "el")
+      evalBuiltin (call (var "substring") [num 0, num 99, str "hi"])
+        `shouldBe` Right (Aeson.String "hi")
+      evalBuiltin (call (var "trim") [str "  hi  "])
+        `shouldBe` Right (Aeson.String "hi")
+      evalBuiltin (call (var "toLower") [str "AbC"]) `shouldBe` Right (Aeson.String "abc")
+      evalBuiltin (call (var "toUpper") [str "AbC"]) `shouldBe` Right (Aeson.String "ABC")
+      evalBuiltin (call (var "startsWith") [str "ba", str "banana"])
+        `shouldBe` Right (Aeson.Bool True)
+      evalBuiltin (call (var "endsWith") [str "na", str "banana"])
+        `shouldBe` Right (Aeson.Bool True)
+      evalBuiltin (call (var "strLength") [str "h\233llo"]) `shouldBe` Right (Aeson.Number 5)
+      evalBuiltin (call (var "lines") [str "a\nb"])
+        `shouldBe` Right (Aeson.toJSON (["a", "b"] :: [Text]))
+      evalBuiltin (call (var "unlines") [strs ["a", "b"]])
+        `shouldBe` Right (Aeson.String "a\nb")
+
+    it "reads records with key-sorted keys, values, and entries" $ do
+      let object = record [("b", num 2), ("a", num 1)]
+      evalBuiltin (call (var "keys") [object])
+        `shouldBe` Right (Aeson.toJSON (["a", "b"] :: [Text]))
+      evalBuiltin (call (var "values") [object])
+        `shouldBe` Right (Aeson.toJSON ([1, 2] :: [Int]))
+      evalBuiltin (call (var "entries") [object])
+        `shouldBe` Right
+          ( Aeson.toJSON
+              [ Aeson.object ["key" Aeson..= ("a" :: Text), "value" Aeson..= (1 :: Int)]
+              , Aeson.object ["key" Aeson..= ("b" :: Text), "value" Aeson..= (2 :: Int)]
+              ]
+          )
+
+    it "guards null with withDefault and isNull" $ do
+      evalBuiltin (call (var "withDefault") [num 0, nullLit]) `shouldBe` Right (Aeson.Number 0)
+      evalBuiltin (call (var "withDefault") [num 0, num 5]) `shouldBe` Right (Aeson.Number 5)
+      evalBuiltin (call (var "isNull") [nullLit]) `shouldBe` Right (Aeson.Bool True)
+      evalBuiltin (call (var "isNull") [num 0]) `shouldBe` Right (Aeson.Bool False)
+
+    it "iterates with range, fold, and foldRight" $ do
+      evalBuiltin (call (var "range") [num 2, num 5])
+        `shouldBe` Right (Aeson.toJSON ([2, 3, 4] :: [Int]))
+      evalBuiltin (call (var "range") [num 5, num 2])
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+      evalBuiltin
+        ( call
+            (var "fold")
+            [lambda ("acc" :| ["x"]) (bin CorePureAdd (var "acc") (var "x")), num 0, nums [1, 2, 3]]
+        )
+        `shouldBe` Right (Aeson.Number 6)
+      evalBuiltin
+        ( call
+            (var "foldRight")
+            [ lambda ("x" :| ["acc"]) (bin CorePureSubtract (var "x") (var "acc"))
+            , num 0
+            , nums [1, 2, 3]
+            ]
+        )
+        `shouldBe` Right (Aeson.Number 2)
+
+    it "renders a markdown table end to end with range, fold, and string ops" $ do
+      -- The capability that currently forces a Haskell report extension: build a
+      -- whole Markdown table in pure Wire by folding generated rows with string ops.
+      let header = str "| n | square |\n| --- | --- |"
+          rowStep =
+            lambda
+              ("acc" :| ["n"])
+              ( call
+                  (var "concat")
+                  [ CorePureList
+                      [ var "acc"
+                      , str "\n| "
+                      , call (var "toString") [var "n"]
+                      , str " | "
+                      , call (var "toString") [bin CorePureMultiply (var "n") (var "n")]
+                      , str " |"
+                      ]
+                  ]
+              )
+      evalBuiltin (call (var "fold") [rowStep, header, call (var "range") [num 1, num 4]])
+        `shouldBe` Right
+          (Aeson.String "| n | square |\n| --- | --- |\n| 1 | 1 |\n| 2 | 4 |\n| 3 | 9 |")
+
+    it "rejects iteration past the fixed bounded-iteration cap" $ do
+      evalBuiltin (call (var "range") [num 0, num 1000001])
+        `shouldBe` Left (PureBoundExceeded "range span")
+      evalBuiltin
+        ( call
+            (var "fold")
+            [ lambda ("acc" :| ["x"]) (call (var "concat") [CorePureList [var "acc", var "acc"]])
+            , str "a"
+            , call (var "range") [num 0, num 25]
+            ]
+        )
+        `shouldBe` Left (PureBoundExceeded "fold accumulator")
+
+    it "bounds numeric accumulator growth and range endpoint overflow" $ do
+      -- A squaring reducer over a tiny list still grows the accumulator without
+      -- limit; the cap must charge the number's magnitude, not count it as one node.
+      evalBuiltin
+        ( call
+            (var "fold")
+            [ lambda ("acc" :| ["x"]) (bin CorePureMultiply (var "acc") (var "acc"))
+            , num 2
+            , call (var "range") [num 0, num 25]
+            ]
+        )
+        `shouldBe` Left (PureBoundExceeded "fold accumulator")
+      -- Endpoints near the Int bounds must not overflow the span check into a
+      -- small value that slips an astronomically large enumeration through.
+      evalBuiltin
+        ( call
+            (var "range")
+            [num (fromIntegral (minBound :: Int)), num (fromIntegral (maxBound :: Int))]
+        )
+        `shouldBe` Left (PureBoundExceeded "range span")
+      evalBuiltin
+        ( call
+            (var "range")
+            [num (fromIntegral (maxBound :: Int)), num (fromIntegral (maxBound :: Int))]
+        )
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+
+    it "rejects function accumulators and charges object key growth in fold" $ do
+      -- A reducer that returns a closure escapes the JSON cost guard and explodes
+      -- only when applied; fold must reduce to a JSON value, not a function.
+      evalBuiltin
+        ( call
+            (var "fold")
+            [lambda ("acc" :| ["x"]) (lambda ("y" :| []) (var "y")), num 0, nums [1, 2, 3]]
+        )
+        `shouldBe` Left (PureTypeMismatch "JSON fold accumulator" "function")
+      -- A fold can double an object key each step while the value stays null; the
+      -- cost must charge key text, not just enqueue values, or it never trips.
+      let firstKey = CorePureIndex (call (var "keys") [var "acc"]) (num 0)
+          doubledKey = call (var "concat") [CorePureList [firstKey, firstKey]]
+          jsonText = call (var "concat") [CorePureList [str "{\"", doubledKey, str "\":null}"]]
+      evalBuiltin
+        ( call
+            (var "fold")
+            [ lambda ("acc" :| ["item"]) (call (var "fromJson") [jsonText])
+            , call (var "fromJson") [str "{\"a\":null}"]
+            , call (var "range") [num 0, num 25]
+            ]
+        )
+        `shouldBe` Left (PureBoundExceeded "fold accumulator")
+      -- The seed is guarded before the reducer runs, so over-cap and function
+      -- seeds are rejected up front on both empty and non-empty folds.
+      evalBuiltin
+        ( call
+            (var "fold")
+            [lambda ("acc" :| ["x"]) (var "acc"), num (scientific 1 2000000), CorePureList []]
+        )
+        `shouldBe` Left (PureBoundExceeded "fold accumulator")
+      evalBuiltin
+        ( call
+            (var "fold")
+            [lambda ("acc" :| ["x"]) (num 0), num (scientific 1 2000000), nums [1]]
+        )
+        `shouldBe` Left (PureBoundExceeded "fold accumulator")
+      evalBuiltin
+        ( call
+            (var "fold")
+            [lambda ("acc" :| ["x"]) (num 0), lambda ("z" :| []) (str "a"), nums [1]]
+        )
+        `shouldBe` Left (PureTypeMismatch "JSON fold accumulator" "function")
+      -- A number with an exponent at the Int minimum must not slip under the cap:
+      -- abs minBound overflows, so the exponent magnitude is taken in Integer.
+      evalBuiltin
+        ( call
+            (var "fold")
+            [lambda ("acc" :| ["x"]) (var "acc"), num (scientific 1 minBound), CorePureList []]
+        )
+        `shouldBe` Left (PureBoundExceeded "fold accumulator")
+
+    it "clamps out-of-Int indices and caps out-of-Int range spans" $ do
+      let big = num (scientific 1 20) -- 10^20, beyond the Int range
+          negBig = num (scientific (-1) 20) -- -10^20
+      evalBuiltin (call (var "take") [big, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.toJSON ([1, 2, 3] :: [Int]))
+      evalBuiltin (call (var "drop") [big, nums [1, 2, 3]])
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+      evalBuiltin (call (var "substring") [num 0, big, str "hello"])
+        `shouldBe` Right (Aeson.String "hello")
+      evalBuiltin (call (var "range") [num 0, big])
+        `shouldBe` Left (PureBoundExceeded "range span")
+      evalBuiltin (call (var "range") [num 0, negBig])
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+      -- A small range straddling the Int boundary is measured, not rejected.
+      evalBuiltin
+        ( call
+            (var "range")
+            [num (fromIntegral (maxBound :: Int)), num (fromIntegral (maxBound :: Int) + 1)]
+        )
+        `shouldBe` Right (Aeson.toJSON ([maxBound] :: [Int]))
+      evalBuiltin
+        ( call
+            (var "range")
+            [num (fromIntegral (maxBound :: Int) + 1), num (fromIntegral (maxBound :: Int))]
+        )
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+      -- A genuinely huge exponent is capped by sign, never materialised.
+      evalBuiltin (call (var "range") [num 0, num (scientific 1 2000000)])
+        `shouldBe` Left (PureBoundExceeded "range span")
+      -- Equal or backwards huge endpoints are an empty half-open range, not an
+      -- over-cap error: the direction is decided before the cap classification.
+      evalBuiltin (call (var "range") [num (scientific 1 2000000), num (scientific 1 2000000)])
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+      evalBuiltin (call (var "range") [num (scientific 1 3000000), num (scientific 1 2000000)])
+        `shouldBe` Right (Aeson.toJSON ([] :: [Int]))
+      -- A small forward span past Int is enumerated by its exact span, not
+      -- rejected: range(10^20, 10^20 + 1) is [10^20].
+      evalBuiltin
+        (call (var "range") [num (scientific 1 20), num (scientific (10 ^ (20 :: Int) + 1) 0)])
+        `shouldBe` Right (Aeson.toJSON ([10 ^ (20 :: Int)] :: [Integer]))
+      -- Endpoints with exponents near the Int bounds must not overflow the width
+      -- comparison: a forward over-cap range stays over-cap, not empty.
+      evalBuiltin
+        ( call
+            (var "range")
+            [num (scientific 1 (maxBound - 1)), num (scientific 1 maxBound)]
+        )
+        `shouldBe` Left (PureBoundExceeded "range span")
+      -- Non-integer indices are still rejected.
+      evalBuiltin (call (var "take") [num (scientific 15 (-1)), nums [1, 2, 3]])
+        `shouldBe` Left (PureTypeMismatch "integer" "number")
+
+  describe "Cortex.Wire.Pure.Bounds typed boundary" $ do
+    prop "clampIndex keeps integer indices within [0, upper]" $
+      \(n :: Int) (NonNegative upper) ->
+        fmap clampedIndexValue (clampIndex upper (fromIntegral n))
+          === Just (max 0 (min upper n))
+
+    prop "clampIndex never fails for huge integers and stays within bounds" $
+      \(NonNegative upper) ->
+        forAll genHugeInteger $ \number ->
+          case clampIndex upper number of
+            Just clamped ->
+              let value = clampedIndexValue clamped in value >= 0 && value <= upper
+            Nothing -> False
+
+    prop "clampIndex rejects non-integer indices" $
+      \(NonNegative upper) (n :: Integer) ->
+        clampIndex upper (scientific (2 * n + 1) (-1)) === Nothing
+
+    prop "planRange classifies in-range spans by the documented semantics" $
+      \(start :: Int) (end :: Int) ->
+        let capValue = toInteger (iterationCapValue corePureBoundedIterationCap)
+            width = toInteger end - toInteger start
+            expected
+              | width <= 0 = TagEmpty
+              | width > capValue = TagOverCap
+              | otherwise = TagEnumerate (toInteger start) (toInteger end)
+         in fmap
+              rangeTag
+              (planRange corePureBoundedIterationCap (fromIntegral start) (fromIntegral end))
+              === Just expected
+
+    prop "planRange treats equal endpoints as an empty range at any magnitude" $
+      forAll
+        genHugeInteger
+        ( \number ->
+            fmap rangeTag (planRange corePureBoundedIterationCap number number) === Just TagEmpty
+        )
+
+    prop "mkFoldAccumulator admits exactly within-cap JSON and preserves the value" $
+      forAll genBoundedJson withinCapAdmission
+
+    it "checkValueCost charges object keys and number magnitude" $ do
+      let capValue = iterationCapValue corePureBoundedIterationCap
+          hugeKeyObject =
+            Aeson.object [Key.fromText (T.replicate (capValue + 1) "k") Aeson..= Aeson.Null]
+      checkValueCost corePureBoundedIterationCap hugeKeyObject `shouldBe` OverLimit
+      checkValueCost corePureBoundedIterationCap (Aeson.Number (scientific 1 (capValue + 1)))
+        `shouldBe` OverLimit
+      checkValueCost corePureBoundedIterationCap (Aeson.Number 5) `shouldBe` WithinLimit
+
 scorePorts :: WirePorts
 scorePorts =
   WirePorts
@@ -1301,6 +1734,81 @@ bin =
 record :: [(Text, CorePureExpr)] -> CorePureExpr
 record fields =
   CorePureRecord [CorePureField (fieldName :| []) fieldExpr | (fieldName, fieldExpr) <- fields]
+
+nums :: [Scientific] -> CorePureExpr
+nums values =
+  CorePureList (fmap num values)
+
+strs :: [Text] -> CorePureExpr
+strs values =
+  CorePureList (fmap str values)
+
+nullLit :: CorePureExpr
+nullLit =
+  CorePureLit CorePureNull
+
+{- | Integer-valued numbers spanning the Int range and far beyond it (exponent up
+to 100000), so clamp/range properties exercise out-of-Int magnitudes.
+-}
+genHugeInteger :: Gen Scientific
+genHugeInteger =
+  scientific <$> arbitrary <*> choose (0, 100000)
+
+{- | Observable tag of a 'RangePlan' for property assertions, since the plan's
+constructors are hidden behind 'foldRangePlan'.
+-}
+data RangeTag = TagEmpty | TagEnumerate Integer Integer | TagOverCap
+  deriving stock (Eq, Show)
+
+rangeTag :: RangePlan -> RangeTag
+rangeTag = foldRangePlan TagEmpty TagEnumerate TagOverCap
+
+{- | Small JSON values for the fold-accumulator cost property: scalars and
+shallow numeric arrays, enough to exercise the within/over-cap boundary.
+-}
+genBoundedJson :: Gen Aeson.Value
+genBoundedJson =
+  oneof
+    [ pure Aeson.Null
+    , Aeson.Bool <$> arbitrary
+    , Aeson.Number . fromInteger <$> arbitrary
+    , Aeson.String . T.pack <$> arbitrary
+    , Aeson.toJSON <$> listOf (Aeson.Number . fromInteger <$> (arbitrary :: Gen Integer))
+    ]
+
+{- | mkFoldAccumulator admits a JSON value iff its cost is within the cap, and
+preserves the value unchanged when it admits it.
+-}
+withinCapAdmission :: Aeson.Value -> Property
+withinCapAdmission value =
+  case mkFoldAccumulator corePureBoundedIterationCap value of
+    Just accumulator ->
+      (foldAccumulatorValue accumulator === value)
+        .&&. ( checkValueCost corePureBoundedIterationCap (foldAccumulatorValue accumulator)
+                 === WithinLimit
+             )
+    Nothing ->
+      checkValueCost corePureBoundedIterationCap value === OverLimit
+
+{- | Evaluate a single CorePure expression with no inputs, returning the @out@ port
+value. Used to exercise individual builtins without per-test port scaffolding.
+-}
+evalBuiltin :: CorePureExpr -> Either PureEvalError Aeson.Value
+evalBuiltin expr =
+  (Map.! "out")
+    <$> evaluatePureTaskOutputs
+      builtinOutPorts
+      (wireInputBundleFromStageInputs Map.empty)
+      []
+      Nothing
+      (Map.singleton "out" expr)
+
+builtinOutPorts :: WirePorts
+builtinOutPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs = Map.singleton "out" WireOutputPort {wireOutputPortContract = "Any"}
+    }
 
 numJson :: Scientific -> Aeson.Value
 numJson =

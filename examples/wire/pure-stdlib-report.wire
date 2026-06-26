@@ -1,0 +1,69 @@
+# Pure Wire stdlib demonstration.
+#
+# Run:
+#
+#   wire run examples/wire/pure-stdlib-report.wire
+#
+# Everything below the seed source is CorePure. `range` generates the row
+# indices, `fold` reduces them into Markdown rows, and the string builtins
+# format each cell. This is the report-rendering shape that previously had to
+# live in a compiled Haskell extension; the whole table is now pure Wire,
+# chained with `|>` and the batch 1 list/string builtins.
+
+use std.io.{@stdout, @writeFile};
+
+contract Seed;
+contract Report;
+
+let tableHeader = "| n | square | cube | size |\n| --- | --- | --- | --- |";
+
+# One Markdown row per index, appended to the running table text. `fold` is the
+# bounded reducer: it folds each generated index onto the accumulated string.
+let appendRow = acc: n:
+  let
+    size = if n * n > 10 then "big" else "small";
+    cells = [
+      toString n,
+      toString (n * n),
+      toString (n * n * n),
+      toUpper size
+    ];
+  in
+  concat [acc, "\n| ", cells |> joinWith " | ", " |"];
+
+# `range 1 6` generates [1, 2, 3, 4, 5] with no loop or recursion; `fold`
+# reduces it; `length` and the string builtins shape the surrounding prose.
+let buildReport = seed:
+  let
+    rows = range 1 6;
+    table = rows |> fold appendRow tableHeader;
+  in
+  concat [
+    "# Wire pure stdlib report\n\n",
+    "seed: ", seed, "\n",
+    "rows: ", toString (length rows), "\n\n",
+    table, "\n"
+  ];
+
+node make_seed
+  -> seed: Seed = "demo";
+
+node render_report
+  <- seed: Seed;
+  -> print_summary: Report = summary;
+  -> write_summary: Report = summary;
+  where let
+    summary = buildReport seed;
+  in { inherit summary; };
+
+node print_report
+  <- print_summary: Report;
+  = @stdout { newline = true; } (print_summary);
+
+node write_report
+  <- write_summary: Report;
+  = @writeFile { path = "./wire-stdlib-report.md"; } (write_summary);
+
+make_seed
+  => render_report
+  => print_report <> write_report

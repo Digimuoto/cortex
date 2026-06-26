@@ -185,6 +185,7 @@ library
         Cortex.Wire.LeanFixture
         Cortex.Wire.Parser
         Cortex.Wire.Pure
+        Cortex.Wire.Pure.Bounds
         Cortex.Wire.Std
         Cortex.Wire.Syntax
         Cortex.Wire.Package

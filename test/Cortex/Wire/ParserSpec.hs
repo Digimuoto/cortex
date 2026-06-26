@@ -100,6 +100,9 @@ spec = describe "Cortex.Wire.Parser" $ do
     it "runtime-bounded iteration Wire example: parses the paginated ingest kernel" $
       parseWireFixture "examples/wire/runtime-bounded-paginated-ingest/page-kernel.wire"
 
+    it "parses the pure stdlib report example" $
+      parseWireFixture "examples/wire/pure-stdlib-report.wire"
+
     it "parses the C build example" $
       parseIncludedWireFixture "examples/wire/c-build/c-build.wire"
 
