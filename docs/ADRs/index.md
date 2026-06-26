@@ -77,6 +77,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0058](0058-pulse-atomic-suspend-settlement.md)                    | Pulse Atomic Suspend Settlement                                     | proposed   |
 | [0059](0059-durable-external-call-frontiers-on-pulse.md)           | Durable External-Call Frontiers on Pulse                            | proposed   |
 | [0060](0060-filesystem-package-and-binding-manifests.md)           | Filesystem Package and Binding Manifests                            | proposed   |
+| [0061](0061-corepure-bounded-iteration-primitives.md)              | CorePure Bounded Iteration Primitives                               | proposed   |
 
 ## Writing a new ADR
 
