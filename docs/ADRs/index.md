@@ -92,6 +92,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0077](0077-wire-manifest-versioning.md)                           | Wire Package Manifest Versioning and Forward-Compatibility Contract        | proposed   |
 | [0078](0078-lean-wire-elaboration-kernel.md)                       | Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel  | proposed   |
 | [0079](0079-wire-admission-witness-schema.md)                      | Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema   | proposed   |
+| [0080](0080-wire-binder-construction-boundary.md)                  | Wire Binder Construction and the Contract-Typing Boundary                  | proposed   |
 
 ## By category
 
@@ -100,12 +101,13 @@ classification; the superseded 0049 is omitted). Numbering stays in allocation o
 ADRs were added (chronological by repository entry; some frontmatter dates drift) — so this is only
 the category lens, not a renumber. A few ADRs cross-cut; only the primary category is shown here.
 
-- **Boundary & governance** (7): [0002](0002-cortex-downstream-ownership-boundary.md),
+- **Boundary & governance** (8): [0002](0002-cortex-downstream-ownership-boundary.md),
   [0003](0003-pulse-service-and-host-action-boundary.md),
   [0006](0006-compiled-workflow-artifact-boundary.md),
   [0016](0016-cortex-roots-and-logos-pattern-extraction.md),
   [0018](0018-canonical-haskell-module-tree.md), [0040](0040-logos-owned-reasoning-surfaces.md),
-  [0063](0063-adr-traceability-and-feature-status-canon.md)
+  [0063](0063-adr-traceability-and-feature-status-canon.md),
+  [0080](0080-wire-binder-construction-boundary.md)
 - **Pulse runtime & durability** (13): [0004](0004-graph-native-pulse-execution.md),
   [0008](0008-pulse-operator-visibility-surfaces.md),
   [0011](0011-compatibility-barriers-and-fresh-run-recovery.md),
