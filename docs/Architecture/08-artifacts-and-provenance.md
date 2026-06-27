@@ -32,7 +32,9 @@ It does not own:
 
 - graph structure or rewrite provenance
 - source-language typing rules
-- downstream artifact presentation such as report-specific HTML, spans, or UI affordances
+- downstream artifact presentation such as report-specific HTML, spans, or UI affordances, including
+  rendered-output provenance-coverage metrics and renderer projection of provenance into annotations
+  or sidecars
 
 ```mermaid
 flowchart LR
@@ -201,8 +203,6 @@ The pattern is:
   provenance and realized topology
 - [Cortex Terminology](../Reference/terminology.md) — normative definitions of envelope, payload
   kind, contract registry, and provenance
-- [ADR 0013 — Artifact Provenance Contract](../ADRs/0013-report-provenance-artifact-contract.md) —
-  artifact provenance contract decision
 - [ADR 0040 — Logos-Owned Reasoning Surfaces](../ADRs/0040-logos-owned-reasoning-surfaces.md) —
   concrete report/document IR ownership
 - [Consumer examples](../Consumers/) — downstream binding examples

@@ -30,8 +30,8 @@ Proposed - this ADR formally amends ADR 0028 by:
 - retiring ADR 0028's "parens required when `<>` and `=>` are mixed" rule and replacing it with a
   committed **precedence ladder**.
 
-It is the semantic foundation for ADR 0048 (`make`) and ADR 0049 (`*` fan operator); both depend on
-the rules pinned here.
+It is the semantic foundation for ADR 0048 (`make`) and ADR 0052 (the `*` boundary adapter); both
+depend on the rules pinned here.
 
 ## Context
 
@@ -52,9 +52,9 @@ keeps parser grouping separate from Mokhov relation laws, which apply only after
 forgotten during lowering. Here, **lowering** means translating the accepted Wire/Circuit frontier
 object into the plain Graph relation used for topology algorithms.
 
-ADR 0048 (bounded node generation via `make`) and ADR 0049 (record↔ports adapter via `*`) both need
-this foundation in place: `make` produces multi-port frontiers that must compose linearly under
-`=>`, and `*` adds a new operator whose precedence relative to `<>` and `=>` must be committed
+ADR 0048 (bounded node generation via `make`) and ADR 0052 (the `*` finite-product boundary adapter)
+both need this foundation in place: `make` produces multi-port frontiers that must compose linearly
+under `=>`, and `*` adds a new operator whose precedence relative to `<>` and `=>` must be committed
 before it can land.
 
 ### Algebraic foundation
@@ -75,7 +75,7 @@ Under this reading:
   matching edges, and leaves only the complementary unmatched ports exposed on the result. The
   matched ports cease to exist as resources, not just cease to be visible.
 - Wire has no implicit duplication primitive. Authors who need N consumers of one value generate N
-  output ports (ADR 0048) and pair them through an explicit adapter (ADR 0049).
+  output ports (ADR 0048) and pair them through an explicit adapter (ADR 0052).
 
 This grounding makes admission decidable from typing alone: at each composition step the set of
 admissible frontier contractions is statically computable from the current signature, and every Wire
@@ -86,7 +86,7 @@ linear-resource language where it sharpens the rules.
 ## Decision
 
 Wire commits to four rules. They apply to every existing topology operator and to the operators
-introduced by ADRs 0048 and 0049.
+introduced by ADRs 0048 and 0052.
 
 ### 1. Linear endpoint rule
 
@@ -96,8 +96,8 @@ clones.
 
 This sharpens ADR 0028's allowance "one output port to feed several compatible inputs": an output
 port may participate in at most one matched edge per composition. Distinct inputs that need the same
-value are produced explicitly (multiple output ports on the same producer, or a fan adapter
-introduced by ADR 0049).
+value are produced explicitly (multiple output ports on the same producer, or an explicit `*`
+adapter introduced by ADR 0052).
 
 ### 2. Match determinism for `=>`
 
@@ -121,7 +121,7 @@ Wire commits to:
 | Tighter   | `<>` / `,` | left          |
 | Looser    | `=>` / `*` | left          |
 
-Tighter binds first. `*` is defined by ADR 0049; this table reserves its precedence so the
+Tighter binds first. `*` is defined by ADR 0052; this table reserves its precedence so the
 foundation is forward-compatible.
 
 This is **inverted from Mokhov's `Algebra.Graph` Haskell library**, where connect (the analog of
@@ -167,7 +167,7 @@ composition has one visible parallel operator and record/list comma syntax stays
 - **Allow non-linear endpoints (one output to many inputs implicitly).** Rejected because it breaks
   the substructural reading of the typed frontier and silently makes `make(N, K) => sink` do the
   wrong thing. Authors who need multi-consumption produce multiple output ports explicitly.
-- **Defer the linearity rule to the construct ADRs (0048, 0049).** Rejected because both constructs
+- **Defer the linearity rule to the construct ADRs (0048, 0052).** Rejected because both constructs
   need linearity in place to define their semantics; pulling the rule into the foundation keeps each
   construct ADR self-contained.
 - **Keep the comma overlay alias.** Rejected. The alias competed visually with value-level list and
@@ -179,7 +179,7 @@ composition has one visible parallel operator and record/list comma syntax stays
 
 - Mixed topology expressions read clean without parens.
 - Linear endpoints make `make(N, K) => sink` a static error rather than silently incorrect.
-- Match determinism is committed in one place; `*` (ADR 0049) inherits it without restating.
+- Match determinism is committed in one place; `*` (ADR 0052) inherits it without restating.
 - The frontier-as-multiset reading has a single canonical home.
 
 ### Negative
@@ -189,7 +189,7 @@ composition has one visible parallel operator and record/list comma syntax stays
   continues to work but reads differently to a reader fluent in the new ladder.
 - `=>` no longer permits one output to feed several compatible inputs. Existing source that depended
   on that allowance is now a static error and must be rewritten with multiple output ports or an
-  explicit adapter (ADR 0049).
+  explicit adapter (ADR 0052).
 
 ### Obligations
 
@@ -224,7 +224,7 @@ composition has one visible parallel operator and record/list comma syntax stays
 - [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
 - [ADR 0028 - Wire Topology Composition and Boundary Labels](./0028-wire-topology-composition-and-boundary-labels.md)
 - [ADR 0048 - Wire Compile-Time Make for Bounded Node Generation](./0048-wire-make-bounded-node-generation.md)
-- [ADR 0049 - Wire Phantom Record↔Ports Adapter for Topology Fans](./0049-wire-fan-phantom-adapter.md)
+- [ADR 0052 - Wire Bounded Indexed Boundary Products](./0052-wire-bounded-indexed-boundary-products.md)
 - [Chapter 04 - Graph and Circuit](../Architecture/04-graph-and-circuit.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)
 - [Wire Grammar Reference](../Reference/Wire/grammar.md)

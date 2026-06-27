@@ -176,9 +176,10 @@ Those are follow-up decisions and implementation work, not prerequisites for the
 
 ## Extensibility
 
-New archetypes require an ADR because they change the public epistemological vocabulary. Downstream
-products do not need an ADR to create product-specific roles; they should map those roles to the
-nearest Logos archetype when using generic templates.
+New archetypes require a Logos-side decision record because they change the public epistemological
+vocabulary; archetype evolution is owned in the Logos repository, not on the Cortex ADR track.
+Downstream products do not need a decision record to create product-specific roles; they should map
+those roles to the nearest Logos archetype when using generic templates.
 
 Program templates extend the library by composing existing runtime authority:
 
@@ -194,8 +195,7 @@ tools, artifact semantics, DB loading, and authorization.
 
 ## Related
 
-- [ADR 0015 — Canonical Logos Archetypes](../../ADRs/0015-canonical-logos-archetypes.md)
-- [ADR 0016 — Cortex Roots and Logos Pattern Extraction](../../ADRs/0016-cortex-roots-and-logos-pattern-extraction.md)
+- [ADR 0016 — Cortex Canonical Root Taxonomy](../../ADRs/0016-cortex-roots-and-logos-pattern-extraction.md)
 - [ADR 0017 — Wire Executor and Port Catalog Boundary](../../ADRs/0017-wire-executor-and-port-catalog-boundary.md)
 - [ADR 0018 — Canonical Haskell Module Tree](../../ADRs/0018-canonical-haskell-module-tree.md)
 - [ADR 0020 — Wire Pure Output Equations](../../ADRs/0020-wire-pure-output-equations.md)

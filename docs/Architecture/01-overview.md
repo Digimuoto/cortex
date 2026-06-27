@@ -147,7 +147,6 @@ Read in order:
 - [../ADRs/0004-graph-native-pulse-execution.md](../ADRs/0004-graph-native-pulse-execution.md)
 - [../ADRs/0010-wire-closed-authority-and-three-layer-stack.md](../ADRs/0010-wire-closed-authority-and-three-layer-stack.md)
 - [../Consumers/](../Consumers/)
-- [../ADRs/0001-structured-report-ir.md](../ADRs/0001-structured-report-ir.md)
 
 ## Success Criteria
 

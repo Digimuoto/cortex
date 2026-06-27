@@ -37,7 +37,9 @@ the frame through which Cortex itself is defined.
 Adopt a strict three-part ownership boundary:
 
 - **Cortex substrate** owns reusable authoring, topology, execution, capability, provenance, memory,
-  provider, and artifact mechanics.
+  and artifact mechanics. Generic external-call execution is a substrate capability, but
+  model-provider adapters, response schemas, and structured-output policy are Logos-owned (ADR
+  0040).
 - **Downstream product binding** owns prompts, tools, domain semantics, product policy, task
   registration, artifact meaning, and operator choices.
 - **Host edge** owns transport, auth, persistence, streaming, route conversion, and delivery

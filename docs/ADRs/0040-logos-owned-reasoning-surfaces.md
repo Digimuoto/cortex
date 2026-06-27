@@ -13,8 +13,6 @@ related:
   - docs/Architecture/02-ownership-and-boundaries.md
   - docs/Architecture/08-artifacts-and-provenance.md
   - docs/Consumers/Logos/reasoning-library.md
-  - docs/ADRs/0001-structured-report-ir.md
-  - docs/ADRs/0013-report-provenance-artifact-contract.md
   - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - docs/ADRs/0018-canonical-haskell-module-tree.md
 ---
@@ -23,8 +21,11 @@ related:
 
 ## Status
 
-Accepted. This ADR supersedes ADR 0001's implementation placement and narrows the proposed module
-trees in ADR 0016 and ADR 0018.
+Accepted, and retained as the historical migration record. The durable ownership invariant it
+established now lives in
+[Chapter 02 — Ownership and Boundaries](../Architecture/02-ownership-and-boundaries.md); this ADR
+narrows the proposed module trees in ADR 0016 and ADR 0018 and records the move of the former
+report-IR surface out of Cortex.
 
 ## Context
 
@@ -82,7 +83,8 @@ Positive consequences:
 Costs and obligations:
 
 - Existing imports of the removed Cortex modules must move to Logos.
-- ADR 0001 remains historical, but its `Cortex exposes ReportIR` claim is superseded.
+- The former report-IR surface (previously recorded on the ADR track, since removed) is gone; Cortex
+  exposes no `ReportIR`.
 - Proposed ADRs that listed `Cortex.Artifact` or model/provider/tool surfaces under
   `Cortex.Capability` must be read through this ADR.
 - The Logos package must provide the moved APIs before Cortex deletes its copies.
@@ -103,7 +105,5 @@ Costs and obligations:
 - [Chapter 02 - Ownership and boundaries](../Architecture/02-ownership-and-boundaries.md)
 - [Chapter 08 - Artifacts and provenance](../Architecture/08-artifacts-and-provenance.md)
 - [Logos reasoning library](../Consumers/Logos/reasoning-library.md)
-- [ADR 0001 - Structured Document IR](0001-structured-report-ir.md)
-- [ADR 0013 - Artifact Provenance Contract](0013-report-provenance-artifact-contract.md)
-- [ADR 0016 - Cortex Roots and Logos Pattern Extraction](0016-cortex-roots-and-logos-pattern-extraction.md)
+- [ADR 0016 - Cortex Canonical Root Taxonomy](0016-cortex-roots-and-logos-pattern-extraction.md)
 - [ADR 0018 - Canonical Haskell Module Tree](0018-canonical-haskell-module-tree.md)

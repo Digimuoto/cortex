@@ -26,7 +26,7 @@ related:
   - docs/ADRs/0046-wire-compile-time-graph-forms.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
   - docs/ADRs/0048-wire-make-bounded-node-generation.md
-  - docs/ADRs/0049-wire-fan-phantom-adapter.md
+  - docs/ADRs/0052-wire-bounded-indexed-boundary-products.md
 ---
 
 # The Wire Language — Specification

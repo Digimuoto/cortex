@@ -15,12 +15,14 @@ The walker starts at @origin@ with mass @1@.  At each step it
 distributes a fraction @α@ of its current mass uniformly across
 outgoing edges; the remaining @1 - α@ "stops" at the current
 vertex.  Because the graph is a DAG, one topological pass computes
-the exact stationary distribution — no convergence loop, no @ε@.
+the exact propagated mass at every vertex — no convergence loop,
+no @ε@ (this is single-pass propagation, not a converged
+stationary distribution).
 
-__Interpretation by direction.__  To query upstream ancestors from
-a reviewer node, call the function with the /transposed/ topology:
+__Interpretation by direction.__  To query upstream ancestors of a
+given vertex, call the function with the /transposed/ topology:
 successors-in-transpose are actual predecessors in the original, so
-mass flows from the reviewer back through its causal cone.  For
+mass flows from that vertex back through its causal cone.  For
 downstream (descendant) queries use the topology as-is.  For
 bidirectional queries run the function twice and merge the maps
 with 'Data.Map.Strict.unionWith' 'max' — matches the BFS

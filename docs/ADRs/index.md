@@ -17,7 +17,6 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 
 | #                                                                  | Title                                                               | Status     |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------- |
-| [0001](0001-structured-report-ir.md)                               | Structured Document IR                                              | superseded |
 | [0002](0002-cortex-downstream-ownership-boundary.md)               | Cortex and Downstream Ownership Boundary                            | accepted   |
 | [0003](0003-pulse-service-and-host-action-boundary.md)             | Pulse Service and Host-Action Boundary                              | accepted   |
 | [0004](0004-graph-native-pulse-execution.md)                       | Graph-Native Pulse Execution                                        | accepted   |
@@ -29,10 +28,8 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0010](0010-wire-closed-authority-and-three-layer-stack.md)        | Wire as Closed-Authority Language over the Graph/Circuit/Wire Stack | accepted   |
 | [0011](0011-compatibility-barriers-and-fresh-run-recovery.md)      | Compatibility Barriers and Fresh-Run Recovery                       | accepted   |
 | [0012](0012-topological-memory-as-deterministic-graph-query.md)    | Topological Memory as Deterministic Graph Query                     | accepted   |
-| [0013](0013-report-provenance-artifact-contract.md)                | Artifact Provenance Contract                                        | accepted   |
 | [0014](0014-executor-taxonomy-model-vs-external-call.md)           | Model vs External Call                                              | proposed   |
-| [0015](0015-canonical-logos-archetypes.md)                         | Canonical Logos Archetypes                                          | proposed   |
-| [0016](0016-cortex-roots-and-logos-pattern-extraction.md)          | Cortex Roots and Logos Pattern Extraction                           | proposed   |
+| [0016](0016-cortex-roots-and-logos-pattern-extraction.md)          | Cortex Canonical Root Taxonomy                                      | proposed   |
 | [0017](0017-wire-executor-and-port-catalog-boundary.md)            | Wire Executor and Port Catalog Boundary                             | proposed   |
 | [0018](0018-canonical-haskell-module-tree.md)                      | Canonical Haskell Module Tree                                       | proposed   |
 | [0019](0019-executor-registration-and-binding.md)                  | Executor Registration and Binding                                   | proposed   |
@@ -43,7 +40,6 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0024](0024-typed-executor-node-interface.md)                      | Typed Executor Node Interface                                       | proposed   |
 | [0025](0025-configured-executor-values.md)                         | Configured Executor Values                                          | proposed   |
 | [0026](0026-wire-failure-taxonomy.md)                              | Wire Failure Taxonomy                                               | proposed   |
-| [0027](0027-typed-llm-output-binding.md)                           | Typed LLM Output Binding                                            | proposed   |
 | [0028](0028-wire-topology-composition-and-boundary-labels.md)      | Wire Topology Composition and Boundary Labels                       | proposed   |
 | [0029](0029-corepure-structured-serialization.md)                  | CorePure Structured Serialization                                   | proposed   |
 | [0030](0030-wire-node-implementation-forms.md)                     | Wire Node Implementation Forms                                      | proposed   |
@@ -65,7 +61,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0046](0046-wire-compile-time-graph-forms.md)                      | Wire Compile-Time Graph Forms                                       | proposed   |
 | [0047](0047-wire-frontier-linearity-and-precedence.md)             | Wire Frontier Linearity and Topology Operator Precedence            | proposed   |
 | [0048](0048-wire-make-bounded-node-generation.md)                  | Wire Compile-Time Make for Bounded Node Generation                  | proposed   |
-| [0049](0049-wire-fan-phantom-adapter.md)                           | Wire Phantom Record↔Ports Adapter for Topology Fans                | proposed   |
+| [0049](0049-wire-fan-phantom-adapter.md)                           | Wire Phantom Record↔Ports Adapter for Topology Fans                | superseded |
 | [0050](0050-wire-corepure-output-residue.md)                       | Wire CorePure Output Residue                                        | proposed   |
 | [0051](0051-wire-source-includes-and-item-generation.md)           | Wire Source Includes and Item Generation                            | proposed   |
 | [0052](0052-wire-bounded-indexed-boundary-products.md)             | Wire Bounded Indexed Boundary Products                              | proposed   |

@@ -66,8 +66,8 @@ main = do
           }
   -- Substrate shell: empty task registry. Consumers
   -- build their own binary that imports Cortex.Pulse and passes a
-  -- populated registry. Per ADR 0015 the runtime never imports
-  -- reasoning-layer or consumer-specific task definitions.
+  -- populated registry. Per ADR 0002 (and Architecture ch.02) the runtime
+  -- never imports reasoning-layer or consumer-specific task definitions.
   runPulse Map.empty config
 
 readRequiredSecretFile :: String -> FilePath -> IO T.Text

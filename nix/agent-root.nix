@@ -25,7 +25,7 @@ in
       Repository shape:
 
       - `src/Cortex/` is the main library. Public roots are `Cortex.Algebra`, `Cortex.Wire`,
-        `Cortex.Pulse`, `Cortex.Capability`, and `Cortex.Artifact`.
+        `Cortex.Pulse`, and `Cortex.Capability`.
       - Public upstream `Digimuoto/haskell-platform` provides runtime support through the
         `haskell-platform-src` flake input.
       - Downstream `Logos` owns reasoning-library code and consumes Cortex as a separate package.

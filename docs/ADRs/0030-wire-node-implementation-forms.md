@@ -21,7 +21,6 @@ related:
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0025-configured-executor-values.md
   - docs/ADRs/0026-wire-failure-taxonomy.md
-  - docs/ADRs/0027-typed-llm-output-binding.md
   - docs/ADRs/0031-wire-binding-forms-and-where-clauses.md
   - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
@@ -269,6 +268,5 @@ executor call. Zero-output and multi-output external executors must use the node
 - [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)
 - [ADR 0025 - Configured Executor Values](./0025-configured-executor-values.md)
 - [ADR 0026 - Wire Failure Taxonomy](./0026-wire-failure-taxonomy.md)
-- [ADR 0027 - Typed LLM Output Binding](./0027-typed-llm-output-binding.md)
 - [ADR 0039 - Wire Node Boundary Transform Normal Form](./0039-wire-node-boundary-transform-normal-form.md)
 - [Wire Grammar](../Reference/Wire/grammar.md)

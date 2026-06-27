@@ -34,7 +34,7 @@ Pulse durable execution path.
 
 ## Context
 
-ADRs 0023 through 0027 introduce several distinct failure sites:
+ADRs 0023 through 0026 introduce several distinct failure sites:
 
 - malformed Wire syntax;
 - missing, duplicate, or undeclared output equations;

@@ -16,7 +16,6 @@ related:
   - docs/ADRs/0045-wire-compile-time-node-body-kinds.md
   - docs/ADRs/0046-wire-compile-time-graph-forms.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
-  - docs/ADRs/0049-wire-fan-phantom-adapter.md
   - docs/ADRs/0052-wire-bounded-indexed-boundary-products.md
 ---
 
@@ -82,8 +81,8 @@ nodes named `workers_0` through `workers_9`. The identity scheme nests under ADR
 form-instantiation prefix when `make` appears inside a form body.
 
 For each generated child, `make` supplies the same `<binding>_<i>` token as the generated port
-label. This makes the children's exposed boundaries align naturally with record-form `*` (ADR 0049),
-which pairs by label.
+label. This makes the children's exposed boundaries align naturally with the record case of the `*`
+boundary adapter (ADR 0052), which pairs by label.
 
 ADR 0052 later admits `workers[i]` as source projection over these generated children. That
 projection is a source view, not the lowered node identity.
@@ -127,10 +126,10 @@ identities from.
 - **`make(N, K) => sink` is rejected for N > 1 unless every generated child exposes a distinct
   output matching a distinct sink input.** Under ADR 0047's linear endpoint rule, several generated
   children all exposing `out: T` cannot all feed one cardinality-one input port, and one output
-  cannot be implicitly copied. Authors hitting this surprise compose with `*` (ADR 0049, generalized
-  by ADR 0052) instead, which inserts the adapter that aggregates the children's outputs into one
-  product-shaped port the sink can consume. The language tour and `wire-code-style` skill must call
-  this out prominently; it is the first surprise authors will hit.
+  cannot be implicitly copied. Authors hitting this surprise compose with `*` (ADR 0052) instead,
+  which inserts the adapter that aggregates the children's outputs into one product-shaped port the
+  sink can consume. The language tour and `wire-code-style` skill must call this out prominently; it
+  is the first surprise authors will hit.
 
 ### Obligations
 
@@ -168,7 +167,6 @@ The executable Haskell expander and diagnostics remain separate correspondence w
 - [ADR 0045 - Wire Compile-Time Node-Body Kinds](./0045-wire-compile-time-node-body-kinds.md)
 - [ADR 0046 - Wire Compile-Time Graph Forms](./0046-wire-compile-time-graph-forms.md)
 - [ADR 0047 - Wire Frontier Linearity and Topology Operator Precedence](./0047-wire-frontier-linearity-and-precedence.md)
-- [ADR 0049 - Wire Phantom Record↔Ports Adapter for Topology Fans](./0049-wire-fan-phantom-adapter.md)
 - [ADR 0052 - Wire Bounded Indexed Boundary Products](./0052-wire-bounded-indexed-boundary-products.md)
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)
 - [Wire Grammar Reference](../Reference/Wire/grammar.md)

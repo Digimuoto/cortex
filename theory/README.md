@@ -144,37 +144,37 @@ actualized port-use witness layer. The source layer carries node identities, typ
 instances, exposed frontier endpoints, source `PortLinear`, and `forgetPorts` lowering into
 `Cortex.Graph.Relation`; overlay lowering and source linearity preservation are mechanized under
 node-and-endpoint-domain disjointness. `Cortex.Wire.Make` and `Cortex.Wire.PhantomAdapter` then
-exhibit ADR 0048's `make` and ADR 0049's `*` as constructions over those certified primitives.
-`Cortex.Wire.GeneratedForms` is the admission seam: it abstracts the per-binding identity scheme as
-a `GeneratedNamePolicy`, supplies the ADR 0048 `<binding>_<index>` default through
-`prefixedIndexPolicy`, carries `KindInstantiatedFrontiers` as the handoff from kind substitution to
-exact child port sets indexed by the accepted kind being instantiated, and requires the accepted
-kind to use its generated `PortLabel` formal at every frontier label position before `make` or
-`makeEach` admission can replace labels. It exposes named admission entry points `Make.accept`,
-`MakeEach.accept`, and `Star.accept` that return either a certified `LinearPortObject` or a small
-named diagnostic. `Cortex.Wire.ElaborationIR` adds the first Lean-owned post-parse,
-post-source-include Wire IR: nominal contracts, record fields, port signatures, opaque node-body
-boundaries, raw list-shaped declarations, accepted finite-frontier declarations, graph expressions
-for `()`, `<>`, `=>`, `*`, `select(...)`, `make`, and `makeEach`, and explicit static diagnostics.
-Isolated accepted node declarations project mechanically to the open `node_ports` source object; raw
-parsing, source includes, full identifier grammar validation, registry binding, graph admission, and
-executable elaboration certificates remain outside this module. The local accepted carriers do
-enforce non-empty nominal names, valid port signatures, per-direction label uniqueness, record-field
-label uniqueness, kind-parameter name uniqueness, module-level contract/kind/node/graph-binding name
-uniqueness, graph-binding name validity, generated-form ownership by the containing graph binding,
-select-arm nominal validity, and local reference closure for record-field contracts, frontier
-contracts, and graph-expression references. The `node_ports` projection keeps input and output port
-instances direction-distinct even when source labels match across directions.
-`Cortex.Wire.FrontierReclaim` states the in-memory lifetime consequence: once a linear source
-frontier is finished, no output or input endpoint has an open frontier obligation left. The source
-algebra is a certified proof-object layer, so raw syntax such as `=>` is not assumed linear by
-itself. The closed runtime-facing slice proves that every closed actualized input has exactly one
-producer, and every closed actualized output has exactly one edge consumer or terminal discharge.
-Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*` expansion, runtime reclaim
-hooks, and executable projection into actualized port use remain explicit correspondence obligations
-rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models recovery of selected latent
-branches as replay of the admitted selected append rewrite, not as a new graph operator or a re-run
-of selector code.
+exhibit ADR 0048's `make` and ADR 0052's `*` (which superseded 0049) as constructions over those
+certified primitives. `Cortex.Wire.GeneratedForms` is the admission seam: it abstracts the
+per-binding identity scheme as a `GeneratedNamePolicy`, supplies the ADR 0048 `<binding>_<index>`
+default through `prefixedIndexPolicy`, carries `KindInstantiatedFrontiers` as the handoff from kind
+substitution to exact child port sets indexed by the accepted kind being instantiated, and requires
+the accepted kind to use its generated `PortLabel` formal at every frontier label position before
+`make` or `makeEach` admission can replace labels. It exposes named admission entry points
+`Make.accept`, `MakeEach.accept`, and `Star.accept` that return either a certified
+`LinearPortObject` or a small named diagnostic. `Cortex.Wire.ElaborationIR` adds the first
+Lean-owned post-parse, post-source-include Wire IR: nominal contracts, record fields, port
+signatures, opaque node-body boundaries, raw list-shaped declarations, accepted finite-frontier
+declarations, graph expressions for `()`, `<>`, `=>`, `*`, `select(...)`, `make`, and `makeEach`,
+and explicit static diagnostics. Isolated accepted node declarations project mechanically to the
+open `node_ports` source object; raw parsing, source includes, full identifier grammar validation,
+registry binding, graph admission, and executable elaboration certificates remain outside this
+module. The local accepted carriers do enforce non-empty nominal names, valid port signatures,
+per-direction label uniqueness, record-field label uniqueness, kind-parameter name uniqueness,
+module-level contract/kind/node/graph-binding name uniqueness, graph-binding name validity,
+generated-form ownership by the containing graph binding, select-arm nominal validity, and local
+reference closure for record-field contracts, frontier contracts, and graph-expression references.
+The `node_ports` projection keeps input and output port instances direction-distinct even when
+source labels match across directions. `Cortex.Wire.FrontierReclaim` states the in-memory lifetime
+consequence: once a linear source frontier is finished, no output or input endpoint has an open
+frontier obligation left. The source algebra is a certified proof-object layer, so raw syntax such
+as `=>` is not assumed linear by itself. The closed runtime-facing slice proves that every closed
+actualized input has exactly one producer, and every closed actualized output has exactly one edge
+consumer or terminal discharge. Raw `=>` matching, repeated-reference rejection, Haskell `make`/`*`
+expansion, runtime reclaim hooks, and executable projection into actualized port use remain explicit
+correspondence obligations rather than hidden assumptions. `Cortex.Wire.SelectRecovery` models
+recovery of selected latent branches as replay of the admitted selected append rewrite, not as a new
+graph operator or a re-run of selector code.
 
 Mechanized results now include:
 
@@ -745,7 +745,7 @@ hand-waving over external model nondeterminism.
 
 ### Track 5 — Substrate / consumer boundary (TODO)
 
-Per ADR 0015, the Cortex runtime never imports the structured reasoning library or any consumer
+Per ADR 0002, the Cortex runtime never imports the structured reasoning library or any consumer
 module. A Lean encoding of the import graph as a strict partial order makes this enforceable
 mechanically rather than by code review.
 

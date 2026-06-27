@@ -123,6 +123,14 @@ queries and schemas; domain-specific imports; host artifact contracts.
 The graph layer has a tighter rule than the rest of Cortex: it must contain no Pulse node identity,
 no rewrite lineage, no task scheduler coupling, no run-outcome semantics. It is pure graph algebra.
 
+Cortex exposes no public `Cortex.Artifact` Haskell root. Substrate artifact and provenance concepts
+are carried by Wire contracts, runtime envelopes, and Pulse provenance, and are surfaced to
+consumers through bindings rather than a dedicated artifact package (see
+[ch.08](./08-artifacts-and-provenance.md)). Model providers, LLM response schemas, tool-call
+records, structured-output policy, and report or document artifact IR are reasoning-library surfaces
+owned by Logos, not Cortex capability APIs. Introducing a public substrate artifact root requires a
+new ADR that justifies a substrate-shaped need.
+
 ### Product binding
 
 Allowed: the Cortex substrate, host domain core, host product code.

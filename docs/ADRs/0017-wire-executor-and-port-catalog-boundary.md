@@ -11,13 +11,13 @@ date: 2026-04-27
 superseded_by: null
 related:
   - docs/Architecture/05-wire-language.md
-  - docs/Consumers/Logos/reasoning-library.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
   - docs/ADRs/0016-cortex-roots-and-logos-pattern-extraction.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
   - "GitHub #55"
 ---
 
@@ -25,29 +25,26 @@ related:
 
 ## Status
 
-Proposed - names the central seam exposed by the first DeepReport contract extraction:
-`WireCompileEnv` currently conflates executor authority projection, executor-port projection, and
-contract catalog projection. The target architecture splits those responsibilities before extracting
-more DeepReport structure from Portman.
+Proposed — names the central seam in the Wire staging surface: `WireCompileEnv` currently conflates
+executor-authority projection, executor-port projection, and contract-catalog projection. The target
+architecture splits those responsibilities.
+
+The concrete cross-repo extraction sequence that first exposed this seam (moving a downstream
+reasoning pattern's port maps out of a product binding) is a downstream concern and lives in the
+Logos repository; this ADR keeps only the substrate boundary. ADR 0040 governs the
+model/provider/tool ownership referenced below.
 
 ## Context
 
-PR #54 moved the generic DeepReport contract catalog from Portman into
-`Logos.Patterns.DeepReport.Contracts`. That removed duplicated contract meaning, but it also exposed
-the next conflation. Portman still declares generic DeepReport port maps in
-`Portman.Workflow.WireEnv`, binds executor ids to runnable Haskell actions in
-`Portman.Task.DeepReportWorkflow`, and owns concrete payload records, codecs, prompts, persistence,
-and product semantics.
-
-The problem is vocabulary drift. In Wire discussions, "contract" and "port" are often used for three
-different things:
+In Wire discussions, "contract" and "port" are often used for three different things:
 
 - value-level payload meaning
 - structural boundary slots on nodes
 - host/runtime code that marshals Haskell values and grants executor authority
 
 Those are different architecture artifacts. Folding them together makes it hard to extract reusable
-Logos pattern structure without accidentally moving product authority into `Logos`.
+downstream pattern structure without accidentally moving product authority into the substrate or a
+reasoning library.
 
 The current Haskell staging surface also blurs the seam. `WireCompileEnv` carries at least three
 distinct projections in one record:
@@ -102,9 +99,9 @@ catalog must survive documentation generation, JSON export, Pulse replay logs, a
 cross-language clients. Making contracts phantom-typed Haskell values would make that catalog
 property depend on every consumer sharing the same Haskell type definitions.
 
-Haskell payload types are a binding-layer concern. A downstream binder may decide that
-`ResearchPlan` corresponds to contract `cortex.deepreport.research-plan/v1`, but the contract
-catalog does not know the `ResearchPlan` type exists.
+Haskell payload types are a binding-layer concern. A downstream binder may decide that a host type
+corresponds to a contract id such as `cortex.example.research-plan/v1`, but the contract catalog
+does not know that Haskell type exists.
 
 ### Ports reference contracts by id
 
@@ -138,31 +135,29 @@ data WirePorts = WirePorts
 ```
 
 A port profile is a named `WirePorts` value published in a catalog. The name is what makes it
-shareable. Many executors can declare that they conform to a profile such as
-`deepreport.gatherer/v1`, and Wire can check that the executor's projected ports match the profile
-structurally. Port profiles carry no runnable authority.
+shareable. Many executors can declare that they conform to a named profile, and Wire can check that
+the executor's projected ports match the profile structurally. Port profiles carry no runnable
+authority.
 
-Labels are not the reason to extract DeepReport ports. The current DeepReport shape can be expressed
-with contract-only routing: each node input has a distinct contract, so no node needs two
-same-contract slots. Extracting `Logos.Patterns.DeepReport.Ports` is therefore a module-boundary
-cleanup, not a new expressiveness requirement.
-
-Labels become mandatory when a node needs distinct roles for the same contract, for example a
+Labels become mandatory when a node needs distinct roles for the same contract — for example a
 comparative rewriter with `previous: ReportSection` and `reference: ReportSection`, an analysis diff
 with `baseline: Analysis` and `candidate: Analysis`, or a pure scoring node with several `Float`
-inputs. Those cases motivate pure output equations and structural primitives, not the first
-DeepReport port extraction. ADR 0020 owns that sequencing.
+inputs. Those cases motivate pure output equations and structural primitives; ADR 0020 owns that
+sequencing. Where every node input already has a distinct contract, contract-only routing suffices
+and no node needs two same-contract slots.
 
 ### Executors grant authority through bindings
 
 An executor definition is not a contract and not merely a port shape. It names a runnable authority
 and should eventually include executor id, production kind from ADR 0014, config schema or decoder,
 port profile reference or explicit port constraints, replay and side-effect metadata, tool-scope
-requirements, provider policy when model-mediated, and the host binder or interpreter.
+requirements, and the host binder or interpreter. Model/provider selection policy, when an executor
+is model-mediated, is **downstream binding metadata carried by the host binding — not a
+`Cortex.Capability` API** (ADR 0040).
 
 The binder is where Haskell type identity matters. Executors are implemented over real application
-types such as `ResearchPlan` or `EvidenceBundle`. The binder bridges those values into `WirePayload`
-and binds the Haskell type to a contract id under host authority.
+types. The binder bridges those values into `WirePayload` and binds the Haskell type to a contract
+id under host authority.
 
 Illustrative downstream shape:
 
@@ -190,9 +185,9 @@ consumers must not plug arbitrary codecs into this layer because durable replay 
 framing.
 
 **Layer 2: application codecs.** The host binder owns mappings between Haskell types and
-`WireValue`. This is where an executor returning `ResearchPlan` is encoded into a JSON-valued
-payload carrying the research-plan contract id. Replay decodes the persisted `WireValue` through the
-same host codec when a runnable stage needs the application type again.
+`WireValue`. This is where an executor returning a host type is encoded into a JSON-valued payload
+carrying that type's contract id. Replay decodes the persisted `WireValue` through the same host
+codec when a runnable stage needs the application type again.
 
 The enforcement responsibilities are also separate.
 
@@ -200,16 +195,20 @@ The enforcement responsibilities are also separate.
 executor id, labels, cardinality, exclusive output groups, and graph topology. It does not need
 schemas, codecs, or Haskell payload types.
 
-**Wire runtime.** Wire runtime currently validates that emitted `WireValue` values match the
-declared output contract's payload kind and coarse shape. Future schema and content validation
-belongs in this layer after payload-kind checks. It still does not know Haskell application types.
+**Wire runtime.** Wire runtime validates that emitted `WireValue` values match the declared output
+contract's payload kind and coarse shape, and under strict projection rejects a declared typed
+output whose contract or payload kind is incompatible with the node's declared output ports. That
+strict check is contract- and port-structural and has **no provider or model-output awareness**:
+typed model-output policy — validation modes, schema source, retry — is a downstream
+reasoning-library concern (ADR 0040). Future schema and content validation belongs in this layer
+after payload-kind checks; it still does not know Haskell application types.
 
 **Pulse persistence.** Pulse persists framed `WireValue` bytes according to the closed
 `WirePayloadKind` table. Contract schemas do not affect framing.
 
-**Host binding.** The binder admits executor ids, config, tools, provider policy, artifact
+**Host binding.** The binder admits executor ids, config, tools, provider/model policy, artifact
 destinations, product permissions, and application codecs. It is the place where authority and
-Haskell type identity enter.
+Haskell type identity enter — all of it downstream of the substrate compile and runtime checks.
 
 **Executor.** The executor is ordinary host code over host types. It is downstream of the binding
 decision and does not define Wire contract semantics.
@@ -239,44 +238,20 @@ Target shape:
   in strict or explicitly permissive mode
 - host authority metadata no longer leaks into the compile-time API
 
-Port extraction should be designed around this projection. It can publish inert profile values now
-while leaving executor authority downstream. Pure nodes and structural primitives should wait until
-same-contract labeled slots are tested as part of their implementation, because those features
-actually require labels for expressiveness.
+Port catalogs can publish inert profile values now while leaving executor authority downstream. Pure
+nodes and structural primitives should wait until same-contract labeled slots are tested as part of
+their implementation, because those features actually require labels for expressiveness.
 
-## DeepReport Migration Implications
+## Downstream pattern extraction
 
-For DeepReport, `Logos.Patterns.DeepReport.Ports` should publish named port profiles such as
-planner, gatherer, required-evidence gate, analyst, section compiler, reviewer, rewriter, publish
-gate, workflow audit, and artifact emitter profiles. Portman may import those profiles, override or
-extend them for product-specific executors, and keep the runtime binder and payload records
-downstream.
-
-This extraction should preserve today's DeepReport graph language. It should not introduce new
-port-label semantics, pure-node syntax, or structural primitive syntax. Current DeepReport gains
-cleaner module boundaries and less duplicated catalog data, not new expressiveness.
-
-Portman can remove duplicate generic contract definitions after PR #54 by importing
-`deepReportWireContractRegistry`. The next removal target is duplicate generic DeepReport port
-profiles, not executor dispatch or payload types.
-
-Portman should keep ownership of:
-
-- executor dispatch and Haskell stage implementations
-- product prompts until finance-specific instructions are separated
-- runtime payload records and host codecs until generic schemas/codecs are deliberately designed
-- product tools, tool authorization, provider keys, and model defaults
-- DB-backed workflow loading and bundled-template sync
-- workspace artifact destinations and report UX policy
-
-The clean next sequence is:
-
-1. Add `Logos.Patterns.DeepReport.Ports` with generic port profiles.
-2. Update Portman to compose those port profiles with product-specific additions.
-3. Introduce explicit executor-definition types after the port profile shape is stable enough to
-   avoid encoding Portman assumptions into Cortex.
-4. Decide the final home for generic artifact contracts such as `ReportArtifactRef` before making
-   artifact-emitter profiles canonical.
+Concrete reusable reasoning patterns (for example a deep-report pattern) may publish named generic
+port profiles and import them into a product binding that overrides or extends them for
+product-specific executors, while keeping the runtime binder and payload records downstream. That
+extraction preserves the existing graph language — it introduces no new port-label semantics,
+pure-node syntax, or structural-primitive syntax — and it must not move product authority (executor
+dispatch, prompts, provider keys, model defaults, tool authorization, DB-backed loading, workspace
+artifact destinations) into the substrate. The concrete extraction sequence for any one pattern is a
+downstream concern owned in the consuming repository, not Cortex canon.
 
 ## Alternatives considered
 
@@ -284,23 +259,23 @@ The clean next sequence is:
   catalog values usable by docs, logs, cross-process replay, and non-Haskell clients.
 - **Let ports carry contract specs inline.** Rejected because ports are endpoint structure. Inlining
   specs would duplicate catalog data and make contract identity harder to compare.
-- **Let executors own contracts.** Rejected because contracts are shared across planners, gatherers,
-  analysts, reviewers, emitters, and future patterns.
+- **Let executors own contracts.** Rejected because contracts are shared across many executors and
+  future patterns.
 - **Let downstream code plug Pulse framing codecs.** Rejected because durable replay requires a
   closed, deterministic, kind-indexed framing table.
-- **Move Portman's runtime binder into Logos.** Rejected because the binder grants tool, provider,
-  artifact, DB, and product authority. Logos patterns may publish inert catalogs and templates, not
-  host authority.
-- **Delay port extraction until a full `ExecutorSpec` exists.** Rejected because the current
-  duplicate `WirePorts` maps are already extractable as inert catalog values. A full
-  executor-definition API can follow once the profile boundary is proven.
+- **Move the host runtime binder into a reasoning library.** Rejected because the binder grants
+  tool, provider, artifact, DB, and product authority. Reasoning-library patterns may publish inert
+  catalogs and templates, not host authority.
+- **Delay port extraction until a full `ExecutorSpec` exists.** Rejected because duplicate
+  `WirePorts` maps are already extractable as inert catalog values. A full executor-definition API
+  can follow once the profile boundary is proven.
 
 ## Consequences
 
 ### Positive
 
 - Contract catalogs remain portable data rather than Haskell-only type witnesses.
-- DeepReport ports can move to Cortex without moving Portman runtime authority.
+- Substrate-generic port profiles can move to Cortex without moving host runtime authority.
 - Executors can share contract vocabulary and port profiles explicitly.
 - Pulse replay has a closed framing story independent of application codecs.
 - Future executor-definition work has a target shape rather than being inferred from
@@ -317,28 +292,27 @@ The clean next sequence is:
 
 ### Obligations
 
-- Add tests when extracting `Logos.Patterns.DeepReport.Ports` to prove the profile names, accepted
-  contracts, output contracts, labels, and cardinalities.
+- Add tests when extracting generic port profiles to prove the profile names, accepted contracts,
+  output contracts, labels, and cardinalities.
 - Keep generated or materialized build metadata with source changes that expose new Haskell modules.
-- Document downstream override rules when Portman composes generic profiles with product-specific
-  executors.
 - Keep Pulse framing closed and deterministic; do not make it a user codec hook.
 - Add schema/content validation after the current payload-kind and coarse-shape runtime checks
   before relying on schemas as enforced contracts.
 - Keep application `WireCodec` instances out of contract catalogs unless a future ADR deliberately
   introduces a language-specific binding package.
-- Do not let a Logos pattern module import Portman or grant product authority.
+- Do not let a reasoning-library pattern module grant product authority or reopen model/provider
+  ownership (ADR 0040).
 - Replace `Maybe WireContractRegistry` with an explicit strict/permissive mode before claiming
-  closed authority for imported Logos templates.
+  closed authority for imported templates.
 
 ## Related
 
 - [ADR 0010 — Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)
 - [ADR 0014 — Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)
-- [ADR 0016 — Cortex Roots and Logos Pattern Extraction](./0016-cortex-roots-and-logos-pattern-extraction.md)
-- [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0016 — Cortex Canonical Root Taxonomy](./0016-cortex-roots-and-logos-pattern-extraction.md)
 - [ADR 0019 — Executor Registration and Binding](./0019-executor-registration-and-binding.md)
+- [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
+- [ADR 0040 — Logos-Owned Reasoning Surfaces](./0040-logos-owned-reasoning-surfaces.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
-- [Logos Reasoning Library](../Consumers/Logos/reasoning-library.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
 - GitHub #55
