@@ -63,6 +63,22 @@ does it create).
 
 - ...
 
+## Traceability
+
+<!--
+REQUIRED for feature/runtime/language/proof ADRs (per the Stage-3 category); OMIT for governance,
+numbering/process, and ledger ADRs. See ADR 0063. There is NO release-note field here — release
+framing lives only in docs/Reference/feature-status.md. Every feature key listed must already have a
+feature-status row. Delete this whole section for a non-feature ADR.
+-->
+
+- Feature keys: `subsystem.capability_name`
+- Public surface: `Cortex.<Layer>`, `docs/Reference/...`
+- Implementation: `src/Cortex/...`
+- Tests: `test/Cortex/...`
+- Theory/proof: link to the relevant `docs/Reference/proof-status.md` row(s), or `none`
+- Tracking: `GitHub #NNN`
+
 ## Related
 
 <!--

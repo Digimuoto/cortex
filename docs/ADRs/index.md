@@ -75,6 +75,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0060](0060-filesystem-package-and-binding-manifests.md)           | Filesystem Package and Binding Manifests                            | proposed   |
 | [0061](0061-corepure-bounded-iteration-primitives.md)              | CorePure Bounded Iteration Primitives                               | proposed   |
 | [0062](0062-typed-effect-variant-output-boundaries.md)             | Typed Effect Variant Output Boundaries                              | proposed   |
+| [0063](0063-adr-traceability-and-feature-status-canon.md)          | ADR Traceability and Feature Status Canon                           | accepted   |
 
 ## Writing a new ADR
 
@@ -83,7 +84,8 @@ Use the [template](../Templates/adr.md). Key discipline:
 - Each ADR is about **one** decision. If you find yourself writing two decisions in one ADR, split
   them.
 - Frontmatter lists `status`, `date`, and `related` issues.
-- Body has `Context`, `Decision`, `Consequences` sections at minimum.
+- Body has `Context`, `Decision`, `Consequences` sections at minimum. Feature/runtime/language/proof
+  ADRs add a `Traceability` block (ADR 0063); governance and meta ADRs omit it.
 - An accepted ADR is canon — supersede it with a new numbered ADR rather than editing the original,
   except to update `status` and add a forward-pointer.
 

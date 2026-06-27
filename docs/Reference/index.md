@@ -32,6 +32,8 @@ front-to-back. If you are trying to do a task rather than look up a rule, start 
   materialization, hydration, provenance.
 - **[proof-status.md](proof-status.md)** — human-readable matrix of Lean proof claims and Haskell
   correspondence status.
+- **[feature-status.md](feature-status.md)** — capability/status canon: feature keys, governing
+  ADRs, implementation/proof status, and evidence links. The release-note extraction source.
 - **[development.md](development.md)** — build, test, formatting, docs, theory, and local validation
   commands.
 - **[Pulse/](Pulse/)** — Pulse runtime reference:
