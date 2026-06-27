@@ -24,8 +24,8 @@
       isLocal = true;
       detailLevel = "FullDetails";
       licenseFiles = [ "LICENSE" ];
-      dataDir = ".";
-      dataFiles = [];
+      dataDir = "data";
+      dataFiles = [ "pulse-schema.sql" ];
       extraSrcFiles = [ "README.md" "NOTICE" ];
       extraTmpFiles = [];
       extraDocFiles = [];
@@ -116,6 +116,7 @@
           "Cortex/Pulse"
           "Cortex/Pulse/Attempt"
           "Cortex/Pulse/Checkpoint"
+          "Cortex/Pulse/Circuit"
           "Cortex/Pulse/Database"
           "Cortex/Pulse/Event"
           "Cortex/Pulse/Executor"
@@ -226,6 +227,27 @@
           ];
           hsSourceDirs = [ "extensions/quantum/src" ];
         };
+        "cortex-testkit" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
+            (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+            (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
+            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
+            (hsPkgs."hasql" or (errorHandler.buildDepError "hasql"))
+            (hsPkgs."hasql-pool" or (errorHandler.buildDepError "hasql-pool"))
+            (hsPkgs."hasql-transaction" or (errorHandler.buildDepError "hasql-transaction"))
+            (hsPkgs."HUnit" or (errorHandler.buildDepError "HUnit"))
+          ];
+          buildable = true;
+          modules = [
+            "Cortex/TestSupport/Database"
+            "Cortex/TestSupport/Pulse"
+          ];
+          hsSourceDirs = [ "testkit/src" ];
+        };
       };
       exes = {
         "cortex-pulse" = {
@@ -299,6 +321,7 @@
             (hsPkgs."base" or (errorHandler.buildDepError "base"))
             (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
             (hsPkgs."cortex".components.sublibs.cortex-quantum or (errorHandler.buildDepError "cortex:cortex-quantum"))
+            (hsPkgs."cortex".components.sublibs.cortex-testkit or (errorHandler.buildDepError "cortex:cortex-testkit"))
             (hsPkgs."haskell-platform" or (errorHandler.buildDepError "haskell-platform"))
             (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
             (hsPkgs."hspec-discover" or (errorHandler.buildDepError "hspec-discover"))
@@ -370,7 +393,6 @@
             "Cortex/Pulse/MemoryToolSpec"
             "Cortex/Pulse/SchedulerSpec"
             "Cortex/Pulse/TypesSpec"
-            "Cortex/TestSupport/Database"
             "Cortex/Wire/Circuit/CompilerSpec"
             "Cortex/Wire/Circuit/IRSpec"
             "Cortex/Wire/CompileSpec"

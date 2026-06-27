@@ -57,6 +57,10 @@ theory/.lake/
 !data/
 !data/**
 
+# testkit/ — cortex-testkit sublibrary source (published downstream test harness, #331)
+!testkit/
+!testkit/**
+
 # editors/ — tree-sitter-wire grammar + editor integrations
 !editors/
 !editors/**

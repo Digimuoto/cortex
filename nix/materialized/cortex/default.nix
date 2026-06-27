@@ -532,6 +532,7 @@
           "these".components.library.planned = lib.mkOverride 900 true;
           "QuickCheck".components.library.planned = lib.mkOverride 900 true;
           "generics-sop".components.library.planned = lib.mkOverride 900 true;
+          "cortex".components.sublibs."cortex-testkit".planned = lib.mkOverride 900 true;
           "distributive".components.library.planned = lib.mkOverride 900 true;
           "transformers".components.library.planned = lib.mkOverride 900 true;
           "hspec-core".components.library.planned = lib.mkOverride 900 true;
