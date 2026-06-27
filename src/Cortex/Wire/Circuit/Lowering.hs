@@ -22,6 +22,7 @@ module Cortex.Wire.Circuit.Lowering
   , lowerCircuitIRToSomeStagePlan
   , lowerCircuitIRToStagePlan
   , committedVariantConditionBinding
+  , committedVariantBinder
   , committedVariantSelection
   , committedVariantSelectKeys
   )
@@ -572,3 +573,29 @@ committedVariantConditionBinding conditionNode = do
       , circuitConditionSelectBranch = \_runId scInputs ->
           pure (committedVariantSelection thenKeys elseKeys scInputs)
       }
+
+{- | Smart constructor for the common committed-variant @select(...)@ binder
+(GitHub #323, ADR 0080): the caller supplies the task-node binding; the condition
+binding is fixed to 'committedVariantConditionBinding' (so it cannot be forgotten),
+and the signal/artifact/rewrite boundaries fail with an explicit typed error. A
+caller that needs those boundaries builds a 'CircuitPulseBinder' directly.
+-}
+committedVariantBinder
+  :: (CircuitTaskNode -> Either CircuitLoweringError (StageDefinition NodeId))
+  -> CircuitPulseBinder
+committedVariantBinder bindTaskNode =
+  CircuitPulseBinder
+    { bindCircuitTaskNode = bindTaskNode
+    , bindCircuitSignalBoundary = \_ -> Left (unsupportedBoundary "signal")
+    , bindCircuitArtifactBoundary = \_ -> Left (unsupportedBoundary "artifact")
+    , bindCircuitRewriteBoundary = \_ -> Left (unsupportedBoundary "rewrite")
+    , bindCircuitConditionNode = committedVariantConditionBinding
+    }
+  where
+    unsupportedBoundary :: Text -> CircuitLoweringError
+    unsupportedBoundary kind =
+      CircuitTemplateRegistryInvalid
+        ( "committedVariantBinder: "
+            <> kind
+            <> " boundaries are not supported; build a CircuitPulseBinder directly"
+        )

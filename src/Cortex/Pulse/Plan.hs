@@ -32,6 +32,7 @@ module Cortex.Pulse.Plan
   , loopRegistrationForStage
   , SomeStagePlan (..)
   , StageDefinition (..)
+  , taskStage
   , StageReplaySafety (..)
   , ReplayPolicy (..)
   , RewriteExhaustionPolicy (..)
@@ -72,7 +73,7 @@ import Cortex.Pulse.Iteration
   , initLoopControl
   , loopProducerMatchesPolicy
   )
-import Cortex.Pulse.Memory.Types (MemoryHandle, MemoryStrategy)
+import Cortex.Pulse.Memory.Types (MemoryHandle, MemoryStrategy, defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Rewrite
   ( BoundaryResourceUse
@@ -145,6 +146,25 @@ liftChainAction f ctx =
         [] -> Aeson.Null
         _ -> Aeson.toJSON ctx.scInputs
    in StageComplete <$> f ctx.scRunId singleInput
+
+{- | Smart constructor for a task-node stage: a runnable 'StageDefinition' with
+safe-to-replay defaults (no timeout, retry, or replay override) and the classic
+memory strategy. The library form of the per-node stage a caller would otherwise
+hand-build, used to bind compiled-circuit task nodes (GitHub #330).
+-}
+taskStage :: NodeId -> (StageContext -> IO (StageResult NodeId)) -> StageDefinition NodeId
+taskStage nodeId action =
+  StageDefinition
+    { sdStageId = nodeId
+    , sdTemplateId = stageTemplateId nodeId
+    , sdActionId = stageActionId nodeId
+    , sdReplaySafety = SafeToReplay
+    , sdReplayPolicyOverride = Nothing
+    , sdTimeoutSeconds = Nothing
+    , sdRetryPolicy = Nothing
+    , sdAction = action
+    , sdMemoryStrategy = defaultMemoryStrategy
+    }
 
 class (Eq stageId, Show stageId, Aeson.FromJSON stageId, Aeson.ToJSON stageId) => StableStageId stageId where
   stageIdToText :: stageId -> Text

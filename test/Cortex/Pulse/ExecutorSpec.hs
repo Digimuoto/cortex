@@ -72,10 +72,14 @@ import Cortex.Capability.Catalog.RuntimeBindingRecord
   )
 import Cortex.Pulse.Circuit
   ( CircuitRunError (..)
+  , committedVariantBinder
   , ensureRunnable
   , resumeCompiledCircuit
   , runCompiledCircuit
+  , runCompiledCircuitManaged
+  , taskStage
   )
+import Cortex.Pulse.Database (provisionPulseSchema)
 import Cortex.Pulse.Executor
   ( LoopInstanceKey (..)
   , ReplayPolicy (..)
@@ -191,6 +195,7 @@ import Cortex.Pulse.Signal
   )
 import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget, taskEnvelopeVersionOrDefault)
 import Cortex.TestSupport.Database (createTestDB, runSession, runTx)
+import Cortex.TestSupport.Pulse (withEphemeralPulseDb)
 import Cortex.Wire
   ( WireAppendHole (..)
   , WireCompileEnv (..)
@@ -218,7 +223,6 @@ import Cortex.Wire.Circuit.Lower
   ( CircuitLoweringError (..)
   , CircuitPulseBinder (..)
   , CircuitPulseConfig (..)
-  , committedVariantConditionBinding
   , lowerCompiledCircuitToStagePlan
   )
 import Cortex.Wire.Compile (compileWireText)
@@ -699,42 +703,36 @@ uses the production 'committedVariantConditionBinding'.
 -}
 selectVariantBinder :: IORef Int -> IORef Int -> IORef Int -> CircuitPulseBinder
 selectVariantBinder produceCount recoverCount okCount =
-  CircuitPulseBinder
-    { bindCircuitTaskNode = \taskNode ->
-        let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
-         in Right $ case unNodeId nodeId of
-              "produce" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' produceCount (\c -> (c + 1, ()))
-                  pure
-                    ( StageComplete
-                        ( Aeson.toJSON
-                            ( ( mkWireValue
-                                  "P"
-                                  WirePayloadJson
-                                  Nothing
-                                  (Aeson.object ["issue" Aeson..= ("backend rejected" :: Text)])
-                              )
-                                { wireValuePort = Just "err"
-                                }
-                            )
+  committedVariantBinder $ \taskNode ->
+    let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+     in Right $ case unNodeId nodeId of
+          "produce" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+              pure
+                ( StageComplete
+                    ( Aeson.toJSON
+                        ( ( mkWireValue
+                              "P"
+                              WirePayloadJson
+                              Nothing
+                              (Aeson.object ["issue" Aeson..= ("backend rejected" :: Text)])
+                          )
+                            { wireValuePort = Just "err"
+                            }
                         )
                     )
-              "handle_err" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' recoverCount (\c -> (c + 1, ()))
-                  pure (StageComplete (Aeson.String "recovered"))
-              "handle_ok" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' okCount (\c -> (c + 1, ()))
-                  pure (StageComplete (Aeson.String "ok"))
-              other ->
-                nodeStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
-    , bindCircuitSignalBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "select-variant test: no signal nodes")
-    , bindCircuitArtifactBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "select-variant test: no artifact nodes")
-    , bindCircuitRewriteBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "select-variant test: no rewrite boundaries")
-    , bindCircuitConditionNode = committedVariantConditionBinding
-    }
+                )
+          "handle_err" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' recoverCount (\c -> (c + 1, ()))
+              pure (StageComplete (Aeson.String "recovered"))
+          "handle_ok" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' okCount (\c -> (c + 1, ()))
+              pure (StageComplete (Aeson.String "ok"))
+          other ->
+            nodeStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
 
 {- | A producer exposing a 3-way exclusive output, committing the middle @b@
 variant, with one handler arm per label. Exercises N-way committed-label
@@ -796,46 +794,40 @@ ran. The condition uses the production 'committedVariantConditionBinding'.
 threeWaySelectBinder
   :: IORef Int -> IORef Int -> IORef Int -> IORef Int -> CircuitPulseBinder
 threeWaySelectBinder produceCount aCount bCount cCount =
-  CircuitPulseBinder
-    { bindCircuitTaskNode = \taskNode ->
-        let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
-         in Right $ case unNodeId nodeId of
-              "produce" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' produceCount (\c -> (c + 1, ()))
-                  pure
-                    ( StageComplete
-                        ( Aeson.toJSON
-                            ( ( mkWireValue
-                                  "P"
-                                  WirePayloadJson
-                                  Nothing
-                                  (Aeson.object ["pick" Aeson..= ("b" :: Text)])
-                              )
-                                { wireValuePort = Just "b"
-                                }
-                            )
+  committedVariantBinder $ \taskNode ->
+    let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+     in Right $ case unNodeId nodeId of
+          "produce" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+              pure
+                ( StageComplete
+                    ( Aeson.toJSON
+                        ( ( mkWireValue
+                              "P"
+                              WirePayloadJson
+                              Nothing
+                              (Aeson.object ["pick" Aeson..= ("b" :: Text)])
+                          )
+                            { wireValuePort = Just "b"
+                            }
                         )
                     )
-              "handle_a" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' aCount (\c -> (c + 1, ()))
-                  pure (StageComplete (Aeson.String "a"))
-              "handle_b" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' bCount (\c -> (c + 1, ()))
-                  pure (StageComplete (Aeson.String "b"))
-              "handle_c" ->
-                nodeStage nodeId $ \_ -> do
-                  atomicModifyIORef' cCount (\c -> (c + 1, ()))
-                  pure (StageComplete (Aeson.String "c"))
-              other ->
-                nodeStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
-    , bindCircuitSignalBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "three-way select test: no signal nodes")
-    , bindCircuitArtifactBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "three-way select test: no artifact nodes")
-    , bindCircuitRewriteBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "three-way select test: no rewrite boundaries")
-    , bindCircuitConditionNode = committedVariantConditionBinding
-    }
+                )
+          "handle_a" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' aCount (\c -> (c + 1, ()))
+              pure (StageComplete (Aeson.String "a"))
+          "handle_b" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' bCount (\c -> (c + 1, ()))
+              pure (StageComplete (Aeson.String "b"))
+          "handle_c" ->
+            nodeStage nodeId $ \_ -> do
+              atomicModifyIORef' cCount (\c -> (c + 1, ()))
+              pure (StageComplete (Aeson.String "c"))
+          other ->
+            nodeStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
 
 analysisFragmentInOutPorts :: WirePorts
 analysisFragmentInOutPorts =
@@ -1179,6 +1171,93 @@ externalCallPlan = Aeson.object ["operations" Aeson..= [Aeson.object ["gate" Aes
 
 spec :: Spec
 spec = beforeAll setupTestDb $ do
+  describe "downstream consumer enablement: managed facade on an ephemeral DB (#329/#330/#331/#323)" $ do
+    it "validates lowering before creating a managed run" $ \_ -> do
+      compiled <-
+        case compileWireText selectVariantSource of
+          Right circuit -> pure circuit
+          Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+      let loweringErr = CircuitTemplateRegistryInvalid "managed validation failed"
+          rejectingBinder =
+            CircuitPulseBinder
+              { bindCircuitTaskNode = \_ -> Left loweringErr
+              , bindCircuitSignalBoundary = \_ -> Left loweringErr
+              , bindCircuitArtifactBoundary = \_ -> Left loweringErr
+              , bindCircuitRewriteBoundary = \_ -> Left loweringErr
+              , bindCircuitConditionNode = \_ -> Left loweringErr
+              }
+          unusableDbConfig =
+            testPulseConfig
+              { pulseDbHost = "invalid.invalid"
+              , pulseDbPort = 1
+              , pulseDbName = "cortex_should_not_be_used"
+              }
+      outcome <-
+        runCompiledCircuitManaged
+          unusableDbConfig
+          "consumer-enablement-validation-test"
+          selectVariantPulseConfig
+          rejectingBinder
+          compiled
+      outcome `shouldBe` Left (CircuitRunLoweringError loweringErr)
+
+    it "provisions idempotently and runs a committed-variant select end-to-end via the managed facade" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          -- #329: provisioning is idempotent. withEphemeralPulseDb already provisioned the
+          -- schema; calling it again must be a no-op (the schema-presence check), twice.
+          provisionPulseSchema (tcPool ctx) `shouldReturn` Right ()
+          provisionPulseSchema (tcPool ctx) `shouldReturn` Right ()
+          produceCount <- newIORef (0 :: Int)
+          recoverCount <- newIORef (0 :: Int)
+          okCount <- newIORef (0 :: Int)
+          compiled <-
+            case compileWireText selectVariantSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          -- #323 committedVariantBinder + #330 taskStage: the consumer supplies only the
+          -- task-node binding; the producer commits the err variant.
+          let binder =
+                committedVariantBinder $ \taskNode ->
+                  let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                   in Right $ case unNodeId nodeId of
+                        "produce" ->
+                          taskStage nodeId $ \_ -> do
+                            atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+                            pure
+                              ( StageComplete
+                                  ( Aeson.toJSON
+                                      ( (mkWireValue "P" WirePayloadJson Nothing (Aeson.object ["issue" Aeson..= ("rejected" :: Text)]))
+                                          { wireValuePort = Just "err"
+                                          }
+                                      )
+                                  )
+                              )
+                        "handle_err" ->
+                          taskStage nodeId $ \_ -> do
+                            atomicModifyIORef' recoverCount (\c -> (c + 1, ()))
+                            pure (StageComplete (Aeson.String "recovered"))
+                        "handle_ok" ->
+                          taskStage nodeId $ \_ -> do
+                            atomicModifyIORef' okCount (\c -> (c + 1, ()))
+                            pure (StageComplete (Aeson.String "ok"))
+                        other ->
+                          taskStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+          -- #330 managed facade end-to-end on the #331 testkit-provisioned ephemeral DB.
+          outcome <-
+            runCompiledCircuitManaged
+              (tcConfig ctx)
+              "consumer-enablement-test"
+              selectVariantPulseConfig
+              binder
+              compiled
+          outcome `shouldBe` Right OutcomeCompleted
+          readIORef produceCount `shouldReturn` 1
+          readIORef recoverCount `shouldReturn` 1
+          readIORef okCount `shouldReturn` 0
+
   describe "select on a committed output variant (ADR 0062, #314)" $ do
     it "routes the committed err variant to the recovery arm and resumes without re-running the effect" $ \mPool -> withDb mPool $ \pool -> do
       (_, taskContext) <- mkTaskContext pool
