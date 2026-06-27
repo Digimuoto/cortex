@@ -21,14 +21,19 @@ module Cortex.Wire.Circuit.Lowering
   , lowerCompiledCircuitToStagePlan
   , lowerCircuitIRToSomeStagePlan
   , lowerCircuitIRToStagePlan
+  , committedVariantConditionBinding
+  , committedVariantSelection
+  , committedVariantSelectKeys
   )
 where
 
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Types qualified as AesonTypes
+import Data.Bifunctor (first)
 import Data.Int (Int32)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -57,7 +62,7 @@ import Cortex.Pulse.Plan
   , StageLatentDeltaSignature (..)
   , StageLatentNode (..)
   , StagePlan (..)
-  , StageReplaySafety
+  , StageReplaySafety (..)
   , StageResult (..)
   , StageRetryPolicy
   , StageTemplateId
@@ -91,6 +96,7 @@ import Cortex.Wire.Circuit.IR
   , CircuitSignalBoundary
   , CircuitTaskNode
   )
+import Cortex.Wire.Value (WireValue (..))
 
 data CircuitConditionBranch
   = CircuitConditionThen
@@ -150,6 +156,8 @@ data CircuitLoweringError
   | CircuitStageRefMismatch CircuitNodeRef NodeId
   | CircuitLoweredGraphInvalid (ValidationError NodeId)
   | CircuitTemplateRegistryInvalid Text
+  | -- | A @wire_select@ condition node's metadata is missing or malformed (ADR 0062).
+    CircuitConditionMetadataInvalid !Text
   deriving stock (Eq, Show)
 
 lowerCircuitIRToStagePlan
@@ -493,3 +501,68 @@ lowerLatentBranch pulseConfig binder anchorNodeId postSuccessorNodes branchId fr
 namespaceNodeId :: NodeId -> NodeId -> NodeId
 namespaceNodeId (NodeId parentNodeId) (NodeId localNodeId) =
   NodeId (parentNodeId <> ":" <> localNodeId)
+
+{- | The @(thenKeys, elseKeys)@ select-arm label sets of a @wire_select@ condition
+node, parsed from its compiled metadata (ADR 0062): the variant labels routed to the
+then branch and to the else branch respectively.
+-}
+committedVariantSelectKeys :: Aeson.Value -> Either CircuitLoweringError ([Text], [Text])
+committedVariantSelectKeys metadata =
+  first (CircuitConditionMetadataInvalid . T.pack) $
+    AesonTypes.parseEither
+      ( Aeson.withObject "wire_select condition metadata" $ \o ->
+          (,) <$> o Aeson..: "thenKeys" <*> o Aeson..: "elseKeys"
+      )
+      metadata
+
+{- | Decide a select branch from the committed variant label (ADR 0062). The select
+boundary's producer commits exactly one variant 'WireValue' whose @wireValuePort@ is
+the chosen label; this finds that producer among the condition node's predecessor
+outputs (the first whose label is one of the select keys) and routes by then-key
+membership. It runs no effect, so a resume that re-evaluates it from the same
+persisted inputs reproduces the same branch. With no committed select label it
+defaults to the else branch with a null anchor output.
+-}
+committedVariantSelection
+  :: [Text] -> [Text] -> Map NodeId Aeson.Value -> CircuitConditionSelection
+committedVariantSelection thenKeys elseKeys scInputs =
+  case committedSelectKeyLabel of
+    Just (label, raw)
+      | label `elem` thenKeys ->
+          CircuitConditionSelection raw CircuitConditionThen
+      | otherwise ->
+          CircuitConditionSelection raw CircuitConditionElse
+    Nothing ->
+      CircuitConditionSelection Aeson.Null CircuitConditionElse
+  where
+    selectKeys = thenKeys <> elseKeys
+    committedSelectKeyLabel =
+      listToMaybe
+        [ (label, raw)
+        | raw <- Map.elems scInputs
+        , Aeson.Success wireValue <- [Aeson.fromJSON raw :: Aeson.Result WireValue]
+        , Just label <- [wireValue.wireValuePort]
+        , label `elem` selectKeys
+        ]
+
+{- | A production condition binding (ADR 0062) whose branch is decided by the
+committed variant label of the select boundary's producer, read from the persisted
+predecessor outputs and routed via the compiled @thenKeys@/@elseKeys@. No backend or
+effect runs in selection, so durable resume is deterministic. This replaces the
+test-only hardcoded selectors as the runtime guard source ADR 0033 deferred.
+-}
+committedVariantConditionBinding
+  :: CircuitConditionNode -> Either CircuitLoweringError CircuitConditionBinding
+committedVariantConditionBinding conditionNode = do
+  (thenKeys, elseKeys) <- committedVariantSelectKeys conditionNode.circuitConditionNodeMetadata
+  Right
+    CircuitConditionBinding
+      { circuitConditionReplaySafety = SafeToReplay
+      , circuitConditionReplayPolicyOverride = Nothing
+      , circuitConditionTimeoutSeconds = Nothing
+      , circuitConditionRetryPolicy = Nothing
+      , circuitConditionTemplateId = Nothing
+      , circuitConditionActionId = Nothing
+      , circuitConditionSelectBranch = \_runId scInputs ->
+          pure (committedVariantSelection thenKeys elseKeys scInputs)
+      }

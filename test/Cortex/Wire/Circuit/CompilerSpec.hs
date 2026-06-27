@@ -65,6 +65,7 @@ import Cortex.Pulse.Rewrite
   , plannedGraphRewriteDelta
   )
 import Cortex.Pulse.Types (defaultRewriteBudget)
+import Cortex.Wire (WirePayloadKind (..), WireValue (..), mkWireValue)
 import Cortex.Wire.Circuit
   ( CircuitArtifactBoundary (..)
   , CircuitCompatibilityWitness (..)
@@ -86,6 +87,8 @@ import Cortex.Wire.Circuit
   , CompiledCircuit (..)
   , CompiledCircuitFragment (..)
   , CompiledCircuitNode (..)
+  , committedVariantSelectKeys
+  , committedVariantSelection
   , compileCircuitIR
   , lowerCompiledCircuitToSomeStagePlan
   , lowerCompiledCircuitToStagePlan
@@ -93,6 +96,46 @@ import Cortex.Wire.Circuit
 
 spec :: Spec
 spec = do
+  describe "ADR 0062 committed-variant select" $ do
+    it "routes a committed then-key label to the then branch" $ do
+      let selection = committedVariantSelection ["ok"] ["err"] (committedVariantInput "producer" "ok")
+      selection.circuitConditionSelectionBranch `shouldBe` CircuitConditionThen
+
+    it "routes a committed else-key label to the else branch" $ do
+      let selection = committedVariantSelection ["ok"] ["err"] (committedVariantInput "producer" "err")
+      selection.circuitConditionSelectionBranch `shouldBe` CircuitConditionElse
+
+    it "dispatches N-way: an else-set label among several routes to else" $ do
+      let selection =
+            committedVariantSelection ["ok"] ["err", "stop"] (committedVariantInput "producer" "stop")
+      selection.circuitConditionSelectionBranch `shouldBe` CircuitConditionElse
+
+    it "is deterministic for the same committed inputs (resume-safe, no effect)" $ do
+      let inputs = committedVariantInput "producer" "ok"
+      committedVariantSelection ["ok"] ["err"] inputs
+        `shouldBe` committedVariantSelection ["ok"] ["err"] inputs
+
+    it "passes the committed variant payload through as the condition output" $ do
+      let selection = committedVariantSelection ["ok"] ["err"] (committedVariantInput "producer" "ok")
+      selection.circuitConditionSelectionOutput
+        `shouldBe` Aeson.toJSON
+          ((mkWireValue "VariantContract" WirePayloadJson Nothing (Aeson.Number 1)) {wireValuePort = Just "ok"})
+
+    it "defaults to else with a null output when no committed select label is present" $ do
+      let selection =
+            committedVariantSelection ["ok"] ["err"] (committedVariantInput "producer" "unrelated")
+      selection `shouldBe` CircuitConditionSelection Aeson.Null CircuitConditionElse
+
+    it "parses thenKeys/elseKeys from condition metadata" $
+      committedVariantSelectKeys
+        (Aeson.object ["thenKeys" Aeson..= (["ok"] :: [T.Text]), "elseKeys" Aeson..= (["err"] :: [T.Text])])
+        `shouldBe` Right (["ok"], ["err"])
+
+    it "rejects malformed condition metadata" $
+      case committedVariantSelectKeys (Aeson.object ["thenKeys" Aeson..= (["ok"] :: [T.Text])]) of
+        Left (CircuitConditionMetadataInvalid _) -> pure ()
+        other -> expectationFailure ("expected CircuitConditionMetadataInvalid, got " <> show other)
+
   describe "compileCircuitIR" $ do
     it "compiles a circuit into a deterministic graph artifact with latent conditional branches" $ do
       compiled <- requireCompiled sampleCircuitIR
@@ -401,6 +444,20 @@ spec = do
         other ->
           expectationFailure
             ("Expected CircuitLoweredGraphInvalid with cycle details, got: " <> show (fmap (.spTopology) other))
+
+{- | A select-boundary producer's committed variant output: one WireValue whose
+port is the chosen variant label (ADR 0062).
+-}
+committedVariantInput :: T.Text -> T.Text -> Map.Map NodeId Aeson.Value
+committedVariantInput producer label =
+  Map.singleton
+    (NodeId producer)
+    ( Aeson.toJSON
+        ( (mkWireValue "VariantContract" WirePayloadJson Nothing (Aeson.Number 1))
+            { wireValuePort = Just label
+            }
+        )
+    )
 
 requireCompiled :: CircuitIR -> IO CompiledCircuit
 requireCompiled circuitIr =

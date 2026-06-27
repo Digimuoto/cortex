@@ -28,7 +28,7 @@ import Control.Exception
 import Control.Monad (forM_, void, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
-import Data.IORef (atomicModifyIORef', modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, atomicModifyIORef', modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Int (Int32, Int64)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
@@ -185,10 +185,13 @@ import Cortex.Wire
   , WireInputCardinality (..)
   , WireInputPort (..)
   , WireOutputPort (..)
+  , WirePayloadKind (..)
   , WirePorts (..)
+  , WireValue (..)
   , compileWireAppendProposalWithEnv
   , defaultOutputPortName
   , emptyWireCompileEnv
+  , mkWireValue
   , wireExecutorProjectionFromPorts
   , wireExecutorRegistryFromList
   )
@@ -201,8 +204,10 @@ import Cortex.Wire.Circuit.Lower
   ( CircuitLoweringError (..)
   , CircuitPulseBinder (..)
   , CircuitPulseConfig (..)
+  , committedVariantConditionBinding
   , lowerCompiledCircuitToStagePlan
   )
+import Cortex.Wire.Compile (compileWireText)
 
 import Platform.Database qualified as DB
 import Platform.Database.Encode qualified as Enc
@@ -640,6 +645,83 @@ wireSmokeBinder =
     , bindCircuitConditionNode = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support condition nodes")
     }
 
+-- | A select over a producer that emits one of two output variants (ADR 0062 #314).
+selectVariantSource :: Text
+selectVariantSource =
+  T.unlines
+    [ "node produce"
+    , "  -> ok: P | err: P ;"
+    , "  = @test.produce ({}) ;"
+    , "node handle_ok"
+    , "  <- ok: P ;"
+    , "  -> done: P"
+    , "  = @test.handle_ok (ok) ;"
+    , "node handle_err"
+    , "  <- err: P ;"
+    , "  -> done: P"
+    , "  = @test.handle_err (err) ;"
+    , "produce select("
+    , "  ok: handle_ok,"
+    , "  err: handle_err"
+    , ")"
+    ]
+
+selectVariantPulseConfig :: CircuitPulseConfig
+selectVariantPulseConfig =
+  CircuitPulseConfig
+    { circuitPulseInitialState = Aeson.Null
+    , circuitPulseRuntimeVersion = 1
+    , circuitPulseReplayPolicy = ReplayPolicyWarn
+    , circuitPulseInitialRewriteBudget = defaultRewriteBudget
+    , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
+    , circuitPulseBudgetExceededExhaustionPolicy = Nothing
+    , circuitPulseMaxRewriteReExecutions = 2
+    }
+
+{- | A binder where the producer emits the committed @err@ variant (incrementing an
+invocation counter), and each arm increments its own counter so the test can assert
+the recovery arm ran exactly once and the non-selected arm never ran. The condition
+uses the production 'committedVariantConditionBinding'.
+-}
+selectVariantBinder :: IORef Int -> IORef Int -> IORef Int -> CircuitPulseBinder
+selectVariantBinder produceCount recoverCount okCount =
+  CircuitPulseBinder
+    { bindCircuitTaskNode = \taskNode ->
+        let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+         in Right $ case unNodeId nodeId of
+              "produce" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+                  pure
+                    ( StageComplete
+                        ( Aeson.toJSON
+                            ( ( mkWireValue
+                                  "P"
+                                  WirePayloadJson
+                                  Nothing
+                                  (Aeson.object ["issue" Aeson..= ("backend rejected" :: Text)])
+                              )
+                                { wireValuePort = Just "err"
+                                }
+                            )
+                        )
+                    )
+              "handle_err" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' recoverCount (\c -> (c + 1, ()))
+                  pure (StageComplete (Aeson.String "recovered"))
+              "handle_ok" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' okCount (\c -> (c + 1, ()))
+                  pure (StageComplete (Aeson.String "ok"))
+              other ->
+                nodeStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+    , bindCircuitSignalBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "select-variant test: no signal nodes")
+    , bindCircuitArtifactBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "select-variant test: no artifact nodes")
+    , bindCircuitRewriteBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "select-variant test: no rewrite boundaries")
+    , bindCircuitConditionNode = committedVariantConditionBinding
+    }
+
 analysisFragmentInOutPorts :: WirePorts
 analysisFragmentInOutPorts =
   WirePorts
@@ -982,6 +1064,46 @@ externalCallPlan = Aeson.object ["operations" Aeson..= [Aeson.object ["gate" Aes
 
 spec :: Spec
 spec = beforeAll setupTestDb $ do
+  describe "select on a committed output variant (ADR 0062, #314)" $ do
+    it "routes the committed err variant to the recovery arm and resumes without re-running the effect" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-select-committed-variant"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      produceCount <- newIORef (0 :: Int)
+      recoverCount <- newIORef (0 :: Int)
+      okCount <- newIORef (0 :: Int)
+      compiled <-
+        case compileWireText selectVariantSource of
+          Right circuit -> pure circuit
+          Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+      stagePlan <-
+        case lowerCompiledCircuitToStagePlan
+          selectVariantPulseConfig
+          (selectVariantBinder produceCount recoverCount okCount)
+          compiled of
+          Right plan -> pure plan
+          Left err -> expectationFailure ("lowering failed: " <> show err) >> fail "unreachable"
+      -- Execute: the producer emits the err variant; select routes to the recovery arm.
+      outcome1 <- executeStagePlan taskContext runId task stagePlan
+      outcome1 `shouldBe` OutcomeCompleted
+      readIORef produceCount `shouldReturn` 1
+      readIORef recoverCount `shouldReturn` 1
+      readIORef okCount `shouldReturn` 0
+      statuses <-
+        readGraphNodeStatuses pool runId
+          >>= maybe (expectationFailure "expected persisted graph state" >> fail "unreachable") pure
+      -- The recovery arm materialized and ran; the non-selected ok arm never materialized.
+      let completedNodes = [nid | (nid, NodeCompleted) <- Map.toList statuses]
+      any (T.isInfixOf "handle_err" . unNodeId) completedNodes `shouldBe` True
+      any (T.isInfixOf "handle_ok" . unNodeId) (Map.keys statuses) `shouldBe` False
+      -- Simulate a crash/resume: re-running the executor on the persisted run must not
+      -- re-run the producer effect or the recovery arm.
+      outcome2 <- resumeStagePlan taskContext runId task stagePlan
+      outcome2 `shouldBe` OutcomeCompleted
+      readIORef produceCount `shouldReturn` 1
+      readIORef recoverCount `shouldReturn` 1
+
   describe "durable external-call stages (ADR 0059)" $ do
     it "submits, parks, refuses forged wakes, then completes from the driver on resume" $ \mPool -> withDb mPool $ \pool -> do
       (_, taskContext) <- mkTaskContext pool

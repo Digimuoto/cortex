@@ -1170,7 +1170,10 @@ wirePortsFromLowered loweredPorts =
     , wirePortsOutputs =
         Map.fromList
           [ ( port.loweredPortName
-            , WireOutputPort {wireOutputPortContract = port.loweredPortContract}
+            , WireOutputPort
+                { wireOutputPortContract = port.loweredPortContract
+                , wireOutputPortExclusiveGroup = Nothing
+                }
             )
           | port <- loweredPorts.loweredOutputs
           ]
