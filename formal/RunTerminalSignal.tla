@@ -15,6 +15,14 @@
 (*                                                                         *)
 (* The state invariant NoStuckWaiter holds under Atomic = TRUE and is      *)
 (* violated under Atomic = FALSE; the violating trace IS the lost wakeup.  *)
+(*                                                                         *)
+(* SCOPE: this model covers only the run-terminal: signal family, whose    *)
+(* delivery resolves the waiter to "done". The reserved external-call:     *)
+(* family (ADR 0059) instead RE-ARMS the waiter (back to NodePending) and  *)
+(* may re-suspend on a not-yet-terminal provider job. That family-specific *)
+(* settlement and its liveness (the wake -> re-suspend -> wake loop        *)
+(* terminating under provider eventual-terminality) are NOT modeled here   *)
+(* and are a separate obligation to discharge when ADR 0059 is implemented.*)
 (***************************************************************************)
 EXTENDS Naturals
 

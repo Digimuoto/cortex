@@ -15,6 +15,8 @@ related:
   - docs/Reference/Pulse/schema.md
   - docs/ADRs/0003-pulse-service-and-host-action-boundary.md
   - docs/ADRs/0004-graph-native-pulse-execution.md
+  - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
+  - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
   - "GitHub #263"
   - "GitHub #264"
   - "GitHub #267"
@@ -53,12 +55,19 @@ as denormalized scheduler state (per `schema.md`); it is **not** derived from si
 transaction, given the wave's final graph state, commits **together**:
 
 1. the graph state (with `NodeWaiting` for parked nodes, and `NodeCompleted` for any node whose wait
-   resolves at registration);
+   resolves to a value at registration);
 2. the `pulse.signals` wait rows;
 3. `runs.status = 'waiting'` — iff any node remains waiting after resolution.
 
 Because the wait row and the `waiting` transition commit atomically, **no window exists between
 registration and park**, so the post-park recheck (and its wake-on-error) is retired.
+
+The graph-state effect of a delivered signal is signal-family-specific. For the `run-terminal:`
+family this ADR resolves the waiting node to `NodeCompleted` with the terminal payload. For the
+reserved `external-call:` family introduced by ADR 0059, the delivered signal is only a wake token:
+settlement re-arms the node (`NodePending`) so the bound `StageAction` can read the external-call
+attempt record and fetch/validate provider output. Ordinary value-carrying signals may still resolve
+to completion, but reserved runtime namespaces define their own trusted resolution rule.
 
 `SELECT … FOR SHARE` on each awaited run row is **retained inside this transaction** — atomicity
 removes the internal (multi-transaction) window, but the share lock is what serializes settlement
@@ -66,11 +75,25 @@ against the terminal writer's delivery transaction. A transaction-scoped advisor
 by every run-terminal protocol operation (see _Boundary Rules_) prevents mutually-awaiting terminal
 writers from deadlocking. All three mechanisms are required.
 
+The `external-call:` family **takes the advisory lock** but not the `FOR SHARE` lock. The share lock
+is run-terminal-specific — an external-call wait has no awaited Pulse run to share-lock — but the
+advisory lock is required to close the same lost-wakeup window: settlement plans an external-call
+wait under the lock (the lock is taken first, before the delivered-row check) and the trusted
+`deliverExternalCallSignal` takes the same lock first, so the two cannot interleave. Either the
+delivery commits first (settlement then observes the delivered row and re-arms) or settlement parks
+first (delivery then marks the now-pending row delivered and wakes the `waiting` run). Without the
+lock, a completion arriving after settlement's delivered-row check but before its park commits would
+be lost: settlement would park on a fresh wait that the already-applied wake never observes. The
+durable attempt record still anchors crash-safe idempotency, but it does not by itself close the
+park race — the advisory lock does. The "already-delivered external-call wake" resolve case (see
+_Boundary Rules_) covers both crash recovery and a delivery serialized just before the park.
+
 ## Mental Model
 
 > Suspending is one transaction. The frontier proposes `NodeWaiting`; settlement decides — per node,
-> under a share lock — resolve-now-or-park, and commits graph state + wait rows + run status as a
-> unit. Delivery remains the single "mark delivered + wake waiting run" transaction.
+> under the signal family's serialization rule — resolve-now-or-park, and commits graph state + wait
+> rows + run status as a unit. Delivery remains the single "mark delivered + wake waiting run"
+> transaction.
 
 ## Boundary Rules
 
@@ -98,11 +121,14 @@ writers from deadlocking. All three mechanisms are required.
   nodes `NodeFailed`, propagates failure through the topology, and persists that repaired graph
   state before failing the run — so a rejected run does not leave a node stranded in `NodeWaiting`.
 - **Resolve-at-settlement.** A node whose awaited run is already terminal resolves in-transaction:
-  its node is marked `NodeCompleted` with the terminal payload, not parked.
+  its node is marked `NodeCompleted` with the terminal payload, not parked. A node whose reserved
+  `external-call:` wake is already delivered resolves by re-arming the node to `NodePending`; the
+  signal payload is wake metadata, not node output.
 - **Re-run only on resolution.** If any node resolved, settlement does not park; it re-runs the plan
-  with the resolved nodes already `NodeCompleted` so their successors unblock. If none resolved, it
-  parks. (Re-running without first marking resolved nodes completed would loop forever, because the
-  normal `runGraphPlan` path does not call `resolveDeliveredSignals` — that runs only on resume.)
+  with the signal-family resolution already applied: value-carrying waits are `NodeCompleted`, and
+  `external-call:` waits are re-armed as `NodePending`. If none resolved, it parks. (Re-running
+  without first applying the resolution would loop forever, because the normal `runGraphPlan` path
+  does not call `resolveDeliveredSignals` — that runs only on resume.)
 - **Owner-checked idempotent registration.** Settlement may re-run (mixed resolve/park, or recovery
   of a `NodeWaiting` run whose wait rows already exist). Registration is idempotent only when the
   same node already owns the pending row for `(run_id, signal_name)`. A different node trying to
@@ -132,9 +158,13 @@ writers from deadlocking. All three mechanisms are required.
 
 ### Obligations
 
-- `settleSuspend` (one transaction): CAS graph-state write first; FOR-SHARE register-or-resolve per
-  `NodeWaiting`; mark resolved nodes `NodeCompleted`; park iff waiters remain; return whether to
-  re-run or report `OutcomeSuspended`.
+- `settleSuspend` (one transaction): CAS graph-state write first; register-or-resolve per
+  `NodeWaiting`; take the awaited-run `FOR SHARE` lock for `run-terminal:` waits, and take the
+  protocol advisory lock for both `run-terminal:` and `external-call:` waits (first, before the
+  delivered-row check) so the lookup→register→park span serializes against trusted external-call
+  delivery and the park race is closed; apply the signal family's resolution rule
+  (`run-terminal:`/ordinary value signals complete, `external-call:` wakes re-arm); park iff waiters
+  remain; return whether to re-run or report `OutcomeSuspended`.
 - Make signal-wait registration owner-checked: same-node pending rows are idempotent, different-node
   pending rows are invalid, and duplicate ownership is never collapsed into `DO NOTHING`.
 - Take the transaction-scoped run-terminal protocol advisory lock first in every operation that
@@ -148,8 +178,11 @@ writers from deadlocking. All three mechanisms are required.
   branch) through settlement; implement re-run-if-resolved.
 - Delete `shouldWakeAfterPark` + the wake-on-error path in `Executor/Outcome.hs`.
 - Tests (against `just test-db`): all-resolve → re-run → complete; mixed resolve/park; CAS-stale →
-  no orphan rows / no park; recovered-waiter settlement parks once. Update `signals.md`/`events.md`
-  (`run.woken` is retired).
+  no orphan rows / no park; recovered-waiter settlement parks once; already-delivered
+  `external-call:` wake re-arms rather than completing from payload. Update
+  `signals.md`/`events.md`: `run.woken` is retired, and `signals.md` documents the reserved
+  `external-call:` family alongside `run-terminal:` with its re-arm-on-wake (not payload-completion)
+  carve-out.
 - Theory: this ADR's safety/liveness obligation is the one `formal/RunTerminalSignal.tla` checks;
   keep it in step with the implementation.
 
@@ -167,6 +200,8 @@ writers from deadlocking. All three mechanisms are required.
 
 - [0003 - Pulse Service and Host-Action Boundary](0003-pulse-service-and-host-action-boundary.md)
 - [0004 - Graph-Native Pulse Execution](0004-graph-native-pulse-execution.md)
+- [0053 - Executor Catalog Manifests and Pulse Runtime Bindings](0053-executor-catalog-manifests-and-pulse-bindings.md)
+- [0059 - Durable External-Call Frontiers on Pulse](0059-durable-external-call-frontiers-on-pulse.md)
 - [Architecture 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md)
 - [Pulse Signals Reference](../Reference/Pulse/signals.md)
 - `formal/RunTerminalSignal.tla`

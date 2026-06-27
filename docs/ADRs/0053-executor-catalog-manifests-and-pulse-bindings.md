@@ -24,6 +24,8 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0044-wire-namespace-use-imports.md
   - docs/ADRs/0054-downstream-wire-packages-and-host-bindings.md
+  - docs/ADRs/0058-pulse-atomic-suspend-settlement.md
+  - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
 ---
 
 # ADR 0053 - Executor Catalog Manifests and Pulse Runtime Bindings
@@ -92,6 +94,7 @@ public surface as seen by source code and by the binder:
 - declared **requirement slots**: capability kind, local binding name, optional config selector
   path, required permission class, expected replay/effect class per slot;
 - declared **replay class** the executor requires (see _Replay and side effects_);
+- declared **await strategy** (`synchronous` | `submit_park_resume`) the executor requires;
 - declared **minimum isolation expectation** the package requests (in-process, WASM sandbox,
   subprocess sandbox, container, brokered process);
 - effect and side-effect metadata available at admission time;
@@ -106,8 +109,8 @@ The registry invariant is:
 > `(executor id, admission projection version)` uniquely identifies admission projection content.
 
 Two manifests claiming the same pair must agree on schemas, ports, contracts, requirement slots,
-replay class, isolation expectation, and effect declarations. Implementation artifacts may differ
-under one projection; the projection itself must not.
+replay class, await strategy, isolation expectation, and effect declarations. Implementation
+artifacts may differ under one projection; the projection itself must not.
 
 ### Executor manifest
 
@@ -148,7 +151,7 @@ The admitted Circuit carries the _interface-level_ executor identity:
 - admitted config digest (see _Config digest_);
 - typed input/output port references and contract ids;
 - declared requirement selectors derived from admitted config;
-- declared replay class and effect metadata.
+- declared replay class, await strategy, and effect metadata.
 
 The runtime binding record carries the _implementation-level_ selection:
 
@@ -164,6 +167,7 @@ The runtime binding record carries the _implementation-level_ selection:
 - runtime policy digest (timeout, retry, replay, commit, output validation);
 - accepted replay class (the class the binding decided to honor; must be at least as strict as the
   projection's declared class);
+- accepted await strategy (the durable completion/suspend shape this binding decided to honor);
 - compatibility digest summarizing the above;
 - reference to the compatibility predicate (binding pack version + predicate identity).
 
@@ -300,7 +304,7 @@ Replay classes:
 - `replay_by_reusing_recorded_outputs` — committed outputs from a prior attempt must be reused on
   resume; the executor must not re-run;
 - `idempotent_with_key` — re-running is safe if the executor uses the attempt-supplied idempotency
-  key for all external effects;
+  key as the stable Pulse-side dedup anchor for external effects;
 - `exactly_once_via_commit_log` — the binding layer maintains an external commit log; re-runs check
   the log before acting;
 - `non_replayable` — re-running is unsafe; resume must surface a policy error unless explicitly
@@ -315,8 +319,32 @@ layer must classify each authority handle:
 - transactional handles must provide explicit commit/abort semantics that the StageAction invokes;
 - non-transactional handles must be declared non-rollbackable and combined with a compatible replay
   class;
-- handles that need idempotency must receive the attempt's idempotency key through the driver's
-  authority-injection mechanism.
+- handles that need idempotency must receive the attempt's Pulse-side idempotency key through the
+  driver's authority-injection mechanism. Provider submit/dedup tokens are driver-owned: they may
+  incorporate request parameters beyond the Pulse key, but their derivation must be deterministic
+  and byte-for-byte stable across crash re-entry.
+
+### Await strategy
+
+The admission projection declares the await strategy an executor requires, and the runtime binding
+record stores the accepted strategy the host binding pack commits to for the bound stage. Await
+strategy is not an executor category: an `ExternalCallExecutor`, `ModelExecutor`, or other bound
+stage may use either shape if its replay/effect policy supports it.
+
+Initial strategies:
+
+- `synchronous` — the `StageAction` completes or fails in the current attempt and does not park on a
+  durable signal.
+- `submit_park_resume` — the `StageAction` may submit external work, persist attempt metadata
+  through Pulse-owned durable attempt state (whose provider-specific fields the binding writes as
+  opaque data), return `StageSuspend`, and later re-enter after a trusted wake via ADR 0058's atomic
+  suspend settlement. ADR 0059 defines the external-call specialization: the wake signal is
+  `external-call:*`, ordinary signal delivery rejects that namespace, and the delivered signal
+  re-arms the waiting node rather than becoming node output.
+
+Pulse does not infer the strategy from the executor id or backend class. It dispatches the opaque
+`StageAction`, records the accepted strategy for audit/resume, and rejects or refuses resume when a
+binding pack attempts to re-enter a stage under an incompatible strategy.
 
 ### Resume compatibility predicate
 
@@ -334,6 +362,7 @@ The predicate must consider at least:
 - isolation policy digest;
 - runtime policy digest (timeout/retry/replay/commit/output validation);
 - accepted replay class;
+- accepted await strategy;
 - output contract validator identities.
 
 Typical permissive transitions (credential rotation within the same logical authority, store path
@@ -358,10 +387,10 @@ Pulse executes already-bound stage actions. It dispatches each stage through the
 - does not instantiate executors;
 - does not pass handles, tools, model clients, or secrets to anything.
 
-Pulse records the binding id, action id, ABI kind/version, replay class, attempt lifecycle,
-checkpoint lineage, and committed output envelopes in its normal runtime state. On resume Pulse
-loads the durable runtime binding record, asks the binder to reconstruct a `StageAction`, evaluates
-the binding pack's compatibility predicate, and either re-enters the stage or refuses.
+Pulse records the binding id, action id, ABI kind/version, replay class, await strategy, attempt
+lifecycle, checkpoint lineage, and committed output envelopes in its normal runtime state. On resume
+Pulse loads the durable runtime binding record, asks the binder to reconstruct a `StageAction`,
+evaluates the binding pack's compatibility predicate, and either re-enters the stage or refuses.
 
 ### Error model
 
@@ -478,8 +507,9 @@ host-action endpoint is catalog metadata.
 ### Obligations
 
 - Define concrete Haskell data types for admission projections (including declared requirement
-  slots, declared replay class, and minimum isolation expectation), executor manifests, runtime
-  binding records, resolved authority fingerprints, and ABI kind/version constants.
+  slots, declared replay class, declared await strategy, and minimum isolation expectation),
+  executor manifests, runtime binding records, resolved authority fingerprints, and ABI kind/version
+  constants.
 - Define the manifest selection rule on host runtime binding packs and the registry conflict
   invariant for `(executor id, admission projection version)`.
 - Define the canonical config digest function and place canonical admitted config durably on the
@@ -487,6 +517,9 @@ host-action endpoint is catalog metadata.
 - Define the compatibility predicate interface, its versioning, and the canonical input list.
 - Define attempt-scoped output buffering and host/Pulse boundary output validation; classify
   external side effects through declared replay classes and per-handle commit/abort semantics.
+- Define await-strategy constants, persist the accepted strategy in runtime binding records, and
+  make the resume compatibility predicate reject incompatible strategy changes unless a binding pack
+  provides an explicit migration.
 - Define the error hierarchy
   (`AdmissionError | BindingError | DispatchError | ExecutorError | ValidationError | PolicyError`)
   and surface it through Pulse runtime state.
@@ -504,6 +537,7 @@ host-action endpoint is catalog metadata.
 - [ADR 0039 - Wire Node Boundary Transform Normal Form](./0039-wire-node-boundary-transform-normal-form.md)
 - [ADR 0044 - Wire Namespace Use Imports](./0044-wire-namespace-use-imports.md)
 - [ADR 0054 - Downstream Wire Packages and Host Runtime Bindings](./0054-downstream-wire-packages-and-host-bindings.md)
+- [ADR 0059 - Durable External-Call Frontiers on Pulse](./0059-durable-external-call-frontiers-on-pulse.md)
 - [Wire Executors and Alphabet Reference](../Reference/Wire/executors-and-alphabet.md)
 - [Pulse Host-Action Contract](../Reference/Pulse/host-actions.md)
 - [Pulse Types Reference](../Reference/Pulse/types.md)

@@ -44,7 +44,9 @@ stateDiagram-v2
     [*] --> pending: StageSuspend SignalName
     pending --> delivered: deliverSignal
     pending --> expired: expiresAt elapses
+    delivered --> consumed: external-call re-arm (§4.2)
     delivered --> [*]
+    consumed --> [*]
     expired --> [*]
 ```
 
@@ -52,10 +54,20 @@ stateDiagram-v2
   run is in `waiting`.
 - **delivered** — a caller has delivered the signal; the wait row carries the delivery payload and
   timestamp.
+- **consumed** — a delivered reserved `external-call:` wake (§4.2) that suspend settlement has used
+  to re-arm the node; consuming it keeps settlement from re-observing the delivered row and
+  re-arming in a loop. Only the `external-call:` family reaches this state.
 - **expired** — an optional `expiresAt` has elapsed without delivery; the wait cannot be satisfied
   and the run must be cancelled or retried.
 
 Only Pulse mutates these states. External callers observe them through the service API.
+
+The **graph-state effect** of delivery depends on the signal family. For an ordinary value signal,
+the delivered payload satisfies the waiting node and becomes available to it on re-entry (§3). The
+reserved runtime families have their own trusted resolution rule: `run-terminal:` (§4.1) completes
+the waiter with its terminal payload, while `external-call:` (§4.2) is a wake token that **re-arms**
+the waiter rather than becoming its value. Reserved-family delivery does not follow the generic
+payload-as-value behavior.
 
 ## 3. Producer protocol — `StageSuspend`
 
@@ -67,8 +79,10 @@ A stage action signals a wait by returning `StageSuspend SignalName`. The execut
 3. Yields the run back to the scheduler. If the run parks, the executor emits a `run.suspended`
    event ([`events.md`](./events.md#3-catalog)).
 
-The stage action does not return a value on suspension. When the signal is delivered and the stage
-re-enters, the delivery payload is available to the stage through its memory handle.
+The stage action does not return a value on suspension. When an **ordinary** signal is delivered and
+the stage re-enters, the delivery payload is available to the stage through its memory handle. The
+reserved runtime families resolve differently — `run-terminal:` completes the waiter (§4.1) and
+`external-call:` re-arms it (§4.2) — so their payloads are not consumed as the node value.
 
 ## 4. Consumer protocol — signal delivery
 
@@ -142,6 +156,27 @@ The `run-terminal:` name family is **reserved for the runtime**. External/host d
 (`deliverSignal`) refuses any name in this family, so a caller cannot forge `run-terminal:<child>`
 to wake or complete a waiter while the awaited run is still live — run-terminal delivery flows only
 through the terminal status writers.
+
+## 4.2 External-call wake signals
+
+The runtime owns a second reserved name family: `external-call:<attempt-key>`. It is the durable
+completion wake for a `submit_park_resume` external-call stage (ADR 0059) — a hardware quantum
+submission, a long-running OpenAPI/MCP/WASM call, or a slow `ModelExecutor`. Its name derives from
+the durable [external-call attempt key](./schema.md#10-external-call-attempts) (run id, node id,
+runtime binding id, frontier id), so one wake resolves exactly one parked stage attempt.
+
+Like `run-terminal:`, the family is **reserved**: external/host `deliverSignal` refuses any name in
+it, so a completion wake cannot be forged. Only the trusted external-call delivery path — used by
+provider-completion watchers, not the public signal endpoint — may mark it delivered.
+
+A delivered `external-call:` signal is a **wake token, not node output**. Its payload may carry
+completion status and an optional provider result locator, but it never becomes the node value.
+Delivery — or an already-delivered wake observed at suspend settlement (ADR 0058) — **re-arms** the
+waiting node: graph state returns to `NodePending`, not `NodeCompleted`. The bound `StageAction`
+re-runs, reads the durable attempt record, fetches and validates the provider result, and only then
+commits canonical output envelopes or a typed failure closure. The resumed fetch is idempotent and
+not-ready-tolerant: a premature or duplicate wake observing a non-terminal provider job re-suspends
+or returns a typed retry/no-progress outcome rather than closing the stage as a provider failure.
 
 ## 5. Records
 

@@ -41,7 +41,9 @@ actions should be introduced.
 
 ## Decision
 
-Executor meaning is split into four layers.
+Executor meaning is split into three substrate layers. A fourth input — inert profiles published by
+downstream consumers — feeds them but is not itself a substrate layer; it is admitted through
+Capability like any other registration.
 
 ### Wire projection
 
@@ -83,11 +85,11 @@ does not embed a Pulse `StageAction`.
 persists, retries, resumes, records events, and materializes rewrites. It does not own executor
 registration, provider policy, product codecs, or application authority.
 
-### Logos patterns
+### Downstream profiles
 
-`Logos.*` may publish reusable reasoning profiles and adapters, such as DeepReport executor
-profiles, but those values do not grant host authority. A downstream host must register and bind
-them through Capability before they can run.
+Downstream libraries (such as `Logos.*`) may publish reusable reasoning profiles and adapters — for
+example DeepReport executor profiles — but those values do not grant host authority. A downstream
+host must register and bind them through Capability before they can run.
 
 ## Contract declarations
 
