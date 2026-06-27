@@ -17,6 +17,7 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 
 | #                                                                  | Title                                                                      | Status     |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------- | ---------- |
+| [0001](0001-canonical-documentation-contract.md)                   | Canonical Documentation Contract                                           | accepted   |
 | [0002](0002-cortex-downstream-ownership-boundary.md)               | Cortex and Downstream Ownership Boundary                                   | accepted   |
 | [0003](0003-pulse-service-and-host-action-boundary.md)             | Pulse Service and Host-Action Boundary                                     | accepted   |
 | [0004](0004-graph-native-pulse-execution.md)                       | Graph-Native Pulse Execution                                               | accepted   |
@@ -98,10 +99,13 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 
 A browse-by-concern view of the current ADRs (primary category from the issue #304 Stage-3
 classification; the superseded 0049 is omitted). Numbering stays in allocation order — the order
-ADRs were added (chronological by repository entry; some frontmatter dates drift) — so this is only
-the category lens, not a renumber. A few ADRs cross-cut; only the primary category is shown here.
+ADRs were added (chronological by repository entry; some frontmatter dates drift) — with one
+deliberate exception: ADR 0001 reclaims the vacated floor slot for the foundational documentation
+contract, placed out of allocation order by design (see ADR 0001 Status). So this is only the
+category lens, not a renumber. A few ADRs cross-cut; only the primary category is shown here.
 
-- **Boundary & governance** (8): [0002](0002-cortex-downstream-ownership-boundary.md),
+- **Boundary & governance** (9): [0001](0001-canonical-documentation-contract.md),
+  [0002](0002-cortex-downstream-ownership-boundary.md),
   [0003](0003-pulse-service-and-host-action-boundary.md),
   [0006](0006-compiled-workflow-artifact-boundary.md),
   [0016](0016-cortex-roots-and-logos-pattern-extraction.md),

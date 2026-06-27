@@ -70,6 +70,8 @@ research snapshots should be removed instead of preserved by default.
 
 ## Related
 
+- [ADRs/0001-canonical-documentation-contract.md](ADRs/0001-canonical-documentation-contract.md) -
+  the governing decision for this map and the doc-kind contract.
 - [index.md](index.md) - docs landing and reading order.
 - [taxonomy.md](taxonomy.md) - concept classification.
 - [glossary.md](glossary.md) - term definitions.

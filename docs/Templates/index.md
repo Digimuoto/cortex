@@ -27,10 +27,14 @@ frontmatter, section shape, and placement discipline.
 
 ## Discipline
 
-- Frontmatter is required.
-- Status values follow a closed vocabulary: `draft`, `active`, `accepted`,
-  `completed`, `superseded`, `archived`, `deprecated`.
-- Dates in frontmatter are ISO dates (`YYYY-MM-DD`).
+The structure, frontmatter, format, and Cortex-first policy these templates encode are governed by
+[ADR 0001 — Canonical Documentation Contract](../ADRs/0001-canonical-documentation-contract.md);
+`scripts/docs-lint` is the gate.
+
+- Frontmatter is required (`title` and `description` always).
+- Status values follow the canonical enum the contract pins (ADRs use `proposed`, `accepted`,
+  `superseded`); `scripts/docs-lint` enforces it.
+- Dates in frontmatter are ISO dates (`YYYY-MM-DD`), never in the future.
 - Canonical docs should frame Cortex directly. Downstream consumers can appear
   as examples, not as the system boundary.
 - Dated artifacts should be retained only while they explain current canon,

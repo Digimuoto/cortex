@@ -106,6 +106,10 @@ contracts, ports, templates, prompts, memory presets, and evaluation policy.
 
 ## Doc-kind taxonomy
 
+This taxonomy, the canonical-vs-dated boundary, and the per-kind frontmatter and format contract are
+governed by
+[ADR 0001 — Canonical Documentation Contract](ADRs/0001-canonical-documentation-contract.md).
+
 Docs are classified on two axes:
 
 |                         | Stable canon                                     | Dated artifacts   |
@@ -120,6 +124,8 @@ Papers: `Publications/paper-N-*/`
 
 ## Related
 
+- [ADRs/0001-canonical-documentation-contract.md](ADRs/0001-canonical-documentation-contract.md) —
+  the governing decision for this taxonomy.
 - [map.md](map.md) — where to put a new doc.
 - [glossary.md](glossary.md) — term definitions.
 - [Architecture/01-overview.md](Architecture/01-overview.md) — architectural starting point.
