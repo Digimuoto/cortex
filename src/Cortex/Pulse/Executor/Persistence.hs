@@ -50,9 +50,10 @@ import Control.Concurrent.STM.TVar (TVar)
 import Control.Monad (forM, when)
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
+import Data.Either (fromRight)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
@@ -134,7 +135,7 @@ import Cortex.Pulse.Rewrite
   , admittedRemainingBudget
   , exceededDimensions
   )
-import Cortex.Pulse.Signal (SignalName (..))
+import Cortex.Pulse.Signal (SignalName (..), isExternalCallSignal)
 
 import Platform.Database qualified as DB
 import Platform.DurableTask.Checkpoint (buildCheckpointEnvelope)
@@ -300,10 +301,17 @@ settleSuspendTx env suspendedState now = do
                 ]
               settledGraphState =
                 foldl'
-                  ( \state PlannedSignalWait {pswNodeId = node, pswSettlement = settlement} ->
+                  ( \state PlannedSignalWait {pswNodeId = node, pswSignalName = signalName, pswSettlement = settlement} ->
                       case signalWaitPayload settlement of
                         Nothing -> state
-                        Just payload -> GraphRuntime.markCompleted node payload state
+                        Just payload
+                          | isExternalCallSignal (SignalName signalName) ->
+                              -- A reserved external-call wake is a re-arm token, not node
+                              -- output: return the node to pending so it re-runs and fetches
+                              -- from the driver. The Left (non-NodeWaiting) case cannot occur
+                              -- here -- the node is one of waitingNodeSignals.
+                              fromRight state (GraphRuntime.resumeFromWaiting node state)
+                          | otherwise -> GraphRuntime.markCompleted node payload state
                   )
                   suspendedState.pgsGraphState
                   planned
@@ -315,6 +323,16 @@ settleSuspendTx env suspendedState now = do
             Q.GraphStateWriteApplied revision -> do
               let persistedState = settledState {pgsRevision = Just revision}
               mapM_ (commitPlannedWait now) planned
+              -- Consume the delivered rows for external-call wakes we just re-armed,
+              -- in the same transaction as the NodePending write: 'lookupDeliveredSignalTx'
+              -- returns the latest delivered row, so a leftover delivered row would
+              -- re-trigger the re-arm in a loop. Consuming all of them closes it.
+              mapM_
+                ( \PlannedSignalWait {pswNodeId = node, pswSignalName = signalName, pswSettlement = settlement} ->
+                    when (isExternalCallSignal (SignalName signalName) && isJust (signalWaitPayload settlement)) $
+                      Q.consumeDeliveredSignal env.seRunId (SignalName signalName) node now
+                )
+                planned
               if null resolvedSignals && any (signalWaitPending . pswSettlement) planned
                 then do
                   Q.updateRunWaiting env.seRunId
@@ -1225,7 +1243,11 @@ handleTerminalFailure env stageDef attemptRef stageName failure stageEnd failure
     case failure of
       StageFailureTimeout timeoutSeconds ->
         emitObsEvent $ EvtStageTimeoutIrreversible env.seRunId stageName (fromIntegral timeoutSeconds)
-      _ -> pure ()
+      -- No irreversibility-specific observation for these terminal shapes today, but
+      -- enumerate them so a new StageFailure constructor forces a decision here rather
+      -- than being silently absorbed by a wildcard.
+      StageFailureException _ -> pure ()
+      StageFailureTyped _ _ -> pure ()
   recordRunEvent
     env
     "stage.failed"
@@ -1335,6 +1357,7 @@ terminalStageOutcome :: StageFailure -> RunOutcome
 terminalStageOutcome = \case
   StageFailureTimeout _ -> OutcomeTimedOut
   StageFailureException _ -> OutcomeFailed
+  StageFailureTyped _ _ -> OutcomeFailed
 
 attemptSummary :: Int -> Maybe Aeson.Value
 attemptSummary attempt
@@ -1370,11 +1393,13 @@ stageFailureType :: StageFailure -> Text
 stageFailureType = \case
   StageFailureException _ -> "stage_failure"
   StageFailureTimeout _ -> "stage_timeout"
+  StageFailureTyped errType _ -> errType
 
 stageFailureMessage :: StageFailure -> Text
 stageFailureMessage = \case
   StageFailureException err -> T.take 200 (T.pack (show err))
   StageFailureTimeout timeoutSeconds -> "Stage timed out after " <> T.pack (show timeoutSeconds) <> " seconds"
+  StageFailureTyped _ message -> T.take 200 message
 
 recordRunEvent :: StageEnv -> Text -> Q.RunEventSeverity -> Text -> Maybe Aeson.Value -> IO ()
 recordRunEvent env eventType severity message details =

@@ -24,6 +24,7 @@ common shared-properties
         DeriveAnyClass
         DerivingVia
         DuplicateRecordFields
+        ImportQualifiedPost
         OverloadedRecordDot
         OverloadedStrings
         RecordWildCards
@@ -157,6 +158,7 @@ library
         Cortex.Pulse.Executor.Events
         Cortex.Pulse.Executor.Frontier
         Cortex.Pulse.Executor.ExternalCall
+        Cortex.Pulse.Executor.ExternalCallStore
         Cortex.Pulse.Executor.Loop
         Cortex.Pulse.Executor.Outcome
         Cortex.Pulse.Executor.Persistence
@@ -205,6 +207,7 @@ library
         Cortex.Pulse.GraphRuntime
         Cortex.Pulse.Health
         Cortex.Pulse.Lowering.Circuit
+        Cortex.Pulse.Lowering.ExternalCallStage
         Cortex.Pulse.Lowering.FusedPlan
         Cortex.Pulse.Materialization
         Cortex.Pulse.Memory

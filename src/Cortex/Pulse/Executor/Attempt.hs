@@ -266,6 +266,23 @@ attemptStage env task stagePlan stageCall = do
             emitObsEvent $ EvtStageAttemptSuspendWriteFailed env.seRunId stageCall.scStageName (T.pack err)
           Right () -> pure ()
         pure (StageSuspended signalName)
+      Right (StageFail errType message) -> do
+        -- A typed terminal failure returned as a value (e.g. a backend reject):
+        -- route it through the terminal-failure path carrying the typed error_type
+        -- (ADR 0026 closure), not retried like a transient exception.
+        flushDeferredRejections env (reverse deferredRejections)
+        handleTerminalFailure
+          env
+          stageCall.scStageDef
+          attemptRef
+          stageCall.scStageName
+          (StageFailureTyped errType message)
+          stageEnd
+          RunFailureSpec
+            { rfsErrType = errType
+            , rfsErrMsg = message
+            , rfsRetryable = False
+            }
       Left failure -> do
         flushDeferredRejections env (reverse deferredRejections)
         case resolveStageFailure stageCall.scStageDef stageCall.scAttempt failure of
@@ -359,11 +376,13 @@ attemptStage env task stagePlan stageCall = do
     renderStageResultTag = \case
       Left (StageFailureException _) -> "failure_exception"
       Left (StageFailureTimeout _) -> "failure_timeout"
+      Left (StageFailureTyped _ _) -> "failure_typed"
       Right (StageComplete _) -> "complete"
       Right (StageSuspend _) -> "suspend"
       Right (StageRewrite _ _) -> "rewrite"
       Right StageLoopStep {} -> "loop_step"
       Right (StageRejectRewrite _ _) -> "reject_rewrite"
+      Right (StageFail _ _) -> "fail"
 
 applyExhaustionPolicy
   :: StageEnv

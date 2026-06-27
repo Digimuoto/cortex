@@ -117,7 +117,7 @@ runPulse registry rawConfig = do
           , DB.dbPoolSize = pulseDbPoolSize config
           , DB.dbPoolTimeout = 30
           }
-  poolResult <- DB.createPool dbConfig
+  poolResult <- PulseDB.createPulsePool dbConfig
   pool <- case poolResult of
     Left err -> do
       emitEvent (Just obsRuntime) $

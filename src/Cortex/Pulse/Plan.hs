@@ -104,6 +104,13 @@ data StageResult stageId
     rather than against rewrite gas.
     -}
     StageLoopStep Aeson.Value LoopStepWitness (GraphRewrite NodeId (StageDefinition stageId))
+  | {- | An expected, typed terminal failure returned as a value (not thrown): the
+    error-type tag (first field, e.g. @external_call_failure@) and a human
+    message (second). Used for backend failures that should route through the
+    ADR 0026 failure closure with a typed reason rather than collapsing to a
+    generic @stage_failure@ exception.
+    -}
+    StageFail !Text !Text
 
 -- | Execution context provided to every stage action.
 data StageContext = StageContext
@@ -187,6 +194,11 @@ data StageRetryExhaustion
 data StageFailure
   = StageFailureException SomeException
   | StageFailureTimeout Int32
+  | {- | A typed terminal failure (error-type tag, message) surfaced from a
+    'StageFail' result, so the run's @error_type@ carries the typed reason
+    instead of a generic @stage_failure@.
+    -}
+    StageFailureTyped !Text !Text
 
 instance Show StageFailure where
   show = T.unpack . stageFailureMessage
@@ -475,3 +487,4 @@ stageFailureMessage :: StageFailure -> Text
 stageFailureMessage = \case
   StageFailureException exc -> T.pack (show exc)
   StageFailureTimeout seconds -> "Stage timed out after " <> T.pack (show seconds) <> "s"
+  StageFailureTyped _ message -> message

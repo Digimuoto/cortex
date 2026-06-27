@@ -134,6 +134,8 @@ module Cortex.Pulse.Query
   , orderWokenRunIdsForUpdate
   , deliverSignal
   , deliverRunTerminalSignals
+  , deliverExternalCallSignal
+  , consumeDeliveredSignal
   , lookupDeliveredSignal
   , lookupDeliveredSignalTx
   , lookupSignalStatus
@@ -152,6 +154,7 @@ where
 import Control.Monad (when)
 import Data.Aeson (ToJSON, Value)
 import Data.Aeson qualified as Aeson
+import Data.Bits (xor)
 import Data.ByteString (ByteString)
 import Data.Foldable (traverse_)
 import Data.Functor.Contravariant ((>$<))
@@ -161,7 +164,7 @@ import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import Data.Time (UTCTime)
-import Data.UUID (UUID)
+import Data.UUID (UUID, toWords)
 import GHC.Generics (Generic)
 import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
@@ -182,8 +185,21 @@ import Cortex.Pulse.Checkpoint
 import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Query.ExternalCall
+  ( ExternalCallAttempt (..)
+  , ExternalCallAttemptKey (..)
+  , externalCallSignalSuffix
+  , externalCallStatusIsTerminal
+  , loadExternalCallAttempt
+  )
 import Cortex.Pulse.Schema
-import Cortex.Pulse.Signal (SignalName (..), parseRunTerminalSignal, runTerminalSignalName)
+import Cortex.Pulse.Signal
+  ( SignalName (..)
+  , externalCallSignalName
+  , isExternalCallSignal
+  , parseRunTerminalSignal
+  , runTerminalSignalName
+  )
 
 import Platform.Database qualified as DB
 import Platform.Database.Encode qualified as Enc
@@ -656,6 +672,43 @@ lockRunTerminalProtocolTx = do
 
 runTerminalProtocolLockKey :: Int64
 runTerminalProtocolLockKey = 5600058
+
+{- | Per-run advisory lock for the external-call wake protocol (ADR 0058/0059).
+Unlike run-terminal -- where run A may wait on run B and vice versa, forming cross-run
+cycles that require one global lock -- an external-call wake only ever wakes its own
+run, so it serializes per run: 'deliverExternalCallSignal' and the external-call
+branch of 'planSignalWaitSettlement' take this lock so a completion arriving between
+the park's delivered-row check and its commit is not lost, without contending across
+unrelated runs or against run-terminal delivery. The two-int advisory-lock space is
+disjoint from the single-bigint run-terminal lock, and per-run keys partition it, so
+the run-terminal lock is the only one ever shared across runs -- no deadlock cycle
+can form.
+-}
+lockExternalCallProtocolTx :: UUID -> Transaction ()
+lockExternalCallProtocolTx runId = do
+  _ <-
+    Tx.statement (externalCallProtocolLockClass, runAdvisoryLockKey runId) $
+      Statement
+        "WITH locked AS (SELECT pg_advisory_xact_lock($1, $2)) SELECT 1::int4 FROM locked"
+        ( Enc.encode2
+            (fst, Enc.nonNullable Enc.int4)
+            (snd, Enc.nonNullable Enc.int4)
+        )
+        (D.singleRow (D.column (D.nonNullable D.int4)))
+        False
+  pure ()
+
+-- | Advisory-lock class (the first int4 key) for the per-run external-call protocol.
+externalCallProtocolLockClass :: Int32
+externalCallProtocolLockClass = 5600059
+
+{- | Fold a run id into an int4 advisory-lock key. A collision only makes two runs
+share the external-call lock (extra serialization, never incorrect).
+-}
+runAdvisoryLockKey :: UUID -> Int32
+runAdvisoryLockKey runId =
+  let (w0, w1, w2, w3) = toWords runId
+   in fromIntegral (w0 `xor` w1 `xor` w2 `xor` w3)
 
 -- | Mark a run as started.
 updateRunStarted :: UUID -> UTCTime -> Transaction ()
@@ -1997,7 +2050,16 @@ fail on a missing target. Ordinary external signals remain pending.
 -}
 planSignalWaitSettlement :: UUID -> NodeId -> SignalName -> Transaction SignalWaitSettlement
 planSignalWaitSettlement runId nodeId signalName@(SignalName signalNameText) = do
-  when (isJust (parseRunTerminalSignal signalName)) lockRunTerminalProtocolTx
+  -- Serialize the lookup -> register -> park span against the matching delivery, as
+  -- the first action and strictly before lookupDeliveredSignalTx, so a completion
+  -- arriving after the delivered-row check but before the park commits is not lost
+  -- (ADR 0058). Run-terminal takes the global lock (cross-run mutual awaits form
+  -- cycles); external-call takes a per-run lock (it only wakes its own run), so its
+  -- park and delivery do not contend across unrelated runs. The two families are
+  -- distinct prefixes, so a name is at most one of them.
+  if isExternalCallSignal signalName
+    then lockExternalCallProtocolTx runId
+    else when (isJust (parseRunTerminalSignal signalName)) lockRunTerminalProtocolTx
   delivered <- lookupDeliveredSignalTx runId signalNameText (unNodeId nodeId)
   case delivered of
     Just mPayload -> pure (SignalWaitSettlementAlreadyDelivered (fromMaybe Aeson.Null mPayload))
@@ -2214,11 +2276,15 @@ deliverSignal runId signalName payload now =
   -- transition). External/host delivery must not be able to forge it: otherwise
   -- the await-a-run primitive is spoofable — a caller could deliver
   -- run-terminal:<child> with an arbitrary payload and wake/complete the waiter
-  -- while the child is still running. Refuse reserved names here; legitimate
-  -- run-terminal delivery never flows through this path.
-  case parseRunTerminalSignal (SignalName signalName) of
-    Just _ -> pure False
-    Nothing -> do
+  -- while the child is still running. The external-call:<digest> namespace is
+  -- likewise reserved for the trusted external-call delivery path
+  -- (deliverExternalCallSignal): forging it would re-arm a parked external-call
+  -- stage with an attacker-chosen wake. Refuse both reserved families here;
+  -- legitimate delivery for them never flows through this path.
+  if isJust (parseRunTerminalSignal (SignalName signalName))
+    || isExternalCallSignal (SignalName signalName)
+    then pure False
+    else do
       delivered <- deliverSignalOnly runId signalName payload now
       when delivered $ wakeRunFromWaiting runId
       pure delivered
@@ -2240,6 +2306,116 @@ deliverSignalOnly runId signalName payload now =
           ((\(_, _, _, d) -> d), Enc.nonNullable Enc.timestamptz)
       )
       ((/= 0) <$> D.rowsAffected)
+      False
+
+{- | Trusted delivery of a reserved @external-call:@ completion wake (ADR 0059).
+Takes the durable attempt key and derives the reserved name internally, so an
+internal caller cannot deliver an ordinary signal through this path.
+
+Serialization: takes the per-run external-call advisory lock first, so it cannot
+interleave with the suspend settlement that plans the same wait (which also takes
+the lock). This closes the lost-wakeup window where a completion arriving after
+settlement's delivered-row check but before its park commits would be missed.
+
+Delivery first requires a durable non-terminal attempt row. It then upserts the
+wake: mark a pending wait delivered, or — if the wake arrives before the stage
+parks and registers its wait — insert a node-scoped @delivered@ row that suspend
+settlement observes as already-delivered and re-arms. The insert is suppressed
+only when an un-consumed @delivered@ row already exists for this wake (an
+in-flight duplicate), so it stays idempotent; a @consumed@ row from a prior
+re-suspend round does NOT suppress it, because the signal name is reused across
+rounds and a fresh wake must still re-arm. A settled or failed attempt is
+terminal, so delivery to it is a no-op (suppresses a post-settlement orphan wake
+without ever dropping a live one). The payload is a wake marker only; completion
+comes from the driver on resume, never from this payload.
+-}
+deliverExternalCallSignal :: ExternalCallAttemptKey -> Value -> UTCTime -> Transaction Bool
+deliverExternalCallSignal key payload now = do
+  lockExternalCallProtocolTx (ecaRunId key)
+  attempt <- loadExternalCallAttempt key
+  case attempt of
+    Nothing -> pure False
+    Just a
+      | externalCallStatusIsTerminal (ecaStatus a) -> pure False
+      | otherwise -> do
+          let runId = ecaRunId key
+              nodeIdText = ecaNodeId key
+              SignalName signalNameText = externalCallSignalName (externalCallSignalSuffix key)
+          updated <-
+            Tx.statement (runId, signalNameText, nodeIdText, payload, now) $
+              Statement
+                "UPDATE pulse.signals SET \
+                \  status = 'delivered', \
+                \  payload = $4, \
+                \  delivered_at = $5 \
+                \WHERE run_id = $1 AND signal_name = $2 AND node_id = $3 AND status = 'pending'"
+                externalCallWakeEncoder
+                ((/= 0) <$> D.rowsAffected)
+                False
+          delivered <-
+            if updated
+              then pure True
+              else
+                Tx.statement (runId, signalNameText, nodeIdText, payload, now) $
+                  Statement
+                    "INSERT INTO pulse.signals \
+                    \  (run_id, signal_name, node_id, status, payload, created_at, delivered_at) \
+                    \SELECT $1, $2, $3, 'delivered', $4, $5, $5 \
+                    \WHERE NOT EXISTS ( \
+                    \  SELECT 1 FROM pulse.signals \
+                    \  WHERE run_id = $1 AND signal_name = $2 AND node_id = $3 \
+                    \    AND status = 'delivered' \
+                    \)"
+                    externalCallWakeEncoder
+                    ((/= 0) <$> D.rowsAffected)
+                    False
+          when delivered $ wakeRunFromWaiting runId
+          pure delivered
+  where
+    externalCallWakeEncoder =
+      Enc.encode5
+        ((\(a, _, _, _, _) -> a), Enc.nonNullable Enc.uuid)
+        ((\(_, b, _, _, _) -> b), Enc.nonNullable Enc.text)
+        ((\(_, _, c, _, _) -> c), Enc.nonNullable Enc.text)
+        ((\(_, _, _, d, _) -> d), Enc.nonNullable Enc.jsonb)
+        ((\(_, _, _, _, e) -> e), Enc.nonNullable Enc.timestamptz)
+
+{- | Consume **every** delivered reserved @external-call:@ wake row for a
+node-scoped wait (status @delivered@ → @consumed@). Settlement calls this when it
+re-arms the parked node, so the wake is not re-observed: 'lookupDeliveredSignalTx'
+returns the latest @delivered@ row, so leaving any @delivered@ row behind would
+re-trigger the re-arm in a loop. Consuming all of them closes that loop. Idempotent.
+-}
+consumeDeliveredSignal :: UUID -> SignalName -> NodeId -> UTCTime -> Transaction ()
+consumeDeliveredSignal runId (SignalName signalNameText) (NodeId nodeIdText) now = do
+  -- Bound row growth: drop consumed rows from prior re-poll rounds before marking
+  -- this round's delivered rows consumed. The signal name is reused across rounds, so
+  -- without this a long-polled external call would leave one dead 'consumed' row per
+  -- round; this keeps at most the most recent for that (run, signal, node).
+  Tx.statement (runId, signalNameText, nodeIdText) $
+    Statement
+      "DELETE FROM pulse.signals \
+      \WHERE run_id = $1 AND signal_name = $2 AND node_id = $3 AND status = 'consumed'"
+      ( Enc.encode3
+          ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c) -> c), Enc.nonNullable Enc.text)
+      )
+      D.noResult
+      False
+  Tx.statement (runId, signalNameText, nodeIdText, now) $
+    Statement
+      "UPDATE pulse.signals SET \
+      \  status = 'consumed', \
+      \  delivered_at = COALESCE(delivered_at, $4) \
+      \WHERE run_id = $1 AND signal_name = $2 AND node_id = $3 AND status = 'delivered'"
+      ( Enc.encode4
+          ((\(a, _, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c, _) -> c), Enc.nonNullable Enc.text)
+          ((\(_, _, _, d) -> d), Enc.nonNullable Enc.timestamptz)
+      )
+      D.noResult
       False
 
 {- | Transition a run from 'waiting' back to 'pending' so the scheduler

@@ -19,6 +19,7 @@ Apply one with, e.g.:
 psql -v ON_ERROR_STOP=1 -f migrations/0001_graph_rewrites_admission_mode.sql
 ```
 
-| File                                     | Adds                                  | For code                                        |
-| ---------------------------------------- | ------------------------------------- | ----------------------------------------------- |
-| `0001_graph_rewrites_admission_mode.sql` | `pulse.graph_rewrites.admission_mode` | ADR 0055 / 0056 witnessed self-append admission |
+| File                                     | Adds                                                                      | For code                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `0001_graph_rewrites_admission_mode.sql` | `pulse.graph_rewrites.admission_mode`                                     | ADR 0055 / 0056 witnessed self-append admission             |
+| `0002_external_call_attempts.sql`        | `pulse.external_call_attempts` table, key index, run FK, `failure_reason` | ADR 0059 §3 durable submit/park/resume external-call stages |

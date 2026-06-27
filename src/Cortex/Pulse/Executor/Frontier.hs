@@ -93,7 +93,7 @@ import Cortex.Pulse.PlanHydration (toSerializableStageDefinition)
 import Cortex.Pulse.Query qualified as Q
 import Cortex.Pulse.Rewrite (RewriteBudget)
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Signal (unSignalName)
+import Cortex.Pulse.Signal (SignalName (..), isExternalCallSignal, unSignalName)
 
 import Platform.Database qualified as DB
 import Platform.DurableTask.Types (RunOutcome (..))
@@ -653,14 +653,21 @@ resolveDeliveredSignals pool runId gs = do
         ]
   foldM resolveOne gs waitingNodes
   where
-    resolveOne state (nid, sigName) = do
-      result <- PulseDB.withConnection pool $ Q.lookupDeliveredSignal runId sigName (unNodeId nid)
-      case result of
-        Right (Just mPayload) -> do
-          let output = fromMaybe Aeson.Null mPayload
-          emitObsEvent $ EvtSignalResolved runId sigName (unNodeId nid)
-          pure (markCompleted nid output state)
-        Right Nothing -> pure state
-        Left err -> do
-          emitObsEvent $ EvtSignalLookupFailed runId sigName (unNodeId nid) (T.pack err)
+    resolveOne state (nid, sigName)
+      | isExternalCallSignal (SignalName sigName) =
+          -- Reserved external-call wakes re-arm rather than completing from payload;
+          -- leave the node NodeWaiting so suspend settlement (settleSuspendTx) does the
+          -- atomic re-arm + delivered-row consume. Both delivery-timing paths thus
+          -- converge on that single settlement site.
           pure state
+      | otherwise = do
+          result <- PulseDB.withConnection pool $ Q.lookupDeliveredSignal runId sigName (unNodeId nid)
+          case result of
+            Right (Just mPayload) -> do
+              let output = fromMaybe Aeson.Null mPayload
+              emitObsEvent $ EvtSignalResolved runId sigName (unNodeId nid)
+              pure (markCompleted nid output state)
+            Right Nothing -> pure state
+            Left err -> do
+              emitObsEvent $ EvtSignalLookupFailed runId sigName (unNodeId nid) (T.pack err)
+              pure state

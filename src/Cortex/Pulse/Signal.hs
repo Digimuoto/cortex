@@ -18,6 +18,9 @@ module Cortex.Pulse.Signal
     SignalName (..)
   , runTerminalSignalName
   , parseRunTerminalSignal
+  , externalCallSignalName
+  , parseExternalCallSignal
+  , isExternalCallSignal
 
     -- * Signal records
   , SignalWait (..)
@@ -30,6 +33,7 @@ where
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson qualified as Aeson
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
@@ -56,6 +60,26 @@ parseRunTerminalSignal :: SignalName -> Maybe UUID
 parseRunTerminalSignal (SignalName name) =
   T.stripPrefix "run-terminal:" name >>= UUID.fromText
 
+{- | The reserved completion-wake signal for a @submit_park_resume@ external-call
+stage (ADR 0059). The suffix is a digest of the durable external-call attempt key
+(see 'Cortex.Pulse.Query.ExternalCall.externalCallSignalSuffix'); this module stays
+query-free and only owns the reserved namespace. Like @run-terminal:@, ordinary
+host delivery refuses this family — only the trusted external-call delivery path
+marks it delivered, and delivery re-arms the parked node rather than completing it.
+-}
+externalCallSignalName :: Text -> SignalName
+externalCallSignalName suffix =
+  SignalName ("external-call:" <> suffix)
+
+-- | Recognize an external-call signal name and recover its opaque attempt suffix.
+parseExternalCallSignal :: SignalName -> Maybe Text
+parseExternalCallSignal (SignalName name) =
+  T.stripPrefix "external-call:" name
+
+-- | Whether a signal name is in the reserved @external-call:@ family.
+isExternalCallSignal :: SignalName -> Bool
+isExternalCallSignal = isJust . parseExternalCallSignal
+
 -- | A pending signal wait registered by a stage.
 data SignalWait = SignalWait
   { swRunId :: UUID
@@ -80,6 +104,10 @@ data SignalStatus
   = SignalPending
   | SignalDelivered
   | SignalExpired
+  | {- | A delivered reserved @external-call:@ wake the runtime has re-armed and
+    consumed (ADR 0059), so settlement does not re-resolve it into a re-arm loop.
+    -}
+    SignalConsumed
   deriving stock (Eq, Ord, Show, Bounded, Enum, Generic)
 
 signalStatusToText :: SignalStatus -> Text
@@ -87,10 +115,12 @@ signalStatusToText = \case
   SignalPending -> "pending"
   SignalDelivered -> "delivered"
   SignalExpired -> "expired"
+  SignalConsumed -> "consumed"
 
 signalStatusFromText :: Text -> Maybe SignalStatus
 signalStatusFromText = \case
   "pending" -> Just SignalPending
   "delivered" -> Just SignalDelivered
   "expired" -> Just SignalExpired
+  "consumed" -> Just SignalConsumed
   _ -> Nothing

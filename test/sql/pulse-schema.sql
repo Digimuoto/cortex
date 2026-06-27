@@ -729,8 +729,12 @@ CREATE TABLE pulse.external_call_attempts (
     status text DEFAULT 'reserved'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     submitted_at timestamp with time zone,
-    settled_at timestamp with time zone
+    settled_at timestamp with time zone,
+    failure_reason text
 );
 
 CREATE UNIQUE INDEX idx_pulse_external_call_attempts_key
     ON pulse.external_call_attempts USING btree (run_id, node_id, runtime_binding_id, frontier_id);
+
+ALTER TABLE ONLY pulse.external_call_attempts
+    ADD CONSTRAINT external_call_attempts_run_id_fkey FOREIGN KEY (run_id) REFERENCES pulse.runs(run_id) ON DELETE CASCADE;

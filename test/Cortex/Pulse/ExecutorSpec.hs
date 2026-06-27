@@ -28,7 +28,7 @@ import Control.Exception
 import Control.Monad (forM_, void, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
-import Data.IORef (atomicModifyIORef', newIORef, readIORef)
+import Data.IORef (atomicModifyIORef', modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Int (Int32, Int64)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
@@ -58,6 +58,17 @@ import Cortex.Algebra.Graph
   , topSort
   , validateDAG
   , vertices
+  )
+import Cortex.Capability.Catalog.AdmissionProjection (ContentDigest (..), ProjectionVersion (..))
+import Cortex.Capability.Catalog.AwaitStrategy
+  ( AwaitStrategy (..)
+  , IsolationExpectation (..)
+  , ReplayClass (..)
+  )
+import Cortex.Capability.Catalog.ExecutorManifest (AbiKind (..), ContentAddress (..))
+import Cortex.Capability.Catalog.RuntimeBindingRecord
+  ( RuntimeBindingRecord (..)
+  , RuntimeStageActionRef (..)
   )
 import Cortex.Pulse.Executor
   ( LoopInstanceKey (..)
@@ -94,6 +105,12 @@ import Cortex.Pulse.Executor
   , toSerializableStageDefinition
   )
 import Cortex.Pulse.Executor qualified as Executor
+import Cortex.Pulse.Executor.ExternalCall
+  ( ExternalCallContext (..)
+  , ExternalCallDriver (..)
+  , FetchResult (..)
+  )
+import Cortex.Pulse.Executor.ExternalCallStore (pulseAttemptStore)
 import Cortex.Pulse.Executor.Persistence (requireGraphStatePersist)
 import Cortex.Pulse.Executor.Types (RunTVars (..), mkStageEnv)
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
@@ -113,6 +130,7 @@ import Cortex.Pulse.Iteration
   , LoopStepWitness (..)
   , kernelWitnessForLocalSpec
   )
+import Cortex.Pulse.Lowering.ExternalCallStage (bindExternalCallStage)
 import Cortex.Pulse.Materialize
   ( NodeProvenanceEntry (..)
   , PersistedGraphState (..)
@@ -127,6 +145,11 @@ import Cortex.Pulse.Query
   , PulseStageLogDetail (..)
   )
 import Cortex.Pulse.Query qualified as Q
+import Cortex.Pulse.Query.ExternalCall
+  ( ExternalCallAttempt (..)
+  , externalCallSignalSuffix
+  , loadExternalCallAttempt
+  )
 import Cortex.Pulse.Rewrite
   ( BudgetContext (..)
   , BudgetDimension (..)
@@ -146,7 +169,12 @@ import Cortex.Pulse.Runtime
   , markFailed
   )
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
-import Cortex.Pulse.Signal (SignalName (..), runTerminalSignalName, unSignalName)
+import Cortex.Pulse.Signal
+  ( SignalName (..)
+  , externalCallSignalName
+  , runTerminalSignalName
+  , unSignalName
+  )
 import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget, taskEnvelopeVersionOrDefault)
 import Cortex.TestSupport.Database (createTestDB, runSession, runTx)
 import Cortex.Wire
@@ -917,8 +945,154 @@ waitForGraphStatuses pool runId predicate =
           threadDelay 50_000
           go (attemptsLeft - 1)
 
+-- | A submit/park/resume runtime binding record for the external-call stage tests.
+externalCallBinding :: RuntimeBindingRecord
+externalCallBinding =
+  RuntimeBindingRecord
+    { rbrBindingId = "braket-pack/quantum.realize"
+    , rbrBindingVersion = "1"
+    , rbrExecutorId = WireExecutorId "quantum.realize"
+    , rbrProjectionVersion = ProjectionVersion "1"
+    , rbrStageActionRef = RuntimeStageActionRef "quantum.realize.braket"
+    , rbrManifestContentAddress = ContentAddress "sha256:m"
+    , rbrArtifactDigest = ContentDigest "d"
+    , rbrAbiKind = AbiSubprocessJsonl
+    , rbrAbiVersion = "1"
+    , rbrAbiDriverDigest = ContentDigest "dd"
+    , rbrBindingPackIdentity = "braket-pack"
+    , rbrResolvedAuthorities = []
+    , rbrIsolation = SubprocessSandbox
+    , rbrAcceptedReplayClass = IdempotentWithKey
+    , rbrAcceptedAwaitStrategy = SubmitParkResume
+    , rbrCompatibilityDigest = ContentDigest "c"
+    }
+
+externalCallPorts :: WirePorts
+externalCallPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs = Map.fromList [("s01", WireOutputPort "MeasurementBit")]
+    }
+
+externalCallOutputs :: [(Text, Aeson.Value)]
+externalCallOutputs = [("s01", Aeson.toJSON (1 :: Int))]
+
+externalCallPlan :: Aeson.Value
+externalCallPlan = Aeson.object ["operations" Aeson..= [Aeson.object ["gate" Aeson..= ("cnot" :: Text)]]]
+
 spec :: Spec
 spec = beforeAll setupTestDb $ do
+  describe "durable external-call stages (ADR 0059)" $ do
+    it "submits, parks, refuses forged wakes, then completes from the driver on resume" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-ec-stage-happy"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      fetchCount <- newIORef (0 :: Int)
+      capturedKey <- newIORef Nothing
+      let driver =
+            ExternalCallDriver
+              { driverRunSync = \_ -> pure (Right externalCallOutputs)
+              , driverSubmit = \ctx ->
+                  writeIORef capturedKey (Just (ecAttemptKey ctx)) >> pure (Right (Aeson.String "job-1"))
+              , driverFetch = \_ -> modifyIORef' fetchCount (+ 1) >> pure (FetchCompleted externalCallOutputs)
+              , driverIdempotencyKey = const "idem-fixed"
+              }
+          stage =
+            bindExternalCallStage
+              driver
+              (pulseAttemptStore pool)
+              externalCallBinding
+              (NodeId "realize")
+              "frontier-happy"
+              externalCallPlan
+              externalCallPorts
+              Nothing
+          stagePlan = mkLinearStagePlan [stage] Aeson.Null 1 ReplayPolicyWarn
+      -- Phase 1: submit + park.
+      outcome1 <- executeStagePlan taskContext runId task stagePlan
+      outcome1 `shouldBe` OutcomeSuspended
+      readRunStatus pool runId `shouldReturn` Just "waiting"
+      readIORef fetchCount `shouldReturn` 0
+      Just key <- readIORef capturedKey
+      attempt <- runTx pool (loadExternalCallAttempt key)
+      fmap ecaStatus attempt `shouldBe` Just "submitted"
+      let sigText = unSignalName (externalCallSignalName (externalCallSignalSuffix key))
+      (ecaSignalName =<< attempt) `shouldBe` Just sigText
+      -- Anti-forgery: ordinary deliverSignal of the reserved name is refused, run still parked.
+      now0 <- getCurrentTime
+      forged <- runTx pool (Q.deliverSignal runId sigText (Aeson.String "forged") now0)
+      forged `shouldBe` False
+      readRunStatus pool runId `shouldReturn` Just "waiting"
+      readIORef fetchCount `shouldReturn` 0
+      -- Phase 2: trusted wake.
+      now <- getCurrentTime
+      woke <- runTx pool (Q.deliverExternalCallSignal key (Aeson.String "wake-marker") now)
+      woke `shouldBe` True
+      readRunStatus pool runId `shouldReturn` Just "pending"
+      -- Phase 3: resume -> re-arm -> driverFetch -> complete from the driver result.
+      runTx pool (Q.updateRunStarted runId now)
+      outcome2 <- resumeStagePlan taskContext runId task stagePlan
+      outcome2 `shouldBe` OutcomeCompleted
+      readRunStatus pool runId `shouldReturn` Just "completed"
+      readIORef fetchCount `shouldReturn` 1
+      settled <- runTx pool (loadExternalCallAttempt key)
+      fmap ecaStatus settled `shouldBe` Just "settled"
+      -- The node output is the driver's result (one wrapped value per measurement port).
+      outputs <- readGraphNodeOutputs pool runId
+      case outputs of
+        Just (nodeOutputs, _) -> Map.size nodeOutputs `shouldBe` 1
+        Nothing -> expectationFailure "Expected persisted node outputs after completion"
+
+    it "re-suspends when the provider job is not yet terminal, then completes on a later wake" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-ec-stage-not-ready"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      fetchCount <- newIORef (0 :: Int)
+      capturedKey <- newIORef Nothing
+      let driver =
+            ExternalCallDriver
+              { driverRunSync = \_ -> pure (Right externalCallOutputs)
+              , driverSubmit = \ctx ->
+                  writeIORef capturedKey (Just (ecAttemptKey ctx)) >> pure (Right (Aeson.String "job-2"))
+              , -- First fetch: not ready (re-suspend). Second fetch: ready.
+                driverFetch = \_ -> do
+                  n <- atomicModifyIORef' fetchCount (\c -> (c + 1, c + 1))
+                  if n == 1 then pure FetchNotReady else pure (FetchCompleted externalCallOutputs)
+              , driverIdempotencyKey = const "idem-fixed"
+              }
+          stage =
+            bindExternalCallStage
+              driver
+              (pulseAttemptStore pool)
+              externalCallBinding
+              (NodeId "realize")
+              "frontier-not-ready"
+              externalCallPlan
+              externalCallPorts
+              Nothing
+          stagePlan = mkLinearStagePlan [stage] Aeson.Null 1 ReplayPolicyWarn
+      -- Submit + park.
+      executeStagePlan taskContext runId task stagePlan `shouldReturn` OutcomeSuspended
+      Just key <- readIORef capturedKey
+      -- First wake -> resume -> not-ready -> re-suspend (still waiting, attempt still submitted).
+      now1 <- getCurrentTime
+      _ <- runTx pool (Q.deliverExternalCallSignal key (Aeson.String "wake-1") now1)
+      runTx pool (Q.updateRunStarted runId now1)
+      resumeStagePlan taskContext runId task stagePlan `shouldReturn` OutcomeSuspended
+      readRunStatus pool runId `shouldReturn` Just "waiting"
+      readIORef fetchCount `shouldReturn` 1
+      stillSubmitted <- runTx pool (loadExternalCallAttempt key)
+      fmap ecaStatus stillSubmitted `shouldBe` Just "submitted"
+      -- Second wake -> resume -> ready -> complete.
+      now2 <- getCurrentTime
+      _ <- runTx pool (Q.deliverExternalCallSignal key (Aeson.String "wake-2") now2)
+      runTx pool (Q.updateRunStarted runId now2)
+      resumeStagePlan taskContext runId task stagePlan `shouldReturn` OutcomeCompleted
+      readRunStatus pool runId `shouldReturn` Just "completed"
+      readIORef fetchCount `shouldReturn` 2
+
   describe "Pulse Executor" $ do
     it "caps exponential retry backoff before Int overflow" $ \_mPool -> do
       retryDelayMicros (FixedBackoffMicros maxBound) 1 `shouldBe` 300_000_000
@@ -1056,6 +1230,7 @@ spec = beforeAll setupTestDb $ do
               , srpRetryable = \case
                   StageFailureException _ -> True
                   StageFailureTimeout _ -> False
+                  StageFailureTyped _ _ -> False
               , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
@@ -1113,6 +1288,7 @@ spec = beforeAll setupTestDb $ do
               , srpRetryable = \case
                   StageFailureException _ -> True
                   StageFailureTimeout _ -> False
+                  StageFailureTyped _ _ -> False
               , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
@@ -1165,6 +1341,7 @@ spec = beforeAll setupTestDb $ do
               , srpRetryable = \case
                   StageFailureException _ -> True
                   StageFailureTimeout _ -> False
+                  StageFailureTyped _ _ -> False
               , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
@@ -1211,6 +1388,7 @@ spec = beforeAll setupTestDb $ do
               , srpRetryable = \case
                   StageFailureException _ -> True
                   StageFailureTimeout _ -> False
+                  StageFailureTyped _ _ -> False
               , srpExhaustion = ExhaustionFailsRun
               }
           stagePlan =
@@ -1254,6 +1432,7 @@ spec = beforeAll setupTestDb $ do
               , srpRetryable = \case
                   StageFailureException _ -> True
                   StageFailureTimeout _ -> False
+                  StageFailureTyped _ _ -> False
               , srpExhaustion = ExhaustionSkipsStage
               }
           stagePlan =

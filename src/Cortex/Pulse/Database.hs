@@ -12,14 +12,29 @@ The retry policy here is deliberately narrow: it retries transient pool
 acquisition timeouts, not SQL errors or connection-establishment failures.
 -}
 module Cortex.Pulse.Database
-  ( pulseDbRetryBudget
+  ( -- * Pool construction (Pulse-owned surface)
+    Pool
+  , ConnectionConfig (..)
+  , createPulsePool
+
+    -- * Execution policy
+  , pulseDbRetryBudget
   , withConnection
   , runTransaction
   , runTransactionAt
   )
 where
 
+import Platform.Database (ConnectionConfig (..), Pool)
 import Platform.Database qualified as DB
+
+{- | Construct a Pulse database pool. Re-exported (with 'Pool' and
+'ConnectionConfig') so a downstream durable runner or provider-completion watcher
+constructs and uses a pool through @Cortex.Pulse.Database@ without importing
+@Platform.Database@ directly.
+-}
+createPulsePool :: ConnectionConfig -> IO (Either String Pool)
+createPulsePool = DB.createPool
 
 -- | Default Pulse budget for transient pool acquisition retry.
 pulseDbRetryBudget :: DB.PoolRetryBudget

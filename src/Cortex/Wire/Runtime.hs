@@ -166,6 +166,8 @@ wrapWireStageResult maybeRegistry producer runId ports = \case
       <$> wrapWireStageOutput maybeRegistry producer runId ports outputValue
   StageSuspend signalName ->
     Right (StageSuspend signalName)
+  StageFail errType message ->
+    Right (StageFail errType message)
 
 wrapWireStageOutput
   :: Maybe WireContractRegistry
