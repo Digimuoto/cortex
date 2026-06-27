@@ -204,7 +204,7 @@ Implemented expression forms:
 - arithmetic `+`, `-`, `*`, `/`;
 - comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`;
 - boolean `&&`, `||`;
-- right-biased record merge `//`;
+- recursive right-biased record merge `//` (deep merge; leaf values are right-biased);
 - non-recursive `let ... in`;
 - `if ... then ... else ...`;
 - string interpolation: `"Score: ${item.score}"`.

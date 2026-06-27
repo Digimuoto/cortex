@@ -201,5 +201,8 @@ reader refuse an artifact it was not built to understand.
   — the Haskell/Lean layering this boundary lives inside.
 - [ADR 0053 — Executor Catalog Manifests and Pulse Runtime Bindings](./0053-executor-catalog-manifests-and-pulse-bindings.md)
   — the sibling pattern of a schema-versioned Haskell-emitted artifact crossing a runtime boundary.
+- [ADR 0062 — Typed Effect Variant Output Boundaries](./0062-typed-effect-variant-output-boundaries.md)
+  — the runtime counterpart: emits the committed select variants whose exclusive-group provenance
+  this artifact's select rows retain at the proof boundary.
 - [Cortex Proof Status](../Reference/proof-status.md)
 - GitHub #304

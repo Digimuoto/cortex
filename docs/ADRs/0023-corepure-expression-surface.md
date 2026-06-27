@@ -119,6 +119,13 @@ the call site.
 Authors who want override behavior write `defaults // { field = newValue; }` rather than declaring
 `field` twice in one record literal.
 
+CorePure's `//` is a **recursive** merge, deviating from Nix's shallow `//`: when a key holds an
+object on both sides the objects merge recursively, and right-biased replacement applies only at
+leaf values (or where the two sides disagree on kind). This lets an author override one nested field
+with `base // { a = { x = 9; }; }` without restating the rest of `a`. The recursive behavior is what
+the evaluator implements (`mergeObjects` / `mergeJsonValue` in `Cortex.Wire.Pure`); this clause
+records it so the canon matches the code.
+
 ### Pipe Sugar
 
 `|>` is the canonical function-composition operator inside CorePure expressions. It is

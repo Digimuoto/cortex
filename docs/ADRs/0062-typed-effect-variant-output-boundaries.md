@@ -200,6 +200,10 @@ substrate (#313), the committed-label select guard/lowering path exercised by du
 explicitly **out of scope** and deferred (#315); this ADR ships on Layer-1 payload-kind/shape
 validation over the current `WireValue`.
 
+This ADR bundles two decisions against the one-decision-per-ADR rule: the emission boundary (#313)
+and the production select runtime (#314/#321). Whether to split it into an emission-boundary ADR and
+a select-runtime ADR is tracked in #320.
+
 ## Alternatives considered
 
 - **A new `StageResult` constructor (`StageCompleteVariant label payload`).** Rejected: it forces
@@ -302,3 +306,6 @@ validation over the current `WireValue`.
     output envelope.
 - [0059 - Durable External-Call Frontiers on Pulse](0059-durable-external-call-frontiers-on-pulse.md)
   - the typed-error-output option this ADR generalises to N variants.
+- [0079 - Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema](0079-wire-admission-witness-schema.md)
+  - the proof-side counterpart: the admission witness retains the select-variant exclusive-group
+    provenance (`selectVariantsShareExclusiveGroup`) this ADR drops before runtime.
