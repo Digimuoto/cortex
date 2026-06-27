@@ -1763,8 +1763,10 @@ data RangeTag = TagEmpty | TagEnumerate Integer Integer | TagOverCap
 rangeTag :: RangePlan -> RangeTag
 rangeTag = foldRangePlan TagEmpty TagEnumerate TagOverCap
 
-{- | Small JSON values for the fold-accumulator cost property: scalars and
-shallow numeric arrays, enough to exercise the within/over-cap boundary.
+{- | JSON values for the fold-accumulator cost property: scalars, shallow numeric
+arrays, and a guaranteed over-cap number, so both sides of the within/over-cap
+boundary are exercised. Without the over-cap case mkFoldAccumulator always admits,
+leaving the property's rejection branch dead.
 -}
 genBoundedJson :: Gen Aeson.Value
 genBoundedJson =
@@ -1774,7 +1776,12 @@ genBoundedJson =
     , Aeson.Number . fromInteger <$> arbitrary
     , Aeson.String . T.pack <$> arbitrary
     , Aeson.toJSON <$> listOf (Aeson.Number . fromInteger <$> (arbitrary :: Gen Integer))
+    , -- A number whose exponent magnitude exceeds the cap is always over-cap, so
+      -- mkFoldAccumulator must reject it and the rejection branch actually runs.
+      Aeson.Number . scientific 1 <$> choose (capValue + 1, capValue + 1000)
     ]
+  where
+    capValue = iterationCapValue corePureBoundedIterationCap
 
 {- | mkFoldAccumulator admits a JSON value iff its cost is within the cap, and
 preserves the value unchanged when it admits it.
