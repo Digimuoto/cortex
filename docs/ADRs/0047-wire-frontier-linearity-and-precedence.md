@@ -105,7 +105,8 @@ adapter introduced by ADR 0052).
 
 - Every output endpoint in `∂⁺G` and every input endpoint in `∂⁻H` has zero or one compatible
   counterpart on the opposite side, where compatible means matching `(label, contract)`.
-- Zero counterparts: the endpoint remains exposed on the composed frontier.
+- Zero counterparts: the endpoint remains exposed on the composed frontier — a **carried endpoint**
+  (an identity wire for an open boundary; see the [glossary](../glossary.md)).
 - One counterpart: the pair is consumed and the matching edge is added.
 - More than one counterpart on either side: static error.
 
@@ -131,6 +132,10 @@ inverted ladder makes that natural without parens: the trailing overlay binds fi
 operand of the final `=>`. The connect still obeys the linear endpoint rule above; if `transform`
 exposes one output that would feed all three branches, the expression is rejected rather than
 rewritten by source-level distributivity.
+
+This is the **stage-structured pipeline** reading the ladder enables: `<>` forms a same-stage
+frontier (stage formation) and `=>` advances to the next stage (stage advancement). See the
+[glossary](../glossary.md).
 
 ### 4. Retire ADR 0028's parens-when-mixing rule
 

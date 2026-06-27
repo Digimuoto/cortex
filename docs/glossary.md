@@ -57,6 +57,15 @@ orientation.
 - **Sum group** — output-port form `-> A | B` where exactly one variant fires.
 - **Wire value** — a node, a composed graph expression, or the empty wire `()`.
 - **Port-boundary** — a wire's currently unconnected input and output ports.
+- **Frontier** — the multiset of named, contract-typed port instances a wire exposes on its
+  boundary; the formal name for a wire's port-boundary.
+- **Frontier transformer** — a Wire source expression read as a function from an input frontier to
+  an output frontier; composition transforms frontiers rather than wiring a fixed graph.
+- **Carried endpoint** — a frontier endpoint that crosses a `=>` composition unmatched and remains
+  exposed on the composed frontier (an identity wire for an open boundary).
+- **Stage-structured pipeline** — the reading where `<>` forms a same-stage frontier (stage
+  formation) and `=>` advances to the next stage (stage advancement); the basis for the ADR 0047
+  precedence ladder.
 - **File-return expression** — the last expression in a `.wire` file, which becomes the file's
   value.
 - **Evaluation-boundary check** — the runnable-wire gate: every singular input must be connected
@@ -66,7 +75,7 @@ orientation.
 
 - **`<>` overlay** — set union of nodes and edges.
 - **`=>` connect** — port-key-matched edge addition over boundaries.
-- **`//` merge** — right-biased shallow record merge.
+- **`//` merge** — recursive right-biased record merge (deep merge; leaves are right-biased).
 - **`++` concat** — string and list concatenation.
 - **`|` sum** — output-port mutual-exclusion constructor.
 - **`@` application** — stages registered executor authority with config: `@qualified.name { ... }`.
