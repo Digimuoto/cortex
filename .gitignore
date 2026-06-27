@@ -52,6 +52,11 @@ theory/.lake/
 !migrations/
 !migrations/**
 
+# data/ — cortex library data-files shipped with the package
+# (e.g. pulse-schema.sql, applied by Cortex.Pulse.Database.provisionPulseSchema; ADR 0003)
+!data/
+!data/**
+
 # editors/ — tree-sitter-wire grammar + editor integrations
 !editors/
 !editors/**

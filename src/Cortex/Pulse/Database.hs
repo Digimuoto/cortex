@@ -22,8 +22,21 @@ module Cortex.Pulse.Database
   , withConnection
   , runTransaction
   , runTransactionAt
+
+    -- * Schema provisioning (Pulse-owned, ADR 0003)
+  , provisionPulseSchema
   )
 where
+
+import Data.ByteString qualified as BS
+import Data.Text (Text)
+import Data.Text qualified as T
+import Hasql.Decoders qualified as D
+import Hasql.Encoders qualified as E
+import Hasql.Session (Session)
+import Hasql.Session qualified as Session
+import Hasql.Statement (Statement (..))
+import Paths_cortex (getDataFileName)
 
 import Platform.Database (ConnectionConfig (..), Pool)
 import Platform.Database qualified as DB
@@ -59,3 +72,34 @@ runTransactionAt
   -> IO (Either String a)
 runTransactionAt =
   DB.runTransactionWithRetry pulseDbRetryBudget
+
+{- | Provision the Pulse schema into a database. Idempotent: if the @pulse@
+schema already exists this is a no-op (so applying twice never errors); otherwise
+the shipped @pulse-schema.sql@ data-file is applied through the simple query
+protocol.
+
+Pulse owns its schema (ADR 0003); this is the library surface a downstream uses
+to provision its own Postgres without reaching into Cortex test SQL.
+-}
+provisionPulseSchema :: Pool -> IO (Either Text ())
+provisionPulseSchema pool = do
+  existing <- withConnection pool pulseSchemaExistsSession
+  case existing of
+    Left err -> pure (Left (T.pack err))
+    Right True -> pure (Right ())
+    Right False -> do
+      schemaPath <- getDataFileName "pulse-schema.sql"
+      script <- BS.readFile schemaPath
+      result <- withConnection pool (Session.sql script)
+      pure (either (Left . T.pack) Right result)
+
+pulseSchemaExistsSession :: Session Bool
+pulseSchemaExistsSession = Session.statement () pulseSchemaExistsStatement
+  where
+    pulseSchemaExistsStatement :: Statement () Bool
+    pulseSchemaExistsStatement =
+      Statement
+        "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'pulse')"
+        E.noParams
+        (D.singleRow (D.column (D.nonNullable D.bool)))
+        True
