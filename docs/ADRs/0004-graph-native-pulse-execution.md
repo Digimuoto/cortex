@@ -76,6 +76,19 @@ not over "current stage index plus next stage."
 - Explain new runtime features in graph-native terms rather than reintroducing stage-list
   vocabulary.
 
+## Traceability
+
+- Feature keys: `pulse.graph_native_execution`
+- Public surface: `Cortex.Pulse`, `docs/Architecture/06-pulse-runtime.md`
+- Implementation: `src/Cortex/Pulse/GraphRuntime.hs` (`readyNodes`, `predecessors` — ready work from
+  predecessor satisfaction over the graph relation), `src/Cortex/Pulse/Plan.hs` (`StagePlan`),
+  `src/Cortex/Pulse/Executor/Loop.hs` (frontier-wave scheduling)
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Pulse/GraphRewriteSpec.hs`
+- Theory/proof:
+  [Graph safety / Graph quotient rows — `proof-status.md`](../Reference/proof-status.md) (Lean
+  `theory/Cortex/Pulse/DAG.lean`, `theory/Cortex/Graph/Safety.lean`)
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/04-graph-and-circuit.md](../Architecture/04-graph-and-circuit.md)

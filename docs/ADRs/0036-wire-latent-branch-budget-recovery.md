@@ -110,6 +110,17 @@ decision introducing max-branch reservation or another escrow rule.
 - **Make latent branch actualization free** - rejected because selected branches still add live
   topology and must remain bounded by runtime authority.
 
+## Traceability
+
+- Feature keys: `rewrite.latent_branch_budget`
+- Public surface: `Cortex.Pulse`, [`docs/Reference/rewrites.md`](../Reference/rewrites.md)
+- Implementation: `src/Cortex/Wire/Circuit/Lowering.hs` (`lowerConditionNode`),
+  `src/Cortex/Pulse/Rewrite.hs` (`admitRewriteDelta`), `src/Cortex/Pulse/Executor/Resume.hs`
+- Tests: `test/Cortex/Wire/Circuit/CompilerSpec.hs`, `test/Cortex/Pulse/ExecutorSpec.hs`
+- Theory/proof:
+  [Selected branch budget / Latent recovery determinism — `proof-status.md`](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [../Architecture/07-rewrites-and-materialization.md](../Architecture/07-rewrites-and-materialization.md)

@@ -74,6 +74,18 @@ a node needs broader settled context.
 - Preserve stage-entry snapshot semantics.
 - Add new memory strategies only as explicit runtime surfaces with clear semantics.
 
+## Traceability
+
+- Feature keys: `pulse.topological_memory`
+- Public surface: `Cortex.Pulse` (the per-node memory query surface and read-strategy selection),
+  `docs/Reference/Wire/configured-executors-and-execution-boundary.md`
+- Implementation: `src/Cortex/Pulse/Memory.hs` (stage-entry snapshot binding, `queryMemory`),
+  `src/Cortex/Pulse/Memory/Query.hs` (`pureQueryMemory` — the deterministic graph query),
+  `src/Cortex/Pulse/Memory/Types.hs`, `src/Cortex/Pulse/Memory/Walk.hs`
+- Tests: `test/Cortex/Pulse/MemorySpec.hs`, `test/Cortex/Pulse/MemoryIntegrationSpec.hs`
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)

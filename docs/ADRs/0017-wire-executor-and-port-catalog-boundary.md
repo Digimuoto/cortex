@@ -305,6 +305,22 @@ downstream concern owned in the consuming repository, not Cortex canon.
 - Replace `Maybe WireContractRegistry` with an explicit strict/permissive mode before claiming
   closed authority for imported templates.
 
+## Traceability
+
+- Feature keys: `wire.executor_port_catalog`
+- Public surface: `Cortex.Wire`,
+  [Wire Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
+- Implementation: `src/Cortex/Wire/Executor.hs` (`WireExecutorProjection`, `WirePorts`,
+  `WireInputPort`, `WireOutputPort`, `WireExecutorRegistry`, `wireExecutorProjectionFromPorts`),
+  `src/Cortex/Wire/Contracts.hs` (`WireContractSpec`, `WireContractRegistry`, `WireCompileEnv`,
+  `WireProjectionMode`, `strictWireCompileEnv`), `src/Cortex/Wire/Value.hs` (`WirePayloadKind`
+  closed framing enum)
+- Tests: `test/Cortex/Wire/CompileSpec.hs`
+  (`allows a strict registered executor projection with matching ports`,
+  `WireExecutorPortsMismatch`)
+- Theory/proof: none
+- Tracking: GitHub #55
+
 ## Related
 
 - [ADR 0010 — Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)

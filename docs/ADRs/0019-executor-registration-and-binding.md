@@ -124,6 +124,20 @@ Costs and risks:
 - Strict projection mode currently requires exact port equality. More flexible profile compatibility
   can be added after concrete profile catalogs stabilize.
 
+## Traceability
+
+- Feature keys: `capability.executor_registration`
+- Public surface: `Cortex.Wire`, `Cortex.Capability`, `Cortex.Pulse`
+- Implementation: `src/Cortex/Wire/Executor.hs` (the inert Wire projection layer:
+  `WireExecutorProjection`, `WireExecutorRegistry`, `lookupWireExecutorProjection`),
+  `src/Cortex/Capability/Executor.hs` (the authority-bearing layer: `ExecutorSpec`,
+  `ExecutorRequirement`, `ExecutorBindingAuthority`, and `executorProjection` /
+  `executorProjectionRegistry` projecting Capability specs back into a Wire registry)
+- Tests: `test/Cortex/Capability/Executor/PureSpec.hs` (builds an `executorProjectionRegistry` from
+  a Capability `ExecutorSpec` and binds the projected pure executor to a Pulse stage)
+- Theory/proof: none
+- Tracking: GitHub #65
+
 ## Related
 
 - [ADR 0017 — Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)

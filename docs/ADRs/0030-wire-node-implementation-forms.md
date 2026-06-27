@@ -259,6 +259,21 @@ executor call. Zero-output and multi-output external executors must use the node
   output or fail.
 - Update tree-sitter grammar and editor corpus examples.
 
+## Traceability
+
+- Feature keys: `wire.node_implementation_forms`
+- Public surface: `Cortex.Wire`, [Wire Grammar](../Reference/Wire/grammar.md)
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`NodeBody` = `NodeBodyPure` | `NodeBodyExecutor`,
+  `ExecutorCall`), `src/Cortex/Wire/Parser.hs` (`nodeImplementationBody`, `pureImplementation`,
+  `singleOutputExecutorShorthand`, `executorImplementation`), `src/Cortex/Wire/NodeBoundary.hs`
+  (`CorePureBody`, `ExecutorBody`, zero-output `ArtifactBody` / `SignalBody`)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (`parses single-output external shorthand`,
+  `parses multi-output executor bodies`, `parses zero-output executor bodies`),
+  `test/Cortex/Wire/CompileSpec.hs`
+  (`compiles a zero-output executor body as a node with an empty output boundary`)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0014 - Model vs External Call](./0014-executor-taxonomy-model-vs-external-call.md)

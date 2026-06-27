@@ -78,6 +78,19 @@ part of the runtime contract.
 - Preserve the graph-native vocabulary of blocked, waiting, rewritten, and materialized state.
 - Avoid baking task-specific explanation formats into the generic Pulse surfaces.
 
+## Traceability
+
+- Feature keys: `pulse.operator_visibility`
+- Public surface: `Cortex.Pulse`, `docs/Reference/Pulse/events.md`,
+  `docs/Reference/Pulse/service-api.md`
+- Implementation: `src/Cortex/Pulse/Executor/Events.hs` (the `ExecutorEvent` taxonomy),
+  `src/Cortex/Pulse/Event.hs` (umbrella surface), `src/Cortex/Pulse/Query.hs` (`appendRunEvent`,
+  `getRunAdminView`, `PulseRunAdminView`, `PulseGraphStateAdminView` — the append-only event history
+  and graph-native run inspection)
+- Tests: `test/Cortex/Pulse/Executor/EventsSpec.hs`
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)

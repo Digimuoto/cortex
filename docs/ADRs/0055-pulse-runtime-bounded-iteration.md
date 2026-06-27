@@ -632,6 +632,17 @@ The first design pass should attack these questions before any Pulse implementat
    self-append decisions, but it cannot claim durable admit, materialize, watermark, resume, signal,
    lease, or snapshot safety without the durable substrate.
 
+## Traceability
+
+- Feature keys: `pulse.runtime_bounded_iteration`
+- Public surface: `Cortex.Pulse`, `docs/Architecture/06-pulse-runtime.md`
+- Implementation: `src/Cortex/Pulse/Iteration.hs` (`LoopPolicy`, `admitRuntimeBound`, `LoopControl`,
+  the v1 self-append admission law and frontier-shape witness checks)
+- Tests: `test/Cortex/Pulse/IterationSpec.hs`
+- Theory/proof: none (the finite-budget and frontier-shape-preservation theorem targets in this
+  ADR's Obligations are not yet mechanized)
+- Tracking: GitHub #251
+
 ## Related
 
 - [ADR 0003 - Pulse Service and Host-Action Boundary](0003-pulse-service-and-host-action-boundary.md)

@@ -110,6 +110,18 @@ The rules are:
 - **Literal probabilistic or quantum semantics** - rejected because Wire branch selection is
   deterministic or replayable runtime choice, not amplitude evolution.
 
+## Traceability
+
+- Feature keys: `wire.select_guarded_affine`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/conditionality.md`
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprSelect`, `SelectArm`),
+  `src/Cortex/Wire/Compile.hs` (`lowerSelectStep`, `buildSelectConditionTree`,
+  `SelectAdmissionArtifact`)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (`nested select`, select admission-artifact rows)
+- Theory/proof:
+  [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [../Reference/Wire/conditionality.md](../Reference/Wire/conditionality.md)

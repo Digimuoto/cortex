@@ -379,6 +379,21 @@ Cortex owns the substrate package and binding mechanics, and the host owns runti
   binder lowering, resume admissibility, and unchanged Pulse execution.
 - Document the Logos DeepReport Wire package as the first downstream proof point.
 
+## Traceability
+
+- Feature keys: `packaging.downstream_packages`
+- Public surface: `Cortex.Wire` (`Cortex.Wire.Package`, `Cortex.Wire.Package.Registry`) for inert
+  Wire packages and `Cortex.Capability` (`Cortex.Capability.BindingPack`) for host runtime binding
+  packs; [Wire executors and alphabet](../Reference/Wire/executors-and-alphabet.md)
+- Implementation: `src/Cortex/Wire/Package.hs`, `src/Cortex/Wire/Package/Registry.hs` (inert
+  vocabulary plus the namespace registry `use` resolves against),
+  `src/Cortex/Capability/BindingPack.hs` (the only authority-bearing artifact),
+  `src/Cortex/Pulse/Lowering/Circuit.hs` (binder lowering to `StageDefinition`s)
+- Tests: `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/QuantumPackageSpec.hs`,
+  `test/Cortex/Capability/BindingPack/BraketSpec.hs`, `test/Cortex/Pulse/Lowering/CircuitSpec.hs`
+- Theory/proof: none
+- Tracking: GitHub #208
+
 ## Related
 
 - [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)

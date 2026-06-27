@@ -190,6 +190,22 @@ calls use node-level executor bodies.
 - Update executor reference docs to replace partial-node wording with configured executor values.
 - Ensure imported configured executor values still require host projection and Capability binding.
 
+## Traceability
+
+- Feature keys: `wire.configured_executor_values`
+- Public surface: `Cortex.Wire`,
+  [Wire Configured Executors and Execution Boundary](../Reference/Wire/configured-executors-and-execution-boundary.md)
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprConfiguredExecutor`, `ExecutorCallConfigured`),
+  `src/Cortex/Wire/Parser.hs` (`configuredExecutorCall`, `ksConfiguredExecutors`),
+  `src/Cortex/Wire/Compile.hs` (`ConfiguredExecutor`, `resolveExecutorCall`, CorePure rejection of
+  configured-executor values)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (`parses configured executor bindings`,
+  `parses configured executor applications`), `test/Cortex/Wire/CompileSpec.hs`
+  (`compiles a configured executor value applied in a node body`,
+  `rejects configured executor values inside CorePure output equations`)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)

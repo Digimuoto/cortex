@@ -75,6 +75,19 @@ This makes provenance and integrity runtime facts, not offline audit convenience
 - Surface provenance in admin tooling as a first-class fact rather than collapsing it into prose.
 - Keep integrity failure behavior explicit and non-silent.
 
+## Traceability
+
+- Feature keys: `rewrite.provenance_integrity`
+- Public surface: `Cortex.Pulse`, [`docs/Reference/rewrites.md`](../Reference/rewrites.md)
+- Implementation: `src/Cortex/Pulse/Materialization.hs` (`NodeProvenance`, `NodeProvenanceEntry`,
+  `initialProvenance`, `computeTopologyHash`, `pgsNodeProvenance`, `pgsTopologyHash`),
+  `src/Cortex/Pulse/Executor/Resume.hs`
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
+  (`persists per-node provenance and topology hash after a successful rewrite`),
+  `test/Cortex/Pulse/GraphRewriteSpec.hs`
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/07-rewrites-and-materialization.md](../Architecture/07-rewrites-and-materialization.md)

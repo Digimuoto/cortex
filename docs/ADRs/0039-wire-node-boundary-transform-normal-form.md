@@ -286,6 +286,20 @@ future changes must preserve.
 - ADR 0038 or a successor proof ledger should track theorem targets for ingress, egress, edge
   soundness, and actualized port-use linearity once the Haskell IR exposes suitable witnesses.
 
+## Traceability
+
+- Feature keys: `wire.node_boundary_normal_form`
+- Public surface: `Cortex.Wire`,
+  [Wire Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
+- Implementation: `src/Cortex/Wire/NodeBoundary.hs` (`NodeBoundaryNormalForm`,
+  `NodeBoundaryIngress`, `NodeBoundaryBody`, `NodeBoundaryEgress`, `pureNodeBoundaryNormalForm`,
+  `executorNodeBoundaryNormalForm`, `validateNodeBoundaryNormalForm`)
+- Tests: `test/Cortex/Wire/RuntimeSpec.hs` (runtime boundary-egress wrapping over the normal form)
+- Theory/proof: [Node boundary normal form row](../Reference/proof-status.md#matrix) (Lean
+  `theory/Cortex/Wire/NodeBoundary.lean` — `NodeBoundaryNormalForm`,
+  `corePure_evalOutputs_eq_egress_after_body_after_ingress`)
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/04-graph-and-circuit.md](../Architecture/04-graph-and-circuit.md)

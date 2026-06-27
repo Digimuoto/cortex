@@ -331,6 +331,21 @@ can build text outputs without unreadable manual `concat` and `toString` calls.
   the duplicate-name discipline already enforced for `let` bindings, lambda parameters, and output
   equations.
 
+## Traceability
+
+- Feature keys: `corepure.expression_surface`
+- Public surface: `Cortex.Wire`,
+  [`docs/Reference/Wire/pure-execution.md`](../Reference/Wire/pure-execution.md)
+- Implementation: `src/Cortex/Wire/Pure.hs` (`evaluateCorePureExpr`, `CorePureValue`,
+  `validateCorePureExpr`, `validateCorePureRecordFieldPaths`, `corePureBuiltinSpecs`,
+  `applyCorePureValue`, `corePureBuiltinAuthorityFree`)
+- Tests: `test/Cortex/Wire/PureSpec.hs` (duplicate-name rejection, lambda shadowing/partial
+  application, record-path prefix conflicts, `//` merge, stdlib builtins, builtin authority-review
+  signature)
+- Theory/proof:
+  [the CorePure builtin-authority and value-contract rows — `proof-status.md`](../Reference/proof-status.md#matrix)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0020 - Wire Pure Output Equations](./0020-wire-pure-output-equations.md)

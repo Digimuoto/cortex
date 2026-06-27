@@ -131,6 +131,20 @@ node gather
 - Add parser/compiler tests for direct output equations and for configured executor body position.
 - Ensure formatters and syntax highlighting treat output RHS expressions as CorePure.
 
+## Traceability
+
+- Feature keys: `corepure.output_residue`
+- Public surface: `Cortex.Wire`,
+  [`docs/Reference/Wire/pure-execution.md`](../Reference/Wire/pure-execution.md)
+- Implementation: `src/Cortex/Wire/Pure.hs` (`CorePureStaticContext`), `src/Cortex/Wire/Compile.hs`
+  (`corePureStaticContextFromBindings`, the static-vs-delayed residue classification of output
+  equations)
+- Tests: `test/Cortex/Wire/PureSpec.hs` (static context from top-level record bindings, node-local
+  `let` shadowing rejection, `where`-field delayed-binding scope)
+- Theory/proof:
+  [the CorePure static-context row — `proof-status.md`](../Reference/proof-status.md#matrix)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0020 - Wire Pure Output Equations](0020-wire-pure-output-equations.md)

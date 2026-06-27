@@ -83,6 +83,20 @@ The design rule is: Wire composes registered authority, and Haskell owns what th
 - Maintain architecture docs so the Graph/Circuit/Wire split stays visible rather than collapsing
   back into "workflow" as one vague layer.
 
+## Traceability
+
+- Feature keys: `wire.closed_authority_stack`
+- Public surface: `Cortex.Algebra` (Graph), `Cortex.Wire` (Circuit + Wire),
+  `docs/Architecture/05-wire-language.md`
+- Implementation: `src/Cortex/Algebra/Graph.hs` (pure topology layer), `src/Cortex/Wire/Circuit.hs`
+  (validated executable topology), `src/Cortex/Wire/AST.hs` (Wire source layer),
+  `src/Cortex/Wire/Executor.hs` (`WireExecutorRegistry` — the registered-authority boundary Wire
+  composes but may not invent)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (registered-authority admission, e.g.
+  `WireUnknownExecutor` rejecting unregistered authority)
+- Theory/proof: none (architectural authority rule, not a mechanized theorem)
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/03-formalism-stack.md](../Architecture/03-formalism-stack.md)

@@ -319,6 +319,20 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 - Define output contracts for current model-mediated nodes.
 - Ensure runtime output validation reports typed executor failures.
 
+## Traceability
+
+- Feature keys: `wire.typed_executor_interface`
+- Public surface: `Cortex.Wire`,
+  [Wire Executors and Alphabet](../Reference/Wire/executors-and-alphabet.md)
+- Implementation: `src/Cortex/Wire/Executor.hs` (`WireExecutorProjection` over typed `WirePorts`),
+  `src/Cortex/Wire/NodeBoundary.hs` (`executorNodeBoundaryNormalForm`, `NodeBoundaryExecutorBody`),
+  `src/Cortex/Wire/Compile.hs` (strict projection port admission, `WireExecutorPortsMismatch`)
+- Tests: `test/Cortex/Wire/CompileSpec.hs`
+  (`allows a strict registered executor projection with matching ports`),
+  `test/Cortex/Wire/RuntimeSpec.hs` (declared output-port wrapping and validation)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)

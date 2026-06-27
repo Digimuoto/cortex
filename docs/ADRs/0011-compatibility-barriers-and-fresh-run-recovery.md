@@ -73,6 +73,18 @@ an old checkpoint is still valid under new code.
 - Treat future migration support as a separate architectural decision, not as incidental
   implementation detail.
 
+## Traceability
+
+- Feature keys: `pulse.compatibility_recovery`
+- Public surface: `Cortex.Pulse`, `docs/Architecture/06-pulse-runtime.md`
+- Implementation: `src/Cortex/Pulse/Checkpoint.hs` (`CheckpointCompatibilityFailure`,
+  `CheckpointPayloadIncompatible`, `checkpointValidationFailureRetryable` — typed compatibility
+  failures and whether a fresh run can recover), `src/Cortex/Pulse/Executor.hs` (fresh-run execution
+  path)
+- Tests: `test/Cortex/Pulse/CheckpointSpec.hs`
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)

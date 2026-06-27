@@ -78,6 +78,19 @@ imperative logic.
 - Revisit this ADR only if the retained-anchor model is intentionally replaced by a different
   provenance law.
 
+## Traceability
+
+- Feature keys: `wire.conditional_lowering`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/conditionality.md`
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprSelect`, `SelectArm`),
+  `src/Cortex/Wire/Compile.hs` (`lowerSelectStep`, `buildSelectConditionTree`),
+  `src/Cortex/Pulse/Rewrite.hs` (`AppendAfter`, `RewriteAnchorRetained` — the retained-anchor
+  materialization of the selected branch)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (`nested select`),
+  `test/Cortex/Pulse/GraphRewriteSpec.hs` (`AppendAfter`)
+- Theory/proof: [the "Select actualization" row](../Reference/proof-status.md)
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Reference/Wire/conditionality.md](../Reference/Wire/conditionality.md)

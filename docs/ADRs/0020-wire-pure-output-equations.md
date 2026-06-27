@@ -241,3 +241,19 @@ state. A pure node should evaluate once and produce all declared outputs or one 
 Deferred. The idea is promising, but it changes the existing distinction between ordinary values and
 wire values. Pure output equations deliver the authoring improvement without requiring that broader
 semantic move.
+
+## Traceability
+
+- Feature keys: `corepure.output_equations`
+- Public surface: `Cortex.Wire`,
+  [`docs/Reference/Wire/pure-execution.md`](../Reference/Wire/pure-execution.md)
+- Implementation: `src/Cortex/Wire/Pure.hs` (`validatePurePorts`, `validatePureOutputPorts`,
+  `preparePureInputs`, `PreparedPureTask`, `bindCorePureWhere`),
+  `src/Cortex/Capability/Executor/Pure.hs` (pure-task stage binding and contract-checked output
+  wrapping)
+- Tests: `test/Cortex/Wire/PureSpec.hs` (multi-output equations, output-port matching,
+  `where`-record scope), `test/Cortex/Capability/Executor/PureSpec.hs`,
+  `test/fixtures/wire/pure-output-equations.wire`
+- Theory/proof:
+  [the CorePure output-ports / lowering / `where`-fields rows — `proof-status.md`](../Reference/proof-status.md#matrix)
+- Tracking: GitHub #304

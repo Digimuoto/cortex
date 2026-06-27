@@ -429,6 +429,20 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
   in a position that is no longer accepted, and to surface WHERE-STATIC-FIELDS violations and
   input-port / where-field collisions with explicit messages.
 
+## Traceability
+
+- Feature keys: `wire.binding_forms`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/pure-execution.md`
+- Implementation: `src/Cortex/Wire/Parser.hs` (expression `let ... in`, module-level `let`, and
+  node-local `where` parsing), `src/Cortex/Wire/Pure.hs` (`corePureWhereStaticFields`,
+  `PureStaticFieldSetUndeterminable` — the WHERE-STATIC-FIELDS admission invariant),
+  `src/Cortex/Wire/AST.hs` (`WireDuplicateLetBinding`, `WireUnknownLetBinding`)
+- Tests: `test/Cortex/Wire/PureSpec.hs` (`corePureWhereStaticFields`, static-field-set rejection,
+  where-field shadowing), `test/Cortex/Wire/ParserSpec.hs` (pure output equations with a
+  where-clause)
+- Theory/proof: [CorePure `where` fields](../Reference/proof-status.md)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0020 - Wire Pure Output Equations](./0020-wire-pure-output-equations.md)

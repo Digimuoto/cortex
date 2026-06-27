@@ -294,3 +294,18 @@ are host binding-pack decisions recorded as runtime binding records.
 
 Rejected. Generic quantum circuit vocabulary and Braket realization have different portability and
 authority properties. Braket belongs in a vendor package and binding pack.
+
+## Traceability
+
+- Feature keys: `packaging.filesystem_manifests`
+- Public surface: `Cortex.Wire` (`Cortex.Wire.Package.Manifest` — the `cortex.toml` loader); loaded
+  by the `wire` CLI (`app/wire/Main.hs`), never by Pulse
+- Implementation: `src/Cortex/Wire/Package/Manifest.hs` (`loadWirePackageManifests`,
+  `decodeWirePackageManifest`); first in-repo package manifests at
+  `extensions/quantum/packages/quantum-core/cortex.toml`,
+  `extensions/quantum/packages/quantum-qec/cortex.toml`, and
+  `extensions/quantum/packages/quantum-braket/cortex.toml`
+- Tests: `test/Cortex/Wire/QuantumPackageSpec.hs`, `test/Cortex/Wire/RealizeCompileSpec.hs` (both
+  load `cortex.toml` manifests through `loadWirePackageManifests`)
+- Theory/proof: none
+- Tracking: GitHub #287

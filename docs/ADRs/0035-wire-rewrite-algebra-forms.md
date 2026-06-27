@@ -119,6 +119,17 @@ lowers to ordinary graph composition.
 - **Keep provenance only in side tables and erase retained owners** - rejected because current
   operator and recovery surfaces benefit from lineage being visible in the graph evolution story.
 
+## Traceability
+
+- Feature keys: `wire.rewrite_algebra_forms`
+- Public surface: `Cortex.Pulse` (the `GraphRewrite` constructors), `docs/Reference/rewrites.md`
+- Implementation: `src/Cortex/Pulse/Rewrite.hs` (`GraphRewrite`, `ExpandNode`, `AppendAfter`,
+  `ExpansionMode`, `RewriteAnchorDisposition`)
+- Tests: `test/Cortex/Pulse/GraphRewriteSpec.hs` (`ExpandNode`, `AppendAfter`)
+- Theory/proof:
+  [the "Rewrite boundary laws" and "Boundary resource algebra" rows](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [../Architecture/07-rewrites-and-materialization.md](../Architecture/07-rewrites-and-materialization.md)

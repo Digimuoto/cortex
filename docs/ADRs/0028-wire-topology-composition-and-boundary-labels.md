@@ -203,6 +203,21 @@ ports rather than to source variable names.
 - Update grammar docs to remove any implicit file-level output-label behavior.
 - Keep list construction and record packing as explicit pure nodes.
 
+## Traceability
+
+- Feature keys: `wire.topology_composition`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprOverlay`, `ExprConnect`),
+  `src/Cortex/Wire/Parser.hs` (`exprOverlayLevel`, `exprConnectLevel`), `src/Cortex/Wire/Compile.hs`
+  (`lowerGraphExpr`, `connectFragments`, `flattenConnectChain`), `src/Cortex/Wire/AST.hs`
+  (`Connection`, `connect`)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (mixed topology operator parsing),
+  `test/Cortex/Wire/CompileSpec.hs` (labeled Wire chain compiles through the circuit backend)
+- Theory/proof: [Source linear port carrier row](../Reference/proof-status.md) (Lean
+  `overlay_preserves_portLinear`, `contract_preserves_portLinear` in
+  `theory/Cortex/Wire/PortLinearity.lean`)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0009 - Rewrite Provenance and Topology Integrity](./0009-rewrite-provenance-and-topology-integrity.md)

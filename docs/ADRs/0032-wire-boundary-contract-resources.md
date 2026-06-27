@@ -127,6 +127,17 @@ locally well-accounted before it is admitted or proved safe.
 - **Runtime leases only** - rejected because leases can protect implementation state but do not
   state the source-language or proof-side contract semantics.
 
+## Traceability
+
+- Feature keys: `wire.boundary_resource_algebra`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Implementation: `src/Cortex/Wire/Contracts.hs` (`WireContractSpec`, `WireContractRegistry`),
+  `src/Cortex/Wire/Contract.hs`, `src/Cortex/Wire/NodeBoundary.hs` (`NodeBoundaryNormalForm` — the
+  node-boundary surface the resource vocabulary accounts for)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (contract admission-artifact rows)
+- Theory/proof: [the "Boundary resource algebra" row](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [../Architecture/03-formalism-stack.md](../Architecture/03-formalism-stack.md)

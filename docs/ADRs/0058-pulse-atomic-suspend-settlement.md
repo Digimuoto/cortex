@@ -196,6 +196,20 @@ _Boundary Rules_) covers both crash recovery and a delivery serialized just befo
 - **Redundant registration (frontier + settlement).** Rejected: a delivery between the two can flip
   the row to `delivered`, and a second pending `INSERT` then duplicates it.
 
+## Traceability
+
+- Feature keys: `pulse.suspend_settlement`
+- Public surface: `Cortex.Pulse`, `docs/Reference/Pulse/signals.md`,
+  `docs/Reference/Pulse/schema.md`
+- Implementation: `src/Cortex/Pulse/Executor/Loop.hs`, `src/Cortex/Pulse/Executor/Resume.hs`
+  (`settleSuspend` entry points), `src/Cortex/Pulse/Executor/Frontier.hs` (provisional
+  `NodeWaiting`), `src/Cortex/Pulse/Executor/Persistence.hs` (CAS-first graph-state write inside the
+  settlement transaction)
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
+- Theory/proof: model-checked by `formal/RunTerminalSignal.tla` (atomic settlement is
+  lost-wakeup-free; the split protocol reproduces the bug). Not a `proof-status.md` Lean row.
+- Tracking: GitHub #267
+
 ## Related
 
 - [0003 - Pulse Service and Host-Action Boundary](0003-pulse-service-and-host-action-boundary.md)

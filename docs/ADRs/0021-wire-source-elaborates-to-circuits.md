@@ -162,6 +162,19 @@ The immediate implementation slice is:
 Topology composition primitives are specified separately by ADR 0028 and can be implemented after
 the node/elaborator slice when multi-node examples require them.
 
+## Traceability
+
+- Feature keys: `wire.source_elaboration`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/pure-execution.md`
+- Implementation: `src/Cortex/Wire/Compile.hs` (`compileWireText`/`compileWireFile` produce a
+  `CompiledCircuit`), `src/Cortex/Wire/Circuit/Compile.hs`, `src/Cortex/Wire/Circuit/Lower.hs`, and
+  `src/Cortex/Wire/Pure.hs` (the one CorePure evaluator shared by elaboration-time folding and
+  runtime residue)
+- Tests: `test/Cortex/Wire/CompileSpec.hs`, `test/Cortex/Wire/PureSpec.hs`
+- Theory/proof: [CorePure lowering and static-context rows](../Reference/proof-status.md) (CorePure
+  evaluation under a static environment)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)

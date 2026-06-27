@@ -130,6 +130,19 @@ the Cabal executable stanza, Nix package/app output, and a `just build-wire` con
   bindings in the Usage guide.
 - Add CLI tests or smoke tests that run without Postgres.
 
+## Traceability
+
+- Feature keys: `packaging.wire_cli`
+- Public surface: the first-party `wire` executable (`app/wire`); see the
+  [Usage guide](../Usage/index.md) and [Quickstart](../Usage/01-quickstart.md)
+- Implementation: `app/wire/Main.hs` (the `wire FILE` / `wire build` / `wire run` / `wire fmt`
+  command family); the executable is declared in `cortex.cabal`
+- Tests: none — the CLI dispatch in `app/wire/Main.hs` has no process-level smoke test; the
+  libraries it wraps are covered by `test/Cortex/Wire/CompileSpec.hs`,
+  `test/Cortex/Wire/RuntimeSpec.hs`, and `test/Cortex/Wire/FormatSpec.hs`
+- Theory/proof: none
+- Tracking: GitHub #141
+
 ## Related
 
 - [Chapter 01 - Overview](../Architecture/01-overview.md)

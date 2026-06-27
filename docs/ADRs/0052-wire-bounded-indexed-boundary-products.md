@@ -361,6 +361,23 @@ correspondence work.
 - Update the DIALOCO paper draft to stop presenting record-form `*` as the general homogeneous fan
   answer.
 
+## Traceability
+
+- Feature keys: `wire.indexed_boundary_products`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`,
+  `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprStar`, `ExprFamilyProjection`),
+  `src/Cortex/Wire/Parser.hs` (`recordIndexedFamily`, indexed-family expansion),
+  `src/Cortex/Wire/Compile.hs` (`buildStarPhantomNode`, `phantomAdapterArtifactFromPlan`),
+  `src/Cortex/Wire/AdmissionArtifact.hs` (`ProductShapeArtifact`, `PhantomAdapterArtifact`)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (phantom-adapter and indexed-product artifact admission),
+  `test/Cortex/Wire/ParserSpec.hs` (indexed `make` bindings and static family projection; bounded
+  indexed product contracts in port positions; out-of-range projection rejection)
+- Theory/proof: [Bounded fan composition row](../Reference/proof-status.md) (Lean
+  `LinearPortGraph.PhantomAdapterWitness`, `LinearPortGraph.ProductAdapterKind` in
+  `theory/Cortex/Wire/PhantomAdapter.lean`)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0039 - Wire Node Boundary Transform Normal Form](./0039-wire-node-boundary-transform-normal-form.md)

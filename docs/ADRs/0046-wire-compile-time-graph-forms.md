@@ -260,6 +260,18 @@ expanded node or graph error.
 - Prove or document the preservation claim: after form expansion, all existing Wire graph, port,
   authority, and runtime invariants apply unchanged to the expanded program.
 
+## Traceability
+
+- Feature keys: `wire.graph_forms`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`
+- Implementation: `src/Cortex/Wire/Parser.hs` (`FormDecl`/`FormParam`/`FormItem`/`FormApplication`,
+  the `formDecl` parser, and the `expandFormBinding` elaboration pass over the `esForms` scope that
+  lowers a bound form application to ordinary scoped nodes and a graph value)
+- Tests: `test/Cortex/Wire/ParserSpec.hs`, `test/Cortex/Wire/CompileSpec.hs`
+- Theory/proof: none (graph-form expansion is not yet separately mechanized; the proof-status
+  derived-form row covers `make`/`makeEach` only)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)

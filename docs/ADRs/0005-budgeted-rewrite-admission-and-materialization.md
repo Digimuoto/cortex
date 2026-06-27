@@ -79,6 +79,16 @@ operations.
 - Persist enough rewrite facts to reconstruct how the current graph was reached.
 - Keep the rewrite algebra small and closed unless a new operation is justified as a runtime law.
 
+## Traceability
+
+- Feature keys: `rewrite.budgeted_admission`
+- Public surface: `Cortex.Pulse`, [`docs/Reference/rewrites.md`](../Reference/rewrites.md)
+- Implementation: `src/Cortex/Pulse/Rewrite.hs` (`admitRewriteDelta`, `RewriteBudget`,
+  `RewriteCost`, `consumeRewriteBudget`), `src/Cortex/Pulse/Materialization.hs`
+- Tests: `test/Cortex/Pulse/GraphRewriteSpec.hs`
+- Theory/proof: [Rewrite admission — `proof-status.md`](../Reference/proof-status.md)
+- Tracking: GitHub #304
+
 ## Related
 
 - [../Architecture/07-rewrites-and-materialization.md](../Architecture/07-rewrites-and-materialization.md)

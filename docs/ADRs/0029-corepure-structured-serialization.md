@@ -143,6 +143,18 @@ renderers can be proposed later as explicit closed stdlib additions.
 - Add budget tests based on traversal and output size.
 - Keep interpolation scalar-only in parser and evaluator tests.
 
+## Traceability
+
+- Feature keys: `corepure.json_serialization`
+- Public surface: `Cortex.Wire`,
+  [`docs/Reference/Wire/pure-execution.md`](../Reference/Wire/pure-execution.md)
+- Implementation: `src/Cortex/Wire/Pure.hs` (`corePureToJson`, `corePureFromJson`,
+  `corePureValueToJson`)
+- Tests: `test/Cortex/Wire/PureSpec.hs` (`fromJson` parsing, malformed-JSON typed pure failure,
+  `toJson`/`fromJson` in the builtin authority-review signature)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)

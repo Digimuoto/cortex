@@ -485,3 +485,21 @@ bridge(s) — it is **not** the future work. The remaining work this ADR scopes 
 frontier integration**: the realize-node contraction, the await strategy, and submit/park/resume
 over a reserved external-call wake signal. The first such durable frontier becomes the revisit point
 for this ADR, per the "ADR after the prototype clarifies the boundary" sequencing.
+
+## Traceability
+
+- Feature keys: `pulse.external_call_frontier`
+- Public surface: `Cortex.Pulse`, `docs/Reference/Pulse/signals.md`,
+  `docs/Reference/Pulse/schema.md`
+- Implementation: `src/Cortex/Pulse/Rewrite/Contract.hs` (`admitFrontierContraction` — the §2
+  decidable admission check), `src/Cortex/Pulse/Lowering/FusedPlan.hs` (canonical `FusedPlan`),
+  `src/Cortex/Pulse/Lowering/ExternalCallStage.hs`, `src/Cortex/Pulse/Executor/ExternalCall.hs` (the
+  §3 submit/park/resume protocol), `src/Cortex/Pulse/Executor/ExternalCallStore.hs`,
+  `src/Cortex/Pulse/Query/ExternalCall.hs` (durable attempt record)
+- Tests: `test/Cortex/Pulse/FrontierContractionSpec.hs`,
+  `test/Cortex/Pulse/Lowering/FusedPlanSpec.hs`, `test/Cortex/Pulse/Executor/ExternalCallSpec.hs`,
+  `test/Cortex/Pulse/Executor/ExternalCallAttemptSpec.hs`
+- Theory/proof: none (the `realize_preserves_portLinear` discharge is an open obligation tracked in
+  `theory/README.md`; the `external-call:` settlement family is not yet modelled in
+  `formal/RunTerminalSignal.tla`)
+- Tracking: GitHub #269

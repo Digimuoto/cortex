@@ -141,6 +141,21 @@ semantic result.
 - Record runtime failure kind, retry class, and relevant schema/config hashes in Pulse events.
 - Keep operational Pulse failures separate from Wire semantic failures.
 
+## Traceability
+
+- Feature keys: `wire.failure_taxonomy`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`
+- Implementation: `src/Cortex/Wire/AST.hs` (`WireError`, `renderWireError` — parse / name /
+  projection / topology failures), `src/Cortex/Wire/Pure.hs` (`PureEvalError` — elaboration- and
+  runtime-pure failures), `src/Cortex/Wire/Use.hs` (`WireUseError`), `src/Cortex/Wire/Import.hs`
+  (`WireImportError`), `src/Cortex/Capability/Catalog/AwaitStrategy.hs` (`ReplayClass` —
+  replay-class axis of the taxonomy)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (`WireUnknownContract`, `WireUnknownExecutor`,
+  `WireDuplicateLetBinding`, `WireParseError`), `test/Cortex/Wire/PureSpec.hs` (`PureEvalError`),
+  `test/Cortex/Capability/CatalogSpec.hs` (`ReplayClass`)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0005 - Budgeted Rewrite Admission and Materialization](./0005-budgeted-rewrite-admission-and-materialization.md)

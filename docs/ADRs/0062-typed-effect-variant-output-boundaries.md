@@ -269,6 +269,20 @@ payload-kind/shape validation over the current `WireValue`.
 - The Lean proof-side select admission / materialization correspondence (#138) covers the durable
   selected-branch story; keep it in scope when #314 lands.
 
+## Traceability
+
+- Feature keys: `wire.typed_effect_variant_outputs`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/conditionality.md`
+- Implementation: `src/Cortex/Wire/NodeBoundary.hs` (exclusive output-group validation),
+  `src/Cortex/Wire/Runtime.hs` (`wrapNodeBoundaryOutput`, `executor_output_validation_failure`),
+  `src/Cortex/Wire/Circuit/Lowering.hs` (`committedVariantConditionBinding`,
+  `bindCircuitConditionNode`), `src/Cortex/Wire/Compile.hs` (`resolveExclusiveBoundary`)
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Wire/Circuit/CompilerSpec.hs`,
+  `test/Cortex/Wire/RuntimeSpec.hs`
+- Theory/proof:
+  [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
+- Tracking: GitHub #313, #314
+
 ## Related
 
 - [0017 - Wire Executor and Port Catalog Boundary](0017-wire-executor-and-port-catalog-boundary.md) -

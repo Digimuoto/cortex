@@ -171,6 +171,20 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 - Add tests that ensure std effects are not available through CorePure.
 - Keep command execution argv-based unless a later ADR explicitly admits shell semantics.
 
+## Traceability
+
+- Feature keys: `capability.std_io_executors`
+- Public surface: `Cortex.Wire` (the `Cortex.Wire.Std` standard pack),
+  [Wire Executors and Alphabet reference](../Reference/Wire/executors-and-alphabet.md)
+- Implementation: `src/Cortex/Wire/Std.hs` (the stable
+  `std.io.{stdin,stdout,command,readFile,writeFile}` executor ids, the
+  `std.io.CommandSpec`/`std.io.CommandResult` contracts, and the per-executor port-shape
+  constraints), `app/wire/Main.hs` (the local smoke runner that executes the host-effect bodies)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (lowers `use std.io.{...}` aliases to canonical executor
+  and contract ids, enforces source-scope admission, and rejects bad source/sink port shapes)
+- Theory/proof: none
+- Tracking: GitHub #141
+
 ## Related
 
 - [Chapter 01 - Overview](../Architecture/01-overview.md)

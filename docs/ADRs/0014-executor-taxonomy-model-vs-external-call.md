@@ -123,6 +123,22 @@ metadata. Wire is agnostic to which backend produced the registration. New backe
 - Any future proposal for a third executor kind requires its own ADR with a distinctness argument
   beyond backend diversity.
 
+## Traceability
+
+- Feature keys: `capability.executor_taxonomy`
+- Public surface: `Cortex.Wire`, `Cortex.Capability`,
+  [Wire Executors and Alphabet reference](../Reference/Wire/executors-and-alphabet.md)
+- Implementation: `src/Cortex/Wire/Executor.hs` (the registered-executor projection surface;
+  `WireExecutorEffect` distinguishes the model kind `WireExecutorModel` from the external-call kind
+  `WireExecutorHostEffect` on the cross-cutting effect axis), `src/Cortex/Capability/Executor.hs`
+  (`ExecutorSpec`, `executorProjection` — the single registered-name external-call surface under
+  which native, host-action, and future backend variants slot without new executor kinds)
+- Tests: `test/Cortex/Capability/Executor/PureSpec.hs` (asserts an executor spec's declared effect
+  class through `executorSpecEffect`), `test/Cortex/Capability/CatalogSpec.hs` (admission projection
+  carries the executor effect axis)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [0010-wire-closed-authority-and-three-layer-stack.md](./0010-wire-closed-authority-and-three-layer-stack.md)

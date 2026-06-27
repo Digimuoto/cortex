@@ -527,6 +527,27 @@ host-action endpoint is catalog metadata.
 - Document that `rust-dylib-v1` is not a security boundary and that isolation policy is the
   enforcement layer.
 
+## Traceability
+
+- Feature keys: `capability.executor_catalog`
+- Public surface: `Cortex.Capability` (the `Cortex.Capability.Catalog.*` and
+  `Cortex.Capability.BindingPack` surface),
+  [Wire Executors and Alphabet reference](../Reference/Wire/executors-and-alphabet.md),
+  [Pulse Types reference](../Reference/Pulse/types.md)
+- Implementation: `src/Cortex/Capability/Catalog/AdmissionProjection.hs` (`AdmissionProjection`,
+  `RequirementSlot`, `admissionProjectionDigest`),
+  `src/Cortex/Capability/Catalog/ExecutorManifest.hs` (`ExecutorManifest`, `AbiKind`,
+  `ContentAddress`), `src/Cortex/Capability/Catalog/RuntimeBindingRecord.hs`
+  (`RuntimeBindingRecord`, `ResolvedAuthorityFingerprint`),
+  `src/Cortex/Capability/Catalog/AwaitStrategy.hs` (`ReplayClass`, `AwaitStrategy`,
+  `IsolationExpectation`), `src/Cortex/Capability/BindingPack.hs` (`HostBindingPack`)
+- Tests: `test/Cortex/Capability/CatalogSpec.hs` (admission-projection and runtime-binding-record
+  JSON round-trips plus `admissionProjectionDigest` determinism and field-sensitivity),
+  `test/Cortex/Capability/BindingPack/BraketSpec.hs` (a concrete host binding pack minting runtime
+  binding records)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0003 - Pulse Service and Host-Action Boundary](./0003-pulse-service-and-host-action-boundary.md)

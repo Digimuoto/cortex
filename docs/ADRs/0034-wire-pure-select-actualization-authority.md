@@ -120,6 +120,18 @@ not itself carry arbitrary graph authority.
 - **Materialize every branch and let pure values route around them** - rejected because it revives
   ordinary fan-out and makes unchosen branches runnable topology.
 
+## Traceability
+
+- Feature keys: `rewrite.select_actualization_authority`
+- Public surface: `Cortex.Wire`,
+  [`docs/Reference/Wire/pure-execution.md`](../Reference/Wire/pure-execution.md)
+- Implementation: `src/Cortex/Wire/Circuit/Lowering.hs` (`lowerConditionNode`,
+  `CircuitConditionSelection`, `circuitConditionSelectBranch`)
+- Tests: `test/Cortex/Wire/Circuit/CompilerSpec.hs`
+  (`admits only the selected latent branch through the rewrite witness surface`)
+- Theory/proof: [Select actualization — `proof-status.md`](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [../Reference/Wire/pure-execution.md](../Reference/Wire/pure-execution.md)

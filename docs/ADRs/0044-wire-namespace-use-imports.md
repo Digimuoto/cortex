@@ -119,6 +119,18 @@ gate.
 - Document std pack contracts and executor projections in Haskell library APIs so host authors do
   not copy string literals.
 
+## Traceability
+
+- Feature keys: `wire.namespace_use_imports`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/modules-imports-and-file-returns.md`
+- Implementation: `src/Cortex/Wire/Use.hs` (`WireUseScope`, `resolveWireExecutorQName`,
+  `WireUseError`), `src/Cortex/Wire/Std.hs` (the `std.io` registry pack),
+  `src/Cortex/Wire/Parser.hs` (`useStmt`, `useItem` — selector and alias grammar)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (`use std.io.{...}` selectors/aliases, wildcard
+  rejection), `test/Cortex/Wire/CompileSpec.hs` (`WireDuplicateBinding`, `WireExecutorNotInScope`)
+- Theory/proof: none
+- Tracking: GitHub #304
+
 ## Related
 
 - [Wire grammar](../Reference/Wire/grammar.md)

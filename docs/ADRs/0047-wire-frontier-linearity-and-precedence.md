@@ -219,6 +219,21 @@ composition has one visible parallel operator and record/list comma syntax stays
   emerges only with large real Wire examples; the formatter's stance can tighten once those exist.
   This is formatter policy, not language semantics.
 
+## Traceability
+
+- Feature keys: `wire.frontier_linearity`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`,
+  `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Implementation: `src/Cortex/Wire/Parser.hs` (`exprConnectLevel`, `exprOverlayLevel` — the
+  overlay-tighter-than-connect/star precedence ladder), `src/Cortex/Wire/Compile.hs`
+  (`linearBoundaryMatches`, `connectFragments`, `flattenConnectChain`)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (overlay binds tighter than connect; star adapters at
+  connect precedence; comma overlay shorthand rejected)
+- Theory/proof: [Source linear port carrier row](../Reference/proof-status.md) (Lean
+  `CertifiedGraph.BoundaryMatchTrace.determined`, `overlay_preserves_portLinear` in
+  `theory/Cortex/Wire/PortLinearity.lean` and `theory/Cortex/Wire/GraphElaboration.lean`)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)

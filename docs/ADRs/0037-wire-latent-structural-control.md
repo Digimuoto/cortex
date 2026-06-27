@@ -179,6 +179,16 @@ its boundary law, resource consumption, runtime realization, and recovery behavi
 - **Hide the branch choice inside executor code** - rejected because it makes possible topology
   invisible to compilation, proof, replay, and operator surfaces.
 
+## Traceability
+
+- Feature keys: `wire.latent_structural_control`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/conditionality.md`
+- Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprSelect`, `SelectArm` — `select(...)`, the only
+  member admitted by the current Wire surface), `src/Cortex/Wire/Compile.hs` (`lowerSelectStep`)
+- Tests: `test/Cortex/Wire/CompileSpec.hs` (`nested select`)
+- Theory/proof: [the "Select source admission" row](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [../Architecture/03-formalism-stack.md](../Architecture/03-formalism-stack.md)

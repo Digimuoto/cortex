@@ -149,6 +149,24 @@ or inconsistent and would make the sort result undefined.
   iteration, promote the fixed per-operation cap to a stated global fuel model rather than widening
   it silently. Tracked in GitHub #301.
 
+## Traceability
+
+- Feature keys: `corepure.bounded_iteration`
+- Public surface: `Cortex.Wire`,
+  [`docs/Reference/Wire/pure-execution.md`](../Reference/Wire/pure-execution.md)
+- Implementation: `src/Cortex/Wire/Pure/Bounds.hs` (`IterationCap`, `corePureBoundedIterationCap`,
+  `FoldAccumulator`, `mkFoldAccumulator`, `RangePlan`, `planRange`, `checkValueCost`,
+  `ClampedIndex`), `src/Cortex/Wire/Pure.hs` (`corePureRange`, `corePureFold`, `corePureFoldRight`,
+  `foldAccumulatorOf`)
+- Tests: `test/Cortex/Wire/PureSpec.hs`
+  (`batch 1 list, string, record, and bounded-iteration builtins`: range/fold/foldRight, cap
+  exhaustion, accumulator/range overflow, function-accumulator rejection;
+  `Cortex.Wire.Pure.Bounds typed boundary`)
+- Theory/proof:
+  [the CorePure builtin-authority signature-mirror row — `proof-status.md`](../Reference/proof-status.md#matrix)
+  (`range`/`fold`/`foldRight` mirrored in `theory/Cortex/Wire/Pure.lean`)
+- Tracking: GitHub #295
+
 ## Related
 
 - [0020 - Wire Pure Output Equations](0020-wire-pure-output-equations.md) - original `fold` deferral

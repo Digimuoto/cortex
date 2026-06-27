@@ -123,6 +123,18 @@ checkpoints, lease recovery, signal resume, cancellation propagation, or service
   cross-process resume, durable signal waits, cancellation propagation, and observability events.
 - Add an initial benchmark child issue after `wire run` can execute pure/static programs.
 
+## Traceability
+
+- Feature keys: `pulse.in_memory_runner`
+- Public surface: the `wire run` command, `docs/Usage/03-running-pulse.md`,
+  `docs/Reference/Pulse/types.md`
+- Implementation: `app/wire/Main.hs` (the local in-process `wire run` smoke runner) reusing the
+  substrate pieces below the durable loop — `src/Cortex/Pulse/GraphRuntime.hs` (graph state and
+  ready frontiers) and `src/Cortex/Pulse/Plan.hs` (`StagePlan`)
+- Tests: none
+- Theory/proof: none
+- Tracking: GitHub #141
+
 ## Related
 
 - [Chapter 01 - Overview](../Architecture/01-overview.md)

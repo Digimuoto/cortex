@@ -213,6 +213,19 @@ semantics.
 - Prove or document the preservation claim: after kind expansion, all existing Wire graph, port,
   authority, and runtime invariants apply unchanged to the expanded program.
 
+## Traceability
+
+- Feature keys: `wire.node_body_kinds`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`
+- Implementation: `src/Cortex/Wire/Parser.hs` (`KindDecl`/`KindParam`/`KindApplication`, the
+  `kindDecl` parser, `node <name> = <kind_application>;` via `kindNodeDecl`, and the
+  `expandParsedNode` elaboration pass over the `esKinds` scope)
+- Tests: `test/Cortex/Wire/ParserSpec.hs`, `test/Cortex/Wire/CompileSpec.hs`,
+  `test/Cortex/Wire/FormatSpec.hs`
+- Theory/proof: [Derived-form elaboration determinism row](../Reference/proof-status.md)
+  (kind-instantiated frontier witnesses are pinned by their child labels)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0010 - Wire as Closed-Authority Language](./0010-wire-closed-authority-and-three-layer-stack.md)

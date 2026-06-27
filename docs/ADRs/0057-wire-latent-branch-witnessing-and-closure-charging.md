@@ -172,6 +172,18 @@ enforcement remains per-site; there is no global gas object.
 - **Max-escrow reservation of branch capacity** - deferred; witnessed assertion gives the guarantee
   without a new escrow account.
 
+## Traceability
+
+- Feature keys: `rewrite.closure_witness_charging`
+- Public surface: `Cortex.Pulse`, [`docs/Reference/rewrites.md`](../Reference/rewrites.md)
+- Implementation: `src/Cortex/Pulse/Materialization.hs` (`prAdmissionMode`,
+  `WitnessedReplayMetadata`, `authorizeWitnessedReplayWithControl`),
+  `src/Cortex/Pulse/Executor/Resume.hs` (mode-aware rewrite re-admission)
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Pulse/IterationSpec.hs`
+- Theory/proof:
+  [Selected branch budget / Latent recovery determinism — `proof-status.md`](../Reference/proof-status.md)
+- Tracking: GitHub #99
+
 ## Related
 
 - [0056 - Admission Modes: Witnessed Materialization and Open Rewrite Gas](0056-admission-modes-witnessed-and-gas.md)

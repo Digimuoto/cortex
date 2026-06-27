@@ -70,3 +70,17 @@ only in the same binding positions as `make(N, K)`.
   contract amendment at the typed boundary.
 - The include surface is intentionally small. Recursive directory traversal, globbing, binary
   includes, and host-specific ignore rules remain future decisions.
+
+## Traceability
+
+- Feature keys: `wire.source_includes`, `wire.item_generation`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`
+- Implementation: `src/Cortex/Wire/Include.hs` (`expandWireSourceIncludes`, `wireSourceIncludeForms`
+  for `include_str`/`includeStr`/`include_dir`/`includeDir`) for the source-include surface;
+  `src/Cortex/Wire/Parser.hs` (`expandMakeBinding` and the `GeneratedFamilyFromMakeEach` family
+  kind) for `makeEach(items, K)` itemized node generation
+- Tests: `test/Cortex/Wire/ImportSpec.hs` (source includes); `test/Cortex/Wire/CompileSpec.hs`,
+  `test/Cortex/Wire/ParserSpec.hs` (`makeEach` expansion and static-value payload rejection)
+- Theory/proof: [Derived-form elaboration determinism row](../Reference/proof-status.md)
+  (`make`/`makeEach` admit one canonical object per source)
+- Tracking: GitHub #304

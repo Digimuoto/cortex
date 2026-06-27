@@ -159,6 +159,19 @@ here.
 - **Make everything witnessed** - rejected; open agent-authored topology is genuinely unknowable
   before run and must remain rejectable.
 
+## Traceability
+
+- Feature keys: `rewrite.admission_modes`
+- Public surface: `Cortex.Pulse`, [`docs/Reference/rewrites.md`](../Reference/rewrites.md)
+- Implementation: `src/Cortex/Pulse/Rewrite.hs` (`AdmissionMode`, `admitWitnessedDelta`,
+  `admissionModeFromText`, `admittedAdmissionMode`), `src/Cortex/Pulse/Materialization.hs`
+  (`prAdmissionMode`, `WitnessedReplayMetadata`), `src/Cortex/Pulse/Iteration.hs`
+  (`authorizeWitnessedStepWithControl`)
+- Tests: `test/Cortex/Pulse/IterationSpec.hs`, `test/Cortex/Pulse/ExecutorSpec.hs`
+  (`runtime-bounded iteration evidence: gas-neutral cap loop`)
+- Theory/proof: [Boundary resource algebra — `proof-status.md`](../Reference/proof-status.md)
+- Tracking: GitHub #181
+
 ## Related
 
 - [0005 - Budgeted Rewrite Admission and Materialization](0005-budgeted-rewrite-admission-and-materialization.md)

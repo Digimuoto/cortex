@@ -160,6 +160,19 @@ The executable Haskell expander and diagnostics remain separate correspondence w
   Recommendation: keep `<binding>_0`. Uniform generation is better for proofs, diagnostics, and
   nested expansion; the visual clutter for the single-instance case is the smaller cost.
 
+## Traceability
+
+- Feature keys: `wire.bounded_node_generation`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`
+- Implementation: `src/Cortex/Wire/Parser.hs` (`expandMakeBinding`, `GeneratedMakeChild`,
+  `overlayGeneratedChildren`), `src/Cortex/Wire/Syntax.hs` (`ExprFamilyProjection`)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (bound `make` expands into generated nodes and a graph
+  binding; `make` with a preceding static count binding; `makeEach` duplicate-label rejection)
+- Theory/proof: [Bounded fan composition row](../Reference/proof-status.md) (Lean
+  `LinearPortGraph.MakeWitness`, `LinearPortGraph.Make.accept_portLinear` in
+  `theory/Cortex/Wire/Make.lean` and `theory/Cortex/Wire/GeneratedForms.lean`)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0024 - Typed Executor Node Interface](./0024-typed-executor-node-interface.md)

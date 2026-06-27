@@ -216,6 +216,19 @@ node classify
 - Add compile-time tests for missing, duplicate, and undeclared output equations.
 - Keep the lowered pure output config keyed by declared output port labels.
 
+## Traceability
+
+- Feature keys: `wire.node_clause_grammar`
+- Public surface: `Cortex.Wire`, `docs/Reference/Wire/grammar.md`
+- Implementation: `src/Cortex/Wire/Parser.hs` (node / input-clause / output-clause grammar),
+  `src/Cortex/Wire/AST.hs` (`WireOutputPort`, output-equation bijection errors such as
+  `WireMissingDefaultOutputPort`), `src/Cortex/Wire/Compile.hs` (output-equation admission)
+- Tests: `test/Cortex/Wire/ParserSpec.hs` (parses pure output equations and clause forms),
+  `test/Cortex/Wire/CompileSpec.hs` (output-port admission)
+- Theory/proof: [CorePure output ports](../Reference/proof-status.md) (declared-output / equation
+  bijection)
+- Tracking: GitHub #304
+
 ## Related
 
 - [ADR 0017 - Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
