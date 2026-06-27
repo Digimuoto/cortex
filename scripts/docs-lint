@@ -38,6 +38,7 @@ STATUS_VALUES = {
     "accepted",
     "active",
     "canonical",
+    "deprecated",
     "draft",
     "final",
     "historical",
