@@ -93,6 +93,75 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 | [0078](0078-lean-wire-elaboration-kernel.md)                       | Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel  | proposed   |
 | [0079](0079-wire-admission-witness-schema.md)                      | Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema   | proposed   |
 
+## By category
+
+A browse-by-concern view of the current ADRs (primary category from the issue #304 Stage-3
+classification; the superseded 0049 is omitted). Numbering stays in allocation order — the order
+ADRs were added (chronological by repository entry; some frontmatter dates drift) — so this is only
+the category lens, not a renumber. A few ADRs cross-cut; only the primary category is shown here.
+
+- **Boundary & governance** (7): [0002](0002-cortex-downstream-ownership-boundary.md),
+  [0003](0003-pulse-service-and-host-action-boundary.md),
+  [0006](0006-compiled-workflow-artifact-boundary.md),
+  [0016](0016-cortex-roots-and-logos-pattern-extraction.md),
+  [0018](0018-canonical-haskell-module-tree.md), [0040](0040-logos-owned-reasoning-surfaces.md),
+  [0063](0063-adr-traceability-and-feature-status-canon.md)
+- **Pulse runtime & durability** (13): [0004](0004-graph-native-pulse-execution.md),
+  [0008](0008-pulse-operator-visibility-surfaces.md),
+  [0011](0011-compatibility-barriers-and-fresh-run-recovery.md),
+  [0012](0012-topological-memory-as-deterministic-graph-query.md),
+  [0043](0043-pulse-in-memory-runner.md), [0055](0055-pulse-runtime-bounded-iteration.md),
+  [0058](0058-pulse-atomic-suspend-settlement.md),
+  [0059](0059-durable-external-call-frontiers-on-pulse.md), [0064](0064-pulse-graph-state-cas.md),
+  [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
+  [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md)
+- **Rewrite admission & budget** (7):
+  [0005](0005-budgeted-rewrite-admission-and-materialization.md),
+  [0009](0009-rewrite-provenance-and-topology-integrity.md),
+  [0034](0034-wire-pure-select-actualization-authority.md),
+  [0036](0036-wire-latent-branch-budget-recovery.md),
+  [0056](0056-admission-modes-witnessed-and-gas.md),
+  [0057](0057-wire-latent-branch-witnessing-and-closure-charging.md),
+  [0069](0069-rewrite-planner-drift-witness.md)
+- **Conditionals, selection & rewrite algebra** (5):
+  [0007](0007-latent-branch-conditional-lowering.md),
+  [0032](0032-wire-boundary-contract-resources.md),
+  [0033](0033-wire-select-guarded-affine-collapse.md), [0035](0035-wire-rewrite-algebra-forms.md),
+  [0037](0037-wire-latent-structural-control.md)
+- **Wire language & grammar** (6): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
+  [0022](0022-wire-node-clause-grammar.md), [0026](0026-wire-failure-taxonomy.md),
+  [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),
+  [0070](0070-wire-file-imports.md)
+- **Wire executor & node interface** (6): [0017](0017-wire-executor-and-port-catalog-boundary.md),
+  [0024](0024-typed-executor-node-interface.md), [0025](0025-configured-executor-values.md),
+  [0030](0030-wire-node-implementation-forms.md),
+  [0039](0039-wire-node-boundary-transform-normal-form.md),
+  [0062](0062-typed-effect-variant-output-boundaries.md)
+- **Wire elaboration & compile-time generation** (4):
+  [0021](0021-wire-source-elaborates-to-circuits.md),
+  [0045](0045-wire-compile-time-node-body-kinds.md), [0046](0046-wire-compile-time-graph-forms.md),
+  [0051](0051-wire-source-includes-and-item-generation.md)
+- **Wire topology composition** (4): [0028](0028-wire-topology-composition-and-boundary-labels.md),
+  [0047](0047-wire-frontier-linearity-and-precedence.md),
+  [0048](0048-wire-make-bounded-node-generation.md),
+  [0052](0052-wire-bounded-indexed-boundary-products.md)
+- **CorePure** (7): [0020](0020-wire-pure-output-equations.md),
+  [0023](0023-corepure-expression-surface.md), [0029](0029-corepure-structured-serialization.md),
+  [0050](0050-wire-corepure-output-residue.md),
+  [0061](0061-corepure-bounded-iteration-primitives.md), [0072](0072-corepure-stdlib-catalogue.md),
+  [0073](0073-corepure-division-model.md)
+- **Capability & executors** (4): [0014](0014-executor-taxonomy-model-vs-external-call.md),
+  [0019](0019-executor-registration-and-binding.md), [0042](0042-wire-standard-effect-executors.md),
+  [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)
+- **Artifact & provenance** (1): [0071](0071-wire-artifact-emission.md)
+- **Packaging, CLI & tooling** (7): [0041](0041-wire-cli-command-surface.md),
+  [0054](0054-downstream-wire-packages-and-host-bindings.md),
+  [0060](0060-filesystem-package-and-binding-manifests.md),
+  [0074](0074-wire-canonical-formatter.md), [0075](0075-pulse-service-config-credentials.md),
+  [0076](0076-wire-cli-proof-fixtures.md), [0077](0077-wire-manifest-versioning.md)
+- **Proof track** (3): [0038](0038-wire-proof-track-theorem-ledger.md),
+  [0078](0078-lean-wire-elaboration-kernel.md), [0079](0079-wire-admission-witness-schema.md)
+
 ## Writing a new ADR
 
 Use the [template](../Templates/adr.md). Key discipline:
