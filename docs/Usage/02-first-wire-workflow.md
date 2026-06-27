@@ -54,6 +54,46 @@ must be registered by the host or consumer library.
 Wire also does not run the workflow directly. It compiles source into a circuit artifact. Pulse runs
 the materialized circuit.
 
+## Run A Ready-Made Example
+
+For local exploration the standalone `wire` CLI bundles compile-and-run: it compiles a source file
+and drives the compiled circuit through the in-memory runner (ADR 0043) — no Postgres, task
+registry, or deployment. The repository ships a catalog of `.wire` programs under `examples/wire/`;
+each file's header comment gives its run command.
+
+A pure CorePure example — `range` / `fold` and the string builtins, no executors:
+
+```bash
+nix run .#wire -- run examples/wire/pure-stdlib-report.wire
+```
+
+It prints a deterministic Markdown report:
+
+```text
+# Wire pure stdlib report
+
+seed: demo
+rows: 5
+
+| n | square | cube | size |
+| --- | --- | --- | --- |
+| 1 | 1 | 1 | SMALL |
+| 2 | 4 | 8 | SMALL |
+| 5 | 25 | 125 | BIG |
+```
+
+What an example needs to run depends on its leaves:
+
+- **Pure** (e.g. `pure-stdlib-report.wire`) — run directly with `wire run`; the body is all
+  CorePure.
+- **Interactive or effectful** (e.g. `mini-build-system.wire`, `interactive-priority-planner.wire`)
+  — need the standard IO executors. See
+  [Executors and alphabet](../Reference/Wire/executors-and-alphabet.md).
+- **Quantum** (`quantum-*.wire`) — need a hardware or simulator backend. See the
+  [Quantum consumer](../Consumers/Quantum.md).
+- **Durable** runs — persistence, resume, and signals are a Pulse concern, not the in-memory runner.
+  See [Running Pulse](03-running-pulse.md).
+
 ## Compiling From Haskell
 
 The current public surface is the Haskell API:

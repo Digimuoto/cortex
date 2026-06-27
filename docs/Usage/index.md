@@ -41,17 +41,18 @@ from a consumer repo and pass a populated registry to `Cortex.Pulse.runPulse`.
 
 ## Reading Path
 
-| If you want to...                     | Start with                                                 |
-| ------------------------------------- | ---------------------------------------------------------- |
-| Build the repo and see the surfaces   | [Quickstart](01-quickstart.md)                             |
-| Understand the shape of a Wire file   | [Your first Wire workflow](02-first-wire-workflow.md)      |
-| Learn what Pulse needs at runtime     | [Running Pulse](03-running-pulse.md)                       |
-| Prepare an operator-facing service    | [Deploying Pulse](04-deploying-pulse.md)                   |
-| Embed Cortex in another Haskell repo  | [Integrating from Haskell](05-integrating-from-haskell.md) |
-| Diagnose common failures              | [Troubleshooting](06-troubleshooting.md)                   |
-| Check proof and correspondence status | [Proof status](../Reference/proof-status.md)               |
-| Look up exact syntax or schemas       | [Reference](../Reference/)                                 |
-| Understand the design commitments     | [Architecture overview](../Architecture/01-overview.md)    |
+| If you want to...                     | Start with                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| Build the repo and see the surfaces   | [Quickstart](01-quickstart.md)                                                 |
+| Understand the shape of a Wire file   | [Your first Wire workflow](02-first-wire-workflow.md)                          |
+| Run a ready-made Wire example         | [Run a ready-made example](02-first-wire-workflow.md#run-a-ready-made-example) |
+| Learn what Pulse needs at runtime     | [Running Pulse](03-running-pulse.md)                                           |
+| Prepare an operator-facing service    | [Deploying Pulse](04-deploying-pulse.md)                                       |
+| Embed Cortex in another Haskell repo  | [Integrating from Haskell](05-integrating-from-haskell.md)                     |
+| Diagnose common failures              | [Troubleshooting](06-troubleshooting.md)                                       |
+| Check proof and correspondence status | [Proof status](../Reference/proof-status.md)                                   |
+| Look up exact syntax or schemas       | [Reference](../Reference/)                                                     |
+| Understand the design commitments     | [Architecture overview](../Architecture/01-overview.md)                        |
 
 ## What This First Pass Covers
 
