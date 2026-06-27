@@ -521,6 +521,23 @@ a
 parses as `a => b => (c <> d)`. The expression is still admitted only if the final connect obeys the
 linear endpoint rule.
 
+### Operator meanings by phase
+
+The same glyph can mean different things in **graph position** (a `wire_expr` composing topology)
+versus **CorePure expression position** (inside a node body). Wire has no implicit fan-out: topology
+is formed only by the graph operators and compile-time generation.
+
+| Glyph / form                     | Graph position                                                                         | CorePure expression position                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `<>`                             | Overlay — set-union of fragments; never clones nodes                                   | —                                                                          |
+| `=>`                             | Connect — linear `(contract, label)` port matching; no implicit fan-out or aggregation | —                                                                          |
+| `*`                              | Explicit finite-product adapter node (generated)                                       | Arithmetic multiplication                                                  |
+| `make(N, K)` / `makeEach(xs, K)` | Compile-time generation of a bounded fresh node family                                 | —                                                                          |
+| `map` / `fold` / `zip` / `range` | —                                                                                      | Operate on JSON values inside a node body; they never instantiate topology |
+
+Fan-in and fan-out are authored as explicit nodes (an adapter, sharing, or persistence node), never
+as implicit concatenation or list aggregation.
+
 `()` is the empty graph value and identity for overlay/connect.
 
 `select(...)` is the conditional continuation form over an exclusive output boundary. Its detailed
