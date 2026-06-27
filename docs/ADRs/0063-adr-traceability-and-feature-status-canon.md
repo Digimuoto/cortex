@@ -122,6 +122,10 @@ Never collapse these into one field:
 - **Proof status** — owned by `proof-status.md`. The matrix's `Theory` cell **links to the
   proof-status row**; it does not restate Lean/Haskell state, so there is one source of proof truth.
 
+`partial` in `feature-status.md` is a conservative current-state label, not a synonym for "no code"
+or "untested." A proposed ADR may govern implemented and tested substrate while remaining `partial`
+until acceptance and all required matrix evidence are in place.
+
 ### 5. Evidence links are validated, never asserted blind
 
 `just docs-check` must confirm that every evidence link in a feature-status row — the `Tests`,

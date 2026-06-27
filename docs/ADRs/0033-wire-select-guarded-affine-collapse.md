@@ -83,10 +83,10 @@ The rules are:
 - The word "superposition" can mislead if used without the formal guarded-affine explanation.
 - Tooling and docs must keep latent branch visibility distinct from materialized topology.
 - Native n-way selection still lowers to a nested binary condition tree, not a native n-way runtime
-  node. The runtime guard source that drives that tree - reading a producer's committed output
-  variant label and routing it through the compiled then/else keys - is implemented as
-  `committedVariantConditionBinding` (ADR 0062, GitHub #314); a native n-way runtime representation
-  remains future work.
+  node. For executor-emitted variants, the guard source that reads a producer's committed output
+  variant label and routes it through compiled then/else keys is `committedVariantConditionBinding`
+  (ADR 0062, GitHub #314). A reusable production Pulse entrypoint that invokes that path remains
+  tracked by GitHub #321; a native n-way runtime representation remains future work.
 
 ### Obligations
 

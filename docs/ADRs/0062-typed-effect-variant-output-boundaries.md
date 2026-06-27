@@ -19,6 +19,7 @@ related:
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
   - "GitHub #313"
   - "GitHub #314"
+  - "GitHub #321"
   - "GitHub #315"
   - "GitHub #138"
 ---
@@ -29,9 +30,9 @@ related:
 
 Proposed - extends ADR 0024, ADR 0033, and ADR 0053, fulfils the failure-routing hook left open by
 ADR 0026, generalises the typed-error-output option in ADR 0059, and discharges the exclusive-output
-grouping ADR 0017 specified but the runtime never implemented. It does not edit those ADRs; the ADR
-0033 note that native selection still needs runtime work is updated when the select runtime (#314)
-lands.
+grouping ADR 0017 specified but the runtime never implemented. It does not edit those ADRs; ADR 0033
+now distinguishes the committed-label guard source (#314) from the reusable production Pulse
+entrypoint still tracked in #321.
 
 ## Context
 
@@ -61,11 +62,12 @@ Two facts make this a real, narrow piece of substrate work rather than a syntax 
    metadata keep only `port name -> contract`; at the egress boundary a sum `ok:T | err:U` is
    indistinguishable from two independent product outputs. ADR 0017's grouping obligation was never
    implemented.
-2. **The production `select(...)` runtime is effectively unbuilt.** The condition binder
-   (`bindCircuitConditionNode`, `circuitConditionSelectBranch`) and
-   `lowerCompiledCircuitToSomeStagePlan` have no production caller; the production Pulse lowering
-   path lowers only realize nodes. So "branch on an executor-emitted variant label" means building
-   the select runtime, not tuning it.
+2. **The reusable production `select(...)` entrypoint is still pending.** The committed-label guard
+   source exists (`committedVariantConditionBinding`) and the lowering path can carry condition
+   binders, but `lowerCompiledCircuitToSomeStagePlan` still lacks a reusable production caller on
+   `main`; the production Pulse lowering path lowers only realize nodes. So "branch on an
+   executor-emitted variant label" is not just a local boundary-validation feature — it still
+   depends on the production entrypoint tracked in #321.
 
 The open question is: what is the smallest substrate boundary that lets an executor commit one typed
 variant, validate it before commit, persist it durably, and let `select` branch on it on resume
@@ -191,11 +193,12 @@ predicate re-run is deterministic and the effect runs once.
 
 ### Scope
 
-Delivered in two tracked steps under this ADR: the emission + validation + persistence substrate
-(#313), and the production select runtime that consumes the committed label with durable resume
-(#314, relating to #138). The host-type codec registry, the host typeclasses, and per-contract
-schema strength are explicitly **out of scope** and deferred (#315); this ADR ships on Layer-1
-payload-kind/shape validation over the current `WireValue`.
+Tracked in three implementation steps under this ADR: the emission + validation + persistence
+substrate (#313), the committed-label select guard/lowering path exercised by durable-resume tests
+(#314, relating to #138), and the reusable production Pulse entrypoint for downstream callers
+(#321). The host-type codec registry, the host typeclasses, and per-contract schema strength are
+explicitly **out of scope** and deferred (#315); this ADR ships on Layer-1 payload-kind/shape
+validation over the current `WireValue`.
 
 ## Alternatives considered
 
@@ -239,9 +242,9 @@ payload-kind/shape validation over the current `WireValue`.
 
 ### Negative
 
-- It builds the production `select(...)` runtime for the first time (#314), which is more than a
-  local change; the substrate (#313) is independently shippable but the headline branch capability
-  depends on the runtime.
+- It builds the committed-label `select(...)` runtime path for the first time (#314) and still needs
+  a reusable production entrypoint (#321). The substrate (#313) is independently shippable, but the
+  headline branch capability depends on downstream callers having that entrypoint.
 - Layer-1 validation does not catch a payload that is valid JSON of the right kind but semantically
   wrong against the contract; strong per-contract schemas wait on the deferred codec work (#315).
 - Overloading `WireValue.wireValuePort` for the variant label makes the runtime exclusive-group
@@ -262,7 +265,7 @@ payload-kind/shape validation over the current `WireValue`.
   sum-plus-ordinary mix.
 - The `select` binder must read only persisted inputs and never re-invoke the backend, preserving
   the effect-once / deterministic-resume property.
-- On landing #314, update ADR 0033's "runtime work still needed" note to point at this mechanism.
+- On landing #321, update this ADR's Traceability block to include the production entrypoint module.
 - If strong per-contract payload validation, cross-version replay safety, or a host-type codec
   registry are later wanted, pursue them through #315 (refining ADR 0017) rather than widening this
   boundary silently.
@@ -281,7 +284,7 @@ payload-kind/shape validation over the current `WireValue`.
   `test/Cortex/Wire/RuntimeSpec.hs`
 - Theory/proof:
   [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
-- Tracking: GitHub #313, #314
+- Tracking: GitHub #313, #314, #321
 
 ## Related
 
