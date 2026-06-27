@@ -13,6 +13,7 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 module Cortex.Pulse
   ( runPulse
   , module Cortex.Pulse.Checkpoint
+  , module Cortex.Pulse.Circuit
   , module Cortex.Pulse.Executor
   , module Cortex.Pulse.Hydrate
   , module Cortex.Pulse.Iteration
@@ -43,6 +44,7 @@ import System.Exit (exitFailure)
 import System.Posix.Signals (Handler (CatchOnce), installHandler, sigINT, sigTERM)
 
 import Cortex.Pulse.Checkpoint
+import Cortex.Pulse.Circuit
 import Cortex.Pulse.Database qualified as PulseDB
 import Cortex.Pulse.Executor (TaskContext (..), TaskRegistry)
 import Cortex.Pulse.Executor qualified as Executor

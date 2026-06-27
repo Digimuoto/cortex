@@ -70,6 +70,12 @@ import Cortex.Capability.Catalog.RuntimeBindingRecord
   ( RuntimeBindingRecord (..)
   , RuntimeStageActionRef (..)
   )
+import Cortex.Pulse.Circuit
+  ( CircuitRunError (..)
+  , ensureRunnable
+  , resumeCompiledCircuit
+  , runCompiledCircuit
+  )
 import Cortex.Pulse.Executor
   ( LoopInstanceKey (..)
   , ReplayPolicy (..)
@@ -79,6 +85,10 @@ import Cortex.Pulse.Executor
   , StageContext (..)
   , StageDefinition (..)
   , StageFailure (..)
+  , StageLatentBranch (..)
+  , StageLatentCondition (..)
+  , StageLatentDeltaSignature (..)
+  , StageLatentNode (..)
   , StagePlan (..)
   , StageRejectedRewrite (..)
   , StageReplaySafety (..)
@@ -151,10 +161,14 @@ import Cortex.Pulse.Query.ExternalCall
   , loadExternalCallAttempt
   )
 import Cortex.Pulse.Rewrite
-  ( BudgetContext (..)
+  ( AnchorBoundaryUse (..)
+  , BoundaryLaw (..)
+  , BoundaryResourceUse (..)
+  , BudgetContext (..)
   , BudgetDimension (..)
   , ExpansionMode (..)
   , GraphRewrite (..)
+  , RewriteAnchorDisposition (..)
   , RewriteBudget (..)
   , RewriteRejectionContext (..)
   , SubgraphSpec (..)
@@ -722,6 +736,107 @@ selectVariantBinder produceCount recoverCount okCount =
     , bindCircuitConditionNode = committedVariantConditionBinding
     }
 
+{- | A producer exposing a 3-way exclusive output, committing the middle @b@
+variant, with one handler arm per label. Exercises N-way committed-label
+dispatch through the nested binary condition tree (ADR 0062, #321).
+-}
+threeWaySelectSource :: Text
+threeWaySelectSource =
+  T.unlines
+    [ "node produce"
+    , "  -> a: P | b: P | c: P ;"
+    , "  = @test.produce ({}) ;"
+    , "node handle_a"
+    , "  <- a: P ;"
+    , "  -> done: P"
+    , "  = @test.handle_a (a) ;"
+    , "node handle_b"
+    , "  <- b: P ;"
+    , "  -> done: P"
+    , "  = @test.handle_b (b) ;"
+    , "node handle_c"
+    , "  <- c: P ;"
+    , "  -> done: P"
+    , "  = @test.handle_c (c) ;"
+    , "produce select("
+    , "  a: handle_a,"
+    , "  b: handle_b,"
+    , "  c: handle_c"
+    , ")"
+    ]
+
+{- | As 'selectVariantPulseConfig', but with a rewrite budget generous enough for
+the nested condition tree an N-way select lowers to (one @AppendAfter@ per
+condition node).
+-}
+threeWaySelectPulseConfig :: CircuitPulseConfig
+threeWaySelectPulseConfig =
+  CircuitPulseConfig
+    { circuitPulseInitialState = Aeson.Null
+    , circuitPulseRuntimeVersion = 1
+    , circuitPulseReplayPolicy = ReplayPolicyWarn
+    , circuitPulseInitialRewriteBudget =
+        RewriteBudget
+          { rbAddedNodesMax = 64
+          , rbAddedEdgesMax = 128
+          , rbAddedDepthMax = 16
+          , rbFrontierDeltaMax = 16
+          , rbRewriteOpsMax = 16
+          }
+    , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
+    , circuitPulseBudgetExceededExhaustionPolicy = Nothing
+    , circuitPulseMaxRewriteReExecutions = 8
+    }
+
+{- | Binder for 'threeWaySelectSource': the producer commits the @b@ variant
+(incrementing an invocation counter); each arm increments its own counter so the
+test can assert the selected arm ran exactly once and the non-selected arms never
+ran. The condition uses the production 'committedVariantConditionBinding'.
+-}
+threeWaySelectBinder
+  :: IORef Int -> IORef Int -> IORef Int -> IORef Int -> CircuitPulseBinder
+threeWaySelectBinder produceCount aCount bCount cCount =
+  CircuitPulseBinder
+    { bindCircuitTaskNode = \taskNode ->
+        let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+         in Right $ case unNodeId nodeId of
+              "produce" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+                  pure
+                    ( StageComplete
+                        ( Aeson.toJSON
+                            ( ( mkWireValue
+                                  "P"
+                                  WirePayloadJson
+                                  Nothing
+                                  (Aeson.object ["pick" Aeson..= ("b" :: Text)])
+                              )
+                                { wireValuePort = Just "b"
+                                }
+                            )
+                        )
+                    )
+              "handle_a" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' aCount (\c -> (c + 1, ()))
+                  pure (StageComplete (Aeson.String "a"))
+              "handle_b" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' bCount (\c -> (c + 1, ()))
+                  pure (StageComplete (Aeson.String "b"))
+              "handle_c" ->
+                nodeStage nodeId $ \_ -> do
+                  atomicModifyIORef' cCount (\c -> (c + 1, ()))
+                  pure (StageComplete (Aeson.String "c"))
+              other ->
+                nodeStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+    , bindCircuitSignalBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "three-way select test: no signal nodes")
+    , bindCircuitArtifactBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "three-way select test: no artifact nodes")
+    , bindCircuitRewriteBoundary = \_ -> Left (CircuitTemplateRegistryInvalid "three-way select test: no rewrite boundaries")
+    , bindCircuitConditionNode = committedVariantConditionBinding
+    }
+
 analysisFragmentInOutPorts :: WirePorts
 analysisFragmentInOutPorts =
   WirePorts
@@ -1103,6 +1218,110 @@ spec = beforeAll setupTestDb $ do
       outcome2 `shouldBe` OutcomeCompleted
       readIORef produceCount `shouldReturn` 1
       readIORef recoverCount `shouldReturn` 1
+
+  describe "Cortex.Pulse.Circuit entrypoint (ADR 0062, #321)" $ do
+    it "dispatches an N-way committed-label select and resumes without re-running the effect" $ \mPool -> withDb mPool $ \pool -> do
+      (_, taskContext) <- mkTaskContext pool
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-entrypoint-nway-select"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      produceCount <- newIORef (0 :: Int)
+      aCount <- newIORef (0 :: Int)
+      bCount <- newIORef (0 :: Int)
+      cCount <- newIORef (0 :: Int)
+      compiled <-
+        case compileWireText threeWaySelectSource of
+          Right circuit -> pure circuit
+          Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+      let binder = threeWaySelectBinder produceCount aCount bCount cCount
+      -- Fresh run through the entrypoint: the producer commits the "b" variant; select routes to handle_b.
+      outcome1 <- runCompiledCircuit taskContext runId task threeWaySelectPulseConfig binder compiled
+      outcome1 `shouldBe` Right OutcomeCompleted
+      readIORef produceCount `shouldReturn` 1
+      readIORef aCount `shouldReturn` 0
+      readIORef bCount `shouldReturn` 1
+      readIORef cCount `shouldReturn` 0
+      statuses <-
+        readGraphNodeStatuses pool runId
+          >>= maybe (expectationFailure "expected persisted graph state" >> fail "unreachable") pure
+      let completedNodes = [nid | (nid, NodeCompleted) <- Map.toList statuses]
+      -- The selected b arm materialized and ran; the non-selected a/c arms never materialized.
+      any (T.isInfixOf "handle_b" . unNodeId) completedNodes `shouldBe` True
+      any (T.isInfixOf "handle_a" . unNodeId) (Map.keys statuses) `shouldBe` False
+      any (T.isInfixOf "handle_c" . unNodeId) (Map.keys statuses) `shouldBe` False
+      -- Resume must not re-run the producer effect or the selected arm.
+      outcome2 <- resumeCompiledCircuit taskContext runId task threeWaySelectPulseConfig binder compiled
+      outcome2 `shouldBe` Right OutcomeCompleted
+      readIORef produceCount `shouldReturn` 1
+      readIORef bCount `shouldReturn` 1
+    it "rejects a lowered plan whose latent condition has no covering executable stage" $ \_ -> do
+      let anchoredPlan =
+            mkLinearStagePlan
+              [nodeStage (NodeId "anchor") (const (pure (StageComplete Aeson.Null)))]
+              Aeson.Null
+              1
+              ReplayPolicyWarn
+          coveredCondition = StageLatentCondition {slcAnchorNodeId = NodeId "anchor", slcBranches = []}
+          orphanCondition = StageLatentCondition {slcAnchorNodeId = NodeId "ghost", slcBranches = []}
+          nestedCoveredCondition = StageLatentCondition {slcAnchorNodeId = NodeId "anchor:nested", slcBranches = []}
+          nestedOrphanCondition = StageLatentCondition {slcAnchorNodeId = NodeId "anchor:ghost", slcBranches = []}
+          branchWithNested nested =
+            StageLatentBranch
+              { slbBranchId = "then"
+              , slbAnchorNodeId = NodeId "anchor"
+              , slbNodes =
+                  Map.singleton
+                    (NodeId "anchor:nested")
+                    StageLatentNode
+                      { slnTemplateId = stageTemplateId (NodeId "nested")
+                      , slnActionId = stageActionId (NodeId "nested")
+                      }
+              , slbTopology = mempty
+              , slbEntryNodes = []
+              , slbExitNodes = []
+              , slbPostSuccessorNodes = []
+              , slbDeltaSignature =
+                  StageLatentDeltaSignature
+                    { sldsAnchorNodeId = NodeId "anchor"
+                    , sldsAnchorDisposition = RewriteAnchorRetained
+                    , sldsBoundaryResourceUse =
+                        BoundaryResourceUse
+                          { bruLaw = AppendContinuation
+                          , bruSlotAnchor = NodeId "anchor"
+                          , bruAnchorBoundaryUse = AnchorBoundaryRetained
+                          }
+                    , sldsNewNodes = Set.empty
+                    , sldsAddedEdges = Set.empty
+                    , sldsEntryNodes = []
+                    , sldsExitNodes = []
+                    }
+              , slbNestedConditions = nested
+              }
+      -- A latent condition backed by an embedded stage is covered and accepted.
+      case ensureRunnable (SomeStagePlan anchoredPlan [coveredCondition]) of
+        Right _ -> pure ()
+        Left err -> expectationFailure ("expected covered latent condition to pass, got " <> show err)
+      -- Nested latent conditions are checked against the branch-local nodes that
+      -- would become executable if the parent arm materializes.
+      case ensureRunnable
+        ( SomeStagePlan
+            anchoredPlan
+            [coveredCondition {slcBranches = [branchWithNested [nestedCoveredCondition]]}]
+        ) of
+        Right _ -> pure ()
+        Left err -> expectationFailure ("expected nested covered latent condition to pass, got " <> show err)
+      -- A latent condition with no covering stage is rejected loudly.
+      case ensureRunnable (SomeStagePlan anchoredPlan [orphanCondition]) of
+        Left err -> err `shouldBe` CircuitRunUnsupportedLatentConditions [NodeId "ghost"]
+        Right _ -> expectationFailure "expected orphan latent condition to be rejected"
+      -- The same rejection applies inside branch-local latent metadata.
+      case ensureRunnable
+        ( SomeStagePlan
+            anchoredPlan
+            [coveredCondition {slcBranches = [branchWithNested [nestedOrphanCondition]]}]
+        ) of
+        Left err -> err `shouldBe` CircuitRunUnsupportedLatentConditions [NodeId "anchor:ghost"]
+        Right _ -> expectationFailure "expected nested orphan latent condition to be rejected"
 
   describe "durable external-call stages (ADR 0059)" $ do
     it "submits, parks, refuses forged wakes, then completes from the driver on resume" $ \mPool -> withDb mPool $ \pool -> do

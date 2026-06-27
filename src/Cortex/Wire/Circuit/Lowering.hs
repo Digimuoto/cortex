@@ -280,14 +280,20 @@ lowerConditionNode pulseConfig binder conditionNode = do
       selectBranch = circuitConditionSelectBranch conditionBinding
       action ctx = do
         selection <- selectBranch ctx.scRunId ctx.scInputs
+        -- Anchor the branch-materializing rewrite on the condition's runtime node
+        -- id, not its lower-time id. A nested select condition is materialized
+        -- under its parent's namespace ({parent}:{local}), so the lower-time id is
+        -- not a live topology node; only ctx.scNodeId reflects the actual anchor
+        -- (ADR 0062, GitHub #321).
+        let anchorNodeId = ctx.scNodeId
         pure $
           case selection.circuitConditionSelectionBranch of
             CircuitConditionThen ->
-              StageRewrite selection.circuitConditionSelectionOutput (AppendAfter stageId thenFragment)
+              StageRewrite selection.circuitConditionSelectionOutput (AppendAfter anchorNodeId thenFragment)
             CircuitConditionElse ->
               maybe
                 (StageComplete selection.circuitConditionSelectionOutput)
-                (StageRewrite selection.circuitConditionSelectionOutput . AppendAfter stageId)
+                (StageRewrite selection.circuitConditionSelectionOutput . AppendAfter anchorNodeId)
                 elseFragment
   pure
     StageDefinition

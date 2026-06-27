@@ -277,7 +277,9 @@ spec = do
       let conditionNodeId = NodeId "__cortex_workflow__/condition/1"
       conditionStage <-
         requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
-      stageResult <- conditionStage.sdAction nilStageCtx
+      -- The executor runs a stage with scNodeId set to its live topology id; a
+      -- condition anchors its branch rewrite on that id (ADR 0062, #321).
+      stageResult <- conditionStage.sdAction (nilStageCtx {scNodeId = conditionNodeId})
       case stageResult of
         StageRewrite (Aeson.Bool True) rewrite ->
           case planRewriteDelta rewrite stagePlan of
@@ -301,7 +303,7 @@ spec = do
           unselectedRuntimeNodeId = NodeId "__cortex_workflow__/condition/1:else_work"
       conditionStage <-
         requireLookup "Expected lowered condition stage" conditionNodeId stagePlan.spDefinitions
-      stageResult <- conditionStage.sdAction nilStageCtx
+      stageResult <- conditionStage.sdAction (nilStageCtx {scNodeId = conditionNodeId})
       case stageResult of
         StageRewrite (Aeson.Bool True) rewrite@(AppendAfter anchor selectedSpec) -> do
           anchor `shouldBe` conditionNodeId

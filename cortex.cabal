@@ -151,6 +151,7 @@ library
         Cortex.Pulse
         Cortex.Pulse.Attempt
         Cortex.Pulse.Checkpoint
+        Cortex.Pulse.Circuit
         Cortex.Pulse.Database
         Cortex.Pulse.Event
         Cortex.Pulse.Executor
