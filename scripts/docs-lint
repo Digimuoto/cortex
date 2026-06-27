@@ -48,6 +48,45 @@ STATUS_VALUES = {
     "superseded",
 }
 
+# --- feature-status matrix (ADR 0063) ---------------------------------------
+FEATURE_STATUS = DOCS / "Reference" / "feature-status.md"
+ADRS = DOCS / "ADRs"
+
+FEATURE_ADR_STATUS = {"proposed", "accepted", "superseded", "deprecated"}
+FEATURE_IMPL_STATUS = {"planned", "partial", "implemented", "verified", "retired"}
+FEATURE_KEY_PREFIXES = {
+    "capability",
+    "cli",
+    "corepure",
+    "packaging",
+    "proof",
+    "pulse",
+    "rewrite",
+    "wire",
+}
+FEATURE_STATUS_COLUMNS = [
+    "Feature key",
+    "Capability",
+    "Governing ADR",
+    "ADR status",
+    "Impl status",
+    "Tests",
+    "Theory",
+    "Reference",
+    "Tracking",
+]
+EVIDENCE_COLUMNS = ("Tests", "Theory", "Reference")
+EMPTY_CELL = "—"  # U+2014 em dash; the honest "no evidence yet" marker
+PROOF_STATUS = DOCS / "Reference" / "proof-status.md"
+FEATURE_KEY_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_]*)+$")
+FEATURE_KEY_TOKEN_RE = re.compile(r"`([^`]+)`")
+FEATURE_ADR_NUMBER_RE = re.compile(r"\b([0-9]{4})\b")
+# A single Markdown link (image syntax excluded, no whitespace in the destination) so the
+# evidence-cell shape check agrees with check_markdown_links; group 1 is the destination.
+FEATURE_LINK_RE = re.compile(r'(?<!!)\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)')
+TRACEABILITY_HEADING_RE = re.compile(r"^#{2,6}\s+Traceability\s*$")
+URI_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:")  # external link form check_markdown_links skips
+
 
 @dataclass
 class Document:
@@ -521,6 +560,186 @@ def check_whitespace(path: Path, text: str, errors: list[str]) -> None:
             add(errors, path, "trailing whitespace", line_no)
 
 
+def adr_declared_feature_keys() -> dict[str, set[str]]:
+    """Map each feature key to the ADR number(s) declaring it in a Traceability block.
+
+    Only `- Feature keys:` bullets under a `## Traceability` or `### Traceability` heading
+    count. Code fences are skipped (so the template example in the canon ADR 0063 is ignored),
+    and a stray `- Feature keys:` bullet elsewhere in an ADR is not mistaken for a declaration.
+    """
+    declared: dict[str, set[str]] = {}
+    if not ADRS.exists():
+        return declared
+    for path in sorted(ADRS.glob("*.md")):
+        match = re.match(r"([0-9]{4})-", path.name)
+        if not match:
+            continue
+        number = match.group(1)
+        in_fence = False
+        in_traceability = False
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if re.match(r"^#{1,6}(?:\s|$)", line):
+                # any heading ends the current block; only a Traceability heading opens one
+                in_traceability = bool(TRACEABILITY_HEADING_RE.match(line))
+                continue
+            if not in_traceability:
+                continue
+            keys_line = re.match(r"^- Feature keys:\s*(.+)$", line)
+            if keys_line:
+                for token in FEATURE_KEY_TOKEN_RE.findall(keys_line.group(1)):
+                    declared.setdefault(token, set()).add(number)
+    return declared
+
+
+def parse_feature_matrix(text: str, errors: list[str]) -> list[tuple[int, list[str]]]:
+    """Return (line_no, cells) for every body row of the ## Capabilities matrix tables."""
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == "## Capabilities"), None)
+    if start is None:
+        add(errors, FEATURE_STATUS, "missing '## Capabilities' section")
+        return []
+
+    rows: list[tuple[int, list[str]]] = []
+    in_fence = False
+    index = start + 1
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("```"):
+            in_fence = not in_fence
+            index += 1
+            continue
+        if in_fence:
+            index += 1
+            continue
+        if line.startswith("## "):
+            break
+
+        stripped = line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            index += 1
+            continue
+        # A table needs a separator row underneath; otherwise this is not a table header.
+        sep_stripped = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        sep_cells = [c.strip() for c in split_table_row(sep_stripped)] if sep_stripped.startswith("|") else []
+        if not sep_cells or not all(SEPARATOR_CELL.match(cell) for cell in sep_cells):
+            index += 1
+            continue
+
+        header = [cell.strip() for cell in split_table_row(stripped)]
+        body = index + 2  # first row after header + separator
+
+        # A capability table is one shaped like the matrix (9 columns) or that names the
+        # feature-key column; such a table must match the canonical schema exactly. Any other
+        # table under ## Capabilities is left alone.
+        is_capability = len(sep_cells) == len(FEATURE_STATUS_COLUMNS) or "Feature key" in header
+        well_formed = header == FEATURE_STATUS_COLUMNS
+        if is_capability and not well_formed:
+            add(errors, FEATURE_STATUS, f"capability table header is {header}, expected {FEATURE_STATUS_COLUMNS}", index + 1)
+
+        while body < len(lines):
+            body_stripped = lines[body].strip()
+            if not (body_stripped.startswith("|") and body_stripped.endswith("|")):
+                break
+            cells = [cell.strip() for cell in split_table_row(body_stripped)]
+            if not (cells and all(SEPARATOR_CELL.match(cell) for cell in cells)):
+                # Only collect rows of a schema-correct capability table; a drifted header is
+                # already reported and its rows cannot be indexed reliably.
+                if is_capability and well_formed:
+                    rows.append((body + 1, cells))
+            body += 1
+        index = body
+    return rows
+
+
+def check_feature_status(errors: list[str]) -> None:
+    """Validate docs/Reference/feature-status.md against ADR 0063.
+
+    Covers the matrix schema, feature-key grammar/uniqueness, status enums,
+    governing-ADR resolution, the evidence-cell shape (with the Theory cell pinned
+    to proof-status.md per Decision rule 4), and the bidirectional ADR<->matrix
+    feature-key join. Evidence-link *resolution* (file/anchor) is enforced for every
+    Markdown link by check_markdown_links; this validator owns the matrix-specific
+    structure and the join that keeps ADRs and the matrix in agreement.
+    """
+    if not FEATURE_STATUS.exists():
+        add(errors, FEATURE_STATUS, "feature-status.md not found")
+        return
+
+    text = FEATURE_STATUS.read_text(encoding="utf-8")
+    rows = parse_feature_matrix(text, errors)
+    declared = adr_declared_feature_keys()
+
+    governed: dict[str, set[str]] = {}
+    first_line: dict[str, int] = {}
+    for line_no, cells in rows:
+        if len(cells) != len(FEATURE_STATUS_COLUMNS):
+            add(errors, FEATURE_STATUS, f"matrix row has {len(cells)} cells, expected {len(FEATURE_STATUS_COLUMNS)}", line_no)
+            continue
+        key_cell, _capability, governing, adr_status, impl_status, tests, theory, reference, _tracking = cells
+
+        key_token = FEATURE_KEY_TOKEN_RE.fullmatch(key_cell)
+        if not key_token:
+            add(errors, FEATURE_STATUS, f"feature-key cell must be a single `code` token: {key_cell!r}", line_no)
+            continue
+        key = key_token.group(1)
+        if not FEATURE_KEY_RE.match(key) or key.split(".", 1)[0] not in FEATURE_KEY_PREFIXES:
+            add(errors, FEATURE_STATUS, f"feature key {key!r} violates the dotted subsystem-prefixed grammar", line_no)
+        if key in governed:
+            add(errors, FEATURE_STATUS, f"duplicate feature-key row {key!r} (first seen at line {first_line[key]})", line_no)
+            continue
+
+        numbers = set(FEATURE_ADR_NUMBER_RE.findall(governing))
+        if not numbers:
+            add(errors, FEATURE_STATUS, f"governing-ADR cell for {key!r} names no ADR: {governing!r}", line_no)
+        for number in sorted(numbers):
+            if not list(ADRS.glob(f"{number}-*.md")):
+                add(errors, FEATURE_STATUS, f"governing ADR {number} for {key!r} resolves to no file", line_no)
+        if adr_status not in FEATURE_ADR_STATUS:
+            add(errors, FEATURE_STATUS, f"invalid ADR status {adr_status!r} for {key!r}", line_no)
+        if impl_status not in FEATURE_IMPL_STATUS:
+            add(errors, FEATURE_STATUS, f"invalid Impl status {impl_status!r} for {key!r}", line_no)
+        for column, cell in zip(EVIDENCE_COLUMNS, (tests, theory, reference)):
+            if cell == EMPTY_CELL:
+                continue
+            destinations = FEATURE_LINK_RE.findall(cell)
+            if not destinations or FEATURE_LINK_RE.sub("", cell).strip(" ,;"):
+                add(errors, FEATURE_STATUS, f"{column} evidence cell for {key!r} must be '{EMPTY_CELL}' or Markdown link(s), not {cell!r}", line_no)
+                continue
+            for destination in destinations:
+                if URI_SCHEME_RE.match(destination):
+                    # check_markdown_links skips URI-scheme targets, so an external evidence link
+                    # would never be resolved; Decision rule 5 wants a local file or anchor.
+                    add(errors, FEATURE_STATUS, f"{column} evidence link for {key!r} must be a local file or anchor, not the external URL {destination!r}", line_no)
+                elif column == "Theory" and (FEATURE_STATUS.parent / destination.split("#", 1)[0]).resolve() != PROOF_STATUS.resolve():
+                    add(errors, FEATURE_STATUS, f"Theory cell for {key!r} must link to proof-status.md, not {destination!r}", line_no)
+
+        governed[key] = numbers
+        first_line[key] = line_no
+
+    # Bidirectional join: matrix -> ADR.
+    for key, numbers in governed.items():
+        sources = declared.get(key, set())
+        if not sources:
+            add(errors, FEATURE_STATUS, f"feature key {key!r} has no declaring ADR ## Traceability block", first_line[key])
+        elif numbers and not (sources & numbers):
+            add(errors, FEATURE_STATUS, f"feature key {key!r} is governed by {sorted(numbers)} but declared in ADR(s) {sorted(sources)}", first_line[key])
+
+    # Bidirectional join: ADR -> matrix. Every ADR that declares a key must be sanctioned by
+    # that key's governing cell, which may name several ADRs via the `A / B (amend)` form.
+    for key, sources in sorted(declared.items()):
+        if key not in governed:
+            add(errors, FEATURE_STATUS, f"ADR(s) {sorted(sources)} declare feature key {key!r} but the matrix has no row for it")
+            continue
+        stray = sources - governed[key]
+        if stray:
+            add(errors, FEATURE_STATUS, f"ADR(s) {sorted(stray)} declare {key!r} but the matrix binds it to {sorted(governed[key])}")
+
+
 def main() -> int:
     if not DOCS.exists():
         print("docs-lint: docs/ not found", file=sys.stderr)
@@ -542,6 +761,8 @@ def main() -> int:
         check_publication_body(document, errors)
         check_canonical_policy(document, errors)
         check_markdown_links(document, errors)
+
+    check_feature_status(errors)
 
     if errors:
         print("docs-lint failed:", file=sys.stderr)

@@ -186,3 +186,54 @@ and verified.
   introduces.
 - [ADR template](../Templates/adr.md)
 - GitHub #304
+
+## Amendment - feature-status validator implemented (2026-06-27, issue #304)
+
+The Obligation "Implement the `docs-check` evidence-link validator for feature-status rows
+(follow-up tooling)" is discharged. The validator lives in `scripts/docs-lint` — the mechanical
+Markdown lint gate run by `just docs-lint` in the pre-commit hook and in CI — rather than in
+`just docs-check` (the documentation site build). Decision rule 5 named `docs-check` loosely;
+`docs-lint` is the correct home because it already owns the link, anchor, table, and frontmatter
+checks and runs on every push.
+
+### What it enforces
+
+`check_feature_status` validates the `## Capabilities` matrix in
+[`feature-status.md`](../Reference/feature-status.md) against this ADR:
+
+- **Schema** — every capability table (one with nine columns, or one naming the `Feature key`
+  column) must carry exactly the nine canonical columns, in order; a drifted header is reported, not
+  silently skipped.
+- **Feature-key grammar and uniqueness** — keys are lowercase-dotted with a known subsystem prefix
+  (Decision rule 2), and no key has more than one row.
+- **Status enums** — `ADR status` is one of `proposed`/`accepted`/`superseded`/`deprecated` and
+  `Impl status` is one of `planned`/`partial`/`implemented`/`verified`/`retired` (Decision rule 4).
+- **Governing-ADR resolution** — every ADR number in the `Governing ADR` cell, including the
+  `NNNN (amend)` and `NNNN / NNNN (amend)` forms, resolves to an ADR file.
+- **Evidence-cell shape** — the `Tests`, `Theory`, and `Reference` cells are either the empty marker
+  `—` or local Markdown link(s) — never a bare path and never an external URL, since Decision rule 5
+  wants a file or anchor; the `Theory` cell must point at `proof-status.md`, keeping one source of
+  proof truth (Decision rule 4).
+- **Bidirectional feature-key join** — every matrix key is declared in a cited ADR's Traceability
+  block (`##` or `###`, so amendment blocks count; code fences and stray bullets elsewhere are
+  ignored), and every key an ADR declares is bound to a matrix row whose governing cell sanctions
+  that ADR — an `A / B (amend)` cell licenses a declaration in either. This is the consistency that
+  stops ADRs and the matrix from drifting apart.
+
+Evidence-link _resolution_ — that the target file or anchor actually exists — is enforced for every
+local Markdown link in the corpus by the existing `check_markdown_links`. That checker skips
+URI-scheme targets, so `check_feature_status` rejects external evidence links outright; every
+surviving evidence link is local and therefore resolved. Decision rule 5's resolution requirement is
+thus met by the lint gate as a whole, and `check_feature_status` adds the matrix-specific structure
+and the join on top.
+
+### Scope limit
+
+The validator does **not** mechanize the Required/Omitted-by-category rule — that a governance,
+boundary, numbering, or proof-track _ledger_ ADR must carry no feature row. That rule needs per-ADR
+category and ledger semantics that are not machine-readable, and its symmetric failure (an ADR that
+wrongly grows _both_ a `## Traceability` block and a matching row) is internally consistent, so the
+join cannot flag it. It stays an authoring-discipline obligation. The join does catch the asymmetric
+form — a row with no declaration, or a declaration with no row.
+
+Tracking: GitHub #304.
