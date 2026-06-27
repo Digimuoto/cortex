@@ -42,6 +42,7 @@ import Data.Aeson qualified as Aeson
 import Data.Foldable (traverse_)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -306,6 +307,17 @@ wrapNodeBoundaryOutput
   -> Aeson.Value
   -> Either Text Aeson.Value
 wrapNodeBoundaryOutput maybeRegistry ctx outputValue =
+  case classifyOutputBoundary ctx.boundaryEgressPorts of
+    BoundaryInvalid invalid -> Left invalid
+    BoundaryVariant variantPorts -> validateVariantEmission maybeRegistry ctx variantPorts outputValue
+    BoundaryProduct -> wrapProductBoundaryOutput maybeRegistry ctx outputValue
+
+wrapProductBoundaryOutput
+  :: Maybe WireContractRegistry
+  -> BoundaryEgressContext
+  -> Aeson.Value
+  -> Either Text Aeson.Value
+wrapProductBoundaryOutput maybeRegistry ctx outputValue =
   case explicitWireOutput outputValue of
     Just wireOutput ->
       validateExplicitWireOutput maybeRegistry ctx.boundaryEgressPorts wireOutput *> Right outputValue
@@ -353,25 +365,48 @@ wrapNodeBoundaryOutputs
   -> BoundaryEgressContext
   -> Map Text Aeson.Value
   -> Either Text Aeson.Value
-wrapNodeBoundaryOutputs maybeRegistry ctx outputValues = do
-  let expectedPorts = Map.keysSet ctx.boundaryEgressPorts.wirePortsOutputs
-      actualPorts = Map.keysSet outputValues
-  if expectedPorts == actualPorts
-    then pure ()
-    else
-      Left
-        ( "Wire node "
-            <> unNodeId ctx.boundaryEgressProducer
-            <> " returned pure output ports "
-            <> renderSet actualPorts
-            <> ", expected "
-            <> renderSet expectedPorts
-            <> "."
-        )
-  wireValues <- traverse outputWireValue (Map.toAscList outputValues)
-  let wireValueSet = WireValueSet wireValues
-  validateExplicitWireOutput maybeRegistry ctx.boundaryEgressPorts (ExplicitWireValueSet wireValueSet)
-  Right (Aeson.toJSON wireValueSet)
+wrapNodeBoundaryOutputs maybeRegistry ctx outputValues =
+  case classifyOutputBoundary ctx.boundaryEgressPorts of
+    BoundaryInvalid invalid -> Left invalid
+    BoundaryVariant variantPorts ->
+      case Map.toAscList outputValues of
+        [(portName, value)]
+          | portName `elem` variantPorts -> do
+              wireValue <- outputWireValue (portName, value)
+              Right (Aeson.toJSON wireValue)
+          | otherwise ->
+              Left
+                ( "Emitted variant label "
+                    <> portName
+                    <> " is not a declared variant of Wire node "
+                    <> unNodeId ctx.boundaryEgressProducer
+                    <> "."
+                )
+        _ ->
+          Left
+            ( "Wire node "
+                <> unNodeId ctx.boundaryEgressProducer
+                <> " is a variant-emitting node and must commit exactly one variant."
+            )
+    BoundaryProduct -> do
+      let expectedPorts = Map.keysSet ctx.boundaryEgressPorts.wirePortsOutputs
+          actualPorts = Map.keysSet outputValues
+      if expectedPorts == actualPorts
+        then pure ()
+        else
+          Left
+            ( "Wire node "
+                <> unNodeId ctx.boundaryEgressProducer
+                <> " returned pure output ports "
+                <> renderSet actualPorts
+                <> ", expected "
+                <> renderSet expectedPorts
+                <> "."
+            )
+      wireValues <- traverse outputWireValue (Map.toAscList outputValues)
+      let wireValueSet = WireValueSet wireValues
+      validateExplicitWireOutput maybeRegistry ctx.boundaryEgressPorts (ExplicitWireValueSet wireValueSet)
+      Right (Aeson.toJSON wireValueSet)
   where
     renderSet values =
       "{"
@@ -402,6 +437,72 @@ wrapNodeBoundaryOutputs maybeRegistry ctx outputValues = do
             , wireValuePort = Just portName
             }
         )
+
+-- | The ADR 0062 classification of a node's output boundary.
+data OutputBoundaryKind
+  = -- | No exclusive group: an ordinary product output boundary.
+    BoundaryProduct
+  | -- | A single exclusive group with no ordinary ports: its declared variant labels.
+    BoundaryVariant ![Text]
+  | -- | A group mixed with ordinary ports, or several groups: invalid for variant emission.
+    BoundaryInvalid !Text
+
+{- | Classify a node's output boundary for ADR 0062. A boundary with no exclusive
+group is an ordinary product boundary; a single exclusive group with no ordinary
+ports is a variant boundary (carrying its declared variant labels); anything else -
+a group mixed with ordinary ports, or several groups - is invalid for variant
+emission ("one selected variant plus side outputs" is out of scope).
+-}
+classifyOutputBoundary :: WirePorts -> OutputBoundaryKind
+classifyOutputBoundary ports =
+  case Set.toList (Set.fromList groupIds) of
+    [] -> BoundaryProduct
+    [groupId]
+      | null ordinaryPorts ->
+          BoundaryVariant
+            [name | (name, spec) <- outs, spec.wireOutputPortExclusiveGroup == Just groupId]
+      | otherwise ->
+          BoundaryInvalid
+            "A variant-emitting node must not mix an exclusive output group with ordinary outputs (ADR 0062: one selected variant plus side outputs is out of scope)."
+    _ ->
+      BoundaryInvalid
+        "A variant-emitting node must expose exactly one exclusive output group (ADR 0062)."
+  where
+    outs = Map.toList ports.wirePortsOutputs
+    groupIds = [groupId | (_, spec) <- outs, Just groupId <- [spec.wireOutputPortExclusiveGroup]]
+    ordinaryPorts = [name | (name, spec) <- outs, isNothing spec.wireOutputPortExclusiveGroup]
+
+{- | A variant-emitting boundary commits exactly one explicit 'WireValue' whose port
+is a declared variant label (ADR 0062). A 'WireValueSet', a raw value, a missing
+label, or an undeclared label is rejected.
+-}
+validateVariantEmission
+  :: Maybe WireContractRegistry
+  -> BoundaryEgressContext
+  -> [Text]
+  -> Aeson.Value
+  -> Either Text Aeson.Value
+validateVariantEmission maybeRegistry ctx variantPorts outputValue =
+  case explicitWireOutput outputValue of
+    Just (ExplicitWireValue wireValue) ->
+      case wireValue.wireValuePort of
+        Just portName
+          | portName `elem` variantPorts ->
+              validateWireValue maybeRegistry ctx.boundaryEgressPorts wireValue *> Right outputValue
+          | otherwise ->
+              Left
+                ( "Emitted variant label "
+                    <> portName
+                    <> " is not a declared variant. Declared variants: "
+                    <> T.intercalate ", " variantPorts
+                    <> "."
+                )
+        Nothing ->
+          Left "A variant-emitting node must set the variant label (the WireValue port)."
+    Just (ExplicitWireValueSet _) ->
+      Left "A variant-emitting node must commit exactly one variant, not a WireValueSet."
+    Nothing ->
+      Left "A variant-emitting node must commit exactly one explicit variant WireValue."
 
 data ExplicitWireOutput
   = ExplicitWireValue !WireValue

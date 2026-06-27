@@ -137,7 +137,9 @@ spec = describe "Cortex.Wire.Pure" $ do
                     , wireInputPortRequired = False
                     }
             , wirePortsOutputs =
-                Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
+                Map.singleton
+                  "out"
+                  WireOutputPort {wireOutputPortContract = "Float", wireOutputPortExclusiveGroup = Nothing}
             }
         inputBundle =
           wireInputBundleFromStageInputs $
@@ -1217,7 +1219,9 @@ spec = describe "Cortex.Wire.Pure" $ do
                     )
                   ]
             , wirePortsOutputs =
-                Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
+                Map.singleton
+                  "out"
+                  WireOutputPort {wireOutputPortContract = "Float", wireOutputPortExclusiveGroup = Nothing}
             }
     validatePurePorts ports (Map.singleton "out" (num 1))
       `shouldBe` Left (PureInputPortRequiresLabel "Float_1" "Float")
@@ -1610,7 +1614,9 @@ scorePorts =
           , labeledJsonInput "weights" "WeightSet"
           ]
     , wirePortsOutputs =
-        Map.singleton "score" WireOutputPort {wireOutputPortContract = "ScoreSet"}
+        Map.singleton
+          "score"
+          WireOutputPort {wireOutputPortContract = "ScoreSet", wireOutputPortExclusiveGroup = Nothing}
     }
 
 multiOutputPorts :: WirePorts
@@ -1620,8 +1626,14 @@ multiOutputPorts =
         Map.singleton "evidence" (snd (labeledJsonInput "evidence" "EvidenceSet"))
     , wirePortsOutputs =
         Map.fromList
-          [ ("accepted", WireOutputPort {wireOutputPortContract = "AcceptedSet"})
-          , ("rejected", WireOutputPort {wireOutputPortContract = "RejectedSet"})
+          [
+            ( "accepted"
+            , WireOutputPort {wireOutputPortContract = "AcceptedSet", wireOutputPortExclusiveGroup = Nothing}
+            )
+          ,
+            ( "rejected"
+            , WireOutputPort {wireOutputPortContract = "RejectedSet", wireOutputPortExclusiveGroup = Nothing}
+            )
           ]
     }
 
@@ -1814,7 +1826,10 @@ builtinOutPorts :: WirePorts
 builtinOutPorts =
   WirePorts
     { wirePortsInputs = Map.empty
-    , wirePortsOutputs = Map.singleton "out" WireOutputPort {wireOutputPortContract = "Any"}
+    , wirePortsOutputs =
+        Map.singleton
+          "out"
+          WireOutputPort {wireOutputPortContract = "Any", wireOutputPortExclusiveGroup = Nothing}
     }
 
 numJson :: Scientific -> Aeson.Value

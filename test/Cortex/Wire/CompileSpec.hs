@@ -6472,7 +6472,7 @@ projectedExecutorPorts =
     , wirePortsOutputs =
         Map.singleton
           "out"
-          WireOutputPort {wireOutputPortContract = "PlannerOutput"}
+          WireOutputPort {wireOutputPortContract = "PlannerOutput", wireOutputPortExclusiveGroup = Nothing}
     }
 
 jsonContract :: T.Text -> WireContractSpec

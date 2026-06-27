@@ -138,6 +138,52 @@ spec = describe "Cortex.Wire runtime egress" $ do
     fmap (.wireValueContract) bundle.wireInputBundleValues
       `shouldBe` ["Score", "Score"]
 
+  describe "ADR 0062 variant output boundaries" $ do
+    it "accepts one labelled variant when two variants share a contract" $ do
+      let emitted =
+            Aeson.toJSON $
+              (mkWireValue "Score" WirePayloadJson (Just "classifier") (Aeson.Number 1))
+                { wireValuePort = Just "accepted"
+                }
+      result <-
+        requireRight $
+          wrapWireStageOutput (Just scoreRegistry) producer runId variantScorePorts emitted
+      wireValue <- requireAesonSuccess (Aeson.fromJSON result :: Aeson.Result WireValue)
+      wireValue.wireValuePort `shouldBe` Just "accepted"
+      wireValue.wireValueContract `shouldBe` "Score"
+
+    it "rejects more than one variant from a variant-emitting node (WireValueSet)" $ do
+      let set =
+            Aeson.toJSON $
+              WireValueSet
+                [ (mkWireValue "Score" WirePayloadJson (Just "classifier") (Aeson.Number 1))
+                    { wireValuePort = Just "accepted"
+                    }
+                , (mkWireValue "Score" WirePayloadJson (Just "classifier") (Aeson.Number 0))
+                    { wireValuePort = Just "rejected"
+                    }
+                ]
+      wrapWireStageOutput (Just scoreRegistry) producer runId variantScorePorts set
+        `shouldBeLeftContaining` "must commit exactly one variant, not a WireValueSet"
+
+    it "rejects a variant label the node does not declare" $ do
+      let emitted =
+            Aeson.toJSON $
+              (mkWireValue "Score" WirePayloadJson (Just "classifier") (Aeson.Number 1))
+                { wireValuePort = Just "maybe"
+                }
+      wrapWireStageOutput (Just scoreRegistry) producer runId variantScorePorts emitted
+        `shouldBeLeftContaining` "is not a declared variant"
+
+    it "rejects a node that mixes an exclusive group with an ordinary output" $ do
+      let emitted =
+            Aeson.toJSON $
+              (mkWireValue "Score" WirePayloadJson (Just "classifier") (Aeson.Number 1))
+                { wireValuePort = Just "ok"
+                }
+      wrapWireStageOutput (Just scoreRegistry) producer runId mixedVariantPorts emitted
+        `shouldBeLeftContaining` "must not mix an exclusive output group with ordinary outputs"
+
 producer :: NodeId
 producer = NodeId "classifier"
 
@@ -148,7 +194,7 @@ scorePorts :: WirePorts
 scorePorts =
   WirePorts
     { wirePortsInputs = Map.empty
-    , wirePortsOutputs = Map.singleton "score" (WireOutputPort "Score")
+    , wirePortsOutputs = Map.singleton "score" (WireOutputPort "Score" Nothing)
     }
 
 dualScorePorts :: WirePorts
@@ -157,8 +203,8 @@ dualScorePorts =
     { wirePortsInputs = Map.empty
     , wirePortsOutputs =
         Map.fromList
-          [ ("accepted", WireOutputPort "Score")
-          , ("rejected", WireOutputPort "Score")
+          [ ("accepted", WireOutputPort "Score" Nothing)
+          , ("rejected", WireOutputPort "Score" Nothing)
           ]
     }
 
@@ -166,7 +212,41 @@ textPorts :: WirePorts
 textPorts =
   WirePorts
     { wirePortsInputs = Map.empty
-    , wirePortsOutputs = Map.singleton "message" (WireOutputPort "Message")
+    , wirePortsOutputs = Map.singleton "message" (WireOutputPort "Message" Nothing)
+    }
+
+{- | An exclusive (sum) output group whose two variants share one contract; only
+well-formed because selection is by label, not contract (ADR 0062).
+-}
+variantScorePorts :: WirePorts
+variantScorePorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs =
+        Map.fromList
+          [
+            ( "accepted"
+            , WireOutputPort {wireOutputPortContract = "Score", wireOutputPortExclusiveGroup = Just 0}
+            )
+          ,
+            ( "rejected"
+            , WireOutputPort {wireOutputPortContract = "Score", wireOutputPortExclusiveGroup = Just 0}
+            )
+          ]
+    }
+
+{- | An invalid variant boundary: an exclusive group mixed with an ordinary output
+(ADR 0062 rejects "one selected variant plus side outputs").
+-}
+mixedVariantPorts :: WirePorts
+mixedVariantPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs =
+        Map.fromList
+          [ ("ok", WireOutputPort {wireOutputPortContract = "Score", wireOutputPortExclusiveGroup = Just 0})
+          , ("audit", WireOutputPort {wireOutputPortContract = "Other", wireOutputPortExclusiveGroup = Nothing})
+          ]
     }
 
 scoreRegistry :: WireContractRegistry

@@ -41,6 +41,7 @@ import Cortex.Wire.AST
   , WireInputPort (..)
   , WireOutputPort (..)
   , WirePorts (..)
+  , wireOrdinaryOutputPort
   )
 import Cortex.Wire.Contract (WireContractSpec (..))
 import Cortex.Wire.Executor
@@ -253,7 +254,7 @@ instance Toml.FromValue WireInputPort where
 instance Toml.FromValue WireOutputPort where
   fromValue =
     Toml.parseTableFromValue $
-      WireOutputPort
+      wireOrdinaryOutputPort
         <$> Toml.reqKey "contract"
 
 instance Toml.FromValue WireInputCardinality where

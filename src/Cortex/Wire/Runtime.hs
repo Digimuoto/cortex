@@ -143,7 +143,9 @@ wrapWireStageDefinition maybeRegistry ports stageDef =
         stageResult <- stageDef.sdAction unwrappedCtx
         case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId ports stageResult of
           Right wrappedResult -> pure wrappedResult
-          Left errText -> fail (T.unpack errText)
+          -- An output that fails contract/variant validation is a typed terminal
+          -- failure (ADR 0062), not an untyped stage exception.
+          Left errText -> pure (StageFail "executor_output_validation_failure" errText)
     }
 
 wrapWireStageResult

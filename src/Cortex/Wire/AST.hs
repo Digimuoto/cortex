@@ -20,6 +20,7 @@ module Cortex.Wire.AST
   , WireInputCardinality (..)
   , WireInputPort (..)
   , WireOutputPort (..)
+  , wireOrdinaryOutputPort
   , WirePorts (..)
   , defaultInputPortName
   , defaultOutputPortName
@@ -40,6 +41,7 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Numeric.Natural (Natural)
 
 import Cortex.Algebra.Graph (ValidationError (..))
 import Cortex.Pulse.Memory.Types (MemoryStrategy)
@@ -108,14 +110,25 @@ instance FromJSON WireInputPort where
 
 data WireOutputPort = WireOutputPort
   { wireOutputPortContract :: !Text
+  , wireOutputPortExclusiveGroup :: !(Maybe Natural)
+  {- ^ The exclusive (sum) output group this port belongs to, if any. Ports sharing
+  a group id are the variants of one @select@-able boundary (ADR 0062); 'Nothing'
+  is an ordinary product output.
+  -}
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
+
+-- | An ordinary (non-variant) output port: no exclusive group.
+wireOrdinaryOutputPort :: Text -> WireOutputPort
+wireOrdinaryOutputPort contract =
+  WireOutputPort {wireOutputPortContract = contract, wireOutputPortExclusiveGroup = Nothing}
 
 instance FromJSON WireOutputPort where
   parseJSON = Aeson.withObject "WireOutputPort" $ \obj ->
     WireOutputPort
       <$> obj Aeson..: "contract"
+      <*> obj Aeson..:? "exclusiveGroup"
 
 data WirePorts = WirePorts
   { wirePortsInputs :: !(Map Text WireInputPort)

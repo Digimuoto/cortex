@@ -666,7 +666,7 @@ outputOnlyAnalysisFragmentPort =
     , wirePortsOutputs =
         Map.singleton
           defaultOutputPortName
-          (WireOutputPort "AnalysisFragment")
+          (WireOutputPort "AnalysisFragment" Nothing)
     }
 
 mkLinearStagePlan
@@ -971,7 +971,7 @@ externalCallPorts :: WirePorts
 externalCallPorts =
   WirePorts
     { wirePortsInputs = Map.empty
-    , wirePortsOutputs = Map.fromList [("s01", WireOutputPort "MeasurementBit")]
+    , wirePortsOutputs = Map.fromList [("s01", WireOutputPort "MeasurementBit" Nothing)]
     }
 
 externalCallOutputs :: [(Text, Aeson.Value)]

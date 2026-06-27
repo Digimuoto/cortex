@@ -28,7 +28,7 @@ module Cortex.Wire.Contracts
 where
 
 import Control.Monad (void)
-import Data.Aeson (ToJSON (..), (.:), (.=))
+import Data.Aeson (ToJSON (..), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.Map.Strict (Map)
@@ -140,6 +140,7 @@ portsMetadataValue ports =
       Aeson.object
         [ "name" Aeson..= portName
         , "contract" Aeson..= portSpec.wireOutputPortContract
+        , "exclusiveGroup" Aeson..= portSpec.wireOutputPortExclusiveGroup
         ]
 
 wirePortsFromMetadataValue :: Aeson.Value -> Either Text WirePorts
@@ -173,7 +174,7 @@ parseInputMetadataEntry = Aeson.withObject "Wire input port metadata" $ \obj -> 
 parseOutputMetadataEntry :: Aeson.Value -> AesonTypes.Parser (Text, WireOutputPort)
 parseOutputMetadataEntry = Aeson.withObject "Wire output port metadata" $ \obj -> do
   portName <- obj .: "name"
-  portSpec <- WireOutputPort <$> obj .: "contract"
+  portSpec <- WireOutputPort <$> obj .: "contract" <*> obj .:? "exclusiveGroup"
   pure (portName, portSpec)
 
 validatePorts :: CircuitNodeRef -> WirePorts -> Either WireError WirePorts

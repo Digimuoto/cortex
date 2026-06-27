@@ -2365,9 +2365,12 @@ data ResolvedSelectArm = ResolvedSelectArm
   , selectArmResolvedExpr :: !Expr
   }
 
-{- | The mixed-boundary rejection below (exclusive sum plus ordinary exits) is
-reachable only through composition: a single node cannot declare a sum plus an
-extra output, the grammar forbids it.
+{- | The mixed-boundary rejection below rejects a @select(...)@ left-hand graph that
+is not a single exclusive group (an exclusive sum plus ordinary exits, or several
+groups). This is a select-boundary restriction, not a grammar one: the node grammar
+itself permits a sum group beside ordinary output clauses (see 'executorImplementation'
+and 'outputPort'). ADR 0062 makes the same single-exclusive-group rule the
+variant-emitting boundary.
 -}
 resolveExclusiveBoundary :: [BoundaryPort] -> Either WireCore.WireError (NonEmpty BoundaryPort)
 resolveExclusiveBoundary exits =
@@ -2915,6 +2918,7 @@ loweredPortsToWirePorts inputs outputs =
           [ ( port.lpInternalName
             , WireCore.WireOutputPort
                 { wireOutputPortContract = port.lpContract
+                , wireOutputPortExclusiveGroup = port.lpExclusiveGroup
                 }
             )
           | port <- outputs
@@ -3498,6 +3502,7 @@ taskWirePortsFromLowered ports =
           [ ( port.lpInternalName
             , WireCore.WireOutputPort
                 { wireOutputPortContract = port.lpContract
+                , wireOutputPortExclusiveGroup = port.lpExclusiveGroup
                 }
             )
           | port <- ports.lnpOutputs

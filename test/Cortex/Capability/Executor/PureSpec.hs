@@ -208,7 +208,9 @@ weightedPorts =
           , labeledFloatInput "authority_score"
           ]
     , wirePortsOutputs =
-        Map.singleton "out" WireOutputPort {wireOutputPortContract = "Float"}
+        Map.singleton
+          "out"
+          WireOutputPort {wireOutputPortContract = "Float", wireOutputPortExclusiveGroup = Nothing}
     }
 
 labeledFloatInput :: Text -> (Text, WireInputPort)
