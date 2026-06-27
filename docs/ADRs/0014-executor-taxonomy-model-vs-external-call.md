@@ -133,3 +133,92 @@ metadata. Wire is agnostic to which backend produced the registration. New backe
   registered executor names under this taxonomy.
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md) — executors are
   dispatched here.
+
+## Amendment - Executor Side-Effect Class Lattice and Admission-Projection Digest Identity (2026-06-27, issue #304)
+
+**Status: proposed.** Append-only amendment under GitHub #304. It does not alter the two-kind
+decision above; it names a concrete realization of the **side-effect class** metadata axis this
+ADR's Obligations already deferred ("Document the cross-cutting metadata axes (determinism, replay
+safety, side-effect class) as a distinct reference surface").
+
+### Context
+
+The original decision keeps determinism, replay-safety, and side-effect class as metadata axes that
+cross-cut the executor kind, and its Obligations defer documenting the side-effect axis to a later
+reference surface. That axis has since materialized in code as a concrete four-valued token, and ADR
+0053's admission projection folds it into the projection content digest — yet no ADR governs its
+values, its meaning, or the fact that it now participates in executor identity. ADR 0053 names
+"effect and side-effect metadata" only generically; the concrete vocabulary and its digest role were
+undocumented.
+
+Grounding (code read for this amendment):
+
+- `WireExecutorEffect` (`src/Cortex/Wire/Executor.hs`) is a four-constructor sum declared in the
+  order `WireExecutorPure`, `WireExecutorModel`, `WireExecutorHostEffect`, `WireExecutorImpure`. It
+  serializes to the tokens `pure` / `model` / `host_effect` / `impure` (`effectText` / `parseEffect`
+  in `src/Cortex/Capability/Catalog/AdmissionProjection.hs`; case-folding TOML decode, with the
+  `host-effect` / `hosteffect` aliases, in `src/Cortex/Wire/Package/Manifest.hs`).
+- The token is a defining field of the admission projection (`apEffect`) and is included verbatim in
+  the canonical tuple that `admissionProjectionDigest` hashes
+  (`src/Cortex/Capability/Catalog/AdmissionProjection.hs`). Per ADR 0053 the admission-projection
+  content digest is interface-level executor identity: it is constrained by the registry invariant
+  that any two manifests sharing one `(executor id, projection version)` must agree on the digest,
+  and it is a required input to ADR 0053's resume compatibility predicate. The effect class
+  therefore participates in run identity, not merely observability.
+- The axis is **declared-only** today. `WireExecutorEffect` derives only `(Eq, Show, Generic)` — no
+  `Ord` — and no admission-, binding-, or dispatch-time code compares effect classes or rejects on
+  them (the effect constructors never reach `src/Cortex/Pulse`). Executors declare their class
+  (`executorSpecEffect`, e.g. `WireExecutorPure` for pure executors in
+  `src/Cortex/Capability/Executor/Pure.hs`, `WireExecutorHostEffect` for the Std host surface in
+  `src/Cortex/Wire/Std.hs`), and the class rides the projection and digest, but no policy keys off
+  it yet.
+
+### Decision
+
+Record the executor **side-effect class** axis flagged by this ADR as a fixed four-valued lattice,
+ascending in side-effect strength in the order the constructors are declared:
+
+`pure ⊑ model ⊑ host_effect ⊑ impure`
+
+- `pure` — no observable effect; output is a function of declared inputs and config.
+- `model` — model-mediated generation (the `ModelExecutor` kind of the original decision):
+  stochastic internally, bounded at the contract boundary.
+- `host_effect` — a registered, classified host effect (the common `ExternalCallExecutor` case).
+- `impure` — unclassified / arbitrary effect; the conservative top of the lattice.
+
+The class is a per-executor **declared** property carried on the admission projection, and its token
+is folded verbatim into the admission-projection content digest. Consequently the class is part of
+executor interface identity: two manifests sharing one `(executor id, projection version)` must
+agree on it, and a change of class changes the digest the resume compatibility predicate consults.
+This amendment governs the axis vocabulary and its digest-identity role **only**. The lattice
+ordering is **not yet an enforced relation** — there is no `Ord` instance and no
+admission/binding/dispatch gate keyed off the class; policy enforcement (refusing a `pure`-declared
+executor that binds a host-effecting authority, constraining resume across a class downgrade,
+gas/retry rules keyed off effect) remains future work. The single decision here is that the
+side-effect class is _identity-bearing and declared_, not yet _enforced_.
+
+### Obligations
+
+- Document the four classes and the `pure ⊑ model ⊑ host_effect ⊑ impure` ordering on the executor
+  reference surface this ADR's Obligations already require, alongside the determinism and
+  replay-safety axes.
+- Before any policy is written against the ordering, decide and record in a follow-up ADR whether
+  the lattice is enforced at admission, at binding, or at dispatch, and which error class an
+  ordering violation raises — the axis is identity-only today.
+- Add a digest regression asserting that a change of `apEffect` changes `admissionProjectionDigest`;
+  the current `CatalogSpec` digest-sensitivity case mutates the await-strategy field, so the effect
+  token's contribution is structurally present in the canonical tuple but not yet directly tested.
+
+### Traceability
+
+- Feature keys: `capability.effect_class_lattice`
+- Public surface: `Cortex.Capability`, `Cortex.Wire`,
+  [Wire Executors and Alphabet reference](../Reference/Wire/executors-and-alphabet.md)
+- Implementation: `src/Cortex/Wire/Executor.hs` (the `WireExecutorEffect` four-value sum),
+  `src/Cortex/Capability/Catalog/AdmissionProjection.hs` (`apEffect`, `effectText`/`parseEffect`,
+  and the inclusion of `effectText (apEffect p)` in `admissionProjectionDigest`),
+  `src/Cortex/Wire/Package/Manifest.hs` (manifest TOML decode of the effect token)
+- Tests: `test/Cortex/Capability/CatalogSpec.hs` (admission-projection JSON round-trip and digest
+  determinism/sensitivity; does not yet isolate the effect field)
+- Theory/proof: none
+- Tracking: GitHub #304

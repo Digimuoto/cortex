@@ -541,3 +541,15 @@ host-action endpoint is catalog metadata.
 - [Wire Executors and Alphabet Reference](../Reference/Wire/executors-and-alphabet.md)
 - [Pulse Host-Action Contract](../Reference/Pulse/host-actions.md)
 - [Pulse Types Reference](../Reference/Pulse/types.md)
+
+## Amendment - Effect-class digest identity (cross-reference) (2026-06-27, issue #304)
+
+**Status: proposed. Pointer only — no decision is made or changed here.** The admission projection's
+`effect` field (the four-valued `WireExecutorEffect`, `src/Cortex/Wire/Executor.hs`) that this ADR
+folds into the admission-projection content digest (`admissionProjectionDigest`,
+`src/Cortex/Capability/Catalog/AdmissionProjection.hs`) is the executor **side-effect class
+lattice**. Its vocabulary (`pure ⊑ model ⊑ host_effect ⊑ impure`), its declared-only status, and the
+fact that it participates in interface identity through the projection content digest are governed
+by the amendment to [ADR 0014](./0014-executor-taxonomy-model-vs-external-call.md) under feature key
+`capability.effect_class_lattice`. No Traceability block is added here — it lives in the 0014
+amendment.
