@@ -26,11 +26,15 @@ here.
 | Active roadmap epic            | [Roadmap/Epics/](Roadmap/Epics/)           | Active while retained                 | No     |
 | Completed initiative           | [Roadmap/Completed/](Roadmap/Completed/)   | Historical, retained selectively      | No     |
 | Archived idea                  | [Roadmap/Archive/](Roadmap/Archive/)       | Historical, retained selectively      | No     |
-| Paper manuscript and figures   | [Publications/paper-N-\*/](Publications/)  | Published-once                        | No     |
+| Paper manuscript and figures   | [Publications/Paper-N-\*/](Publications/)  | Published-once                        | No     |
 | Paper notes and ideas          | [Publications/Notes/](Publications/Notes/) | Working                               | No     |
 | Research or synthesis memo     | [Research-notes/{scope}/](Research-notes/) | Historical, retained selectively      | Yes    |
 | Controlled experiment          | [Experiments/{scope}/](Experiments/)       | Epic-controlled, retained selectively | Yes    |
 | Template                       | [Templates/](Templates/)                   | Long-term canon                       | No     |
+
+Template coverage for every kind is maintained in
+[Templates/index.md](Templates/index.md#template-coverage). A kind may reuse a generic template or
+record that no dedicated template is needed; absence from that table is a documentation-canon bug.
 
 ## By Question
 

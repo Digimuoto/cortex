@@ -112,15 +112,21 @@ governed by
 
 Docs are classified on two axes:
 
-|                         | Stable canon                                     | Dated artifacts   |
-| ----------------------- | ------------------------------------------------ | ----------------- |
-| **Canonical authority** | `Usage/`, `Architecture/`, `Reference/`, `ADRs/` | none              |
-| **Project working**     | `Roadmap/Epics/`, `Roadmap/Plans/`               | `Research-notes/` |
-| **Historical**          | `Roadmap/Completed/`, `Roadmap/Archive/`         | `Experiments/`    |
+| Classification      | Stable canon                                                     | Dated artifacts           |
+| ------------------- | ---------------------------------------------------------------- | ------------------------- |
+| Canonical authority | `Usage/`, `Architecture/`, `Reference/`, `Style.md`, `ADRs/`     | none                      |
+| Project working     | `Roadmap/Epics/`, `Roadmap/Plans/`                               | `Research-notes/{scope}/` |
+| Historical          | `Roadmap/Completed/`, `Roadmap/Archive/`                         | `Experiments/{scope}/`    |
+| Cross-cutting canon | `Templates/`, `index.md`, `map.md`, `glossary.md`, `taxonomy.md` | none                      |
+| Consumer-specific   | `Consumers/{consumer}.md`, `Consumers/Logos/`                    | none                      |
+| Publication working | `Publications/Paper-N-*/`, `Publications/Notes/`                 | none                      |
 
-Cross-cutting canon: `Templates/`, `index.md`, `map.md`, `glossary.md`, `taxonomy.md`
-Consumer-specific: `Consumers/{consumer}.md`, or `Consumers/{consumer}/` for a larger public binding
-Papers: `Publications/paper-N-*/`
+Every home in [map.md](map.md#by-kind) must appear above as a backticked taxonomy path. Missing
+coverage is a documentation-canon bug caught by `scripts/docs-lint`.
+
+Per-kind authoring shape is tracked in [Templates/index.md](Templates/index.md#template-coverage).
+That page accounts for every kind listed in [map.md](map.md#by-kind), including kinds that
+intentionally reuse a generic template or have no dedicated template.
 
 ## Related
 

@@ -49,11 +49,17 @@ STATUS_VALUES = {
     "superseded",
 }
 
+# ADR lifecycle status (ADR 0001 §5, ADR 0063 amendment): the narrower per-kind enum, enforced on
+# ADR frontmatter and on the feature-status matrix so the two can never drift. The global
+# STATUS_VALUES set above stays broader for non-ADR doc kinds.
+ADR_STATUS = {"proposed", "accepted", "superseded"}
+
 # --- feature-status matrix (ADR 0063) ---------------------------------------
 FEATURE_STATUS = DOCS / "Reference" / "feature-status.md"
+TEMPLATES_INDEX = DOCS / "Templates" / "index.md"
 ADRS = DOCS / "ADRs"
 
-FEATURE_ADR_STATUS = {"proposed", "accepted", "superseded", "deprecated"}
+FEATURE_ADR_STATUS = ADR_STATUS
 FEATURE_IMPL_STATUS = {"planned", "partial", "implemented", "verified", "retired"}
 FEATURE_KEY_PREFIXES = {
     "capability",
@@ -105,7 +111,10 @@ def iter_docs() -> list[Path]:
     paths: list[Path] = []
     for pattern in ("*.md", "*.mmd"):
         for path in DOCS.rglob(pattern):
-            if "Templates" in path.relative_to(DOCS).parts:
+            # Template files carry placeholder frontmatter and YYYY-MM-DD dates that intentionally
+            # violate the lint. Only Templates/index.md — the doc-kind coverage record — is linted.
+            parts = path.relative_to(DOCS).parts
+            if "Templates" in parts and path.name != "index.md":
                 continue
             paths.append(path)
     return sorted(paths)
@@ -268,6 +277,8 @@ def check_frontmatter(document: Document, errors: list[str]) -> None:
     status = fm.get("status")
     if isinstance(status, str) and status not in STATUS_VALUES:
         add(errors, path, f"unknown status {status!r}", 1)
+    if is_adr(path) and isinstance(status, str) and status not in ADR_STATUS:
+        add(errors, path, f"ADR status must be one of {sorted(ADR_STATUS)}, got {status!r}", 1)
 
     date = parse_date(fm.get("date"))
     updated = parse_date(fm.get("updated"))
@@ -780,6 +791,151 @@ def check_feature_status(errors: list[str]) -> None:
             add(errors, FEATURE_STATUS, f"ADR(s) {sorted(stray)} declare {key!r} but the matrix binds it to {sorted(governed[key])}")
 
 
+def section_text(path: Path, heading: str, errors: list[str]) -> str | None:
+    """Body text of a `## <heading>` section."""
+    if not path.exists():
+        add(errors, path, f"{heading!r} source not found")
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == f"## {heading}"), None)
+    if start is None:
+        add(errors, path, f"missing '## {heading}' section")
+        return None
+
+    section_lines: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("## "):
+            break
+        section_lines.append(line)
+    return "\n".join(section_lines)
+
+
+def section_table_rows(path: Path, heading: str, errors: list[str]) -> list[list[str]] | None:
+    """Body rows of the first Markdown table under a `## <heading>` section.
+
+    Returns None (and records an error) when the file, the section, or the table is missing, so
+    callers can distinguish "could not read" from "read, found nothing".
+    """
+    if not path.exists():
+        add(errors, path, f"{heading!r} source not found")
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == f"## {heading}"), None)
+    if start is None:
+        add(errors, path, f"missing '## {heading}' section")
+        return None
+
+    in_fence = False
+    index = start + 1
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("```"):
+            in_fence = not in_fence
+            index += 1
+            continue
+        if in_fence:
+            index += 1
+            continue
+        if line.startswith("## "):
+            break
+
+        stripped = line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            index += 1
+            continue
+        sep_stripped = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        sep_cells = [c.strip() for c in split_table_row(sep_stripped)] if sep_stripped.startswith("|") else []
+        if not sep_cells or not all(SEPARATOR_CELL.match(cell) for cell in sep_cells):
+            index += 1
+            continue
+
+        rows: list[list[str]] = []
+        body = index + 2  # first row after header + separator
+        while body < len(lines):
+            body_stripped = lines[body].strip()
+            if not (body_stripped.startswith("|") and body_stripped.endswith("|")):
+                break
+            cells = [cell.strip() for cell in split_table_row(body_stripped)]
+            if cells and all(SEPARATOR_CELL.match(cell) for cell in cells):
+                break
+            if cells:
+                rows.append(cells)
+            body += 1
+        return rows
+
+    add(errors, path, f"no table found under '## {heading}'")
+    return None
+
+
+def section_table_first_column(path: Path, heading: str, errors: list[str]) -> list[str] | None:
+    rows = section_table_rows(path, heading, errors)
+    if rows is None:
+        return None
+    return [row[0] for row in rows if row]
+
+
+def markdown_link_label(cell: str) -> str:
+    """Return the displayed Markdown-link label when a table cell is a single link."""
+    match = re.fullmatch(r"\[([^\]]+)\]\([^)]*\)", cell.strip())
+    if match:
+        return match.group(1).replace(r"\*", "*")
+    return cell.strip()
+
+
+def check_taxonomy_homes(errors: list[str]) -> None:
+    """Keep taxonomy path coverage synced with map.md's displayed homes."""
+    map_path = DOCS / "map.md"
+    taxonomy_path = DOCS / "taxonomy.md"
+    rows = section_table_rows(map_path, "By Kind", errors)
+    taxonomy = section_text(taxonomy_path, "Doc-kind taxonomy", errors)
+    if rows is None or taxonomy is None:
+        return
+
+    homes = []
+    for row in rows:
+        if len(row) < 2:
+            continue
+        homes.append(markdown_link_label(row[1]))
+
+    for home in sorted(set(homes)):
+        if f"`{home}`" not in taxonomy:
+            add(errors, taxonomy_path, f"map.md home {home!r} is missing from '## Doc-kind taxonomy'")
+
+    seen: set[str] = set()
+    for home in homes:
+        if home in seen:
+            add(errors, map_path, f"duplicate map.md home {home!r}")
+        seen.add(home)
+
+
+def check_doc_kinds(errors: list[str]) -> None:
+    """Keep the doc-kind registry synced (ADR 0001 doc-kind contract).
+
+    map.md '## By Kind' is the canonical list of doc kinds; Templates/index.md '## Template
+    Coverage' must account for exactly the same set — no missing kind, no extra kind, no duplicate.
+    This is the mechanical form of map.md's "absence from that table is a documentation-canon bug".
+    """
+    map_path = DOCS / "map.md"
+    by_kind = section_table_first_column(map_path, "By Kind", errors)
+    coverage = section_table_first_column(TEMPLATES_INDEX, "Template Coverage", errors)
+    if by_kind is None or coverage is None:
+        return
+
+    map_kinds = set(by_kind)
+    coverage_kinds = set(coverage)
+    for kind in sorted(map_kinds - coverage_kinds):
+        add(errors, TEMPLATES_INDEX, f"map.md doc kind {kind!r} has no '## Template Coverage' row")
+    for kind in sorted(coverage_kinds - map_kinds):
+        add(errors, map_path, f"Template Coverage kind {kind!r} is absent from map.md '## By Kind'")
+
+    for source, names in ((map_path, by_kind), (TEMPLATES_INDEX, coverage)):
+        seen: set[str] = set()
+        for name in names:
+            if name in seen:
+                add(errors, source, f"duplicate doc kind {name!r}")
+            seen.add(name)
+
+
 def main() -> int:
     if not DOCS.exists():
         print("docs-lint: docs/ not found", file=sys.stderr)
@@ -804,6 +960,8 @@ def main() -> int:
         check_markdown_links(document, errors)
 
     check_feature_status(errors)
+    check_doc_kinds(errors)
+    check_taxonomy_homes(errors)
 
     if errors:
         print("docs-lint failed:", file=sys.stderr)

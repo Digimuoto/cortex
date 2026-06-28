@@ -106,7 +106,7 @@ feature-status matrix cite durable artifacts only.
 
 Never collapse these into one field:
 
-- **ADR status** — `proposed` | `accepted` | `superseded` | `deprecated` (the decision).
+- **ADR status** — `proposed` | `accepted` | `superseded` (the decision; see Amendments).
 - **Implementation status** — `planned` | `partial` | `implemented` | `verified` | `retired` (the
   code).
 - **Proof status** — owned by `proof-status.md`. The matrix's `Theory` cell links to the
@@ -197,8 +197,8 @@ CI.
   not silently skipped.
 - **Feature-key grammar and uniqueness** — keys are lowercase-dotted with a known subsystem prefix
   (Decision rule 2), and no key has more than one row.
-- **Status enums** — `ADR status` is one of `proposed`/`accepted`/`superseded`/`deprecated` and
-  `Impl status` is one of `planned`/`partial`/`implemented`/`verified`/`retired` (Decision rule 4).
+- **Status enums** — `ADR status` is one of `proposed`/`accepted`/`superseded` and `Impl status` is
+  one of `planned`/`partial`/`implemented`/`verified`/`retired` (Decision rule 4).
 - **Governing-ADR resolution** — every ADR number in the `Governing ADR` cell, including the
   `NNNN (amend)` and `NNNN / NNNN (amend)` forms, resolves to an ADR file.
 - **Evidence-cell shape** — the `Tests`, `Theory`, and `Reference` cells are either the empty marker
@@ -229,3 +229,15 @@ form — a row with no declaration, or a declaration with no row.
 Accepted ADRs and the feature-status matrix do not carry tracker state. Proposed ADRs may keep
 temporary planning links in a final `## Tracking` section under ADR 0001, but that section is
 deleted before acceptance.
+
+## Amendments
+
+- **ADR status enum narrowed to three values.** The original Decision rule 4 listed `deprecated` as
+  a fourth ADR status. The ADR lifecycle is owned by ADR 0001, which defines exactly `proposed`,
+  `accepted`, and `superseded`; a decision that is withdrawn or replaced is recorded with
+  `superseded` (plus a `superseded_by` forward-pointer), so `deprecated` had no distinct lifecycle
+  meaning and is retired. `ADR status` is now `proposed` | `accepted` | `superseded` across the
+  template, the ADR index, this contract, and the `feature-status.md` legend, and
+  `scripts/docs-lint` enforces the three-value set on both ADR frontmatter and the feature-status
+  matrix from one shared definition. (`deprecated` remains available as a general document status
+  for non-ADR doc kinds.)

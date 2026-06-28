@@ -10,8 +10,9 @@ sidebar:
 
 # Architecture Decision Records
 
-Each ADR captures one committed design decision. Files use `NNNN-kebab-slug.md` naming. Status
-values: `proposed`, `accepted`, `superseded`, `deprecated`.
+Each ADR captures one committed design decision. Files use `NNNN-kebab-slug.md` naming. ADR
+lifecycle status values are `proposed`, `accepted`, and `superseded`. ADR 0001 governs the
+documentation lifecycle; ADR 0063 governs feature traceability and feature-status joins.
 
 ## Current ADRs
 
@@ -182,6 +183,9 @@ Use the [template](../Templates/adr.md). Key discipline:
 - Proposed ADRs may end with a temporary `## Tracking` section for issue/PR planning state. Delete
   that section before moving the ADR to `accepted`; accepted ADRs should cite durable artifacts, not
   issue-tracker archaeology.
+- Before accepting an ADR, reconcile the living docs that should synthesize it: Architecture,
+  Reference, Usage, feature-status/proof-status when applicable, and consumer docs if the decision
+  changes a downstream-facing boundary.
 - An accepted ADR is canon — supersede it with a new numbered ADR rather than editing the original,
   except to update `status` and add a forward-pointer.
 

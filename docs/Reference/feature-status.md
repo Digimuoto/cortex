@@ -35,7 +35,7 @@ validates that every evidence link resolves.
 
 | Dimension      | Values                                                                         |
 | -------------- | ------------------------------------------------------------------------------ |
-| ADR status     | `proposed` · `accepted` · `superseded` · `deprecated`                          |
+| ADR status     | `proposed` · `accepted` · `superseded`                                         |
 | Implementation | `planned` · `partial` · `implemented` · `verified` · `retired`                 |
 | Proof          | see [`proof-status.md`](proof-status.md) (`proven`/`hooked`/`tested`/`open`/…) |
 

@@ -4,7 +4,7 @@ description: "{One-sentence description of the decision.}"
 sidebar:
   label: "NNNN. {Short label}"
   order: N
-status: proposed   # proposed | accepted | superseded | deprecated
+status: proposed   # proposed | accepted | superseded
 date: YYYY-MM-DD
 superseded_by: null   # if superseded, path to the replacing ADR
 related:
@@ -15,7 +15,7 @@ related:
 
 ## Status
 
-{Proposed | Accepted | Superseded | Deprecated} — {one sentence with rationale for the status}.
+{Proposed | Accepted | Superseded} — {one sentence with rationale for the status}.
 
 ## Context
 
