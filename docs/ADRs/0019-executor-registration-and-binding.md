@@ -17,7 +17,6 @@ related:
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0018-canonical-haskell-module-tree.md
-  - "GitHub #65"
 ---
 
 # ADR 0019 — Executor Registration and Binding
@@ -136,11 +135,31 @@ Costs and risks:
 - Tests: `test/Cortex/Capability/Executor/PureSpec.hs` (builds an `executorProjectionRegistry` from
   a Capability `ExecutorSpec` and binds the projected pure executor to a Pulse stage)
 - Theory/proof: none
-- Tracking: GitHub #65
 
 ## Related
 
 - [ADR 0017 — Wire Executor and Port Catalog Boundary](./0017-wire-executor-and-port-catalog-boundary.md)
 - [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
 - [ADR 0018 — Canonical Haskell Module Tree](./0018-canonical-haskell-module-tree.md)
-- GitHub #65
+
+## Amendment - Author-declared executor port policy (2026-06-28)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+Strict projection mode has two executor port policies. `WireExecutorFixedPorts` keeps the original
+exact-port-equality rule: the source-declared node ports must match the registered projection.
+`WireExecutorAuthorDeclaredPorts` is the narrow escape hatch for executors whose port shape is
+defined by the Wire authoring form itself, such as CorePure output equations or standard effect
+helpers with source-declared outputs.
+
+The escape hatch does not make an executor permissive or grant runtime authority. The executor must
+still be registered in the projection registry, and host execution still goes through Capability and
+Pulse binding. The relaxation only says that Cortex checks executor identity and leaves exact
+port-shape soundness to the source form and its compiler checks rather than requiring equality with
+a fixed catalog projection.
+
+Traceability: `WireExecutorPortPolicy`, `WireExecutorFixedPorts`, and
+`WireExecutorAuthorDeclaredPorts` live in `src/Cortex/Wire/Executor.hs`; strict-mode validation is
+in `src/Cortex/Wire/Compile.hs`; coverage includes the strict-projection author-declared-port case
+in `test/Cortex/Wire/CompileSpec.hs`.

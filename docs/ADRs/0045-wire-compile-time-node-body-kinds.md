@@ -224,7 +224,6 @@ semantics.
   `test/Cortex/Wire/FormatSpec.hs`
 - Theory/proof: [Derived-form elaboration determinism row](../Reference/proof-status.md)
   (kind-instantiated frontier witnesses are pinned by their child labels)
-- Tracking: GitHub #304
 
 ## Related
 

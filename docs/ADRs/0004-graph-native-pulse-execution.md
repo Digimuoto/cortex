@@ -87,7 +87,6 @@ not over "current stage index plus next stage."
 - Theory/proof:
   [Graph safety / Graph quotient rows — `proof-status.md`](../Reference/proof-status.md) (Lean
   `theory/Cortex/Pulse/DAG.lean`, `theory/Cortex/Graph/Safety.lean`)
-- Tracking: GitHub #304
 
 ## Related
 

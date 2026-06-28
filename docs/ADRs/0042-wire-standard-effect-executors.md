@@ -23,8 +23,6 @@ related:
   - docs/ADRs/0041-wire-cli-command-surface.md
   - docs/ADRs/0043-pulse-in-memory-runner.md
   - docs/ADRs/0044-wire-namespace-use-imports.md
-  - "GitHub #141"
-  - "GitHub #142"
 ---
 
 # ADR 0042 - Wire Standard Effect Executors
@@ -183,7 +181,6 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 - Tests: `test/Cortex/Wire/CompileSpec.hs` (lowers `use std.io.{...}` aliases to canonical executor
   and contract ids, enforces source-scope admission, and rejects bad source/sink port shapes)
 - Theory/proof: none
-- Tracking: GitHub #141
 
 ## Related
 
@@ -200,5 +197,3 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 - [ADR 0041 - Wire CLI Command Surface](0041-wire-cli-command-surface.md)
 - [ADR 0043 - Pulse In-Memory Runner](0043-pulse-in-memory-runner.md)
 - [ADR 0044 - Wire Namespace Use Imports](0044-wire-namespace-use-imports.md)
-- GitHub #141
-- GitHub #142

@@ -154,7 +154,6 @@ semantic result.
   `WireDuplicateLetBinding`, `WireParseError`), `test/Cortex/Wire/PureSpec.hs` (`PureEvalError`),
   `test/Cortex/Capability/CatalogSpec.hs` (`ReplayClass`)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

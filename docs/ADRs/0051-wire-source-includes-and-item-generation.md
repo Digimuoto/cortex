@@ -83,4 +83,3 @@ only in the same binding positions as `make(N, K)`.
   `test/Cortex/Wire/ParserSpec.hs` (`makeEach` expansion and static-value payload rejection)
 - Theory/proof: [Derived-form elaboration determinism row](../Reference/proof-status.md)
   (`make`/`makeEach` admit one canonical object per source)
-- Tracking: GitHub #304

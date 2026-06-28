@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0005-budgeted-rewrite-admission-and-materialization.md
   - docs/ADRs/0009-rewrite-provenance-and-topology-integrity.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #304"
 ---
 
 # ADR 0069 — Haskell-Lean Rewrite Planner Correspondence and Drift Witness
@@ -143,7 +142,6 @@ the equations the Lean contract names, so divergence "fails loudly in tests or r
 - Implementation: `src/Cortex/Pulse/Rewrite.hs`
 - Tests: `test/Cortex/Pulse/GraphRewriteSpec.hs`
 - Theory/proof: [Rewrite admission correspondence — `proof-status.md`](../Reference/proof-status.md)
-- Tracking: GitHub #304
 
 ## Related
 
@@ -155,4 +153,3 @@ the equations the Lean contract names, so divergence "fails loudly in tests or r
 - [Cortex Rewrites Reference](../Reference/rewrites.md)
 - [Cortex Proof Status](../Reference/proof-status.md)
 - [Cortex Feature Status](../Reference/feature-status.md)
-- GitHub #304

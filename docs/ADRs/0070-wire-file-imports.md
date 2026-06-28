@@ -16,7 +16,6 @@ related:
   - docs/Reference/Wire/grammar.md
   - docs/ADRs/0044-wire-namespace-use-imports.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
-  - "GitHub #304"
 ---
 
 # ADR 0070 - Wire File Imports, File-Return Selection and Module Closure Semantics
@@ -184,7 +183,6 @@ message.
   `src/Cortex/Wire/Include.hs`, `src/Cortex/Wire/Syntax.hs`
 - Tests: `test/Cortex/Wire/ImportSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -193,4 +191,3 @@ message.
 - [Wire grammar](../Reference/Wire/grammar.md)
 - [ADR 0044 - Wire Namespace Use Imports](0044-wire-namespace-use-imports.md)
 - [ADR 0010 - Wire Closed Authority and Three-Layer Stack](0010-wire-closed-authority-and-three-layer-stack.md)
-- GitHub #304

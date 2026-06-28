@@ -298,7 +298,6 @@ future changes must preserve.
 - Theory/proof: [Node boundary normal form row](../Reference/proof-status.md#matrix) (Lean
   `theory/Cortex/Wire/NodeBoundary.lean` — `NodeBoundaryNormalForm`,
   `corePure_evalOutputs_eq_egress_after_body_after_ingress`)
-- Tracking: GitHub #304
 
 ## Related
 

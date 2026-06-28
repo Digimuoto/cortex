@@ -246,7 +246,7 @@ The implemented builtin environment is closed:
 | `toJson`   | 1     | Canonical compact JSON serialization for structured values.          |
 | `fromJson` | 1     | Parses a JSON string into a structured CorePure value.               |
 
-List, search, string, record, and bounded-iteration builtins (issue #295 batch 1):
+List, search, string, record, and bounded-iteration builtins:
 
 | Builtin       | Arity | Meaning                                                             |
 | ------------- | ----- | ------------------------------------------------------------------- |

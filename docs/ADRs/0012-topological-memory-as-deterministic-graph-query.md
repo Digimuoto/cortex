@@ -84,14 +84,13 @@ a node needs broader settled context.
   `src/Cortex/Pulse/Memory/Types.hs`, `src/Cortex/Pulse/Memory/Walk.hs`
 - Tests: `test/Cortex/Pulse/MemorySpec.hs`, `test/Cortex/Pulse/MemoryIntegrationSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)
 - [../Reference/Wire/configured-executors-and-execution-boundary.md](../Reference/Wire/configured-executors-and-execution-boundary.md)
 
-## Amendment — Composite Memory Scoring and the DAG Random-Walk Influence Primitive (2026-06-27, issue #304)
+## Amendment — Composite Memory Scoring and the DAG Random-Walk Influence Primitive (2026-06-27)
 
 _Proposed amendment. Append-only extension of the accepted decision above; the original decision
 text is unchanged. The base decision (memory is a deterministic graph query at stage entry) remains
@@ -119,10 +118,10 @@ one topological pass (O(|V| + |E|), no convergence loop, no `ε`), and it return
 cyclic input. Because it lives in `Cortex.Algebra` over any `Ord a`, it carries no memory or Pulse
 semantics of its own.
 
-This raises a scope question (issue #304, binding question B11): is the _exact_ scoring model a
-ratified substrate contract, or a substrate-incidental default a downstream reasoning layer may
-re-tune? This amendment answers only what the code lets it answer honestly, and leaves B11 open by
-separating the two layers below.
+This raises a scope question: is the _exact_ scoring model a ratified substrate contract, or a
+substrate-incidental default a downstream reasoning layer may re-tune? This amendment answers only
+what the code lets it answer honestly, and leaves the tuning question open by separating the two
+layers below.
 
 ### Decision
 
@@ -182,4 +181,3 @@ tunable parts.
   `src/Cortex/Pulse/Memory/Query.hs`, `src/Cortex/Pulse/Memory/Types.hs`
 - Tests: `test/Cortex/Algebra/GraphSpec.hs`, `test/Cortex/Pulse/MemorySpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304

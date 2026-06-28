@@ -27,20 +27,18 @@ related:
   - docs/Reference/Pulse/signals.md
   - docs/Reference/Pulse/schema.md
   - docs/Consumers/Quantum.md
-  - "GitHub #269"
 ---
 
 # ADR 0059 - Durable External-Call Frontiers on Pulse
 
 ## Status
 
-Proposed. Motivated by the QEC repetition-code workbench (#269), whose quantum circuits today run
-through a standalone Python bridge under the local `wire run` interpreter, with Pulse uninvolved.
-This ADR records how such a Wire-authored external-backend graph should instead run as a durable
-Pulse run, and pins the frontier projection plus durable execution contract the existing executor
-ADRs leave open. It does not change the registration model (ADR 0019), the executor taxonomy (ADR
-0014), or the host-owned authority boundary (ADR 0003); it composes them and adds frontier
-projection.
+Proposed. Motivated by the QEC repetition-code workbench, whose quantum circuits today run through a
+standalone Python bridge under the local `wire run` interpreter, with Pulse uninvolved. This ADR
+records how such a Wire-authored external-backend graph should instead run as a durable Pulse run,
+and pins the frontier projection plus durable execution contract the existing executor ADRs leave
+open. It does not change the registration model (ADR 0019), the executor taxonomy (ADR 0014), or the
+host-owned authority boundary (ADR 0003); it composes them and adds frontier projection.
 
 ## Context
 
@@ -84,7 +82,7 @@ Despite all of this, no decision says how a Wire **subgraph** bound to an extern
    long-running, externally stateful, and non-idempotent unless guarded by a provider or host
    idempotency key. The first needs no durability; the second is a textbook durable-task shape.
 
-Because neither is pinned, external backends sit outside Pulse entirely (the #269 bridge),
+Because neither is pinned, external backends sit outside Pulse entirely on the standalone bridge,
 forfeiting durable scheduling, recovery, observability, and the await primitive — exactly the
 capabilities the hardware path most needs.
 
@@ -479,7 +477,7 @@ resolves to ADR 0056's witnessed-neutral rule.)
 
 ## First Consumer
 
-The QEC repetition-code workbench (#269) is the prototype, and it validates the boundary on the
+The QEC repetition-code workbench is the prototype, and it validates the boundary on the
 `wire run` + bridge path. Hardware execution itself already exists through the standalone OpenQASM
 bridge(s) — it is **not** the future work. The remaining work this ADR scopes is the **Pulse-durable
 frontier integration**: the realize-node contraction, the await strategy, and submit/park/resume
@@ -502,4 +500,7 @@ for this ADR, per the "ADR after the prototype clarifies the boundary" sequencin
 - Theory/proof: none (the `realize_preserves_portLinear` discharge is an open obligation tracked in
   `theory/README.md`; the `external-call:` settlement family is not yet modelled in
   `formal/RunTerminalSignal.tla`)
-- Tracking: GitHub #269
+
+## Tracking
+
+- #269 — QEC repetition-code workbench and durable frontier integration.

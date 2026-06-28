@@ -1,68 +1,58 @@
 ---
-title: "ADR 0063 — ADR Traceability and Feature Status Canon"
+title: "ADR 0063 — Feature Status Matrix and Feature Key Contract"
 description:
-  "ADRs stay one-decision records; feature ADRs carry a Traceability block keyed by a stable feature
-  key, and a feature-status matrix is the capability/status canon."
+  "Feature ADRs declare stable feature keys in Traceability blocks, and feature-status.md is the
+  capability/status matrix joined to those keys."
 sidebar:
-  label: "0063. Traceability canon"
+  label: "0063. Feature status matrix"
   order: 63
 status: accepted
 date: 2026-06-27
 superseded_by: null
 related:
+  - docs/ADRs/0001-canonical-documentation-contract.md
   - docs/Architecture/02-ownership-and-boundaries.md
   - docs/Reference/proof-status.md
   - docs/Reference/feature-status.md
   - docs/Templates/adr.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #304"
 ---
 
-# ADR 0063 — ADR Traceability and Feature Status Canon
+# ADR 0063 — Feature Status Matrix and Feature Key Contract
 
 ## Status
 
-Accepted — establishes the authoring contract for traceability in feature ADRs and the
-capability/status canon. This is a docs-process governance decision, not a shipped substrate
-capability, so it carries **no** Traceability block itself.
+Accepted — establishes the feature-key identity contract, the `## Traceability` join for feature
+ADRs, and the capability/status matrix. ADR 0001 owns the general documentation and ADR lifecycle;
+this ADR owns only the feature-status slice. This is a docs-process governance decision, not a
+shipped substrate capability, so it carries **no** Traceability block itself.
 
 ## Context
 
-Cortex has a real ADR canon for decisions but no canon for current capability, verification, or
-release truth.
+Cortex has a real ADR canon for decisions, but ADR status alone cannot express current capability,
+verification, or proof state.
 
-- The ADR template is decision-shaped: frontmatter (`status`, `date`, `superseded_by`, `related`)
-  and a body of Status / Context / Decision / Alternatives / Consequences / Related. The ADR index
-  exposes only number, title, and ADR `status`.
-- That single `status` field conflates three independent facts — whether the _decision_ is accepted,
-  whether the _code_ is shipped, and whether the _proof_ has landed. The track currently reads 13
-  accepted / 43 proposed / 1 superseded, yet much of the "proposed" pile is already shipped
-  substrate. The drift is invisible because there is nowhere to record it.
+- ADR `status` answers whether a decision is `proposed`, `accepted`, or `superseded`; it does not
+  answer whether code is shipped, tests exist, or proof correspondence has landed.
 - One good precedent already exists: [`proof-status.md`](../Reference/proof-status.md) separates the
-  human claim, Lean status, Haskell correspondence, proof links, and remaining gap, and ADR 0038
-  states that the ADR records the decision while the Reference page is the current-state view.
-- Forcing a feature list into every ADR would make the canon worse. Many decisions are not features:
-  ownership boundaries, proof obligations, numbering policy, the module tree, import direction.
+  human claim, Lean status, Haskell correspondence, proof links, and remaining gap. ADR 0038 records
+  the decision while the Reference page owns the current proof-state view.
+- Forcing release or implementation state into ADR prose would make ADRs worse. Many ADRs are not
+  features at all: ownership boundaries, proof obligations, numbering policy, the module tree, and
+  import direction.
+
+The missing piece is a durable identity that joins feature ADRs, current status, source, tests,
+proof rows, Reference docs, and release tooling without turning issues or PRs into canon.
 
 ## Decision
 
-Adopt a layered canon with one responsibility per layer, and generalize the `proof-status.md`
-pattern to all substrate capabilities.
+Feature status is a keyed Reference matrix. Feature ADRs declare stable feature keys; the matrix
+records the current status and evidence for those keys.
 
-| Layer                 | Owns                                                                |
-| --------------------- | ------------------------------------------------------------------- |
-| Architecture chapters | The narrative map of Cortex — why the substrate is shaped this way. |
-| ADRs                  | Why a decision exists. One decision per ADR.                        |
-| Reference docs        | What is currently true — the rules.                                 |
-| `feature-status.md`   | What capabilities exist, where, and how verified.                   |
-| Issues / PRs          | What is actively changing — planning state, never canon.            |
-| Releases              | Generated from feature-status rows changed since the last tag.      |
+### 1. Feature ADR Traceability block
 
-Five rules govern the new surfaces. They are hard edges.
-
-### 1. ADR Traceability block
-
-A feature ADR carries a `## Traceability` block; a non-feature ADR does not.
+A feature/runtime/language/proof ADR carries a `## Traceability` block; governance, boundary,
+numbering/process, and ledger ADRs omit it.
 
 ```markdown
 ## Traceability
@@ -72,21 +62,18 @@ A feature ADR carries a `## Traceability` block; a non-feature ADR does not.
 - Implementation: `src/Cortex/Pulse/...`
 - Tests: `test/Cortex/...`
 - Theory/proof: link to the relevant `docs/Reference/proof-status.md` row(s)
-- Tracking: `GitHub #...`
 ```
 
-There is **no release-note field** in the ADR. Release framing belongs only to feature-status rows
-and downstream release tooling.
+There is **no release-note field** in the ADR. Release framing belongs to release tooling fed by the
+current-state Reference matrix, not to append-only decision prose.
 
-Whether the block is required follows the **Stage-3 category** (this sweep's classification), not a
-separate taxonomy:
+Whether the block is required follows the ADR's primary category:
 
-- **Required** for ADRs in the feature/runtime/language/proof categories — Pulse runtime, Rewrite
-  admission, Conditionals/selection, Wire language/elaboration/topology, Wire executor & node,
-  CorePure, Capability & executors, Artifact & provenance, Packaging/CLI, and Proof-track _feature_
-  ADRs.
+- **Required** for feature/runtime/language/proof ADRs — Pulse runtime, Rewrite admission,
+  Conditionals/selection, Wire language/elaboration/topology, Wire executor & node, CorePure,
+  Capability & executors, Artifact & provenance, Packaging/CLI, and Proof-track _feature_ ADRs.
 - **Omitted** for governance and meta ADRs — Boundary & governance, numbering/process policy, and
-  the proof-track _ledger_ (which already points at `proof-status.md`).
+  the proof-track _ledger_.
 
 ### 2. Feature keys are the join primitive
 
@@ -101,16 +88,19 @@ release line. Its grammar and lifecycle:
 - **Allocation.** A key is allocated when its `feature-status.md` row is created, and recorded in
   the governing ADR's Traceability block.
 - **Stability.** Keys are never renamed or reused. A retired capability keeps its key with
-  implementation status `retired`. (ADR re-enumeration does not touch feature keys — they are
-  number-independent.)
+  implementation status `retired`. ADR renumbering does not touch feature keys.
 
 ### 3. `feature-status.md` is the capability/status canon
 
-[`feature-status.md`](../Reference/feature-status.md) is the current-truth matrix and the single
-extraction source for release notes. It is **capability/status canon, not marketing feature canon**:
-rows cover substrate capabilities that may not be user-visible in any product sense. Columns:
+[`feature-status.md`](../Reference/feature-status.md) is the current-truth matrix for governed
+substrate capabilities. It is **capability/status canon, not marketing feature canon**: rows cover
+substrate capabilities that may not be user-visible in any product sense. Columns:
 
-`Feature key | Capability | Governing ADR | ADR status | Impl status | Tests | Theory | Reference | Tracking`
+`Feature key | Capability | Governing ADR | ADR status | Impl status | Tests | Theory | Reference`
+
+Active issues, draft PRs, and checklist state do not live in the matrix. Proposed ADRs may carry
+temporary tracker state in their `## Tracking` section under ADR 0001; accepted ADRs and the
+feature-status matrix cite durable artifacts only.
 
 ### 4. Status dimensions stay separate
 
@@ -119,8 +109,8 @@ Never collapse these into one field:
 - **ADR status** — `proposed` | `accepted` | `superseded` | `deprecated` (the decision).
 - **Implementation status** — `planned` | `partial` | `implemented` | `verified` | `retired` (the
   code).
-- **Proof status** — owned by `proof-status.md`. The matrix's `Theory` cell **links to the
-  proof-status row**; it does not restate Lean/Haskell state, so there is one source of proof truth.
+- **Proof status** — owned by `proof-status.md`. The matrix's `Theory` cell links to the
+  proof-status row; it does not restate Lean/Haskell state, so there is one source of proof truth.
 
 `partial` in `feature-status.md` is a conservative current-state label, not a synonym for "no code"
 or "untested." A proposed ADR may govern implemented and tested substrate while remaining `partial`
@@ -128,20 +118,23 @@ until acceptance and all required matrix evidence are in place.
 
 ### 5. Evidence links are validated, never asserted blind
 
-`just docs-check` must confirm that every evidence link in a feature-status row — the `Tests`,
-`Theory`, and `Reference` cells — resolves to an existing file or anchor. (`Impl status` is a status
+`just docs-lint` must confirm that every evidence link in a feature-status row — the `Tests`,
+`Theory`, and `Reference` cells — resolves to an existing file or anchor. `Impl status` is a status
 value, not a path; per-capability implementation paths live in the governing ADR's `## Traceability`
-block, not the matrix.) The matrix may **under-claim** (an empty cell is allowed and honest); it
-must not **dangle** (a link to a path that does not exist fails the check). A row is seeded with its
-key and status before its evidence links exist; the links are added as the capability is governed
-and verified.
+block, not the matrix. The matrix may **under-claim** (an empty cell is allowed and honest); it must
+not **dangle** (a link to a path that does not exist fails the check). A row is seeded with its key
+and status before its evidence links exist; the links are added as the capability is governed and
+verified.
 
 ## Alternatives considered
 
 - **Add a feature list to every ADR.** Rejected — it corrupts ADR semantics. Non-feature decisions
   have no features, and the list would rot inside an append-only decision record.
 - **Use GitHub issues as the capability canon.** Rejected — issues are planning state and they
-  close; canon must be durable. ADRs and the matrix link to issues, not the reverse.
+  close; canon must be durable.
+- **Keep tracker IDs in `feature-status.md`.** Rejected — the matrix is Reference canon, so tracker
+  IDs would mix temporary planning state into the current-truth capability view. Proposed ADRs may
+  keep temporary tracker state under `## Tracking`; accepted ADRs and Reference matrices should not.
 - **Extend `proof-status.md` to cover all features.** Rejected — proof-status is proof-specific and
   rich. The feature matrix links to it rather than absorbing it, avoiding a second proof-truth
   source.
@@ -151,14 +144,14 @@ and verified.
 ### Positive
 
 - Status drift becomes visible and auditable: a `proposed` ADR governing `implemented` code is now
-  expressible, and the gap is a tracked row rather than a silent inconsistency.
-- Releases extract from a single source of truth.
+  expressible, and the gap is a status row rather than a silent inconsistency.
+- Releases and summaries can extract from a single current-state source.
 - ADRs stay clean one-decision records; the canon gains a status story without changing ADR
   semantics.
 
 ### Negative
 
-- One more Reference page to maintain. Its honesty depends on the docs-check validator and on
+- One more Reference page to maintain. Its honesty depends on the docs-lint validator and on
   authoring discipline.
 - Feature-key allocation is a new lightweight governance step.
 
@@ -168,19 +161,17 @@ and verified.
   required-for-feature guidance.
 - Create [`docs/Reference/feature-status.md`](../Reference/feature-status.md) and list it in the
   Reference index.
-- Implement the `docs-check` evidence-link validator for feature-status rows (follow-up tooling).
-- Author every Stage-2 feature ADR with a Traceability block and a stable feature key; seed the
-  matrix row first, then add evidence links as they become concrete.
-- Backfill the `## Traceability` block and a feature-status row into the **pre-Stage-2**
-  feature/runtime/language/proof ADRs — the requirement in Decision rule 1 applies to them too, but
-  the backfill is a tracked follow-up rather than part of this opener. Until it lands, the matrix
-  covers the Stage-2 set and grows as each pre-existing feature ADR is revisited; accepted + shipped
-  ADRs are the priority. Governance/boundary/numbering/ledger ADRs remain exempt.
-- Resolves issue #304 OQ10 (status hygiene): status drift is now a structural concern owned by
-  `feature-status.md`, not the ADR `status` field.
+- Implement the docs-lint feature-status validator.
+- Author every feature ADR with a Traceability block and a stable feature key; seed the matrix row
+  first, then add evidence links as they become concrete.
+- Backfill the `## Traceability` block and a feature-status row into pre-existing
+  feature/runtime/language/proof ADRs. Governance/boundary/numbering/ledger ADRs remain exempt.
+- Status drift is a structural concern owned by `feature-status.md`, not the ADR `status` field.
 
 ## Related
 
+- [ADR 0001 — Canonical Documentation Contract](./0001-canonical-documentation-contract.md) — the
+  broader documentation and ADR lifecycle contract.
 - [Chapter 02 — Ownership and Boundaries](../Architecture/02-ownership-and-boundaries.md)
 - [ADR 0038 — Wire Proof-Track Theorem Ledger](./0038-wire-proof-track-theorem-ledger.md) — the
   precedent: decision in the ADR, current state in a Reference page.
@@ -189,25 +180,21 @@ and verified.
 - [Cortex Feature Status](../Reference/feature-status.md) — the capability/status canon this ADR
   introduces.
 - [ADR template](../Templates/adr.md)
-- GitHub #304
 
-## Amendment - feature-status validator implemented (2026-06-27, issue #304)
+## Amendment - feature-status validator implemented (2026-06-27)
 
-The Obligation "Implement the `docs-check` evidence-link validator for feature-status rows
-(follow-up tooling)" is discharged. The validator lives in `scripts/docs-lint` — the mechanical
-Markdown lint gate run by `just docs-lint` in the pre-commit hook and in CI — rather than in
-`just docs-check` (the documentation site build). Decision rule 5 named `docs-check` loosely;
-`docs-lint` is the correct home because it already owns the link, anchor, table, and frontmatter
-checks and runs on every push.
+The docs-lint feature-status validator obligation is discharged. The validator lives in
+`scripts/docs-lint`, the Markdown lint gate run by `just docs-lint` in the pre-commit hook and in
+CI.
 
 ### What it enforces
 
 `check_feature_status` validates the `## Capabilities` matrix in
 [`feature-status.md`](../Reference/feature-status.md) against this ADR:
 
-- **Schema** — every capability table (one with nine columns, or one naming the `Feature key`
-  column) must carry exactly the nine canonical columns, in order; a drifted header is reported, not
-  silently skipped.
+- **Schema** — every capability table (one with eight columns, or one naming the `Feature key`
+  column) must carry exactly the eight canonical columns, in order; a drifted header is reported,
+  not silently skipped.
 - **Feature-key grammar and uniqueness** — keys are lowercase-dotted with a known subsystem prefix
   (Decision rule 2), and no key has more than one row.
 - **Status enums** — `ADR status` is one of `proposed`/`accepted`/`superseded`/`deprecated` and
@@ -215,21 +202,20 @@ checks and runs on every push.
 - **Governing-ADR resolution** — every ADR number in the `Governing ADR` cell, including the
   `NNNN (amend)` and `NNNN / NNNN (amend)` forms, resolves to an ADR file.
 - **Evidence-cell shape** — the `Tests`, `Theory`, and `Reference` cells are either the empty marker
-  `—` or local Markdown link(s) — never a bare path and never an external URL, since Decision rule 5
-  wants a file or anchor; the `Theory` cell must point at `proof-status.md`, keeping one source of
-  proof truth (Decision rule 4).
+  `—` or local Markdown link(s), never a bare path and never an external URL; the `Theory` cell must
+  point at `proof-status.md`, keeping one source of proof truth (Decision rule 4).
 - **Bidirectional feature-key join** — every matrix key is declared in a cited ADR's Traceability
   block (`##` or `###`, so amendment blocks count; code fences and stray bullets elsewhere are
   ignored), and every key an ADR declares is bound to a matrix row whose governing cell sanctions
-  that ADR — an `A / B (amend)` cell licenses a declaration in either. This is the consistency that
-  stops ADRs and the matrix from drifting apart.
+  that ADR. An `A / B (amend)` cell licenses a declaration in either. This consistency stops ADRs
+  and the matrix from drifting apart.
 
 Evidence-link _resolution_ — that the target file or anchor actually exists — is enforced for every
 local Markdown link in the corpus by the existing `check_markdown_links`. That checker skips
 URI-scheme targets, so `check_feature_status` rejects external evidence links outright; every
 surviving evidence link is local and therefore resolved. Decision rule 5's resolution requirement is
-thus met by the lint gate as a whole, and `check_feature_status` adds the matrix-specific structure
-and the join on top.
+met by the lint gate as a whole, and `check_feature_status` adds the matrix-specific structure and
+the join on top.
 
 ### Scope limit
 
@@ -240,4 +226,6 @@ wrongly grows _both_ a `## Traceability` block and a matching row) is internally
 join cannot flag it. It stays an authoring-discipline obligation. The join does catch the asymmetric
 form — a row with no declaration, or a declaration with no row.
 
-Tracking: GitHub #304.
+Accepted ADRs and the feature-status matrix do not carry tracker state. Proposed ADRs may keep
+temporary planning links in a final `## Tracking` section under ADR 0001, but that section is
+deleted before acceptance.

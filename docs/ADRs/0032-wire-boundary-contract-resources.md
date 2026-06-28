@@ -27,7 +27,6 @@ related:
   - docs/ADRs/0037-wire-latent-structural-control.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
-  - "GitHub #99"
 ---
 
 # ADR 0032 - Wire Boundary Contracts as Planning Resources
@@ -136,7 +135,6 @@ locally well-accounted before it is admitted or proved safe.
   node-boundary surface the resource vocabulary accounts for)
 - Tests: `test/Cortex/Wire/CompileSpec.hs` (contract admission-artifact rows)
 - Theory/proof: [the "Boundary resource algebra" row](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 
@@ -157,4 +155,3 @@ locally well-accounted before it is admitted or proved safe.
 - [0037-wire-latent-structural-control.md](0037-wire-latent-structural-control.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
 - [0039-wire-node-boundary-transform-normal-form.md](0039-wire-node-boundary-transform-normal-form.md)
-- GitHub #99

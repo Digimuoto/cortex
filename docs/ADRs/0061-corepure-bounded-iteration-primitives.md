@@ -15,8 +15,6 @@ related:
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0056-admission-modes-witnessed-and-gas.md
-  - "GitHub #295"
-  - "GitHub #301"
 ---
 
 # ADR 0061 - CorePure Bounded Iteration Primitives
@@ -33,7 +31,7 @@ JSON-shaped report and value logic. Its builtin set already iterates finite inpu
 `filter`, `sum`, `zipWith`, `all`, `any`), but it has no general reducer and no way to generate a
 finite sequence from a count. Without those, real list/string report logic — the kind that currently
 forces a Haskell extension such as `Cortex.Quantum.Qec.renderReport` — cannot be written in pure
-Wire (issue #295).
+Wire.
 
 Two earlier decisions gated exactly these primitives:
 
@@ -81,9 +79,9 @@ CorePure therefore stays total: every admitted program either produces a value o
 error in bounded work. This satisfies the ADR 0023 cost-model precondition by stating the cost model
 explicitly (a fixed node/element ceiling) rather than deferring to an accounting system.
 
-The accompanying ergonomic stdlib (issue #295 batch 1: `reverse`, `sort`, `sortBy`, `take`, `drop`,
-search, string, and record builtins) is _not_ gated by this ADR. Those iterate finite input
-structure, exactly the termination class of the existing `map`/`filter`/`sum`, and need no cap.
+The accompanying ergonomic stdlib (`reverse`, `sort`, `sortBy`, `take`, `drop`, search, string, and
+record builtins) is _not_ gated by this ADR. Those iterate finite input structure, exactly the
+termination class of the existing `map`/`filter`/`sum`, and need no cap.
 
 `sortBy(keyFn, list)` is admitted: it sorts by a deterministic key projection under a fixed total
 order over JSON values, so it is not the "sort with user comparators" ADR 0023 defers. A free
@@ -103,7 +101,7 @@ or inconsistent and would make the sort result undefined.
   0023 cost-model precondition. Rejected.
 - **Keep `fold`/`range` deferred and ship only the ungated stdlib.** Delivers most of the list and
   string ergonomics, but leaves Wire unable to reduce to a custom accumulator or generate a sequence
-  from a count - the structural gap issue #295 set out to close. Rejected.
+  from a count - the structural gap this ADR closes. Rejected.
 
 ## Consequences
 
@@ -136,7 +134,7 @@ or inconsistent and would make the sort result undefined.
   any single operation trips. These are bounded but can be large; for an authored expression they
   are a footgun, not a data-driven amplification (data-derived `range`/`fold` are themselves
   capped). A true total-allocation bound is a global cost budget, deferred as the fuel-model work
-  below and tracked in GitHub #301.
+  below.
 
 ### Obligations
 
@@ -147,7 +145,7 @@ or inconsistent and would make the sort result undefined.
   `PureBoundExceeded` failure.
 - If CorePure later needs a total-allocation bound across composed expressions, or tunable or larger
   iteration, promote the fixed per-operation cap to a stated global fuel model rather than widening
-  it silently. Tracked in GitHub #301.
+  it silently.
 
 ## Traceability
 
@@ -165,7 +163,6 @@ or inconsistent and would make the sort result undefined.
 - Theory/proof:
   [the CorePure builtin-authority signature-mirror row — `proof-status.md`](../Reference/proof-status.md#matrix)
   (`range`/`fold`/`foldRight` mirrored in `theory/Cortex/Wire/Pure.lean`)
-- Tracking: GitHub #295
 
 ## Related
 
@@ -179,3 +176,8 @@ or inconsistent and would make the sort result undefined.
   - CorePure introduces no tunable budget; the cap here is a totality guard, not gas.
 - [Wire Reference - Pure Execution](../Reference/Wire/pure-execution.md) - builtin catalogue and
   failure surface.
+
+## Tracking
+
+- #295 — ergonomic CorePure stdlib and bounded-iteration work.
+- #301 — global CorePure fuel-model follow-up.

@@ -256,4 +256,3 @@ semantic move.
   `test/fixtures/wire/pure-output-equations.wire`
 - Theory/proof:
   [the CorePure output-ports / lowering / `where`-fields rows — `proof-status.md`](../Reference/proof-status.md#matrix)
-- Tracking: GitHub #304

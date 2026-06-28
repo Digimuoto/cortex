@@ -129,7 +129,6 @@ gate.
 - Tests: `test/Cortex/Wire/ParserSpec.hs` (`use std.io.{...}` selectors/aliases, wildcard
   rejection), `test/Cortex/Wire/CompileSpec.hs` (`WireDuplicateBinding`, `WireExecutorNotInScope`)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

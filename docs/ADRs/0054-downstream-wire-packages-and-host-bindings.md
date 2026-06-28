@@ -23,7 +23,6 @@ related:
   - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
   - docs/ADRs/0044-wire-namespace-use-imports.md
   - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
-  - "GitHub #208"
 ---
 
 # ADR 0054 - Downstream Wire Packages and Host Runtime Bindings
@@ -392,7 +391,6 @@ Cortex owns the substrate package and binding mechanics, and the host owns runti
 - Tests: `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/QuantumPackageSpec.hs`,
   `test/Cortex/Capability/BindingPack/BraketSpec.hs`, `test/Cortex/Pulse/Lowering/CircuitSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #208
 
 ## Related
 
@@ -405,4 +403,3 @@ Cortex owns the substrate package and binding mechanics, and the host owns runti
 - [ADR 0053 - Executor Catalog Manifests and Pulse Runtime Bindings](./0053-executor-catalog-manifests-and-pulse-bindings.md)
 - [Wire modules, imports, and file returns](../Reference/Wire/modules-imports-and-file-returns.md)
 - [Wire executors and alphabet](../Reference/Wire/executors-and-alphabet.md)
-- GitHub #208

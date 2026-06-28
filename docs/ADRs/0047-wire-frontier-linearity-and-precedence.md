@@ -237,7 +237,6 @@ composition has one visible parallel operator and record/list comma syntax stays
 - Theory/proof: [Source linear port carrier row](../Reference/proof-status.md) (Lean
   `CertifiedGraph.BoundaryMatchTrace.determined`, `overlay_preserves_portLinear` in
   `theory/Cortex/Wire/PortLinearity.lean` and `theory/Cortex/Wire/GraphElaboration.lean`)
-- Tracking: GitHub #304
 
 ## Related
 

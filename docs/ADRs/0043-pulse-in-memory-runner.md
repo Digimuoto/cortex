@@ -23,8 +23,6 @@ related:
   - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
   - docs/ADRs/0041-wire-cli-command-surface.md
   - docs/ADRs/0042-wire-standard-effect-executors.md
-  - "GitHub #141"
-  - "GitHub #142"
 ---
 
 # ADR 0043 - Pulse In-Memory Runner
@@ -133,7 +131,6 @@ checkpoints, lease recovery, signal resume, cancellation propagation, or service
   ready frontiers) and `src/Cortex/Pulse/Plan.hs` (`StagePlan`)
 - Tests: none
 - Theory/proof: none
-- Tracking: GitHub #141
 
 ## Related
 
@@ -150,5 +147,3 @@ checkpoints, lease recovery, signal resume, cancellation propagation, or service
 - [ADR 0036 - Latent Branch Budget and Recovery Policy](0036-wire-latent-branch-budget-recovery.md)
 - [ADR 0041 - Wire CLI Command Surface](0041-wire-cli-command-surface.md)
 - [ADR 0042 - Wire Standard Effect Executors](0042-wire-standard-effect-executors.md)
-- GitHub #141
-- GitHub #142

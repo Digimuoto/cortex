@@ -331,7 +331,6 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
   (`allows a strict registered executor projection with matching ports`),
   `test/Cortex/Wire/RuntimeSpec.hs` (declared output-port wrapping and validation)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

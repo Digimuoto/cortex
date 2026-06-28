@@ -3,7 +3,7 @@ title: "ADR 0078 — Lean-Owned Wire Elaboration IR and Executable Certifying Ad
 description:
   "Records that Cortex maintains a Lean-owned post-parse Wire elaboration IR and an executable,
   soundness-by-construction certifying admission kernel for the primitive graph subset, without
-  deciding the compiler-authority question that issue #103 keeps open."
+  deciding the open compiler-authority question."
 sidebar:
   label: "0078. Lean elaboration kernel"
   order: 78
@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
-  - "GitHub #103"
 ---
 
 # ADR 0078 — Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel
@@ -28,8 +27,7 @@ related:
 Proposed — this ADR records a proof-track artifact that already exists for the primitive graph
 subset and fixes the boundary it keeps. It is deliberately a **partial** answer to the larger
 compiler-authority question: it does not decide whether the Wire compiler stays Haskell-first,
-becomes a Lean-specified Haskell implementation, or moves into Lean. That decision remains open on
-GitHub #103.
+becomes a Lean-specified Haskell implementation, or moves into Lean. That decision remains open.
 
 ## Context
 
@@ -45,7 +43,7 @@ Two earlier decisions frame Wire elaboration but leave a gap between them.
   **future**: compiler admission gates "are not theorem-ledger rows until the parser or elaborator
   itself is mechanized," and 0038 records that it "settles what must be proved before deciding
   whether the compiler remains Haskell-first, becomes a Lean-specified Haskell implementation, or
-  eventually moves into Lean," pinning that authority question to GitHub #103 as undecided.
+  eventually moves into Lean," leaving that authority question undecided.
 
 Since 0038 was written, the elaborator stopped being only future for one subset. The theory track
 now carries a **Lean-owned post-parse IR** and an **executable certifying admission kernel** over
@@ -58,8 +56,8 @@ decide — is overdue.
 The constraint is sharp. Recording the kernel must not be read as choosing Lean as the compiler spec
 or implementation. The kernel covers a subset, certifies a relation rather than producing the
 runtime circuit, and is tied to the Haskell compiler only through a differential oracle, not through
-extraction. Overstating it would silently resolve #103; understating it would keep an accepted,
-checked proof surface invisible to the canon.
+extraction. Overstating it would silently resolve the compiler-authority question; understating it
+would keep an accepted, checked proof surface invisible to the canon.
 
 ## Decision
 
@@ -141,8 +139,7 @@ cross when citing this ADR.
    validator only.
 
 5. **No authority claim.** The kernel being executable and Lean-owned does not make Lean the
-   compiler spec or implementation. The authority model is exactly the open question on #103; this
-   ADR leaves it open.
+   compiler spec or implementation. The authority model remains open; this ADR leaves it open.
 
 ## Alternatives considered
 
@@ -153,16 +150,16 @@ cross when citing this ADR.
   one-decision record so its boundary and its `partial` status are explicit rather than a status
   cell in a table.
 
-- **Wait for #103 and record the kernel only once authority is decided.** Rejected. That leaves an
-  accepted, build-checked soundness surface undocumented in canon and lets readers infer either too
-  much ("Lean is the compiler now") or too little ("the elaborator is still entirely future") from
-  0021 and 0038. Recording the artifact and explicitly scoping out the authority question is more
-  honest than silence.
+- **Wait for the compiler-authority decision and record the kernel only once authority is decided.**
+  Rejected. That leaves an accepted, build-checked soundness surface undocumented in canon and lets
+  readers infer either too much ("Lean is the compiler now") or too little ("the elaborator is still
+  entirely future") from 0021 and 0038. Recording the artifact and explicitly scoping out the
+  authority question is more honest than silence.
 
 - **Record the kernel as the Wire compiler's specification.** Rejected — it would presume the answer
-  to #103. The kernel certifies a relation over a subset and corresponds to the compiler only
-  differentially; calling it the spec would overclaim and pre-empt the binding question this ADR is
-  required to leave open.
+  to the compiler-authority decision. The kernel certifies a relation over a subset and corresponds
+  to the compiler only differentially; calling it the spec would overclaim and pre-empt the binding
+  question this ADR is required to leave open.
 
 ## Consequences
 
@@ -187,10 +184,10 @@ cross when citing this ADR.
 
 ### Obligations
 
-- **Keep #103 open in canon.** Until GitHub #103 decides the compiler-authority model
-  (Haskell-first, Lean-specified Haskell, or Lean implementation), this ADR must not be read as
-  choosing one. If #103 resolves, update or supersede this ADR — and ADR 0038 — to reflect the
-  chosen authority model.
+- **Keep compiler authority open in canon.** Until the compiler-authority decision chooses the
+  authority model (Haskell-first, Lean-specified Haskell, or Lean implementation), this ADR must not
+  be read as choosing one. If that decision resolves, update or supersede this ADR — and ADR 0038 —
+  to reflect the chosen authority model.
 - Keep the IR post-parse: do not add parser, filesystem, or runtime modelling to
   `Cortex.Wire.ElaborationIR` without a separate decision.
 - When a derived form joins the certifying kernel, update the primitive-subset scope statement and
@@ -201,13 +198,13 @@ cross when citing this ADR.
 
 ## Open questions
 
-- **Compiler authority (#103).** This ADR records the Lean-owned elaboration IR and the executable
+- **Compiler authority.** This ADR records the Lean-owned elaboration IR and the executable
   certifying kernel but does **not** decide the normative authority for Wire elaboration. The open
-  trichotomy is exactly GitHub #103: whether the Wire compiler (a) stays **Haskell-first** with Lean
-  as a differential check, (b) becomes a **Lean-specified Haskell implementation**, or (c) **moves
-  into Lean**. Recording the kernel is at most a partial input to that decision and must not be read
-  as selecting any branch. If #103 resolves, this ADR and ADR 0038 are updated or superseded to
-  reflect the chosen model.
+  trichotomy is whether the Wire compiler (a) stays **Haskell-first** with Lean as a differential
+  check, (b) becomes a **Lean-specified Haskell implementation**, or (c) **moves into Lean**.
+  Recording the kernel is at most a partial input to that decision and must not be read as selecting
+  any branch. If that decision resolves, this ADR and ADR 0038 are updated or superseded to reflect
+  the chosen model.
 
 ## Traceability
 
@@ -226,7 +223,6 @@ cross when citing this ADR.
 - Theory/proof: [the "Executable admission kernel" row](../Reference/proof-status.md#matrix) and
   [The Emission-Soundness Target](../Reference/proof-status.md#the-emission-soundness-target) clause
   4 (the per-fixture kernel differential)
-- Tracking: GitHub #103
 
 ## Related
 
@@ -235,11 +231,14 @@ cross when citing this ADR.
 - [ADR 0021 — Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md) —
   the Haskell elaborator this kernel mechanizes a subset of.
 - [ADR 0038 — Wire Proof-Track Theorem Ledger](./0038-wire-proof-track-theorem-ledger.md) — frames
-  the elaborator as future and pins the compiler-authority question to GitHub #103.
+  the elaborator as future and leaves the compiler-authority question open.
 - [ADR 0047 — Wire Frontier Linearity and Precedence](./0047-wire-frontier-linearity-and-precedence.md)
   — the boundary-matching policy the kernel's `connect` matcher computes.
 - [Cortex Proof Status](../Reference/proof-status.md) — the proof-claim dashboard the `Theory` cell
   links to.
 - [Cortex Feature Status](../Reference/feature-status.md) — the `proof.elaboration_kernel`
   capability row.
-- GitHub #103
+
+## Tracking
+
+- #103 — compiler-authority decision.

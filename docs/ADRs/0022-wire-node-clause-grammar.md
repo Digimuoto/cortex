@@ -227,7 +227,6 @@ node classify
   `test/Cortex/Wire/CompileSpec.hs` (output-port admission)
 - Theory/proof: [CorePure output ports](../Reference/proof-status.md) (declared-output / equation
   bijection)
-- Tracking: GitHub #304
 
 ## Related
 

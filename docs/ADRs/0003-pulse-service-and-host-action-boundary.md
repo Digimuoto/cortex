@@ -76,7 +76,7 @@ actions.
 - Keep Pulse-owned state behind Pulse APIs rather than direct table reads from hosts.
 - Document new task types in terms of what Pulse owns versus what must stay downstream.
 
-## Note (2026-06-28, #329)
+## Note (2026-06-28)
 
 Pulse provisions its own schema as a library surface: `Cortex.Pulse.Database.provisionPulseSchema`
 applies the shipped `data/pulse-schema.sql` data-file (idempotent via a schema-presence check). This

@@ -23,7 +23,6 @@ related:
   - docs/ADRs/0035-wire-rewrite-algebra-forms.md
   - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #99"
 ---
 
 # ADR 0037 - Wire Latent Structural Control Operators
@@ -187,7 +186,6 @@ its boundary law, resource consumption, runtime realization, and recovery behavi
   member admitted by the current Wire surface), `src/Cortex/Wire/Compile.hs` (`lowerSelectStep`)
 - Tests: `test/Cortex/Wire/CompileSpec.hs` (`nested select`)
 - Theory/proof: [the "Select source admission" row](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 
@@ -204,4 +202,3 @@ its boundary law, resource consumption, runtime realization, and recovery behavi
 - [0035-wire-rewrite-algebra-forms.md](0035-wire-rewrite-algebra-forms.md)
 - [0036-wire-latent-branch-budget-recovery.md](0036-wire-latent-branch-budget-recovery.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
-- GitHub #99

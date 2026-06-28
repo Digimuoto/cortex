@@ -21,7 +21,6 @@ related:
   - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
   - docs/ADRs/0037-wire-latent-structural-control.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #99"
 ---
 
 # ADR 0035 - Wire Rewrite Algebra Forms
@@ -128,7 +127,6 @@ lowers to ordinary graph composition.
 - Tests: `test/Cortex/Pulse/GraphRewriteSpec.hs` (`ExpandNode`, `AppendAfter`)
 - Theory/proof:
   [the "Rewrite boundary laws" and "Boundary resource algebra" rows](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 
@@ -144,4 +142,3 @@ lowers to ordinary graph composition.
 - [0036-wire-latent-branch-budget-recovery.md](0036-wire-latent-branch-budget-recovery.md)
 - [0037-wire-latent-structural-control.md](0037-wire-latent-structural-control.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
-- GitHub #99

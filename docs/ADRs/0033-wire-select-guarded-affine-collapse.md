@@ -22,7 +22,6 @@ related:
   - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
   - docs/ADRs/0037-wire-latent-structural-control.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #99"
 ---
 
 # ADR 0033 - Wire Select as Guarded Affine Collapse
@@ -85,8 +84,8 @@ The rules are:
 - Native n-way selection still lowers to a nested binary condition tree, not a native n-way runtime
   node. For executor-emitted variants, the guard source that reads a producer's committed output
   variant label and routes it through compiled then/else keys is `committedVariantConditionBinding`
-  (ADR 0062, GitHub #314). A reusable production Pulse entrypoint that invokes that path remains
-  tracked by GitHub #321; a native n-way runtime representation remains future work.
+  (ADR 0062). A reusable production Pulse entrypoint that invokes that path remains pending; a
+  native n-way runtime representation remains future work.
 
 ### Obligations
 
@@ -120,7 +119,6 @@ The rules are:
 - Tests: `test/Cortex/Wire/CompileSpec.hs` (`nested select`, select admission-artifact rows)
 - Theory/proof:
   [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 
@@ -136,4 +134,8 @@ The rules are:
 - [0036-wire-latent-branch-budget-recovery.md](0036-wire-latent-branch-budget-recovery.md)
 - [0037-wire-latent-structural-control.md](0037-wire-latent-structural-control.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
-- GitHub #99
+
+## Tracking
+
+- #314 — committed-label guard path.
+- #321 — reusable production Pulse entrypoint.

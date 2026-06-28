@@ -17,11 +17,6 @@ related:
   - docs/ADRs/0033-wire-select-guarded-affine-collapse.md
   - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #313"
-  - "GitHub #314"
-  - "GitHub #321"
-  - "GitHub #315"
-  - "GitHub #138"
 ---
 
 # ADR 0062 - Typed Effect Variant Output Boundaries
@@ -31,8 +26,8 @@ related:
 Proposed - extends ADR 0024, ADR 0033, and ADR 0053, fulfils the failure-routing hook left open by
 ADR 0026, generalises the typed-error-output option in ADR 0059, and discharges the exclusive-output
 grouping ADR 0017 specified but the runtime never implemented. It does not edit those ADRs; ADR 0033
-now distinguishes the committed-label guard source (#314) from the reusable production Pulse
-entrypoint still tracked in #321.
+now distinguishes the committed-label guard source from the reusable production Pulse entrypoint
+that remains pending.
 
 ## Context
 
@@ -67,7 +62,7 @@ Two facts make this a real, narrow piece of substrate work rather than a syntax 
    binders, but `lowerCompiledCircuitToSomeStagePlan` still lacks a reusable production caller on
    `main`; the production Pulse lowering path lowers only realize nodes. So "branch on an
    executor-emitted variant label" is not just a local boundary-validation feature — it still
-   depends on the production entrypoint tracked in #321.
+   depends on the production entrypoint that remains pending.
 
 The open question is: what is the smallest substrate boundary that lets an executor commit one typed
 variant, validate it before commit, persist it durably, and let `select` branch on it on resume
@@ -113,12 +108,12 @@ That is well-formed only because selection is by label; contract-only dispatch w
 - **Wire compile time** owns the known contract ids, port labels, exclusive-group membership, and
   label/contract compatibility. (The exclusive group is dropped before runtime today; this ADR
   carries it through.)
-- **The Pulse boundary** (this ADR's substrate, #313) validates and commits: exactly one emitted
-  label, payload-kind/shape validation against _that label's_ contract, and a durable `WireValue`
-  commit. It is host-language-agnostic - it sees `(label, payload)`, never a host type.
+- **The Pulse boundary** validates and commits: exactly one emitted label, payload-kind/shape
+  validation against _that label's_ contract, and a durable `WireValue` commit. It is
+  host-language-agnostic - it sees `(label, payload)`, never a host type.
 - **The host binding** maps host values onto that surface: a host-type <-> contract-id codec and a
   host-constructor <-> variant-label map. This is host-specific ergonomics, the deferred
-  codec-registry work (#315), and is not part of this ADR's substrate.
+  codec-registry work, and is not part of this ADR's substrate.
 
 ### Substrate (Pulse boundary)
 
@@ -140,8 +135,8 @@ plus ordinary side outputs" would need a different envelope and downstream linea
 The node grammar itself permits multiple output clauses (a sum group beside ordinary ports), so this
 variant-boundary restriction is an ADR-0062 rule, not a grammar rule; `select(...)`'s
 `resolveExclusiveBoundary` already rejects a sum-plus-extra-exit boundary. (The comment at the
-`resolveExclusiveBoundary` site claiming the grammar forbids the mix is stale; #313 should correct
-it.)
+`resolveExclusiveBoundary` site claiming the grammar forbids the mix is stale and should be
+corrected.)
 
 The boundary validates a candidate variant **before commit** (ADR 0053):
 
@@ -173,8 +168,8 @@ Three distinct cases, kept separate:
 A bind-time check, where the binder's declared emitter-label set is available, verifies it is a
 subset of the node's declared variants; runtime membership validation (above) stays authoritative
 for every emitted candidate. (The host constructor -> label mapping that would make the
-emitter-label set precise is deferred to #315.) The recover-versus-fail-hard decision for a given
-run is the binder's, within the three cases above.
+emitter-label set precise is deferred to the codec/schema follow-up.) The recover-versus-fail-hard
+decision for a given run is the binder's, within the three cases above.
 
 ### select consumes the label
 
@@ -193,16 +188,16 @@ predicate re-run is deterministic and the effect runs once.
 
 ### Scope
 
-Tracked in three implementation steps under this ADR: the emission + validation + persistence
-substrate (#313), the committed-label select guard/lowering path exercised by durable-resume tests
-(#314, relating to #138), and the reusable production Pulse entrypoint for downstream callers
-(#321). The host-type codec registry, the host typeclasses, and per-contract schema strength are
-explicitly **out of scope** and deferred (#315); this ADR ships on Layer-1 payload-kind/shape
-validation over the current `WireValue`.
+Scoped in three implementation steps under this ADR: the emission + validation + persistence
+substrate, the committed-label select guard/lowering path exercised by durable-resume tests, and the
+reusable production Pulse entrypoint for downstream callers. The host-type codec registry, host
+typeclasses, and per-contract schema strength are explicitly **out of scope** and deferred to the
+codec/schema follow-up; this ADR ships on Layer-1 payload-kind/shape validation over the current
+`WireValue`.
 
-This ADR bundles two decisions against the one-decision-per-ADR rule: the emission boundary (#313)
-and the production select runtime (#314/#321). Whether to split it into an emission-boundary ADR and
-a select-runtime ADR is tracked in #320.
+This ADR bundles two decisions against the one-decision-per-ADR rule: the emission boundary and the
+production select runtime. Whether to split it into an emission-boundary ADR and a select-runtime
+ADR remains a proposed-ADR cleanup question.
 
 ## Alternatives considered
 
@@ -217,15 +212,15 @@ a select-runtime ADR is tracked in #320.
 - **An order-based `Either err ok` adapter (`Right` -> first label, `Left` -> second).** Rejected:
   it is order-sensitive and misroutes `err | ok` or any non-`ok | err` pair. A host adapter must
   name both labels explicitly through a constructor -> label map; that mapping is host-binding
-  ergonomics and lives in the codec layer (#315), not in this substrate.
+  ergonomics and lives in the codec layer, not in this substrate.
 - **Drive `select` by re-running a predicate over the producer's value (the existing test-only
   binder shape).** Rejected as the primary path: for an effectful producer, re-deriving the branch
   means re-running the effect on resume. Reading the committed label instead keeps resume
   effect-free; the predicate form remains available for pure conditions.
-- **Require the host-type codec registry (#315) first.** Rejected as a blocker: the variant boundary
-  is a Layer-1 concern (label membership + payload kind/shape) and ships on the current `WireValue`.
-  The codec registry and `ContractId` versioning are a separate, deferred refinement of ADR 0017
-  (#315).
+- **Require the host-type codec registry first.** Rejected as a blocker: the variant boundary is a
+  Layer-1 concern (label membership + payload kind/shape) and ships on the current `WireValue`. The
+  codec registry and `ContractId` versioning are a separate, deferred refinement of ADR 0017 (the
+  codec/schema follow-up).
 
 ## Consequences
 
@@ -246,11 +241,11 @@ a select-runtime ADR is tracked in #320.
 
 ### Negative
 
-- It builds the committed-label `select(...)` runtime path for the first time (#314) and still needs
-  a reusable production entrypoint (#321). The substrate (#313) is independently shippable, but the
-  headline branch capability depends on downstream callers having that entrypoint.
+- It builds the committed-label `select(...)` runtime path for the first time and still needs a
+  reusable production entrypoint. The substrate is independently shippable, but the headline branch
+  capability depends on downstream callers having that entrypoint.
 - Layer-1 validation does not catch a payload that is valid JSON of the right kind but semantically
-  wrong against the contract; strong per-contract schemas wait on the deferred codec work (#315).
+  wrong against the contract; strong per-contract schemas wait on the codec/schema follow-up.
 - Overloading `WireValue.wireValuePort` for the variant label makes the runtime exclusive-group
   metadata load-bearing for correctness (without it the boundary cannot distinguish a grouped
   variant port from an ungrouped product port).
@@ -260,21 +255,21 @@ a select-runtime ADR is tracked in #320.
 - A bind-time check should verify the binder's declared emitter-label set (where available) is a
   subset of the node's declared variants; runtime membership validation stays authoritative for
   every emitted candidate (the precise emitter-label set depends on the host constructor -> label
-  mapping deferred to #315).
+  mapping deferred to the codec/schema follow-up).
 - A variant-emitting boundary must be exactly one exclusive group with no ordinary output ports;
   completion commits exactly one `WireValue` (reject a `WireValueSet`, multiple values, or zero).
   This is new enforcement, since `validateExplicitWireOutput` currently validates set members
-  independently. Ordinary product multi-output nodes are unchanged. #313 should also correct the
-  stale `resolveExclusiveBoundary` comment that claims the node grammar forbids the
+  independently. Ordinary product multi-output nodes are unchanged. The implementation should also
+  correct the stale `resolveExclusiveBoundary` comment that claims the node grammar forbids the
   sum-plus-ordinary mix.
 - The `select` binder must read only persisted inputs and never re-invoke the backend, preserving
   the effect-once / deterministic-resume property.
-- On landing #321, update this ADR's Traceability block to include the production entrypoint module.
+- When the production entrypoint lands, update this ADR's Traceability block to include its module.
 - If strong per-contract payload validation, cross-version replay safety, or a host-type codec
-  registry are later wanted, pursue them through #315 (refining ADR 0017) rather than widening this
-  boundary silently.
-- The Lean proof-side select admission / materialization correspondence (#138) covers the durable
-  selected-branch story; keep it in scope when #314 lands.
+  registry are later wanted, pursue them through the codec/schema follow-up (refining ADR 0017)
+  rather than widening this boundary silently.
+- The Lean proof-side select admission / materialization correspondence covers the durable
+  selected-branch story; keep it in scope when the committed-label guard path lands.
 
 ## Traceability
 
@@ -288,7 +283,6 @@ a select-runtime ADR is tracked in #320.
   `test/Cortex/Wire/RuntimeSpec.hs`
 - Theory/proof:
   [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
-- Tracking: GitHub #313, #314, #321
 
 ## Related
 
@@ -309,3 +303,12 @@ a select-runtime ADR is tracked in #320.
 - [0079 - Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema](0079-wire-admission-witness-schema.md)
   - the proof-side counterpart: the admission witness retains the select-variant exclusive-group
     provenance (`selectVariantsShareExclusiveGroup`) this ADR drops before runtime.
+
+## Tracking
+
+- #138 — select admission/materialization proof correspondence.
+- #313 — typed effect-variant emission boundary.
+- #314 — committed-label guard and lowering path.
+- #315 — codec/schema follow-up.
+- #320 — possible split of emission boundary and select runtime decisions.
+- #321 — reusable production Pulse entrypoint.

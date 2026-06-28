@@ -546,7 +546,6 @@ host-action endpoint is catalog metadata.
   `test/Cortex/Capability/BindingPack/BraketSpec.hs` (a concrete host binding pack minting runtime
   binding records)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -563,7 +562,7 @@ host-action endpoint is catalog metadata.
 - [Pulse Host-Action Contract](../Reference/Pulse/host-actions.md)
 - [Pulse Types Reference](../Reference/Pulse/types.md)
 
-## Amendment - Effect-class digest identity (cross-reference) (2026-06-27, issue #304)
+## Amendment - Effect-class digest identity (cross-reference) (2026-06-27)
 
 **Status: proposed. Pointer only — no decision is made or changed here.** The admission projection's
 `effect` field (the four-valued `WireExecutorEffect`, `src/Cortex/Wire/Executor.hs`) that this ADR

@@ -95,7 +95,6 @@ The design rule is: Wire composes registered authority, and Haskell owns what th
 - Tests: `test/Cortex/Wire/CompileSpec.hs` (registered-authority admission, e.g.
   `WireUnknownExecutor` rejecting unregistered authority)
 - Theory/proof: none (architectural authority rule, not a mechanized theorem)
-- Tracking: GitHub #304
 
 ## Related
 

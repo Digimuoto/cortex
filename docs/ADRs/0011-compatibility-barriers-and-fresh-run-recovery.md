@@ -83,7 +83,6 @@ an old checkpoint is still valid under new code.
   path)
 - Tests: `test/Cortex/Pulse/CheckpointSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

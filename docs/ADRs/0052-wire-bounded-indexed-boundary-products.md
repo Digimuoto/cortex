@@ -19,9 +19,6 @@ related:
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
   - docs/ADRs/0048-wire-make-bounded-node-generation.md
   - docs/ADRs/0050-wire-corepure-output-residue.md
-  - "GitHub #170"
-  - "GitHub #173"
-  - "GitHub #181"
 ---
 
 # ADR 0052 - Wire Bounded Indexed Boundary Products
@@ -199,7 +196,7 @@ overexpose nominal structure and create poor diagnostics for large nested values
 
 Node egress may intentionally produce several output ports from local data, as described by
 ADR 0039. That is not topology fan-out. This ADR concerns graph-boundary adapters between aggregate
-ports and multi-port frontiers. Issue #170 remains the right home for node-local egress projection.
+ports and multi-port frontiers. Node-local egress projection remains a separate follow-up.
 
 ## `*` adapter mechanics
 
@@ -357,7 +354,7 @@ correspondence work.
 - Add nested-product tests showing that one `*` unfolds only one constructor.
 - Extend the Lean proof track with a `ProductAdapterWitness` or a generalization of
   `PhantomAdapterWitness` over finite product shapes.
-- Update issue #173 so certification covers indexed products as well as record adapters.
+- Update the certification follow-up so it covers indexed products as well as record adapters.
 - Update the DIALOCO paper draft to stop presenting record-form `*` as the general homogeneous fan
   answer.
 
@@ -376,7 +373,6 @@ correspondence work.
 - Theory/proof: [Bounded fan composition row](../Reference/proof-status.md) (Lean
   `LinearPortGraph.PhantomAdapterWitness`, `LinearPortGraph.ProductAdapterKind` in
   `theory/Cortex/Wire/PhantomAdapter.lean`)
-- Tracking: GitHub #304
 
 ## Related
 
@@ -389,6 +385,8 @@ correspondence work.
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md)
 - [Wire Grammar Reference](../Reference/Wire/grammar.md)
 - [Wire Contracts, Ports, and Matching Reference](../Reference/Wire/contracts-ports-and-matching.md)
-- [GitHub #170 - ADR: define Wire egress projection and binding phases](https://github.com/Digimuoto/cortex/issues/170)
-- [GitHub #173 - Lean: certify makeEach and star elaboration](https://github.com/Digimuoto/cortex/issues/173)
-- [GitHub #181 - Design bounded graph iteration for Wire forms](https://github.com/Digimuoto/cortex/issues/181)
+
+## Tracking
+
+- #170 — node-local egress projection.
+- #173 — certification coverage for product adapters.

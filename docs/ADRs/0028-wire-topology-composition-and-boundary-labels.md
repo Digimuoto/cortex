@@ -216,7 +216,6 @@ ports rather than to source variable names.
 - Theory/proof: [Source linear port carrier row](../Reference/proof-status.md) (Lean
   `overlay_preserves_portLinear`, `contract_preserves_portLinear` in
   `theory/Cortex/Wire/PortLinearity.lean`)
-- Tracking: GitHub #304
 
 ## Related
 

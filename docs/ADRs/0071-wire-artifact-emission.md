@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
   - docs/Reference/feature-status.md
-  - "GitHub #304"
 ---
 
 # ADR 0071 — Artifact-Emission Boundary Node and Durable Artifact-Reference Contract
@@ -185,7 +184,6 @@ edges, per ADR 0002.
   (`bindCircuitArtifactBoundary`)
 - Tests: `test/Cortex/Wire/Circuit/IRSpec.hs`, `test/Cortex/Wire/Circuit/CompilerSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -201,4 +199,3 @@ edges, per ADR 0002.
   substrate envelope, payload-kind, and provenance model.
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
 - [Cortex Feature Status](../Reference/feature-status.md) — the `wire.artifact_emission` row.
-- GitHub #304

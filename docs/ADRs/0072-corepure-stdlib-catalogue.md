@@ -1,8 +1,8 @@
 ---
 title: "ADR 0072 - CorePure Ergonomic Stdlib Catalogue"
 description:
-  "Records and governs the issue #295 ergonomic CorePure stdlib batch (list, search, string, record,
-  and option builtins) as a closed, total, authority-free extension admitted under ADR 0023's stdlib
+  "Records and governs the ergonomic CorePure stdlib batch (list, search, string, record, and option
+  builtins) as a closed, total, authority-free extension admitted under ADR 0023's stdlib
   discipline."
 sidebar:
   label: "0072. CorePure stdlib catalogue"
@@ -16,17 +16,16 @@ related:
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0061-corepure-bounded-iteration-primitives.md
   - docs/ADRs/0020-wire-pure-output-equations.md
-  - "GitHub #295"
 ---
 
 # ADR 0072 - CorePure Ergonomic Stdlib Catalogue
 
 ## Status
 
-Proposed - records the governing decision for the issue #295 ergonomic stdlib batch, which ADR 0023
-left to "admission discipline" and ADR 0061 explicitly named only to disclaim governing. ADR 0023
-remains canon; this ADR does not edit it. It states that the catalogue is admitted under 0023's
-existing discipline and records which members reuse the ADR 0061 index clamp.
+Proposed - records the governing decision for the ergonomic stdlib batch, which ADR 0023 left to
+"admission discipline" and ADR 0061 explicitly named only to disclaim governing. ADR 0023 remains
+canon; this ADR does not edit it. It states that the catalogue is admitted under 0023's existing
+discipline and records which members reuse the ADR 0061 index clamp.
 
 ## Context
 
@@ -40,7 +39,7 @@ than a closed final list:
 - "Future stdlib additions must preserve data-last ordering."
 - The surface stays closed, total, and authority-free, with typed deterministic failures.
 
-The issue #295 work then added a large ergonomic batch so that real list/string/record report logic
+The ergonomic stdlib work then added a large batch so that real list/string/record report logic
 could be written in pure Wire rather than compiled into a Haskell extension. That batch roughly
 tripled the builtin surface: the implemented closed environment now lists 49 builtins against the
 roughly 18 of the 0023 core (`corePureBuiltinSpecs` in `src/Cortex/Wire/Pure.hs`).
@@ -48,17 +47,16 @@ roughly 18 of the 0023 core (`corePureBuiltinSpecs` in `src/Cortex/Wire/Pure.hs`
 Governance of that batch fell into a gap. ADR 0061 governs only the three value-driven
 bounded-iteration primitives (`range`, `fold`, `foldRight`) and their fixed cost cap; it names the
 rest of the batch precisely to **disclaim** governing it, stating the "accompanying ergonomic stdlib
-(issue #295 batch 1: `reverse`, `sort`, `sortBy`, `take`, `drop`, search, string, and record
-builtins) is _not_ gated by this ADR" because "those iterate finite input structure, exactly the
-termination class of the existing `map`/`filter`/`sum`, and need no cap." ADR 0023 set the
-discipline but predates the batch. So the ergonomic catalogue is shipped, tested, and documented,
-yet no ADR records the decision to admit it. This ADR closes that gap without reopening the 0023
-surface decision.
+(`reverse`, `sort`, `sortBy`, `take`, `drop`, search, string, and record builtins) is _not_ gated by
+ADR 0061" because "those iterate finite input structure, exactly the termination class of the
+existing `map`/`filter`/`sum`, and need no cap." ADR 0023 set the discipline but predates the batch.
+So the ergonomic catalogue is shipped, tested, and documented, yet no ADR records the decision to
+admit it. This ADR closes that gap without reopening the 0023 surface decision.
 
 ## Decision
 
-Record that the issue #295 ergonomic stdlib catalogue is admitted into CorePure under ADR 0023's
-existing stdlib discipline, and name it as the capability governed by the feature key
+Record that the ergonomic stdlib catalogue is admitted into CorePure under ADR 0023's existing
+stdlib discipline, and name it as the capability governed by the feature key
 `corepure.stdlib_catalogue`. The catalogue is the batch **excluding** the bounded-iteration trio,
 which stays governed by ADR 0061. It comprises 28 builtins in five groups, registered in
 `corePureBuiltinSpecs` (`src/Cortex/Wire/Pure.hs`):
@@ -147,7 +145,6 @@ pure extension of the closed builtin table.
   signature mirror and `closedBuiltinEnv_authorityFree` theorem range over the catalogue; no
   catalogue-specific termination theorem is required, since every member iterates finite input
   structure.
-- Tracking: GitHub #295
 
 ## Related
 
@@ -162,3 +159,7 @@ pure extension of the closed builtin table.
   catalogue and failure surface.
 - [Chapter 05 - Wire Language](../Architecture/05-wire-language.md) - where CorePure sits in the
   Wire layer.
+
+## Tracking
+
+- #295 — ergonomic CorePure stdlib batch.

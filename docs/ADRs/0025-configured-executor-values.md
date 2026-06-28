@@ -204,7 +204,6 @@ calls use node-level executor bodies.
   (`compiles a configured executor value applied in a node body`,
   `rejects configured executor values inside CorePure output equations`)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

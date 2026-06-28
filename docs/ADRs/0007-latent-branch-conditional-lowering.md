@@ -89,7 +89,6 @@ imperative logic.
 - Tests: `test/Cortex/Wire/CompileSpec.hs` (`nested select`),
   `test/Cortex/Pulse/GraphRewriteSpec.hs` (`AppendAfter`)
 - Theory/proof: [the "Select actualization" row](../Reference/proof-status.md)
-- Tracking: GitHub #304
 
 ## Related
 

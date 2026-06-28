@@ -23,8 +23,6 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0042-wire-standard-effect-executors.md
   - docs/ADRs/0043-pulse-in-memory-runner.md
-  - "GitHub #141"
-  - "GitHub #142"
 ---
 
 # ADR 0041 - Wire CLI Command Surface
@@ -141,7 +139,6 @@ the Cabal executable stanza, Nix package/app output, and a `just build-wire` con
   libraries it wraps are covered by `test/Cortex/Wire/CompileSpec.hs`,
   `test/Cortex/Wire/RuntimeSpec.hs`, and `test/Cortex/Wire/FormatSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #141
 
 ## Related
 
@@ -158,5 +155,3 @@ the Cabal executable stanza, Nix package/app output, and a `just build-wire` con
 - [ADR 0039 - Wire Node Boundary Transform Normal Form](0039-wire-node-boundary-transform-normal-form.md)
 - [ADR 0042 - Wire Standard Effect Executors](0042-wire-standard-effect-executors.md)
 - [ADR 0043 - Pulse In-Memory Runner](0043-pulse-in-memory-runner.md)
-- GitHub #141
-- GitHub #142

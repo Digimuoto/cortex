@@ -89,7 +89,6 @@ part of the runtime contract.
   and graph-native run inspection)
 - Tests: `test/Cortex/Pulse/Executor/EventsSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

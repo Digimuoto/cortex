@@ -15,7 +15,6 @@ related:
   - docs/ADRs/0054-downstream-wire-packages-and-host-bindings.md
   - docs/Architecture/02-ownership-and-boundaries.md
   - docs/Reference/feature-status.md
-  - "GitHub #304"
 ---
 
 # ADR 0077 - Wire Package Manifest Versioning and Forward-Compatibility Contract
@@ -177,7 +176,6 @@ separate authority-bearing class loaded by a different layer and is not implemen
   `test/Cortex/Wire/QuantumPackageSpec.hs` and `test/Cortex/Wire/RealizeCompileSpec.hs` load valid
   manifests only and do not assert unknown-key tolerance
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -187,4 +185,3 @@ separate authority-bearing class loaded by a different layer and is not implemen
   — the inert-package-versus-host-authority split the manifest decode lives inside.
 - [Chapter 02 - Ownership and Boundaries](../Architecture/02-ownership-and-boundaries.md)
 - [Cortex Feature Status](../Reference/feature-status.md) — the `packaging.manifest_versioning` row.
-- GitHub #304

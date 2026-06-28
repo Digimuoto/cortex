@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0011-compatibility-barriers-and-fresh-run-recovery.md
   - docs/ADRs/0058-pulse-atomic-suspend-settlement.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #304"
 ---
 
 # ADR 0064 — Pulse Graph-State Optimistic Concurrency and Single-Writer Ownership
@@ -164,7 +163,6 @@ stops harmlessly instead of corrupting the winner's state.
   `nextGraphStateRevision`, `handleGraphStatePersistError`, `settleSuspend`)
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs` (`graph-state persistence hardening`)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -182,4 +180,3 @@ stops harmlessly instead of corrupting the winner's state.
 - [Pulse Schema Reference](../Reference/Pulse/schema.md) — `graph_state` and the `updated_at`
   revision token.
 - [Pulse Events Reference](../Reference/Pulse/events.md) — `run.graph_state_stale_write`.
-- GitHub #304

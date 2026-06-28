@@ -17,7 +17,6 @@ related:
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
-  - "GitHub #304"
 ---
 
 # ADR 0079 — Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema
@@ -58,8 +57,9 @@ What is missing is a decision that _fixes the artifact as the contract_ and _say
 authoritative_. Without it, the schema version is an implementation detail rather than a governed
 boundary; the two validators can drift; and there is no recorded direction for whether the Lean
 checker — the side that can be proven sound — is the authority or merely a mirror. ADR 0038's
-obligation "If GitHub #103 later chooses Lean as compiler spec or implementation, this ADR should be
-updated or superseded" makes the authority question live but does not answer it for the _artifact_.
+obligation "If the compiler-authority decision later chooses Lean as compiler spec or
+implementation, this ADR should be updated or superseded" makes the authority question live but does
+not answer it for the _artifact_.
 
 ## Decision
 
@@ -172,8 +172,9 @@ reader refuse an artifact it was not built to understand.
   reflected in `AdmissionArtifact.validatorReadyCheck` and its soundness chain, and vice versa.
 - **Version every schema change.** Any field or encoding change bumps
   `wireAdmissionCurrentSchemaVersion` and regenerates the emitted fixtures.
-- If GitHub #103 chooses Lean as the compiler spec or implementation, revisit whether the artifact
-  remains an evidence record or becomes a Lean-constructed witness, and update this ADR accordingly.
+- If the compiler-authority decision chooses Lean as the compiler spec or implementation, revisit
+  whether the artifact remains an evidence record or becomes a Lean-constructed witness, and update
+  this ADR accordingly.
 
 ## Traceability
 
@@ -186,7 +187,6 @@ reader refuse an artifact it was not built to understand.
   `theory/Cortex/Wire/AdmissionArtifact/Sound.lean`
 - Tests: `test/Cortex/Wire/CompileSpec.hs`
 - Theory/proof: [Wire Admission Notes](../Reference/proof-status.md#wire-admission-notes)
-- Tracking: GitHub #304
 
 ## Related
 
@@ -205,4 +205,7 @@ reader refuse an artifact it was not built to understand.
   — the runtime counterpart: emits the committed select variants whose exclusive-group provenance
   this artifact's select rows retain at the proof boundary.
 - [Cortex Proof Status](../Reference/proof-status.md)
-- GitHub #304
+
+## Tracking
+
+- #103 — compiler-authority decision.

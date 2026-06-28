@@ -143,7 +143,6 @@ node gather
   `let` shadowing rejection, `where`-field delayed-binding scope)
 - Theory/proof:
   [the CorePure static-context row — `proof-status.md`](../Reference/proof-status.md#matrix)
-- Tracking: GitHub #304
 
 ## Related
 

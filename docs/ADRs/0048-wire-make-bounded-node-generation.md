@@ -171,7 +171,6 @@ The executable Haskell expander and diagnostics remain separate correspondence w
 - Theory/proof: [Bounded fan composition row](../Reference/proof-status.md) (Lean
   `LinearPortGraph.MakeWitness`, `LinearPortGraph.Make.accept_portLinear` in
   `theory/Cortex/Wire/Make.lean` and `theory/Cortex/Wire/GeneratedForms.lean`)
-- Tracking: GitHub #304
 
 ## Related
 

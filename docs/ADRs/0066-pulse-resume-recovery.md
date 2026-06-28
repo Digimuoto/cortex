@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0011-compatibility-barriers-and-fresh-run-recovery.md
   - docs/ADRs/0058-pulse-atomic-suspend-settlement.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #304"
 ---
 
 # ADR 0066 — Pulse Graph-State-Driven Resume and Recovery Preconditions
@@ -209,7 +208,6 @@ Resume never best-effort continues past a failed precondition.
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
 - Theory/proof: [Pulse recovery envelope row](../Reference/proof-status.md) (Lean
   `theory/Cortex/Pulse/Recovery.lean` — `persistence_safety`, `PersistedRecoveryPreconditions`)
-- Tracking: GitHub #304
 
 ## Related
 

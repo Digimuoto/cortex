@@ -17,7 +17,6 @@ related:
   - docs/ADRs/0003-pulse-service-and-host-action-boundary.md
   - docs/ADRs/0008-pulse-operator-visibility-surfaces.md
   - docs/ADRs/0058-pulse-atomic-suspend-settlement.md
-  - "GitHub #259"
 ---
 
 # ADR 0068 - Pulse Scheduler: Lease Recovery, Fair Claiming and Backpressure Visibility
@@ -26,8 +25,7 @@ related:
 
 Proposed. The mechanisms described here are implemented in `Cortex.Pulse.Scheduler` and exercised by
 `test/Cortex/Pulse/SchedulerSpec.hs`. This ADR records the contract those mechanisms must satisfy
-and the obligations that follow; the configurable-threshold and requeue-age follow-ups remain
-tracked on issue #259.
+and the obligations that follow; the configurable-threshold and requeue-age follow-ups remain open.
 
 ## Context
 
@@ -48,8 +46,8 @@ decisions that 0003 leaves open, and every one of them has a failure mode if lef
   it triggers. Without an explicit race resolution, a run can be double-executed, or a completed run
   can be reported failed.
 - **Backpressure visibility.** When the pool is saturated and runnable work keeps aging in the
-  queue, nothing in the runtime previously surfaced that condition (issue #259). Saturation is
-  invisible until a human notices latency.
+  queue, nothing in the runtime previously surfaced that condition. Saturation is invisible until a
+  human notices latency.
 
 These four are not independent features bolted onto separate components — they are the observable
 behavior of one scheduler loop, and they interact: per-type caps shape claiming, claiming saturates
@@ -159,8 +157,7 @@ algorithm ADR 0003 deferred; it has four coupled rules.
 - The lease-renewal/recovery race has one written resolution, so completed runs are never reported
   failed at the boundary and abandoned runs are recovered without double-execution.
 - Saturation is visible: per-type active counts, pending count, oldest pending age, and waiting
-  count are on the health surface, with a rate-limited starvation warning — the gap issue #259
-  opened.
+  count are on the health surface, with a rate-limited starvation warning.
 
 ### Negative
 
@@ -183,8 +180,8 @@ algorithm ADR 0003 deferred; it has four coupled rules.
   touching run rows.
 - Keep the backpressure snapshot feeding the health surface every tick, measuring pending age over
   never-started runs only, and keep the starvation warning rate-limited.
-- Follow-up (issue #259): add a `pending_since` column so requeued-run queue age and `queue_seconds`
-  are recoverable, and make the starvation threshold/cadence configurable.
+- Follow-up: add a `pending_since` column so requeued-run queue age and `queue_seconds` are
+  recoverable, and make the starvation threshold/cadence configurable.
 
 ## Traceability
 
@@ -194,7 +191,6 @@ algorithm ADR 0003 deferred; it has four coupled rules.
   `src/Cortex/Pulse/Health.hs`, `src/Cortex/Pulse.hs`
 - Tests: `test/Cortex/Pulse/SchedulerSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #259
 
 ## Related
 
@@ -207,3 +203,7 @@ algorithm ADR 0003 deferred; it has four coupled rules.
 - [Architecture 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md)
 - [Pulse Service API Reference](../Reference/Pulse/service-api.md)
 - [Pulse Events Reference](../Reference/Pulse/events.md) </content> </invoke>
+
+## Tracking
+
+- #259 — configurable scheduler thresholds and requeue-age accounting.

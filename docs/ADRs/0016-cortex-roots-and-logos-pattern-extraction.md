@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0018-canonical-haskell-module-tree.md
   - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
-  - "GitHub #50"
 ---
 
 # ADR 0016 — Cortex Canonical Root Taxonomy
@@ -186,7 +185,7 @@ authority.
 
 - Whether `.wire` `contract X;` declarations should admit local contract names, remain
   documentation-only, or become importable declaration files. Current compiler behavior parses them
-  but does not use them for registry membership. Tracked by GitHub #50.
+  but does not use them for registry membership. The declaration-semantics follow-up remains open.
 - The API surface for explicit strict/permissive contract-registry mode. The behavior is settled:
   patterns compile against explicit registries.
 - The concrete executor-definition data type and whether it belongs under `Cortex.Capability`,
@@ -253,3 +252,7 @@ authority.
   closed-authority composition model.
 - [../Architecture/08-artifacts-and-provenance.md](../Architecture/08-artifacts-and-provenance.md) —
   contract-owned meaning and runtime envelopes.
+
+## Tracking
+
+- #50 — `.wire` contract declaration semantics.

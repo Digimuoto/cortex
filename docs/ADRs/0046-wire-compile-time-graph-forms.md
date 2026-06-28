@@ -270,7 +270,6 @@ expanded node or graph error.
 - Tests: `test/Cortex/Wire/ParserSpec.hs`, `test/Cortex/Wire/CompileSpec.hs`
 - Theory/proof: none (graph-form expansion is not yet separately mechanized; the proof-status
   derived-form row covers `make`/`makeEach` only)
-- Tracking: GitHub #304
 
 ## Related
 

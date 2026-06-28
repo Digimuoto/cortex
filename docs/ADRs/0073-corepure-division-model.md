@@ -14,7 +14,6 @@ related:
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0023-corepure-expression-surface.md
-  - "GitHub #304"
 ---
 
 # ADR 0073 — CorePure Division Number Model: Finite Float64 and Non-Finite Rejection
@@ -170,7 +169,6 @@ overflows). Collapsing them would lose the distinction a caller needs to explain
   `PureNonFiniteFloatDivision`, `PureNonFiniteFloatDivisionOperands`)
 - Tests: `test/Cortex/Wire/PureSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

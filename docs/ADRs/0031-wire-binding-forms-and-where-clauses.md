@@ -441,7 +441,6 @@ names; `where` brings those names into node-body scope. Same evaluation order, s
   where-field shadowing), `test/Cortex/Wire/ParserSpec.hs` (pure output equations with a
   where-clause)
 - Theory/proof: [CorePure `where` fields](../Reference/proof-status.md)
-- Tracking: GitHub #304
 
 ## Related
 

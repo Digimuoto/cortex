@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0019-executor-registration-and-binding.md
   - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
-  - "GitHub #55"
 ---
 
 # ADR 0017 — Wire Executor and Port Catalog Boundary
@@ -319,7 +318,6 @@ downstream concern owned in the consuming repository, not Cortex canon.
   (`allows a strict registered executor projection with matching ports`,
   `WireExecutorPortsMismatch`)
 - Theory/proof: none
-- Tracking: GitHub #55
 
 ## Related
 
@@ -331,4 +329,20 @@ downstream concern owned in the consuming repository, not Cortex canon.
 - [ADR 0040 — Logos-Owned Reasoning Surfaces](./0040-logos-owned-reasoning-surfaces.md)
 - [Chapter 05 — Wire Language](../Architecture/05-wire-language.md)
 - [Wire Reference — Contracts, Ports, and Matching](../Reference/Wire/contracts-ports-and-matching.md)
-- GitHub #55
+
+## Amendment - Wire value envelope pointer (2026-06-28)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+ADR 0017 remains the governing home for the substrate value shape used by Wire contracts and Pulse
+framing. `src/Cortex/Wire/Value.hs` realizes that boundary with `WireValue`, the closed
+`WirePayloadKind` registry, and the payload-kind media-type table. The generic runtime envelope
+shape and provenance fields are documented in
+[Architecture 08 — Artifacts and provenance](../Architecture/08-artifacts-and-provenance.md) and
+[Cortex terminology](../Reference/terminology.md); egress artifact emission is governed separately
+by [ADR 0071](./0071-wire-artifact-emission.md).
+
+This is a pointer, not a new capability ADR: the borderline "value-envelope schema and media-type
+registry" item is already covered by ADR 0017's contract/framing split plus the architecture
+chapter's runtime-envelope vocabulary.

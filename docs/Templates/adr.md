@@ -9,7 +9,6 @@ date: YYYY-MM-DD
 superseded_by: null   # if superseded, path to the replacing ADR
 related:
   - docs/Architecture/...
-  - "GitHub #NNN"
 ---
 
 # ADR NNNN — {Decision title}
@@ -77,11 +76,20 @@ feature-status row. Delete this whole section for a non-feature ADR.
 - Implementation: `src/Cortex/...`
 - Tests: `test/Cortex/...`
 - Theory/proof: link to the relevant `docs/Reference/proof-status.md` row(s), or `none`
-- Tracking: `GitHub #NNN`
 
 ## Related
 
 <!--
 Other ADRs this decision depends on, architecture chapters that cite it,
 references that codify it.
+-->
+
+## Tracking
+
+<!--
+Optional and only while status: proposed. Use for issue links, draft PRs, or unresolved checklist
+state downstream of this ADR. The ADR is the design authority; issues, epics, and PRs execute it and
+feed implementation specifics back while the ADR remains proposed. Delete this entire section before
+changing status to accepted; accepted ADRs keep only durable canon/source/test/proof/merged-PR/commit
+references, and the rest of the docs must already be reconciled to the accepted decision.
 -->

@@ -74,7 +74,6 @@ FEATURE_STATUS_COLUMNS = [
     "Tests",
     "Theory",
     "Reference",
-    "Tracking",
 ]
 EVIDENCE_COLUMNS = ("Tests", "Theory", "Reference")
 EMPTY_CELL = "—"  # U+2014 em dash; the honest "no evidence yet" marker
@@ -204,6 +203,10 @@ def is_canonical(path: Path) -> bool:
     if parts[0] in {"Architecture", "Reference", "Publications"}:
         return True
     return len(parts) == 1 and path.suffix == ".md"
+
+
+def is_adr(path: Path) -> bool:
+    return path.parent == ADRS and path.name != "index.md" and path.suffix == ".md"
 
 
 def parse_date(value: object) -> dt.date | None:
@@ -356,10 +359,46 @@ def check_canonical_policy(document: Document, errors: list[str]) -> None:
     for line_no, line in enumerate(lines, start=1):
         if re.search(r"\bTrack\s+[0-9]+\b", line):
             add(errors, document.path, "canonical docs must not use internal track numbers", line_no)
-        if re.search(r"\b(?:GitHub|PR)\s+#[0-9]+\b", line):
+        tracker_text = re.sub(r"\]\([^)]+\)", "]()", line)
+        if TRACKER_TOKEN_RE.search(tracker_text):
             add(errors, document.path, "canonical docs must not cite transient issue or PR IDs", line_no)
         if "Cortex Pulse" in line:
             add(errors, document.path, "use the stable term 'Pulse runtime' in canonical docs", line_no)
+
+
+TRACKING_HEADING_RE = re.compile(r"^##\s+Tracking\s*$")
+TRACKER_TOKEN_RE = re.compile(r"\b(?:GitHub\s+#|PR\s+#|issue\s+)[0-9]+\b|(?<![A-Za-z0-9_./-])#[0-9]+\b")
+
+
+def check_adr_tracking_policy(document: Document, errors: list[str]) -> None:
+    if not is_adr(document.path):
+        return
+
+    status = document.frontmatter.get("status")
+    lines = document.text.splitlines()
+    tracking_lines = [
+        line_no for line_no, line in enumerate(lines, start=1) if TRACKING_HEADING_RE.match(line)
+    ]
+
+    if status != "proposed" and tracking_lines:
+        for line_no in tracking_lines:
+            add(errors, document.path, "only proposed ADRs may carry a temporary ## Tracking section", line_no)
+
+    if status == "accepted":
+        for line_no, line in enumerate(lines, start=1):
+            if TRACKER_TOKEN_RE.search(line):
+                add(errors, document.path, "accepted ADRs must not cite transient issue or PR IDs", line_no)
+
+    if status == "proposed":
+        in_tracking = False
+        for line_no, line in enumerate(lines, start=1):
+            if TRACKING_HEADING_RE.match(line):
+                in_tracking = True
+                continue
+            if in_tracking and re.match(r"^##\s+", line):
+                in_tracking = False
+            if not in_tracking and TRACKER_TOKEN_RE.search(line):
+                add(errors, document.path, "proposed ADR tracker references must live under ## Tracking", line_no)
 
 
 def check_markdown_links(document: Document, errors: list[str]) -> None:
@@ -681,7 +720,7 @@ def check_feature_status(errors: list[str]) -> None:
         if len(cells) != len(FEATURE_STATUS_COLUMNS):
             add(errors, FEATURE_STATUS, f"matrix row has {len(cells)} cells, expected {len(FEATURE_STATUS_COLUMNS)}", line_no)
             continue
-        key_cell, _capability, governing, adr_status, impl_status, tests, theory, reference, _tracking = cells
+        key_cell, _capability, governing, adr_status, impl_status, tests, theory, reference = cells
 
         key_token = FEATURE_KEY_TOKEN_RE.fullmatch(key_cell)
         if not key_token:
@@ -761,6 +800,7 @@ def main() -> int:
         check_related(document, errors)
         check_publication_body(document, errors)
         check_canonical_policy(document, errors)
+        check_adr_tracking_policy(document, errors)
         check_markdown_links(document, errors)
 
     check_feature_status(errors)

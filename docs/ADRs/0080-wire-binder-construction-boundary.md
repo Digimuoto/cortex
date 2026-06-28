@@ -2,7 +2,7 @@
 title: "ADR 0080 — Wire Binder Construction and the Contract-Typing Boundary"
 description:
   "Bounds the near-term Wire binder-construction helper to a minimal label-only hook, and draws the
-  boundary between it, the deferred contract-typing layer (#315), and binder composition (ADR 0054)."
+  boundary between it, the deferred contract-typing layer, and binder composition (ADR 0054)."
 sidebar:
   label: "0080. Binder construction boundary"
   order: 80
@@ -17,9 +17,6 @@ related:
   - docs/ADRs/0054-downstream-wire-packages-and-host-bindings.md
   - docs/ADRs/0062-typed-effect-variant-output-boundaries.md
   - docs/Reference/Wire/conditionality.md
-  - "GitHub #323"
-  - "GitHub #315"
-  - "GitHub #321"
 ---
 
 # ADR 0080 — Wire Binder Construction and the Contract-Typing Boundary
@@ -32,26 +29,27 @@ the committed-variant binder capability it scopes belongs to `wire.typed_effect_
 
 ## Context
 
-GitHub #323 proposed a public `committedVariantBinder` smart constructor so downstreams can build a
-`CircuitPulseBinder` without re-deriving the committed-variant wiring. Before adding public surface,
-we audited the substrate against our contract/type-system aspirations to avoid both overengineering
-the helper and entrenching a shape that fights the contract direction.
+The binder-construction work proposed a public `committedVariantBinder` smart constructor so
+downstreams can build a `CircuitPulseBinder` without re-deriving the committed-variant wiring.
+Before adding public surface, we audited the substrate against our contract/type-system aspirations
+to avoid both overengineering the helper and entrenching a shape that fights the contract direction.
 
 **What is built today.** The lowering binder surface is real: `CircuitPulseBinder` (five binder
 fields), `committedVariantConditionBinding`, and the production entrypoint `Cortex.Pulse.Circuit`
-(ADR 0062, #321). The executor-catalog metadata is real but inert as far as binding goes:
+(ADR 0062). The executor-catalog metadata is real but inert as far as binding goes:
 `HostBindingPack` is an executor-id → `RuntimeBindingRecord` lookup; `ExecutorManifest` and
 `AdmissionProjection` are static descriptors.
 
 **What is deliberately deferred.** No production code constructs a `CircuitPulseBinder` (only tests
-do) — #323 would be the first. There is no binder composition over the `CircuitPulseBinder` surface
-(an ADR 0054 obligation). There is no `HasContract`/`WireCodec` codec layer (illustrative in ADR
-0017; deferred to #315). Payload validation is Layer-1 only (`WirePayloadKind` shape); the
-`WireContractSpec` `schema` field and `ExecutorCodecBoundary` exist but are inert. These are
-intentional deferrals, not missing scaffolding: the hooks for contract schemas and codecs already
-exist, so filling them later does not force a boundary redesign.
+do) — the proposed helper would be the first production construction site. There is no binder
+composition over the `CircuitPulseBinder` surface (an ADR 0054 obligation). There is no
+`HasContract`/`WireCodec` codec layer (illustrative in ADR 0017; deferred to the contract-typing
+follow-up). Payload validation is Layer-1 only (`WirePayloadKind` shape); the `WireContractSpec`
+`schema` field and `ExecutorCodecBoundary` exist but are inert. These are intentional deferrals, not
+missing scaffolding: the hooks for contract schemas and codecs already exist, so filling them later
+does not force a boundary redesign.
 
-**Two aspirations frame the choice.** Contract typing (#315): `ContractId → ContractDefinition` with
+**Two aspirations frame the choice.** Contract typing: `ContractId → ContractDefinition` with
 schema, versioned identity, and compatibility — but ADR 0017 deliberately decided **contracts are
 values, not Haskell types** (so a contract catalog stays portable across process, language, and
 replay logs). So "contracts as types" must mean richer _value-level_ nominal types with schemas,
@@ -69,10 +67,11 @@ the helper's only value is removing a "remember to wire the condition" footgun. 
 minimal, label-only hook; no composition algebra.
 
 **Q2 — Contract-as-name versus contract-as-type: how much to commit now?** ADR 0017 rejects
-phantom-typed contracts; #315 wants schema/version on the value-level contract; the `schema` field
-already exists but is inert. Committing schema validation now pre-empts #315. **Decision:** the
-binder commits nothing to contract typing — it is purely structural label routing. Contract typing
-stays value-level and lives in #315, reconciled to ADR 0017 (no host-type identity).
+phantom-typed contracts; the contract-typing follow-up wants schema/version on the value-level
+contract; the `schema` field already exists but is inert. Committing schema validation now pre-empts
+the contract-typing follow-up. **Decision:** the binder commits nothing to contract typing — it is
+purely structural label routing. Contract typing stays value-level and lives in the contract-typing
+follow-up, reconciled to ADR 0017 (no host-type identity).
 
 **Q3 — Label-only versus contract-key select.** `resolveSelectArms` resolves an arm key by label
 first and falls back to a unique contract name (`SelectResolvedByLabel | SelectResolvedByContract`);
@@ -83,22 +82,23 @@ helper uses the label-based binding and entrenches nothing about contract-keying
 
 **Q4 — How much codec/typing to commit now?** The audit shows the Layer-1 (Pulse framing, payload
 kind/shape) versus Layer-2 (host codecs, schema) split is stable: the inert `schema` slot and empty
-`ExecutorCodecBoundary` are exactly the hooks #315 fills, with no boundary change. **Decision:** the
-split is stable; the binder stays Layer-1; all codec/schema work is #315; no ABI-driver templates
-now.
+`ExecutorCodecBoundary` are exactly the hooks the contract-typing follow-up fills, with no boundary
+change. **Decision:** the split is stable; the binder stays Layer-1; all codec/schema work stays in
+the contract-typing follow-up; no ABI-driver templates now.
 
 ## Decision
 
 The substrate is sound and its layering is stable, so each concern stays at its own altitude:
 
-1. The near-term binder helper (#323) is a **minimal, label-only binder hook** — a task-node binding
-   lifted into a `CircuitPulseBinder` that fixes
+1. The near-term binder helper is a **minimal, label-only binder hook** — a task-node binding lifted
+   into a `CircuitPulseBinder` that fixes
    `bindCircuitConditionNode = committedVariantConditionBinding` and fails the
    signal/artifact/rewrite boundaries with an explicit typed `CircuitLoweringError`. It defines no
    composition algebra and no contract typing.
 2. **Contract typing** (schema, versioned `ContractDefinition`, compatibility) stays value-level and
-   is owned by #315, reconciled to ADR 0017's "contracts are values."
-3. **Binder composition** over `CircuitPulseBinder` stays owned by ADR 0054 and its epic (#278).
+   is owned by the contract-typing follow-up, reconciled to ADR 0017's "contracts are values."
+3. **Binder composition** over `CircuitPulseBinder` stays owned by ADR 0054 and the
+   binder-composition epic.
 4. The **label is the canonical select arm key**; contract-key resolution is demoted to elaboration.
 
 ## Consequences
@@ -106,8 +106,8 @@ The substrate is sound and its layering is stable, so each concern stays at its 
 ### Positive
 
 - Every concern is right-sized: no speculative composition algebra, no half-built contract schema.
-- #315 gains a sharpened target (value-level contract typing, not host types) and #321's entrypoint
-  stays the integration seam.
+- The contract-typing follow-up gains a sharpened target (value-level contract typing, not host
+  types) and the production select entrypoint stays the integration seam.
 - The select surface converges on a single discriminant (the label).
 
 ### Negative
@@ -119,8 +119,8 @@ The substrate is sound and its layering is stable, so each concern stays at its 
 
 ### Obligations
 
-- #315 reconciles contracts-as-types with ADR 0017 (value-level schema/version, never host-type
-  identity) and is the home for codec/schema work.
+- The contract-typing follow-up reconciles contracts-as-types with ADR 0017 (value-level
+  schema/version, never host-type identity) and is the home for codec/schema work.
 - A follow-up warns on, then removes, contract-key select resolution (ADR 0033 / conditionality
   reference).
 - The minimal helper, when implemented, is label-only with explicit boundary failures, re-exported
@@ -129,10 +129,11 @@ The substrate is sound and its layering is stable, so each concern stays at its 
 
 ## Alternatives considered
 
-- **Build the general binder-composition layer now.** Rejected: ADR 0054 / #278 scope; no current
-  consumer; defining the composition algebra ahead of need is overengineering.
-- **Commit contract schema/version validation now.** Rejected: pre-empts #315 and collides with ADR
-  0017's contracts-are-values decision; the inert `schema` hook means deferral costs no redesign.
+- **Build the general binder-composition layer now.** Rejected: ADR 0054 binder-composition scope;
+  no current consumer; defining the composition algebra ahead of need is overengineering.
+- **Commit contract schema/version validation now.** Rejected: pre-empts the contract-typing
+  follow-up and collides with ADR 0017's contracts-are-values decision; the inert `schema` hook
+  means deferral costs no redesign.
 - **Keep contract-key select as a permanent feature.** Rejected: it conflates the label
   (constructor) with the contract (payload interface) and complicates proof and contract evolution.
 - **Ship no helper at all.** Viable, but a minimal hook removes a real wiring footgun at negligible
@@ -147,4 +148,10 @@ The substrate is sound and its layering is stable, so each concern stays at its 
 - [0054-downstream-wire-packages-and-host-bindings.md](0054-downstream-wire-packages-and-host-bindings.md)
 - [0062-typed-effect-variant-output-boundaries.md](0062-typed-effect-variant-output-boundaries.md)
 - [../Reference/Wire/conditionality.md](../Reference/Wire/conditionality.md)
-- GitHub #323, #315, #321
+
+## Tracking
+
+- #315 — value-level contract typing and codec/schema work.
+- #321 — production select entrypoint.
+- #323 — committed-variant binder helper.
+- #278 — binder-composition epic.

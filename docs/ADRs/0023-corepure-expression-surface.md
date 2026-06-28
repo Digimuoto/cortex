@@ -351,7 +351,6 @@ can build text outputs without unreadable manual `concat` and `toString` calls.
   signature)
 - Theory/proof:
   [the CorePure builtin-authority and value-contract rows — `proof-status.md`](../Reference/proof-status.md#matrix)
-- Tracking: GitHub #304
 
 ## Related
 

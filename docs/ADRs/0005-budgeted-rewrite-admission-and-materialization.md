@@ -87,10 +87,26 @@ operations.
   `RewriteCost`, `consumeRewriteBudget`), `src/Cortex/Pulse/Materialization.hs`
 - Tests: `test/Cortex/Pulse/GraphRewriteSpec.hs`
 - Theory/proof: [Rewrite admission — `proof-status.md`](../Reference/proof-status.md)
-- Tracking: GitHub #304
 
 ## Related
 
 - [../Architecture/07-rewrites-and-materialization.md](../Architecture/07-rewrites-and-materialization.md)
 - [../Roadmap/Plans/rewrite-materialization-and-recovery.md](../Roadmap/Plans/rewrite-materialization-and-recovery.md)
 - [../Reference/rewrites.md](../Reference/rewrites.md)
+
+## Amendment - Materialized node identity namespace (2026-06-28)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+Materialized rewrite node identity belongs under ADR 0005 because it is part of replay-stable
+materialization, not a new topology feature. For the ordinary anchored rewrite path, a local
+inserted node id is namespaced as `parent <> ":" <> local`. Local inserted node ids must be
+non-empty and must not contain the `:` delimiter; after namespacing, inserted node ids must be fresh
+against the current topology.
+
+The delimiter reservation keeps rewrite materialization deterministic and collision-resistant across
+replay. Runtime-bounded iteration uses the same namespace discipline with the flat iteration-indexed
+seed described in [ADR 0055](./0055-pulse-runtime-bounded-iteration.md), and the persisted rewrite
+facts remain part of the provenance and integrity story governed by
+[ADR 0009](./0009-rewrite-provenance-and-topology-integrity.md).

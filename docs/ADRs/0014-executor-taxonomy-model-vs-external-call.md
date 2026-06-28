@@ -137,7 +137,6 @@ metadata. Wire is agnostic to which backend produced the registration. New backe
   class through `executorSpecEffect`), `test/Cortex/Capability/CatalogSpec.hs` (admission projection
   carries the executor effect axis)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -150,9 +149,9 @@ metadata. Wire is agnostic to which backend produced the registration. New backe
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md) — executors are
   dispatched here.
 
-## Amendment - Executor Side-Effect Class Lattice and Admission-Projection Digest Identity (2026-06-27, issue #304)
+## Amendment - Executor Side-Effect Class Lattice and Admission-Projection Digest Identity (2026-06-27)
 
-**Status: proposed.** Append-only amendment under GitHub #304. It does not alter the two-kind
+**Status: proposed.** Append-only amendment from the ADR sweep. It does not alter the two-kind
 decision above; it names a concrete realization of the **side-effect class** metadata axis this
 ADR's Obligations already deferred ("Document the cross-cutting metadata axes (determinism, replay
 safety, side-effect class) as a distinct reference surface").
@@ -237,4 +236,7 @@ side-effect class is _identity-bearing and declared_, not yet _enforced_.
 - Tests: `test/Cortex/Capability/CatalogSpec.hs` (admission-projection JSON round-trip and digest
   determinism/sensitivity; does not yet isolate the effect field)
 - Theory/proof: none
-- Tracking: GitHub #304
+
+## Tracking
+
+- #304 — ADR sweep follow-up that introduced this proposed amendment.

@@ -17,7 +17,6 @@ related:
   - docs/ADRs/0011-compatibility-barriers-and-fresh-run-recovery.md
   - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #304"
 ---
 
 # ADR 0067 - Pulse Per-Stage Retry, Backoff and Replay-Safety Policy
@@ -203,7 +202,6 @@ effective `ReplayPolicy`. The executor (`handleRetry`, `handleSkip`, `handleTerm
   `src/Cortex/Pulse/Executor/ReplayPolicy.hs` (`enforceGraphReplayPolicy`, `applyReplayPolicy`)
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -224,4 +222,3 @@ effective `ReplayPolicy`. The executor (`handleRetry`, `handleSkip`, `handleTerm
 - [Architecture 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md) — Retry and Replay-safety
   subsections.
 - [Pulse Types Reference](../Reference/Pulse/types.md) — the normative type shapes.
-- GitHub #304

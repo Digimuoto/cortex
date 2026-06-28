@@ -18,7 +18,6 @@ related:
   - docs/ADRs/0043-pulse-in-memory-runner.md
   - docs/ADRs/0058-pulse-atomic-suspend-settlement.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #304"
 ---
 
 # ADR 0065 - Pulse Concurrent Frontier Execution and Cooperative Cancellation
@@ -214,7 +213,6 @@ drains. After the wave drains, `classifyFrontierOutcome` decides the run outcome
   `src/Cortex/Pulse/Executor/Types.hs`
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -233,4 +231,3 @@ drains. After the wave drains, `classifyFrontierOutcome` decides the run outcome
   execution" narrative.
 - [Pulse Events Reference](../Reference/Pulse/events.md)
 - [Cortex Feature Status](../Reference/feature-status.md) — the `pulse.frontier_concurrency` row.
-- GitHub #304

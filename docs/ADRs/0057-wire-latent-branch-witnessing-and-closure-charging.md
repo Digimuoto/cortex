@@ -22,7 +22,6 @@ related:
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/Reference/Wire/conditionality.md
   - docs/Reference/rewrites.md
-  - "GitHub #99"
 ---
 
 # ADR 0057 - Latent Branch Witnessing and Proposal Closure Charging
@@ -182,7 +181,6 @@ enforcement remains per-site; there is no global gas object.
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Pulse/IterationSpec.hs`
 - Theory/proof:
   [Selected branch budget / Latent recovery determinism — `proof-status.md`](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 

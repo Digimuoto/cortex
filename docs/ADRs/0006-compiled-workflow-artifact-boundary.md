@@ -80,3 +80,24 @@ carries the honest shape of the workflow contract above the runtime.
 - [../Architecture/04-graph-and-circuit.md](../Architecture/04-graph-and-circuit.md)
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md)
 - [../Publications/Paper-3-graph-substitution-semantics/manuscript.md](../Publications/Paper-3-graph-substitution-semantics/manuscript.md)
+
+## Amendment - Compiled circuit compatibility witness (2026-06-28)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+The compiled artifact boundary includes a compatibility witness. A compiled circuit carries a family
+string plus a SHA-256 digest over the serialized compiler input for that artifact family. The
+witness is not a proof of semantic equivalence and is not host authority; it is a compatibility
+barrier that lets consumers and runtime integration code detect that a compiled artifact belongs to
+the expected circuit family and digest lineage before treating it as reusable.
+
+The current implementation records this as `CircuitCompatibilityWitness` on `CompiledCircuit`.
+Wire-source compilation uses the `cortex.workflow.wire` family over the serialized `WireFile`;
+CircuitIR compilation uses the `cortex.workflow/v1` family over serialized `CircuitIR`. Future
+compiler families may add their own family strings, but must keep the witness explicit on the
+compiled artifact rather than hiding compatibility behind implicit file naming or runtime state.
+
+Traceability: `CircuitCompatibilityWitness` and `CompiledCircuit` live in
+`src/Cortex/Wire/Circuit/Compiled.hs`; witness construction is in `src/Cortex/Wire/Compile.hs` and
+`src/Cortex/Wire/Circuit/Compiler.hs`; coverage includes `test/Cortex/Wire/Circuit/CompilerSpec.hs`.

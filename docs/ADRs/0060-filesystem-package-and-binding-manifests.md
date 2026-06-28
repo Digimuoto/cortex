@@ -14,8 +14,6 @@ related:
   - docs/ADRs/0054-downstream-wire-packages-and-host-bindings.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
   - docs/Architecture/02-ownership-and-boundaries.md
-  - "GitHub #287"
-  - "GitHub #289"
 ---
 
 # ADR 0060 - Filesystem Package and Binding Manifests
@@ -308,4 +306,36 @@ authority properties. Braket belongs in a vendor package and binding pack.
 - Tests: `test/Cortex/Wire/QuantumPackageSpec.hs`, `test/Cortex/Wire/RealizeCompileSpec.hs` (both
   load `cortex.toml` manifests through `loadWirePackageManifests`)
 - Theory/proof: none
-- Tracking: GitHub #287
+
+## Amendment - CLI package manifest discovery precedence (2026-06-28)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+The `wire` CLI's manifest discovery and precedence policy is a thin host/compiler selection rule
+under this ADR, not a separate package-authority decision. The CLI composes manifests in this order:
+explicit repeated `--wire-package PATH` flags first; if no explicit flags are present, the
+`CORTEX_WIRE_PACKAGE_MANIFESTS` search path; if neither is set, no extension packages are loaded and
+the compile environment knows only Cortex's standard namespaces.
+
+Manifest discovery still grants no runtime authority. It only selects package data for
+`WireCompileEnv`; Pulse receives already-bound stage actions and never loads package manifests.
+
+## Amendment - Package composition conflict contract (2026-06-28)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+Wire package composition is deterministic internally, but public manifest loading must not silently
+choose a winner when independently loaded packages claim the same identity. The package layer uses
+left-biased composition for registries so the operation is stable, and exposes `PackageConflict`
+diagnostics for duplicate package ids, namespaces, executor ids, and contract ids. Callers that load
+external manifests must reject a non-empty `packageConflicts` result before compilation.
+
+This discharges the earlier "future hardening" note for conflict diagnostics. Manifest versioning,
+dependency declarations, package-owned Wire module paths, and direct TOML syntax for future binding
+requirements remain deferred.
+
+Traceability: `PackageConflict`, `packageConflicts`, and `renderPackageConflict` live in
+`src/Cortex/Wire/Package.hs`; the `wire` CLI rejects conflicts before constructing `WireCompileEnv`;
+coverage includes `test/Cortex/Wire/PackageSpec.hs` and `test/Cortex/Wire/QuantumPackageSpec.hs`.

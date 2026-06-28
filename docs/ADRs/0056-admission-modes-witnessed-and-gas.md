@@ -22,7 +22,6 @@ related:
   - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0055-pulse-runtime-bounded-iteration.md
   - docs/ADRs/0057-wire-latent-branch-witnessing-and-closure-charging.md
-  - "GitHub #181"
 ---
 
 # ADR 0056 - Admission Modes: Witnessed Materialization and Open Rewrite Gas
@@ -170,7 +169,6 @@ here.
 - Tests: `test/Cortex/Pulse/IterationSpec.hs`, `test/Cortex/Pulse/ExecutorSpec.hs`
   (`runtime-bounded iteration evidence: gas-neutral cap loop`)
 - Theory/proof: [Boundary resource algebra — `proof-status.md`](../Reference/proof-status.md)
-- Tracking: GitHub #181
 
 ## Related
 

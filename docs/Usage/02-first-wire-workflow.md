@@ -94,6 +94,21 @@ What an example needs to run depends on its leaves:
 - **Durable** runs — persistence, resume, and signals are a Pulse concern, not the in-memory runner.
   See [Running Pulse](03-running-pulse.md).
 
+## Loading Package Manifests With the CLI
+
+The `wire` CLI can opt into compile-time package manifests when an example or extension uses names
+outside Cortex's standard namespaces. Pass one or more explicit manifests with `--wire-package`:
+
+```bash
+nix run .#wire -- run \
+  --wire-package extensions/quantum/packages/quantum-core/cortex.toml \
+  examples/wire/quantum-bell-state.wire
+```
+
+If no `--wire-package` flags are present, the CLI reads `CORTEX_WIRE_PACKAGE_MANIFESTS` as a search
+path. If neither is set, it loads no extension packages. Manifest loading selects compile-time
+package data only; it does not grant runtime executor, provider, secret, or Pulse authority.
+
 ## Compiling From Haskell
 
 The current public surface is the Haskell API:

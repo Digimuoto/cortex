@@ -18,7 +18,6 @@ related:
   - docs/Reference/feature-status.md
   - docs/ADRs/0041-wire-cli-command-surface.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #304"
 ---
 
 # ADR 0076 — Wire CLI Proof-Fixture and Grammar-Acceptance Subcommands
@@ -156,7 +155,6 @@ is the only sanctioned way to change them.
   [The Emission-Soundness Target](../Reference/proof-status.md#the-emission-soundness-target) —
   clauses 2 (`validatorReadyCheck` at every `lean-check`) and 4 (per-fixture kernel differential)
   consume these regenerated fixtures
-- Tracking: GitHub #304
 
 ## Related
 
@@ -171,4 +169,3 @@ is the only sanctioned way to change them.
   this ADR extends.
 - [ADR 0038 — Wire Proof-Track Theorem Ledger](./0038-wire-proof-track-theorem-ledger.md) — the
   theorem targets whose fixtures `wire lean-fixtures` regenerates.
-- GitHub #304

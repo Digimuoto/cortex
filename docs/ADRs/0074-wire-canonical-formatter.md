@@ -15,7 +15,6 @@ related:
   - docs/Reference/feature-status.md
   - docs/ADRs/0041-wire-cli-command-surface.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
-  - "GitHub #304"
 ---
 
 # ADR 0074 - Canonical Wire Source Formatter and wire fmt Command
@@ -171,7 +170,7 @@ interpreter that reads files, applies the mode, writes or prints, and sets the e
   it fixes are Wire-language-shaped concerns: they close a gap ADR 0047 left in the language's
   precedence semantics. Whether the language-shaped half is reclassified toward Wire language &
   grammar, or stays with the command surface, is deferred to the Stage-3 classification of this
-  sweep (GitHub #304); the Obligations bullet tracks the resolution.
+  sweep; the Obligations bullet tracks the resolution.
 
 ## Traceability
 
@@ -181,7 +180,6 @@ interpreter that reads files, applies the mode, writes or prints, and sets the e
 - Implementation: `src/Cortex/Wire/Format.hs`, `app/wire/Main.hs`
 - Tests: `test/Cortex/Wire/FormatSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -192,4 +190,7 @@ interpreter that reads files, applies the mode, writes or prints, and sets the e
 - [ADR 0047 - Wire Frontier Linearity and Precedence](0047-wire-frontier-linearity-and-precedence.md)
   - settles the precedence ladder and defers the parenthesis policy resolved here.
 - [Cortex Feature Status](../Reference/feature-status.md)
-- GitHub #304
+
+## Tracking
+
+- #304 — ADR sweep classification context.

@@ -86,7 +86,6 @@ This makes provenance and integrity runtime facts, not offline audit convenience
   (`persists per-node provenance and topology hash after a successful rewrite`),
   `test/Cortex/Pulse/GraphRewriteSpec.hs`
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

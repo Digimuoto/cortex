@@ -153,7 +153,6 @@ renderers can be proposed later as explicit closed stdlib additions.
 - Tests: `test/Cortex/Wire/PureSpec.hs` (`fromJson` parsing, malformed-JSON typed pure failure,
   `toJson`/`fromJson` in the builtin authority-review signature)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

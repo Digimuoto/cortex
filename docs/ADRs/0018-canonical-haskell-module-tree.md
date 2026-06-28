@@ -22,7 +22,6 @@ related:
   - docs/ADRs/0020-wire-pure-output-equations.md
   - docs/ADRs/0019-executor-registration-and-binding.md
   - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
-  - "GitHub #62"
 ---
 
 # ADR 0018 — Canonical Haskell Module Tree
@@ -384,4 +383,3 @@ Rejected. `Document` currently mixes generic artifact substrate with report and 
 - [ADR 0020 — Wire Pure Output Equations](./0020-wire-pure-output-equations.md)
 - [ADR 0040 — Logos-Owned Reasoning Surfaces](./0040-logos-owned-reasoning-surfaces.md)
 - [Logos Reasoning Library](../Consumers/Logos/reasoning-library.md)
-- GitHub #62

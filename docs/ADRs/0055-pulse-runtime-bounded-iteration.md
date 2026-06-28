@@ -28,14 +28,6 @@ related:
   - docs/ADRs/0057-wire-latent-branch-witnessing-and-closure-charging.md
   - docs/ADRs/0058-pulse-atomic-suspend-settlement.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #21"
-  - "GitHub #181"
-  - "GitHub #182"
-  - "GitHub #235"
-  - "GitHub #251"
-  - "GitHub #259"
-  - "GitHub #260"
-  - "GitHub #261"
 ---
 
 # ADR 0055 - Pulse Runtime-Bounded Iteration
@@ -548,8 +540,8 @@ Acceptance of this proposed ADR requires the in-text design gates to remain expl
 uses one composite continuation-state anchor, the loop step is a witnessed ADR 0056 append of a
 previously admitted kernel, the proposer is the existing loop-exit `StageLoopStep`, and durable
 suspend/external-call interactions are delegated to ADR 0058 and ADR 0059. The obligations below are
-the implementation, reference-doc, and proof work for GitHub #251 unless they explicitly ask for a
-follow-up boundary-law ADR.
+the implementation, reference-doc, and proof work for the runtime-bounded-iteration track unless
+they explicitly ask for a follow-up boundary-law ADR.
 
 - Define a `LoopPolicy` or equivalent runtime carrier with at least: maximum iteration count, budget
   exhaustion behavior, checkpoint cadence, cancellation points, and emitted-output aggregation
@@ -641,7 +633,6 @@ The first design pass should attack these questions before any Pulse implementat
 - Tests: `test/Cortex/Pulse/IterationSpec.hs`
 - Theory/proof: none (the finite-budget and frontier-shape-preservation theorem targets in this
   ADR's Obligations are not yet mechanized)
-- Tracking: GitHub #251
 
 ## Related
 
@@ -659,9 +650,7 @@ The first design pass should attack these questions before any Pulse implementat
 - [ADR 0059 - Durable External-Call Frontiers on Pulse](0059-durable-external-call-frontiers-on-pulse.md)
 - [Architecture 05 - Wire Language](../Architecture/05-wire-language.md)
 - [Architecture 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md)
-- [GitHub #21 - Realized circuit snapshots](https://github.com/Digimuoto/cortex/issues/21)
-- [GitHub #181 - Design bounded graph iteration for Wire forms](https://github.com/Digimuoto/cortex/issues/181)
-- [GitHub #235 - Frontier-bounded memory liveness](https://github.com/Digimuoto/cortex/issues/235)
-- [GitHub #251 - Pulse runtime-bounded iteration implementation](https://github.com/Digimuoto/cortex/issues/251)
-- [GitHub #259 - Hierarchical run scheduling](https://github.com/Digimuoto/cortex/issues/259)
-- [GitHub #261 - Runtime iteration as certified self-append](https://github.com/Digimuoto/cortex/issues/261)
+
+## Tracking
+
+- #251 — runtime-bounded-iteration implementation, reference, and proof work.

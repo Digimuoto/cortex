@@ -272,7 +272,6 @@ executor call. Zero-output and multi-output external executors must use the node
   `test/Cortex/Wire/CompileSpec.hs`
   (`compiles a zero-output executor body as a node with an empty output boundary`)
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 

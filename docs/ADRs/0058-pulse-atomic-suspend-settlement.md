@@ -17,9 +17,6 @@ related:
   - docs/ADRs/0004-graph-native-pulse-execution.md
   - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
   - docs/ADRs/0059-durable-external-call-frontiers-on-pulse.md
-  - "GitHub #263"
-  - "GitHub #264"
-  - "GitHub #267"
 ---
 
 # ADR 0058 - Pulse Atomic Suspend Settlement
@@ -28,8 +25,8 @@ related:
 
 Proposed. The design is validated by the model-checked spec `formal/RunTerminalSignal.tla` (atomic
 settlement is lost-wakeup-free; the split protocol reproduces the bug). This ADR records the runtime
-contract and the implementation obligations; the refactor itself is tracked on #267 (the testability
-and design groundwork landed via #263).
+contract and the implementation obligations; the refactor itself remains tracked separately from the
+testability and design groundwork that already landed.
 
 ## Context
 
@@ -43,10 +40,10 @@ A parent run suspends on a child run's `run-terminal:<uuid>` signal. Today the s
 4. a post-park recheck re-reads delivered signals and self-wakes to patch the window between
    (1)/(3).
 
-Every run-terminal bug fixed to date (PR #263: lost wakeup at registration, delivery racing the
-park, missing terminal writers, swallowed lookup error; then a timeout-omission and a wake-on-error)
-has been an **additive guard on a new interleaving** of this split. The protocol is correct only if
-all four sites share one mental model — the signature of a transition surface that is too large.
+Every run-terminal bug fixed to date (lost wakeup at registration, delivery racing the park, missing
+terminal writers, swallowed lookup error; then a timeout-omission and a wake-on-error) has been an
+**additive guard on a new interleaving** of this split. The protocol is correct only if all four
+sites share one mental model — the signature of a transition surface that is too large.
 
 ## Decision
 
@@ -189,8 +186,7 @@ _Boundary Rules_) covers both crash recovery and a delivery serialized just befo
 ## Alternatives considered
 
 - **Keep the recheck (status quo).** Rejected as the steady state: it is correct but is an additive
-  guard that every new interleaving re-opens; the suite that would catch regressions was dormant
-  (#264).
+  guard that every new interleaving re-opens; the suite that would catch regressions was dormant.
 - **Derive `waiting` from signal rows (drop the denormalized status).** Rejected: it pushes a
   graph/signal join into scheduler claiming and erases a documented lifecycle state (`schema.md`).
 - **Redundant registration (frontier + settlement).** Rejected: a delivery between the two can flip
@@ -208,7 +204,6 @@ _Boundary Rules_) covers both crash recovery and a delivery serialized just befo
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
 - Theory/proof: model-checked by `formal/RunTerminalSignal.tla` (atomic settlement is
   lost-wakeup-free; the split protocol reproduces the bug). Not a `proof-status.md` Lean row.
-- Tracking: GitHub #267
 
 ## Related
 
@@ -219,3 +214,9 @@ _Boundary Rules_) covers both crash recovery and a delivery serialized just befo
 - [Architecture 06 - Pulse Runtime](../Architecture/06-pulse-runtime.md)
 - [Pulse Signals Reference](../Reference/Pulse/signals.md)
 - `formal/RunTerminalSignal.tla`
+
+## Tracking
+
+- #263 — testability and design groundwork.
+- #264 — dormant regression-suite recovery.
+- #267 — atomic suspend-settlement refactor.

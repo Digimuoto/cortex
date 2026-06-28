@@ -24,7 +24,6 @@ related:
   - docs/ADRs/0036-wire-latent-branch-budget-recovery.md
   - docs/ADRs/0037-wire-latent-structural-control.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #99"
 ---
 
 # ADR 0034 - Pure Selectors and Restricted Actualization Authority
@@ -130,7 +129,6 @@ not itself carry arbitrary graph authority.
 - Tests: `test/Cortex/Wire/Circuit/CompilerSpec.hs`
   (`admits only the selected latent branch through the rewrite witness surface`)
 - Theory/proof: [Select actualization — `proof-status.md`](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 
@@ -148,4 +146,3 @@ not itself carry arbitrary graph authority.
 - [0036-wire-latent-branch-budget-recovery.md](0036-wire-latent-branch-budget-recovery.md)
 - [0037-wire-latent-structural-control.md](0037-wire-latent-structural-control.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
-- GitHub #99

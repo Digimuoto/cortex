@@ -173,7 +173,6 @@ the node/elaborator slice when multi-node examples require them.
 - Tests: `test/Cortex/Wire/CompileSpec.hs`, `test/Cortex/Wire/PureSpec.hs`
 - Theory/proof: [CorePure lowering and static-context rows](../Reference/proof-status.md) (CorePure
   evaluation under a static environment)
-- Tracking: GitHub #304
 
 ## Related
 

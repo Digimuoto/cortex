@@ -17,7 +17,6 @@ related:
   - docs/Reference/feature-status.md
   - docs/ADRs/0003-pulse-service-and-host-action-boundary.md
   - docs/ADRs/0008-pulse-operator-visibility-surfaces.md
-  - "GitHub #304"
 ---
 
 # ADR 0075 — cortex-pulse Service Config, Runner-Token Minting and Credential Surface
@@ -153,8 +152,7 @@ The security-relevant invariants that are actually implemented at this surface:
   the `cortex-pulse` CLI boundary, so its primary category here is **Packaging, CLI & tooling**. But
   what it configures — the service credential, the runner-token claim parameters, and the scheduler
   concurrency caps — is owned by the **Pulse runtime** (ADR 0003). Whether this decision classifies
-  as CLI tooling or as Pulse runtime is deferred to the Stage-3 classification of this sweep (GitHub
-  #304).
+  as CLI tooling or as Pulse runtime is deferred to the Stage-3 classification of this sweep.
 - **Runner-token minting.** The title and config surface anticipate runner-token minting, but no
   signing path exists in this repository (see Consequences): the config carries the JWT claim
   parameters and signing-secret path, yet nothing in `src/` or `app/` mints a token. How tokens are
@@ -169,7 +167,6 @@ The security-relevant invariants that are actually implemented at this surface:
 - Implementation: `app/cortex-pulse/Main.hs`, `src/Cortex/Pulse/Types.hs`, `src/Cortex/Pulse.hs`
 - Tests: none
 - Theory/proof: none
-- Tracking: GitHub #304
 
 ## Related
 
@@ -182,4 +179,7 @@ The security-relevant invariants that are actually implemented at this surface:
   contract.
 - [Pulse Host Actions Reference](../Reference/Pulse/host-actions.md) — the outbound Pulse → host
   direction the service credential authenticates.
-- GitHub #304
+
+## Tracking
+
+- #304 — ADR sweep classification context.

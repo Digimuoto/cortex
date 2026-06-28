@@ -97,12 +97,9 @@ values: `proposed`, `accepted`, `superseded`, `deprecated`.
 
 ## By category
 
-A browse-by-concern view of the current ADRs (primary category from the issue #304 Stage-3
-classification; the superseded 0049 is omitted). Numbering stays in allocation order — the order
-ADRs were added (chronological by repository entry; some frontmatter dates drift) — with one
-deliberate exception: ADR 0001 reclaims the vacated floor slot for the foundational documentation
-contract, placed out of allocation order by design (see ADR 0001 Status). So this is only the
-category lens, not a renumber. A few ADRs cross-cut; only the primary category is shown here.
+A browse-by-concern view of the current ADRs. The superseded 0049 is omitted. Numbering is the
+stable ADR identifier space, not a category ranking. A few ADRs cross-cut; only the primary category
+is shown here.
 
 - **Boundary & governance** (9): [0001](0001-canonical-documentation-contract.md),
   [0002](0002-cortex-downstream-ownership-boundary.md),
@@ -174,9 +171,17 @@ Use the [template](../Templates/adr.md). Key discipline:
 
 - Each ADR is about **one** decision. If you find yourself writing two decisions in one ADR, split
   them.
-- Frontmatter lists `status`, `date`, and `related` issues.
+- Start substantial design work with a `proposed` ADR. Issues, epics, and PRs are downstream
+  execution surfaces derived from the ADR, not substitutes for the design record.
+- While an ADR is proposed, implementation may refine its wording, obligations, traceability, and
+  open questions. Acceptance happens only after dependencies are met, implementation/docs evidence
+  is current, and temporary tracker state is removed.
+- Frontmatter lists `status`, `date`, and durable `related` canon/source references.
 - Body has `Context`, `Decision`, `Consequences` sections at minimum. Feature/runtime/language/proof
   ADRs add a `Traceability` block (ADR 0063); governance and meta ADRs omit it.
+- Proposed ADRs may end with a temporary `## Tracking` section for issue/PR planning state. Delete
+  that section before moving the ADR to `accepted`; accepted ADRs should cite durable artifacts, not
+  issue-tracker archaeology.
 - An accepted ADR is canon — supersede it with a new numbered ADR rather than editing the original,
   except to update `status` and add a forward-pointer.
 

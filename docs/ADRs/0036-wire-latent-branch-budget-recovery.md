@@ -25,7 +25,6 @@ related:
   - docs/ADRs/0035-wire-rewrite-algebra-forms.md
   - docs/ADRs/0037-wire-latent-structural-control.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
-  - "GitHub #99"
 ---
 
 # ADR 0036 - Latent Branch Budget and Recovery Policy
@@ -119,7 +118,6 @@ decision introducing max-branch reservation or another escrow rule.
 - Tests: `test/Cortex/Wire/Circuit/CompilerSpec.hs`, `test/Cortex/Pulse/ExecutorSpec.hs`
 - Theory/proof:
   [Selected branch budget / Latent recovery determinism — `proof-status.md`](../Reference/proof-status.md)
-- Tracking: GitHub #99
 
 ## Related
 
@@ -136,4 +134,3 @@ decision introducing max-branch reservation or another escrow rule.
 - [0035-wire-rewrite-algebra-forms.md](0035-wire-rewrite-algebra-forms.md)
 - [0037-wire-latent-structural-control.md](0037-wire-latent-structural-control.md)
 - [0038-wire-proof-track-theorem-ledger.md](0038-wire-proof-track-theorem-ledger.md)
-- GitHub #99
