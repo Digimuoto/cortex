@@ -18,8 +18,12 @@ import Data.Text.IO qualified as TIO
 import Test.Hspec
 
 import Cortex.Capability.BindingPack.Braket (BraketConfig (..), braketBindingPack)
-import Cortex.Pulse.Lowering.Circuit (lrFusedPlan, lrIdempotencyKey)
-import Cortex.Pulse.Lowering.FusedPlan (FusedMeasurement (..), fpMeasurements, fusedPlanDigest)
+import Cortex.Pulse.Lowering.Circuit (lrIdempotencyKey, lrPayload)
+import Cortex.Pulse.Lowering.ExternalCallPayload
+  ( ExternalCallOutput (..)
+  , ecpOutputs
+  , externalCallPayloadDigest
+  )
 import Cortex.Quantum.Plan
   ( Measurement (..)
   , QuantumPlan (..)
@@ -105,8 +109,8 @@ spec =
         Right lowering -> do
           let lowered = realizeLowered lowering
           lrIdempotencyKey lowered
-            `shouldBe` "e82c5e80b0268174417a1f11c1db56475e2f24b5cd15e3733a9a5e0bf581cd2c"
-          fusedPlanDigest (lrFusedPlan lowered) `shouldBe` lrIdempotencyKey lowered
+            `shouldBe` "f12bb1388f6cb2d0f28d6d089b990d8d1107bea97feb5c1ffc7397d3fe5e9c3f"
+          externalCallPayloadDigest (lrPayload lowered) `shouldBe` lrIdempotencyKey lowered
 
     it "rejects a circuit with no realize collect node" $ \env ->
       (compileText env noRealizeCircuit >>= findRealize)
@@ -135,8 +139,8 @@ spec =
               let plan = realizePlan lowering
               fmap measurementOutput (quantumPlanMeasurements plan) `shouldBe` ["bc"]
               quantumPlanTopoOrder plan `shouldNotContain` ["mt"]
-              fpMeasurements (lrFusedPlan (realizeLowered lowering))
-                `shouldBe` [FusedMeasurement 0 "bc"]
+              ecpOutputs (lrPayload (realizeLowered lowering))
+                `shouldBe` [ExternalCallOutput (Just "wire:0") "bc"]
   where
     pack =
       braketBindingPack

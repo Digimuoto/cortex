@@ -130,7 +130,7 @@ projection (ADR 0053):
 let reviewer = @logos.deep_report.reviewer {
   model = "gpt-5.4";
   tools = ["web_search", "read_artifact"];
-  memory = topological { preset = "reviewer"; };
+  memory = topological { preset = "influence_biased"; };
 };
 ```
 

@@ -33,12 +33,12 @@ related:
 
 ## Status
 
-Proposed. Motivated by the QEC repetition-code workbench, whose quantum circuits today run through a
-standalone Python bridge under the local `wire run` interpreter, with Pulse uninvolved. This ADR
-records how such a Wire-authored external-backend graph should instead run as a durable Pulse run,
-and pins the frontier projection plus durable execution contract the existing executor ADRs leave
-open. It does not change the registration model (ADR 0019), the executor taxonomy (ADR 0014), or the
-host-owned authority boundary (ADR 0003); it composes them and adds frontier projection.
+Proposed. Motivated by long-running external-backend work, with the QEC repetition-code workbench as
+the first downstream pressure case. This ADR records how a Wire-authored external-backend frontier
+runs as a durable Pulse stage, and pins the frontier projection plus durable execution contract the
+existing executor ADRs leave open. It does not change the registration model (ADR 0019), the
+executor taxonomy (ADR 0014), or the host-owned authority boundary (ADR 0003); it composes them and
+adds frontier projection.
 
 ## Context
 
@@ -71,13 +71,10 @@ already decides how that authority is registered and bound:
 Despite all of this, no decision says how a Wire **subgraph** bound to an external backend becomes a
 **durable Pulse stage**. Two facts collide:
 
-1. **Granularity.** Wire models a quantum circuit as many gate-nodes, but the backend executes the
-   whole circuit as one coherent submission — gates are sub-millisecond and cannot be checkpointed
-   between. `docs/Consumers/Quantum.md` already states the host _"walks the materialized nodes and
-   appends operations to the selected quantum circuit"_: fusion is a host responsibility in today's
-   standalone bridge, performed outside Pulse. (This ADR moves the **backend-neutral** fusion
-   in-substrate as a pure rewrite — §2 — leaving only backend-specific lowering host-side.)
-   Materializing each gate as a durable stage would be absurd.
+1. **Granularity.** Some external backends execute a whole collected frontier as one coherent
+   request. A quantum circuit is the pressure case: many Wire gate nodes lower to one provider
+   submission, and per-gate Pulse checkpointing would be physically meaningless. The generic problem
+   is that the durable unit is a collected same-backend frontier, not every source node inside it.
 2. **Lifetime.** A local simulator call is synchronous and cheap; a hardware submission is
    long-running, externally stateful, and non-idempotent unless guarded by a provider or host
    idempotency key. The first needs no durability; the second is a textbook durable-task shape.
@@ -139,94 +136,89 @@ The quantum/Braket surface is the **first downstream consumer** of this mechanis
 package decomposition (`quantum.core` / `quantum.qec` / `quantum.braket`) and host binding pack are
 specified downstream (`docs/Consumers/Quantum.md`), not in this substrate ADR.
 
-### 2. Frontier projection: a pure fusion rewrite feeding a realize stage
+### 2. Frontier projection: a pure fusion rewrite feeding a collect stage
 
-The author marks the frontier boundary explicitly — a `collect`-style external-call executor (e.g.
-`@quantum.realize`) — rather than the materializer inferring a maximal subgraph. The circuit is
-authored as ordinary Wire topology (gate-nodes, for composition and typing) and **collected** at
-that boundary, which separates cleanly into a pure half and an effectful half:
+The author marks the frontier boundary explicitly with a `collect`-style external-call executor (for
+example `@quantum.realize`) rather than the materializer inferring a maximal subgraph. The source
+remains ordinary Wire topology and is **collected** at that boundary, which separates cleanly into a
+pure half and an effectful half:
 
 ```
-build_circuit  =>  fuse           =>  realize            =>  decode      =>  report
-(gate frontier)    (pure rewrite)     (host-owned effect)    downstream Pulse stages
-                   emits FusedPlan     consumes FusedPlan
+build_frontier  =>  fuse           =>  collect            =>  continue
+(source graph)      (pure rewrite)     (host-owned effect)    downstream Pulse stages
+                   emits payload       consumes payload
 ```
 
 - **Fusion is a pure in-Wire rewrite.** A contraction collapses the collected same-backend subgraph
-  into a single typed **`FusedPlan`** value — the backend-neutral operation list the standalone
-  bridge builds today — derived deterministically from the frozen topology. It runs in the substrate
-  under the ADR 0035 rewrite algebra, carries **no** effect, authority, or backend semantics, and
-  emits the plan as a value on one linear edge. The gate-nodes are inputs to that rewrite, never
-  durable stages.
-- **Realize is a thin effectful consumer.** The realize stage takes the `FusedPlan` value and
-  produces the measurement results through the bound `StageAction` (§3). Backend-_specific_ lowering
-  (e.g. OpenQASM serialization) and the external submit/park/resume effect live in the host binding
-  pack, not in the pure rewrite.
+  into a single typed external-call payload derived deterministically from the frozen topology. It
+  runs in the substrate under the ADR 0035 rewrite algebra, carries **no** effect, authority, or
+  backend semantics, and emits the frozen payload as a value on one linear edge. Domain-specific
+  translation into that payload is owned by the downstream package or host binding, not by Pulse.
+- **The collecting stage is a thin effectful consumer.** The collecting stage takes the frozen
+  payload value and produces named outputs through the bound `StageAction` (§3). Backend-specific
+  lowering (for example OpenQASM serialization in the quantum extension) and the external
+  submit/park/resume effect live in the host binding pack, not in the pure rewrite.
 
-This split is the decision for **where fusion lives** (previously an open question): the
-backend-neutral plan is built **in-substrate by a pure rewrite**, while everything backend-specific
-or effectful stays **host-side**. The substrate never gains backend semantics — the canonical rule
-is purely structural over node identity — and the host never re-derives graph structure, because the
-frozen plan is read back from the durable attempt record on resume (§3), not recomputed.
+This split is the decision for **where fusion lives** (previously an open question): Cortex owns the
+structural collection check, the canonical frozen-payload envelope, and the durable attempt record;
+domain-specific payload construction and backend-specific lowering stay downstream or host-side. The
+substrate never gains backend semantics, and the host never re-derives graph structure on resume:
+the frozen payload is read back from the durable attempt record (§3), not recomputed from the live
+graph.
 
-Realize's **output ports are one per named measurement** — `s01`, `s12`, `final_d0`, … are distinct
-typed result ports, not a single results record. Per-measurement ports keep the substructural
-discipline native: a results record would need a `*` (copy) to fan it to multiple downstream
-consumers, reintroducing the linearity question the typed ports avoid. Realize cannot consume
-post-measurement values as _inputs_, because those exist only after it executes; it consumes the
-`FusedPlan` and produces the results. This is the author-explicit form of the host-walks-nodes
-behavior `Quantum.md` documents, and it mirrors the existing `std.io.command` send-spec /
-await-result / continue pattern the eraser already uses.
+The collecting node's **output ports are declared ordinary Wire output ports**. Cortex requires
+their labels to be distinct and wraps completed outputs through the canonical Wire output-envelope
+path; it does not prescribe a measurement schema, result record, or backend-specific output family.
+The quantum extension may choose one output per named measurement. Another external backend may
+choose a different output shape, as long as port linearity and contract validation hold.
 
 **Collection is a contraction with a decidable admission check.** Sinking the frontier into the
-fusion rewrite collapses the collected subgraph into one `FusedPlan`-producing node — structurally a
+fusion rewrite collapses the collected subgraph into one payload-producing node — structurally a
 contraction. Two obligations follow, and both are decisions, not open questions:
 
 - **Admission.** A frontier is admissible iff, for the nodes **inside the collected set**: every
   node shares one external-call authority and one await strategy, and no non-backend node
-  intervenes. The constraint is on the collected set, **not** on the realize stage's **frozen
-  boundary inputs**: classical parameters fed in (shot count, rotation angles, `BackendConfig`) are
-  legitimate inbound edges, not cross-authority violations — requiring every parameter to be static
-  config would block parameterized external calls. A collected set that mixes authorities or pulls
-  in a non-backend node is **rejected** (the author/materializer must place separate realize nodes);
-  the validator does not silently split it. This is a decidable check in the `validatorReady_sound`
-  lineage — the same machinery that admits other rewrites — not host-side guesswork.
+  intervenes. The constraint is on the collected set, **not** on the collect stage's **frozen
+  boundary inputs**: parameters fed in from the surrounding graph are legitimate inbound edges, not
+  cross-authority violations — requiring every parameter to be static config would block
+  parameterized external calls. A collected set that mixes authorities or pulls in a non-backend
+  node is **rejected** (the author/materializer must place separate collect nodes); the validator
+  does not silently split it. This is a decidable check in the `validatorReady_sound` lineage — the
+  same machinery that admits other rewrites — not host-side guesswork.
 - **Port linearity.** The contraction must preserve port linearity. It does **not** reduce to
-  `bulkContract`: `bulkContract` only erases endpoints monotonically, whereas the realize
-  contraction erases the collected gate outputs **and re-emerges fresh per-measurement output
-  ports**, so the existing `bulkContract_preserves_portLinear` does not discharge it
-  (`theory/README.md` records this). The obligation is therefore a **dedicated
-  `realize_preserves_portLinear`** (see _Obligations_): collected outputs become internal under the
-  single-pair `contract` lemma, the fresh measurement ports are disjoint and each consumed once, and
-  the two combine by a domain-disjointness argument. The `FusedPlan` flows on a single linear edge
-  consumed exactly once by realize, which keeps the consumed side trivial. Governed by ADR 0035's
-  rewrite boundary laws; the collected external-call resource is accounted under ADR 0032's boundary
+  `bulkContract`: `bulkContract` only erases endpoints monotonically, whereas collection erases the
+  collected internal outputs and re-emerges the collect node's declared output ports, so the
+  existing `bulkContract_preserves_portLinear` does not discharge it (`theory/README.md` records
+  this). The obligation is therefore a dedicated `external_call_collect_preserves_portLinear` (see
+  _Obligations_): collected outputs become internal under the single-pair `contract` lemma, the
+  fresh collect outputs are disjoint and each consumed once, and the two combine by a
+  domain-disjointness argument. The frozen payload flows on a single linear edge consumed exactly
+  once by the collect node, which keeps the consumed side trivial. Governed by ADR 0035's rewrite
+  boundary laws; the collected external-call resource is accounted under ADR 0032's boundary
   resource algebra.
 
-**`FusedPlan` emission is canonical.** The plan is built from a partial order (gates on disjoint
-qubits are unordered), so the rewrite emits a **deterministic, canonical linearization** of the
-frozen subgraph. Non-commuting gates are already forced by qubit dataflow; the canonical rule fixes
-the order of the commuting/independent set so the plan — and its content hash — is identical across
-replays of the same topology. That content hash is the stable frontier identity used by the durable
-attempt record (§3).
+**Payload emission is canonical.** The collected payload is a deterministic value derived from the
+frozen frontier, with ordered steps and sorted output labels so the payload — and its content hash —
+is identical across replays of the same topology. That content hash is the stable frontier identity
+used by the durable attempt record (§3). Domain packages own any additional ordering rules needed by
+their backend (for example quantum gate-order constraints).
 
 ### 3. Execution is a host-owned external effect via the bound StageAction
 
-The realize stage is a **host-owned external effect executed through the bound `StageAction`** that
-**consumes the `FusedPlan` value** produced by the pure fusion rewrite (§2), under ADR 0003's trust
-boundary (domain authority lives in the host, not Pulse). Backend-_specific_ lowering — e.g.
-OpenQASM serialization of the neutral plan — happens inside the host binding pack, never in the pure
-rewrite. The host-action-v1 protocol is **one possible ABI/driver** for that effect — not the
-required mechanism: per `docs/Reference/Pulse/host-actions.md`, capability/executor calls do not use
-the host-action protocol unless a host explicitly registers an executor that calls back into its own
-service. The host may equally implement the `StageAction` as a direct provider SDK call (Braket
-submit), a subprocess, or a brokered process. Pulse dispatches the **opaque bound `StageAction`**
-and observes only its result — _complete_ or _suspend_. The **await strategy** that decides which
-shape applies is binding metadata declared in the ADR 0053 admission projection / runtime binding
-record (alongside replay, effect, and isolation), **not** a category Pulse interprets. Two
-strategies:
+The collecting stage is a **host-owned external effect executed through the bound `StageAction`**
+that **consumes the frozen payload** produced by the pure fusion rewrite (§2), under ADR 0003's
+trust boundary (domain authority lives in the host, not Pulse). Backend-specific lowering happens
+inside the host binding pack, never in the pure rewrite. The host-action-v1 protocol is **one
+possible ABI/driver** for that effect — not the required mechanism: per
+`docs/Reference/Pulse/host-actions.md`, capability/executor calls do not use the host-action
+protocol unless a host explicitly registers an executor that calls back into its own service. The
+host may equally implement the `StageAction` as a direct provider SDK call, a subprocess, or a
+brokered process. Pulse dispatches the **opaque bound `StageAction`** and observes only its result —
+_complete_ or _suspend_. The **await strategy** that decides which shape applies is binding metadata
+declared in the ADR 0053 admission projection / runtime binding record (alongside replay, effect,
+and isolation), **not** a category Pulse interprets. Two strategies:
 
-- **Synchronous** (local simulator, fast pure-ish backends): the action runs the `FusedPlan` and
+- **Synchronous** (local simulator, fast pure-ish backends): the action runs the frozen payload and
   returns results inline; the stage completes in one transaction.
 - **Submit/park/resume** (hardware, any long-running async backend — and equally a slow
   `ModelExecutor`): the action _submits_ and returns a job handle, then suspends. The run **parks**
@@ -235,27 +227,26 @@ strategies:
   `run-terminal:`; only the trusted external-call delivery helper can mark it delivered. On delivery
   the run **resumes by re-arming the waiting node**, not by completing it from the signal payload.
   The resumed `StageAction` reads the attempt record and provider completion state, then maps the
-  fetched result to the realize node's output ports or to a typed failure. No poll loop; a crash
+  fetched result to the collect node's output ports or to a typed failure. No poll loop; a crash
   recovers to the parked-and-awaiting state.
 
 **Idempotency is anchored to a durable attempt record, not the live graph and not the signal rows.**
 ADR 0058's settlement transaction commits only graph state, `pulse.signals` wait rows, and
 `runs.status` — it does not carry executor metadata. The host binding therefore uses a separate
 Pulse-owned external-call attempt record, keyed by run id, node id, runtime binding id, and frontier
-id — the canonical fused-plan digest, which is the stable frontier identity (a single derivation
-rule, not a choice). Pulse stores provider-specific fields as opaque data; it does not interpret the
+id — the canonical payload digest, which is the stable frontier identity (a single derivation rule,
+not a choice). Pulse stores provider-specific fields as opaque data; it does not interpret the
 backend. The `external-call:` signal name is derived from this attempt key, so a wake resolves
 exactly one parked stage attempt.
 
 The submit protocol is crash-safe:
 
-1. reserve the attempt record before provider submission, storing the frozen fused plan and a
+1. reserve the attempt record before provider submission, storing the frozen payload and a
    deterministic Pulse-side idempotency key derived from the frozen materialized frontier;
 2. derive the provider submit/dedup token deterministically in the driver and submit to the provider
    outside the database transaction using that provider token. The provider token may incorporate
-   request parameters beyond the fused-plan digest (region, device, shots, bucket, prefix, action);
-   it need not equal the Pulse attempt key, but it must be reproduced byte-for-byte on crash
-   re-entry;
+   request parameters beyond the payload digest (region, device, shots, bucket, prefix, action); it
+   need not equal the Pulse attempt key, but it must be reproduced byte-for-byte on crash re-entry;
 3. persist the external job handle on the attempt record before returning `StageSuspend`;
 4. during ADR 0058 suspend settlement, atomically link the waiting node and reserved
    `external-call:` wake signal to the attempt record.
@@ -280,9 +271,9 @@ silent settle.
 
 **The failure path is typed.** Job reject, calibration error, queue timeout, and async-submit
 failure propagate as typed failures under ADR 0026's closed failure taxonomy, closed via the
-**failure-closure** operator (Architecture 06): the resumed realize stage fails with a typed reason
+**failure-closure** operator (Architecture 06): the resumed collect stage fails with a typed reason
 after reading the attempt record/provider status, and downstream stages observe the closed failure
-rather than a missing result. A realize node _may_ additionally expose a typed error output for
+rather than a missing result. A collect node _may_ additionally expose a typed error output for
 recoverable backend errors an author wants to branch on, but the default negative path is closure,
 not silence.
 
@@ -295,12 +286,12 @@ executor.
 
 ## Mental Model
 
-> A backend is bound once as a Capability and runs as a Pulse stage. The author builds the circuit
-> as Wire and _collects_ it: a pure fusion rewrite contracts the gate frontier into a
-> backend-neutral `FusedPlan` value, and the realize stage consumes it, its outputs the measurement
-> results. Cheap backends return inline; long-running backends submit, park on a trusted
-> external-call wake signal, re-run the realize stage on wake, then produce outputs. Decoding is the
-> next stage.
+> A backend is bound once as a Capability and runs as a Pulse stage. The author builds a Wire
+> frontier and _collects_ it: a pure fusion rewrite contracts the frontier into a deterministic
+> frozen payload, and the collect stage consumes that payload and emits declared outputs. Cheap
+> backends return inline; long-running backends submit, park on a trusted external-call wake signal,
+> re-run the collect stage on wake, then produce outputs. Downstream analysis is ordinary Pulse
+> work.
 
 ## Boundary Rules
 
@@ -314,10 +305,10 @@ executor.
   whole provider task.
 - **One authority per frontier, by decidable check.** A collected set mixing two backend authorities
   (or pulling in a non-backend node) is **rejected** by the admission validator — the author places
-  separate realize nodes; the validator never silently splits. Frozen classical parameters fed to a
-  realize node are not authority violations.
+  separate collect nodes; the validator never silently splits. Frozen parameters fed to a collect
+  node are not authority violations.
 - **Idempotency is anchored to a durable attempt record.** A separate external-call attempt record
-  holds the idempotency key, external job handle, frozen fused plan, and completion signal name.
+  holds the idempotency key, external job handle, frozen payload, and completion signal name.
   Attempt reservation precedes provider submit; the provider call happens outside the DB
   transaction; ADR 0058 settlement atomically links the waiting node and reserved wake signal to the
   attempt record. The Pulse-side key is read back from the attempt record on resume, never
@@ -339,7 +330,7 @@ executor.
   submit/park/resume choice lives in the ADR 0053 admission projection / binding record; Pulse
   dispatches an opaque `StageAction` and does not infer backend category from the field.
 - **The negative path is closed, not silent.** Backend failures propagate as typed reasons under ADR
-  0026's failure taxonomy, closed via the failure-closure operator; the realize node never resumes
+  0026's failure taxonomy, closed via the failure-closure operator; the collect node never resumes
   with a missing result.
 
 ## Consequences
@@ -370,19 +361,18 @@ executor.
 #### Implementation
 
 - Add the **fusion contraction** rewrite that sinks a same-authority, same-await-strategy frontier
-  into a single backend-neutral, canonically-linearized `FusedPlan` value, and a realize-node
-  (`collect`-style) external-call executor with one typed output port per named measurement that
-  consumes that value.
+  into a single generic, canonically-linearized `ExternalCallPayload` value, and a collect-style
+  external-call executor with declared typed output ports that consumes that value.
 - Implement the decidable admission validator in the `validatorReady` lineage: nodes inside the
   collected set share one backend authority and await strategy, no non-backend node intervenes, and
-  mixed collected authorities are rejected. Frozen classical boundary inputs to the realize node are
-  allowed and are not cross-authority violations.
+  mixed collected authorities are rejected. Frozen boundary inputs to the collect node are allowed
+  and are not cross-authority violations.
 - Add an **await strategy** field (`synchronous` | `submit_park_resume`) to the ADR 0053 admission
   projection / runtime binding record — at the executor level, covering `ModelExecutor` too. Pulse
   dispatches the opaque `StageAction` and reacts only to complete-or-suspend; it does not infer
   backend behavior from the field.
 - Define a Pulse-owned durable **external-call attempt record** holding
-  `{idempotency key, external job handle, frozen fused plan, completion signal name}` as opaque
+  `{idempotency key, external job handle, frozen payload, completion signal name}` as opaque
   provider-aware runtime state. Reserve it before provider submit, persist the handle before
   returning `StageSuspend`, and have ADR 0058 settlement atomically link the waiting node/signal to
   that attempt. Deliver completion through the reserved `external-call:` namespace with a trusted
@@ -398,7 +388,7 @@ executor.
   closure.
 - Add the generic binding helper that turns an `ExternalCallDriver` plus runtime binding metadata
   into a `StageDefinition`: derive the attempt key from run id, node id, runtime binding id, and the
-  frontier id (the canonical fused-plan digest); reserve or load the attempt record; submit or fetch
+  frontier id (the canonical payload digest); reserve or load the attempt record; submit or fetch
   through the driver; wrap completed outputs through the canonical Wire output-envelope path.
 - Exercise both wake timing paths in DB-backed tests: a trusted `external-call:` signal already
   delivered before suspend settlement, and a trusted `external-call:` signal delivered while the run
@@ -428,15 +418,15 @@ executor.
 #### Formal (theory/)
 
 - Discharge port-linearity for the fusion contraction — it is **never admitted unproven**. It does
-  not reduce to `bulkContract` (the realize contraction re-emerges fresh measurement output ports,
-  which `bulkContract` does not model), so prove the dedicated **`realize_preserves_portLinear`**:
-  collected outputs become internal under the single-pair `contract` lemma, the fresh measurement
-  ports are disjoint and each consumed once, combined by a domain-disjointness argument; the
-  `FusedPlan` single linear edge keeps the consumed side trivial. (`theory/README.md` already tracks
-  this as the open obligation.)
+  not reduce to `bulkContract` (the collect contraction re-emerges fresh declared output ports,
+  which `bulkContract` does not model), so prove the dedicated
+  **`external_call_collect_preserves_portLinear`**: collected outputs become internal under the
+  single-pair `contract` lemma, the fresh collect ports are disjoint and each consumed once,
+  combined by a domain-disjointness argument; the `ExternalCallPayload` single linear edge keeps the
+  consumed side trivial. (`theory/README.md` tracks this as the open obligation.)
 - Account the collected external-call resource under ADR 0032's boundary resource algebra, and show
   the contraction obeys ADR 0035's rewrite boundary laws.
-- Confirm the gas treatment against ADR 0056: a **source-authored** realize contraction is
+- Confirm the gas treatment against ADR 0056: a **source-authored** collect contraction is
   compile-witnessed materialization — **gas-neutral as an admission gate, recorded as cost/metric**,
   never rejected for gas. When an **open producer** introduces the frontier it pays once at its own
   admission boundary (ADR 0056/0057); the later witnessed realization does not refill or recharge.
@@ -464,11 +454,11 @@ executor.
 
 (The admission rule, per-measurement typing, idempotency anchoring, the linearity discharge, the gas
 treatment, and **where fusion lives** were open questions in earlier drafts; review promoted them to
-the decisions and obligations above — fusion is a pure in-substrate rewrite emitting the
-backend-neutral `FusedPlan` (§2); the linearity discharge resolves to the dedicated
-`realize_preserves_portLinear` lemma — it does **not** reduce to `bulkContract`, because the realize
-contraction re-emerges fresh measurement output ports (`theory/README.md`); and the gas treatment
-resolves to ADR 0056's witnessed-neutral rule.)
+the decisions and obligations above — fusion is a pure in-substrate rewrite emitting the generic
+`ExternalCallPayload` (§2); the linearity discharge resolves to the dedicated
+`external_call_collect_preserves_portLinear` lemma — it does **not** reduce to `bulkContract`,
+because the collect contraction re-emerges fresh declared output ports (`theory/README.md`); and the
+gas treatment resolves to ADR 0056's witnessed-neutral rule.)
 
 1. **Local-sim durability.** Should synchronous local simulation run as a Pulse stage at all, or
    stay on the `wire run` path? Uniformity vs overhead.
@@ -490,12 +480,14 @@ for this ADR, per the "ADR after the prototype clarifies the boundary" sequencin
 - Public surface: `Cortex.Pulse`, `docs/Reference/Pulse/signals.md`,
   `docs/Reference/Pulse/schema.md`
 - Implementation: `src/Cortex/Pulse/Rewrite/Contract.hs` (`admitFrontierContraction` — the §2
-  decidable admission check), `src/Cortex/Pulse/Lowering/FusedPlan.hs` (canonical `FusedPlan`),
-  `src/Cortex/Pulse/Lowering/ExternalCallStage.hs`, `src/Cortex/Pulse/Executor/ExternalCall.hs` (the
-  §3 submit/park/resume protocol), `src/Cortex/Pulse/Executor/ExternalCallStore.hs`,
-  `src/Cortex/Pulse/Query/ExternalCall.hs` (durable attempt record)
+  decidable admission check), `src/Cortex/Pulse/Lowering/ExternalCallPayload.hs` (canonical
+  `ExternalCallPayload`), `src/Cortex/Pulse/Lowering/ExternalCallStage.hs`,
+  `src/Cortex/Pulse/Executor/ExternalCall.hs` (the §3 submit/park/resume protocol),
+  `src/Cortex/Pulse/Executor/ExternalCallStore.hs`, `src/Cortex/Pulse/Query/ExternalCall.hs`
+  (durable attempt record)
 - Tests: `test/Cortex/Pulse/FrontierContractionSpec.hs`,
-  `test/Cortex/Pulse/Lowering/FusedPlanSpec.hs`, `test/Cortex/Pulse/Executor/ExternalCallSpec.hs`,
+  `test/Cortex/Pulse/Lowering/ExternalCallPayloadSpec.hs`,
+  `test/Cortex/Pulse/Executor/ExternalCallSpec.hs`,
   `test/Cortex/Pulse/Executor/ExternalCallAttemptSpec.hs`
 - Theory/proof: none (the `realize_preserves_portLinear` discharge is an open obligation tracked in
   `theory/README.md`; the `external-call:` settlement family is not yet modelled in

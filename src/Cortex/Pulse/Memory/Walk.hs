@@ -137,7 +137,7 @@ inScope scope mStatus =
         DebugAllStatuses -> True
 
 {- | A node is /settled/ iff it has a terminal, reproducible outcome
-the reviewer can read: completed, skipped (with reason), rewritten
+a later stage can read: completed, skipped (with reason), rewritten
 (the anchor output was preserved on rewrite admission).  Running,
 waiting, failed, and interrupted nodes are excluded — they are
 live orchestration state, not memory.

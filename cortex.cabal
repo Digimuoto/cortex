@@ -214,7 +214,7 @@ library
         Cortex.Pulse.Health
         Cortex.Pulse.Lowering.Circuit
         Cortex.Pulse.Lowering.ExternalCallStage
-        Cortex.Pulse.Lowering.FusedPlan
+        Cortex.Pulse.Lowering.ExternalCallPayload
         Cortex.Pulse.Materialization
         Cortex.Pulse.Memory
         Cortex.Pulse.Memory.Query
@@ -407,7 +407,7 @@ test-suite cortex-test
         Cortex.Pulse.FrontierContractionSpec
         Cortex.Pulse.Executor.ExternalCallAttemptSpec
         Cortex.Pulse.Executor.ExternalCallSpec
-        Cortex.Pulse.Lowering.FusedPlanSpec
+        Cortex.Pulse.Lowering.ExternalCallPayloadSpec
         Cortex.Pulse.Lowering.CircuitSpec
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec

@@ -40,7 +40,7 @@ A single Wire value often wears multiple hats. The roles are:
 | Role                          | What it is                                                                                 | Examples                                                                          |
 | ----------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | **Executor**                  | Registered recipe. Turns config + typed inputs into typed outputs. Referenced via `@name`. | `@review.analyst`, `@artifact.log`, `@cortex.report_run`                          |
-| **Configured executor value** | Executor plus inert config, reusable in node bodies. Not a graph vertex.                   | `@review.gatherer { memory = topological { preset = "analyst"; }; }`              |
+| **Configured executor value** | Executor plus inert config, reusable in node bodies. Not a graph vertex.                   | `@review.gatherer { memory = topological { preset = "causal"; }; }`               |
 | **Node**                      | Explicit graph vertex with typed input/output ports and an implementation body.            | `node analyst <- evidence: EvidenceBundle; -> analysis: AnalysisFragment; = ...;` |
 | **Composed wire**             | Result of applying a graph operator. Has a derived boundary.                               | `planner => gatherer => analyst`                                                  |
 | **Runtime wrapper**           | A node whose role is to host a whole wire and provide runtime services.                    | `@cortex.report_run { title = ...; }`                                             |

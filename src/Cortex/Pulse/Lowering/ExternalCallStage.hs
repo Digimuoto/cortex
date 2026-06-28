@@ -54,29 +54,30 @@ import Cortex.Wire.Contract (WireContractRegistry)
 import Cortex.Wire.Runtime (wrapWireStageOutputs)
 
 {- | Bind a driver + store + runtime binding record into a durable external-call
-stage. @frontierId@ is the canonical frontier identity (the fused-plan digest) and
-@frozenPlan@ the canonical fused plan value; both come from
-'Cortex.Pulse.Lowering.Circuit.lowerRealizeFrontier'. The realize node id sets the
-stage identity and matches the runtime 'scNodeId' the attempt key is derived from.
+stage. @frontierId@ is the canonical frontier identity (the payload digest) and
+@frozenPayload@ the canonical external-call payload; both come from
+'Cortex.Pulse.Lowering.Circuit.lowerExternalCallFrontier'. The collect node id sets
+the stage identity and matches the runtime 'scNodeId' the attempt key is derived
+from.
 -}
 bindExternalCallStage
   :: ExternalCallDriver IO
   -> AttemptStore IO
   -> RuntimeBindingRecord
   -> NodeId
-  -- ^ the realize node / stage id
+  -- ^ the collect node / stage id
   -> Text
-  -- ^ frontier id (canonical fused-plan digest)
+  -- ^ frontier id (canonical payload digest)
   -> Value
-  -- ^ frozen fused plan
+  -- ^ frozen external-call payload
   -> WirePorts
   -> Maybe WireContractRegistry
   -> StageDefinition NodeId
-bindExternalCallStage driver store binding realizeNode frontierId frozenPlan ports registry =
+bindExternalCallStage driver store binding collectNode frontierId frozenPayload ports registry =
   StageDefinition
-    { sdStageId = realizeNode
-    , sdTemplateId = stageTemplateId realizeNode
-    , sdActionId = stageActionId realizeNode
+    { sdStageId = collectNode
+    , sdTemplateId = stageTemplateId collectNode
+    , sdActionId = stageActionId collectNode
     , sdReplaySafety = SafeToReplay
     , -- Crash-safe: reserve is idempotent on the key, and resume re-fetches
       -- idempotently rather than re-running an effect against the live graph.
@@ -97,7 +98,7 @@ bindExternalCallStage driver store binding realizeNode frontierId frozenPlan por
               , ecaRuntimeBindingId = rbrBindingId binding
               , ecaFrontierId = frontierId
               }
-      outcome <- runExternalCall (rbrAcceptedAwaitStrategy binding) driver store key frozenPlan
+      outcome <- runExternalCall (rbrAcceptedAwaitStrategy binding) driver store key frozenPayload
       pure $ case outcome of
         ExternalCallSuspended signalName -> StageSuspend (SignalName signalName)
         ExternalCallFailed reason -> StageFail "external_call_failure" reason

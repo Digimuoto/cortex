@@ -206,7 +206,7 @@ per-bit marginals are projections from the aggregate result.
 4. The lowerer walks the upstream symbolic quantum frontier feeding the realization node.
 5. The lowerer admits only a same-authority quantum frontier and rejects mixed backend/non-backend
    collection.
-6. The lowerer emits a canonical fused plan and idempotency key.
+6. The lowerer emits a canonical external-call payload and idempotency key.
 7. The Braket stage action submits, parks, resumes, fetches, and returns `QuantumResult`.
 8. Pure downstream Wire/Pulse nodes decode QEC syndromes and render reports.
 
@@ -239,12 +239,12 @@ nix run .#wire-quantum-qec-repetition-braket -- --confirm-hardware
 This app is a Haskell extension runner around the native `@realize` source shape. It compiles each
 selected graph against the quantum package manifests in-process, walks the upstream quantum frontier
 feeding `@quantum.realize`, drives the shared realize-frontier lowering for admission, host-binding
-resolution, and the idempotency digest, lowers the fused plan to OpenQASM, and submits or dry-runs
-the task through the AWS CLI (handed in via `CORTEX_AWS_BIN`). It renders a Markdown experiment
-report with a per-case Qiskit-style circuit diagram and collapsible OpenQASM, and `--output DIR`
-writes it to a runner-generated `<timestamp>-qec-repetition-<hardware>.md` file. It deliberately
-avoids the older `std.io.command` Wire scaffold and uses no Python, but it is not the final durable
-Pulse binding-pack CLI.
+resolution, and the idempotency digest, lowers the payload to OpenQASM, and submits or dry-runs the
+task through the AWS CLI (handed in via `CORTEX_AWS_BIN`). It renders a Markdown experiment report
+with a per-case Qiskit-style circuit diagram and collapsible OpenQASM, and `--output DIR` writes it
+to a runner-generated `<timestamp>-qec-repetition-<hardware>.md` file. It deliberately avoids the
+older `std.io.command` Wire scaffold and uses no Python, but it is not the final durable Pulse
+binding-pack CLI.
 
 ## Compatibility With Current Bridges
 

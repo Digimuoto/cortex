@@ -246,7 +246,7 @@ policy such as tools, memory authority, model choice, timeouts, budgets, and dom
 
 ```wire
 let sectionWriter = @native.report_section_writer {
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   model = "gpt-5.4";
 };
 

@@ -1,17 +1,16 @@
 {- |
 Module      : Cortex.Quantum.Plan
-Description : Walk a compiled Wire circuit to a fused realize plan (ADR 0059 §2).
+Description : Walk a compiled Wire circuit to a quantum external-call payload.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
 The compiled-circuit walker: given a 'CompiledCircuit' produced from a native
-@use quantum.*@ source, it reproduces the backend-neutral quantum plan (the
-operation/measurement stream the standalone Python bridge built as
-@build_quantum_plan@) directly over the in-process circuit graph, locates the
-single @\@quantum.realize@ collect node, collects the upstream quantum frontier,
-and drives the existing 'lowerRealizeFrontier' decision core for admission,
+@use quantum.*@ source, it reproduces the quantum operation/measurement stream
+directly over the in-process circuit graph, locates the single @\@quantum.realize@
+collect node, collects the upstream quantum frontier, and translates that
+domain-specific plan into Cortex's generic external-call payload for admission,
 host-binding resolution, and the idempotency digest.
 
 The realize node is the reshaped ADR 0059 collector: it consumes the symbolic
@@ -36,7 +35,7 @@ module Cortex.Quantum.Plan
   , RealizeError (..)
   , renderRealizeError
   , RealizeLowering (..)
-  , planFusedOps
+  , planExternalCallPayload
   , lowerCompiledRealize
   , quantumBraketAuthority
   )
@@ -60,11 +59,14 @@ import Cortex.Algebra.Graph (Relation, predecessors, relVertices)
 import Cortex.Capability.BindingPack (HostBindingPack)
 import Cortex.Capability.Catalog.AwaitStrategy (AwaitStrategy (..))
 import Cortex.Pulse.Lowering.Circuit
-  ( LoweredRealize
+  ( LoweredExternalCall
   , LoweringError (..)
-  , lowerRealizeFrontier
+  , lowerExternalCallFrontier
   )
-import Cortex.Pulse.Lowering.FusedPlan (FusedMeasurement (..), FusedOp (..))
+import Cortex.Pulse.Lowering.ExternalCallPayload
+  ( ExternalCallOutput (..)
+  , ExternalCallStep (..)
+  )
 import Cortex.Pulse.Rewrite.Contract (CollectedNode (..))
 import Cortex.Wire
   ( CircuitNodeRef (..)
@@ -574,19 +576,29 @@ realizeNodeRef circuit = do
     [] -> Left WalkNoRealizeNode
     many -> Left (WalkMultipleRealizeNodes many)
 
--- | Derive the canonical fused operation/measurement lists from a plan.
-planFusedOps :: QuantumPlan -> ([FusedOp], [FusedMeasurement])
-planFusedOps plan =
-  ( map fusedOp (quantumPlanOps plan)
-  , [FusedMeasurement (measurementWire m) (measurementOutput m) | m <- quantumPlanMeasurements plan]
+{- | Translate the quantum operation/measurement lists into Cortex's generic
+external-call payload shape.
+-}
+planExternalCallPayload :: QuantumPlan -> ([ExternalCallStep], [ExternalCallOutput])
+planExternalCallPayload plan =
+  ( map payloadStep (quantumPlanOps plan)
+  , [ ExternalCallOutput
+        { ecoSource = Just (wireOperand (measurementWire m))
+        , ecoLabel = measurementOutput m
+        }
+    | m <- quantumPlanMeasurements plan
+    ]
   )
   where
-    fusedOp = \case
-      OpPrepareZero _ wire _ -> FusedOp "prepare_zero" [wire] []
-      OpGate1 _ gate wire -> FusedOp gate [wire] []
-      OpRz _ wire angle -> FusedOp "rz" [wire] [("angle", Number (realToFrac angle))]
-      OpGate2 _ gate control target -> FusedOp gate [control, target] []
-      OpMeasureZ m -> FusedOp "measure_z" [measurementWire m] []
+    payloadStep = \case
+      OpPrepareZero _ wire _ -> ExternalCallStep "prepare_zero" [wireOperand wire] []
+      OpGate1 _ gate wire -> ExternalCallStep gate [wireOperand wire] []
+      OpRz _ wire angle -> ExternalCallStep "rz" [wireOperand wire] [("angle", Number (realToFrac angle))]
+      OpGate2 _ gate control target -> ExternalCallStep gate [wireOperand control, wireOperand target] []
+      OpMeasureZ m -> ExternalCallStep "measure_z" [wireOperand (measurementWire m)] []
+
+wireOperand :: Int -> Text
+wireOperand wire = "wire:" <> T.pack (show wire)
 
 {- | The uniform external-call authority assigned to every collected quantum
 node so the frontier admits as a single same-authority contraction.
@@ -612,13 +624,13 @@ renderRealizeError = \case
 data RealizeLowering = RealizeLowering
   { realizePlan :: !QuantumPlan
   , realizeNode :: !Text
-  , realizeLowered :: !LoweredRealize
+  , realizeLowered :: !LoweredExternalCall
   }
   deriving stock (Eq, Show)
 
 {- | Lower a compiled circuit's @\@quantum.realize@ frontier: walk the plan, find
 the single realize node, collect the upstream quantum frontier under one
-authority/await classification, and drive 'lowerRealizeFrontier' for admission,
+authority/await classification, and drive 'lowerExternalCallFrontier' for admission,
 host-binding resolution, and the idempotency digest.
 -}
 lowerCompiledRealize
@@ -630,8 +642,8 @@ lowerCompiledRealize pack realizeId circuit = do
   realizeRef <- mapLeft RealizeWalk (realizeNodeRef circuit)
   plan <- mapLeft RealizeWalk (compiledCircuitToRealizedPlan realizeRef circuit)
   let collected = map collectedNode (quantumPlanTopoOrder plan)
-      (ops, measurements) = planFusedOps plan
-  lowered <- mapLeft RealizeLower (lowerRealizeFrontier pack realizeId collected ops measurements)
+      (steps, outputs) = planExternalCallPayload plan
+  lowered <- mapLeft RealizeLower (lowerExternalCallFrontier pack realizeId collected steps outputs)
   Right (RealizeLowering plan realizeRef lowered)
   where
     collectedNode ref = CollectedNode ref (Just (quantumBraketAuthority, SubmitParkResume))

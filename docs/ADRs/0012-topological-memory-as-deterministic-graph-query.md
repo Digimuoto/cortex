@@ -119,14 +119,15 @@ cyclic input. Because it lives in `Cortex.Algebra` over any `Ord a`, it carries 
 semantics of its own.
 
 This raises a scope question: is the _exact_ scoring model a ratified substrate contract, or a
-substrate-incidental default a downstream reasoning layer may re-tune? This amendment answers only
-what the code lets it answer honestly, and leaves the tuning question open by separating the two
-layers below.
+substrate-incidental default a downstream layer may re-tune? This amendment answers only what the
+code lets it answer honestly: Cortex owns deterministic graph-state query mechanics and generic
+ranking hooks; downstream libraries own cognitive memory policy, role names, and product ranking
+defaults.
 
 ### Decision
 
-Extend ADR 0012 along two separable layers — ratify the durable parts, record (do not freeze) the
-tunable parts.
+Extend ADR 0012 along two separable layers — ratify the durable Cortex parts, and explicitly refuse
+to canonize downstream ranking policy.
 
 1. **Ratify the influence primitive and the deterministic-query discipline.** The graph axis of
    memory scoring is `Cortex.Algebra.Graph.Influence.dagRandomWalkInfluence`, a consumer-neutral
@@ -139,17 +140,15 @@ tunable parts.
    `max`-merge for transpose/`Bidirectional` walks and the stage-entry snapshot binding from ADR
    0012 are likewise substrate guarantees. These are the durable contract.
 
-2. **Record the current composite as the substrate default, not a frozen contract.** The shipped
-   weighting is the _default_ policy — owned by the substrate, but not ratified as the only
-   admissible ranking: damping `α = 0.85` (`influenceDamping`, hardcoded with an explicit note to
-   lift onto `ScoreWeights` if a caller needs per-stage tuning), temporal decay
-   `1 / (1 + age_hours)`, token-jaccard semantic similarity (`defaultSemanticScorer`), and equal
-   default axis weights `1.0 / 1.0 / 1.0` (`defaultScoreWeights`), with the `reviewer` and `planner`
-   presets nudging individual axes (graph to 1.5, temporal to 1.5 respectively). A downstream
-   reasoning layer may override the composite weighting through the surfaces the substrate already
-   exposes — `ScoreWeights`, the pluggable `SemanticScorer`, and the `WalkSpec` presets — without
-   changing substrate semantics. Cortex does **not** ratify any specific axis weighting as canonical
-   product ranking policy; that question (B11) stays open.
+2. **Record the current composite as a compatibility default, not a frozen ranking contract.** The
+   shipped mechanics expose generic knobs — `ScoreWeights`, pluggable `SemanticScorer`, `WalkSpec`,
+   and named generic presets (`causal`, `influence_biased`, `recent_bidirectional`, `default`). The
+   current fallback values are damping `α = 0.85` (`influenceDamping`), temporal decay
+   `1 / (1 + age_hours)`, token-jaccard text overlap (`defaultSemanticScorer`), and equal default
+   axis weights `1.0 / 1.0 / 1.0` (`defaultScoreWeights`). Those values are substrate-provided
+   fallbacks so the query is usable without a downstream scorer; they are **not** ratified as
+   canonical product ranking policy. A downstream reasoning layer may override scoring through the
+   exposed hooks without changing substrate semantics.
 
 ### Obligations
 
@@ -158,25 +157,24 @@ tunable parts.
 - Preserve the deterministic total order and the `clamp01` totality guarantee. Any new axis must
   normalise into `[0, 1]` and contribute zero when absent, so adding an axis can never make the
   ordering non-total.
-- Treat damping, decay shape, semantic default, and default weights as the _substrate default_. Do
+- Treat damping, decay shape, semantic fallback, and default weights as compatibility defaults. Do
   not promote a specific weighting to a ratified ranking contract without a follow-up decision that
   settles binding question B11.
 - If damping or weights become per-stage tunable, expose them as explicit `ScoreWeights` /
   `WalkSpec` surfaces rather than a global toggle — consistent with ADR 0012's per-node-strategy
   obligation.
-- **Open (binding question B13) — preset-name ownership.** The `WalkSpec` preset _mechanism_ and the
-  influence primitive are substrate; but the named `analyst` / `reviewer` / `planner` presets are
-  reasoning-archetype-shaped vocabulary. Whether Cortex keeps them as a substrate convenience
-  catalogue or migrates the named presets to `Logos.Memory` is unresolved. Until B13 is settled,
-  keep the preset _names_ free of reasoning semantics in the substrate layer (e.g. the
-  `Cortex.Algebra.Graph` influence primitive must not reference a "reviewer node" — describe the
-  geometry, not the role).
+- **Preset-name ownership is settled.** The `WalkSpec` preset _mechanism_ and the generic presets
+  are substrate; role-shaped names are not. Cortex accepts the legacy serialized aliases `analyst`,
+  `reviewer`, and `planner` only for compatibility with already-authored Wire, mapping them to
+  `causal`, `influence_biased`, and `recent_bidirectional` respectively. New Cortex documentation
+  and schemas must use the generic names. Downstream packages such as Logos may expose their own
+  role vocabulary above those generic presets.
 
 ### Traceability
 
 - Feature keys: `pulse.memory_scoring`
-- Public surface: `Cortex.Pulse` (memory query, walk specs, and presets), `Cortex.Algebra.Graph`
-  (the `dagRandomWalkInfluence` primitive)
+- Public surface: `Cortex.Pulse` (memory query, walk specs, generic presets, and compatibility
+  aliases), `Cortex.Algebra.Graph` (the `dagRandomWalkInfluence` primitive)
 - Implementation: `src/Cortex/Algebra/Graph/Influence.hs`, `src/Cortex/Pulse/Memory/Score.hs`,
   `src/Cortex/Pulse/Memory/Query.hs`, `src/Cortex/Pulse/Memory/Types.hs`
 - Tests: `test/Cortex/Algebra/GraphSpec.hs`, `test/Cortex/Pulse/MemorySpec.hs`

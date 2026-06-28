@@ -123,7 +123,7 @@ spec = describe "cortex_memory_query tool" $ do
     it "decodes a populated args object" $ do
       let raw =
             Aeson.object
-              [ "preset" Aeson..= ("reviewer" :: Text)
+              [ "preset" Aeson..= ("influence_biased" :: Text)
               , "direction" Aeson..= ("ancestors" :: Text)
               , "scope" Aeson..= ("settled_only" :: Text)
               , "routingKey" Aeson..= ("analyst" :: Text)
@@ -133,7 +133,7 @@ spec = describe "cortex_memory_query tool" $ do
       case parseCortexMemoryQueryArgs raw of
         Left err -> expectationFailure ("unexpected parse failure: " <> show err)
         Right args -> do
-          args.cmqPreset `shouldBe` Just PresetReviewer
+          args.cmqPreset `shouldBe` Just PresetInfluenceBiased
           args.cmqDirection `shouldBe` Just Ancestors
           args.cmqScope `shouldBe` Just SettledOnly
           args.cmqRoutingKey `shouldBe` Just "analyst"
@@ -356,8 +356,8 @@ spec = describe "cortex_memory_query tool" $ do
       -- driven by graph influence alone and ties break on NodeId.
       -- Setting a queryText that only overlaps with one of the
       -- analysts' body text must shift the top match to that
-      -- analyst — proves the scorer is wired up and the "use
-      -- `queryText` to narrow recall" nudge in the reviewer instructions
+      -- matching branch — proves the scorer is wired up and the "use
+      -- `queryText` to narrow recall" nudge in the tool description
       -- is not just advisory.
       let semanticWeightSnap =
             fanoutSnapshot
@@ -402,14 +402,14 @@ spec = describe "cortex_memory_query tool" $ do
         other -> expectationFailure ("expected object result, got " <> show other)
 
     it "inherits the caller's topological preset when cmqPreset is Nothing" $ do
-      -- The reviewer preset has wsLimit = Nothing and balanced
-      -- weights; here we just verify the inherited limit behaviour
+      -- The influence-biased preset has wsLimit = Nothing; here we just verify
+      -- the inherited preset behaviour
       -- by supplying a TopologicalStrategyConfig with a tight
       -- per-stage limit and confirming it's surfaced even with a
       -- bare args object.
       let callerCfg =
             TopologicalStrategyConfig
-              { tscPreset = PresetReviewer
+              { tscPreset = PresetInfluenceBiased
               , tscRoutingKey = Nothing
               , tscLimit = Nothing
               }

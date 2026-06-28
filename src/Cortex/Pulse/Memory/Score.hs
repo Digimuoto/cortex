@@ -21,9 +21,9 @@ score is clamped into @[0, 1]@ again.  Absent axes (no temporal
 data, no semantic query) contribute zero rather than skewing the
 score.
 
-The shipped semantic default is a token-jaccard similarity suitable
-for short model-generated or operator-authored bodies.  pgvector /
-reranker implementations slot in via 'SemanticScorer' in the query.
+The shipped semantic default is a token-jaccard similarity over short
+text fields.  Callers that need a stronger semantic policy slot it in
+via 'SemanticScorer' in the query.
 
 Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
@@ -57,8 +57,8 @@ import Cortex.Pulse.Memory.Types
 The sum of weighted-clamped components is itself clamped, so passing
 very large weights cannot push the score above 1.  Passing weight 0
 on an axis drops it entirely — callers use that to configure
-per-stage-kind walk specs (e.g. the analyst heavily weights graph
-influence; the reviewer balances all three).
+per-stage-kind walk specs without changing the deterministic query
+pipeline.
 
 The graph-axis input is a random-walk influence value produced by
 'Cortex.Algebra.Graph.Influence.dagRandomWalkInfluence' — a
@@ -121,8 +121,8 @@ temporalDistanceScore capturedAt completedAt =
 
 {- | Default scorer: token-jaccard similarity over normalised tokens.
 Not a good retrieval mechanism in isolation, but adequate as the
-always-available baseline while pgvector / reranker scorers are
-integrated via the pluggable 'SemanticScorer' field.
+always-available baseline while stronger scorers are integrated via
+the pluggable 'SemanticScorer' field.
 -}
 defaultSemanticScorer :: SemanticScorer
 defaultSemanticScorer = tokenJaccard

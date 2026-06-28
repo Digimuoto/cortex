@@ -1189,8 +1189,8 @@ externalCallPorts =
 externalCallOutputs :: [(Text, Aeson.Value)]
 externalCallOutputs = [("s01", Aeson.toJSON (1 :: Int))]
 
-externalCallPlan :: Aeson.Value
-externalCallPlan = Aeson.object ["operations" Aeson..= [Aeson.object ["gate" Aeson..= ("cnot" :: Text)]]]
+externalCallPayload :: Aeson.Value
+externalCallPayload = Aeson.object ["steps" Aeson..= [Aeson.object ["name" Aeson..= ("call" :: Text)]]]
 
 spec :: Spec
 spec = beforeAll setupTestDb $ do
@@ -1709,7 +1709,7 @@ spec = beforeAll setupTestDb $ do
               externalCallBinding
               (NodeId "realize")
               "frontier-happy"
-              externalCallPlan
+              externalCallPayload
               externalCallPorts
               Nothing
           stagePlan = mkLinearStagePlan [stage] Aeson.Null 1 ReplayPolicyWarn
@@ -1773,7 +1773,7 @@ spec = beforeAll setupTestDb $ do
               externalCallBinding
               (NodeId "realize")
               "frontier-not-ready"
-              externalCallPlan
+              externalCallPayload
               externalCallPorts
               Nothing
           stagePlan = mkLinearStagePlan [stage] Aeson.Null 1 ReplayPolicyWarn

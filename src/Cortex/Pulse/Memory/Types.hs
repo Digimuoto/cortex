@@ -27,9 +27,9 @@ module Cortex.Pulse.Memory.Types
   , defaultScoreWeights
   , WalkSpec (..)
   , defaultWalkSpec
-  , analystWalkSpec
-  , reviewerWalkSpec
-  , plannerWalkSpec
+  , causalWalkSpec
+  , influenceBiasedWalkSpec
+  , recentBidirectionalWalkSpec
 
     -- * Named presets (selectable from wire meta)
   , WalkSpecPreset (..)
@@ -139,9 +139,9 @@ data ScoreWeights = ScoreWeights
   }
   deriving stock (Eq, Show, Generic)
 
-{- | Balanced default: each axis weighted equally, no cutoff.  Domain
-consumers (analyst / reviewer walk specs) will override with their
-own weightings.
+{- | Balanced default: each axis weighted equally, no cutoff.  Callers
+that need a different ranking policy should build an explicit
+'WalkSpec' or select one of the generic presets below.
 -}
 defaultScoreWeights :: ScoreWeights
 defaultScoreWeights =
@@ -180,31 +180,23 @@ defaultWalkSpec =
 -- Per-stage walk-spec presets
 -- ----------------------------------------------------------------------------
 --
--- These are reusable 'WalkSpec' shapes for the common Pulse stage
--- roles, defined so downstream domain code
--- doesn't encode the walk geometry inline.  Tune weights at the call
--- site if a stage wants semantic or temporal weighting; the default
--- axis weights stay balanced (1.0/1.0/1.0).
+-- These are reusable, substrate-generic 'WalkSpec' shapes.  They
+-- describe graph geometry and weighting only; downstream libraries
+-- own role names and cognitive memory policy.
 
-{- | Analyst stages look at their causal cone: reverse-BFS ancestors,
-settled nodes only.  Matches 'defaultWalkSpec' — an analyst is the
-canonical consumer shape.
+{- | Causal-cone preset: reverse-BFS ancestors, settled nodes only.
+Matches 'defaultWalkSpec'.
 -}
-analystWalkSpec :: WalkSpec
-analystWalkSpec = defaultWalkSpec
+causalWalkSpec :: WalkSpec
+causalWalkSpec = defaultWalkSpec
 
-{- | Reviewer stages read every settled ancestor by the time they
-enter.  Because the memory view is pinned at the reviewer's stage
-entry ('Cortex.Pulse.Memory.newMemoryHandle' binds a snapshot at
-construction), reviewer siblings that are still running or waiting
-at that moment are not visible — /no same-frontier bleed/.  Once a
-sibling settles and a later stage starts, the next stage's entry
-snapshot includes it.  Direction stays 'Ancestors'.  Graph weight
-is raised slightly so highly-connected observations rank ahead of
-peripheral ancestors when scores tie.
+{- | Causal-cone preset with the graph-influence axis raised.  The
+stage-entry snapshot rule still applies: same-frontier siblings that
+are running or waiting at capture time are not visible, and a later
+stage sees a fresh snapshot after they settle.
 -}
-reviewerWalkSpec :: WalkSpec
-reviewerWalkSpec =
+influenceBiasedWalkSpec :: WalkSpec
+influenceBiasedWalkSpec =
   WalkSpec
     { wsDirection = Ancestors
     , wsScope = SettledOnly
@@ -218,14 +210,12 @@ reviewerWalkSpec =
     , wsLimit = Nothing
     }
 
-{- | Planner / meta-stage preset: bidirectional walk (the planner may
-look at both the causal cone it's planning against and the
-downstream stages it's shaping), settled nodes only, temporal
-weighting emphasised so recently-settled state dominates stale
-history.
+{- | Bidirectional preset with the temporal axis raised.  Useful for
+callers that intentionally inspect both ancestor and descendant cones
+and want recent settled state to dominate stale history.
 -}
-plannerWalkSpec :: WalkSpec
-plannerWalkSpec =
+recentBidirectionalWalkSpec :: WalkSpec
+recentBidirectionalWalkSpec =
   WalkSpec
     { wsDirection = Bidirectional
     , wsScope = SettledOnly
@@ -247,9 +237,9 @@ plannerWalkSpec =
 extractor.  These are the fields the scoring and rendering layers
 actually look at.
 
- * 'efRoutingKey' — the "claim ref" / logical topic the output is
-   about.  Used to filter by 'qRoutingKey'.  'Nothing' if the output
-   has no declared routing key.
+ * 'efRoutingKey' — the logical topic the output is about.  Used to
+   filter by 'qRoutingKey'.  'Nothing' if the output has no declared
+   routing key.
  * 'efBodyText' — the primary textual body the semantic scorer runs
    against.
  * 'efEvidence' — tool-call IDs or other evidence refs carried by
@@ -267,9 +257,9 @@ data ExtractedFields = ExtractedFields
 output: score in @[0, 1]@ (caller guarantees @clamp01@).
 
 The shipped default is token-jaccard (see
-'Cortex.Pulse.Memory.Score.defaultSemanticScorer').  pgvector /
-reranker implementations slot in by constructing a different
-'SemanticScorer' and threading it through the handle.
+'Cortex.Pulse.Memory.Score.defaultSemanticScorer').  Callers that
+need a stronger policy construct a different 'SemanticScorer' and
+thread it through the handle.
 -}
 type SemanticScorer = Text -> Text -> Double
 
@@ -280,8 +270,7 @@ type SemanticScorer = Text -> Text -> Double
  * 'qSemanticText' — free-text scored by the 'qSemanticScorer'.
    'Nothing' skips the semantic axis (contributes zero).
  * 'qExtractor' — domain-specific decoder pulling 'ExtractedFields'
-   out of a stage output JSONB.  Analogous to
-   @analystOutputsFromInputs@.  'Nothing' means the match is
+   out of a stage output JSONB.  'Nothing' means the match is
    structural-only (a node matches iff its status matches the walk
    scope); no body text, no routing-key filter.
  * 'qSemanticScorer' — the scorer used when 'qSemanticText' is set.
@@ -411,37 +400,41 @@ data MemoryHandle = MemoryHandle
 -- ============================================================================
 
 {- | Symbolic name of a shipped 'WalkSpec' preset, so wire authors can
-pick one by name instead of spelling out every field.  @Custom@
-keeps the escape hatch for code-level construction.
+pick one by name instead of spelling out every field.
 -}
 data WalkSpecPreset
-  = PresetAnalyst
-  | PresetReviewer
-  | PresetPlanner
+  = PresetCausal
+  | PresetInfluenceBiased
+  | PresetRecentBidirectional
   | PresetDefault
   deriving stock (Eq, Show, Generic)
 
 walkSpecPresetToText :: WalkSpecPreset -> Text
 walkSpecPresetToText = \case
-  PresetAnalyst -> "analyst"
-  PresetReviewer -> "reviewer"
-  PresetPlanner -> "planner"
+  PresetCausal -> "causal"
+  PresetInfluenceBiased -> "influence_biased"
+  PresetRecentBidirectional -> "recent_bidirectional"
   PresetDefault -> "default"
 
 walkSpecPresetFromText :: Text -> Either Text WalkSpecPreset
 walkSpecPresetFromText = \case
-  "analyst" -> Right PresetAnalyst
-  "reviewer" -> Right PresetReviewer
-  "planner" -> Right PresetPlanner
+  "causal" -> Right PresetCausal
+  "influence_biased" -> Right PresetInfluenceBiased
+  "recent_bidirectional" -> Right PresetRecentBidirectional
   "default" -> Right PresetDefault
+  -- Compatibility aliases for wires authored before the Cortex
+  -- presets were renamed away from downstream role vocabulary.
+  "analyst" -> Right PresetCausal
+  "reviewer" -> Right PresetInfluenceBiased
+  "planner" -> Right PresetRecentBidirectional
   other -> Left ("unknown walk-spec preset: " <> other)
 
 -- | Materialise a preset into a 'WalkSpec' value.
 resolveWalkSpecPreset :: WalkSpecPreset -> WalkSpec
 resolveWalkSpecPreset = \case
-  PresetAnalyst -> analystWalkSpec
-  PresetReviewer -> reviewerWalkSpec
-  PresetPlanner -> plannerWalkSpec
+  PresetCausal -> causalWalkSpec
+  PresetInfluenceBiased -> influenceBiasedWalkSpec
+  PresetRecentBidirectional -> recentBidirectionalWalkSpec
   PresetDefault -> defaultWalkSpec
 
 instance Aeson.ToJSON WalkSpecPreset where
@@ -471,7 +464,7 @@ data TopologicalStrategyConfig = TopologicalStrategyConfig
 defaultTopologicalConfig :: TopologicalStrategyConfig
 defaultTopologicalConfig =
   TopologicalStrategyConfig
-    { tscPreset = PresetAnalyst
+    { tscPreset = PresetCausal
     , tscRoutingKey = Nothing
     , tscLimit = Nothing
     }
@@ -487,7 +480,7 @@ instance Aeson.ToJSON TopologicalStrategyConfig where
 instance Aeson.FromJSON TopologicalStrategyConfig where
   parseJSON = Aeson.withObject "TopologicalStrategyConfig" $ \obj ->
     TopologicalStrategyConfig
-      <$> obj Aeson..:? "preset" Aeson..!= PresetAnalyst
+      <$> obj Aeson..:? "preset" Aeson..!= PresetCausal
       <*> obj Aeson..:? "routingKey"
       <*> obj Aeson..:? "limit"
 
@@ -518,7 +511,7 @@ defaultMemoryStrategy = MemoryClassic
 -- JSON encoding uses a tagged object so future variants extend
 -- without breaking persisted wires.  Shape:
 --   { "tag": "classic" }
---   { "tag": "topological", "config": { "preset": "analyst", ... } }
+--   { "tag": "topological", "config": { "preset": "causal", ... } }
 instance Aeson.ToJSON MemoryStrategy where
   toJSON MemoryClassic = Aeson.object ["tag" Aeson..= ("classic" :: Text)]
   toJSON (MemoryTopological cfg) =

@@ -203,7 +203,7 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
             { qExtractor = analystExtractor
             , qRoutingKey = Just "analyst"
             }
-    matches <- handle.queryMemory (nid "reviewer") analystWalkSpec query
+    matches <- handle.queryMemory (nid "reviewer") causalWalkSpec query
     -- All three analysts share routing_key="analyst".  Reviewer's
     -- ancestors walk reaches every one of them regardless of which
     -- chain it took — that's the broadcast-read property.
@@ -216,21 +216,21 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     -- exactly on every field.
     handle <- fanoutHandle initialPersistedState completedAtMap
     let query = emptyQuery {qExtractor = analystExtractor}
-    a <- handle.queryMemory (nid "reviewer") analystWalkSpec query
-    b <- handle.queryMemory (nid "reviewer") analystWalkSpec query
+    a <- handle.queryMemory (nid "reviewer") causalWalkSpec query
+    b <- handle.queryMemory (nid "reviewer") causalWalkSpec query
     a `shouldBe` b
 
   it "resume reconstructs an equivalent view from equivalent state" $ do
     let query = emptyQuery {qExtractor = analystExtractor, qRoutingKey = Just "analyst"}
     -- Pre-crash: stage enters, binds a snapshot, queries.
     handle1 <- fanoutHandle initialPersistedState completedAtMap
-    preCrash <- handle1.queryMemory (nid "reviewer") analystWalkSpec query
+    preCrash <- handle1.queryMemory (nid "reviewer") causalWalkSpec query
 
     -- Post-resume: the executor reconstructs equivalent state and
     -- binds a new snapshot.  Same persisted state, same completion
     -- map, same topology ⇒ equivalent view.
     handle2 <- fanoutHandle initialPersistedState completedAtMap
-    postResume <- handle2.queryMemory (nid "reviewer") analystWalkSpec query
+    postResume <- handle2.queryMemory (nid "reviewer") causalWalkSpec query
 
     fmap moNodeId preCrash `shouldBe` fmap moNodeId postResume
     fmap moExtracted preCrash `shouldBe` fmap moExtracted postResume
@@ -245,7 +245,7 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     snap <- captureMemorySnapshot gsVar nodeCompletedAtVar topologyVar
     let handle = newMemoryHandle snap
         query = emptyQuery {qExtractor = analystExtractor, qRoutingKey = Just "analyst"}
-    initial <- handle.queryMemory (nid "reviewer") analystWalkSpec query
+    initial <- handle.queryMemory (nid "reviewer") causalWalkSpec query
     length initial `shouldBe` 3
 
     -- Mid-stage mutation: delete one analyst output from the live
@@ -262,14 +262,14 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
                   }
             }
     atomically $ writeTVar gsVar droppedState
-    afterMutation <- handle.queryMemory (nid "reviewer") analystWalkSpec query
+    afterMutation <- handle.queryMemory (nid "reviewer") causalWalkSpec query
     length afterMutation `shouldBe` 3
 
     -- A new snapshot captured after the mutation does observe it —
     -- that represents a /different/ stage's entry.
     freshSnap <- captureMemorySnapshot gsVar nodeCompletedAtVar topologyVar
     let freshHandle = newMemoryHandle freshSnap
-    freshMatches <- freshHandle.queryMemory (nid "reviewer") analystWalkSpec query
+    freshMatches <- freshHandle.queryMemory (nid "reviewer") causalWalkSpec query
     length freshMatches `shouldBe` 2
 
   it "decodes wire-wrapped analyst outputs via unwrapWireStageValue" $ do
@@ -297,13 +297,13 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     let naiveQuery = emptyQuery {qExtractor = analystExtractor, qRoutingKey = Just "analyst"}
         unwrappingQuery = emptyQuery {qExtractor = wireAwareAnalystExtractor, qRoutingKey = Just "analyst"}
 
-    naiveMatches <- handle.queryMemory (nid "reviewer") analystWalkSpec naiveQuery
+    naiveMatches <- handle.queryMemory (nid "reviewer") causalWalkSpec naiveQuery
     -- Without unwrapping, the extractor fails (payload is the wire
     -- envelope, not the analyst shape) and the routing-key filter
     -- drops every analyst — that's the regression.
     naiveMatches `shouldBe` []
 
-    unwrappedMatches <- handle.queryMemory (nid "reviewer") analystWalkSpec unwrappingQuery
+    unwrappedMatches <- handle.queryMemory (nid "reviewer") causalWalkSpec unwrappingQuery
     fmap moNodeId unwrappedMatches
       `shouldMatchList` [nid "analyst-a", nid "analyst-b", nid "analyst-c"]
 
@@ -334,7 +334,7 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     handle <- fanoutHandle waitingState completedAtMap
     let structuralQuery = emptyQuery
     settledOnly <-
-      handle.queryMemory (nid "reviewer") analystWalkSpec structuralQuery
+      handle.queryMemory (nid "reviewer") causalWalkSpec structuralQuery
     fmap moNodeId settledOnly
       `shouldMatchList` [nid "planner", nid "analyst-a", nid "analyst-c"]
 
@@ -345,7 +345,7 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     widened <-
       handle.queryMemory
         (nid "reviewer")
-        (analystWalkSpec {wsScope = DebugAllStatuses})
+        (causalWalkSpec {wsScope = DebugAllStatuses})
         structuralQuery
     fmap moNodeId widened
       `shouldMatchList` [nid "planner", nid "analyst-a", nid "analyst-c"]
@@ -404,7 +404,7 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     entryMatches <-
       analystBHandle.queryMemory
         (nid "analyst-b")
-        analystWalkSpec
+        causalWalkSpec
         (emptyQuery {qExtractor = analystExtractor})
     fmap moNodeId entryMatches `shouldBe` [nid "planner"]
 
@@ -416,6 +416,6 @@ spec = describe "MemoryHandle (stage-entry bound)" $ do
     laterMatches <-
       reviewerHandle.queryMemory
         (nid "reviewer")
-        analystWalkSpec
+        causalWalkSpec
         (emptyQuery {qExtractor = analystExtractor, qRoutingKey = Just "analyst"})
     fmap moNodeId laterMatches `shouldBe` [nid "analyst-a"]

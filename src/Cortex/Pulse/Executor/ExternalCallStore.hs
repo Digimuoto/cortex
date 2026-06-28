@@ -50,9 +50,9 @@ pulseAttemptStore pool =
     { storeLoad = \key -> do
         attempt <- runOrThrow (loadExternalCallAttempt key)
         pure (toView <$> attempt)
-    , storeReserve = \key idempotencyKey frozenPlan -> do
+    , storeReserve = \key idempotencyKey frozenPayload -> do
         now <- getCurrentTime
-        runOrThrow (reserveExternalCallAttempt key idempotencyKey frozenPlan now)
+        runOrThrow (reserveExternalCallAttempt key idempotencyKey frozenPayload now)
     , storePersistHandle = \key jobHandle signalName -> do
         now <- getCurrentTime
         runOrThrow (persistExternalCallHandle key jobHandle signalName now)

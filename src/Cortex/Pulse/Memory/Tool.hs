@@ -9,15 +9,12 @@ Stability   : experimental
 This is the tool-surface complement to the declarative
 @meta.memory = …@ per-node knob.  Where the wire meta bakes a
 memory read into the stage's prefix (cheap, deterministic, no
-extra capability latency), the tool lets a model-backed or host
-executor issue arbitrary walks mid-evaluation when the authored
-walk did not return enough context.
+extra capability latency), the tool lets a host executor issue
+explicit walks mid-evaluation when the authored walk did not return
+enough context.
 
-The tool schema and the pure execution path live here so both the
-Pulse-native dispatch (in-process stage actions calling
-'executeCortexMemoryQuery' directly) and the DeepReport
-interceptor (which partitions tool calls before the HTTP bounce)
-share the same contract.
+The tool schema and the pure execution path live here so in-process
+stage actions and host adapters share the same substrate contract.
 
 Pulse modules implement durable runtime mechanics without binding consumer task registries.
 -}
@@ -78,8 +75,8 @@ cortexMemoryQueryToolName = "cortex_memory_query"
 to match the style of the other built-in tools.
 
 Every field is optional.  Defaults mirror the Haskell defaults:
-ancestor walk, settled-only scope, analyst preset, no routing
-filter, no semantic text, no limit.
+ancestor walk, settled-only scope, causal preset, no routing filter,
+no semantic text, no limit.
 -}
 cortexMemoryQuerySchema :: Aeson.Value
 cortexMemoryQuerySchema =
@@ -90,11 +87,11 @@ cortexMemoryQuerySchema =
           [ "preset"
               .= Aeson.object
                 [ "type" .= ("string" :: Text)
-                , "enum" .= (["analyst", "reviewer", "planner", "default"] :: [Text])
+                , "enum" .= (["causal", "influence_biased", "recent_bidirectional", "default"] :: [Text])
                 , "description"
                     .= ( "Named WalkSpec preset.  Picks the base scoring weights + "
                            <> "direction.  Defaults to the caller stage's declared "
-                           <> "strategy preset, or `analyst` when absent."
+                           <> "strategy preset, or `causal` when absent."
                            :: Text
                        )
                 ]
@@ -126,8 +123,8 @@ cortexMemoryQuerySchema =
                 , "description"
                     .= ( "Exact-match filter on the stage output's routing key. "
                            <> "The built-in structural extractor reads the first "
-                           <> "non-empty string field among `slot`, `claim_ref`, "
-                           <> "or `claimRef` from the output object.  Outputs "
+                           <> "non-empty string field among `routingKey`, `slot`, "
+                           <> "`claim_ref`, or `claimRef` from the output object. Outputs "
                            <> "using a different routing-key field name will not "
                            <> "be matchable via this filter — their matches drop "
                            <> "when `routingKey` is set.  Omit to see every "
@@ -141,10 +138,11 @@ cortexMemoryQuerySchema =
                 , "description"
                     .= ( "Free-text hint scored by the semantic axis.  The "
                            <> "default scorer is token-jaccard — a short, narrow "
-                           <> "natural-language phrase (`\"china revenue 12q4\"`) "
+                           <> "phrase (`\"release notes\"`) "
                            <> "raises the rank of nodes whose extracted body "
                            <> "shares vocabulary with the hint.  Pluggable; "
-                           <> "pgvector / reranker implementations slot in here."
+                           <> "callers can thread a different scorer through the "
+                           <> "lower-level query API."
                            :: Text
                        )
                 ]
@@ -179,7 +177,7 @@ cortexMemoryQueryToolDefinition =
                      <> "Returns a ranked list of matched nodes with their outputs, "
                      <> "scores, and graph distances from the caller.  Use when the "
                      <> "stage's authored context is not enough and you need to "
-                     <> "reach beyond direct parents — e.g. read sibling analysts "
+                     <> "reach beyond direct parents — e.g. read sibling outputs "
                      <> "that share a routing key, or pull distant ancestors that "
                      <> "match a semantic hint."
                      :: Text
@@ -256,17 +254,16 @@ The caller's 'MemoryStrategy' seeds the defaults when the tool
 args leave a field blank:
 
  * @cmqPreset = Nothing@ + caller is 'MemoryTopological' →
-   inherit the stage's 'tscPreset'.  So a reviewer whose wire
-   declares @memory = topological { preset = "reviewer"; … }@
-   runs the tool against the reviewer preset unless the model
-   overrides it.
+   inherit the stage's 'tscPreset'.  So a stage whose wire declares
+   @memory = topological { preset = "influence_biased"; … }@ runs
+   the tool against that preset unless the caller overrides it.
  * @cmqPreset = Nothing@ + caller is 'MemoryClassic' →
    'PresetDefault'.  Classic stages didn't opt into a specific
    topological shape, so the balanced default is the least
    surprising inheritance.
  * @cmqRoutingKey = Nothing@ + caller is 'MemoryTopological'
    with a routing-key filter → /not/ inherited.  The tool lets
-   the model explicitly broaden the filter, so leaving it blank
+   the caller explicitly broadens the filter, so leaving it blank
    means "every match", not "whatever the stage picked".
 
 Pure JSON over an in-process IO snapshot read — no DB, no
@@ -346,8 +343,7 @@ renderCortexMemoryQueryResult snap matches =
 
 {- | Built-in structural extractor: returns the raw output so a
 caller that didn't set a routing-key filter still gets the body
-back.  Domain-specific extractors (analyst decoders, etc.) live
-in the consumers, not here.
+back.  Domain-specific extractors live in the consumers, not here.
 
 Wire-bound stages wrap their outputs in a 'WireValue' envelope
 (see @Cortex.Wire.Runtime.wrapWireStageResult@).  The extractor
@@ -394,14 +390,15 @@ peelWireValueEnvelope (Aeson.Object obj)
       inner
 peelWireValueEnvelope v = v
 
-{- | Best-effort "slot" / "claim_ref" lookup for the routing-key
+{- | Best-effort routing-key lookup for the routing-key
 filter.  If the output isn't a JSON object with a string routing
 field, returns 'Nothing' and the routing-key filter naturally
 drops the match (when the caller set @routingKey@).
 -}
 extractRoutingKey :: Aeson.Value -> Maybe Text
 extractRoutingKey (Aeson.Object obj) =
-  ( KeyMap.lookup (Key.fromText "slot") obj
+  ( KeyMap.lookup (Key.fromText "routingKey") obj
+      <|> KeyMap.lookup (Key.fromText "slot") obj
       <|> KeyMap.lookup (Key.fromText "claim_ref") obj
       <|> KeyMap.lookup (Key.fromText "claimRef") obj
   )

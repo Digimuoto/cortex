@@ -205,7 +205,7 @@ configuration, applied behind an explicit node boundary.
 
 ```wire
 let critic_executor = @review.analyst {
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   instructions = "Critique the draft and call out weak claims.";
 };
 

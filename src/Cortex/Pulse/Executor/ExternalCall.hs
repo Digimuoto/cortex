@@ -15,7 +15,7 @@ a typed @StageFail@ in the ADR 0026 closure).
 
 Two await strategies (ADR 0053 binding metadata):
 
-* __synchronous__ — run the fused plan inline and complete;
+* __synchronous__ — run the frozen payload inline and complete;
 * __submit/park/resume__ — first entry reserves the attempt, submits to the
   provider, persists the job handle, and suspends on the reserved @external-call:@
   wake; resume (the attempt already carries a handle) fetches the provider result
@@ -52,7 +52,7 @@ its own provider submit/dedup token from this; Pulse does not force its key.
 -}
 data ExternalCallContext = ExternalCallContext
   { ecAttemptKey :: !ExternalCallAttemptKey
-  , ecFrozenPlan :: !Value
+  , ecFrozenPayload :: !Value
   , ecIdempotencyKey :: !Text
   -- ^ The Pulse-side dedup anchor, NOT the provider token.
   }
@@ -61,7 +61,7 @@ data ExternalCallContext = ExternalCallContext
 not-yet-terminal (re-suspend), or a typed terminal failure.
 -}
 data FetchResult
-  = -- | Terminal: named measurement outputs.
+  = -- | Terminal: named outputs.
     FetchCompleted ![(Text, Value)]
   | -- | The provider job is not terminal yet; the stage re-suspends.
     FetchNotReady
@@ -72,7 +72,7 @@ data FetchResult
 -- | Host-supplied, backend-specific operations. Opaque to Pulse (ADR 0053).
 data ExternalCallDriver m = ExternalCallDriver
   { driverRunSync :: Value -> m (Either Text [(Text, Value)])
-  -- ^ Run the fused plan inline (synchronous strategy) → named measurement outputs.
+  -- ^ Run the frozen payload inline (synchronous strategy) → named outputs.
   , driverSubmit :: ExternalCallContext -> m (Either Text Value)
   -- ^ Submit to the provider (driver derives its own dedup token) → opaque handle.
   , driverFetch :: Value -> m FetchResult
@@ -80,7 +80,7 @@ data ExternalCallDriver m = ExternalCallDriver
   idempotent and not-ready-tolerant (ADR 0059).
   -}
   , driverIdempotencyKey :: Value -> Text
-  -- ^ Derive the deterministic Pulse-side idempotency key from the frozen plan.
+  -- ^ Derive the deterministic Pulse-side idempotency key from the frozen payload.
   }
 
 -- | What the executor reads back about an in-flight attempt.
@@ -107,7 +107,7 @@ data AttemptStore m = AttemptStore
 
 -- | The outcome the executor maps onto a Pulse @StageResult@.
 data ExternalCallOutcome
-  = -- | Completed with named measurement outputs.
+  = -- | Completed with named outputs.
     ExternalCallCompleted ![(Text, Value)]
   | -- | Suspended; the run parks on this reserved external-call wake until completion.
     ExternalCallSuspended !Text
@@ -125,12 +125,12 @@ runExternalCall
   -> AttemptStore m
   -> ExternalCallAttemptKey
   -> Value
-  -- ^ frozen fused plan
+  -- ^ frozen external-call payload
   -> m ExternalCallOutcome
-runExternalCall Synchronous driver _ _ frozenPlan = do
-  result <- driverRunSync driver frozenPlan
+runExternalCall Synchronous driver _ _ frozenPayload = do
+  result <- driverRunSync driver frozenPayload
   pure (either ExternalCallFailed ExternalCallCompleted result)
-runExternalCall SubmitParkResume driver store key frozenPlan = do
+runExternalCall SubmitParkResume driver store key frozenPayload = do
   existing <- storeLoad store key
   case existing of
     Just view
@@ -161,12 +161,12 @@ runExternalCall SubmitParkResume driver store key frozenPlan = do
           pure (ExternalCallFailed reason)
 
     firstEntry = do
-      let idempotencyKey = driverIdempotencyKey driver frozenPlan
-      storeReserve store key idempotencyKey frozenPlan
+      let idempotencyKey = driverIdempotencyKey driver frozenPayload
+      storeReserve store key idempotencyKey frozenPayload
       let ctx =
             ExternalCallContext
               { ecAttemptKey = key
-              , ecFrozenPlan = frozenPlan
+              , ecFrozenPayload = frozenPayload
               , ecIdempotencyKey = idempotencyKey
               }
       submitted <- driverSubmit driver ctx

@@ -298,7 +298,7 @@ node reviewer
   -> reviewed: ReviewerDraft | error: ExecutorError;
   = @review.reviewer {
     memory = topological {
-      preset = "reviewer";
+      preset = "influence_biased";
       routingKey = "analyst";
       limit = 16;
     };

@@ -208,7 +208,7 @@ pulse.external_call_attempts
   runtime_binding_id  text not null
   frontier_id         text not null            -- canonical hash of the frozen frontier
   idempotency_key     text not null
-  frozen_plan         jsonb not null           -- the canonical fused sub-plan
+  frozen_plan         jsonb not null           -- the canonical frozen external-call payload
   job_handle          jsonb                     -- null until the provider submit is recorded
   signal_name         text                      -- reserved external-call: wake token (ADR 0059 §3)
   status              text not null default 'reserved'   -- reserved | submitted | settled | failed
@@ -221,18 +221,18 @@ pulse.external_call_attempts
 
 The Pulse-owned durable home for a `submit_park_resume` external call's executor metadata (ADR 0059
 §3). ADR 0058 suspend settlement commits only graph state, signal wait rows, and run status, so this
-record — not the signal rows — carries the idempotency key, frozen fused plan, and provider job
-handle. Reserve is idempotent on the key, so crash recovery re-entry never creates a duplicate
-provider task; provider fields are opaque JSON that Pulse does not interpret. The stored
-`idempotency_key` is the **Pulse-side** dedup anchor; it is distinct from the driver-owned provider
-submit/dedup token (which may fold request parameters such as region/device/shots/bucket/prefix and
-is not persisted here). The `external-call:` wake is a reserved name family that ordinary
-`deliverSignal` refuses (only the trusted external-call delivery path may mark it delivered); its
-delivery re-arms the waiting node so the bound stage fetches and validates the provider result
-rather than completing from the signal payload (see
-[`signals.md §4.2`](./signals.md#42-external-call-wake-signals)). A typed backend failure is
-recorded in `failure_reason` and read back on resume, so a crash between the failure write and the
-node-completion graph write reproduces the same typed reason rather than losing it.
+record — not the signal rows — carries the idempotency key, frozen payload, and provider job handle.
+Reserve is idempotent on the key, so crash recovery re-entry never creates a duplicate provider
+task; provider fields are opaque JSON that Pulse does not interpret. The stored `idempotency_key` is
+the **Pulse-side** dedup anchor; it is distinct from the driver-owned provider submit/dedup token
+(which may fold request parameters such as region/device/shots/bucket/prefix and is not persisted
+here). The `external-call:` wake is a reserved name family that ordinary `deliverSignal` refuses
+(only the trusted external-call delivery path may mark it delivered); its delivery re-arms the
+waiting node so the bound stage fetches and validates the provider result rather than completing
+from the signal payload (see [`signals.md §4.2`](./signals.md#42-external-call-wake-signals)). A
+typed backend failure is recorded in `failure_reason` and read back on resume, so a crash between
+the failure write and the node-completion graph write reproduces the same typed reason rather than
+losing it.
 
 ## Appendix A — Ownership
 

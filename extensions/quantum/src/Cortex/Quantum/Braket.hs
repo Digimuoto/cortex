@@ -75,7 +75,7 @@ import Text.Read (readMaybe)
 
 import Cortex.Capability.BindingPack (HostBindingPack)
 import Cortex.Capability.BindingPack.Braket (BraketConfig (..), braketBindingPack)
-import Cortex.Pulse.Lowering.Circuit (LoweredRealize (..))
+import Cortex.Pulse.Lowering.Circuit (LoweredExternalCall (..))
 import Cortex.Quantum.Cost
   ( CostEstimate
   , CostOverrides (..)
@@ -305,7 +305,7 @@ buildActionPayload qasm =
       ]
 
 {- | AWS Braket's @client-token@ identifies one concrete create request, not just
-the abstract fused plan. Hash the plan digest together with every parameter that
+the abstract external-call payload. Hash the payload digest together with every parameter that
 can change the create request so a rerun with different shots/device/S3/action
 gets a distinct token, while a retry of the exact same request reuses it.
 -}

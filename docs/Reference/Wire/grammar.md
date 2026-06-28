@@ -468,7 +468,7 @@ node merge
 
 Executor config is inert data. It may contain records, lists, strings, numbers, booleans, configured
 values admitted by the config schema, tool names, and tagged config constructors such as
-`topological { preset = "analyst"; }`. The registry validates whether those fields are meaningful.
+`topological { preset = "causal"; }`. The registry validates whether those fields are meaningful.
 Record fields support Nix-style `inherit name;` sugar, which desugars to `name = name;`.
 
 ## 7. Graph Composition

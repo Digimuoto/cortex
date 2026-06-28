@@ -29,7 +29,7 @@ alphabet and pairs it with inert config data:
 let analyst = @review.analyst {
   model = "gpt-5.4";
   temperature = 0.2;
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
 };
 ```
 
@@ -133,7 +133,7 @@ parameters, tools, and nested tagged records, but they cannot run executors.
 ```wire
 let reviewer = @review.review {
   tools = [webSearch, readArtifact];
-  memory = topological { preset = "reviewer"; };
+  memory = topological { preset = "influence_biased"; };
 };
 ```
 

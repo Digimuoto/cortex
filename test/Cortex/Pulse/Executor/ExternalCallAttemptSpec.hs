@@ -60,20 +60,20 @@ mkKey runId frontier =
     , ecaFrontierId = frontier
     }
 
-plan :: Aeson.Value
-plan = Aeson.object ["operations" Aeson..= [Aeson.object ["gate" Aeson..= ("cnot" :: Text)]]]
+payload :: Aeson.Value
+payload = Aeson.object ["steps" Aeson..= [Aeson.object ["name" Aeson..= ("call" :: Text)]]]
 
 spec :: Spec
 spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
-  it "reserve then load yields a reserved attempt with the frozen plan" $ \mdb -> withDb mdb $ \db -> do
+  it "reserve then load yields a reserved attempt with the frozen payload" $ \mdb -> withDb mdb $ \db -> do
     now <- getCurrentTime
     runId <- seedRun db "ec-reserve"
     let key = mkKey runId "f-reserve"
-    runTx db (reserveExternalCallAttempt key "idem-1" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-1" payload now)
     loaded <- runTx db (loadExternalCallAttempt key)
     fmap ecaStatus loaded `shouldBe` Just "reserved"
     fmap ecaIdempotencyKey loaded `shouldBe` Just "idem-1"
-    fmap ecaFrozenPlan loaded `shouldBe` Just plan
+    fmap ecaFrozenPayload loaded `shouldBe` Just payload
     (ecaJobHandle =<< loaded) `shouldBe` Nothing
     (ecaFailureReason =<< loaded) `shouldBe` Nothing
 
@@ -81,18 +81,18 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     now <- getCurrentTime
     runId <- seedRun db "ec-idem"
     let key = mkKey runId "f-idem"
-    runTx db (reserveExternalCallAttempt key "idem-first" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-first" payload now)
     runTx db (reserveExternalCallAttempt key "idem-second" (Aeson.object ["x" Aeson..= (1 :: Int)]) now)
     loaded <- runTx db (loadExternalCallAttempt key)
     fmap ecaIdempotencyKey loaded `shouldBe` Just "idem-first"
-    fmap ecaFrozenPlan loaded `shouldBe` Just plan
+    fmap ecaFrozenPayload loaded `shouldBe` Just payload
 
   it "persist handle marks the attempt submitted with the job handle and signal" $ \mdb -> withDb mdb $ \db -> do
     now <- getCurrentTime
     runId <- seedRun db "ec-submit"
     let key = mkKey runId "f-submit"
         handle = Aeson.object ["jobArn" Aeson..= ("arn:aws:braket:job/abc" :: Text)]
-    runTx db (reserveExternalCallAttempt key "idem-s" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-s" payload now)
     runTx db (persistExternalCallHandle key handle "external-call:job-abc" now)
     loaded <- runTx db (loadExternalCallAttempt key)
     fmap ecaStatus loaded `shouldBe` Just "submitted"
@@ -103,7 +103,7 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     now <- getCurrentTime
     runId <- seedRun db "ec-settle"
     let key = mkKey runId "f-settle"
-    runTx db (reserveExternalCallAttempt key "idem-x" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-x" payload now)
     runTx db (settleExternalCallAttempt key now)
     loaded <- runTx db (loadExternalCallAttempt key)
     fmap ecaStatus loaded `shouldBe` Just "settled"
@@ -112,7 +112,7 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     now <- getCurrentTime
     runId <- seedRun db "ec-fail"
     let key = mkKey runId "f-fail"
-    runTx db (reserveExternalCallAttempt key "idem-f" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-f" payload now)
     runTx db (failExternalCallAttempt key "device rejected" now)
     loaded <- runTx db (loadExternalCallAttempt key)
     fmap ecaStatus loaded `shouldBe` Just "failed"
@@ -123,9 +123,9 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     runId <- seedRun db "ec-list"
     let submittedKey = mkKey runId "f-list-submitted"
         reservedKey = mkKey runId "f-list-reserved"
-    runTx db (reserveExternalCallAttempt submittedKey "i1" plan now)
+    runTx db (reserveExternalCallAttempt submittedKey "i1" payload now)
     runTx db (persistExternalCallHandle submittedKey (Aeson.String "job1") "external-call:1" now)
-    runTx db (reserveExternalCallAttempt reservedKey "i2" plan now)
+    runTx db (reserveExternalCallAttempt reservedKey "i2" payload now)
     listed <- runTx db (listSubmittedExternalCallAttempts 100)
     let frontiersForRun = [ecaFrontierId (ecaKey a) | a <- listed, ecaRunId (ecaKey a) == runId]
     frontiersForRun `shouldBe` ["f-list-submitted"]
@@ -135,7 +135,7 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     runId <- seedRun db "ec-wake"
     let key = mkKey runId "f-wake"
         sigText = unSignalName (externalCallSignalName (externalCallSignalSuffix key))
-    runTx db (reserveExternalCallAttempt key "idem-wake" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-wake" payload now)
     -- Delivery after attempt reservation but before any pending wait inserts a
     -- node-scoped delivered row for suspend settlement to observe.
     delivered <- runTx db (Q.deliverExternalCallSignal key (Aeson.String "wake") now)
@@ -172,7 +172,7 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     let key = mkKey runId "f-resuspend"
         sig = externalCallSignalName (externalCallSignalSuffix key)
         sigText = unSignalName sig
-    runTx db (reserveExternalCallAttempt key "idem-resuspend" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-resuspend" payload now)
     -- Round 1: deliver, then consume (as a re-arm would). The signal name is reused
     -- across re-suspend rounds, so a leftover 'consumed' row must NOT suppress the next wake.
     _ <- runTx db (Q.deliverExternalCallSignal key (Aeson.String "wake-1") now)
@@ -188,7 +188,7 @@ spec = beforeAll setupTestDb . describe "external-call attempt CRUD + wake" $ do
     runId <- seedRun db "ec-terminal"
     let key = mkKey runId "f-terminal"
         sigText = unSignalName (externalCallSignalName (externalCallSignalSuffix key))
-    runTx db (reserveExternalCallAttempt key "idem-t" plan now)
+    runTx db (reserveExternalCallAttempt key "idem-t" payload now)
     runTx db (settleExternalCallAttempt key now)
     -- A late/duplicate completion for an already-settled attempt must not re-arm it.
     delivered <- runTx db (Q.deliverExternalCallSignal key (Aeson.String "late") now)

@@ -7,7 +7,7 @@ Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
 The external-call attempt record is the Pulse-owned durable home for a
-@submit_park_resume@ external call's @{idempotency key, frozen fused plan, job
+@submit_park_resume@ external call's @{idempotency key, frozen payload, job
 handle, completion signal}@, keyed by @(run, node, runtime binding, frontier)@
 (ADR 0059 §3). ADR 0058 settlement commits only graph state, signal wait rows, and
 run status, so executor metadata lives here, not on the signal rows.
@@ -114,7 +114,7 @@ externalCallSignalSuffix key =
 data ExternalCallAttempt = ExternalCallAttempt
   { ecaKey :: !ExternalCallAttemptKey
   , ecaIdempotencyKey :: !Text
-  , ecaFrozenPlan :: !Aeson.Value
+  , ecaFrozenPayload :: !Aeson.Value
   , ecaJobHandle :: !(Maybe Aeson.Value)
   , ecaSignalName :: !(Maybe Text)
   , ecaStatus :: !Text
@@ -124,18 +124,18 @@ data ExternalCallAttempt = ExternalCallAttempt
 
 {- | Reserve the attempt before provider submission. Idempotent on the key: a
 recovery re-entry with the same key is a no-op (@ON CONFLICT DO NOTHING@), so the
-frozen plan and idempotency key written on first reservation are authoritative.
+frozen payload and idempotency key written on first reservation are authoritative.
 -}
 reserveExternalCallAttempt
   :: ExternalCallAttemptKey -> Text -> Aeson.Value -> UTCTime -> Transaction ()
-reserveExternalCallAttempt key idempotencyKey frozenPlan now =
+reserveExternalCallAttempt key idempotencyKey frozenPayload now =
   Tx.statement
     ( key.ecaRunId
     , key.ecaNodeId
     , key.ecaRuntimeBindingId
     , key.ecaFrontierId
     , idempotencyKey
-    , frozenPlan
+    , frozenPayload
     , now
     )
     $ Statement

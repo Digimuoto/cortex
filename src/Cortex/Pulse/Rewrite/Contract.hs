@@ -1,12 +1,12 @@
 {- |
 Module      : Cortex.Pulse.Rewrite.Contract
-Description : Decidable admission check for a realize-node frontier contraction (ADR 0059 §2).
+Description : Decidable admission check for an external-call frontier contraction.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
-Sinking the set of upstream backend nodes feeding a realize node into one durable
+Sinking the set of upstream backend nodes feeding a collect node into one durable
 stage is a contraction. ADR 0059 §2 requires a /decidable/ admission check that
 runs in the @validatorReady@ lineage rather than host-side guesswork: every node in
 the collected set must share one external-call authority and one await strategy, and
@@ -14,8 +14,8 @@ no non-backend node may sit inside the set. A set that violates this is __reject
 (the author/materializer must place separate realize nodes); the validator never
 silently splits it.
 
-The check is on the /collected set/ only. Frozen classical boundary inputs to the
-realize node (shot count, rotation angles, backend config) are legitimate inbound
+The check is on the /collected set/ only. Frozen boundary inputs to the collect
+node (request parameters, runtime config, domain values) are legitimate inbound
 edges, not members of the collected set, so they are not authority violations — they
 are excluded by the lowering's collection traversal, not by this check.
 
@@ -34,7 +34,7 @@ where
 import Data.List (nub)
 import Data.Maybe (isNothing)
 
-{- | A node collected into a realize frontier, paired with its backend classification:
+{- | A node collected into an external-call frontier, paired with its backend classification:
 @Just (authority, strategy)@ for a backend node, @Nothing@ for a non-backend node
 that must not appear inside the collected set.
 -}

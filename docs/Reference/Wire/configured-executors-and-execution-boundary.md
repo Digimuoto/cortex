@@ -97,7 +97,7 @@ execution.
 Executor config may grant memory or retrieval authority:
 
 ```text
-memory = topological { preset = "analyst"; };
+memory = topological { preset = "causal"; };
 ```
 
 That authority belongs to the executor binding. It is legal as registered config/tool authority, but

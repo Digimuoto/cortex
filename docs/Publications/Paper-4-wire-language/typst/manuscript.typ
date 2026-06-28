@@ -228,7 +228,7 @@ later.
 
 ```wire
 let analyst_base = @review.analyst {
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
 };
 
 node critic :

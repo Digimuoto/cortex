@@ -1,31 +1,31 @@
 {- |
 Module      : Cortex.Pulse.Lowering.Circuit
-Description : Lower a realize frontier to a bound, durable stage (ADR 0059 §2/§3).
+Description : Lower a collected external-call frontier to a bound, durable stage.
 Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
-The decision core of the Wire→Pulse lowering: given a realize node's collected
-upstream frontier (classified by backend authority and await strategy), the fused
-operation/measurement list, and the host binding pack, it
+The decision core of the Wire→Pulse lowering: given a collect node's upstream
+frontier (classified by backend authority and await strategy), the frozen
+external-call payload steps/outputs, and the host binding pack, it
 
 1. admits the contraction (ADR 0059 §2, 'admitFrontierContraction') — rejecting a
    mixed or non-backend frontier rather than splitting it;
-2. resolves the realize executor through the binding pack, failing with the typed
+2. resolves the collecting executor through the binding pack, failing with the typed
    @missing runtime binding@ (the ADR 0054 invariant: compile succeeds without a
    pack; only runnable lowering fails);
-3. builds the canonical fused plan (P6a) and its digest (the idempotency key).
+3. builds the canonical external-call payload and its digest (the idempotency key).
 
-The result is a 'LoweredRealize' the executor runs via
+The result is a 'LoweredExternalCall' the executor runs via
 'Cortex.Pulse.Executor.ExternalCall.runExternalCall'. Walking the compiled-circuit
 artifact to produce the inputs, and the @wire pulse run@ CLI, sit on top of this
 core; this module keeps the admission/binding/plan decision pure and testable.
 -}
 module Cortex.Pulse.Lowering.Circuit
   ( LoweringError (..)
-  , LoweredRealize (..)
-  , lowerRealizeFrontier
+  , LoweredExternalCall (..)
+  , lowerExternalCallFrontier
   )
 where
 
@@ -36,12 +36,12 @@ import Cortex.Capability.Catalog.AwaitStrategy (AwaitStrategy)
 import Cortex.Capability.Catalog.RuntimeBindingRecord
   ( RuntimeBindingRecord (..)
   )
-import Cortex.Pulse.Lowering.FusedPlan
-  ( FusedMeasurement
-  , FusedOp
-  , FusedPlan
-  , fusedPlan
-  , fusedPlanDigest
+import Cortex.Pulse.Lowering.ExternalCallPayload
+  ( ExternalCallOutput
+  , ExternalCallPayload
+  , ExternalCallStep
+  , externalCallPayload
+  , externalCallPayloadDigest
   )
 import Cortex.Pulse.Rewrite.Contract
   ( CollectedNode
@@ -53,39 +53,38 @@ import Cortex.Wire.Executor (WireExecutorId)
 data LoweringError
   = -- | The collected frontier is inadmissible (ADR 0059 §2).
     LoweringInadmissibleFrontier !(FrontierAdmissionError Text)
-  | -- | No host binding pack resolves the realize executor (ADR 0054).
+  | -- | No host binding pack resolves the collecting executor (ADR 0054).
     LoweringMissingRuntimeBinding !WireExecutorId
   deriving stock (Eq, Show)
 
-data LoweredRealize = LoweredRealize
+data LoweredExternalCall = LoweredExternalCall
   { lrBinding :: !RuntimeBindingRecord
   , lrAwaitStrategy :: !AwaitStrategy
-  , lrFusedPlan :: !FusedPlan
+  , lrPayload :: !ExternalCallPayload
   , lrIdempotencyKey :: !Text
   }
   deriving stock (Eq, Show)
 
-{- | Lower a realize node's collected frontier to a bound, durable stage. The
+{- | Lower a collected external-call frontier to a bound, durable stage. The
 collected nodes are classified by @(authority, await strategy)@ (a non-backend node
-classifies as @Nothing@); ops/measurements are the fused sub-plan in topological
-order.
+classifies as @Nothing@); steps/outputs are the frozen payload in admitted order.
 -}
-lowerRealizeFrontier
+lowerExternalCallFrontier
   :: HostBindingPack
   -> WireExecutorId
   -> [CollectedNode Text WireExecutorId AwaitStrategy]
-  -> [FusedOp]
-  -> [FusedMeasurement]
-  -> Either LoweringError LoweredRealize
-lowerRealizeFrontier pack realizeId collected ops measurements = do
+  -> [ExternalCallStep]
+  -> [ExternalCallOutput]
+  -> Either LoweringError LoweredExternalCall
+lowerExternalCallFrontier pack collectId collected steps outputs = do
   either (Left . LoweringInadmissibleFrontier) Right (admitFrontierContraction collected)
   binding <-
-    maybe (Left (LoweringMissingRuntimeBinding realizeId)) Right (lookupBinding realizeId pack)
-  let plan = fusedPlan ops measurements
+    maybe (Left (LoweringMissingRuntimeBinding collectId)) Right (lookupBinding collectId pack)
+  let payload = externalCallPayload steps outputs
   Right
-    LoweredRealize
+    LoweredExternalCall
       { lrBinding = binding
       , lrAwaitStrategy = rbrAcceptedAwaitStrategy binding
-      , lrFusedPlan = plan
-      , lrIdempotencyKey = fusedPlanDigest plan
+      , lrPayload = payload
+      , lrIdempotencyKey = externalCallPayloadDigest payload
       }

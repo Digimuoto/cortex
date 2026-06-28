@@ -20,35 +20,35 @@ let analyst_suffix = topo_awareness ++ weak_evidence_rule ++ citation_rule;
 # ---- configured executor values ----
 
 let gatherer_mechanism_exec = @review.gatherer {
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   tools = [getDate, searchAssets, getAssetFundamentals, webSearch];
 };
 
 let gatherer_timing_exec = @review.gatherer {
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   tools = [getDate, searchAssets, getAssetNews, webSearch];
 };
 
 let gatherer_beneficiaries_exec = @review.gatherer {
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch];
 };
 
 let analyst_mechanism_exec = @review.analyst {
   maxOutputTokens = 16384;
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   instructions = ''Attack the mechanism leg.'' ++ analyst_suffix;
 };
 
 let analyst_timing_exec = @review.analyst {
   maxOutputTokens = 16384;
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   instructions = ''Attack the timing leg.'' ++ analyst_suffix;
 };
 
 let analyst_beneficiaries_exec = @review.analyst {
   maxOutputTokens = 16384;
-  memory = topological { preset = "analyst"; };
+  memory = topological { preset = "causal"; };
   instructions = ''Attack the beneficiary leg.'' ++ analyst_suffix;
 };
 
