@@ -14,8 +14,9 @@
 -- the ALTER guards below bring such a database to the current shape.
 --
 -- NOTE: this repository has no in-repo migration runner; the `pulse` schema is
--- applied out of band (the test fixture test/sql/pulse-schema.sql is a generated
--- dump). Apply this file to deployed databases through the same deployment /
+-- applied out of band (data/pulse-schema.sql is the curated full-schema dump a
+-- fresh database is provisioned from). Apply this file to deployed databases
+-- through the same deployment /
 -- schema pipeline that provisions the pulse schema, before rolling out the code
 -- that writes or reads pulse.external_call_attempts.
 
