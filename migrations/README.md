@@ -3,11 +3,12 @@
 Forward, idempotent DDL for the `pulse` schema, applied to **deployed** databases provisioned before
 the corresponding code change.
 
-This repository has **no in-repo migration runner**. The `pulse` schema is owned by Pulse and
-applied out of band; `test/sql/pulse-schema.sql` is a generated dump used only by the ephemeral test
-database (`just test-db`), which already reflects every column. These files exist so an operator (or
-the deployment / schema pipeline that provisions the `pulse` schema) can bring an existing database
-up to the current shape.
+This repository has **no in-repo migration runner**. The `pulse` schema is owned by Pulse:
+`data/pulse-schema.sql` is the curated full-schema dump a fresh database is provisioned from — by
+`Cortex.Pulse.Database.provisionPulseSchema` (the library surface) and by the ephemeral test
+database (`just test-db`) — and already reflects every column. These migration files exist so an
+operator (or the deployment / schema pipeline that provisions the `pulse` schema) can bring an
+**already-deployed** database up to the current shape without re-provisioning.
 
 - Each file is named `NNNN_short_description.sql`, applied in lexical order.
 - Each is **idempotent** (safe to re-run) and backfills existing rows.

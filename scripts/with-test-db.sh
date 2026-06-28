@@ -8,7 +8,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-schema="$root/test/sql/pulse-schema.sql"
+schema="$root/data/pulse-schema.sql"
 [ -f "$schema" ] || { echo "missing schema fixture: $schema" >&2; exit 1; }
 
 work="$(mktemp -d)"

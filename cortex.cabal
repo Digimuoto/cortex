@@ -18,6 +18,11 @@ extra-source-files:
     README.md
     NOTICE
 
+-- Pulse-owned schema shipped as a library data-file (ADR 0003); applied by
+-- Cortex.Pulse.Database.provisionPulseSchema via Paths_cortex.getDataFileName.
+data-dir:           data
+data-files:         pulse-schema.sql
+
 common shared-properties
     default-language: GHC2024
     default-extensions:
