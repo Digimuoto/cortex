@@ -77,6 +77,7 @@ import Cortex.Pulse.Circuit
   , committedVariantBinderWith
   , ensureRunnable
   , resumeCompiledCircuit
+  , resumeCompiledCircuitManaged
   , runCompiledCircuit
   , runCompiledCircuitManaged
   , signalStage
@@ -1241,17 +1242,37 @@ spec = beforeAll setupTestDb $ do
                         other ->
                           taskStage nodeId SafeToReplay $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
           -- #330 managed facade end-to-end on the #331 testkit-provisioned ephemeral DB.
-          outcome <-
+          result <-
             runCompiledCircuitManaged
               (tcConfig ctx)
               "consumer-enablement-test"
               selectVariantPulseConfig
               binder
               compiled
-          outcome `shouldBe` Right OutcomeCompleted
-          readIORef produceCount `shouldReturn` 1
-          readIORef recoverCount `shouldReturn` 1
-          readIORef okCount `shouldReturn` 0
+          case result of
+            Left err -> expectationFailure ("managed run failed: " <> show err)
+            Right (runId, outcome) -> do
+              -- #330 #1: the facade surfaces the durable run id, not just the outcome.
+              outcome `shouldBe` OutcomeCompleted
+              readIORef produceCount `shouldReturn` 1
+              readIORef recoverCount `shouldReturn` 1
+              readIORef okCount `shouldReturn` 0
+              -- #330 #2 managed resume: addressed by the returned run id, resuming the
+              -- now-settled run returns the same run id, completes, and re-invokes no
+              -- producer effect (ADR 0062).
+              resumed <-
+                resumeCompiledCircuitManaged
+                  (tcConfig ctx)
+                  runId
+                  selectVariantPulseConfig
+                  binder
+                  compiled
+              case resumed of
+                Left err -> expectationFailure ("managed resume failed: " <> show err)
+                Right (resumedRunId, resumedOutcome) -> do
+                  resumedRunId `shouldBe` runId
+                  resumedOutcome `shouldBe` OutcomeCompleted
+              readIORef produceCount `shouldReturn` 1
 
   describe "boundary binders for circuits with non-task nodes (#323, #36)" $ do
     let artifactBoundary =
