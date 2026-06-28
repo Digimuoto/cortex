@@ -464,19 +464,9 @@ mkTemplateRegistry
 mkTemplateRegistry defs =
   either (error . T.unpack) id (buildStageTemplateRegistry defs)
 
+-- | Test stages are idempotent (counter bumps), so they bind as 'SafeToReplay'.
 nodeStage :: NodeId -> (StageContext -> IO (StageResult NodeId)) -> StageDefinition NodeId
-nodeStage nodeId action =
-  StageDefinition
-    { sdStageId = nodeId
-    , sdTemplateId = stageTemplateId nodeId
-    , sdActionId = stageActionId nodeId
-    , sdReplaySafety = SafeToReplay
-    , sdReplayPolicyOverride = Nothing
-    , sdTimeoutSeconds = Nothing
-    , sdRetryPolicy = Nothing
-    , sdAction = action
-    , sdMemoryStrategy = defaultMemoryStrategy
-    }
+nodeStage nodeId = taskStage nodeId SafeToReplay
 
 runtimeIterationPolicy :: Int -> FrontierShapeWitness -> LoopKernelWitness -> LoopPolicy
 runtimeIterationPolicy cap frontierWitness kernelWitness =
@@ -1224,7 +1214,7 @@ spec = beforeAll setupTestDb $ do
                   let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
                    in Right $ case unNodeId nodeId of
                         "produce" ->
-                          taskStage nodeId $ \_ -> do
+                          taskStage nodeId SafeToReplay $ \_ -> do
                             atomicModifyIORef' produceCount (\c -> (c + 1, ()))
                             pure
                               ( StageComplete
@@ -1236,15 +1226,15 @@ spec = beforeAll setupTestDb $ do
                                   )
                               )
                         "handle_err" ->
-                          taskStage nodeId $ \_ -> do
+                          taskStage nodeId SafeToReplay $ \_ -> do
                             atomicModifyIORef' recoverCount (\c -> (c + 1, ()))
                             pure (StageComplete (Aeson.String "recovered"))
                         "handle_ok" ->
-                          taskStage nodeId $ \_ -> do
+                          taskStage nodeId SafeToReplay $ \_ -> do
                             atomicModifyIORef' okCount (\c -> (c + 1, ()))
                             pure (StageComplete (Aeson.String "ok"))
                         other ->
-                          taskStage nodeId $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+                          taskStage nodeId SafeToReplay $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
           -- #330 managed facade end-to-end on the #331 testkit-provisioned ephemeral DB.
           outcome <-
             runCompiledCircuitManaged

@@ -36,6 +36,7 @@ module Cortex.Pulse.Circuit
   , ensureRunnable
   , committedVariantBinder
   , taskStage
+  , StageReplaySafety (..)
   )
 where
 
@@ -66,6 +67,7 @@ import Cortex.Pulse.Node (NodeId)
 import Cortex.Pulse.Plan
   ( SomeStagePlan (..)
   , StageLatentCondition (..)
+  , StageReplaySafety (..)
   , slbNestedConditions
   , slbNodes
   , spDefinitions
