@@ -20,7 +20,7 @@
 -- Name: pulse; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA pulse;
+CREATE SCHEMA IF NOT EXISTS pulse;
 
 
 --

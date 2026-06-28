@@ -28,6 +28,7 @@ module Cortex.Pulse.Database
   )
 where
 
+import Control.Exception (IOException, try)
 import Data.ByteString qualified as BS
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -73,13 +74,17 @@ runTransactionAt
 runTransactionAt =
   DB.runTransactionWithRetry pulseDbRetryBudget
 
-{- | Provision the Pulse schema into a database. Idempotent: if the @pulse@
-schema already exists this is a no-op (so applying twice never errors); otherwise
-the shipped @pulse-schema.sql@ data-file is applied through the simple query
-protocol.
+{- | Provision the Pulse schema into a database. Idempotent: if the @pulse@ schema
+already exists this is a no-op (so applying twice never errors); otherwise the shipped
+@pulse-schema.sql@ data-file is applied through the simple query protocol — a single
+implicit transaction, so a mid-script failure rolls back rather than leaving a partial
+schema. Schema presence is checked against @pg_catalog.pg_namespace@ rather than the
+privilege-filtered @information_schema.schemata@ (a role without privileges on @pulse@
+must still see it as present), and a missing or unreadable data-file is returned as
+'Left' rather than thrown — the @IO (Either Text ())@ contract is total.
 
-Pulse owns its schema (ADR 0003); this is the library surface a downstream uses
-to provision its own Postgres without reaching into Cortex test SQL.
+Pulse owns its schema (ADR 0003); this is the library surface a downstream uses to
+provision its own Postgres without reaching into Cortex test SQL.
 -}
 provisionPulseSchema :: Pool -> IO (Either Text ())
 provisionPulseSchema pool = do
@@ -88,10 +93,13 @@ provisionPulseSchema pool = do
     Left err -> pure (Left (T.pack err))
     Right True -> pure (Right ())
     Right False -> do
-      schemaPath <- getDataFileName "pulse-schema.sql"
-      script <- BS.readFile schemaPath
-      result <- withConnection pool (Session.sql script)
-      pure (either (Left . T.pack) Right result)
+      scriptOrErr <- try (getDataFileName "pulse-schema.sql" >>= BS.readFile)
+      case scriptOrErr of
+        Left ioErr ->
+          pure (Left ("reading pulse-schema.sql: " <> T.pack (show (ioErr :: IOException))))
+        Right script -> do
+          result <- withConnection pool (Session.sql script)
+          pure (either (Left . T.pack) Right result)
 
 pulseSchemaExistsSession :: Session Bool
 pulseSchemaExistsSession = Session.statement () pulseSchemaExistsStatement
@@ -99,7 +107,7 @@ pulseSchemaExistsSession = Session.statement () pulseSchemaExistsStatement
     pulseSchemaExistsStatement :: Statement () Bool
     pulseSchemaExistsStatement =
       Statement
-        "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'pulse')"
+        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'pulse')"
         E.noParams
         (D.singleRow (D.column (D.nonNullable D.bool)))
         True
