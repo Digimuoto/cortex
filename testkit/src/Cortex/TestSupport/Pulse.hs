@@ -36,6 +36,7 @@ import Data.Word (Word16)
 import Hasql.Pool qualified as HP
 import Hasql.Session qualified as Session
 import System.Environment (getEnv, lookupEnv)
+import System.IO (hPutStrLn, stderr)
 import Text.Read (readMaybe)
 
 import Cortex.Pulse.Database (ConnectionConfig (..), Pool, createPulsePool, provisionPulseSchema)
@@ -121,14 +122,20 @@ teardown resources = do
   dropDatabase (resourcesEnv resources) (resourcesDbName resources)
 
 dropDatabase :: PgEnv -> Text -> IO ()
-dropDatabase env dbName = do
-  maintenancePool <- openPool (connectionConfigFor env "postgres")
-  -- Best-effort: FORCE so a leaked connection cannot wedge teardown (pg13+).
-  _ <-
-    HP.use
-      maintenancePool
-      (Session.sql (TE.encodeUtf8 ("DROP DATABASE IF EXISTS " <> quoteIdent dbName <> " WITH (FORCE)")))
-  HP.release maintenancePool
+dropDatabase env dbName =
+  bracket (openPool (connectionConfigFor env "postgres")) HP.release $ \maintenancePool -> do
+    -- FORCE (pg13+) so a leaked connection cannot wedge teardown. A failed drop leaks the
+    -- ephemeral database, so warn on stderr rather than silently discarding the error.
+    result <-
+      HP.use
+        maintenancePool
+        (Session.sql (TE.encodeUtf8 ("DROP DATABASE IF EXISTS " <> quoteIdent dbName <> " WITH (FORCE)")))
+    case result of
+      Right () -> pure ()
+      Left err ->
+        hPutStrLn
+          stderr
+          ("withEphemeralPulseDb: failed to drop ephemeral database " <> T.unpack dbName <> ": " <> show err)
 
 readPgEnv :: IO PgEnv
 readPgEnv = do
