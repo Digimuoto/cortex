@@ -84,8 +84,8 @@ The rules are:
 - Native n-way selection still lowers to a nested binary condition tree, not a native n-way runtime
   node. For executor-emitted variants, the guard source that reads a producer's committed output
   variant label and routes it through compiled then/else keys is `committedVariantConditionBinding`
-  (ADR 0062). A reusable production Pulse entrypoint that invokes that path remains pending; a
-  native n-way runtime representation remains future work.
+  (ADR 0062), invoked by the reusable `Cortex.Pulse.Circuit` production entrypoint. A native n-way
+  runtime representation remains future work.
 
 ### Obligations
 
@@ -138,4 +138,3 @@ The rules are:
 ## Tracking
 
 - #314 — committed-label guard path.
-- #321 — reusable production Pulse entrypoint.

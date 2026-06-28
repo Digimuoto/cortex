@@ -142,8 +142,9 @@ classification. See [chapter 07](./07-rewrites-and-materialization.md) for the a
 
 ### Lifecycle
 
-- **Startup.** Connect to the database, verify schema, recover stale runs by resuming from their
-  last completed checkpoint, start the scheduler and the health endpoint.
+- **Startup.** Connect to the database, verify that the Pulse schema has the required current shape,
+  recover stale runs by resuming from their last completed checkpoint, start the scheduler and the
+  health endpoint.
 - **Shutdown.** On SIGTERM, stop claiming new work, drain in-flight runs at a tight poll interval,
   finalize each completed run, and exit.
 - **Unclean exit.** On SIGKILL or crash, the next startup re-reads the last completed checkpoint and

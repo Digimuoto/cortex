@@ -26,8 +26,8 @@ related:
 Proposed - extends ADR 0024, ADR 0033, and ADR 0053, fulfils the failure-routing hook left open by
 ADR 0026, generalises the typed-error-output option in ADR 0059, and discharges the exclusive-output
 grouping ADR 0017 specified but the runtime never implemented. It does not edit those ADRs; ADR 0033
-now distinguishes the committed-label guard source from the reusable production Pulse entrypoint
-that remains pending.
+now distinguishes the committed-label guard source from the reusable `Cortex.Pulse.Circuit`
+production entrypoint that invokes it.
 
 ## Context
 
@@ -57,12 +57,11 @@ Two facts make this a real, narrow piece of substrate work rather than a syntax 
    metadata keep only `port name -> contract`; at the egress boundary a sum `ok:T | err:U` is
    indistinguishable from two independent product outputs. ADR 0017's grouping obligation was never
    implemented.
-2. **The reusable production `select(...)` entrypoint is still pending.** The committed-label guard
-   source exists (`committedVariantConditionBinding`) and the lowering path can carry condition
-   binders, but `lowerCompiledCircuitToSomeStagePlan` still lacks a reusable production caller on
-   `main`; the production Pulse lowering path lowers only realize nodes. So "branch on an
-   executor-emitted variant label" is not just a local boundary-validation feature — it still
-   depends on the production entrypoint that remains pending.
+2. **The reusable production `select(...)` entrypoint is now the integration surface.** The
+   committed-label guard source exists (`committedVariantConditionBinding`), the lowering path
+   carries condition binders, and `Cortex.Pulse.Circuit` exposes reusable fresh/resume managed
+   entrypoints that invoke that path. So "branch on an executor-emitted variant label" is now a
+   concrete production Pulse integration surface, not just a local boundary-validation feature.
 
 The open question is: what is the smallest substrate boundary that lets an executor commit one typed
 variant, validate it before commit, persist it durably, and let `select` branch on it on resume
@@ -241,9 +240,9 @@ ADR remains a proposed-ADR cleanup question.
 
 ### Negative
 
-- It builds the committed-label `select(...)` runtime path for the first time and still needs a
-  reusable production entrypoint. The substrate is independently shippable, but the headline branch
-  capability depends on downstream callers having that entrypoint.
+- It expands the public Pulse integration surface: downstream callers now depend on the managed
+  `Cortex.Pulse.Circuit` entrypoints, their schema-provisioning precondition, and their run-claim /
+  lease-owner failure modes.
 - Layer-1 validation does not catch a payload that is valid JSON of the right kind but semantically
   wrong against the contract; strong per-contract schemas wait on the codec/schema follow-up.
 - Overloading `WireValue.wireValuePort` for the variant label makes the runtime exclusive-group
@@ -264,7 +263,9 @@ ADR remains a proposed-ADR cleanup question.
   sum-plus-ordinary mix.
 - The `select` binder must read only persisted inputs and never re-invoke the backend, preserving
   the effect-once / deterministic-resume property.
-- When the production entrypoint lands, update this ADR's Traceability block to include its module.
+- Keep the `Cortex.Pulse.Circuit` entrypoints effect-once: committed-label selection must read
+  persisted producer outputs on resume, and managed resume must claim the run under the caller's
+  lease owner before dispatch.
 - If strong per-contract payload validation, cross-version replay safety, or a host-type codec
   registry are later wanted, pursue them through the codec/schema follow-up (refining ADR 0017)
   rather than widening this boundary silently.
@@ -274,11 +275,13 @@ ADR remains a proposed-ADR cleanup question.
 ## Traceability
 
 - Feature keys: `wire.typed_effect_variant_outputs`
-- Public surface: `Cortex.Wire`, `docs/Reference/Wire/conditionality.md`
+- Public surface: `Cortex.Wire`, `Cortex.Pulse.Circuit`, `docs/Reference/Wire/conditionality.md`
 - Implementation: `src/Cortex/Wire/NodeBoundary.hs` (exclusive output-group validation),
   `src/Cortex/Wire/Runtime.hs` (`wrapNodeBoundaryOutput`, `executor_output_validation_failure`),
   `src/Cortex/Wire/Circuit/Lowering.hs` (`committedVariantConditionBinding`,
-  `bindCircuitConditionNode`), `src/Cortex/Wire/Compile.hs` (`resolveExclusiveBoundary`)
+  `bindCircuitConditionNode`), `src/Cortex/Pulse/Circuit.hs` (`runCompiledCircuit`,
+  `resumeCompiledCircuit`, managed fresh/resume entrypoints), `src/Cortex/Wire/Compile.hs`
+  (`resolveExclusiveBoundary`)
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Wire/Circuit/CompilerSpec.hs`,
   `test/Cortex/Wire/RuntimeSpec.hs`
 - Theory/proof:
@@ -311,4 +314,3 @@ ADR remains a proposed-ADR cleanup question.
 - #314 — committed-label guard and lowering path.
 - #315 — codec/schema follow-up.
 - #320 — possible split of emission boundary and select runtime decisions.
-- #321 — reusable production Pulse entrypoint.

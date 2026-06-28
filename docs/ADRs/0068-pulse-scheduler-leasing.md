@@ -78,12 +78,14 @@ algorithm ADR 0003 deferred; it has four coupled rules.
 3. **Run-scoped lease renewal with explicit race resolution.** `withLeaseRenewal` renews a run's
    lease every half the lease duration (jitter capped so renewal-plus-jitter stays below the lease,
    and disabled entirely for leases under 10s). `renewRunLease` returns whether the renewing
-   `UPDATE` still matched a `running` row owned by this executor. The three outcomes are resolved
-   explicitly: renewed → continue; renewal-returned-false → poll the in-flight action and **accept a
-   completed outcome** if it already finished (`pulse.lease.completed_before_renewal`), otherwise
-   treat the lease as lost, cancel, and after cancellation **still accept** an outcome that landed
-   in the cancellation window (`pulse.lease.race`); DB-failed renewal → fail closed and cancel. A
-   lease genuinely lost marks the run `failed` retryable.
+   `UPDATE` still matched a `running` row owned by the explicit lease owner passed by the caller.
+   The owner predicate is part of the renewal guard, so a mismatched owner fails closed rather than
+   extending another worker's run. The three outcomes are resolved explicitly: renewed → continue;
+   renewal-returned-false → poll the in-flight action and **accept a completed outcome** if it
+   already finished (`pulse.lease.completed_before_renewal`), otherwise treat the lease as lost,
+   cancel, and after cancellation **still accept** an outcome that landed in the cancellation window
+   (`pulse.lease.race`); DB-failed renewal → fail closed and cancel. A lease genuinely lost marks
+   the run `failed` retryable.
 
 4. **Two-path recovery plus a backpressure surface.** Recovery is split by ownership.
    `reclaimOwnedRuns` (startup) refreshes leases for runs still owned by _this_ lease owner so the
@@ -174,7 +176,8 @@ algorithm ADR 0003 deferred; it has four coupled rules.
 - Keep the claim atomic and skip-locked, and keep the `run.claimed` event (with `queue_seconds` for
   first claims) inside the claim transaction.
 - Keep `withLeaseRenewal` resolving the three renewal outcomes explicitly, accepting a completed
-  outcome over a lease-loss failure in both the renewal-false and post-cancel windows.
+  outcome over a lease-loss failure in both the renewal-false and post-cancel windows, and never
+  renewing a run whose `lease_owner` differs from the caller's owner.
 - Keep owned-reclaim (resume) and foreign-recovery (fail) partitioned by `lease_owner`, run recovery
   on its fixed cadence, and have `recoverExpiredRuns` take the ADR 0058 advisory lock before
   touching run rows.

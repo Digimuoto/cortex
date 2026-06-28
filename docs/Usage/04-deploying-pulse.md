@@ -15,8 +15,9 @@ shell; your application supplies the registry, secrets, host API, and operationa
 
 1. Build a consumer binary that imports Cortex and passes a populated task registry to
    `Cortex.Pulse.runPulse`.
-2. Provision Postgres and apply the Cortex schema expected by the running version. See
-   [Pulse schema](../Reference/Pulse/schema.md).
+2. Provision Postgres and apply or validate the Cortex schema expected by the running version. New
+   consumer-owned databases may use `Cortex.Pulse.Database.provisionPulseSchema`; deployed databases
+   still need the forward migrations listed in [Pulse schema](../Reference/Pulse/schema.md).
 3. Mount secret files for JWT signing and service credentials.
 4. Set a stable `--lease-owner` for each logical runtime instance.
 5. Configure concurrency:
@@ -51,6 +52,8 @@ host API
 - Keep `lease-owner` stable across restarts of the same logical worker so startup recovery can
   reclaim owned runs.
 - Use distinct lease owners for independent workers.
+- Treat a lease-owner mismatch as a hard ownership conflict; Pulse will not renew another worker's
+  run.
 - Keep host actions idempotent where Pulse may retry or resume work.
 - Treat the database as the durable source of runtime truth.
 

@@ -79,10 +79,11 @@ actions.
 ## Note (2026-06-28)
 
 Pulse provisions its own schema as a library surface: `Cortex.Pulse.Database.provisionPulseSchema`
-applies the shipped `data/pulse-schema.sql` data-file (idempotent via a schema-presence check). This
-realizes "Pulse owns its schema" as a consumer-facing capability — downstreams (e.g. Logos)
-provision their own Postgres without reaching into Cortex test SQL — and does not change the
-ownership boundary.
+applies the shipped `data/pulse-schema.sql` data-file when the `pulse` schema is absent, serializing
+first provisioning with a transaction-scoped advisory lock, and validates that an existing schema
+has the required current shape before returning success. This realizes "Pulse owns its schema" as a
+consumer-facing capability — downstreams provision their own Postgres without reaching into Cortex
+test SQL — and does not change the ownership boundary.
 
 ## Related
 

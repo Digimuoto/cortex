@@ -152,6 +152,4 @@ The substrate is sound and its layering is stable, so each concern stays at its 
 ## Tracking
 
 - #315 — value-level contract typing and codec/schema work.
-- #321 — production select entrypoint.
-- #323 — committed-variant binder helper.
 - #278 — binder-composition epic.
