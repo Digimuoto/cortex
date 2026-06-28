@@ -72,11 +72,14 @@ import Cortex.Capability.Catalog.RuntimeBindingRecord
   )
 import Cortex.Pulse.Circuit
   ( CircuitRunError (..)
+  , artifactStage
   , committedVariantBinder
+  , committedVariantBinderWith
   , ensureRunnable
   , resumeCompiledCircuit
   , runCompiledCircuit
   , runCompiledCircuitManaged
+  , signalStage
   , taskStage
   )
 import Cortex.Pulse.Database (provisionPulseSchema)
@@ -216,7 +219,9 @@ import Cortex.Wire
   )
 import Cortex.Wire.Circuit.Artifact (CompiledCircuit (..))
 import Cortex.Wire.Circuit.IR
-  ( CircuitNodeRef (..)
+  ( CircuitArtifactBoundary (..)
+  , CircuitNodeRef (..)
+  , CircuitSignalBoundary (..)
   , CircuitTaskNode (..)
   )
 import Cortex.Wire.Circuit.Lower
@@ -516,8 +521,8 @@ singleStageKernelWitness stageDef =
           }
    in kernelWitnessForLocalSpec localSpec
 
-signalStage :: TestStage -> SignalName -> StageDefinition TestStage
-signalStage stageId signalName =
+signalWaitStage :: TestStage -> SignalName -> StageDefinition TestStage
+signalWaitStage stageId signalName =
   StageDefinition
     { sdStageId = stageId
     , sdTemplateId = stageTemplateId stageId
@@ -533,7 +538,7 @@ signalStage stageId signalName =
 singleSignalWaitPlan :: SignalName -> StagePlan TestStage
 singleSignalWaitPlan signalName =
   mkLinearStagePlan
-    [signalStage TestStageAlpha signalName]
+    [signalWaitStage TestStageAlpha signalName]
     Aeson.Null
     1
     ReplayPolicyWarn
@@ -1247,6 +1252,42 @@ spec = beforeAll setupTestDb $ do
           readIORef produceCount `shouldReturn` 1
           readIORef recoverCount `shouldReturn` 1
           readIORef okCount `shouldReturn` 0
+
+  describe "boundary binders for circuits with non-task nodes (#323, #36)" $ do
+    let artifactBoundary =
+          CircuitArtifactBoundary
+            { circuitArtifactBoundaryRef = CircuitNodeRef "report"
+            , circuitArtifactKind = "pdf"
+            , circuitArtifactLabel = "Report"
+            , circuitArtifactMetadata = Aeson.Null
+            }
+        signalBoundary =
+          CircuitSignalBoundary
+            { circuitSignalBoundaryRef = CircuitNodeRef "await"
+            , circuitSignalName = "approved"
+            , circuitSignalDescription = Nothing
+            , circuitSignalMetadata = Aeson.Null
+            }
+        rejectTask _ = Left (CircuitBoundaryUnsupported "task is unused in this fixture")
+        richBinder =
+          committedVariantBinderWith
+            rejectTask
+            (Right . signalStage)
+            (\b -> Right (artifactStage b SafeToReplay (\_ -> pure (StageComplete Aeson.Null))))
+            (\_ -> Left (CircuitBoundaryUnsupported "rewrite"))
+    it "committedVariantBinder rejects an artifact boundary with a typed CircuitBoundaryUnsupported" $ \_ ->
+      case bindCircuitArtifactBoundary (committedVariantBinder rejectTask) artifactBoundary of
+        Left (CircuitBoundaryUnsupported kind) -> kind `shouldBe` "artifact"
+        Left _ -> expectationFailure "expected a CircuitBoundaryUnsupported error"
+        Right _ -> expectationFailure "expected the task-only binder to reject artifact boundaries"
+    it "artifactStage keys its stage on the boundary ref so lowering's ref-check passes" $ \_ ->
+      case bindCircuitArtifactBoundary richBinder artifactBoundary of
+        Right stageDef -> stageDef.sdStageId `shouldBe` NodeId "report"
+        Left _ -> expectationFailure "expected committedVariantBinderWith to bind the artifact boundary"
+    it "signalStage keys its stage on the boundary ref" $ \_ ->
+      case bindCircuitSignalBoundary richBinder signalBoundary of
+        Right stageDef -> stageDef.sdStageId `shouldBe` NodeId "await"
+        Left _ -> expectationFailure "expected committedVariantBinderWith to bind the signal boundary"
 
   describe "select on a committed output variant (ADR 0062, #314)" $ do
     it "routes the committed err variant to the recovery arm and resumes without re-running the effect" $ \mPool -> withDb mPool $ \pool -> do

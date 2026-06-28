@@ -23,6 +23,9 @@ module Cortex.Wire.Circuit.Lowering
   , lowerCircuitIRToStagePlan
   , committedVariantConditionBinding
   , committedVariantBinder
+  , committedVariantBinderWith
+  , signalStage
+  , artifactStage
   , committedVariantSelection
   , committedVariantSelectKeys
   )
@@ -70,6 +73,7 @@ import Cortex.Pulse.Plan
   , buildStageTemplateRegistry
   , stageActionId
   , stageTemplateId
+  , taskStage
   )
 import Cortex.Pulse.Rewrite
   ( GraphRewrite (AppendAfter)
@@ -78,6 +82,7 @@ import Cortex.Pulse.Rewrite
   , SubgraphSpec (..)
   , rewriteBoundaryResourceUse
   )
+import Cortex.Pulse.Signal (SignalName (..))
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
   , CompiledCircuit (..)
@@ -90,11 +95,11 @@ import Cortex.Wire.Circuit.Compile
   , compileCircuitIR
   )
 import Cortex.Wire.Circuit.IR
-  ( CircuitArtifactBoundary
+  ( CircuitArtifactBoundary (..)
   , CircuitIR
   , CircuitNodeRef (..)
   , CircuitRewriteBoundary
-  , CircuitSignalBoundary
+  , CircuitSignalBoundary (..)
   , CircuitTaskNode
   )
 import Cortex.Wire.Value (WireValue (..))
@@ -159,6 +164,12 @@ data CircuitLoweringError
   | CircuitTemplateRegistryInvalid Text
   | -- | A @wire_select@ condition node's metadata is missing or malformed (ADR 0062).
     CircuitConditionMetadataInvalid !Text
+  | {- | A boundary node (signal, artifact, or rewrite) was reached but the binder in
+    use does not bind that boundary kind. Carries the boundary kind. Distinct from a
+    malformed template registry: the circuit is well-formed, the binder is just
+    narrower than the circuit requires.
+    -}
+    CircuitBoundaryUnsupported !Text
   deriving stock (Eq, Show)
 
 lowerCircuitIRToStagePlan
@@ -574,28 +585,70 @@ committedVariantConditionBinding conditionNode = do
           pure (committedVariantSelection thenKeys elseKeys scInputs)
       }
 
+{- | The general committed-variant @select(...)@ binder builder (GitHub #323, #36,
+ADR 0080): the caller supplies the task-node binding and the signal/artifact/rewrite
+boundary bindings; the condition binding is fixed to 'committedVariantConditionBinding'
+so it cannot be forgotten. Build the boundary stages with 'signalStage' /
+'artifactStage'. 'committedVariantBinder' is the task-only special case where every
+boundary is rejected.
+-}
+committedVariantBinderWith
+  :: (CircuitTaskNode -> Either CircuitLoweringError (StageDefinition NodeId))
+  -> (CircuitSignalBoundary -> Either CircuitLoweringError (StageDefinition NodeId))
+  -> (CircuitArtifactBoundary -> Either CircuitLoweringError (StageDefinition NodeId))
+  -> (CircuitRewriteBoundary -> Either CircuitLoweringError (StageDefinition NodeId))
+  -> CircuitPulseBinder
+committedVariantBinderWith bindTaskNode bindSignal bindArtifact bindRewrite =
+  CircuitPulseBinder
+    { bindCircuitTaskNode = bindTaskNode
+    , bindCircuitSignalBoundary = bindSignal
+    , bindCircuitArtifactBoundary = bindArtifact
+    , bindCircuitRewriteBoundary = bindRewrite
+    , bindCircuitConditionNode = committedVariantConditionBinding
+    }
+
 {- | Smart constructor for the common committed-variant @select(...)@ binder
 (GitHub #323, ADR 0080): the caller supplies the task-node binding; the condition
-binding is fixed to 'committedVariantConditionBinding' (so it cannot be forgotten),
-and the signal/artifact/rewrite boundaries fail with an explicit typed error. A
-caller that needs those boundaries builds a 'CircuitPulseBinder' directly.
+binding is fixed to 'committedVariantConditionBinding', and the signal/artifact/rewrite
+boundaries are rejected with 'CircuitBoundaryUnsupported'. A caller whose circuit has
+boundary nodes uses 'committedVariantBinderWith' with 'signalStage' / 'artifactStage'.
 -}
 committedVariantBinder
   :: (CircuitTaskNode -> Either CircuitLoweringError (StageDefinition NodeId))
   -> CircuitPulseBinder
 committedVariantBinder bindTaskNode =
-  CircuitPulseBinder
-    { bindCircuitTaskNode = bindTaskNode
-    , bindCircuitSignalBoundary = \_ -> Left (unsupportedBoundary "signal")
-    , bindCircuitArtifactBoundary = \_ -> Left (unsupportedBoundary "artifact")
-    , bindCircuitRewriteBoundary = \_ -> Left (unsupportedBoundary "rewrite")
-    , bindCircuitConditionNode = committedVariantConditionBinding
-    }
-  where
-    unsupportedBoundary :: Text -> CircuitLoweringError
-    unsupportedBoundary kind =
-      CircuitTemplateRegistryInvalid
-        ( "committedVariantBinder: "
-            <> kind
-            <> " boundaries are not supported; build a CircuitPulseBinder directly"
-        )
+  committedVariantBinderWith
+    bindTaskNode
+    (\_ -> Left (CircuitBoundaryUnsupported "signal"))
+    (\_ -> Left (CircuitBoundaryUnsupported "artifact"))
+    (\_ -> Left (CircuitBoundaryUnsupported "rewrite"))
+
+{- | Lower a signal boundary to a stage that suspends the run on the boundary's signal
+name. Suspension is idempotent (a resumed re-evaluation re-suspends on the same
+signal), so the stage binds as 'SafeToReplay'. The stage id is taken from the boundary
+ref so the lowering ref-check passes.
+-}
+signalStage :: CircuitSignalBoundary -> StageDefinition NodeId
+signalStage boundary =
+  taskStage
+    (boundaryNodeId boundary.circuitSignalBoundaryRef)
+    SafeToReplay
+    (\_ -> pure (StageSuspend (SignalName boundary.circuitSignalName)))
+
+{- | Lower an artifact boundary to a stage whose action and replay safety the caller
+supplies. Cortex has no built-in artifact runtime, so the caller defines what the
+artifact stage does (e.g. write the artifact, then 'StageComplete' its descriptor) and
+whether re-running it on resume is safe. The stage id is taken from the boundary ref so
+the lowering ref-check passes.
+-}
+artifactStage
+  :: CircuitArtifactBoundary
+  -> StageReplaySafety
+  -> (StageContext -> IO (StageResult NodeId))
+  -> StageDefinition NodeId
+artifactStage boundary =
+  taskStage (boundaryNodeId boundary.circuitArtifactBoundaryRef)
+
+-- | A boundary's circuit node ref is its stage id (the lowering ref-check requires it).
+boundaryNodeId :: CircuitNodeRef -> NodeId
+boundaryNodeId = NodeId . unCircuitNodeRef

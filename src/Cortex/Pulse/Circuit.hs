@@ -35,6 +35,9 @@ module Cortex.Pulse.Circuit
   , lowerRunnableCircuit
   , ensureRunnable
   , committedVariantBinder
+  , committedVariantBinderWith
+  , signalStage
+  , artifactStage
   , taskStage
   , StageReplaySafety (..)
   )
@@ -86,8 +89,11 @@ import Cortex.Wire.Circuit.Lowering
   ( CircuitLoweringError
   , CircuitPulseBinder
   , CircuitPulseConfig
+  , artifactStage
   , committedVariantBinder
+  , committedVariantBinderWith
   , lowerCompiledCircuitToSomeStagePlan
+  , signalStage
   )
 
 import Platform.DurableTask.Types (RunOutcome, TriggerSource (..))
