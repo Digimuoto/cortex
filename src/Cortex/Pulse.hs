@@ -359,7 +359,7 @@ resumeOneRun registry taskContext leaseDuration runId = do
               ]
             pure Nothing
       outcome <-
-        Scheduler.withLeaseRenewal pool runId leaseDuration $
+        Scheduler.withLeaseRenewal pool runId (pulseLeaseOwner taskContext.tcConfig) leaseDuration $
           Executor.resumeTask registry taskContext runId task
       endTime <- getCurrentTime
       Scheduler.finalizeTaskSchedule pool (Just runId) task triggerSource endTime outcome

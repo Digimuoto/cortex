@@ -29,14 +29,16 @@ module Cortex.Pulse.Database
 where
 
 import Control.Exception (IOException, try)
+import Control.Monad (unless)
 import Data.ByteString qualified as BS
+import Data.Int (Int64)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
-import Hasql.Session (Session)
-import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
+import Hasql.Transaction (Transaction)
+import Hasql.Transaction qualified as Tx
 import Paths_cortex (getDataFileName)
 
 import Platform.Database (ConnectionConfig (..), Pool)
@@ -74,11 +76,16 @@ runTransactionAt
 runTransactionAt =
   DB.runTransactionWithRetry pulseDbRetryBudget
 
-{- | Provision the Pulse schema into a database. Idempotent: if the @pulse@ schema
-already exists this is a no-op (so applying twice never errors); otherwise the shipped
-@pulse-schema.sql@ data-file is applied through the simple query protocol — a single
-implicit transaction, so a mid-script failure rolls back rather than leaving a partial
-schema. Schema presence is checked against @pg_catalog.pg_namespace@ rather than the
+{- | Provision the Pulse schema into a database. Idempotent for an already-current
+schema: if @pulse@ exists, the current required shape is validated before returning
+success; stale or partial schemas return 'Left' instead of failing later at runtime.
+If @pulse@ is absent, the shipped @pulse-schema.sql@ data-file is applied through the
+transaction simple-query protocol — a mid-script failure rolls back rather than
+leaving a partial schema — and then the same shape check runs. The absent-schema
+apply path takes a transaction-scoped advisory lock, so concurrent first
+provisioners serialize and later callers see the completed schema instead of racing
+the create-only dump; current-schema checks stay lock-free.
+Schema presence is checked against @pg_catalog.pg_namespace@ rather than the
 privilege-filtered @information_schema.schemata@ (a role without privileges on @pulse@
 must still see it as present), and a missing or unreadable data-file is returned as
 'Left' rather than thrown — the @IO (Either Text ())@ contract is total.
@@ -88,26 +95,169 @@ provision its own Postgres without reaching into Cortex test SQL.
 -}
 provisionPulseSchema :: Pool -> IO (Either Text ())
 provisionPulseSchema pool = do
-  existing <- withConnection pool pulseSchemaExistsSession
-  case existing of
+  checked <- runTransaction pool provisionPulseSchemaCheckTx
+  case checked of
     Left err -> pure (Left (T.pack err))
-    Right True -> pure (Right ())
-    Right False -> do
+    Right PulseSchemaCurrent -> pure (Right ())
+    Right (PulseSchemaStale missing) -> pure (staleSchemaError missing)
+    Right PulseSchemaAbsent -> do
       scriptOrErr <- try (getDataFileName "pulse-schema.sql" >>= BS.readFile)
       case scriptOrErr of
         Left ioErr ->
           pure (Left ("reading pulse-schema.sql: " <> T.pack (show (ioErr :: IOException))))
         Right script -> do
-          result <- withConnection pool (Session.sql script)
-          pure (either (Left . T.pack) Right result)
+          applied <- runTransaction pool (provisionPulseSchemaApplyTx script)
+          pure $ case applied of
+            Left err -> Left (T.pack err)
+            Right PulseSchemaCurrent -> Right ()
+            Right (PulseSchemaStale missing) -> staleSchemaError missing
+            Right PulseSchemaAbsent ->
+              Left "pulse schema provisioning did not create the pulse schema"
 
-pulseSchemaExistsSession :: Session Bool
-pulseSchemaExistsSession = Session.statement () pulseSchemaExistsStatement
-  where
-    pulseSchemaExistsStatement :: Statement () Bool
-    pulseSchemaExistsStatement =
+data PulseSchemaProvisionState
+  = PulseSchemaCurrent
+  | PulseSchemaAbsent
+  | PulseSchemaStale [Text]
+  deriving stock (Eq, Show)
+
+staleSchemaError :: [Text] -> Either Text a
+staleSchemaError names =
+  Left
+    ( "pulse schema exists but is stale or incomplete; missing: "
+        <> T.intercalate ", " names
+    )
+
+provisionPulseSchemaCheckTx :: Transaction PulseSchemaProvisionState
+provisionPulseSchemaCheckTx =
+  pulseSchemaProvisionStateTx
+
+provisionPulseSchemaApplyTx :: BS.ByteString -> Transaction PulseSchemaProvisionState
+provisionPulseSchemaApplyTx script = do
+  lockPulseSchemaProvisionTx
+  exists <- pulseSchemaExistsTx
+  unless exists (Tx.sql script)
+  pulseSchemaProvisionStateTx
+
+pulseSchemaProvisionStateTx :: Transaction PulseSchemaProvisionState
+pulseSchemaProvisionStateTx = do
+  exists <- pulseSchemaExistsTx
+  if exists
+    then do
+      missing <- pulseSchemaMissingRequiredObjectsTx
+      pure $
+        case missing of
+          [] -> PulseSchemaCurrent
+          names -> PulseSchemaStale names
+    else pure PulseSchemaAbsent
+
+lockPulseSchemaProvisionTx :: Transaction ()
+lockPulseSchemaProvisionTx = do
+  _ <-
+    Tx.statement pulseSchemaProvisionLockKey $
       Statement
-        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'pulse')"
-        E.noParams
-        (D.singleRow (D.column (D.nonNullable D.bool)))
-        True
+        "WITH locked AS (SELECT pg_advisory_xact_lock($1)) SELECT 1::int4 FROM locked"
+        (E.param (E.nonNullable E.int8))
+        (D.singleRow (D.column (D.nonNullable D.int4)))
+        False
+  pure ()
+
+pulseSchemaProvisionLockKey :: Int64
+pulseSchemaProvisionLockKey = 5600060
+
+pulseSchemaExistsTx :: Transaction Bool
+pulseSchemaExistsTx = Tx.statement () pulseSchemaExistsStatement
+
+pulseSchemaExistsStatement :: Statement () Bool
+pulseSchemaExistsStatement =
+  Statement
+    "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'pulse')"
+    E.noParams
+    (D.singleRow (D.column (D.nonNullable D.bool)))
+    True
+
+pulseSchemaMissingRequiredObjectsTx :: Transaction [Text]
+pulseSchemaMissingRequiredObjectsTx =
+  Tx.statement () pulseSchemaMissingRequiredObjectsStatement
+
+pulseSchemaMissingRequiredObjectsStatement :: Statement () [Text]
+pulseSchemaMissingRequiredObjectsStatement =
+  Statement
+    pulseSchemaMissingRequiredObjectsSql
+    E.noParams
+    (D.rowList (D.column (D.nonNullable D.text)))
+    True
+
+pulseSchemaMissingRequiredObjectsSql :: BS.ByteString
+pulseSchemaMissingRequiredObjectsSql =
+  "SELECT required_name FROM ("
+    <> BS.intercalate
+      " UNION ALL "
+      ( (tableProbe <$> pulseSchemaRequiredTables)
+          <> (columnProbe <$> pulseSchemaRequiredColumns)
+          <> (enumProbe <$> pulseSchemaRequiredRunStatusLabels)
+      )
+    <> ") missing ORDER BY required_name"
+
+pulseSchemaRequiredTables :: [BS.ByteString]
+pulseSchemaRequiredTables =
+  [ "task_definitions"
+  , "runs"
+  , "graph_state"
+  , "graph_rewrites"
+  , "external_call_attempts"
+  , "run_events"
+  , "signals"
+  ]
+
+pulseSchemaRequiredColumns :: [(BS.ByteString, BS.ByteString)]
+pulseSchemaRequiredColumns =
+  [ ("task_definitions", "scheduler_claimed")
+  , ("graph_rewrites", "admission_mode")
+  , ("runs", "lease_owner")
+  ]
+
+pulseSchemaRequiredRunStatusLabels :: [BS.ByteString]
+pulseSchemaRequiredRunStatusLabels =
+  ["waiting"]
+
+tableProbe :: BS.ByteString -> BS.ByteString
+tableProbe tableName =
+  "SELECT 'table pulse."
+    <> tableName
+    <> "'::text AS required_name WHERE NOT EXISTS ( \
+       \SELECT 1 FROM pg_catalog.pg_class c \
+       \JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+       \WHERE n.nspname = 'pulse' AND c.relname = '"
+    <> tableName
+    <> "' AND c.relkind IN ('r', 'p') \
+       \)"
+
+columnProbe :: (BS.ByteString, BS.ByteString) -> BS.ByteString
+columnProbe (tableName, columnName) =
+  "SELECT 'column pulse."
+    <> tableName
+    <> "."
+    <> columnName
+    <> "'::text AS required_name WHERE NOT EXISTS ( \
+       \SELECT 1 FROM pg_catalog.pg_attribute a \
+       \JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
+       \JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+       \WHERE n.nspname = 'pulse' AND c.relname = '"
+    <> tableName
+    <> "' AND a.attname = '"
+    <> columnName
+    <> "' AND NOT a.attisdropped \
+       \)"
+
+enumProbe :: BS.ByteString -> BS.ByteString
+enumProbe enumLabel =
+  "SELECT 'enum pulse.run_status."
+    <> enumLabel
+    <> "'::text AS required_name WHERE NOT EXISTS ( \
+       \SELECT 1 FROM pg_catalog.pg_type t \
+       \JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+       \JOIN pg_catalog.pg_enum e ON e.enumtypid = t.oid \
+       \WHERE n.nspname = 'pulse' AND t.typname = 'run_status' AND e.enumlabel = '"
+    <> enumLabel
+    <> "' \
+       \)"

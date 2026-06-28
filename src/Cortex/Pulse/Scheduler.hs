@@ -479,7 +479,13 @@ runSchedulerLoop registry taskContext healthState = do
         , ("task_id", Aeson.toJSON task.taskId)
         , ("trigger_source", Aeson.toJSON (renderTriggerSource triggerSource))
         ]
-      let runAction = withLeaseRenewal pool runId leaseDuration (Executor.executeTask registry taskContext runId task)
+      let runAction =
+            withLeaseRenewal
+              pool
+              runId
+              leaseOwner
+              leaseDuration
+              (Executor.executeTask registry taskContext runId task)
       pure (Just (runId, task, triggerSource, runAction))
 
     markRunFailedForUnexpectedExit :: UUID -> SomeException -> IO RunOutcome
@@ -664,8 +670,8 @@ recoverExpiredRuns pool currentLeaseOwner now = do
 Renews the specific run's lease every half the lease duration and cancels
 the in-flight action if renewal becomes ambiguous.
 -}
-withLeaseRenewal :: DB.Pool -> UUID -> Int32 -> IO RunOutcome -> IO RunOutcome
-withLeaseRenewal pool runId leaseDuration action = do
+withLeaseRenewal :: DB.Pool -> UUID -> Text -> Int32 -> IO RunOutcome -> IO RunOutcome
+withLeaseRenewal pool runId leaseOwner leaseDuration action = do
   let renewalInterval = max 1 (fromIntegral leaseDuration `div` 2) * 1_000_000 -- microseconds
       leaseMicros = fromIntegral leaseDuration * 1_000_000 :: Int
       -- Cap jitter so renewal + max jitter stays below the full lease duration.
@@ -689,15 +695,13 @@ withLeaseRenewal pool runId leaseDuration action = do
         Left (Left err) -> throwIO err
         Right () -> do
           now <- getCurrentTime
-          result <- PulseDB.withConnection pool $ Q.renewRunLease runId now leaseDuration
+          result <- PulseDB.withConnection pool $ Q.renewRunLease runId leaseOwner now leaseDuration
           case result of
             Left err ->
-              failRunForLeaseLoss
+              stopAfterLeaseRenewalStopped
                 actionAsync
-                now
                 "lease_renewal_failed"
                 ("Run lease renewal failed, cancelling in-flight execution: " <> T.pack err)
-                True
             Right True ->
               renewLoop interval jitter actionAsync
             Right False -> do
@@ -715,15 +719,13 @@ withLeaseRenewal pool runId leaseDuration action = do
                 Just (Left err) ->
                   throwIO err
                 Nothing ->
-                  failRunForLeaseLoss
+                  stopAfterLeaseRenewalStopped
                     actionAsync
-                    now
                     "lease_lost"
                     "Run lease no longer belongs to this executor, cancelling in-flight execution"
-                    True
 
-    failRunForLeaseLoss :: Async RunOutcome -> UTCTime -> Text -> Text -> Bool -> IO RunOutcome
-    failRunForLeaseLoss actionAsync now errType errMsg retryable = do
+    stopAfterLeaseRenewalStopped :: Async RunOutcome -> Text -> Text -> IO RunOutcome
+    stopAfterLeaseRenewalStopped actionAsync errType errMsg = do
       cancel actionAsync
       waitCatch actionAsync >>= \case
         Right outcome -> do
@@ -737,24 +739,6 @@ withLeaseRenewal pool runId leaseDuration action = do
             ]
           pure outcome
         Left _ -> do
-          Err.logDbFailure_
-            ( \dbErr ->
-                emitSchedulerEvent
-                  ObsError
-                  "pulse.lease.fail.write"
-                  ("Failed to mark run as failed after lease loss: " <> T.pack dbErr)
-                  [("run_id", Aeson.toJSON runId), ("error_type", Aeson.toJSON errType)]
-            )
-            ( PulseDB.runTransaction pool $
-                Q.updateRunFailed
-                  Q.RunFailureUpdate
-                    { rfuRunId = runId
-                    , rfuCompletedAt = now
-                    , rfuErrType = errType
-                    , rfuErrMsg = errMsg
-                    , rfuRetryable = retryable
-                    }
-            )
           emitSchedulerEvent
             ObsError
             "pulse.lease.lost"

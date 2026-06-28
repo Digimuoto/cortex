@@ -17,6 +17,8 @@ module Cortex.Pulse.Query
     -- * Run Management
   , claimAndCreateRun
   , claimNextPendingRun
+  , ManagedResumeClaim (..)
+  , claimManagedRunForResume
   , createPendingRun
   , getRunStatusForUpdate
   , TerminalRunStatus (..)
@@ -399,6 +401,12 @@ data PulsePendingRunClaim = PulsePendingRunClaim
   }
   deriving stock (Eq, Show)
 
+data ManagedResumeClaim = ManagedResumeClaim
+  { mrcStatus :: Text
+  , mrcClaimed :: Bool
+  }
+  deriving stock (Eq, Show)
+
 data PulseExpiredRunRecovery = PulseExpiredRunRecovery
   { perrRunId :: UUID
   , perrTaskId :: UUID
@@ -566,6 +574,58 @@ claimNextPendingRun leaseOwner now leaseDurationSec excludedTypes deprioritized 
       )
       False
 
+{- | Claim an existing managed run before resuming it.
+
+The managed facade is used by scheduler-less consumers, so resume must perform the
+same ownership transition that the scheduler claim path provides. A run is claimed
+only when it is pending, or when it is running with an expired lease. Terminal and
+waiting runs are reported to the caller without changing ownership; a live running
+run returns @mrcClaimed = False@ so the facade can reject split-brain execution.
+-}
+claimManagedRunForResume
+  :: UUID -> Text -> UTCTime -> Int32 -> Transaction (Maybe ManagedResumeClaim)
+claimManagedRunForResume runId leaseOwner now leaseDurationSec =
+  Tx.statement (runId, leaseOwner, now, leaseDurationSec) $
+    Statement
+      "WITH target AS ( \
+      \  SELECT run_id, status, lease_expires_at \
+      \  FROM pulse.runs \
+      \  WHERE run_id = $1 \
+      \  FOR UPDATE \
+      \), claimable AS ( \
+      \  SELECT run_id \
+      \  FROM target \
+      \  WHERE status = 'pending'::pulse.run_status \
+      \     OR ( \
+      \       status = 'running'::pulse.run_status \
+      \       AND lease_expires_at IS NOT NULL \
+      \       AND lease_expires_at < $3 \
+      \     ) \
+      \), claimed AS ( \
+      \  UPDATE pulse.runs r SET \
+      \    status = 'running'::pulse.run_status, \
+      \    started_at = COALESCE(r.started_at, $3), \
+      \    lease_owner = $2, \
+      \    lease_expires_at = $3 + make_interval(secs => $4::double precision) \
+      \  FROM claimable c \
+      \  WHERE r.run_id = c.run_id \
+      \  RETURNING r.run_id \
+      \) \
+      \SELECT target.status, EXISTS (SELECT 1 FROM claimed) \
+      \FROM target"
+      ( Enc.encode4
+          ((\(a, _, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c, _) -> c), Enc.nonNullable Enc.timestamptz)
+          ((\(_, _, _, d) -> d), Enc.nonNullable Enc.int4)
+      )
+      ( D.rowMaybe $
+          ManagedResumeClaim
+            <$> D.column (D.nonNullable D.text)
+            <*> D.column (D.nonNullable D.bool)
+      )
+      False
+
 createPendingRun
   :: UUID -> TriggerSource -> Maybe UUID -> Maybe UUID -> UTCTime -> Transaction (Maybe UUID)
 createPendingRun taskId triggerSource parentRunId maybeUserId now =
@@ -724,35 +784,48 @@ updateRunStarted rId now =
 updateRunCompleted :: UUID -> UTCTime -> Transaction ()
 updateRunCompleted rId now = do
   lockRunTerminalProtocolTx
-  Tx.statement (rId, now) $
-    Statement
-      "UPDATE pulse.runs SET status = 'completed'::pulse.run_status, completed_at = $2 WHERE run_id = $1"
-      (Enc.encode2 (fst, Enc.nonNullable Enc.uuid) (snd, Enc.nonNullable Enc.timestamptz))
-      D.noResult
-      False
-  deliverTerminalFor rId RunCompleted now
+  changed <-
+    Tx.statement (rId, now) $
+      Statement
+        "WITH updated AS ( \
+        \  UPDATE pulse.runs \
+        \  SET status = 'completed'::pulse.run_status, completed_at = $2 \
+        \  WHERE run_id = $1 \
+        \    AND status NOT IN ('completed'::pulse.run_status, 'failed'::pulse.run_status, 'cancelled'::pulse.run_status, 'timeout'::pulse.run_status) \
+        \  RETURNING run_id \
+        \) SELECT EXISTS (SELECT 1 FROM updated)"
+        (Enc.encode2 (fst, Enc.nonNullable Enc.uuid) (snd, Enc.nonNullable Enc.timestamptz))
+        (D.singleRow (D.column (D.nonNullable D.bool)))
+        False
+  when changed (deliverTerminalFor rId RunCompleted now)
 
 -- | Mark a run as failed with error details and wake its run-terminal waiters.
 updateRunFailed :: RunFailureUpdate -> Transaction ()
 updateRunFailed input = do
   lockRunTerminalProtocolTx
-  Tx.statement input $
-    Statement
-      "UPDATE pulse.runs SET status = 'failed'::pulse.run_status, completed_at = $2, \
-      \error_type = $3, error_message = $4, error_retryable = $5 \
-      \WHERE run_id = $1 AND status != 'failed'::pulse.run_status"
-      ( Enc.encodeParams
-          ( Enc.col (.rfuRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.rfuCompletedAt) (Enc.nonNullable Enc.timestamptz)
-                 , Enc.col (.rfuErrType) (Enc.nonNullable Enc.text)
-                 , Enc.col (.rfuErrMsg) (Enc.nonNullable Enc.text)
-                 , Enc.col (.rfuRetryable) (Enc.nonNullable Enc.bool)
-                 ]
-          )
-      )
-      D.noResult
-      False
-  deliverTerminalFor input.rfuRunId RunFailed input.rfuCompletedAt
+  changed <-
+    Tx.statement input $
+      Statement
+        "WITH updated AS ( \
+        \  UPDATE pulse.runs \
+        \  SET status = 'failed'::pulse.run_status, completed_at = $2, \
+        \      error_type = $3, error_message = $4, error_retryable = $5 \
+        \  WHERE run_id = $1 \
+        \    AND status NOT IN ('completed'::pulse.run_status, 'failed'::pulse.run_status, 'cancelled'::pulse.run_status, 'timeout'::pulse.run_status) \
+        \  RETURNING run_id \
+        \) SELECT EXISTS (SELECT 1 FROM updated)"
+        ( Enc.encodeParams
+            ( Enc.col (.rfuRunId) (Enc.nonNullable Enc.uuid)
+                :| [ Enc.col (.rfuCompletedAt) (Enc.nonNullable Enc.timestamptz)
+                   , Enc.col (.rfuErrType) (Enc.nonNullable Enc.text)
+                   , Enc.col (.rfuErrMsg) (Enc.nonNullable Enc.text)
+                   , Enc.col (.rfuRetryable) (Enc.nonNullable Enc.bool)
+                   ]
+            )
+        )
+        (D.singleRow (D.column (D.nonNullable D.bool)))
+        False
+  when changed (deliverTerminalFor input.rfuRunId RunFailed input.rfuCompletedAt)
 
 {- | Mark a run as cancelled. Preserves the operator-provided cancel_reason
 from requestCancellation; only sets it if not already present. Wakes the
@@ -761,18 +834,25 @@ run's run-terminal waiters.
 updateRunCancelled :: UUID -> UTCTime -> Text -> Transaction ()
 updateRunCancelled rId now reason = do
   lockRunTerminalProtocolTx
-  Tx.statement (rId, now, reason) $
-    Statement
-      "UPDATE pulse.runs SET status = 'cancelled'::pulse.run_status, completed_at = $2, \
-      \cancel_reason = COALESCE(cancel_reason, $3) WHERE run_id = $1"
-      ( Enc.encode3
-          ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
-          ((\(_, b, _) -> b), Enc.nonNullable Enc.timestamptz)
-          ((\(_, _, c) -> c), Enc.nonNullable Enc.text)
-      )
-      D.noResult
-      False
-  deliverTerminalFor rId RunCancelled now
+  changed <-
+    Tx.statement (rId, now, reason) $
+      Statement
+        "WITH updated AS ( \
+        \  UPDATE pulse.runs \
+        \  SET status = 'cancelled'::pulse.run_status, completed_at = $2, \
+        \      cancel_reason = COALESCE(cancel_reason, $3) \
+        \  WHERE run_id = $1 \
+        \    AND status NOT IN ('completed'::pulse.run_status, 'failed'::pulse.run_status, 'cancelled'::pulse.run_status, 'timeout'::pulse.run_status) \
+        \  RETURNING run_id \
+        \) SELECT EXISTS (SELECT 1 FROM updated)"
+        ( Enc.encode3
+            ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
+            ((\(_, b, _) -> b), Enc.nonNullable Enc.timestamptz)
+            ((\(_, _, c) -> c), Enc.nonNullable Enc.text)
+        )
+        (D.singleRow (D.column (D.nonNullable D.bool)))
+        False
+  when changed (deliverTerminalFor rId RunCancelled now)
 
 {- | Mark a run as timed out and wake its run-terminal waiters. A retry, if
 any, is a fresh run under a new run id (parent_run_id lineage), so timeout is
@@ -781,22 +861,28 @@ terminal for this run id.
 updateRunTimedOut :: RunTimeoutUpdate -> Transaction ()
 updateRunTimedOut input = do
   lockRunTerminalProtocolTx
-  Tx.statement input $
-    Statement
-      "UPDATE pulse.runs SET status = 'timeout'::pulse.run_status, completed_at = $2, \
-      \error_type = $3, error_message = $4, error_retryable = false \
-      \WHERE run_id = $1"
-      ( Enc.encodeParams
-          ( Enc.col (.rtuRunId) (Enc.nonNullable Enc.uuid)
-              :| [ Enc.col (.rtuCompletedAt) (Enc.nonNullable Enc.timestamptz)
-                 , Enc.col (.rtuErrType) (Enc.nonNullable Enc.text)
-                 , Enc.col (.rtuErrMsg) (Enc.nonNullable Enc.text)
-                 ]
-          )
-      )
-      D.noResult
-      False
-  deliverTerminalFor input.rtuRunId RunTimedOut input.rtuCompletedAt
+  changed <-
+    Tx.statement input $
+      Statement
+        "WITH updated AS ( \
+        \  UPDATE pulse.runs \
+        \  SET status = 'timeout'::pulse.run_status, completed_at = $2, \
+        \      error_type = $3, error_message = $4, error_retryable = false \
+        \  WHERE run_id = $1 \
+        \    AND status NOT IN ('completed'::pulse.run_status, 'failed'::pulse.run_status, 'cancelled'::pulse.run_status, 'timeout'::pulse.run_status) \
+        \  RETURNING run_id \
+        \) SELECT EXISTS (SELECT 1 FROM updated)"
+        ( Enc.encodeParams
+            ( Enc.col (.rtuRunId) (Enc.nonNullable Enc.uuid)
+                :| [ Enc.col (.rtuCompletedAt) (Enc.nonNullable Enc.timestamptz)
+                   , Enc.col (.rtuErrType) (Enc.nonNullable Enc.text)
+                   , Enc.col (.rtuErrMsg) (Enc.nonNullable Enc.text)
+                   ]
+            )
+        )
+        (D.singleRow (D.column (D.nonNullable D.bool)))
+        False
+  when changed (deliverTerminalFor input.rtuRunId RunTimedOut input.rtuCompletedAt)
 
 getRunStartedAt :: UUID -> Session (Maybe UTCTime)
 getRunStartedAt rId =
@@ -1163,24 +1249,28 @@ releaseSchedulerClaimByRunId rId now =
 -- Lease Management
 -- ============================================================================
 
-{- | Renew lease for a specific run (run-scoped, not owner-wide).
-Used by withLeaseRenewal during task execution.
+{- | Renew lease for a specific run and owner.
+Used by withLeaseRenewal during task execution. The owner predicate is part of the
+fencing contract: once another process claims the run, stale workers can no longer
+renew it.
 -}
-renewRunLease :: UUID -> UTCTime -> Int32 -> Session Bool
-renewRunLease rId now leaseDurationSec =
-  Session.statement (rId, now, leaseDurationSec) $
+renewRunLease :: UUID -> Text -> UTCTime -> Int32 -> Session Bool
+renewRunLease rId leaseOwner now leaseDurationSec =
+  Session.statement (rId, leaseOwner, now, leaseDurationSec) $
     Statement
       "WITH renewed AS ( \
       \  UPDATE pulse.runs SET \
-      \    lease_expires_at = $2 + make_interval(secs => $3::double precision) \
+      \    lease_expires_at = $3 + make_interval(secs => $4::double precision) \
       \  WHERE run_id = $1 \
       \    AND status = 'running'::pulse.run_status \
+      \    AND lease_owner = $2 \
       \  RETURNING run_id \
       \) SELECT EXISTS (SELECT 1 FROM renewed)"
-      ( Enc.encode3
-          ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
-          ((\(_, b, _) -> b), Enc.nonNullable Enc.timestamptz)
-          ((\(_, _, c) -> c), Enc.nonNullable Enc.int4)
+      ( Enc.encode4
+          ((\(a, _, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c, _) -> c), Enc.nonNullable Enc.timestamptz)
+          ((\(_, _, _, d) -> d), Enc.nonNullable Enc.int4)
       )
       (D.singleRow (D.column (D.nonNullable D.bool)))
       False

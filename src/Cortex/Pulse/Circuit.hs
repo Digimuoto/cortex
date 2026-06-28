@@ -32,7 +32,9 @@ module Cortex.Pulse.Circuit
   , runCompiledCircuit
   , resumeCompiledCircuit
   , runCompiledCircuitManaged
+  , runCompiledCircuitManagedOn
   , resumeCompiledCircuitManaged
+  , resumeCompiledCircuitManagedOn
   , lowerRunnableCircuit
   , ensureRunnable
   , committedVariantBinder
@@ -45,7 +47,15 @@ module Cortex.Pulse.Circuit
 where
 
 import Control.Concurrent.STM (newTVarIO)
-import Control.Exception (finally)
+import Control.Exception
+  ( SomeAsyncException
+  , SomeException
+  , displayException
+  , finally
+  , fromException
+  , throwIO
+  , try
+  )
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Int (Int32)
@@ -68,6 +78,7 @@ import Cortex.Pulse.Database
   , withConnection
   )
 import Cortex.Pulse.Executor (TaskContext (..), executeStagePlan, resumeStagePlan)
+import Cortex.Pulse.Executor.Persistence (failRun)
 import Cortex.Pulse.Node (NodeId)
 import Cortex.Pulse.Plan
   ( SomeStagePlan (..)
@@ -79,8 +90,10 @@ import Cortex.Pulse.Plan
   , taskStage
   )
 import Cortex.Pulse.Query
-  ( PulseTaskDefinitionInsert (..)
+  ( ManagedResumeClaim (..)
+  , PulseTaskDefinitionInsert (..)
   , claimAndCreateRun
+  , claimManagedRunForResume
   , createTaskDefinition
   , getTaskById
   , getTaskForRun
@@ -100,7 +113,12 @@ import Cortex.Wire.Circuit.Lowering
   , signalStage
   )
 
-import Platform.DurableTask.Types (RunOutcome, TriggerSource (..))
+import Platform.DurableTask.Types
+  ( RunOutcome (..)
+  , RunStatus (..)
+  , TriggerSource (..)
+  , runStatusFromText
+  )
 
 -- | Why a compiled circuit could not be run through this entrypoint.
 data CircuitRunError
@@ -117,6 +135,16 @@ data CircuitRunError
     execution could begin (managed facade).
     -}
     CircuitRunSetupError Text
+  | -- | Opening a managed database pool failed.
+    CircuitRunPoolError Text
+  | -- | Setup reached a database that does not look provisioned with the Pulse schema.
+    CircuitRunSchemaMissing Text
+  | -- | A managed run could not be claimed without violating its ownership contract.
+    CircuitRunTaskClaimConflict Text
+  | -- | A managed resume target exists but is not currently resumable by this caller.
+    CircuitRunResumeRejected Text
+  | -- | Circuit execution raised an exception after a durable run was claimed.
+    CircuitRunExecutionError Text
   deriving stock (Eq, Show)
 
 {- | Reject a lowered plan this entrypoint cannot execute.
@@ -198,21 +226,26 @@ resumeCompiledCircuit taskContext runId task pulseConfig binder compiledCircuit 
 
 {- | Lower and execute a compiled Wire circuit as a fresh, durable, *managed* run:
 open a pool from the 'PulseConfig', create a task definition + run, execute it under a
-renewed lease, and return the durable run id alongside the outcome. The caller
-supplies only config + binder + circuit; run/lease/'TaskContext' assembly is hidden
-(GitHub #330). The circuit is lowered before any durable rows are created, so
+renewed lease, and return the durable run id alongside the outcome. This is a
+one-shot convenience facade; high-throughput consumers should use
+'runCompiledCircuitManagedOn' with a caller-owned pool. The caller supplies only
+config + binder + circuit; run/lease/'TaskContext' assembly is hidden by GitHub
+issue 330. The circuit is lowered before any durable rows are created, so
 validation failures are side-effect-free.
 
 Each managed run creates a scheduler-inert task definition (@enabled = false@, so the
 Pulse scheduler never auto-claims it), grouped under @task_type = workflowKey@ with a
 unique @task_name@, then claims one run against it. The task-definition and run rows
-are durable records and are not cleaned up. The managed run assumes the Pulse schema
-is already provisioned ('Cortex.Pulse.Database.provisionPulseSchema').
+are durable records and are not cleaned up; operators need a retention policy for
+long-lived hosts that drive many one-off managed runs. The managed run assumes the
+Pulse schema is already provisioned ('Cortex.Pulse.Database.provisionPulseSchema').
 
 The returned run id is the durable handle: a consumer records it to correlate,
 inspect, or 'resumeCompiledCircuitManaged' the run after a crash. Execution runs under
 'withLeaseRenewal' with @pulseLeaseOwner@, so a run that outlives its lease duration
-keeps its lease and a co-located scheduler does not reclaim it mid-flight.
+keeps its lease and a co-located scheduler does not reclaim it mid-flight. If
+execution raises an exception after the run is claimed, the facade marks the run
+failed and returns 'CircuitRunExecutionError' rather than leaking an IO exception.
 -}
 runCompiledCircuitManaged
   :: PulseConfig
@@ -224,20 +257,51 @@ runCompiledCircuitManaged
 runCompiledCircuitManaged pulseConfig workflowKey circuitConfig binder circuit =
   case lowerRunnableCircuit circuitConfig binder circuit of
     Left err -> pure (Left err)
-    Right (SomeStagePlan stagePlan _latentConditions) ->
-      withManagedRun pulseConfig workflowKey $ \taskContext runId task ->
-        Right
-          <$> withLeaseRenewal
-            taskContext.tcPool
-            runId
-            (leaseSecondsOf pulseConfig)
-            (executeStagePlan taskContext runId task stagePlan)
+    Right lowered ->
+      withManagedPool pulseConfig $ \pool ->
+        runLoweredCompiledCircuitManagedOn pool pulseConfig workflowKey lowered
+
+{- | Pool-reuse variant of 'runCompiledCircuitManaged'. The caller owns schema
+provisioning and pool lifetime; this function still owns the durable managed run
+row lifecycle.
+-}
+runCompiledCircuitManagedOn
+  :: Pool
+  -> PulseConfig
+  -> Text
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+runCompiledCircuitManagedOn pool pulseConfig workflowKey circuitConfig binder circuit =
+  case lowerRunnableCircuit circuitConfig binder circuit of
+    Left err -> pure (Left err)
+    Right lowered ->
+      runLoweredCompiledCircuitManagedOn pool pulseConfig workflowKey lowered
+
+runLoweredCompiledCircuitManagedOn
+  :: Pool
+  -> PulseConfig
+  -> Text
+  -> SomeStagePlan
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+runLoweredCompiledCircuitManagedOn pool pulseConfig workflowKey (SomeStagePlan stagePlan _latentConditions) =
+  withManagedRun pool pulseConfig workflowKey $ \taskContext runId task ->
+    runManagedExecution taskContext.tcPool runId $
+      withLeaseRenewal
+        taskContext.tcPool
+        runId
+        (pulseLeaseOwner pulseConfig)
+        (leaseSecondsOf pulseConfig)
+        (executeStagePlan taskContext runId task stagePlan)
 
 {- | Resume a durable, *managed* run from persisted graph state, addressed by the run
-id 'runCompiledCircuitManaged' returned. Opens a pool from the 'PulseConfig', loads the
-run's task definition, and re-drives the plan under a renewed lease. A committed-variant
-selector re-reads its persisted label and never re-invokes the producer effect (ADR
-0062); a stage that already completed is not re-run.
+id 'runCompiledCircuitManaged' returned. Opens a pool from the 'PulseConfig' and
+atomically claims a resumable run before loading its task definition and re-driving
+the plan under a renewed lease. Live running runs are rejected instead of being
+co-owned; terminal/waiting runs return their stored outcome without re-driving the
+plan. A committed-variant selector re-reads its persisted label and never re-invokes
+the producer effect (ADR 0062); a stage that already completed is not re-run.
 
 The binder and 'CircuitPulseConfig' must match the original run's (persisted graph
 state is keyed by node id). Returns the same run id alongside the outcome.
@@ -252,14 +316,43 @@ resumeCompiledCircuitManaged
 resumeCompiledCircuitManaged pulseConfig runId circuitConfig binder circuit =
   case lowerRunnableCircuit circuitConfig binder circuit of
     Left err -> pure (Left err)
-    Right (SomeStagePlan stagePlan _latentConditions) ->
-      withManagedResume pulseConfig runId $ \taskContext task ->
-        Right
-          <$> withLeaseRenewal
-            taskContext.tcPool
-            runId
-            (leaseSecondsOf pulseConfig)
-            (resumeStagePlan taskContext runId task stagePlan)
+    Right lowered ->
+      withManagedPool pulseConfig $ \pool ->
+        resumeLoweredCompiledCircuitManagedOn pool pulseConfig runId lowered
+
+{- | Pool-reuse variant of 'resumeCompiledCircuitManaged'. The caller owns schema
+provisioning and pool lifetime. The resume path still atomically claims ownership
+of a resumable run before driving the graph.
+-}
+resumeCompiledCircuitManagedOn
+  :: Pool
+  -> PulseConfig
+  -> UUID
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+resumeCompiledCircuitManagedOn pool pulseConfig runId circuitConfig binder circuit =
+  case lowerRunnableCircuit circuitConfig binder circuit of
+    Left err -> pure (Left err)
+    Right lowered ->
+      resumeLoweredCompiledCircuitManagedOn pool pulseConfig runId lowered
+
+resumeLoweredCompiledCircuitManagedOn
+  :: Pool
+  -> PulseConfig
+  -> UUID
+  -> SomeStagePlan
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+resumeLoweredCompiledCircuitManagedOn pool pulseConfig runId (SomeStagePlan stagePlan _latentConditions) =
+  withManagedResume pool pulseConfig runId $ \taskContext task ->
+    runManagedExecution taskContext.tcPool runId $
+      withLeaseRenewal
+        taskContext.tcPool
+        runId
+        (pulseLeaseOwner pulseConfig)
+        (leaseSecondsOf pulseConfig)
+        (resumeStagePlan taskContext runId task stagePlan)
 
 -- | The configured lease duration as the 'Int32' seconds the run/claim API expects.
 leaseSecondsOf :: PulseConfig -> Int32
@@ -276,7 +369,7 @@ withManagedPool
 withManagedPool pulseConfig use = do
   poolResult <- createPulsePool (connectionConfigOf pulseConfig)
   case poolResult of
-    Left err -> pure (setupError "pool" err)
+    Left err -> pure (Left (CircuitRunPoolError (T.pack err)))
     Right pool -> use pool `finally` HP.release pool
 
 {- | Assemble a fresh managed run (a scheduler-inert task definition, a claimed run,
@@ -287,73 +380,139 @@ task is loaded /before/ the run is claimed, so a load failure leaves no orphaned
 action renews the lease under.
 -}
 withManagedRun
-  :: PulseConfig
+  :: Pool
+  -> PulseConfig
   -> Text
   -> (TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO (Either CircuitRunError RunOutcome))
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-withManagedRun pulseConfig workflowKey run =
-  withManagedPool pulseConfig $ \pool -> do
-    now <- getCurrentTime
-    uniqueSuffix <- toText <$> UUIDv4.nextRandom
-    let taskName = workflowKey <> "/" <> uniqueSuffix
-    created <- runTransaction pool (createTaskDefinition (inertTaskDefInsert workflowKey taskName now))
-    case created of
-      Left err -> pure (setupError "create task definition" err)
-      Right Nothing -> pure (Left (CircuitRunSetupError "create task definition: unexpected conflict"))
-      Right (Just taskId) -> do
-        loaded <- withConnection pool (getTaskById taskId)
-        case loaded of
-          Left err -> pure (setupError "load task" err)
-          Right Nothing -> pure (Left (CircuitRunSetupError "load task: definition not found"))
-          Right (Just task) -> do
-            claimed <-
-              runTransaction
-                pool
-                ( claimAndCreateRun
-                    taskId
-                    (pulseLeaseOwner pulseConfig)
-                    TriggerManual
-                    now
-                    (leaseSecondsOf pulseConfig)
-                )
-            case claimed of
-              Left err -> pure (setupError "claim run" err)
-              Right Nothing -> pure (Left (CircuitRunSetupError "claim run: task could not be claimed"))
-              Right (Just runId) -> do
-                shutdownFlag <- newTVarIO False
-                outcome <-
-                  run
-                    TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
-                    runId
-                    task
-                pure (fmap (runId,) outcome)
+withManagedRun pool pulseConfig workflowKey run = do
+  now <- getCurrentTime
+  uniqueSuffix <- toText <$> UUIDv4.nextRandom
+  let taskName = workflowKey <> "/" <> uniqueSuffix
+  created <- runTransaction pool (createTaskDefinition (inertTaskDefInsert workflowKey taskName now))
+  case created of
+    Left err -> pure (setupError "create task definition" err)
+    Right Nothing -> pure (Left (CircuitRunTaskClaimConflict "create task definition: unexpected conflict"))
+    Right (Just taskId) -> do
+      loaded <- withConnection pool (getTaskById taskId)
+      case loaded of
+        Left err -> pure (setupError "load task" err)
+        Right Nothing -> pure (Left (CircuitRunSetupError "load task: definition not found"))
+        Right (Just task) -> do
+          claimed <-
+            runTransaction
+              pool
+              ( claimAndCreateRun
+                  taskId
+                  (pulseLeaseOwner pulseConfig)
+                  TriggerManual
+                  now
+                  (leaseSecondsOf pulseConfig)
+              )
+          case claimed of
+            Left err -> pure (setupError "claim run" err)
+            Right Nothing -> pure (Left (CircuitRunTaskClaimConflict "claim run: task could not be claimed"))
+            Right (Just runId) -> do
+              shutdownFlag <- newTVarIO False
+              outcome <-
+                run
+                  TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
+                  runId
+                  task
+              pure (fmap (runId,) outcome)
 
-{- | Load the task definition for an existing run, assemble a 'TaskContext', run the
-action, and pair its outcome with the run id. A missing run or a load failure becomes
-a 'CircuitRunSetupError'.
+{- | Load the task definition for an existing run, claim resumable ownership, assemble
+a 'TaskContext', run the action, and pair its outcome with the run id. A missing run
+or a load failure becomes a 'CircuitRunSetupError' before the claim is attempted.
 -}
 withManagedResume
-  :: PulseConfig
+  :: Pool
+  -> PulseConfig
   -> UUID
   -> (TaskContext -> PulseTaskDefinitionRow Result -> IO (Either CircuitRunError RunOutcome))
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-withManagedResume pulseConfig runId run =
-  withManagedPool pulseConfig $ \pool -> do
-    loaded <- withConnection pool (getTaskForRun runId)
-    case loaded of
-      Left err -> pure (setupError "load run task" err)
-      Right Nothing -> pure (Left (CircuitRunSetupError "load run task: run not found"))
-      Right (Just task) -> do
-        shutdownFlag <- newTVarIO False
-        outcome <-
-          run
-            TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
-            task
-        pure (fmap (runId,) outcome)
+withManagedResume pool pulseConfig runId run = do
+  loaded <- withConnection pool (getTaskForRun runId)
+  case loaded of
+    Left err -> pure (setupError "load run task" err)
+    Right Nothing -> pure (Left (CircuitRunSetupError "load run task: run not found"))
+    Right (Just task) -> do
+      now <- getCurrentTime
+      claimed <-
+        runTransaction
+          pool
+          (claimManagedRunForResume runId (pulseLeaseOwner pulseConfig) now (leaseSecondsOf pulseConfig))
+      case claimed of
+        Left err -> pure (setupError "claim resume run" err)
+        Right Nothing -> pure (Left (CircuitRunSetupError "claim resume run: run not found"))
+        Right (Just claim)
+          | claim.mrcClaimed -> do
+              shutdownFlag <- newTVarIO False
+              outcome <-
+                run
+                  TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
+                  task
+              pure (fmap (runId,) outcome)
+          | otherwise ->
+              case runOutcomeForStoredStatus claim.mrcStatus of
+                Just outcome -> pure (Right (runId, outcome))
+                Nothing ->
+                  pure
+                    ( Left
+                        ( CircuitRunResumeRejected
+                            ("run is not resumable while status is " <> claim.mrcStatus)
+                        )
+                    )
 
 -- | Tag a setup-phase DB failure with the phase that produced it.
 setupError :: Text -> String -> Either CircuitRunError a
-setupError context err = Left (CircuitRunSetupError (context <> ": " <> T.pack err))
+setupError context err =
+  let errText = T.pack err
+      full = context <> ": " <> errText
+   in Left $
+        if looksLikeMissingPulseSchema errText
+          then CircuitRunSchemaMissing full
+          else CircuitRunSetupError full
+
+looksLikeMissingPulseSchema :: Text -> Bool
+looksLikeMissingPulseSchema err =
+  let normalized = T.replace "\\\"" "\"" err
+   in any
+        (`T.isInfixOf` normalized)
+        [ "3F000" -- invalid_schema_name
+        , "42P01" -- undefined_table
+        , "42704" -- undefined_object
+        , "schema \"pulse\""
+        , "relation \"pulse."
+        , "type \"pulse."
+        ]
+
+runOutcomeForStoredStatus :: Text -> Maybe RunOutcome
+runOutcomeForStoredStatus status =
+  case runStatusFromText status of
+    Just Completed -> Just OutcomeCompleted
+    Just Failed -> Just OutcomeFailed
+    Just Cancelled -> Just OutcomeCancelled
+    Just Timeout -> Just OutcomeTimedOut
+    Just Waiting -> Just OutcomeSuspended
+    Just Pending -> Nothing
+    Just Running -> Nothing
+    Just Skipped -> Nothing
+    Nothing -> Nothing
+
+runManagedExecution :: Pool -> UUID -> IO RunOutcome -> IO (Either CircuitRunError RunOutcome)
+runManagedExecution pool runId action = do
+  result <- try action :: IO (Either SomeException RunOutcome)
+  case result of
+    Right outcome -> pure (Right outcome)
+    Left err ->
+      case fromException err :: Maybe SomeAsyncException of
+        Just _ -> throwIO err
+        Nothing -> do
+          now <- getCurrentTime
+          let errText = T.take 200 (T.pack (displayException err))
+          failRun pool runId now "executor_exception" errText True
+          pure (Left (CircuitRunExecutionError errText))
 
 {- | A scheduler-inert task definition (enabled = false; next_run_at set so a direct
 claim succeeds while the scheduler's due query, which requires enabled, skips it).

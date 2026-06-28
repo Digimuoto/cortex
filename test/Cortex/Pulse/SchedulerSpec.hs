@@ -16,7 +16,7 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (wait, withAsync)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, readMVar)
 import Control.Concurrent.STM (atomically, newTVarIO, writeTVar)
-import Control.Exception (SomeException, displayException, try)
+import Control.Exception (SomeException, bracket, displayException, try)
 import Control.Monad (join)
 import Data.Aeson qualified as Aeson
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
@@ -25,6 +25,7 @@ import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Time
   ( UTCTime (..)
   , addUTCTime
@@ -34,15 +35,18 @@ import Data.Time
   , secondsToDiffTime
   )
 import Data.UUID (UUID)
+import Data.Word (Word16)
 import GHC.Generics (Generic)
 import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
 import Hasql.Pool (Pool)
+import Hasql.Pool qualified as HP
 import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
 import Rel8 (Result)
-import System.Environment (lookupEnv)
+import System.Environment (getEnv, lookupEnv)
 import Test.Hspec
+import Text.Read (readMaybe)
 
 import Cortex.Pulse.Executor
   ( ReplayPolicy (..)
@@ -73,6 +77,8 @@ import Cortex.Pulse.Schema (PulseTaskDefinitionRow (..))
 import Cortex.Pulse.Types (PulseConfig (..), defaultRewriteBudget)
 import Cortex.TestSupport.Database (createTestDB, insertTestUser, runSession, runTx)
 
+import Platform.Database (ConnectionConfig (..))
+import Platform.Database qualified as PlatformDB
 import Platform.Database.Encode qualified as Enc
 import Platform.DurableTask.Types (RunOutcome (..), RunStatus (..), TriggerSource (..))
 
@@ -212,7 +218,7 @@ dbSpec = beforeAll setupTestDb $ do
       initialLeaseExpiry <- readRunLeaseExpiry pool runId
       initialLeaseExpiry `shouldSatisfy` isJust
       withAsync
-        ( withLeaseRenewal pool runId 2 $ do
+        ( withLeaseRenewal pool runId "test-owner" 2 $ do
             threadDelay 2500000
             completedAt <- getCurrentTime
             runTx pool $ Q.updateRunCompleted runId completedAt
@@ -232,22 +238,55 @@ dbSpec = beforeAll setupTestDb $ do
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-lease-loss"
       runId <- createTestRunWithLease pool taskId 2
       startTime <- getCurrentTime
-      withAsync (withLeaseRenewal pool runId 2 (threadDelay 5000000 >> pure OutcomeCompleted)) $ \worker -> do
-        threadDelay 1100000
-        now <- getCurrentTime
-        runTx pool $ Q.updateRunCancelled runId now "simulate lost lease owner"
-        outcome <- wait worker
-        outcome `shouldBe` OutcomeFailed
+      withAsync
+        (withLeaseRenewal pool runId "test-owner" 2 (threadDelay 5000000 >> pure OutcomeCompleted))
+        $ \worker -> do
+          threadDelay 1100000
+          now <- getCurrentTime
+          runTx pool $ Q.updateRunCancelled runId now "simulate lost lease owner"
+          outcome <- wait worker
+          outcome `shouldBe` OutcomeFailed
       endTime <- getCurrentTime
       diffUTCTime endTime startTime `shouldSatisfy` (< 3)
       runView <- runSession pool $ Q.getRunAdminView runId
-      fmap Q.pravStatus runView `shouldBe` Just "failed"
-      fmap Q.pravErrorType runView `shouldBe` Just (Just "lease_lost")
+      fmap Q.pravStatus runView `shouldBe` Just "cancelled"
+      fmap Q.pravErrorType runView `shouldBe` Just Nothing
+
+    it "fails closed when the renewing owner does not match the run lease owner" $ \mPool -> withDb mPool $ \pool -> do
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-lease-owner-mismatch"
+      runId <- createTestRunWithLease pool taskId 2
+      withAsync
+        (withLeaseRenewal pool runId "other-owner" 2 (threadDelay 5000000 >> pure OutcomeCompleted))
+        $ \worker -> do
+          outcome <- wait worker
+          outcome `shouldBe` OutcomeFailed
+      runView <- runSession pool $ Q.getRunAdminView runId
+      fmap Q.pravStatus runView `shouldBe` Just "running"
+      fmap Q.pravErrorType runView `shouldBe` Just Nothing
+
+    it "does not mark the run failed when lease renewal errors before ownership is known" $ \mPool -> withDb mPool $ \_ ->
+      withSingleConnectionTestPool $ \pool -> do
+        taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-lease-renew-error"
+        runId <- createTestRunWithLease pool taskId 2
+        withAsync (holdOnlyConnection pool) $ \holder -> do
+          threadDelay 100000
+          outcome <-
+            withLeaseRenewal
+              pool
+              runId
+              "test-owner"
+              2
+              (threadDelay 15000000 >> pure OutcomeCompleted)
+          outcome `shouldBe` OutcomeFailed
+          wait holder
+        runView <- runSession pool $ Q.getRunAdminView runId
+        fmap Q.pravStatus runView `shouldBe` Just "running"
+        fmap Q.pravErrorType runView `shouldBe` Just Nothing
 
     it "accepts a completed outcome when run finishes just before lease renewal" $ \mPool -> withDb mPool $ \pool -> do
       taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-lease-race-completed"
       runId <- createTestRunWithLease pool taskId 2
-      outcome <- withLeaseRenewal pool runId 2 $ do
+      outcome <- withLeaseRenewal pool runId "test-owner" 2 $ do
         completedAt <- getCurrentTime
         runTx pool $ Q.updateRunCompleted runId completedAt
         pure OutcomeCompleted
@@ -682,7 +721,8 @@ dbSpec = beforeAll setupTestDb $ do
         expectCreatedRun "create scheduled run"
           =<< runTx pool (Q.claimAndCreateRun taskId leaseOwner TriggerSchedule claimTime 300)
       task <- loadTaskDef pool taskId
-      firstOutcome <- withLeaseRenewal pool runId 300 (executeStagePlan taskContext runId task stagePlan)
+      firstOutcome <-
+        withLeaseRenewal pool runId leaseOwner 300 (executeStagePlan taskContext runId task stagePlan)
       firstOutcome `shouldBe` OutcomeShutdown
       runSession pool (Q.readRunStatus runId) `shouldReturn` Just "running"
       betaAfterShutdown <- readIORef betaRuns
@@ -690,7 +730,8 @@ dbSpec = beforeAll setupTestDb $ do
       reclaimedRunIds <- runSession pool $ Q.reclaimOwnedRuns leaseOwner reclaimTime 300
       reclaimedRunIds `shouldBe` [runId]
       atomically $ writeTVar shutdownFlag False
-      secondOutcome <- withLeaseRenewal pool runId 300 (resumeStagePlan taskContext runId task stagePlan)
+      secondOutcome <-
+        withLeaseRenewal pool runId leaseOwner 300 (resumeStagePlan taskContext runId task stagePlan)
       secondOutcome `shouldBe` OutcomeCompleted
       finalizeTaskSchedule pool (Just runId) task (Just TriggerSchedule) finishedAt secondOutcome
       runSession pool (Q.readRunStatus runId) `shouldReturn` Just "completed"
@@ -761,6 +802,41 @@ setRunLeaseExpiry pool runId leaseExpiry =
       (Enc.encode2 (fst, Enc.nonNullable Enc.uuid) (snd, Enc.nonNullable Enc.timestamptz))
       D.noResult
       False
+
+withSingleConnectionTestPool :: (Pool -> IO a) -> IO a
+withSingleConnectionTestPool =
+  bracket open PlatformDB.releasePool
+  where
+    open = do
+      dbHost <- T.pack <$> getEnv "PGHOST"
+      portStr <- getEnv "PGPORT"
+      dbPort <- case readMaybe portStr of
+        Just p -> pure p
+        Nothing -> fail $ "Invalid PGPORT value: " <> portStr
+      dbUser <- T.pack <$> getEnv "PGUSER"
+      dbDatabase <- T.pack <$> getEnv "PGDATABASE"
+      dbPassword <- maybe "" T.pack <$> lookupEnv "PGPASSWORD"
+      result <-
+        PlatformDB.initConnectionPool
+          ConnectionConfig
+            { dbHost = dbHost
+            , dbPort = dbPort :: Word16
+            , dbUser = dbUser
+            , dbPassword = dbPassword
+            , dbDatabase = dbDatabase
+            , dbPoolSize = 1
+            , dbPoolTimeout = 1
+            }
+      case result of
+        Left err -> fail $ "Failed to create single-connection test pool: " <> err
+        Right pool -> pure pool
+
+holdOnlyConnection :: Pool -> IO ()
+holdOnlyConnection pool = do
+  result <- HP.use pool (Session.sql "SELECT pg_sleep(8)")
+  case result of
+    Left err -> expectationFailure ("Failed to hold the only pool connection: " <> show err)
+    Right () -> pure ()
 
 holdRunTerminalProtocolLock :: Pool -> IO ()
 holdRunTerminalProtocolLock pool =

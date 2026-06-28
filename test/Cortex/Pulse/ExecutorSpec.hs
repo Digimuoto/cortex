@@ -14,7 +14,7 @@ Tests may import the surface they exercise, but they do not define downstream pr
 module Cortex.Pulse.ExecutorSpec (spec) where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (cancel, waitCatch, withAsync)
+import Control.Concurrent.Async (cancel, wait, waitCatch, withAsync)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, tryPutMVar)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, writeTVar)
 import Control.Exception
@@ -35,7 +35,7 @@ import Data.Maybe (isJust)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time (addUTCTime, diffUTCTime, getCurrentTime)
+import Data.Time (UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import GHC.Generics (Generic)
@@ -299,6 +299,15 @@ readRunStatus :: Pool -> UUID -> IO (Maybe Text)
 readRunStatus pool runId =
   runSession pool $ Q.readRunStatus runId
 
+setRunLeaseExpiry :: Pool -> UUID -> UTCTime -> IO ()
+setRunLeaseExpiry pool runId leaseExpiry =
+  runSession pool . Session.statement (runId, leaseExpiry) $
+    Statement
+      "UPDATE pulse.runs SET lease_expires_at = $2 WHERE run_id = $1"
+      (Enc.encode2 (fst, Enc.nonNullable Enc.uuid) (snd, Enc.nonNullable Enc.timestamptz))
+      D.noResult
+      False
+
 {- | Read persisted graph state and decode node statuses.
 Fails the test with a descriptive message if the JSON cannot be decoded.
 -}
@@ -355,6 +364,24 @@ readStageAttemptLogs pool runId =
 readRunEvents :: Pool -> UUID -> IO [PulseRunEvent]
 readRunEvents pool runId =
   runSession pool $ Q.listRunEvents runId
+
+readManagedRunRows :: Pool -> Text -> IO [(UUID, Text, Maybe Text)]
+readManagedRunRows pool workflowKey =
+  runSession pool . Session.statement workflowKey $
+    Statement
+      "SELECT r.run_id, r.status, r.error_type \
+      \FROM pulse.runs r \
+      \INNER JOIN pulse.task_definitions td ON td.task_id = r.task_id \
+      \WHERE td.task_type = $1 \
+      \ORDER BY r.created_at ASC"
+      (Enc.encode1 (id, Enc.nonNullable Enc.text))
+      ( D.rowList $
+          (,,)
+            <$> D.column (D.nonNullable D.uuid)
+            <*> D.column (D.nonNullable D.text)
+            <*> D.column (D.nullable D.text)
+      )
+      True
 
 mkTaskContext :: Pool -> IO (TVar Bool, TaskContext)
 mkTaskContext pool = do
@@ -1220,7 +1247,7 @@ spec = beforeAll setupTestDb $ do
                   let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
                    in Right $ case unNodeId nodeId of
                         "produce" ->
-                          taskStage nodeId SafeToReplay $ \_ -> do
+                          taskStage nodeId Irreversible $ \_ -> do
                             atomicModifyIORef' produceCount (\c -> (c + 1, ()))
                             pure
                               ( StageComplete
@@ -1232,15 +1259,15 @@ spec = beforeAll setupTestDb $ do
                                   )
                               )
                         "handle_err" ->
-                          taskStage nodeId SafeToReplay $ \_ -> do
+                          taskStage nodeId Irreversible $ \_ -> do
                             atomicModifyIORef' recoverCount (\c -> (c + 1, ()))
                             pure (StageComplete (Aeson.String "recovered"))
                         "handle_ok" ->
-                          taskStage nodeId SafeToReplay $ \_ -> do
+                          taskStage nodeId Irreversible $ \_ -> do
                             atomicModifyIORef' okCount (\c -> (c + 1, ()))
                             pure (StageComplete (Aeson.String "ok"))
                         other ->
-                          taskStage nodeId SafeToReplay $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+                          taskStage nodeId Irreversible $ \_ -> pure (StageComplete (Aeson.String ("passthrough:" <> other)))
           -- #330 managed facade end-to-end on the #331 testkit-provisioned ephemeral DB.
           result <-
             runCompiledCircuitManaged
@@ -1257,9 +1284,8 @@ spec = beforeAll setupTestDb $ do
               readIORef produceCount `shouldReturn` 1
               readIORef recoverCount `shouldReturn` 1
               readIORef okCount `shouldReturn` 0
-              -- #330 #2 managed resume: addressed by the returned run id, resuming the
-              -- now-settled run returns the same run id, completes, and re-invokes no
-              -- producer effect (ADR 0062).
+              -- Terminal managed resume returns the stored outcome without re-driving
+              -- completed graph work or invoking the producer again.
               resumed <-
                 resumeCompiledCircuitManaged
                   (tcConfig ctx)
@@ -1272,6 +1298,212 @@ spec = beforeAll setupTestDb $ do
                 Right (resumedRunId, resumedOutcome) -> do
                   resumedRunId `shouldBe` runId
                   resumedOutcome `shouldBe` OutcomeCompleted
+              readIORef produceCount `shouldReturn` 1
+
+    it "does not swallow async managed execution cancellation" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          compiled <-
+            case compileWireText selectVariantSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          let workflowKey = "consumer-exception-test"
+              binder =
+                committedVariantBinder $ \taskNode ->
+                  let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                   in Right . taskStage nodeId Irreversible $ \_ ->
+                        throwIO ThreadKilled
+          result <-
+            try
+              ( runCompiledCircuitManaged
+                  (tcConfig ctx)
+                  workflowKey
+                  selectVariantPulseConfig
+                  binder
+                  compiled
+              )
+              :: IO (Either SomeException (Either CircuitRunError (UUID, RunOutcome)))
+          case result of
+            Left err ->
+              T.pack (displayException err) `shouldSatisfy` T.isInfixOf "thread killed"
+            Right other -> expectationFailure ("expected async cancellation to escape, got: " <> show other)
+          rows <- readManagedRunRows (tcPool ctx) workflowKey
+          case rows of
+            [(_, status, errType)] -> do
+              status `shouldBe` "running"
+              errType `shouldBe` Nothing
+            other -> expectationFailure ("expected one unfailed managed run row, got: " <> show other)
+
+    it "resumes an expired managed run without re-running completed producer work" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          compiled <-
+            case compileWireText selectVariantSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          handlerStarted <- newEmptyMVar
+          releaseOriginalHandler <- newEmptyMVar
+          produceCount <- newIORef (0 :: Int)
+          handlerAttempts <- newIORef (0 :: Int)
+          let workflowKey = "consumer-expired-resume"
+              binder =
+                committedVariantBinder $ \taskNode ->
+                  let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                   in Right $ case unNodeId nodeId of
+                        "produce" ->
+                          taskStage nodeId Irreversible $ \_ -> do
+                            atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+                            pure
+                              ( StageComplete
+                                  ( Aeson.toJSON
+                                      ( (mkWireValue "P" WirePayloadJson Nothing (Aeson.object ["issue" Aeson..= ("rejected" :: Text)]))
+                                          { wireValuePort = Just "err"
+                                          }
+                                      )
+                                  )
+                              )
+                        "handle_err" ->
+                          taskStage nodeId Irreversible $ \_ -> do
+                            attempt <- atomicModifyIORef' handlerAttempts (\c -> let next = c + 1 in (next, next))
+                            when (attempt == 1) $ do
+                              void (tryPutMVar handlerStarted ())
+                              readMVar releaseOriginalHandler
+                            pure (StageComplete (Aeson.String "recovered"))
+                        "handle_ok" ->
+                          taskStage nodeId Irreversible $ \_ ->
+                            pure (StageComplete (Aeson.String "ok"))
+                        other ->
+                          taskStage nodeId Irreversible $ \_ ->
+                            pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+          withAsync
+            ( runCompiledCircuitManaged
+                (tcConfig ctx)
+                workflowKey
+                selectVariantPulseConfig
+                binder
+                compiled
+            )
+            $ \worker -> do
+              timeout 5000000 (readMVar handlerStarted) `shouldReturn` Just ()
+              rows <- readManagedRunRows (tcPool ctx) workflowKey
+              runId <- case rows of
+                [(rid, "running", Nothing)] -> pure rid
+                other ->
+                  expectationFailure ("expected one blocked managed run row, got: " <> show other)
+                    >> fail "unreachable"
+              cancel worker
+              waitCatch worker >>= \case
+                Left _ -> pure ()
+                Right other -> expectationFailure ("expected cancelled managed worker, got: " <> show other)
+              liveResume <-
+                resumeCompiledCircuitManaged
+                  (tcConfig ctx)
+                  runId
+                  selectVariantPulseConfig
+                  binder
+                  compiled
+              case liveResume of
+                Left (CircuitRunResumeRejected msg) ->
+                  msg `shouldSatisfy` T.isInfixOf "running"
+                Left err -> expectationFailure ("expected live resume rejection, got: " <> show err)
+                Right other -> expectationFailure ("expected live resume rejection, got: " <> show other)
+              readIORef produceCount `shouldReturn` 1
+              readIORef handlerAttempts `shouldReturn` 1
+              expiredAt <- addUTCTime (-1) <$> getCurrentTime
+              setRunLeaseExpiry (tcPool ctx) runId expiredAt
+              resumed <-
+                resumeCompiledCircuitManaged
+                  (tcConfig ctx)
+                  runId
+                  selectVariantPulseConfig
+                  binder
+                  compiled
+              case resumed of
+                Left err -> expectationFailure ("managed crash resume failed: " <> show err)
+                Right (resumedRunId, resumedOutcome) -> do
+                  resumedRunId `shouldBe` runId
+                  resumedOutcome `shouldBe` OutcomeCompleted
+              readIORef produceCount `shouldReturn` 1
+              readIORef handlerAttempts `shouldReturn` 2
+              readRunStatus (tcPool ctx) runId `shouldReturn` Just "completed"
+
+    it "rejects managed resume while another owner still has a live lease" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          compiled <-
+            case compileWireText selectVariantSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          started <- newEmptyMVar
+          release <- newEmptyMVar
+          produceCount <- newIORef (0 :: Int)
+          let workflowKey = "consumer-live-resume-rejected"
+              binder =
+                committedVariantBinder $ \taskNode ->
+                  let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                   in Right $ case unNodeId nodeId of
+                        "produce" ->
+                          taskStage nodeId Irreversible $ \_ -> do
+                            atomicModifyIORef' produceCount (\c -> (c + 1, ()))
+                            putMVar started ()
+                            readMVar release
+                            pure
+                              ( StageComplete
+                                  ( Aeson.toJSON
+                                      ( (mkWireValue "P" WirePayloadJson Nothing (Aeson.object ["issue" Aeson..= ("rejected" :: Text)]))
+                                          { wireValuePort = Just "err"
+                                          }
+                                      )
+                                  )
+                              )
+                        "handle_err" ->
+                          taskStage nodeId Irreversible $ \_ ->
+                            pure (StageComplete (Aeson.String "recovered"))
+                        "handle_ok" ->
+                          taskStage nodeId Irreversible $ \_ ->
+                            pure (StageComplete (Aeson.String "ok"))
+                        other ->
+                          taskStage nodeId Irreversible $ \_ ->
+                            pure (StageComplete (Aeson.String ("passthrough:" <> other)))
+          withAsync
+            ( runCompiledCircuitManaged
+                (tcConfig ctx)
+                workflowKey
+                selectVariantPulseConfig
+                binder
+                compiled
+            )
+            $ \worker -> do
+              readMVar started
+              rows <- readManagedRunRows (tcPool ctx) workflowKey
+              runId <- case rows of
+                [(rid, "running", Nothing)] -> pure rid
+                other ->
+                  expectationFailure ("expected one live managed run row, got: " <> show other) >> fail "unreachable"
+              resumed <-
+                resumeCompiledCircuitManaged
+                  (tcConfig ctx)
+                  runId
+                  selectVariantPulseConfig
+                  binder
+                  compiled
+              case resumed of
+                Left (CircuitRunResumeRejected msg) ->
+                  msg `shouldSatisfy` T.isInfixOf "running"
+                Left err -> expectationFailure ("expected CircuitRunResumeRejected, got: " <> show err)
+                Right _ -> expectationFailure "expected live managed resume to be rejected"
+              putMVar release ()
+              wait worker >>= \case
+                Right (completedRunId, outcome) -> do
+                  completedRunId `shouldBe` runId
+                  outcome `shouldBe` OutcomeCompleted
+                Left err -> expectationFailure ("managed run failed after release: " <> show err)
               readIORef produceCount `shouldReturn` 1
 
   describe "boundary binders for circuits with non-task nodes (#323, #36)" $ do
@@ -4868,6 +5100,25 @@ spec = beforeAll setupTestDb $ do
       -- The first error_type should be preserved
       runView <- runSession pool $ Q.getRunAdminView runId
       fmap Q.pravErrorType runView `shouldBe` Just (Just "graph_state_persist_failed")
+
+    it "late failRun does not overwrite a completed run" $ \mPool -> withDb mPool $ \pool -> do
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-failrun-after-completed"
+      runId <- createTestRun pool taskId
+      now <- getCurrentTime
+      _ <- DB.runTransaction pool $ Q.updateRunCompleted runId now
+      _ <-
+        DB.runTransaction pool $
+          Q.updateRunFailed
+            Q.RunFailureUpdate
+              { rfuRunId = runId
+              , rfuCompletedAt = now
+              , rfuErrType = "executor_exception"
+              , rfuErrMsg = "late failure"
+              , rfuRetryable = True
+              }
+      runView <- runSession pool $ Q.getRunAdminView runId
+      fmap Q.pravStatus runView `shouldBe` Just "completed"
+      fmap Q.pravErrorType runView `shouldBe` Just Nothing
 
   describe "signal node_id scoping" $ do
     it "reused signal name does not consume stale delivery from different node" $ \mPool -> withDb mPool $ \pool -> do
