@@ -30,15 +30,15 @@ spec = do
 
     it "formats small frontiers horizontally inside connect chains" $ do
       formatWireSource "test" "a=>(b<>c<>d)=>e"
-        `shouldBe` Right "a\n  => (b <> c <> d)\n  => e\n"
+        `shouldBe` Right "a\n  => b <> c <> d\n  => e\n"
 
-    it "formats large frontiers vertically with leading overlay operators" $ do
+    it "formats large frontiers with stage-aligned leading overlay operators" $ do
       formatWireSource "test" "a=>(b<>c<>d<>e<>f)=>g"
-        `shouldBe` Right "a\n  => (\n    b\n    <> c\n    <> d\n    <> e\n    <> f\n  )\n  => g\n"
+        `shouldBe` Right "a\n  => b\n  <> c\n  <> d\n  <> e\n  <> f\n  => g\n"
 
-    it "preserves explicit right-nested connect groups" $ do
+    it "preserves explicit right-nested connect groups without redundant frontier parens" $ do
       formatWireSource "test" "a=>b=>((c<>d)=>e)"
-        `shouldBe` Right "a\n  => b\n  => (\n    (c <> d)\n      => e\n  )\n"
+        `shouldBe` Right "a\n  => b\n  => (\n    c <> d\n      => e\n  )\n"
 
     it "formats star adapters as topology stages" $ do
       formatWireSource "test" "a*b=>c"
@@ -46,7 +46,7 @@ spec = do
 
     it "formats star adapters after overlay stages" $ do
       formatWireSource "test" "(a<>b)*sink"
-        `shouldBe` Right "(a <> b)\n  * sink\n"
+        `shouldBe` Right "a <> b\n  * sink\n"
 
     it "preserves explicit right-nested star groups" $ do
       formatWireSource "test" "a*(b*c)"
@@ -78,7 +78,7 @@ spec = do
       formatWireSource "test" source `shouldBe` Right expected
 
     it "is idempotent" $ do
-      let source = "a\n  => (b <> c <> d)\n  => e\n"
+      let source = "a\n  => b <> c <> d\n  => e\n"
       formatted <- requireRight (formatWireSource "test" source)
       formatWireSource "test" formatted `shouldBe` Right formatted
 
@@ -177,7 +177,7 @@ spec = do
       formatWireSource "test" source
         `shouldBe` Right "let frontier = a <> (b <> c);\n\nfrontier\n"
 
-    it "preserves nested indentation across multi-line let RHS" $ do
+    it "keeps nested large frontiers aligned with their graph stage" $ do
       let source =
             "let pipeline =\n\
             \  a\n\
@@ -193,13 +193,11 @@ spec = do
           expected =
             "let pipeline =\n\
             \  a\n\
-            \    => (\n\
-            \      b\n\
-            \      <> c\n\
-            \      <> d\n\
-            \      <> e\n\
-            \      <> f\n\
-            \    )\n\
+            \    => b\n\
+            \    <> c\n\
+            \    <> d\n\
+            \    <> e\n\
+            \    <> f\n\
             \    => g;\n\
             \\n\
             \pipeline\n"

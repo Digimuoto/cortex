@@ -395,7 +395,7 @@ formatTopologyChain level (TopologyChain first rest) =
 formatStage :: Int -> Expr -> [Text]
 formatStage level = \case
   expr@ExprOverlay {} ->
-    parenthesizeInlineStage level (formatOverlay level (flattenOverlay expr))
+    formatOverlay level (flattenOverlay expr)
   expr@ExprConnect {} ->
     parenthesizeMultiline level (formatGraphExpr (level + 1) expr)
   expr@ExprStar {} ->
@@ -408,9 +408,7 @@ formatOverlay level items
   | length items <= 4 && all isInlineGraphAtom items && T.length inline <= 100 =
       [indentText level inline]
   | otherwise =
-      [indentText level "("]
-        <> formatOverlayItems (level + 1) items
-        <> [indentText level ")"]
+      formatOverlayItems level items
   where
     inline =
       T.intercalate " <> " (fmap formatExprInline items)
@@ -425,9 +423,10 @@ formatOverlayItems level =
           ExprConnect {} -> parenthesizeMultiline level (formatGraphExpr (level + 1) item)
           ExprStar {} -> parenthesizeMultiline level (formatGraphExpr (level + 1) item)
           -- Nested ExprOverlay only reaches this branch from explicit source
-          -- grouping (flattenOverlay walks the left spine only). Wrap in
-          -- parens so the right-nested AST round-trips through the parser.
-          ExprOverlay {} -> parenthesizeInlineStage level (formatOverlay level (flattenOverlay item))
+          -- grouping (flattenOverlay walks the left spine only). parenthesizeMultiline
+          -- always wraps, so the right-nested AST round-trips regardless of how the
+          -- inner frontier renders (e.g. a leading parenthesized connect/select).
+          ExprOverlay {} -> parenthesizeMultiline level (formatGraphExpr (level + 1) item)
           _ -> [indentText level (formatExprInline item)]
       where
         prefix = if index == 0 then "" else "<> "
@@ -440,13 +439,6 @@ parenthesizeMultiline level = \case
     [indentText level "("]
       <> lines'
       <> [indentText level ")"]
-
-parenthesizeInlineStage :: Int -> [Text] -> [Text]
-parenthesizeInlineStage level = \case
-  [single]
-    | not ("(" `T.isPrefixOf` T.strip single) ->
-        [indentText level ("(" <> T.strip single <> ")")]
-  lines' -> lines'
 
 addPrefix :: Text -> [Text] -> [Text]
 addPrefix "" lines' =
