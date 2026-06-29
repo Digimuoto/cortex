@@ -21,6 +21,20 @@ Cortex builds through Nix and the repo `justfile`. Use these surfaces rather tha
 nix develop
 ```
 
+### Apple Silicon
+
+`aarch64-darwin` builds are supported through the flake. Use `nix build`, `nix run`, or
+`nix develop`; do not build Cortex by invoking Cabal or GHC directly.
+
+The flake provides the Darwin SDK, libc++, and GHC bootstrap toolchain through Nix. You should not
+need to install or point Cortex at a separate C++ standard library. A cold macOS build may still
+take a long time when the binary cache does not contain the exact bootstrap compiler path, because
+Nix may build intermediate GHCs from source.
+
+During successful executable links, Darwin may print warnings for optional library search paths that
+do not exist in the local store, such as a `pg_config/lib` path. Treat those as non-fatal when the
+build reaches install and fixup phases successfully.
+
 ## Core Commands
 
 | Command            | Purpose                                                  |

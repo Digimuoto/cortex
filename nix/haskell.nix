@@ -12,6 +12,85 @@
   }: let
     overlays = [
       inputs.haskell-nix.overlay
+      (final: prev: let
+        patchDarwinBootstrapGhc = compiler:
+          compiler.overrideAttrs (old: {
+            postConfigure =
+              (old.postConfigure or "")
+              + final.lib.optionalString (final.stdenv.hostPlatform.isDarwin && final.stdenv.hostPlatform.isAarch64) ''
+                for config in mk/config.mk hadrian/cfg/system.config; do
+                  if grep -q '${final.stdenv.cc}/bin/cc -std=gnu23' "$config"; then
+                    substituteInPlace "$config" \
+                      --replace-fail "${final.stdenv.cc}/bin/cc -std=gnu23" "${final.stdenv.cc}/bin/cc"
+                  fi
+                done
+              '';
+            preConfigure =
+              final.lib.optionalString (final.stdenv.hostPlatform.isDarwin && final.stdenv.hostPlatform.isAarch64) ''
+                export ac_cv_prog_cc_c23=
+                export CXX_STD_LIB_LIBS="c++ c++abi"
+                export CXX_STD_LIB_LIB_DIRS="${final.darwin.libcxx}/lib"
+                export CXX_STD_LIB_DYN_LIB_DIRS="${final.darwin.libcxx}/lib"
+              ''
+              + (old.preConfigure or "");
+            preInstall =
+              final.lib.optionalString (final.stdenv.hostPlatform.isDarwin && final.stdenv.hostPlatform.isAarch64) ''
+                export ac_cv_prog_cc_c23=
+                export CXX_STD_LIB_LIBS="c++ c++abi"
+                export CXX_STD_LIB_LIB_DIRS="${final.darwin.libcxx}/lib"
+                export CXX_STD_LIB_DYN_LIB_DIRS="${final.darwin.libcxx}/lib"
+              ''
+              + (old.preInstall or "");
+            postInstall =
+              (old.postInstall or "")
+              + final.lib.optionalString (final.stdenv.hostPlatform.isDarwin && final.stdenv.hostPlatform.isAarch64) ''
+                packageDb=$(find "$out/lib" -path '*/package.conf.d' -type d | head -n1)
+                if [ -n "$packageDb" ]; then
+                  mkdir -p "$out/envDeps" "$out/exactDeps"
+                  for pkgId in $("$out/bin/ghc-pkg" -v0 --global-package-db="$packageDb" list --simple-output); do
+                    if name=$("$out/bin/ghc-pkg" -v0 --global-package-db="$packageDb" field "$pkgId" name --simple-output 2>/dev/null); then
+                      id=$("$out/bin/ghc-pkg" -v0 --global-package-db="$packageDb" field "$pkgId" id --simple-output)
+                      ver=$("$out/bin/ghc-pkg" -v0 --global-package-db="$packageDb" field "$pkgId" version --simple-output)
+                      mkdir -p "$out/exactDeps/$name"
+                      echo "--dependency=$name=$id" > "$out/exactDeps/$name/configure-flags"
+                      {
+                        echo "constraint: $name == $ver"
+                        echo "constraint: $name installed"
+                      } > "$out/exactDeps/$name/cabal.config"
+                      echo "package-id $id" > "$out/envDeps/$name"
+                    fi
+                  done
+                fi
+              '';
+            buildInputs =
+              (old.buildInputs or [])
+              ++ final.lib.optionals (final.stdenv.hostPlatform.isDarwin && final.stdenv.hostPlatform.isAarch64) [
+                final.darwin.libcxx
+              ];
+            passthru =
+              (old.passthru or {})
+              // final.lib.optionalAttrs (compiler ? buildGHC) {
+                buildGHC = compiler.buildGHC;
+              }
+              // final.lib.optionalAttrs (compiler ? raw-src) {
+                raw-src = compiler.raw-src;
+              };
+          });
+      in {
+        haskell =
+          prev.haskell
+          // {
+            compiler =
+              prev.haskell.compiler
+              // {
+                # GHC 9.10's Darwin toolchain may bootstrap through older GHCs.
+                # When that compiler has to build from source on aarch64-darwin,
+                # its configure script probes libc++ linkage via CC without LDFLAGS.
+                ghc948 = patchDarwinBootstrapGhc prev.haskell.compiler.ghc948;
+                ghc967 = patchDarwinBootstrapGhc prev.haskell.compiler.ghc967;
+              };
+          };
+      })
       (final: _prev: {
         cortexProject = final.haskell-nix.project' {
           src = ../.;
