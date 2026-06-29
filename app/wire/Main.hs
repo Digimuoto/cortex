@@ -89,6 +89,13 @@ import Cortex.Wire
   , wireInputBundleFromStageInputs
   , wirePayloadKindMediaType
   )
+import Cortex.Wire.Cli.Frontier
+  ( FrontierClosure (..)
+  , FrontierCommand (..)
+  , FrontierFormat (..)
+  , FrontierScope (..)
+  , parseFrontierCommand
+  )
 import Cortex.Wire.Compile
   ( WireModule (..)
   , compileWireFragmentTextWithEnv
@@ -97,6 +104,7 @@ import Cortex.Wire.Compile
   , compileWireModulesWithReturn
   )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
+import Cortex.Wire.EndpointUse qualified as EndpointUse
 import Cortex.Wire.Import (loadWireModuleClosure, renderWireImportError)
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
@@ -134,6 +142,7 @@ data Command
   | CommandRun !FilePath
   | CommandLeanFixtures !FilePath
   | CommandParse !FilePath
+  | CommandFrontier !FrontierCommand
   | CommandHelp
   deriving stock (Eq, Show)
 
@@ -209,6 +218,7 @@ main = do
     Right (CommandRun path) -> runWire packagePaths path
     Right (CommandLeanFixtures outDir) -> leanFixturesWire outDir
     Right (CommandParse path) -> parseWireOnly path
+    Right (CommandFrontier frontierCommand) -> frontierWire packagePaths frontierCommand
 
 {- | Pull repeatable @--wire-package PATH@ options out of the raw argv, returning the
 collected manifest paths and the remaining command arguments. These flags select which
@@ -234,6 +244,7 @@ parseCommand = \case
   ["run", path] -> Right (CommandRun path)
   ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
   ["parse", path] -> Right (CommandParse path)
+  "frontier" : args -> CommandFrontier <$> parseFrontierCommand args
   [path] -> Right (CommandRun path)
   "build" : _ -> Left "usage: wire build [--return NAME] FILE"
   "fmt" : _ -> Left "usage: wire fmt [--check | --stdout] FILE..."
@@ -274,6 +285,8 @@ usageText =
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
+    , "  wire frontier [--closure | --open] [--node NODE] [--json] FILE"
+    , "                              (inspect endpoint-use / closure accounting; no execution)"
     , ""
     , "global options:"
     , "  --wire-package PATH         compose a Wire package manifest (repeatable)."
@@ -301,6 +314,43 @@ loadWireModules :: FilePath -> IO (NonEmpty WireModule)
 loadWireModules path =
   loadWireModuleClosure path
     >>= either (dieText . renderWireImportError) pure
+
+{- | Inspect the endpoint-use / closure accounting of a compiled Wire file
+(ADR 0081). Runs the normal validator-ready compile path, projects closed or
+open endpoint-use accounting over the admission artifact, and prints either the
+whole graph, a single node, or the JSON surface. This is an inspection command;
+it does not execute.
+-}
+frontierWire :: [FilePath] -> FrontierCommand -> IO ()
+frontierWire packagePaths frontierCommand = do
+  compileEnv <- loadCliWireCompileEnv packagePaths
+  modules <- loadWireModules frontierCommand.frontierCommandFile
+  compiled <-
+    either (dieText . renderWireError) pure (compileWireModules compileEnv modules)
+  artifact <-
+    maybe
+      (dieText "compiled circuit carries no Wire admission artifact")
+      pure
+      (compiledWireAdmissionArtifact compiled)
+  let report =
+        case frontierCommand.frontierCommandClosure of
+          FrontierClosed -> EndpointUse.endpointUseReportFromArtifact artifact
+          FrontierOpen -> EndpointUse.endpointUseReport EndpointUse.OpenFragment artifact
+  case frontierCommand.frontierCommandScope of
+    FrontierNode nodeName ->
+      case EndpointUse.lookupNodeFrontier (CircuitNodeRef nodeName) report of
+        Nothing -> dieText ("wire frontier: no such node: " <> nodeName)
+        Just nodeFrontier -> case frontierCommand.frontierCommandFormat of
+          FrontierJson -> putJsonLn nodeFrontier
+          FrontierText -> TIO.putStr (EndpointUse.renderNodeFrontierText nodeFrontier)
+    FrontierGraph -> case frontierCommand.frontierCommandFormat of
+      FrontierJson -> putJsonLn report
+      FrontierText -> TIO.putStr (EndpointUse.renderEndpointUseReportText report)
+  where
+    putJsonLn :: Aeson.ToJSON a => a -> IO ()
+    putJsonLn value = do
+      BSL.putStr (AesonPretty.encodePretty value)
+      BSL.putStr "\n"
 
 {- | Regenerate the Lean fixture modules for emitted admission artifacts.
 The umbrella module is rewritten alongside the per-fixture modules so lake

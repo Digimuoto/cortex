@@ -19,7 +19,8 @@ namespace EmittedSelectContract
 
 /-- Emitted admission artifact for the contract-fallback-resolved select fixture. -/
 def artifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .openFragment
   nodes :=
     [ ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
     , ⟨"draft_plan"⟩
@@ -328,6 +329,167 @@ def artifact : WireAdmissionArtifact where
       , conditionNode := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
       }
     ]
+  endpointUses :=
+    { inputUses :=
+        [ { port :=
+              { node := ⟨"validate_plan"⟩
+              , port := ⟨"draft"⟩
+              , contract := ⟨"DraftPlan"⟩
+              , label := .label ⟨"draft"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"draft_plan"⟩
+                  , port := ⟨"draft"⟩
+                  , contract := ⟨"DraftPlan"⟩
+                  , label := .label ⟨"draft"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+              , port := ⟨"variant_in_1"⟩
+              , contract := ⟨"ResearchPlan"⟩
+              , label := .label ⟨"valid"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"validate_plan"⟩
+                  , port := ⟨"valid"⟩
+                  , contract := ⟨"ResearchPlan"⟩
+                  , label := .label ⟨"valid"⟩
+                  , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
+                  }
+          }
+        , { port :=
+              { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+              , port := ⟨"variant_in_2"⟩
+              , contract := ⟨"PlanIssue"⟩
+              , label := .label ⟨"issue"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"validate_plan"⟩
+                  , port := ⟨"issue"⟩
+                  , contract := ⟨"PlanIssue"⟩
+                  , label := .label ⟨"issue"⟩
+                  , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
+                  }
+          }
+        , { port :=
+              { node := ⟨"publish_report"⟩
+              , port := ⟨"valid"⟩
+              , contract := ⟨"ResearchPlan"⟩
+              , label := .label ⟨"valid"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+                  , port := ⟨"bridge_out_1"⟩
+                  , contract := ⟨"ResearchPlan"⟩
+                  , label := .label ⟨"valid"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        ]
+    , outputUses :=
+        [ { port :=
+              { node := ⟨"draft_plan"⟩
+              , port := ⟨"draft"⟩
+              , contract := ⟨"DraftPlan"⟩
+              , label := .label ⟨"draft"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"validate_plan"⟩
+                  , port := ⟨"draft"⟩
+                  , contract := ⟨"DraftPlan"⟩
+                  , label := .label ⟨"draft"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"validate_plan"⟩
+              , port := ⟨"valid"⟩
+              , contract := ⟨"ResearchPlan"⟩
+              , label := .label ⟨"valid"⟩
+              , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+                  , port := ⟨"variant_in_1"⟩
+                  , contract := ⟨"ResearchPlan"⟩
+                  , label := .label ⟨"valid"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"validate_plan"⟩
+              , port := ⟨"issue"⟩
+              , contract := ⟨"PlanIssue"⟩
+              , label := .label ⟨"issue"⟩
+              , exclusiveGroup := some (⟨"validate_plan"⟩, 0)
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+                  , port := ⟨"variant_in_2"⟩
+                  , contract := ⟨"PlanIssue"⟩
+                  , label := .label ⟨"issue"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+              , port := ⟨"variant_out_1"⟩
+              , contract := ⟨"ResearchPlan"⟩
+              , label := .label ⟨"valid"⟩
+              , exclusiveGroup := some (⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩, 0)
+              }
+          , useKind := .terminalDischarge .proofBoundarySink
+          }
+        , { port :=
+              { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+              , port := ⟨"variant_out_2"⟩
+              , contract := ⟨"PlanIssue"⟩
+              , label := .label ⟨"issue"⟩
+              , exclusiveGroup := some (⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩, 0)
+              }
+          , useKind := .terminalDischarge .proofBoundarySink
+          }
+        , { port :=
+              { node := ⟨"__select.ResearchPlan_PlanIssue.daae5c794e93"⟩
+              , port := ⟨"bridge_out_1"⟩
+              , contract := ⟨"ResearchPlan"⟩
+              , label := .label ⟨"valid"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"publish_report"⟩
+                  , port := ⟨"valid"⟩
+                  , contract := ⟨"ResearchPlan"⟩
+                  , label := .label ⟨"valid"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"publish_report"⟩
+              , port := ⟨"report"⟩
+              , contract := ⟨"ReportArtifactRef"⟩
+              , label := .label ⟨"report"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted artifact.
 #guard artifact.validatorReadyCheck

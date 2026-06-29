@@ -1,3 +1,4 @@
+import Cortex.Wire.AdmissionArtifact.BoundaryPortUse
 import Cortex.Wire.AdmissionArtifact.Generated
 import Cortex.Wire.AdmissionArtifact.Phantom
 import Cortex.Wire.AdmissionArtifact.Primitive
@@ -28,6 +29,7 @@ projections that feed existing Lean carriers.
 -/
 structure WireAdmissionArtifact where
   schemaVersion : Nat
+  closureMode : WireAdmissionClosureMode
   nodes : List NodeId
   bindingRefs : List BindingName
   entries : List AdmissionBoundaryPort
@@ -37,6 +39,7 @@ structure WireAdmissionArtifact where
   generatedForms : List GeneratedFormArtifact
   phantomAdapters : List PhantomAdapterArtifact
   selects : List SelectAdmissionArtifact
+  endpointUses : AdmissionEndpointUseWitness
   deriving Repr
 
 namespace WireAdmissionArtifact
@@ -801,6 +804,127 @@ theorem selectInternalTraceExit_key_of_valid_node
           exact
             selectInternalChoiceExit_key hSelect hConditionRow hExit hChoiceOriginal
 
+/-! ## Endpoint-Use Witness Exactness -/
+
+/-- Input boundary rows projected from primitive node rows, preserving artifact order. -/
+def endpointUsePrimitiveInputs (artifact : WireAdmissionArtifact) :
+    List AdmissionBoundaryPort :=
+  (artifact.primitiveSteps.map fun
+    | PrimitiveGraphStep.node _node entries _exits => entries
+    | _otherStep => []).flatten
+
+/-- Output boundary rows projected from primitive node rows, preserving artifact order. -/
+def endpointUsePrimitiveOutputs (artifact : WireAdmissionArtifact) :
+    List AdmissionBoundaryPort :=
+  (artifact.primitiveSteps.map fun
+    | PrimitiveGraphStep.node _node _entries exits => exits
+    | _otherStep => []).flatten
+
+/-- Look up a primitive input boundary by raw node/port identity. -/
+def endpointUseInputBoundary?
+    (artifact : WireAdmissionArtifact)
+    (key : NodeId × FieldLabel) :
+    Option AdmissionBoundaryPort :=
+  artifact.endpointUsePrimitiveInputs.find? fun input =>
+    decide (input.endpointKey = key)
+
+/-- Look up a primitive output boundary by raw node/port identity. -/
+def endpointUseOutputBoundary?
+    (artifact : WireAdmissionArtifact)
+    (key : NodeId × FieldLabel) :
+    Option AdmissionBoundaryPort :=
+  artifact.endpointUsePrimitiveOutputs.find? fun output =>
+    decide (output.endpointKey = key)
+
+/-- Select-internal output-key classifier used by endpoint-use derivation. -/
+def endpointUseSelectInternalExitKeyCheck
+    (artifact : WireAdmissionArtifact)
+    (key : NodeId × FieldLabel × ContractId) :
+    Bool :=
+  artifact.selects.any fun selectAdmission =>
+    artifact.primitiveSteps.any fun
+      | PrimitiveGraphStep.node node _entries exits =>
+          decide (node = selectAdmission.conditionNode) &&
+            exits.any fun exit =>
+              decide (exit.key = key) &&
+                SelectInternalChoiceExit selectAdmission exit
+      | _otherStep => false
+
+/-- Map a partial row projection over a list, failing if any row is unaccounted. -/
+def mapOption {α β : Type} (f : α → Option β) : List α → Option (List β)
+  | [] => some []
+  | item :: rest =>
+      match f item, mapOption f rest with
+      | some projected, some projectedRest => some (projected :: projectedRest)
+      | _, _ => none
+
+/-- Derive the input-use witness row for one primitive input endpoint. -/
+def endpointInputUse?
+    (artifact : WireAdmissionArtifact)
+    (input : AdmissionBoundaryPort) :
+    Option AdmissionInputUseWitness :=
+  match artifact.connections.find? fun connection =>
+      decide (connection.toEndpoint.endpointKey = input.endpointKey) with
+  | some connection =>
+      match artifact.endpointUseOutputBoundary? connection.fromEndpoint.endpointKey with
+      | some upstream =>
+          some { port := input, useKind := .producedByEdge upstream }
+      | none => none
+  | none =>
+      if input.key ∈ artifact.entries.map AdmissionBoundaryPort.key then
+        some
+          { port := input
+          , useKind :=
+              match artifact.closureMode with
+              | .closedExecutable => .hostInput
+              | .openFragment => .importedObligation
+          }
+      else
+        none
+
+/-- Derive the output-use witness row for one primitive output endpoint. -/
+def endpointOutputUse?
+    (artifact : WireAdmissionArtifact)
+    (output : AdmissionBoundaryPort) :
+    Option AdmissionOutputUseWitness :=
+  match artifact.connections.find? fun connection =>
+      decide (connection.fromEndpoint.endpointKey = output.endpointKey) with
+  | some connection =>
+      match artifact.endpointUseInputBoundary? connection.toEndpoint.endpointKey with
+      | some downstream =>
+          some { port := output, useKind := .consumedByEdge downstream }
+      | none => none
+  | none =>
+      if artifact.endpointUseSelectInternalExitKeyCheck output.key then
+        some
+          { port := output
+          , useKind := .terminalDischarge .proofBoundarySink
+          }
+      else if output.key ∈ artifact.exits.map AdmissionBoundaryPort.key then
+        some
+          { port := output
+          , useKind :=
+              match artifact.closureMode with
+              | .closedExecutable => .terminalDischarge .hostReturn
+              | .openFragment => .terminalDischarge .exportedBoundary
+          }
+      else
+        none
+
+/-- Derived endpoint-use witness. A missing row means the artifact left an endpoint unaccounted. -/
+def deriveEndpointUseWitness? (artifact : WireAdmissionArtifact) :
+    Option AdmissionEndpointUseWitness :=
+  match
+      mapOption artifact.endpointInputUse? artifact.endpointUsePrimitiveInputs,
+      mapOption artifact.endpointOutputUse? artifact.endpointUsePrimitiveOutputs with
+  | some inputUses, some outputUses =>
+      some { inputUses := inputUses, outputUses := outputUses }
+  | _, _ => none
+
+/-- The persisted endpoint-use witness is exactly the one derived from primitive rows. -/
+def EndpointUseWitnessExact (artifact : WireAdmissionArtifact) : Prop :=
+  artifact.deriveEndpointUseWitness? = some artifact.endpointUses
+
 /-- Primitive rows replay to exactly one final frame matching the top-level summary.
 
 This is stronger than row-local validity: overlay/connect rows must consume the
@@ -942,6 +1066,8 @@ witnesses.
 -/
 structure ValidatorReady (artifact : WireAdmissionArtifact) : Prop where
   schemaCurrent : artifact.SchemaCurrent
+  endpointUseWitnessExact : artifact.EndpointUseWitnessExact
+  endpointUseLinear : artifact.endpointUses.EndpointUseLinear
   summaryKeysUnique : artifact.SummaryKeysUnique
   summaryRowsValid : artifact.SummaryRowsValid
   summaryDomainClosed : artifact.SummaryDomainClosed
@@ -986,6 +1112,11 @@ structure ValidatorReady (artifact : WireAdmissionArtifact) : Prop where
 instance schemaCurrentDecidable (artifact : WireAdmissionArtifact) :
     Decidable artifact.SchemaCurrent :=
   inferInstanceAs (Decidable (artifact.schemaVersion = currentSchemaVersion))
+
+instance endpointUseWitnessExactDecidable (artifact : WireAdmissionArtifact) :
+    Decidable artifact.EndpointUseWitnessExact := by
+  unfold EndpointUseWitnessExact
+  infer_instance
 
 end WireAdmissionArtifact
 

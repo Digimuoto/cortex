@@ -29,6 +29,7 @@ import Cortex.Wire.BoundaryResource
 import Cortex.Wire.NodeBoundary
 import Cortex.Wire.PortLinearity
 import Cortex.Wire.ActualizedBridge
+import Cortex.Wire.BoundaryPortLinearity
 import Cortex.Wire.ElaborationIR
 import Cortex.Wire.ElaborationIRDecide
 import Cortex.Wire.GraphElaboration
@@ -41,6 +42,7 @@ import Cortex.Wire.GeneratedFormsDeterminism
 import Cortex.Wire.AdmissionArtifact
 import Cortex.Wire.AdmissionArtifact.Check
 import Cortex.Wire.AdmissionArtifact.Boundary
+import Cortex.Wire.AdmissionArtifact.BoundaryPortUse
 import Cortex.Wire.AdmissionArtifact.EmittedFixture
 import Cortex.Wire.AdmissionArtifact.Differential
 import Cortex.Wire.AdmissionArtifact.Differential.Chain

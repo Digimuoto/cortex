@@ -19,7 +19,8 @@ namespace EmittedChain
 
 /-- Emitted admission artifact for the labeled primitive chain (planner => analyst) fixture. -/
 def artifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .openFragment
   nodes := [⟨"analyst"⟩, ⟨"planner"⟩]
   bindingRefs := []
   entries := []
@@ -100,6 +101,53 @@ def artifact : WireAdmissionArtifact where
   generatedForms := []
   phantomAdapters := []
   selects := []
+  endpointUses :=
+    { inputUses :=
+        [ { port :=
+              { node := ⟨"analyst"⟩
+              , port := ⟨"plan"⟩
+              , contract := ⟨"PlannerOutput"⟩
+              , label := .label ⟨"plan"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"planner"⟩
+                  , port := ⟨"plan"⟩
+                  , contract := ⟨"PlannerOutput"⟩
+                  , label := .label ⟨"plan"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        ]
+    , outputUses :=
+        [ { port :=
+              { node := ⟨"planner"⟩
+              , port := ⟨"plan"⟩
+              , contract := ⟨"PlannerOutput"⟩
+              , label := .label ⟨"plan"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"analyst"⟩
+                  , port := ⟨"plan"⟩
+                  , contract := ⟨"PlannerOutput"⟩
+                  , label := .label ⟨"plan"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"analyst"⟩
+              , port := ⟨"analysis"⟩
+              , contract := ⟨"AnalysisFragment"⟩
+              , label := .label ⟨"analysis"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted artifact.
 #guard artifact.validatorReadyCheck

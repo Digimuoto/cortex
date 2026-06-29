@@ -379,7 +379,10 @@ def contractFallbackCandidates
 
 Executable Wire resolves labels first. If no label matches, the same token is
 interpreted as a contract-name fallback and accepted only when that contract
-appears on exactly one variant. -/
+appears on exactly one variant. The fallback returns the canonical label key,
+not the `ContractId`; faithfulness therefore depends on the one-variant
+contract match checked here, while ordinary label resolution remains keyed by
+the source-visible arm label. -/
 def resolveArmKey
     (shape : SelectableOutputShape)
     (key : SelectArmKey) :

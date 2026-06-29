@@ -87,12 +87,14 @@ import Cortex.Wire.AdmissionArtifact
   , SelectResolutionMode (..)
   , SelectVariantArtifact (..)
   , WireAdmissionArtifact (..)
+  , WireAdmissionClosureMode (..)
   , appendGeneratedFormArtifact
   , appendPhantomAdapterArtifact
   , appendPrimitiveStep
   , appendSelectAdmissionArtifact
   , combineWireAdmissionArtifacts
   , emptyWireAdmissionArtifact
+  , finalizeWireAdmissionArtifact
   , wireAdmissionArtifactValidatorReady
   , wireAdmissionMetadataKey
   , wireAdmissionMetadataValue
@@ -743,7 +745,13 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
         (Map.keysSet lowered.lwfFragment.gfNodes)
         lowered.lwfFragment.gfEntries
         lowered.lwfFragment.gfConnections
-  admission <- validateWireAdmissionArtifact lowered.lwfFragment.gfAdmission
+  let closureMode =
+        if requireConnected
+          then AdmissionClosedExecutable
+          else AdmissionOpenFragment
+      finalizedAdmission =
+        finalizeWireAdmissionArtifact closureMode lowered.lwfFragment.gfAdmission
+  admission <- validateWireAdmissionArtifact finalizedAdmission
   let metadataValue =
         attachAdmissionMetadata
           lowered.lwfMetadata

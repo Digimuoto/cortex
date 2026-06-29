@@ -74,7 +74,8 @@ def chainRawConnection : AdmissionRawConnection where
 
 /-- The full admission artifact the Haskell compiler emits for the chain. -/
 def chainArtifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .closedExecutable
   nodes := [⟨"analyst"⟩, ⟨"planner"⟩]
   bindingRefs := []
   entries := []
@@ -88,6 +89,21 @@ def chainArtifact : WireAdmissionArtifact where
   generatedForms := []
   phantomAdapters := []
   selects := []
+  endpointUses :=
+    { inputUses :=
+        [ { port := analystPlanEntry
+          , useKind := .producedByEdge plannerPlanExit
+          }
+        ]
+    , outputUses :=
+        [ { port := plannerPlanExit
+          , useKind := .consumedByEdge analystPlanEntry
+          }
+        , { port := analystAnalysisExit
+          , useKind := .terminalDischarge .hostReturn
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted chain artifact.
 #guard chainArtifact.validatorReadyCheck

@@ -31,15 +31,26 @@ module Cortex.Wire.AdmissionArtifact
   , SelectVariantArtifact (..)
   , SelectArmAdmissionArtifact (..)
   , SelectAdmissionArtifact (..)
+  , WireAdmissionClosureMode (..)
+  , AdmissionTerminalDischargeKind (..)
+  , AdmissionInputUseKind (..)
+  , AdmissionInputUseWitness (..)
+  , AdmissionOutputUseKind (..)
+  , AdmissionOutputUseWitness (..)
+  , AdmissionEndpointUseWitness (..)
   , WireAdmissionArtifact (..)
   , wireAdmissionCurrentSchemaVersion
   , emptyWireAdmissionArtifact
+  , emptyAdmissionEndpointUseWitness
+  , deriveAdmissionEndpointUseWitness
+  , finalizeWireAdmissionArtifact
   , appendPrimitiveStep
   , appendGeneratedFormArtifact
   , appendPhantomAdapterArtifact
   , appendSelectAdmissionArtifact
   , combineWireAdmissionArtifacts
   , wireAdmissionArtifactValidatorReady
+  , wireAdmissionEndpointUseLinear
   , wireAdmissionMetadataKey
   , wireAdmissionMetadataValue
   )
@@ -47,8 +58,13 @@ where
 
 import Data.Aeson (FromJSON, ToJSON, Value, (.:))
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as AesonKey
+import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Data.Aeson.Types (Parser)
 import Data.List qualified as List
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -430,8 +446,122 @@ data SelectAdmissionArtifact = SelectAdmissionArtifact
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
+data WireAdmissionClosureMode
+  = AdmissionClosedExecutable
+  | AdmissionOpenFragment
+  deriving stock (Eq, Show, Generic)
+
+instance ToJSON WireAdmissionClosureMode where
+  toJSON = \case
+    AdmissionClosedExecutable -> Aeson.String "closed_executable"
+    AdmissionOpenFragment -> Aeson.String "open_fragment"
+
+instance FromJSON WireAdmissionClosureMode where
+  parseJSON =
+    Aeson.withText "WireAdmissionClosureMode" $ \case
+      "closed_executable" -> pure AdmissionClosedExecutable
+      "open_fragment" -> pure AdmissionOpenFragment
+      other -> fail ("unknown wire admission closure mode: " <> T.unpack other)
+
+data AdmissionTerminalDischargeKind
+  = AdmissionExportedBoundary
+  | AdmissionHostReturn
+  | AdmissionProofBoundarySink
+  deriving stock (Eq, Show, Generic)
+
+instance ToJSON AdmissionTerminalDischargeKind where
+  toJSON = \case
+    AdmissionExportedBoundary -> Aeson.String "exported_boundary"
+    AdmissionHostReturn -> Aeson.String "host_return"
+    AdmissionProofBoundarySink -> Aeson.String "proof_boundary_sink"
+
+instance FromJSON AdmissionTerminalDischargeKind where
+  parseJSON =
+    Aeson.withText "AdmissionTerminalDischargeKind" $ \case
+      "exported_boundary" -> pure AdmissionExportedBoundary
+      "host_return" -> pure AdmissionHostReturn
+      "proof_boundary_sink" -> pure AdmissionProofBoundarySink
+      other -> fail ("unknown admission terminal discharge kind: " <> T.unpack other)
+
+data AdmissionInputUseKind
+  = AdmissionProducedByEdge !AdmissionBoundaryPort
+  | AdmissionHostInput
+  | AdmissionImportedObligation
+  deriving stock (Eq, Show)
+
+instance ToJSON AdmissionInputUseKind where
+  toJSON = \case
+    AdmissionProducedByEdge fromPort ->
+      Aeson.object
+        [ "tag" Aeson..= ("produced_by_edge" :: Text)
+        , "from" Aeson..= fromPort
+        ]
+    AdmissionHostInput ->
+      Aeson.object ["tag" Aeson..= ("host_input" :: Text)]
+    AdmissionImportedObligation ->
+      Aeson.object ["tag" Aeson..= ("imported_obligation" :: Text)]
+
+instance FromJSON AdmissionInputUseKind where
+  parseJSON =
+    Aeson.withObject "AdmissionInputUseKind" $ \obj -> do
+      tag <- obj .: "tag"
+      case (tag :: Text) of
+        "produced_by_edge" -> AdmissionProducedByEdge <$> obj .: "from"
+        "host_input" -> pure AdmissionHostInput
+        "imported_obligation" -> pure AdmissionImportedObligation
+        other -> fail ("unknown admission input use tag: " <> T.unpack other)
+
+data AdmissionInputUseWitness = AdmissionInputUseWitness
+  { admissionInputUsePort :: !AdmissionBoundaryPort
+  , admissionInputUseKind :: !AdmissionInputUseKind
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data AdmissionOutputUseKind
+  = AdmissionConsumedByEdge !AdmissionBoundaryPort
+  | AdmissionTerminalDischarge !AdmissionTerminalDischargeKind
+  deriving stock (Eq, Show)
+
+instance ToJSON AdmissionOutputUseKind where
+  toJSON = \case
+    AdmissionConsumedByEdge toPort ->
+      Aeson.object
+        [ "tag" Aeson..= ("consumed_by_edge" :: Text)
+        , "to" Aeson..= toPort
+        ]
+    AdmissionTerminalDischarge kind ->
+      Aeson.object
+        [ "tag" Aeson..= ("terminal_discharge" :: Text)
+        , "kind" Aeson..= kind
+        ]
+
+instance FromJSON AdmissionOutputUseKind where
+  parseJSON =
+    Aeson.withObject "AdmissionOutputUseKind" $ \obj -> do
+      tag <- obj .: "tag"
+      case (tag :: Text) of
+        "consumed_by_edge" -> AdmissionConsumedByEdge <$> obj .: "to"
+        "terminal_discharge" -> AdmissionTerminalDischarge <$> obj .: "kind"
+        other -> fail ("unknown admission output use tag: " <> T.unpack other)
+
+data AdmissionOutputUseWitness = AdmissionOutputUseWitness
+  { admissionOutputUsePort :: !AdmissionBoundaryPort
+  , admissionOutputUseKind :: !AdmissionOutputUseKind
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data AdmissionEndpointUseWitness = AdmissionEndpointUseWitness
+  { admissionEndpointInputUses :: ![AdmissionInputUseWitness]
+  , admissionEndpointOutputUses :: ![AdmissionOutputUseWitness]
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
 data WireAdmissionArtifact = WireAdmissionArtifact
   { wireAdmissionSchemaVersion :: !Natural
+  , wireAdmissionClosureMode :: !WireAdmissionClosureMode
   , wireAdmissionNodes :: ![CircuitNodeRef]
   , wireAdmissionBindingRefs :: ![Text]
   , wireAdmissionEntries :: ![AdmissionBoundaryPort]
@@ -441,16 +571,18 @@ data WireAdmissionArtifact = WireAdmissionArtifact
   , wireAdmissionGeneratedForms :: ![GeneratedFormArtifact]
   , wireAdmissionPhantomAdapters :: ![PhantomAdapterArtifact]
   , wireAdmissionSelects :: ![SelectAdmissionArtifact]
+  , wireAdmissionEndpointUses :: !AdmissionEndpointUseWitness
   }
   deriving stock (Eq, Show, Generic)
 
 wireAdmissionCurrentSchemaVersion :: Natural
-wireAdmissionCurrentSchemaVersion = 3
+wireAdmissionCurrentSchemaVersion = 4
 
 instance ToJSON WireAdmissionArtifact where
   toJSON artifact =
     Aeson.object
       [ "wireAdmissionSchemaVersion" Aeson..= wireAdmissionSchemaVersion artifact
+      , "wireAdmissionClosureMode" Aeson..= wireAdmissionClosureMode artifact
       , "wireAdmissionNodes" Aeson..= wireAdmissionNodes artifact
       , "wireAdmissionBindingRefs" Aeson..= wireAdmissionBindingRefs artifact
       , "wireAdmissionEntries" Aeson..= wireAdmissionEntries artifact
@@ -460,11 +592,20 @@ instance ToJSON WireAdmissionArtifact where
       , "wireAdmissionGeneratedForms" Aeson..= wireAdmissionGeneratedForms artifact
       , "wireAdmissionPhantomAdapters" Aeson..= wireAdmissionPhantomAdapters artifact
       , "wireAdmissionSelects" Aeson..= wireAdmissionSelects artifact
+      , "wireAdmissionEndpointUses" Aeson..= wireAdmissionEndpointUses artifact
       ]
 
 instance FromJSON WireAdmissionArtifact where
   parseJSON =
     Aeson.withObject "WireAdmissionArtifact" $ \obj -> do
+      case unknownWireAdmissionArtifactFields obj of
+        [] ->
+          pure ()
+        unknownFields ->
+          fail
+            ( "unknown wire admission artifact field(s): "
+                <> T.unpack (T.intercalate ", " unknownFields)
+            )
       rawSchemaVersion <- obj .: "wireAdmissionSchemaVersion"
       schemaVersion <- nonNegativeNatural "wire admission schema version" rawSchemaVersion
       if schemaVersion == wireAdmissionCurrentSchemaVersion
@@ -473,7 +614,8 @@ instance FromJSON WireAdmissionArtifact where
         else
           fail ("unsupported wire admission schema version: " <> show schemaVersion)
       WireAdmissionArtifact schemaVersion
-        <$> obj .: "wireAdmissionNodes"
+        <$> obj .: "wireAdmissionClosureMode"
+        <*> obj .: "wireAdmissionNodes"
         <*> obj .: "wireAdmissionBindingRefs"
         <*> obj .: "wireAdmissionEntries"
         <*> obj .: "wireAdmissionExits"
@@ -482,11 +624,33 @@ instance FromJSON WireAdmissionArtifact where
         <*> obj .: "wireAdmissionGeneratedForms"
         <*> obj .: "wireAdmissionPhantomAdapters"
         <*> obj .: "wireAdmissionSelects"
+        <*> obj .: "wireAdmissionEndpointUses"
+
+unknownWireAdmissionArtifactFields :: Aeson.Object -> [Text]
+unknownWireAdmissionArtifactFields obj =
+  filter (`Set.notMember` expectedFields) (fmap AesonKey.toText (AesonKeyMap.keys obj))
+  where
+    expectedFields =
+      Set.fromList
+        [ "wireAdmissionSchemaVersion"
+        , "wireAdmissionClosureMode"
+        , "wireAdmissionNodes"
+        , "wireAdmissionBindingRefs"
+        , "wireAdmissionEntries"
+        , "wireAdmissionExits"
+        , "wireAdmissionConnections"
+        , "wireAdmissionPrimitiveSteps"
+        , "wireAdmissionGeneratedForms"
+        , "wireAdmissionPhantomAdapters"
+        , "wireAdmissionSelects"
+        , "wireAdmissionEndpointUses"
+        ]
 
 emptyWireAdmissionArtifact :: WireAdmissionArtifact
 emptyWireAdmissionArtifact =
   WireAdmissionArtifact
     { wireAdmissionSchemaVersion = wireAdmissionCurrentSchemaVersion
+    , wireAdmissionClosureMode = AdmissionClosedExecutable
     , wireAdmissionNodes = []
     , wireAdmissionBindingRefs = []
     , wireAdmissionEntries = []
@@ -496,13 +660,140 @@ emptyWireAdmissionArtifact =
     , wireAdmissionGeneratedForms = []
     , wireAdmissionPhantomAdapters = []
     , wireAdmissionSelects = []
+    , wireAdmissionEndpointUses = emptyAdmissionEndpointUseWitness
     }
+
+emptyAdmissionEndpointUseWitness :: AdmissionEndpointUseWitness
+emptyAdmissionEndpointUseWitness =
+  AdmissionEndpointUseWitness
+    { admissionEndpointInputUses = []
+    , admissionEndpointOutputUses = []
+    }
+
+finalizeWireAdmissionArtifact
+  :: WireAdmissionClosureMode -> WireAdmissionArtifact -> WireAdmissionArtifact
+finalizeWireAdmissionArtifact closureMode artifact =
+  finalized
+    { wireAdmissionEndpointUses =
+        fromMaybe
+          emptyAdmissionEndpointUseWitness
+          (deriveAdmissionEndpointUseWitness finalized)
+    }
+  where
+    finalized =
+      artifact
+        { wireAdmissionSchemaVersion = wireAdmissionCurrentSchemaVersion
+        , wireAdmissionClosureMode = closureMode
+        }
+
+deriveAdmissionEndpointUseWitness
+  :: WireAdmissionArtifact -> Maybe AdmissionEndpointUseWitness
+deriveAdmissionEndpointUseWitness artifact =
+  AdmissionEndpointUseWitness
+    <$> traverse inputUseFor primitiveInputs
+    <*> traverse outputUseFor primitiveOutputs
+  where
+    primitiveInputs =
+      [ input
+      | PrimitiveNode _node inputs _outputs <- artifact.wireAdmissionPrimitiveSteps
+      , input <- inputs
+      ]
+
+    primitiveOutputs =
+      [ output
+      | PrimitiveNode _node _inputs outputs <- artifact.wireAdmissionPrimitiveSteps
+      , output <- outputs
+      ]
+
+    inputByEndpoint :: Map EndpointKey AdmissionBoundaryPort
+    inputByEndpoint =
+      Map.fromList
+        [ (admissionBoundaryEndpointKey input, input)
+        | input <- primitiveInputs
+        ]
+
+    outputByEndpoint :: Map EndpointKey AdmissionBoundaryPort
+    outputByEndpoint =
+      Map.fromList
+        [ (admissionBoundaryEndpointKey output, output)
+        | output <- primitiveOutputs
+        ]
+
+    upstreamOf :: Map EndpointKey AdmissionBoundaryPort
+    upstreamOf =
+      Map.fromList
+        [ (toKey, upstream)
+        | connection <- artifact.wireAdmissionConnections
+        , let toKey = endpointRefKey connection.connectionTo
+        , Just upstream <- [Map.lookup (endpointRefKey connection.connectionFrom) outputByEndpoint]
+        ]
+
+    downstreamOf :: Map EndpointKey AdmissionBoundaryPort
+    downstreamOf =
+      Map.fromList
+        [ (fromKey, downstream)
+        | connection <- artifact.wireAdmissionConnections
+        , let fromKey = endpointRefKey connection.connectionFrom
+        , Just downstream <- [Map.lookup (endpointRefKey connection.connectionTo) inputByEndpoint]
+        ]
+
+    entryKeys =
+      Set.fromList (fmap admissionBoundaryKey artifact.wireAdmissionEntries)
+
+    exitKeys =
+      Set.fromList (fmap admissionBoundaryKey artifact.wireAdmissionExits)
+
+    selectInternalExitKeys =
+      Set.fromList
+        ( concatMap
+            (primitiveGraphStepSelectInternalExitKeys artifact.wireAdmissionSelects)
+            artifact.wireAdmissionPrimitiveSteps
+        )
+
+    inputUseFor input =
+      case Map.lookup (admissionBoundaryEndpointKey input) upstreamOf of
+        Just upstream ->
+          Just (AdmissionInputUseWitness input (AdmissionProducedByEdge upstream))
+        Nothing
+          | admissionBoundaryKey input `Set.member` entryKeys ->
+              Just
+                ( AdmissionInputUseWitness input $
+                    case artifact.wireAdmissionClosureMode of
+                      AdmissionClosedExecutable -> AdmissionHostInput
+                      AdmissionOpenFragment -> AdmissionImportedObligation
+                )
+          | otherwise -> Nothing
+
+    outputUseFor output =
+      case Map.lookup (admissionBoundaryEndpointKey output) downstreamOf of
+        Just downstream ->
+          Just (AdmissionOutputUseWitness output (AdmissionConsumedByEdge downstream))
+        Nothing
+          | admissionBoundaryKey output `Set.member` selectInternalExitKeys ->
+              Just
+                ( AdmissionOutputUseWitness
+                    output
+                    (AdmissionTerminalDischarge AdmissionProofBoundarySink)
+                )
+          | admissionBoundaryKey output `Set.member` exitKeys ->
+              Just
+                ( AdmissionOutputUseWitness
+                    output
+                    (AdmissionTerminalDischarge carriedOutputDischarge)
+                )
+          | otherwise -> Nothing
+
+    carriedOutputDischarge =
+      case artifact.wireAdmissionClosureMode of
+        AdmissionClosedExecutable -> AdmissionHostReturn
+        AdmissionOpenFragment -> AdmissionExportedBoundary
 
 combineWireAdmissionArtifacts
   :: WireAdmissionArtifact -> WireAdmissionArtifact -> WireAdmissionArtifact
 combineWireAdmissionArtifacts left right =
   WireAdmissionArtifact
     { wireAdmissionSchemaVersion = wireAdmissionCurrentSchemaVersion
+    , wireAdmissionClosureMode = AdmissionClosedExecutable
     , wireAdmissionNodes = wireAdmissionNodes left <> wireAdmissionNodes right
     , wireAdmissionBindingRefs = wireAdmissionBindingRefs left <> wireAdmissionBindingRefs right
     , wireAdmissionEntries = wireAdmissionEntries left <> wireAdmissionEntries right
@@ -515,6 +806,7 @@ combineWireAdmissionArtifacts left right =
     , wireAdmissionPhantomAdapters =
         wireAdmissionPhantomAdapters left <> wireAdmissionPhantomAdapters right
     , wireAdmissionSelects = wireAdmissionSelects left <> wireAdmissionSelects right
+    , wireAdmissionEndpointUses = emptyAdmissionEndpointUseWitness
     }
 
 appendPrimitiveStep :: PrimitiveGraphStep -> WireAdmissionArtifact -> WireAdmissionArtifact
@@ -539,6 +831,8 @@ appendSelectAdmissionArtifact selectAdmission artifact =
 wireAdmissionArtifactValidatorReady :: WireAdmissionArtifact -> Bool
 wireAdmissionArtifactValidatorReady artifact =
   wireAdmissionSchemaVersion artifact == wireAdmissionCurrentSchemaVersion
+    && wireAdmissionEndpointUseWitnessExact artifact
+    && wireAdmissionEndpointUseLinear artifact
     && wireAdmissionSummaryKeysUnique artifact
     && wireAdmissionSummaryRowsValid artifact
     && wireAdmissionSummaryDomainClosed artifact
@@ -567,6 +861,63 @@ wireAdmissionArtifactValidatorReady artifact =
     && all generatedFormArtifactValid artifact.wireAdmissionGeneratedForms
     && all phantomAdapterArtifactValid artifact.wireAdmissionPhantomAdapters
     && all selectAdmissionArtifactValid artifact.wireAdmissionSelects
+
+wireAdmissionEndpointUseWitnessExact :: WireAdmissionArtifact -> Bool
+wireAdmissionEndpointUseWitnessExact artifact =
+  deriveAdmissionEndpointUseWitness artifact == Just artifact.wireAdmissionEndpointUses
+
+{- | Haskell-side counterpart of the Lean
+@AdmissionEndpointUseWitness.EndpointUseLinear@ rule (ADR 0081): the persisted
+endpoint-use witness records a linear edge matching. Every internally produced
+input names an output that is consumed by exactly that input, and every
+edge-consumed output names an input produced by exactly that output. Boundary
+endpoints (host input, imported obligation, terminal discharge) carry no
+obligation. Implicit fan-out and fan-in break the symmetric edge correspondence
+and are rejected.
+
+This is the boundary-port-linear admission rule whose proof-side soundness is
+@AdmissionEndpointUseWitness.artifactBoundaryWitness_boundaryPortLinear@. The
+predicate is maintained in lockstep with the Lean executable checker; it is not
+extracted from Lean.
+-}
+wireAdmissionEndpointUseLinear :: WireAdmissionArtifact -> Bool
+wireAdmissionEndpointUseLinear artifact =
+  all inputEdgeConsistent witness.admissionEndpointInputUses
+    && all outputEdgeConsistent witness.admissionEndpointOutputUses
+  where
+    witness = artifact.wireAdmissionEndpointUses
+
+    outputByKey :: Map (CircuitNodeRef, Text, Text) AdmissionOutputUseKind
+    outputByKey =
+      Map.fromList
+        [ (admissionBoundaryKey row.admissionOutputUsePort, row.admissionOutputUseKind)
+        | row <- witness.admissionEndpointOutputUses
+        ]
+
+    inputByKey :: Map (CircuitNodeRef, Text, Text) AdmissionInputUseKind
+    inputByKey =
+      Map.fromList
+        [ (admissionBoundaryKey row.admissionInputUsePort, row.admissionInputUseKind)
+        | row <- witness.admissionEndpointInputUses
+        ]
+
+    inputEdgeConsistent row =
+      case row.admissionInputUseKind of
+        AdmissionProducedByEdge fromPort ->
+          case Map.lookup (admissionBoundaryKey fromPort) outputByKey of
+            Just (AdmissionConsumedByEdge toPort) ->
+              admissionBoundaryKey toPort == admissionBoundaryKey row.admissionInputUsePort
+            _ -> False
+        _ -> True
+
+    outputEdgeConsistent row =
+      case row.admissionOutputUseKind of
+        AdmissionConsumedByEdge toPort ->
+          case Map.lookup (admissionBoundaryKey toPort) inputByKey of
+            Just (AdmissionProducedByEdge fromPort) ->
+              admissionBoundaryKey fromPort == admissionBoundaryKey row.admissionOutputUsePort
+            _ -> False
+        _ -> True
 
 wireAdmissionSummaryKeysUnique :: WireAdmissionArtifact -> Bool
 wireAdmissionSummaryKeysUnique artifact =
@@ -1518,6 +1869,16 @@ primitiveOverlayUnique leftNodes rightNodes leftBindings rightBindings =
     && unique rightNodes
     && unique leftBindings
     && unique rightBindings
+
+type EndpointKey = (CircuitNodeRef, Text)
+
+admissionBoundaryEndpointKey :: AdmissionBoundaryPort -> EndpointKey
+admissionBoundaryEndpointKey boundary =
+  (admissionBoundaryNode boundary, admissionBoundaryPort boundary)
+
+endpointRefKey :: EndpointRef -> EndpointKey
+endpointRefKey ref =
+  (ref.endpointNodeRef, fromMaybe "" ref.endpointPortName)
 
 admissionBoundaryKey :: AdmissionBoundaryPort -> (CircuitNodeRef, Text, Text)
 admissionBoundaryKey boundary =

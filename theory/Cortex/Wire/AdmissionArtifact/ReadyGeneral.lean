@@ -20,6 +20,20 @@ theorem validatorReady_schemaCurrent
     artifact.SchemaCurrent :=
   hReady.schemaCurrent
 
+/-- Validator readiness exposes exact persisted endpoint-use witness derivation. -/
+theorem validatorReady_endpointUseWitnessExact
+    {artifact : WireAdmissionArtifact}
+    (hReady : artifact.ValidatorReady) :
+    artifact.EndpointUseWitnessExact :=
+  hReady.endpointUseWitnessExact
+
+/-- Validator readiness exposes the boundary port-linear endpoint-use rule. -/
+theorem validatorReady_endpointUseLinear
+    {artifact : WireAdmissionArtifact}
+    (hReady : artifact.ValidatorReady) :
+    artifact.endpointUses.EndpointUseLinear :=
+  hReady.endpointUseLinear
+
 /-- Validator readiness exposes top-level summary-key uniqueness. -/
 theorem validatorReady_summaryKeysUnique
     {artifact : WireAdmissionArtifact}

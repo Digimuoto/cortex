@@ -3823,6 +3823,28 @@ theorem primitiveStepsValidCheck_sound
       (fun primitiveStep _ hStepCheck =>
         PrimitiveGraphStep.validCheck_sound hStepCheck)
 
+/-- Executable checker that the persisted endpoint-use witness is derived exactly. -/
+def endpointUseWitnessExactCheck (artifact : WireAdmissionArtifact) : Bool :=
+  decide artifact.EndpointUseWitnessExact
+
+/-- Successful endpoint-use exactness checking proves the persisted witness is derived. -/
+theorem endpointUseWitnessExactCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.endpointUseWitnessExactCheck = true) :
+    artifact.EndpointUseWitnessExact :=
+  of_decide_eq_true hCheck
+
+/-- Executable checker that the persisted endpoint-use witness is boundary port linear. -/
+def endpointUseLinearCheck (artifact : WireAdmissionArtifact) : Bool :=
+  decide artifact.endpointUses.EndpointUseLinear
+
+/-- Successful endpoint-use linearity checking proves the boundary port-linear rule. -/
+theorem endpointUseLinearCheck_sound
+    {artifact : WireAdmissionArtifact}
+    (hCheck : artifact.endpointUseLinearCheck = true) :
+    artifact.endpointUses.EndpointUseLinear :=
+  of_decide_eq_true hCheck
+
 /-- Executable checker-record counterpart of `ValidatorReady`.
 
 The name is retained from the earlier staged checker slices. At this point it
@@ -3830,6 +3852,8 @@ contains every field needed to construct `ValidatorReady`.
 -/
 structure ValidatorReadyCore (artifact : WireAdmissionArtifact) : Prop where
   schemaCurrent : artifact.SchemaCurrent
+  endpointUseWitnessExact : artifact.EndpointUseWitnessExact
+  endpointUseLinear : artifact.endpointUses.EndpointUseLinear
   summaryKeysUnique : artifact.SummaryKeysUnique
   summaryRowsValid : artifact.SummaryRowsValid
   summaryDomainClosed : artifact.SummaryDomainClosed
@@ -3877,6 +3901,8 @@ theorem validatorReady_core
     (hReady : artifact.ValidatorReady) :
     artifact.ValidatorReadyCore where
   schemaCurrent := hReady.schemaCurrent
+  endpointUseWitnessExact := hReady.endpointUseWitnessExact
+  endpointUseLinear := hReady.endpointUseLinear
   summaryKeysUnique := hReady.summaryKeysUnique
   summaryRowsValid := hReady.summaryRowsValid
   summaryDomainClosed := hReady.summaryDomainClosed
@@ -3919,6 +3945,7 @@ theorem validatorReady_core
 /-- Executable checker for the validator-ready checker-record layer. -/
 def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
   decide artifact.SchemaCurrent &&
+  artifact.endpointUseWitnessExactCheck &&
   artifact.summaryKeysUniqueCheck &&
   artifact.summaryRowsValidCheck &&
   artifact.summaryDomainClosedCheck &&
@@ -3946,7 +3973,8 @@ def validatorReadyCoreCheck (artifact : WireAdmissionArtifact) : Bool :=
   artifact.selectArmBodyNodesPairwiseDisjointCheck &&
   artifact.phantomBridgeFrontiersBackedByPrimitiveCheck &&
   artifact.phantomBridgeFrontiersMatchPrimitiveCheck &&
-  artifact.phantomBridgeBulkConnectionsReplayedCheck
+  artifact.phantomBridgeBulkConnectionsReplayedCheck &&
+  artifact.endpointUseLinearCheck
 
 /-- Successful core checking proves the validator-ready checker-record layer. -/
 theorem validatorReadyCoreCheck_sound
@@ -3955,6 +3983,7 @@ theorem validatorReadyCoreCheck_sound
     artifact.ValidatorReadyCore := by
   unfold validatorReadyCoreCheck at hCheck
   simp only [Bool.and_eq_true] at hCheck
+  rcases hCheck with ⟨hCheck, hEndpointUseLinear⟩
   rcases hCheck with ⟨hCheck, hPhantomBridgeBulkReplayed⟩
   rcases hCheck with ⟨hCheck, hPhantomBridgeFrontiersMatch⟩
   rcases hCheck with ⟨hCheck, hPhantomBridgeFrontiersBacked⟩
@@ -3982,9 +4011,14 @@ theorem validatorReadyCoreCheck_sound
   rcases hCheck with ⟨hCheck, hSummaryIdentities⟩
   rcases hCheck with ⟨hCheck, hSummaryDomain⟩
   rcases hCheck with ⟨hCheck, hSummaryRows⟩
-  rcases hCheck with ⟨hSchema, hSummaryKeys⟩
+  rcases hCheck with ⟨hCheck, hSummaryKeys⟩
+  rcases hCheck with ⟨hSchema, hEndpointUseWitness⟩
   exact
     { schemaCurrent := of_decide_eq_true hSchema
+    , endpointUseWitnessExact :=
+        endpointUseWitnessExactCheck_sound hEndpointUseWitness
+    , endpointUseLinear :=
+        endpointUseLinearCheck_sound hEndpointUseLinear
     , summaryKeysUnique := summaryKeysUniqueCheck_sound hSummaryKeys
     , summaryRowsValid := summaryRowsValidCheck_sound hSummaryRows
     , summaryDomainClosed := summaryDomainClosedCheck_sound hSummaryDomain
@@ -4040,6 +4074,8 @@ theorem validatorReadyCore_toValidatorReady
     (hCore : artifact.ValidatorReadyCore) :
     artifact.ValidatorReady where
   schemaCurrent := hCore.schemaCurrent
+  endpointUseWitnessExact := hCore.endpointUseWitnessExact
+  endpointUseLinear := hCore.endpointUseLinear
   summaryKeysUnique := hCore.summaryKeysUnique
   summaryRowsValid := hCore.summaryRowsValid
   summaryDomainClosed := hCore.summaryDomainClosed

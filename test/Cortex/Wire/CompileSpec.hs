@@ -30,9 +30,15 @@ import Cortex.Wire (Connection (..), EndpointRef (..), WirePayloadKind (..), ren
 import Cortex.Wire.AdmissionArtifact
   ( AdmissionBoundaryPort (..)
   , AdmissionConnection (..)
+  , AdmissionEndpointUseWitness (..)
+  , AdmissionInputUseKind (..)
+  , AdmissionInputUseWitness (..)
+  , AdmissionOutputUseKind (..)
+  , AdmissionOutputUseWitness (..)
   , AdmissionPortLabel (..)
   , AdmissionStaticField (..)
   , AdmissionStaticValue (..)
+  , AdmissionTerminalDischargeKind (..)
   , GeneratedChildArtifact (..)
   , GeneratedChildSourceArtifact (..)
   , GeneratedFormArtifact (..)
@@ -46,10 +52,15 @@ import Cortex.Wire.AdmissionArtifact
   , SelectResolutionMode (..)
   , SelectVariantArtifact (..)
   , WireAdmissionArtifact (..)
+  , WireAdmissionClosureMode (..)
   , combineWireAdmissionArtifacts
+  , deriveAdmissionEndpointUseWitness
+  , emptyAdmissionEndpointUseWitness
   , emptyWireAdmissionArtifact
+  , finalizeWireAdmissionArtifact
   , wireAdmissionArtifactValidatorReady
   , wireAdmissionCurrentSchemaVersion
+  , wireAdmissionEndpointUseLinear
   , wireAdmissionMetadataKey
   , wireAdmissionMetadataValue
   )
@@ -132,6 +143,65 @@ spec = describe "Cortex.Wire.Compile" $ do
       compiled
       `shouldBe` True
 
+  it "persists exact endpoint-use accounting in the admission artifact" $ do
+    compiled <- requireRight (compileWireText simpleChainSourceText)
+    artifact <- requireWireAdmissionArtifact compiled
+    let simplePlannerPlan = ("planner", "plan", "PlannerOutput")
+        simpleAnalystPlan = ("analyst", "plan", "PlannerOutput")
+        simpleAnalystAnalysis = ("analyst", "analysis", "AnalysisFragment")
+    artifact.wireAdmissionClosureMode `shouldBe` AdmissionClosedExecutable
+
+    case artifact.wireAdmissionEndpointUses.admissionEndpointInputUses of
+      [inputUse] -> do
+        admissionBoundaryTypedSummary inputUse.admissionInputUsePort `shouldBe` simpleAnalystPlan
+        case inputUse.admissionInputUseKind of
+          AdmissionProducedByEdge upstream ->
+            admissionBoundaryTypedSummary upstream `shouldBe` simplePlannerPlan
+          other -> expectationFailure ("unexpected input use: " <> show other)
+      other -> expectationFailure ("unexpected input uses: " <> show other)
+
+    case artifact.wireAdmissionEndpointUses.admissionEndpointOutputUses of
+      [plannerOutput, analystOutput] -> do
+        admissionBoundaryTypedSummary plannerOutput.admissionOutputUsePort `shouldBe` simplePlannerPlan
+        case plannerOutput.admissionOutputUseKind of
+          AdmissionConsumedByEdge downstream ->
+            admissionBoundaryTypedSummary downstream `shouldBe` simpleAnalystPlan
+          other -> expectationFailure ("unexpected planner output use: " <> show other)
+
+        admissionBoundaryTypedSummary analystOutput.admissionOutputUsePort
+          `shouldBe` simpleAnalystAnalysis
+        analystOutput.admissionOutputUseKind
+          `shouldBe` AdmissionTerminalDischarge AdmissionHostReturn
+      other -> expectationFailure ("unexpected output uses: " <> show other)
+
+  it "rejects stale endpoint-use witnesses at the validator boundary" $ do
+    compiled <- requireRight (compileWireText simpleChainSourceText)
+    artifact <- requireWireAdmissionArtifact compiled
+    artifact {wireAdmissionEndpointUses = emptyAdmissionEndpointUseWitness}
+      `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+    artifact {wireAdmissionClosureMode = AdmissionOpenFragment}
+      `shouldNotSatisfy` wireAdmissionArtifactValidatorReady
+
+  it "rejects asymmetric endpoint-use edge witnesses at the linearity boundary" $ do
+    compiled <- requireRight (compileWireText simpleChainSourceText)
+    artifact <- requireWireAdmissionArtifact compiled
+    artifact `shouldSatisfy` wireAdmissionEndpointUseLinear
+
+    let witness = artifact.wireAdmissionEndpointUses
+        malformedOutputs =
+          case witness.admissionEndpointOutputUses of
+            outputUse : rest ->
+              outputUse {admissionOutputUseKind = AdmissionTerminalDischarge AdmissionHostReturn}
+                : rest
+            [] -> []
+        malformedArtifact =
+          artifact
+            { wireAdmissionEndpointUses =
+                witness {admissionEndpointOutputUses = malformedOutputs}
+            }
+
+    malformedArtifact `shouldNotSatisfy` wireAdmissionEndpointUseLinear
+
   it "rejects unsupported Wire admission artifact schema versions" $ do
     compiled <- requireRight (compileWireText simpleChainSourceText)
     case wireAdmissionValue compiled of
@@ -154,6 +224,31 @@ spec = describe "Cortex.Wire.Compile" $ do
             expectationFailure "unsupported wire admission schema version decoded"
           Aeson.Error message ->
             message `shouldContain` "unsupported wire admission schema version"
+
+  it "rejects unknown top-level Wire admission artifact fields" $
+    case wireAdmissionMetadataValue emptyWireAdmissionArtifact of
+      Aeson.Object obj ->
+        let malformedAdmission =
+              Aeson.Object (KeyMap.insert "wireAdmissionExtra" Aeson.Null obj)
+         in case Aeson.fromJSON malformedAdmission :: Aeson.Result WireAdmissionArtifact of
+              Aeson.Success _artifact ->
+                expectationFailure "unknown wire admission artifact field decoded"
+              Aeson.Error message ->
+                message `shouldContain` "unknown wire admission artifact field"
+      other ->
+        expectationFailure ("unexpected admission artifact JSON: " <> show other)
+
+  it "derives proof_boundary_sink for select-internal condition exits" $
+    case deriveAdmissionEndpointUseWitness minimalSelectAdmissionArtifact of
+      Nothing ->
+        expectationFailure "expected select artifact endpoint-use witness"
+      Just witness -> do
+        let proofSinks =
+              [ output.admissionOutputUsePort.admissionBoundaryPort
+              | output <- witness.admissionEndpointOutputUses
+              , AdmissionTerminalDischarge AdmissionProofBoundarySink <- [output.admissionOutputUseKind]
+              ]
+        Set.fromList proofSinks `shouldBe` Set.fromList ["variant_out_1", "variant_out_2"]
 
   it "rejects negative indexed product artifact counts" $
     case Aeson.fromJSON negativeIndexedProductShapeJson :: Aeson.Result ProductShapeArtifact of
@@ -2711,7 +2806,8 @@ spec = describe "Cortex.Wire.Compile" $ do
                     }
                 ]
             }
-    validArtifact `shouldSatisfy` wireAdmissionArtifactValidatorReady
+    finalizeWireAdmissionArtifact AdmissionClosedExecutable validArtifact
+      `shouldSatisfy` wireAdmissionArtifactValidatorReady
 
   it "compiles explicit overlay with independent entries and exits" $ do
     compiled <- requireRight (compileWireFragmentText overlayFragmentSourceText)
@@ -3994,8 +4090,13 @@ spec = describe "Cortex.Wire.Compile" $ do
     it "packages an open-input diagram as a circuit with an entry port" $ do
       compiled <- requireRight (compileWireText paperOpenInputSourceText)
       compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "sink"]
-      expectWireAdmissionArtifact compiled $ \artifact ->
+      expectWireAdmissionArtifact compiled $ \artifact -> do
         fmap (.admissionBoundaryPort) artifact.wireAdmissionEntries `shouldBe` ["x"]
+        case artifact.wireAdmissionEndpointUses.admissionEndpointInputUses of
+          [inputUse] -> do
+            inputUse.admissionInputUsePort.admissionBoundaryPort `shouldBe` "x"
+            inputUse.admissionInputUseKind `shouldBe` AdmissionHostInput
+          other -> expectationFailure ("unexpected input uses: " <> show other)
 
     it "rejects two outputs sharing one key against one input (fan-in)" $
       compileWireText paperFanInSameKeySourceText
@@ -5698,28 +5799,29 @@ minimalGeneratedAdmissionArtifact =
 
 minimalPhantomAdmissionArtifact :: WireAdmissionArtifact
 minimalPhantomAdmissionArtifact =
-  emptyWireAdmissionArtifact
-    { wireAdmissionNodes = [planner, sink, phantomNode]
-    , wireAdmissionEntries = []
-    , wireAdmissionExits = []
-    , wireAdmissionConnections =
-        [ rawConnection multi phantomMulti
-        , rawConnection phantomSingular singular
-        ]
-    , wireAdmissionPrimitiveSteps =
-        [ PrimitiveNode planner [] [multi]
-        , PrimitiveNode phantomNode [phantomMulti] [phantomSingular]
-        , PrimitiveConnect [multi] [phantomMulti] [AdmissionConnection multi phantomMulti] [] []
-        , PrimitiveNode sink [singular] []
-        , PrimitiveConnect
-            [phantomSingular]
-            [singular]
-            [AdmissionConnection phantomSingular singular]
-            []
-            []
-        ]
-    , wireAdmissionPhantomAdapters = [phantomAdapter]
-    }
+  finalizeWireAdmissionArtifact AdmissionClosedExecutable $
+    emptyWireAdmissionArtifact
+      { wireAdmissionNodes = [planner, sink, phantomNode]
+      , wireAdmissionEntries = []
+      , wireAdmissionExits = []
+      , wireAdmissionConnections =
+          [ rawConnection multi phantomMulti
+          , rawConnection phantomSingular singular
+          ]
+      , wireAdmissionPrimitiveSteps =
+          [ PrimitiveNode planner [] [multi]
+          , PrimitiveNode phantomNode [phantomMulti] [phantomSingular]
+          , PrimitiveConnect [multi] [phantomMulti] [AdmissionConnection multi phantomMulti] [] []
+          , PrimitiveNode sink [singular] []
+          , PrimitiveConnect
+              [phantomSingular]
+              [singular]
+              [AdmissionConnection phantomSingular singular]
+              []
+              []
+          ]
+      , wireAdmissionPhantomAdapters = [phantomAdapter]
+      }
   where
     planner =
       CircuitNodeRef "planner"

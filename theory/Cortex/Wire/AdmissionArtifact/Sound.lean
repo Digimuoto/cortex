@@ -297,6 +297,8 @@ facts needed for replay without citing checker implementation details.
 -/
 structure Sound (artifact : WireAdmissionArtifact) : Prop where
   schemaCurrent : artifact.SchemaCurrent
+  endpointUseWitnessExact : artifact.EndpointUseWitnessExact
+  endpointUseLinear : artifact.endpointUses.EndpointUseLinear
   primitive : artifact.PrimitiveSound
   generated : artifact.GeneratedSound
   select : artifact.SelectSound
@@ -453,6 +455,8 @@ theorem validatorReady_sound
     (hReady : artifact.ValidatorReady) :
     artifact.Sound where
   schemaCurrent := hReady.schemaCurrent
+  endpointUseWitnessExact := hReady.endpointUseWitnessExact
+  endpointUseLinear := hReady.endpointUseLinear
   primitive := validatorReady_primitiveSound hReady
   generated := validatorReady_generatedSound hReady
   select := validatorReady_selectSound hReady

@@ -20,7 +20,8 @@ namespace EmittedIndexedGather
 /-- Emitted admission artifact for the
 indexed-product phantom gather (workers * sink) fixture. -/
 def artifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .openFragment
   nodes :=
     [⟨"__star:gather:b30635591d8b"⟩, ⟨"sink"⟩, ⟨"workers_0"⟩, ⟨"workers_1"⟩, ⟨"workers_2"⟩]
   bindingRefs := [⟨"workers"⟩]
@@ -393,6 +394,149 @@ def artifact : WireAdmissionArtifact where
       }
     ]
   selects := []
+  endpointUses :=
+    { inputUses :=
+        [ { port :=
+              { node := ⟨"__star:gather:b30635591d8b"⟩
+              , port := ⟨"workers_0"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_0"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"workers_0"⟩
+                  , port := ⟨"workers_0"⟩
+                  , contract := ⟨"Sample"⟩
+                  , label := .label ⟨"workers_0"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__star:gather:b30635591d8b"⟩
+              , port := ⟨"workers_1"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_1"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"workers_1"⟩
+                  , port := ⟨"workers_1"⟩
+                  , contract := ⟨"Sample"⟩
+                  , label := .label ⟨"workers_1"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__star:gather:b30635591d8b"⟩
+              , port := ⟨"workers_2"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_2"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"workers_2"⟩
+                  , port := ⟨"workers_2"⟩
+                  , contract := ⟨"Sample"⟩
+                  , label := .label ⟨"workers_2"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"sink"⟩
+              , port := ⟨"samples"⟩
+              , contract := ⟨"[Sample;3]"⟩
+              , label := .label ⟨"samples"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"__star:gather:b30635591d8b"⟩
+                  , port := ⟨"samples"⟩
+                  , contract := ⟨"[Sample;3]"⟩
+                  , label := .label ⟨"samples"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        ]
+    , outputUses :=
+        [ { port :=
+              { node := ⟨"workers_0"⟩
+              , port := ⟨"workers_0"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_0"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"__star:gather:b30635591d8b"⟩
+                  , port := ⟨"workers_0"⟩
+                  , contract := ⟨"Sample"⟩
+                  , label := .label ⟨"workers_0"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"workers_1"⟩
+              , port := ⟨"workers_1"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_1"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"__star:gather:b30635591d8b"⟩
+                  , port := ⟨"workers_1"⟩
+                  , contract := ⟨"Sample"⟩
+                  , label := .label ⟨"workers_1"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"workers_2"⟩
+              , port := ⟨"workers_2"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_2"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"__star:gather:b30635591d8b"⟩
+                  , port := ⟨"workers_2"⟩
+                  , contract := ⟨"Sample"⟩
+                  , label := .label ⟨"workers_2"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__star:gather:b30635591d8b"⟩
+              , port := ⟨"samples"⟩
+              , contract := ⟨"[Sample;3]"⟩
+              , label := .label ⟨"samples"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"sink"⟩
+                  , port := ⟨"samples"⟩
+                  , contract := ⟨"[Sample;3]"⟩
+                  , label := .label ⟨"samples"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"sink"⟩
+              , port := ⟨"done"⟩
+              , contract := ⟨"Done"⟩
+              , label := .label ⟨"done"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted artifact.
 #guard artifact.validatorReadyCheck

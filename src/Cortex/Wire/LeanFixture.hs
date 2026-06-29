@@ -178,6 +178,7 @@ renderArtifactField indent (name, value) =
 artifactFields :: WireAdmissionArtifact -> [(Text, LeanValue)]
 artifactFields artifact =
   [ ("schemaVersion", naturalValue artifact.wireAdmissionSchemaVersion)
+  , ("closureMode", closureModeValue artifact.wireAdmissionClosureMode)
   , ("nodes", LeanList (fmap nodeRefValue artifact.wireAdmissionNodes))
   , ("bindingRefs", LeanList (fmap anonText artifact.wireAdmissionBindingRefs))
   , ("entries", LeanList (fmap boundaryPortValue artifact.wireAdmissionEntries))
@@ -187,6 +188,7 @@ artifactFields artifact =
   , ("generatedForms", LeanList (fmap generatedFormValue artifact.wireAdmissionGeneratedForms))
   , ("phantomAdapters", LeanList (fmap phantomAdapterValue artifact.wireAdmissionPhantomAdapters))
   , ("selects", LeanList (fmap selectValue artifact.wireAdmissionSelects))
+  , ("endpointUses", endpointUseWitnessValue artifact.wireAdmissionEndpointUses)
   ]
 
 -- Value translation ---------------------------------------------------------
@@ -199,6 +201,11 @@ anonText text = LeanAtom ("\10216" <> leanStringLit text <> "\10217")
 
 naturalValue :: Natural -> LeanValue
 naturalValue = LeanAtom . T.pack . show
+
+closureModeValue :: WireAdmissionClosureMode -> LeanValue
+closureModeValue = \case
+  AdmissionClosedExecutable -> LeanAtom ".closedExecutable"
+  AdmissionOpenFragment -> LeanAtom ".openFragment"
 
 boundaryPortValue :: AdmissionBoundaryPort -> LeanValue
 boundaryPortValue boundary =
@@ -398,6 +405,49 @@ selectArmValue arm =
     , ("bodyEntries", LeanList (fmap boundaryPortValue arm.selectArmBodyEntries))
     , ("bodyExits", LeanList (fmap boundaryPortValue arm.selectArmBodyExits))
     ]
+
+endpointUseWitnessValue :: AdmissionEndpointUseWitness -> LeanValue
+endpointUseWitnessValue witness =
+  LeanRecord
+    [ ("inputUses", LeanList (fmap inputUseWitnessValue witness.admissionEndpointInputUses))
+    , ("outputUses", LeanList (fmap outputUseWitnessValue witness.admissionEndpointOutputUses))
+    ]
+
+inputUseWitnessValue :: AdmissionInputUseWitness -> LeanValue
+inputUseWitnessValue witness =
+  LeanRecord
+    [ ("port", boundaryPortValue witness.admissionInputUsePort)
+    , ("useKind", inputUseKindValue witness.admissionInputUseKind)
+    ]
+
+inputUseKindValue :: AdmissionInputUseKind -> LeanValue
+inputUseKindValue = \case
+  AdmissionProducedByEdge fromPort ->
+    LeanApp ".producedByEdge" [boundaryPortValue fromPort]
+  AdmissionHostInput ->
+    LeanAtom ".hostInput"
+  AdmissionImportedObligation ->
+    LeanAtom ".importedObligation"
+
+outputUseWitnessValue :: AdmissionOutputUseWitness -> LeanValue
+outputUseWitnessValue witness =
+  LeanRecord
+    [ ("port", boundaryPortValue witness.admissionOutputUsePort)
+    , ("useKind", outputUseKindValue witness.admissionOutputUseKind)
+    ]
+
+outputUseKindValue :: AdmissionOutputUseKind -> LeanValue
+outputUseKindValue = \case
+  AdmissionConsumedByEdge toPort ->
+    LeanApp ".consumedByEdge" [boundaryPortValue toPort]
+  AdmissionTerminalDischarge kind ->
+    LeanApp ".terminalDischarge" [terminalDischargeKindValue kind]
+
+terminalDischargeKindValue :: AdmissionTerminalDischargeKind -> LeanValue
+terminalDischargeKindValue = \case
+  AdmissionExportedBoundary -> LeanAtom ".exportedBoundary"
+  AdmissionHostReturn -> LeanAtom ".hostReturn"
+  AdmissionProofBoundarySink -> LeanAtom ".proofBoundarySink"
 
 -- Lean value layout ----------------------------------------------------------
 

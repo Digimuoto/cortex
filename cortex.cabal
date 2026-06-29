@@ -186,6 +186,7 @@ library
         Cortex.Wire.AdmissionBinding
         Cortex.Wire.Compile
         Cortex.Wire.Contract
+        Cortex.Wire.EndpointUse
         Cortex.Wire.Executor
         Cortex.Wire.Import
         Cortex.Wire.Include
@@ -210,6 +211,7 @@ library
         Cortex.Wire.Circuit.Lowering
         Cortex.Wire.Circuit.Node
         Cortex.Wire.Circuit.NodeKind
+        Cortex.Wire.Cli.Frontier
         Cortex.Pulse.GraphRuntime
         Cortex.Pulse.Health
         Cortex.Pulse.Lowering.Circuit
@@ -426,7 +428,9 @@ test-suite cortex-test
         Cortex.Pulse.TypesSpec
         Cortex.Wire.Circuit.CompilerSpec
         Cortex.Wire.Circuit.IRSpec
+        Cortex.Wire.Cli.FrontierSpec
         Cortex.Wire.CompileSpec
+        Cortex.Wire.EndpointUseSpec
         Cortex.Wire.FormatSpec
         Cortex.Wire.ImportSpec
         Cortex.Wire.ParserSpec

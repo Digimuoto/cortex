@@ -19,7 +19,8 @@ namespace EmittedMake
 
 /-- Emitted admission artifact for the bounded make expansion (make(3, sample)) fixture. -/
 def artifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .openFragment
   nodes := [⟨"workers_0"⟩, ⟨"workers_1"⟩, ⟨"workers_2"⟩]
   bindingRefs := [⟨"workers"⟩]
   entries := []
@@ -130,6 +131,38 @@ def artifact : WireAdmissionArtifact where
     ]
   phantomAdapters := []
   selects := []
+  endpointUses :=
+    { inputUses := []
+    , outputUses :=
+        [ { port :=
+              { node := ⟨"workers_0"⟩
+              , port := ⟨"workers_0"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_0"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        , { port :=
+              { node := ⟨"workers_1"⟩
+              , port := ⟨"workers_1"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_1"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        , { port :=
+              { node := ⟨"workers_2"⟩
+              , port := ⟨"workers_2"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_2"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted artifact.
 #guard artifact.validatorReadyCheck

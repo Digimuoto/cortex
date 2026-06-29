@@ -18,7 +18,7 @@ open Cortex.Wire.ElaborationIR
 /-! ## Schema Version -/
 
 /-- Schema version emitted by the current Haskell admission artifact encoder. -/
-def currentSchemaVersion : Nat := 3
+def currentSchemaVersion : Nat := 4
 
 /-! ## Shared Boundary Rows -/
 
@@ -126,6 +126,17 @@ def selectKey (boundary : AdmissionBoundaryPort) : FieldLabel :=
   match boundary.label with
   | .noLabel => ⟨boundary.contract.name⟩
   | .label label => label
+
+/-- Node/port identity for endpoint-use accounting over raw source edges.
+
+Raw compiled connection refs serialize node and port only, so endpoint-use replay
+must recover the contract-bearing boundary row by this key before checking the
+full row. This projection is not a replacement for `AdmissionBoundaryPort.key`;
+it is used only under validator-ready primitive frontier exactness, where the
+decoded primitive node rows supply the unique contract-bearing endpoint row for
+each raw edge endpoint. -/
+def endpointKey (boundary : AdmissionBoundaryPort) : NodeId × FieldLabel :=
+  (boundary.node, boundary.port)
 
 end AdmissionBoundaryPort
 
@@ -289,6 +300,14 @@ def Valid (endpoint : AdmissionEndpointRef) : Prop :=
 def ofBoundary (boundary : AdmissionBoundaryPort) : AdmissionEndpointRef :=
   { node := boundary.node, port := some boundary.port }
 
+/-- Node/port identity used to match raw source edges back to boundary rows.
+
+The raw endpoint does not carry a `ContractId`; the contract is recovered from
+the matching boundary row and then validated through the full boundary key and
+connection compatibility checks. -/
+def endpointKey (endpoint : AdmissionEndpointRef) : NodeId × FieldLabel :=
+  (endpoint.node, endpoint.port.getD ⟨""⟩)
+
 end AdmissionEndpointRef
 
 /-- Raw compiled connection emitted by the top-level artifact summary. -/
@@ -310,6 +329,52 @@ def Valid (connection : AdmissionRawConnection) : Prop :=
   connection.fromEndpoint.Valid ∧ connection.toEndpoint.Valid
 
 end AdmissionRawConnection
+
+/-! ## Endpoint-Use Witness Rows -/
+
+/-- Whether an emitted endpoint-use witness was derived for an executable or an open fragment. -/
+inductive WireAdmissionClosureMode where
+  | closedExecutable
+  | openFragment
+  deriving DecidableEq, Repr
+
+/-- Refinement of non-edge output discharge used by the Haskell admission artifact. -/
+inductive AdmissionTerminalDischargeKind where
+  | exportedBoundary
+  | hostReturn
+  | proofBoundarySink
+  deriving DecidableEq, Repr
+
+/-- How one primitive input endpoint is satisfied. -/
+inductive AdmissionInputUseKind where
+  | producedByEdge (fromPort : AdmissionBoundaryPort)
+  | hostInput
+  | importedObligation
+  deriving DecidableEq, Repr
+
+/-- Witness row for one primitive input endpoint. -/
+structure AdmissionInputUseWitness where
+  port : AdmissionBoundaryPort
+  useKind : AdmissionInputUseKind
+  deriving DecidableEq, Repr
+
+/-- How one primitive output endpoint is consumed or discharged. -/
+inductive AdmissionOutputUseKind where
+  | consumedByEdge (toPort : AdmissionBoundaryPort)
+  | terminalDischarge (kind : AdmissionTerminalDischargeKind)
+  deriving DecidableEq, Repr
+
+/-- Witness row for one primitive output endpoint. -/
+structure AdmissionOutputUseWitness where
+  port : AdmissionBoundaryPort
+  useKind : AdmissionOutputUseKind
+  deriving DecidableEq, Repr
+
+/-- Complete endpoint-use witness projected from a validator-ready admission artifact. -/
+structure AdmissionEndpointUseWitness where
+  inputUses : List AdmissionInputUseWitness
+  outputUses : List AdmissionOutputUseWitness
+  deriving DecidableEq, Repr
 
 end AdmissionArtifact
 end Cortex.Wire

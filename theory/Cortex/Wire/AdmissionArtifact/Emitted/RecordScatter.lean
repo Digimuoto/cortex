@@ -20,7 +20,8 @@ namespace EmittedRecordScatter
 /-- Emitted admission artifact for the
 record-form phantom scatter (source * (a <> b)) fixture. -/
 def artifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .openFragment
   nodes := [⟨"__star:scatter:7dc42cd924f2"⟩, ⟨"a"⟩, ⟨"b"⟩, ⟨"source"⟩]
   bindingRefs := []
   entries := []
@@ -287,6 +288,126 @@ def artifact : WireAdmissionArtifact where
       }
     ]
   selects := []
+  endpointUses :=
+    { inputUses :=
+        [ { port :=
+              { node := ⟨"__star:scatter:7dc42cd924f2"⟩
+              , port := ⟨"pair"⟩
+              , contract := ⟨"Pair"⟩
+              , label := .label ⟨"pair"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"source"⟩
+                  , port := ⟨"pair"⟩
+                  , contract := ⟨"Pair"⟩
+                  , label := .label ⟨"pair"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"a"⟩
+              , port := ⟨"a"⟩
+              , contract := ⟨"A"⟩
+              , label := .label ⟨"a"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"__star:scatter:7dc42cd924f2"⟩
+                  , port := ⟨"a"⟩
+                  , contract := ⟨"A"⟩
+                  , label := .label ⟨"a"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"b"⟩
+              , port := ⟨"b"⟩
+              , contract := ⟨"B"⟩
+              , label := .label ⟨"b"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .producedByEdge
+                  { node := ⟨"__star:scatter:7dc42cd924f2"⟩
+                  , port := ⟨"b"⟩
+                  , contract := ⟨"B"⟩
+                  , label := .label ⟨"b"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        ]
+    , outputUses :=
+        [ { port :=
+              { node := ⟨"source"⟩
+              , port := ⟨"pair"⟩
+              , contract := ⟨"Pair"⟩
+              , label := .label ⟨"pair"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"__star:scatter:7dc42cd924f2"⟩
+                  , port := ⟨"pair"⟩
+                  , contract := ⟨"Pair"⟩
+                  , label := .label ⟨"pair"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__star:scatter:7dc42cd924f2"⟩
+              , port := ⟨"a"⟩
+              , contract := ⟨"A"⟩
+              , label := .label ⟨"a"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"a"⟩
+                  , port := ⟨"a"⟩
+                  , contract := ⟨"A"⟩
+                  , label := .label ⟨"a"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"__star:scatter:7dc42cd924f2"⟩
+              , port := ⟨"b"⟩
+              , contract := ⟨"B"⟩
+              , label := .label ⟨"b"⟩
+              , exclusiveGroup := none
+              }
+          , useKind :=
+              .consumedByEdge
+                  { node := ⟨"b"⟩
+                  , port := ⟨"b"⟩
+                  , contract := ⟨"B"⟩
+                  , label := .label ⟨"b"⟩
+                  , exclusiveGroup := none
+                  }
+          }
+        , { port :=
+              { node := ⟨"a"⟩
+              , port := ⟨"done_a"⟩
+              , contract := ⟨"Done"⟩
+              , label := .label ⟨"done_a"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        , { port :=
+              { node := ⟨"b"⟩
+              , port := ⟨"done_b"⟩
+              , contract := ⟨"Done"⟩
+              , label := .label ⟨"done_b"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted artifact.
 #guard artifact.validatorReadyCheck

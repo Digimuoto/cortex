@@ -19,7 +19,8 @@ namespace EmittedMakeEach
 
 /-- Emitted admission artifact for the item-labeled makeEach expansion fixture. -/
 def artifact : WireAdmissionArtifact where
-  schemaVersion := 3
+  schemaVersion := 4
+  closureMode := .openFragment
   nodes := [⟨"workers_alpha"⟩, ⟨"workers_beta"⟩]
   bindingRefs := [⟨"workers"⟩]
   entries := []
@@ -100,6 +101,29 @@ def artifact : WireAdmissionArtifact where
     ]
   phantomAdapters := []
   selects := []
+  endpointUses :=
+    { inputUses := []
+    , outputUses :=
+        [ { port :=
+              { node := ⟨"workers_alpha"⟩
+              , port := ⟨"workers_alpha"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_alpha"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        , { port :=
+              { node := ⟨"workers_beta"⟩
+              , port := ⟨"workers_beta"⟩
+              , contract := ⟨"Sample"⟩
+              , label := .label ⟨"workers_beta"⟩
+              , exclusiveGroup := none
+              }
+          , useKind := .terminalDischarge .exportedBoundary
+          }
+        ]
+    }
 
 -- The Lean-owned executable validator accepts the emitted artifact.
 #guard artifact.validatorReadyCheck
