@@ -6,9 +6,9 @@ License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
-The command is intentionally small in this first slice. It exposes the public
-Wire compile surface and a local smoke runner for linear stdin -> CorePure ->
-stdout examples. Durable execution remains the job of Pulse.
+The command exposes the public Wire compile surface and a local runner for
+CorePure nodes plus the standard std.io executors. Durable execution remains
+the job of Pulse.
 -}
 module Main (main) where
 
@@ -280,7 +280,8 @@ usageText =
     , "                              Default: Cortex standard namespaces only."
     , "                              CORTEX_WIRE_PACKAGE_MANIFESTS (search path) is an alternative."
     , ""
-    , "The local runner currently supports stdin/stdout executors plus CorePure DAG frontiers."
+    , "The local runner supports CorePure DAG frontiers plus standard std.io executors:"
+    , "  stdin, stdout, command, readFile, writeFile."
     ]
 
 buildWire :: [FilePath] -> Maybe Text -> FilePath -> IO ()

@@ -1,6 +1,6 @@
 # Interactive Wire example for the standalone `wire` command.
 #
-# Intended run command after the `wire` CLI and stdio executors land:
+# Run:
 #
 #   nix run .#wire -- run examples/wire/interactive-priority-planner.wire
 #

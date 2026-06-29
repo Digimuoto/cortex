@@ -93,9 +93,9 @@ flowchart LR
 
 ## If You Just Want To Use It
 
-Start with [Usage/](Usage/). It is the practical guide: build Cortex, inspect the Pulse runtime,
-write a first Wire workflow, deploy a consumer-bound Pulse binary, and find the right
-troubleshooting surface.
+Start with [Usage/](Usage/). It is the practical guide: build Cortex, run Wire locally, choose an
+execution mode, embed Cortex in Haskell, operate durable Pulse, and find the right troubleshooting
+surface.
 
 The architecture chapters explain why Cortex is designed this way. The reference pages state exact
 rules. Usage should be the first stop when the question is "what do I do next?"
@@ -115,7 +115,7 @@ rules. Usage should be the first stop when the question is "what do I do next?"
 
 ## Read First
 
-1. **[Usage guide](Usage/)** - practical path for building, authoring, running, and deploying.
+1. **[Usage guide](Usage/)** - practical path for local runs, authoring, embedding, and operations.
 2. **[Architecture overview](Architecture/01-overview.md)** - system frame and ownership boundary.
 3. **[Ownership and boundaries](Architecture/02-ownership-and-boundaries.md)** - what belongs in
    Cortex versus a downstream product.

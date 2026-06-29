@@ -936,6 +936,81 @@ def check_doc_kinds(errors: list[str]) -> None:
             seen.add(name)
 
 
+def frontmatter_sidebar_fields(path: Path) -> dict[str, str]:
+    """Extract nested sidebar fields without relying on the minimal YAML parser."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+
+    fields: dict[str, str] = {}
+    in_sidebar = False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if re.match(r"^[A-Za-z0-9_.-]+:", line):
+            in_sidebar = line.startswith("sidebar:")
+            continue
+        if not in_sidebar:
+            continue
+        match = re.match(r"\s+([A-Za-z0-9_.-]+):(?:\s*(.*))?$", line)
+        if match:
+            fields[match.group(1)] = strip_quotes(match.group(2) or "")
+    return fields
+
+
+def check_usage_spine(errors: list[str]) -> None:
+    """Keep Usage/index.md's reading path in sync with numbered Usage pages."""
+    usage_dir = DOCS / "Usage"
+    index_path = usage_dir / "index.md"
+    if not usage_dir.exists():
+        return
+
+    numbered: dict[str, int] = {}
+    for path in sorted(usage_dir.glob("[0-9][0-9]-*.md")):
+        prefix = path.name[:2]
+        try:
+            order = int(prefix)
+        except ValueError:
+            add(errors, path, "Usage page filename must start with a numeric NN- prefix")
+            continue
+        numbered[path.name] = order
+
+        sidebar = frontmatter_sidebar_fields(path)
+        if not sidebar:
+            add(errors, path, "Usage page frontmatter must include sidebar label/order", 1)
+            continue
+        label = sidebar.get("label")
+        order_value = sidebar.get("order")
+        if not isinstance(label, str) or not label.startswith(f"{order:02d}. "):
+            add(errors, path, f"Usage sidebar label must start with '{order:02d}. '", 1)
+        if str(order_value) != str(order):
+            add(errors, path, f"Usage sidebar order {order_value!r} must match filename prefix {order}", 1)
+
+    rows = section_table_rows(index_path, "Reading Path", errors)
+    if rows is None:
+        return
+
+    targets: list[str] = []
+    for row in rows:
+        for cell in row:
+            for target in re.findall(r"(?<!!)\[[^\]]+\]\(([^)\s#]+)(?:#[^)]+)?\)", cell):
+                if re.fullmatch(r"[0-9][0-9]-[^/]+\.md", target):
+                    targets.append(target)
+
+    expected = set(numbered)
+    found = set(targets)
+    for target in sorted(expected - found):
+        add(errors, index_path, f"Usage reading path is missing numbered page {target!r}")
+    for target in sorted(found - expected):
+        add(errors, index_path, f"Usage reading path links unknown numbered page {target!r}")
+
+    seen: set[str] = set()
+    for target in targets:
+        if target in seen:
+            add(errors, index_path, f"Usage reading path links numbered page {target!r} more than once")
+        seen.add(target)
+
+
 def main() -> int:
     if not DOCS.exists():
         print("docs-lint: docs/ not found", file=sys.stderr)
@@ -962,6 +1037,7 @@ def main() -> int:
     check_feature_status(errors)
     check_doc_kinds(errors)
     check_taxonomy_homes(errors)
+    check_usage_spine(errors)
 
     if errors:
         print("docs-lint failed:", file=sys.stderr)

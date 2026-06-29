@@ -1,15 +1,16 @@
 ---
 title: Deploying Pulse
-description: First-pass deployment checklist for a consumer-bound Pulse runtime.
+description: Production checklist for a consumer-bound Pulse runtime.
 sidebar:
-  label: 04. Deploying Pulse
-  order: 4
+  label: 09. Deploying Pulse
+  order: 9
 ---
 
 # Deploying Pulse
 
 Production Pulse deployments are consumer-bound. Cortex supplies the runtime library and substrate
-shell; your application supplies the registry, secrets, host API, and operational policy.
+shell; your application supplies the registry, secrets, host API, persistence policy, and operator
+environment.
 
 ## Deployment Checklist
 
@@ -25,8 +26,9 @@ shell; your application supplies the registry, secrets, host API, and operationa
    - `--max-frontier-concurrency`
    - repeated `--task-type-max-concurrent TYPE=N`
 6. Expose the health endpoint.
-7. Connect observability according to the platform runtime environment.
+7. Connect logs, metrics, and traces according to the platform runtime environment.
 8. Decide how task definitions and compiled circuits enter the database.
+9. Define retention for task definitions, runs, graph state, stage logs, and events.
 
 Rule of thumb: `--max-concurrent-tasks` caps the whole worker, `--max-frontier-concurrency` caps one
 run's active frontier, and `--task-type-max-concurrent` is a repeatable per-task-type override.
@@ -41,7 +43,7 @@ consumer binary
   starts runPulse
 
 Postgres
-  stores task definitions, runs, checkpoints, signals, and events
+  stores task definitions, runs, graph state, checkpoints, signals, and events
 
 host API
   owns side effects and product policy
@@ -56,5 +58,11 @@ host API
   run.
 - Keep host actions idempotent where Pulse may retry or resume work.
 - Treat the database as the durable source of runtime truth.
+- Keep schema deployment and application rollout in the same release plan.
 
-The detailed runtime contract lives in [Pulse reference](../Reference/Pulse/).
+## Related
+
+- [Running durable Pulse](08-running-durable-pulse.md)
+- [Operating Pulse](10-operating-pulse.md)
+- [Pulse schema](../Reference/Pulse/schema.md)
+- [Host actions](../Reference/Pulse/host-actions.md)

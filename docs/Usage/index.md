@@ -1,8 +1,8 @@
 ---
 title: Cortex Usage Guide
 description:
-  Practical guide for installing Cortex, writing a first Wire workflow, running Pulse, and deploying
-  a consumer-bound runtime.
+  Practical guide for building Cortex, running Wire locally, embedding Cortex, and operating durable
+  Pulse.
 sidebar:
   label: Usage
   order: 1
@@ -10,7 +10,9 @@ sidebar:
 
 # Cortex Usage Guide
 
-This chapter is for people who want to use Cortex before they study its architecture.
+This chapter is for people who want to use Cortex before they study its architecture. It is a task
+guide: commands, decision points, expected observations, and links to the exact reference surface
+when a rule matters.
 
 Cortex has three practical jobs:
 
@@ -19,59 +21,50 @@ Cortex has three practical jobs:
 3. Run the compiled circuit with Pulse.
 
 You do not need the graph algebra or Lean proof story to start. Those explain why the substrate is
-shaped the way it is. This guide starts with the working path and links to the deeper material only
-when it matters.
+shaped the way it is. Usage starts with the working path and routes deeper questions to
+[Architecture](../Architecture/) and [Reference](../Reference/).
 
 ## The Working Model
+
+You author topology in Wire, then run the compiled circuit one of two ways:
 
 ```text
 .wire source
   -> compiled circuit
-  -> Pulse task definition
-  -> durable run state
-  -> events, outputs, checkpoints, and provenance
+       -> local run with `wire run`   (in-process, non-durable)
+       -> durable Pulse run           (Postgres: checkpoints, resume, signals, provenance)
 ```
 
 Wire is the authoring language. Pulse is the durable runtime. A host or consumer library provides
-the executor registry that gives node bodies their authority.
-
-The stock `cortex-pulse` binary is intentionally a substrate shell with an empty task registry. It
-is useful for checking the runtime surface and health behavior. Real deployments usually link Cortex
-from a consumer repo and pass a populated registry to `Cortex.Pulse.runPulse`.
+the registry that gives executor nodes their authority. The right execution mode depends on whether
+you need only a local one-shot run or durable state in Postgres.
 
 ## Reading Path
 
-| If you want to...                     | Start with                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------ |
-| Build the repo and see the surfaces   | [Quickstart](01-quickstart.md)                                                 |
-| Understand the shape of a Wire file   | [Your first Wire workflow](02-first-wire-workflow.md)                          |
-| Run a ready-made Wire example         | [Run a ready-made example](02-first-wire-workflow.md#run-a-ready-made-example) |
-| Learn what Pulse needs at runtime     | [Running Pulse](03-running-pulse.md)                                           |
-| Prepare an operator-facing service    | [Deploying Pulse](04-deploying-pulse.md)                                       |
-| Embed Cortex in another Haskell repo  | [Integrating from Haskell](05-integrating-from-haskell.md)                     |
-| Diagnose common failures              | [Troubleshooting](06-troubleshooting.md)                                       |
-| Check proof and correspondence status | [Proof status](../Reference/proof-status.md)                                   |
-| Look up exact syntax or schemas       | [Reference](../Reference/)                                                     |
-| Understand the design commitments     | [Architecture overview](../Architecture/01-overview.md)                        |
+| Page                                                                       | Start here when you want to...                                            |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [Quickstart](01-quickstart.md)                                             | Build the repo, inspect the CLIs, and run the first command.              |
+| [Execution modes](02-execution-modes.md)                                   | Choose local `wire run`, managed Pulse, or durable Pulse service.         |
+| [First local Wire run](03-first-local-wire-run.md)                         | Run the report example and check the produced output.                     |
+| [Writing Wire workflows](04-writing-wire-workflows.md)                     | Learn the practical source shape before using the grammar reference.      |
+| [Running Wire examples](05-running-wire-examples.md)                       | Pick an example by prerequisites, side effects, and runtime mode.         |
+| [Package manifests and extensions](06-package-manifests-and-extensions.md) | Load non-standard Wire namespaces such as quantum packages.               |
+| [Integrating from Haskell](07-integrating-from-haskell.md)                 | Compile Wire with strict registries and embed managed or service Pulse.   |
+| [Running durable Pulse](08-running-durable-pulse.md)                       | Start the Postgres-backed runtime path and understand its inputs.         |
+| [Deploying Pulse](09-deploying-pulse.md)                                   | Prepare a consumer-bound runtime for production.                          |
+| [Operating Pulse](10-operating-pulse.md)                                   | Diagnose live runs, leases, signals, events, schema state, and retention. |
+| [Troubleshooting](11-troubleshooting.md)                                   | Route common symptoms to the right check or reference page.               |
 
-## What This First Pass Covers
+## What Belongs Here
 
-This Usage chapter is intentionally a light working guide. It deliberately avoids becoming the Wire
-book. Writing Wire deserves its own teaching sequence because the language has nodes, ports,
-contracts, CorePure expressions, executor authority, configured executor values, signals, and
-rewrites. The Usage chapter should teach the shortest operational path; the Wire book should teach
-the language properly.
-
-## What Is Proven
-
-Cortex has a machine-checked proof surface for graph safety, fixed-topology Pulse safety, CorePure
-evaluation boundaries, node ingress/body/egress normal form, rewrite admission, and selected-branch
-actualization. The [proof status](../Reference/proof-status.md) dashboard separates those Lean
-claims from Haskell implementation correspondence so you can see which guarantees are closed,
-hooked, or still open.
+Usage pages should lead with runnable commands, concrete outcomes, and operational choices. They may
+summarize rules, but exact language syntax belongs in [Wire reference](../Reference/Wire/) and exact
+runtime semantics belong in [Pulse reference](../Reference/Pulse/).
 
 ## Related
 
-- [../Reference/](../Reference/) - exact rules and schemas.
-- [../Architecture/](../Architecture/) - why the substrate is designed this way.
-- [../Consumers/](../Consumers/) - examples of downstream bindings.
+- [Architecture overview](../Architecture/01-overview.md) - why the substrate is designed this way.
+- [Wire reference](../Reference/Wire/) - exact language rules.
+- [Pulse reference](../Reference/Pulse/) - exact runtime rules.
+- [Proof status](../Reference/proof-status.md) - proof and implementation-correspondence status.
+- [Consumers](../Consumers/) - downstream binding examples.

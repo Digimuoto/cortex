@@ -16,7 +16,8 @@ related:
   - docs/Reference/Pulse/types.md
   - docs/Reference/Pulse/events.md
   - docs/Reference/rewrites.md
-  - docs/Usage/03-running-pulse.md
+  - docs/Usage/02-execution-modes.md
+  - docs/Usage/08-running-durable-pulse.md
   - docs/ADRs/0003-pulse-service-and-host-action-boundary.md
   - docs/ADRs/0004-graph-native-pulse-execution.md
   - docs/ADRs/0035-wire-rewrite-algebra-forms.md
@@ -124,8 +125,8 @@ checkpoints, lease recovery, signal resume, cancellation propagation, or service
 ## Traceability
 
 - Feature keys: `pulse.in_memory_runner`
-- Public surface: the `wire run` command, `docs/Usage/03-running-pulse.md`,
-  `docs/Reference/Pulse/types.md`
+- Public surface: the `wire run` command, `docs/Usage/02-execution-modes.md`,
+  `docs/Usage/08-running-durable-pulse.md`, `docs/Reference/Pulse/types.md`
 - Implementation: `app/wire/Main.hs` (the local in-process `wire run` smoke runner) reusing the
   substrate pieces below the durable loop — `src/Cortex/Pulse/GraphRuntime.hs` (graph state and
   ready frontiers) and `src/Cortex/Pulse/Plan.hs` (`StagePlan`)
@@ -140,7 +141,8 @@ checkpoints, lease recovery, signal resume, cancellation propagation, or service
 - [Pulse types](../Reference/Pulse/types.md)
 - [Pulse events](../Reference/Pulse/events.md)
 - [Rewrites](../Reference/rewrites.md)
-- [Running Pulse](../Usage/03-running-pulse.md)
+- [Execution modes](../Usage/02-execution-modes.md)
+- [Running durable Pulse](../Usage/08-running-durable-pulse.md)
 - [ADR 0003 - Pulse Service and Host Action Boundary](0003-pulse-service-and-host-action-boundary.md)
 - [ADR 0004 - Graph-Native Pulse Execution](0004-graph-native-pulse-execution.md)
 - [ADR 0035 - Wire Rewrite Algebra Forms](0035-wire-rewrite-algebra-forms.md)
