@@ -95,11 +95,13 @@ import Cortex.Wire.AdmissionArtifact
   , combineWireAdmissionArtifacts
   , emptyWireAdmissionArtifact
   , finalizeWireAdmissionArtifact
-  , wireAdmissionArtifactValidatorReady
   , wireAdmissionMetadataKey
   , wireAdmissionMetadataValue
   )
-import Cortex.Wire.AdmissionBinding (admissionArtifactBindsCompiledCircuit)
+import Cortex.Wire.AdmissionBundle
+  ( AdmissionBundleError (..)
+  , admitWireAdmissionBundle
+  )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitCompatibilityWitness (..)
   , CircuitConditionNode (..)
@@ -751,11 +753,10 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
           else AdmissionOpenFragment
       finalizedAdmission =
         finalizeWireAdmissionArtifact closureMode lowered.lwfFragment.gfAdmission
-  admission <- validateWireAdmissionArtifact finalizedAdmission
   let metadataValue =
         attachAdmissionMetadata
           lowered.lwfMetadata
-          admission
+          finalizedAdmission
       compiled =
         CompiledCircuit
           { compiledCircuitId = lowered.lwfCircuitId
@@ -768,28 +769,24 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
           , compiledCircuitMetadata = metadataValue
           }
   -- The artifact and the circuit are derived from the same lowering fragment
-  -- through parallel paths; gating on the binding checker turns that shared
-  -- derivation into an enforced invariant instead of a refactor hazard.
-  case admissionArtifactBindsCompiledCircuit admission compiled of
-    Right () -> pure compiled
-    Left bindingError ->
+  -- through parallel paths; gating on the admission bundle turns that shared
+  -- derivation into one enforced boundary instead of a refactor hazard.
+  case admitWireAdmissionBundle finalizedAdmission compiled of
+    Right _bundle -> pure compiled
+    Left bundleError ->
       Left
         ( WireCore.WireParseError
-            ( "internal Wire admission artifact does not bind to the compiled circuit: "
-                <> T.pack (show bindingError)
+            ( "internal Wire admission bundle was rejected: "
+                <> renderAdmissionBundleError bundleError
             )
         )
 
-validateWireAdmissionArtifact
-  :: WireAdmissionArtifact -> Either WireCore.WireError WireAdmissionArtifact
-validateWireAdmissionArtifact admission
-  | wireAdmissionArtifactValidatorReady admission =
-      Right admission
-  | otherwise =
-      Left
-        ( WireCore.WireParseError
-            "internal Wire admission artifact failed validator-ready checks"
-        )
+renderAdmissionBundleError :: AdmissionBundleError -> Text
+renderAdmissionBundleError = \case
+  AdmissionBundleArtifactNotValidatorReady ->
+    "artifact failed validator-ready checks"
+  AdmissionBundleCircuitBindingFailed bindingError ->
+    "artifact does not bind to the compiled circuit: " <> T.pack (show bindingError)
 
 attachAdmissionMetadata :: Maybe Aeson.Value -> WireAdmissionArtifact -> Aeson.Value
 attachAdmissionMetadata maybeMetadata admission =

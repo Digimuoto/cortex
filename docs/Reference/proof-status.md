@@ -76,8 +76,9 @@ The cutline is:
 - Lean owns a post-parse elaboration IR and primitive-subset admission kernel, not the textual
   parser;
 - `WireAdmissionArtifact` is the Haskell-to-Lean proof-witness exchange schema;
-- Haskell currently gates compiler output with `wireAdmissionArtifactValidatorReady` and
-  artifact-to-circuit binding checks;
+- Haskell currently gates compiler output by constructing a `WireAdmissionBundle`
+  (`src/Cortex/Wire/AdmissionBundle.hs`), whose first implementation joins
+  `wireAdmissionArtifactValidatorReady` with artifact-to-circuit binding checks;
 - Lean's executable validator is the intended authority for the artifact contract, but runtime
   validation of arbitrary freshly emitted artifacts by Lean remains an open obligation.
 
@@ -243,6 +244,12 @@ as having solved that projection rule.
   compiler's primitive trace is core-only for every emitted fixture: generated differential modules
   (`theory/Cortex/Wire/AdmissionArtifact/Differential/`) replay compiler output for the full
   eight-fixture corpus and `#guard` boundary agreement at every `lean-check`.
+- The Haskell compiler now has one named admission-boundary gate:
+  `Cortex.Wire.AdmissionBundle.admitWireAdmissionBundle`. The gate constructs a
+  `WireAdmissionBundle` only after the artifact is validator-ready and the same artifact binds to
+  the compiled circuit metadata/topology/select bodies. This is not yet Lean runtime validation of
+  arbitrary freshly emitted artifacts; it is the explicit Haskell-side join point that a future Lean
+  validation entrypoint can replace or back.
 - Derived-form elaboration is mechanized as deterministic
   (`theory/Cortex/Wire/GeneratedFormsDeterminism.lean`): `KindInstantiatedFrontiers` is determined
   by its child labels (`eq_of_childLabel_eq`), the `make`/`makeEach` label witnesses pin those

@@ -182,6 +182,7 @@ library
         Cortex.Pulse.Resume
         Cortex.Pulse.Runtime
         Cortex.Wire
+        Cortex.Wire.AdmissionBundle
         Cortex.Wire.AdmissionArtifact
         Cortex.Wire.AdmissionBinding
         Cortex.Wire.Compile

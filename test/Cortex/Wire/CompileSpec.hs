@@ -68,6 +68,11 @@ import Cortex.Wire.AdmissionBinding
   ( AdmissionBindingError (..)
   , admissionArtifactBindsCompiledCircuit
   )
+import Cortex.Wire.AdmissionBundle
+  ( AdmissionBundleError (..)
+  , WireAdmissionBundle (..)
+  , admitWireAdmissionBundle
+  )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitConditionNode (..)
   , CompiledCircuit (..)
@@ -3799,6 +3804,29 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireText source `shouldSatisfy` isRight
 
   describe "admission artifact circuit binding" $ do
+    it "admits a validator-ready artifact bound to its compiled circuit as a bundle" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      expectAdmissionBundle compiled
+
+    it "rejects validator-stale artifacts before circuit binding" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let staleArtifact =
+            artifact {wireAdmissionEndpointUses = emptyAdmissionEndpointUseWitness}
+      admitWireAdmissionBundle
+        staleArtifact
+        (patchAdmissionMetadata staleArtifact compiled)
+        `shouldBe` Left AdmissionBundleArtifactNotValidatorReady
+
+    it "rejects circuit-binding drift through the unified bundle gate" $ do
+      compiled <- requireRight (compileWireText simpleChainSourceText)
+      artifact <- requireWireAdmissionArtifact compiled
+      let metadataDrift =
+            compiled {compiledCircuitMetadata = Aeson.object ["format" Aeson..= ("drift" :: T.Text)]}
+      admitWireAdmissionBundle artifact metadataDrift
+        `shouldBe` Left
+          (AdmissionBundleCircuitBindingFailed BindingMetadataMissingAdmissionKey)
+
     it "binds the labeled chain artifact to its compiled circuit" $ do
       compiled <- requireRight (compileWireText simpleChainSourceText)
       expectArtifactBindsCircuit compiled
@@ -5517,6 +5545,16 @@ expectArtifactBindsCircuit :: CompiledCircuit -> Expectation
 expectArtifactBindsCircuit compiled = do
   artifact <- requireWireAdmissionArtifact compiled
   admissionArtifactBindsCompiledCircuit artifact compiled `shouldBe` Right ()
+
+expectAdmissionBundle :: CompiledCircuit -> Expectation
+expectAdmissionBundle compiled = do
+  artifact <- requireWireAdmissionArtifact compiled
+  admitWireAdmissionBundle artifact compiled
+    `shouldBe` Right
+      WireAdmissionBundle
+        { wireAdmissionBundleSchemaVersion = wireAdmissionCurrentSchemaVersion
+        , wireAdmissionBundleArtifact = artifact
+        }
 
 expectBindingFailure
   :: (AdmissionBindingError -> Bool)
