@@ -95,6 +95,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0078](0078-lean-wire-elaboration-kernel.md)                       | Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel  | proposed   |
 | [0079](0079-wire-admission-witness-schema.md)                      | Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema   | proposed   |
 | [0080](0080-wire-binder-construction-boundary.md)                  | Wire Binder Construction and the Contract-Typing Boundary                  | proposed   |
+| [0081](0081-wire-endpoint-closure-accounting.md)                   | Wire Endpoint Closure Accounting and Frontier Inspection                   | proposed   |
 
 ## By category
 
@@ -127,11 +128,12 @@ is shown here.
   [0056](0056-admission-modes-witnessed-and-gas.md),
   [0057](0057-wire-latent-branch-witnessing-and-closure-charging.md),
   [0069](0069-rewrite-planner-drift-witness.md)
-- **Conditionals, selection & rewrite algebra** (5):
+- **Conditionals, selection & rewrite algebra** (4):
   [0007](0007-latent-branch-conditional-lowering.md),
-  [0032](0032-wire-boundary-contract-resources.md),
   [0033](0033-wire-select-guarded-affine-collapse.md), [0035](0035-wire-rewrite-algebra-forms.md),
   [0037](0037-wire-latent-structural-control.md)
+- **Wire contracts & resources** (2): [0032](0032-wire-boundary-contract-resources.md),
+  [0081](0081-wire-endpoint-closure-accounting.md)
 - **Wire language & grammar** (6): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
   [0022](0022-wire-node-clause-grammar.md), [0026](0026-wire-failure-taxonomy.md),
   [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),

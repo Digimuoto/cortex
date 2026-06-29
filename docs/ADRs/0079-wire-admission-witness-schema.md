@@ -44,9 +44,10 @@ Today the substrate has a concrete answer in code, but no ADR records it as a de
   references, boundary entry/exit ports, raw connections, a postorder primitive trace, generated
   `make`/`makeEach` rows, phantom-adapter `*` rows, and `select(...)` admission rows). The module
   header is explicit that it carries _evidence_, not Lean proof terms.
-- The record is schema-versioned. `wireAdmissionCurrentSchemaVersion = 3`, and the `FromJSON`
-  instance hard-fails any other version with `unsupported wire admission schema version`. Version 3
-  is what carries the phantom-adapter record aggregate contract explicitly, per ADR 0038's notes.
+- The record is schema-versioned. `wireAdmissionCurrentSchemaVersion = 4`, and the `FromJSON`
+  instance hard-fails any other version with `unsupported wire admission schema version`. Version 4
+  carries closure mode and endpoint-use witnesses on top of the phantom-adapter record aggregate
+  contract added in version 3.
 - Both sides already implement a validator over this record. Haskell decides
   `wireAdmissionArtifactValidatorReady :: WireAdmissionArtifact -> Bool` (a conjunction of ~30 row,
   uniqueness, domain-closure, frontier-backing, primitive-replay, select, and phantom checks). Lean
@@ -73,7 +74,7 @@ Concretely:
    model only as a `WireAdmissionArtifact`, never as Lean proof terms or compiler-internal state.
    The record's fields and JSON encoding are the boundary surface; both sides agree on it through
    the shared schema version.
-2. **The schema is versioned and version-gated.** `wireAdmissionCurrentSchemaVersion = 3` is the
+2. **The schema is versioned and version-gated.** `wireAdmissionCurrentSchemaVersion = 4` is the
    single current version. Decoding rejects any other version rather than best-effort parsing it.
    Schema changes bump this number; an artifact tagged with a version a reader does not understand
    is a hard decode failure, not a silent partial read.
@@ -179,13 +180,15 @@ reader refuse an artifact it was not built to understand.
 ## Traceability
 
 - Feature keys: `proof.admission_artifact_schema`
-- Public surface: `Cortex.Wire` (the `Cortex.Wire.AdmissionArtifact` record, schema version, and
-  `wireAdmissionArtifactValidatorReady` gate)
+- Public surface: `Cortex.Wire` (the `Cortex.Wire.AdmissionArtifact` record, schema version, closure
+  mode, endpoint-use witness, and `wireAdmissionArtifactValidatorReady` gate)
 - Implementation: `src/Cortex/Wire/AdmissionArtifact.hs`, `src/Cortex/Wire/AdmissionBinding.hs`,
   `src/Cortex/Wire/Compile.hs`, `src/Cortex/Wire/LeanFixture.hs`,
+  `theory/Cortex/Wire/AdmissionArtifact/Boundary.lean`,
+  `theory/Cortex/Wire/AdmissionArtifact/ValidatorCore.lean`,
   `theory/Cortex/Wire/AdmissionArtifact/ValidatorCoreCheck.lean`,
   `theory/Cortex/Wire/AdmissionArtifact/Sound.lean`
-- Tests: `test/Cortex/Wire/CompileSpec.hs`
+- Tests: `test/Cortex/Wire/CompileSpec.hs`, `test/Cortex/Wire/EndpointUseSpec.hs`
 - Theory/proof: [Wire Admission Notes](../Reference/proof-status.md#wire-admission-notes)
 
 ## Related

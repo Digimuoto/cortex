@@ -134,10 +134,11 @@ the Cabal executable stanza, Nix package/app output, and a `just build-wire` con
 - Public surface: the first-party `wire` executable (`app/wire`); see the
   [Usage guide](../Usage/index.md) and [Quickstart](../Usage/01-quickstart.md)
 - Implementation: `app/wire/Main.hs` (the `wire FILE` / `wire build` / `wire run` / `wire fmt`
-  command family); the executable is declared in `cortex.cabal`
-- Tests: none — the CLI dispatch in `app/wire/Main.hs` has no process-level smoke test; the
-  libraries it wraps are covered by `test/Cortex/Wire/CompileSpec.hs`,
-  `test/Cortex/Wire/RuntimeSpec.hs`, and `test/Cortex/Wire/FormatSpec.hs`
+  command family), plus `src/Cortex/Wire/Cli/Frontier.hs` for the tested frontier parser; the
+  executable is declared in `cortex.cabal`
+- Tests: `test/Cortex/Wire/Cli/FrontierSpec.hs` covers the frontier parser. The wrapped libraries
+  are covered by `test/Cortex/Wire/CompileSpec.hs`, `test/Cortex/Wire/RuntimeSpec.hs`, and
+  `test/Cortex/Wire/FormatSpec.hs`; there is still no process-level CLI smoke test.
 - Theory/proof: none
 
 ## Related

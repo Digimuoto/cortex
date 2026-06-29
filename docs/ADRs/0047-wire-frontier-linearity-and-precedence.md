@@ -233,7 +233,8 @@ composition has one visible parallel operator and record/list comma syntax stays
   overlay-tighter-than-connect/star precedence ladder), `src/Cortex/Wire/Compile.hs`
   (`linearBoundaryMatches`, `connectFragments`, `flattenConnectChain`)
 - Tests: `test/Cortex/Wire/ParserSpec.hs` (overlay binds tighter than connect; star adapters at
-  connect precedence; comma overlay shorthand rejected)
+  connect precedence; comma overlay shorthand rejected), `test/Cortex/Wire/CompileSpec.hs` (repeated
+  graph references, implicit output fan-out, and implicit input fan-in are rejected)
 - Theory/proof: [Source linear port carrier row](../Reference/proof-status.md) (Lean
   `CertifiedGraph.BoundaryMatchTrace.determined`, `overlay_preserves_portLinear` in
   `theory/Cortex/Wire/PortLinearity.lean` and `theory/Cortex/Wire/GraphElaboration.lean`)
