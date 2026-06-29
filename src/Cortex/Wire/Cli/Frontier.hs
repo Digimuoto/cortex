@@ -47,33 +47,40 @@ data FrontierCommand = FrontierCommand
   { frontierCommandClosure :: !FrontierClosure
   , frontierCommandScope :: !FrontierScope
   , frontierCommandFormat :: !FrontierFormat
+  , frontierCommandSelectedReturn :: !(Maybe Text)
   , frontierCommandFile :: !FilePath
   }
   deriving stock (Eq, Show)
 
 frontierUsage :: Text
-frontierUsage = "usage: wire frontier [--closure | --open] [--node NODE] [--json] FILE"
+frontierUsage = "usage: wire frontier [--return NAME] [--closure | --open] [--node NODE] [--json] FILE"
 
 parseFrontierCommand :: [String] -> Either Text FrontierCommand
-parseFrontierCommand = collect Nothing Nothing FrontierText []
+parseFrontierCommand = collect Nothing Nothing Nothing FrontierText []
   where
-    collect maybeClosure maybeScope format files = \case
-      [] -> finish maybeClosure maybeScope format files
-      ("--json" : rest) -> collect maybeClosure maybeScope FrontierJson files rest
+    collect maybeClosure maybeScope maybeReturn format files = \case
+      [] -> finish maybeClosure maybeScope maybeReturn format files
+      ("--json" : rest) -> collect maybeClosure maybeScope maybeReturn FrontierJson files rest
       ("--closure" : rest) -> do
         closure <- setClosure FrontierClosed maybeClosure
-        collect (Just closure) maybeScope format files rest
+        collect (Just closure) maybeScope maybeReturn format files rest
       ("--open" : rest) -> do
         closure <- setClosure FrontierOpen maybeClosure
-        collect (Just closure) maybeScope format files rest
+        collect (Just closure) maybeScope maybeReturn format files rest
+      ("--return" : selectedReturn : rest)
+        | "-" `isPrefixOf` selectedReturn -> Left frontierUsage
+        | otherwise -> do
+            selected <- setReturn (T.pack selectedReturn) maybeReturn
+            collect maybeClosure maybeScope (Just selected) format files rest
       ("--node" : nodeName : rest)
         | "-" `isPrefixOf` nodeName -> Left frontierUsage
         | otherwise -> do
             scope <- setScope (FrontierNode (T.pack nodeName)) maybeScope
-            collect maybeClosure (Just scope) format files rest
+            collect maybeClosure (Just scope) maybeReturn format files rest
+      ["--return"] -> Left frontierUsage
       ["--node"] -> Left frontierUsage
       (('-' : _) : _) -> Left frontierUsage
-      (path : rest) -> collect maybeClosure maybeScope format (path : files) rest
+      (path : rest) -> collect maybeClosure maybeScope maybeReturn format (path : files) rest
 
     setClosure newClosure = \case
       Nothing -> Right newClosure
@@ -87,7 +94,13 @@ parseFrontierCommand = collect Nothing Nothing FrontierText []
         | oldScope == newScope -> Right oldScope
         | otherwise -> Left "wire frontier accepts only one --node selection."
 
-    finish maybeClosure maybeScope format files =
+    setReturn newReturn = \case
+      Nothing -> Right newReturn
+      Just oldReturn
+        | oldReturn == newReturn -> Right oldReturn
+        | otherwise -> Left "wire frontier accepts only one --return selection."
+
+    finish maybeClosure maybeScope maybeReturn format files =
       case reverse files of
         [path] ->
           Right
@@ -95,6 +108,7 @@ parseFrontierCommand = collect Nothing Nothing FrontierText []
               { frontierCommandClosure = fromMaybe FrontierClosed maybeClosure
               , frontierCommandScope = fromMaybe FrontierGraph maybeScope
               , frontierCommandFormat = format
+              , frontierCommandSelectedReturn = maybeReturn
               , frontierCommandFile = path
               }
         _ -> Left frontierUsage

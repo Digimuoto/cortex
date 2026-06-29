@@ -41,10 +41,12 @@ The CLI can compile a named graph-valued binding instead of the default file-ret
 
 ```sh
 wire build --return exported_planner ./pipeline.wire
+wire frontier --return exported_planner --json ./pipeline.wire
 ```
 
 This is useful for files that serve as a catalog of exported graph values while still having a
-default executable file-return.
+default executable file-return. `wire frontier --return` inspects endpoint-use / closure accounting
+for the same selected graph without executing it.
 
 ## Imports
 

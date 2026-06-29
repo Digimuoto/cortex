@@ -285,7 +285,7 @@ usageText =
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
-    , "  wire frontier [--closure | --open] [--node NODE] [--json] FILE"
+    , "  wire frontier [--return NAME] [--closure | --open] [--node NODE] [--json] FILE"
     , "                              (inspect endpoint-use / closure accounting; no execution)"
     , ""
     , "global options:"
@@ -325,8 +325,13 @@ frontierWire :: [FilePath] -> FrontierCommand -> IO ()
 frontierWire packagePaths frontierCommand = do
   compileEnv <- loadCliWireCompileEnv packagePaths
   modules <- loadWireModules frontierCommand.frontierCommandFile
+  let compile =
+        maybe
+          (compileWireModules compileEnv)
+          (compileWireModulesWithReturn compileEnv)
+          frontierCommand.frontierCommandSelectedReturn
   compiled <-
-    either (dieText . renderWireError) pure (compileWireModules compileEnv modules)
+    either (dieText . renderWireError) pure (compile modules)
   artifact <-
     maybe
       (dieText "compiled circuit carries no Wire admission artifact")

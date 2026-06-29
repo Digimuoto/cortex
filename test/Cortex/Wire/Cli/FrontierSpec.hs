@@ -24,6 +24,7 @@ spec = describe "Cortex.Wire.Cli.Frontier.parseFrontierCommand" $ do
           { frontierCommandClosure = FrontierClosed
           , frontierCommandScope = FrontierGraph
           , frontierCommandFormat = FrontierText
+          , frontierCommandSelectedReturn = Nothing
           , frontierCommandFile = "workflow.wire"
           }
 
@@ -34,6 +35,7 @@ spec = describe "Cortex.Wire.Cli.Frontier.parseFrontierCommand" $ do
           { frontierCommandClosure = FrontierClosed
           , frontierCommandScope = FrontierGraph
           , frontierCommandFormat = FrontierJson
+          , frontierCommandSelectedReturn = Nothing
           , frontierCommandFile = "workflow.wire"
           }
 
@@ -44,22 +46,32 @@ spec = describe "Cortex.Wire.Cli.Frontier.parseFrontierCommand" $ do
           { frontierCommandClosure = FrontierClosed
           , frontierCommandScope = FrontierGraph
           , frontierCommandFormat = FrontierText
+          , frontierCommandSelectedReturn = Nothing
           , frontierCommandFile = "workflow.wire"
           }
 
-  it "parses open node inspection with flags after the file" $
-    parseFrontierCommand ["workflow.wire", "--open", "--node", "planner", "--json"]
+  it "parses selected-return open node inspection with flags after the file" $
+    parseFrontierCommand
+      ["workflow.wire", "--open", "--node", "planner", "--return", "library_graph", "--json"]
       `shouldBe` Right
         FrontierCommand
           { frontierCommandClosure = FrontierOpen
           , frontierCommandScope = FrontierNode "planner"
           , frontierCommandFormat = FrontierJson
+          , frontierCommandSelectedReturn = Just "library_graph"
           , frontierCommandFile = "workflow.wire"
           }
 
   it "rejects --node when the next token is another flag" $
     parseFrontierCommand ["--node", "--json", "workflow.wire"] `shouldBe` Left frontierUsage
 
+  it "rejects --return when the next token is another flag" $
+    parseFrontierCommand ["--return", "--json", "workflow.wire"] `shouldBe` Left frontierUsage
+
   it "rejects conflicting closure projections" $
     parseFrontierCommand ["--closure", "--open", "workflow.wire"]
       `shouldBe` Left "wire frontier accepts only one of --closure or --open."
+
+  it "rejects conflicting selected returns" $
+    parseFrontierCommand ["--return", "first", "--return", "second", "workflow.wire"]
+      `shouldBe` Left "wire frontier accepts only one --return selection."

@@ -15,6 +15,7 @@ module Cortex.Wire.EndpointUseSpec (spec) where
 
 import Data.Aeson qualified as Aeson
 import Data.Text (Text)
+import Data.Text qualified as T
 import Test.Hspec
 
 import Cortex.Wire (CircuitNodeRef (..), Connection (..), EndpointRef (..))
@@ -27,7 +28,9 @@ import Cortex.Wire.AdmissionArtifact
   , emptyWireAdmissionArtifact
   , finalizeWireAdmissionArtifact
   )
+import Cortex.Wire.Compile (compileWireTextWithReturn)
 import Cortex.Wire.EndpointUse
+import Cortex.Wire.LeanFixture (compiledWireAdmissionArtifact)
 
 nodeA, nodeB :: CircuitNodeRef
 nodeA = CircuitNodeRef "A"
@@ -252,3 +255,36 @@ spec = describe "Cortex.Wire.EndpointUse.endpointUseReportFromArtifact" $ do
       Nothing -> expectationFailure "node B missing from report"
 
     reportUnaccounted report `shouldBe` ([], [])
+
+  it "reports endpoint-use for a selected exported graph return" $ do
+    compiled <- requireRight (compileWireTextWithReturn "library_graph" exportedGraphLibrarySourceText)
+    artifact <-
+      case compiledWireAdmissionArtifact compiled of
+        Just value -> pure value
+        Nothing -> fail "compiled circuit carries no admission artifact"
+    let report = endpointUseReportFromArtifact artifact
+
+    fmap (.nodeFrontierRef) report.reportNodes `shouldBe` [CircuitNodeRef "library"]
+    case lookupNodeFrontier (CircuitNodeRef "library") report of
+      Just frontier ->
+        fmap outputFrontierUse frontier.nodeFrontierOutputs
+          `shouldBe` [TerminalDischarge HostReturn]
+      Nothing -> expectationFailure "library node missing from selected-return report"
+
+exportedGraphLibrarySourceText :: T.Text
+exportedGraphLibrarySourceText =
+  T.unlines
+    [ "contract LibraryOutput;"
+    , "contract MainOutput;"
+    , "node library"
+    , "  -> out: LibraryOutput = \"library\";"
+    , "node main"
+    , "  -> out: MainOutput = \"main\";"
+    , "export let library_graph = library ;"
+    , "main"
+    ]
+
+requireRight :: Show err => Either err a -> IO a
+requireRight = \case
+  Right value -> pure value
+  Left err -> fail ("expected Right, got: " <> show err)

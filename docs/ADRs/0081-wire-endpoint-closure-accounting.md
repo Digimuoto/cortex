@@ -153,6 +153,7 @@ reports the frontier accounting persisted in the admission artifact:
 
 ```text
 wire frontier FILE --node NODE
+wire frontier FILE --return NAME
 wire frontier FILE --closure
 wire frontier FILE --open
 wire frontier FILE --json
@@ -165,12 +166,14 @@ fan-out/fan-in/repeated-reference conflicts using the same endpoint vocabulary a
 with zero output ports may be reported as a terminating node, but that is derived from its declared
 port shape, not from a separate policy.
 
-`--closure` reports graph-level endpoint accounting for the selected return graph and is the default
-projection. `--open` reprojects the same validator-ready admission artifact as an open fragment for
-inspection, classifying top-level inputs as imported obligations and carried outputs as exported
-boundaries without changing the compiled circuit metadata. `--json` is the future editor/code-server
-bridge: an editor can render inline "missing upstream", "open downstream", "consumed here", "returns
-to host", and "terminates here" hints from the same data rather than inventing a second analysis.
+`--return NAME` selects a named graph-valued export before inspection, matching
+`wire build --return NAME`. `--closure` reports graph-level endpoint accounting for the selected
+return graph and is the default projection. `--open` reprojects the same validator-ready admission
+artifact as an open fragment for inspection, classifying top-level inputs as imported obligations
+and carried outputs as exported boundaries without changing the compiled circuit metadata. `--json`
+is the future editor/code-server bridge: an editor can render inline "missing upstream", "open
+downstream", "consumed here", "returns to host", and "terminates here" hints from the same data
+rather than inventing a second analysis.
 
 This slice exposes the evidence currently available from the compiler and admission artifact. It
 does not infer solely from the final `CompiledCircuit` node relation, which has already forgotten
