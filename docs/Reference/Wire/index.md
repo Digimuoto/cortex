@@ -39,9 +39,21 @@ The rewrite algebra, admission, and materialization — a runtime concern — ar
 The grammar spec is self-contained. The topic pages exist to give readers a shorter, scope-limited
 entry point when they are looking for specific rules without wanting to read the whole spec.
 
+## Proof Boundary
+
+The Wire Reference describes the production source language. The current Lean proof boundary is
+post-parse: Lean does not claim parser correctness for this surface. ADR 0078 records the Lean-owned
+post-parse elaboration IR and primitive admission kernel; ADR 0079 records `WireAdmissionArtifact`
+as the Haskell-to-Lean proof-witness exchange schema. The remaining compiler-authority decision is
+open, and node-local egress projection remains open.
+
 ## Related
 
 - [../../Architecture/05-wire-language.md](../../Architecture/05-wire-language.md) — Wire substrate
   architecture.
+- [../../ADRs/0078-lean-wire-elaboration-kernel.md](../../ADRs/0078-lean-wire-elaboration-kernel.md)
+  — post-parse Lean elaboration IR and primitive admission kernel.
+- [../../ADRs/0079-wire-admission-witness-schema.md](../../ADRs/0079-wire-admission-witness-schema.md)
+  — Wire admission artifact schema and validator authority direction.
 - [../terminology.md](../terminology.md) — accepted Wire terminology.
 - [../../Research-notes/Wire/](../../Research-notes/Wire/) — dated design notes and synthesis.

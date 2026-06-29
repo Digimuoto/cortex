@@ -15,6 +15,8 @@ related:
   - docs/Architecture/06-pulse-runtime.md
   - docs/Architecture/07-rewrites-and-materialization.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
+  - docs/ADRs/0078-lean-wire-elaboration-kernel.md
+  - docs/ADRs/0079-wire-admission-witness-schema.md
 ---
 
 # Cortex Proof Status
@@ -59,6 +61,30 @@ prefix-conflicting CorePure record paths are rejected before evaluation and cove
 compiler/runtime tests, but they are parser/elaborator admission checks rather than admitted-middle
 Lean safety claims. If the parser or compiler is later mechanized, those gates can become proof
 rows.
+
+## Wire/Lean Proof Boundary
+
+[ADR 0078](../ADRs/0078-lean-wire-elaboration-kernel.md) and
+[ADR 0079](../ADRs/0079-wire-admission-witness-schema.md) define the current Wire proof boundary.
+They supersede the old parse/AST-boundary framing: the immediate proof target is **post-parse** and
+**artifact based**, not a full proof of the Haskell parser or source front end.
+
+The cutline is:
+
+- the production parser, source include expansion, and surface syntax admission remain Haskell
+  compiler obligations unless a later ADR mechanizes them;
+- Lean owns a post-parse elaboration IR and primitive-subset admission kernel, not the textual
+  parser;
+- `WireAdmissionArtifact` is the Haskell-to-Lean proof-witness exchange schema;
+- Haskell currently gates compiler output with `wireAdmissionArtifactValidatorReady` and
+  artifact-to-circuit binding checks;
+- Lean's executable validator is the intended authority for the artifact contract, but runtime
+  validation of arbitrary freshly emitted artifacts by Lean remains an open obligation.
+
+Two important gaps stay visible. The compiler-authority decision remains open: Haskell-first with
+Lean validation, Lean-specified Haskell, or a Lean-owned compiler. Node-local egress projection and
+binding-phase semantics also remain open; current node-boundary and artifact rows must not be read
+as having solved that projection rule.
 
 ## Matrix
 
@@ -274,7 +300,7 @@ replayable.
 ## How To Read The Counts
 
 The numerator is the number of dashboard claims at that status. The denominator is the current
-dashboard goal set: the 31 claims above. Adding a new semantic claim should increase the denominator
+dashboard goal set: the 33 claims above. Adding a new semantic claim should increase the denominator
 instead of hiding work inside an existing row.
 
 The strictest question is not "is there a Lean theorem?" but:
@@ -294,6 +320,10 @@ correspondence surface.
 
 - [../ADRs/0038-wire-proof-track-theorem-ledger.md](../ADRs/0038-wire-proof-track-theorem-ledger.md)
   — detailed theorem ledger.
+- [../ADRs/0078-lean-wire-elaboration-kernel.md](../ADRs/0078-lean-wire-elaboration-kernel.md) —
+  post-parse Lean elaboration IR and primitive admission kernel.
+- [../ADRs/0079-wire-admission-witness-schema.md](../ADRs/0079-wire-admission-witness-schema.md) —
+  schema-versioned Haskell-to-Lean admission artifact and validator-authority direction.
 - [../Architecture/03-formalism-stack.md](../Architecture/03-formalism-stack.md) — formalism stack.
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md) — Wire architecture.
 - [development.md](development.md) — local Lean and docs commands.

@@ -35,6 +35,11 @@ Wire is the Cortex source language for authoring typed dataflow topology over a 
 alphabet. A Wire file declares contracts, configured executor values, nodes, and graph composition.
 The compiler elaborates the source to a fixed circuit before Pulse evaluates it.
 
+This grammar is the production source surface. The current Lean proof boundary is downstream of it:
+Lean receives a post-parse elaboration IR and schema-versioned admission artifact rather than a
+proof of the textual parser. See [ADR 0078](../../ADRs/0078-lean-wire-elaboration-kernel.md) and
+[ADR 0079](../../ADRs/0079-wire-admission-witness-schema.md).
+
 The current grammar is intentionally explicit:
 
 - every authored node has typed input and output clauses;

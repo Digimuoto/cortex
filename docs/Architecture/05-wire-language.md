@@ -229,6 +229,26 @@ capability for that owner and arm. In the current runtime, that capability is re
 retained-owner `AppendAfter` admission rather than a separate persisted `SelectActualize` token.
 Branch actualization is not an arbitrary planner-authored rewrite.
 
+## Wire/Lean proof handoff
+
+Wire's proof handoff is intentionally staged. Source parsing, include expansion, and surface syntax
+normalization are Haskell compiler responsibilities. The current Lean proof target begins after that
+front end: [ADR 0078](../ADRs/0078-lean-wire-elaboration-kernel.md) records a Lean-owned post-parse
+IR and primitive-subset admission kernel. [ADR 0079](../ADRs/0079-wire-admission-witness-schema.md)
+records `WireAdmissionArtifact` as the schema-versioned evidence record that crosses from Haskell to
+Lean.
+
+The production compiler still emits and gates the artifact on the Haskell side, including artifact
+validator readiness and artifact-to-circuit binding. Lean mirrors the artifact contract and proves
+the executable validator sound; that is the intended validation-authority direction. It is not yet
+runtime authority for arbitrary freshly emitted artifacts, and it is not a proof that the compiler
+was extracted from Lean.
+
+Two boundaries remain open and should stay visible in Wire-facing docs. The compiler-authority model
+after ADR 0078/0079 is not decided. Node-local egress projection and binding phase semantics are
+also not decided; the current node-boundary normal form names the egress slot but does not close the
+projection rule.
+
 ## Configured executor values and reuse
 
 Wire's reuse surface is the configured executor value: inert source data that names registered
@@ -379,6 +399,10 @@ Cortex still owns the source language, composition rules, and substrate runtime.
   output expressions and static/runtime residue split
 - [ADR 0034 — Pure Selectors and Restricted Actualization Authority](../ADRs/0034-wire-pure-select-actualization-authority.md)
   — pure branch choice without general rewrite authority
+- [ADR 0078 — Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel](../ADRs/0078-lean-wire-elaboration-kernel.md)
+  — post-parse Lean proof IR and primitive admission kernel
+- [ADR 0079 — Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema](../ADRs/0079-wire-admission-witness-schema.md)
+  — schema-versioned admission artifact and validator-authority direction
 - [Wire Grammar](../Reference/Wire/grammar.md) — normative grammar
 - [Cortex Terminology](../Reference/terminology.md) — accepted vocabulary
 - [Consumer examples](../Consumers/) — downstream binding examples
