@@ -28,13 +28,29 @@ spec = do
       formatWireSource "test" "a=>b=>c"
         `shouldBe` Right "a\n  => b\n  => c\n"
 
+    it "formats simple connect pairs inline" $ do
+      formatWireSource "test" "a=>b"
+        `shouldBe` Right "a => b\n"
+
+    it "formats simple star pairs inline" $ do
+      formatWireSource "test" "a*b"
+        `shouldBe` Right "a * b\n"
+
+    it "formats short configured graph atoms inline" $ do
+      formatWireSource "test" "@exec { mode = fast; }=>sink"
+        `shouldBe` Right "@exec { mode = fast; } => sink\n"
+
     it "formats small frontiers horizontally inside connect chains" $ do
       formatWireSource "test" "a=>(b<>c<>d)=>e"
         `shouldBe` Right "a\n  => b <> c <> d\n  => e\n"
 
-    it "formats large frontiers with stage-aligned leading overlay operators" $ do
+    it "formats large frontiers with payload-indented overlay continuations" $ do
       formatWireSource "test" "a=>(b<>c<>d<>e<>f)=>g"
-        `shouldBe` Right "a\n  => b\n  <> c\n  <> d\n  <> e\n  <> f\n  => g\n"
+        `shouldBe` Right "a\n  => b\n    <> c\n    <> d\n    <> e\n    <> f\n  => g\n"
+
+    it "formats first-stage large frontiers without synthetic stage indentation" $ do
+      formatWireSource "test" "(a<>b<>c<>d<>e)=>sink"
+        `shouldBe` Right "a <> b\n  <> c\n  <> d\n  <> e\n  => sink\n"
 
     it "preserves explicit right-nested connect groups without redundant frontier parens" $ do
       formatWireSource "test" "a=>b=>((c<>d)=>e)"
@@ -50,7 +66,7 @@ spec = do
 
     it "preserves explicit right-nested star groups" $ do
       formatWireSource "test" "a*(b*c)"
-        `shouldBe` Right "a\n  * (\n    b\n      * c\n  )\n"
+        `shouldBe` Right "a\n  * (b * c)\n"
 
     it "formats contract record shapes" $ do
       formatWireSource "test" "contract Result{summary: Text;};"
@@ -88,7 +104,7 @@ spec = do
 
     it "does not treat # inside strings as a comment" $ do
       formatWireSource "test" "let flake = \".#wire\";\na\n  => b\n"
-        `shouldBe` Right "let flake = \".#wire\";\n\na\n  => b\n"
+        `shouldBe` Right "let flake = \".#wire\";\n\na => b\n"
 
     it "allows non-cyclic graph-domain compile errors before formatting" $ do
       let source =
@@ -98,7 +114,7 @@ spec = do
             \  -> input: T = input;\n\
             \a=>a\n"
           expected =
-            "contract T;\n\nnode a\n  <- input: T;\n  -> input: T = input;\n\na\n  => a\n"
+            "contract T;\n\nnode a\n  <- input: T;\n  -> input: T = input;\n\na => a\n"
       formatWireSource "test" source `shouldBe` Right expected
 
     it "preserves kind declarations rather than expanding them" $ do
@@ -194,10 +210,10 @@ spec = do
             "let pipeline =\n\
             \  a\n\
             \    => b\n\
-            \    <> c\n\
-            \    <> d\n\
-            \    <> e\n\
-            \    <> f\n\
+            \      <> c\n\
+            \      <> d\n\
+            \      <> e\n\
+            \      <> f\n\
             \    => g;\n\
             \\n\
             \pipeline\n"
@@ -232,8 +248,7 @@ spec = do
           \  <- score: Score;\n\
           \  -> text: Text = concat [toString score];\n\
           \\n\
-          \home\n\
-          \  => report\n"
+          \home => report\n"
 
     it "preserves CorePure field access on a parenthesised ident" $ do
       let source = "let x = (a).b;\nx\n"

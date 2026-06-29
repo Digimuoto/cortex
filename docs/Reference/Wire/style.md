@@ -94,17 +94,28 @@ plan_build
   => summarize_build
 ```
 
-Break large frontiers vertically with a leading `<>` on each member, aligned with the `=>` stages so
-each line reads as another member of the same frontier:
+Break large frontiers vertically with a leading `<>` on each continuation, indented under the first
+frontier member so each line reads as another member of the same frontier:
 
 ```wire
 plan_build
   => compile_check
-  <> test_check
+    <> test_check
+    <> docs_check
+    <> lint_check
+    <> audit_check
+    <> package_check
+  => summarize_build
+```
+
+When a large frontier is the first graph stage, keep the first two compact members on the first line
+and indent the remaining members beneath them:
+
+```wire
+compile_check <> test_check
   <> docs_check
   <> lint_check
   <> audit_check
-  <> package_check
   => summarize_build
 ```
 

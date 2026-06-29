@@ -371,85 +371,124 @@ formatExecutorConfig record =
   " " <> formatRecordInline record
 
 formatGraphExpr :: Int -> Expr -> [Text]
-formatGraphExpr level expr =
+formatGraphExpr level = formatGraphWithPrefix level noLinePrefix
+
+data LinePrefix
+  = LinePrefixNone
+  | LinePrefix !Text
+  deriving stock (Eq, Show)
+
+noLinePrefix :: LinePrefix
+noLinePrefix = LinePrefixNone
+
+prefixText :: LinePrefix -> Text
+prefixText = \case
+  LinePrefixNone -> ""
+  LinePrefix prefix -> prefix
+
+indentPrefixed :: Int -> LinePrefix -> Text -> Text
+indentPrefixed level prefix content =
+  indentText level (prefixText prefix <> content)
+
+formatGraphWithPrefix :: Int -> LinePrefix -> Expr -> [Text]
+formatGraphWithPrefix level prefix expr =
   case expr of
     ExprConnect {} ->
-      formatTopologyChain level (flattenTopology expr)
+      formatTopologyChain level prefix (flattenTopology expr)
     ExprStar {} ->
-      formatTopologyChain level (flattenTopology expr)
+      formatTopologyChain level prefix (flattenTopology expr)
     ExprOverlay {} ->
-      formatOverlay level (flattenOverlay expr)
+      formatOverlay level prefix (flattenOverlay expr)
     _ ->
-      [indentText level (formatExprInline expr)]
+      [indentPrefixed level prefix (formatExprInline expr)]
 
-formatTopologyChain :: Int -> TopologyChain -> [Text]
-formatTopologyChain level (TopologyChain first rest) =
-  formatStage level first <> concatMap formatNext rest
+formatTopologyChain :: Int -> LinePrefix -> TopologyChain -> [Text]
+formatTopologyChain level LinePrefixNone chain
+  | Just line <- formatInlineTopologyChain chain =
+      [indentText level line]
+formatTopologyChain level prefix (TopologyChain first rest) =
+  formatStage level prefix first <> concatMap formatNext rest
   where
     formatNext (TopologyStep op stageExpr) =
-      case formatStage (level + 1) stageExpr of
-        [] -> []
-        firstLine : moreLines ->
-          (indentText (level + 1) (formatTopologyOp op <> " ") <> T.dropWhile (== ' ') firstLine) : moreLines
+      formatStage (level + 1) (LinePrefix (formatTopologyOp op <> " ")) stageExpr
 
-formatStage :: Int -> Expr -> [Text]
-formatStage level = \case
+formatStage :: Int -> LinePrefix -> Expr -> [Text]
+formatStage level prefix = \case
   expr@ExprOverlay {} ->
-    formatOverlay level (flattenOverlay expr)
+    formatOverlay level prefix (flattenOverlay expr)
   expr@ExprConnect {} ->
-    parenthesizeMultiline level (formatGraphExpr (level + 1) expr)
+    parenthesizeMultiline level prefix (formatGraphExpr (level + 1) expr)
   expr@ExprStar {} ->
-    parenthesizeMultiline level (formatGraphExpr (level + 1) expr)
+    parenthesizeMultiline level prefix (formatGraphExpr (level + 1) expr)
   expr ->
-    [indentText level (formatExprInline expr)]
+    [indentPrefixed level prefix (formatExprInline expr)]
 
-formatOverlay :: Int -> [Expr] -> [Text]
-formatOverlay level items
+formatOverlay :: Int -> LinePrefix -> [Expr] -> [Text]
+formatOverlay level prefix items
   | length items <= 4 && all isInlineGraphAtom items && T.length inline <= 100 =
-      [indentText level inline]
+      [indentPrefixed level prefix inline]
   | otherwise =
-      formatOverlayItems level items
+      formatOverlayItems level prefix items
   where
     inline =
       T.intercalate " <> " (fmap formatExprInline items)
 
-formatOverlayItems :: Int -> [Expr] -> [Text]
-formatOverlayItems level =
-  concat . zipWith formatItem [0 :: Int ..]
+formatOverlayItems :: Int -> LinePrefix -> [Expr] -> [Text]
+formatOverlayItems level firstPrefix items =
+  case firstStagePair items of
+    Just (first, second, rest) ->
+      [indentPrefixed level firstPrefix (formatExprInline first <> " <> " <> formatExprInline second)]
+        <> concatMap formatContinuation rest
+    Nothing ->
+      concat (zipWith formatItem [0 :: Int ..] items)
   where
-    formatItem index item =
-      addPrefix prefix $
-        case item of
-          ExprConnect {} -> parenthesizeMultiline level (formatGraphExpr (level + 1) item)
-          ExprStar {} -> parenthesizeMultiline level (formatGraphExpr (level + 1) item)
-          -- Nested ExprOverlay only reaches this branch from explicit source
-          -- grouping (flattenOverlay walks the left spine only). parenthesizeMultiline
-          -- always wraps, so the right-nested AST round-trips regardless of how the
-          -- inner frontier renders (e.g. a leading parenthesized connect/select).
-          ExprOverlay {} -> parenthesizeMultiline level (formatGraphExpr (level + 1) item)
-          _ -> [indentText level (formatExprInline item)]
-      where
-        prefix = if index == 0 then "" else "<> "
+    firstStagePair = \case
+      first : second : rest
+        | firstPrefix == LinePrefixNone
+        , isSimpleOverlayContinuation first
+        , isSimpleOverlayContinuation second ->
+            Just (first, second, rest)
+      _ -> Nothing
 
-parenthesizeMultiline :: Int -> [Text] -> [Text]
-parenthesizeMultiline level = \case
-  [] -> [indentText level "()"]
-  [single] -> [indentText level ("(" <> T.strip single <> ")")]
+    formatItem index =
+      formatItemAt itemLevel prefix
+      where
+        (itemLevel, prefix) =
+          if index == 0
+            then (level, firstPrefix)
+            else (level + 1, overlayContinuationPrefix)
+
+    formatItemAt itemLevel prefix item =
+      case item of
+        ExprConnect {} -> parenthesizeMultiline itemLevel prefix (formatGraphExpr (itemLevel + 1) item)
+        ExprStar {} -> parenthesizeMultiline itemLevel prefix (formatGraphExpr (itemLevel + 1) item)
+        -- Nested ExprOverlay only reaches this branch from explicit source
+        -- grouping (flattenOverlay walks the left spine only). parenthesizeMultiline
+        -- always wraps, so the right-nested AST round-trips regardless of how the
+        -- inner frontier renders.
+        ExprOverlay {} -> parenthesizeMultiline itemLevel prefix (formatGraphExpr (itemLevel + 1) item)
+        _ -> [indentPrefixed itemLevel prefix (formatExprInline item)]
+
+    formatContinuation =
+      formatItemAt (level + 1) overlayContinuationPrefix
+
+    overlayContinuationPrefix = LinePrefix "<> "
+
+isSimpleOverlayContinuation :: Expr -> Bool
+isSimpleOverlayContinuation = \case
+  ExprConnect {} -> False
+  ExprStar {} -> False
+  ExprOverlay {} -> False
+  expr -> isInlineGraphAtom expr
+
+parenthesizeMultiline :: Int -> LinePrefix -> [Text] -> [Text]
+parenthesizeMultiline level prefix = \case
+  [] -> [indentPrefixed level prefix "()"]
+  [single] -> [indentPrefixed level prefix ("(" <> T.strip single <> ")")]
   lines' ->
-    [indentText level "("]
+    [indentPrefixed level prefix "("]
       <> lines'
       <> [indentText level ")"]
-
-addPrefix :: Text -> [Text] -> [Text]
-addPrefix "" lines' =
-  lines'
-addPrefix prefix lines' =
-  case lines' of
-    [] -> []
-    firstLine : rest ->
-      let spaces = T.takeWhile (== ' ') firstLine
-          content = T.dropWhile (== ' ') firstLine
-       in (spaces <> prefix <> content) : rest
 
 data TopologyOp
   = TopologyConnect
@@ -466,6 +505,27 @@ formatTopologyOp :: TopologyOp -> Text
 formatTopologyOp = \case
   TopologyConnect -> "=>"
   TopologyStar -> "*"
+
+formatInlineTopologyChain :: TopologyChain -> Maybe Text
+formatInlineTopologyChain = \case
+  TopologyChain first [TopologyStep op second]
+    | isInlineTopologyAtom first
+    , isInlineTopologyAtom second
+    , T.length line <= 100 ->
+        Just line
+    where
+      line = formatExprInline first <> " " <> formatTopologyOp op <> " " <> formatExprInline second
+  _ -> Nothing
+
+isInlineTopologyAtom :: Expr -> Bool
+isInlineTopologyAtom = \case
+  ExprOverlay {} -> False
+  ExprConnect {} -> False
+  ExprStar {} -> False
+  ExprMerge {} -> False
+  ExprConcat {} -> False
+  ExprList {} -> False
+  expr -> T.length (formatExprInline expr) <= 80
 
 flattenTopology :: Expr -> TopologyChain
 flattenTopology expr =
