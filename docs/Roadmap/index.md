@@ -29,6 +29,8 @@ transition notes, or migration-era planning notes.
 
 ## Current Plans
 
+- **[ADR sweep governance](Plans/adr-sweep-governance.md)** - coordination ledger for remaining
+  ADR-sweep governance gaps and their canonical destination surfaces.
 - **[Lean mechanization](Plans/lean-mechanization.md)** - machine-checked support for the
   fixed-topology core.
 - **[Rewrite materialization and recovery](Plans/rewrite-materialization-and-recovery.md)** -

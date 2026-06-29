@@ -10,6 +10,7 @@ sidebar:
 
 | Plan                                                                            | Kind          | Status   |
 | ------------------------------------------------------------------------------- | ------------- | -------- |
+| [ADR sweep governance](adr-sweep-governance.md)                                 | Coordination  | Active   |
 | [Lean mechanization](lean-mechanization.md)                                     | Research plan | Proposed |
 | [Rewrite materialization and recovery](rewrite-materialization-and-recovery.md) | Research plan | Proposed |
 
