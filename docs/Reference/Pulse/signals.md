@@ -1,8 +1,8 @@
 ---
 title: "Pulse Signals Reference"
 description:
-  "Normative contract for durable signals: naming, state machine, producer and consumer protocols,
-  delivery semantics, storage."
+  "Normative contract for durable signals: naming, shipped and staged states, producer and consumer
+  protocols, delivery semantics, storage."
 sidebar:
   label: "Pulse signals"
   order: 14
@@ -18,7 +18,8 @@ atomically transitions to delivered and the run wakes at that node.
 
 This page states the contract. Architectural framing is in
 [chapter 06](../../Architecture/06-pulse-runtime.md); the service endpoint is
-[`service-api.md`](./service-api.md#1-endpoints).
+[`service-api.md`](./service-api.md#1-endpoints). ADR 0082 governs the base durable signal
+primitive; ADR 0058 and ADR 0059 govern the specialized run-terminal and external-call families.
 
 ## 1. Identity and scope
 
@@ -29,7 +30,8 @@ newtype SignalName = SignalName { unSignalName :: Text }
 A signal name is an opaque text tag. Signals are scoped to a run: the same name in two different
 runs is two different signals. Within a run, at most one wait per signal name may be `pending` at a
 time — a partial unique index on `(run_id, signal_name) WHERE status = 'pending'` enforces this. A
-name may be reused for a second wait once the prior wait has been delivered or expired.
+name may be reused for a second wait once the prior wait has been delivered. Reuse after expiry is
+reserved by the schema, but depends on the future active expiry transition.
 
 The `node_id` on a signal row records which node registered the wait, but it does not participate in
 uniqueness. Settlement still treats it as the pending row's owner: a same-node re-settlement is
@@ -43,7 +45,7 @@ single node.
 stateDiagram-v2
     [*] --> pending: StageSuspend SignalName
     pending --> delivered: deliverSignal
-    pending --> expired: expiresAt elapses
+    pending --> expired: expiresAt elapses (staged)
     delivered --> consumed: external-call re-arm (§4.2)
     delivered --> [*]
     consumed --> [*]
@@ -57,8 +59,8 @@ stateDiagram-v2
 - **consumed** — a delivered reserved `external-call:` wake (§4.2) that suspend settlement has used
   to re-arm the node; consuming it keeps settlement from re-observing the delivered row and
   re-arming in a loop. Only the `external-call:` family reaches this state.
-- **expired** — an optional `expiresAt` has elapsed without delivery; the wait cannot be satisfied
-  and the run must be cancelled or retried.
+- **expired** — reserved by schema/types for a future `expiresAt` transition. The active runtime
+  expiry path is not shipped yet, so callers must not rely on waits being advanced to this state.
 
 Only Pulse mutates these states. External callers observe them through the service API.
 
@@ -103,8 +105,9 @@ payload and delivery timestamp, and wakes the waiting node in a single transacti
 deliveries to a signal that is already `delivered` are no-ops and return the original delivery.
 
 Attempting to deliver a signal that was never waited on (no matching `pending` row) fails with a
-structured error. Attempting to deliver an `expired` signal fails with a structured error; the run
-must be retried to produce a fresh wait.
+structured error. When the staged expiry transition lands, attempting to deliver an `expired` signal
+will likewise fail with a structured error and the run will need to be retried to produce a fresh
+wait.
 
 ## 4.1 Run-terminal signals
 
@@ -223,6 +226,8 @@ Schema-level detail is in [`schema.md §9`](./schema.md#9-signals).
 - [./types.md](./types.md) — `StageResult` and `StageSuspend`.
 - [../../Architecture/06-pulse-runtime.md](../../Architecture/06-pulse-runtime.md) — runtime
   framing.
+- [../../ADRs/0082-pulse-durable-signals.md](../../ADRs/0082-pulse-durable-signals.md) — base
+  durable signal primitive.
 
 ---
 

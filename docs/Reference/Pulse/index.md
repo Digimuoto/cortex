@@ -15,7 +15,7 @@ Consultable normative material for the Pulse runtime. Architectural framing live
 ## Contents
 
 - **[schema.md](schema.md)** — DB enums, task definitions, runs, checkpoints, stage log, stage
-  attempt log, run events, signals.
+  attempt log, run events, signals, provisioning, and migration policy.
 - **[types.md](types.md)** — task envelope, checkpoint envelope, stage plan, retry policy, memory
   strategy, stage result.
 - **[runtime-bounded-iteration.md](runtime-bounded-iteration.md)** — evidence matrix and runnable
@@ -30,5 +30,9 @@ Consultable normative material for the Pulse runtime. Architectural framing live
 
 - [../../Architecture/06-pulse-runtime.md](../../Architecture/06-pulse-runtime.md) — Pulse runtime
   architecture.
+- [../../ADRs/0082-pulse-durable-signals.md](../../ADRs/0082-pulse-durable-signals.md) — durable
+  signal primitive.
+- [../../ADRs/0083-pulse-schema-lifecycle.md](../../ADRs/0083-pulse-schema-lifecycle.md) — schema
+  lifecycle and migrations.
 - [../terminology.md](../terminology.md) — normative vocabulary.
 - [../../Consumers/](../../Consumers/) — downstream binding examples.

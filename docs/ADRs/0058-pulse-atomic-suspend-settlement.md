@@ -113,6 +113,10 @@ _Boundary Rules_) covers both crash recovery and a delivery serialized just befo
   terminal writer between "observed non-terminal" and "pending wait committed"); the advisory lock,
   not lock ordering, is the deadlock-avoidance mechanism. The lock is transaction-scoped, so
   commit/rollback releases it with the same atomicity as the signal rows.
+- **Run-terminal protocol writer set.** The operations named above are the governed run-terminal
+  protocol writer set. Any future code path that writes a terminal run status, delivers
+  `run-terminal:` waiters, recovers expired terminalizing runs, or plans a `run-terminal:`
+  settlement must join this set and take the advisory lock before touching protocol run rows.
 - **Rejected suspends repair graph state.** A suspend that settlement rejects (run-terminal target
   missing, run-terminal self-wait, or duplicate pending ownership) marks the offending `NodeWaiting`
   nodes `NodeFailed`, propagates failure through the topology, and persists that repaired graph
@@ -167,6 +171,8 @@ _Boundary Rules_) covers both crash recovery and a delivery serialized just befo
 - Take the transaction-scoped run-terminal protocol advisory lock first in every operation that
   touches run rows under the protocol: the four terminal status writers, expired-lease recovery,
   run-terminal settlement planning, and `deliverRunTerminalSignals`.
+- Extend the run-terminal protocol writer set whenever a new terminalizing or run-terminal delivery
+  path is added; no path may rely on a local lock-order argument outside this registry.
 - A rejected suspend repairs graph state (mark offending `NodeWaiting` nodes failed, propagate
   failure) and persists it before failing the run.
 - Remove inline registration from `Executor/Frontier.hs` (`StageSuspended` → `OutcomeSuspendedOn`,

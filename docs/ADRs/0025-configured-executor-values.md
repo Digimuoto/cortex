@@ -16,8 +16,10 @@ related:
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0019-executor-registration-and-binding.md
+  - docs/ADRs/0012-topological-memory-as-deterministic-graph-query.md
   - docs/ADRs/0022-wire-node-clause-grammar.md
   - docs/ADRs/0024-typed-executor-node-interface.md
+  - docs/ADRs/0040-logos-owned-reasoning-surfaces.md
   - docs/ADRs/0050-wire-corepure-output-residue.md
   - docs/ADRs/0030-wire-node-implementation-forms.md
 ---
@@ -143,6 +145,26 @@ host callbacks.
 Config admission happens before the graph vertex is admitted. Invalid config is a Wire admission
 failure, not a runtime executor failure.
 
+### Runtime Options Boundary
+
+Wire also admits a small set of node-local runtime metadata fields such as `timeout`, `retry`,
+`stepBudget`, `toolLoopMinSteps`, `maxOutputTokens`, `reasoningEnabled`, and `memory`. These fields
+are static executor metadata carried with the node; they are not additional graph edges and they do
+not grant authority by themselves.
+
+Their ownership is split:
+
+- generic execution controls such as timeout, retry, and step budget are Cortex substrate metadata;
+- `memory = classic` / `memory = topological { ... }` is the Cortex/Pulse topological-memory
+  strategy governed by ADR 0012;
+- model choice, tool policy, reasoning behavior, and product-specific memory presets remain
+  executor/downstream policy under ADR 0040 and ADR 0054, even when historical field names such as
+  `toolLoopMinSteps`, `maxOutputTokens`, or `reasoningEnabled` are serialized for compatibility.
+
+The compiler may preserve these fields in circuit metadata for host binders and executors. The field
+names are not a Cortex promise to implement model loops, provider selection, cognitive memory, or
+product reasoning policy inside the substrate.
+
 ### Port Matching
 
 A configured executor value is applied to one input expression. If the registered projection has one
@@ -189,6 +211,8 @@ calls use node-level executor bodies.
 - Reject input-dependent executor config.
 - Update executor reference docs to replace partial-node wording with configured executor values.
 - Ensure imported configured executor values still require host projection and Capability binding.
+- Keep node runtime-options docs explicit about the split between Cortex substrate metadata and
+  downstream/provider policy.
 
 ## Traceability
 

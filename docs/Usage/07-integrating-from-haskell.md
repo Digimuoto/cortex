@@ -48,6 +48,28 @@ id, renews the lease while it executes, and lets the caller resume by run id aft
 caller still owns schema provisioning, pool reuse choices, binder compatibility, and retention of
 durable rows.
 
+Use the `...ManagedOn` variants when the consumer already owns a PostgreSQL pool and wants to
+amortize pool setup across runs. Use the non-`On` variants when the consumer wants Cortex to open a
+pool from `PulseConfig` for one call. Both paths run the same stage plan and return
+`Either CircuitRunError (UUID, RunOutcome)` for fresh runs; resume variants take the prior run id.
+
+Managed resume claims the run before executing it. A pending run or a running run with an expired
+lease can be resumed by the caller. A live running run is rejected to avoid split-brain execution,
+waiting and other non-claimable non-terminal runs are reported as not resumable, and terminal runs
+return their stored outcome without re-driving the plan.
+
+The main error classes are:
+
+- `CircuitRunLoweringError` — the compiled circuit cannot lower to a runnable Pulse stage plan.
+- `CircuitRunUnsupportedLatentConditions` — the managed entrypoint cannot run unresolved latent
+  conditions.
+- `CircuitRunPoolError` / `CircuitRunSchemaMissing` — pool setup or schema validation failed before
+  execution.
+- `CircuitRunSetupError` / `CircuitRunTaskClaimConflict` — task definition, task load, or run-claim
+  setup failed.
+- `CircuitRunResumeRejected` — the target run exists but is not currently resumable by this caller.
+- `CircuitRunExecutionError` — execution raised an exception after setup.
+
 ## Provision The Schema
 
 For a new consumer-owned database, call `Cortex.Pulse.Database.provisionPulseSchema` before managed
@@ -57,6 +79,9 @@ current objects when the schema already exists.
 For an already-deployed database, apply forward migrations from `migrations/` before rolling out
 code that depends on new schema shape. `provisionPulseSchema` validates; it is not a general
 migration runner.
+
+Ephemeral test databases should use the same provisioning path. That keeps local tests aligned with
+fresh downstream setup instead of relying on hand-written table fragments.
 
 ## Boundary Rule
 
@@ -69,4 +94,5 @@ and run the graph.
 - [Execution modes](02-execution-modes.md)
 - [Running durable Pulse](08-running-durable-pulse.md)
 - [Pulse schema](../Reference/Pulse/schema.md)
+- [Pulse signals](../Reference/Pulse/signals.md)
 - [Consumers](../Consumers/)

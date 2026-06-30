@@ -87,12 +87,16 @@ stops harmlessly instead of corrupting the winner's state.
 > revision it read and wins only if no one has moved it since. The loser yields the run — it stops
 > without a terminal write — rather than clobbering the winner.
 
+The named mutation boundary is the **durable graph-state write seam**. Runtime code may construct
+new graph state in memory, but durable mutation of `pulse.graph_state` must cross this seam so the
+CAS token, stale-write behavior, event emission, and suspend-settlement ordering remain uniform.
+
 ## Boundary Rules
 
 - **One row, one revision per run.** `run_id` is the `graph_state` primary key; `updated_at` is both
   the durable snapshot timestamp and the CAS token. There is no separate revision column.
-- **CAS on every wave write.** All durable graph-state writes route through the persistence seam
-  (`persistGraphState` / `requireGraphStatePersist` / `requireGraphStatePersistVar` /
+- **CAS on every wave write.** All durable graph-state writes route through the durable graph-state
+  write seam (`persistGraphState` / `requireGraphStatePersist` / `requireGraphStatePersistVar` /
   `settleSuspend`) rather than raw `writeGraphState`: the frontier's running-mark and per-node
   result writes (`Executor/Frontier.hs`), the loop's post-rewrite write (`Executor/Loop.hs`), and
   resume's rehydration write (`Executor/Resume.hs`). Each carries the expected revision it last
@@ -146,6 +150,8 @@ stops harmlessly instead of corrupting the winner's state.
 
 - Every new graph-state write path must go through the persistence seam carrying an expected
   revision; no caller may issue a raw `writeGraphState` without it, or the CAS is bypassed.
+- Reviews of new durable execution paths must treat raw `writeGraphState` as an implementation
+  detail of the seam, not as a general mutation API.
 - `settleSuspend` must keep its graph-state CAS write first in the transaction (ADR 0058) so a stale
   result aborts before wait rows or a park are written.
 - `nextGraphStateRevision` must remain strictly increasing; any change to the revision source must

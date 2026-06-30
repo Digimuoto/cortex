@@ -96,6 +96,9 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0079](0079-wire-admission-witness-schema.md)                      | Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema   | proposed   |
 | [0080](0080-wire-binder-construction-boundary.md)                  | Wire Binder Construction and the Contract-Typing Boundary                  | proposed   |
 | [0081](0081-wire-endpoint-closure-accounting.md)                   | Wire Endpoint Closure Accounting and Frontier Inspection                   | proposed   |
+| [0082](0082-pulse-durable-signals.md)                              | Pulse Durable Signal Primitive                                             | proposed   |
+| [0083](0083-pulse-schema-lifecycle.md)                             | Pulse Schema Lifecycle and Migration Policy                                | proposed   |
+| [0084](0084-wire-tree-sitter-grammar.md)                           | tree-sitter-wire Grammar Governance                                        | proposed   |
 
 ## By category
 
@@ -111,7 +114,7 @@ is shown here.
   [0018](0018-canonical-haskell-module-tree.md), [0040](0040-logos-owned-reasoning-surfaces.md),
   [0063](0063-adr-traceability-and-feature-status-canon.md),
   [0080](0080-wire-binder-construction-boundary.md)
-- **Pulse runtime & durability** (13): [0004](0004-graph-native-pulse-execution.md),
+- **Pulse runtime & durability** (15): [0004](0004-graph-native-pulse-execution.md),
   [0008](0008-pulse-operator-visibility-surfaces.md),
   [0011](0011-compatibility-barriers-and-fresh-run-recovery.md),
   [0012](0012-topological-memory-as-deterministic-graph-query.md),
@@ -119,7 +122,8 @@ is shown here.
   [0058](0058-pulse-atomic-suspend-settlement.md),
   [0059](0059-durable-external-call-frontiers-on-pulse.md), [0064](0064-pulse-graph-state-cas.md),
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
-  [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md)
+  [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
+  [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
 - **Rewrite admission & budget** (7):
   [0005](0005-budgeted-rewrite-admission-and-materialization.md),
   [0009](0009-rewrite-provenance-and-topology-integrity.md),
@@ -160,11 +164,12 @@ is shown here.
   [0019](0019-executor-registration-and-binding.md), [0042](0042-wire-standard-effect-executors.md),
   [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)
 - **Artifact & provenance** (1): [0071](0071-wire-artifact-emission.md)
-- **Packaging, CLI & tooling** (7): [0041](0041-wire-cli-command-surface.md),
+- **Packaging, CLI & tooling** (8): [0041](0041-wire-cli-command-surface.md),
   [0054](0054-downstream-wire-packages-and-host-bindings.md),
   [0060](0060-filesystem-package-and-binding-manifests.md),
   [0074](0074-wire-canonical-formatter.md), [0075](0075-pulse-service-config-credentials.md),
-  [0076](0076-wire-cli-proof-fixtures.md), [0077](0077-wire-manifest-versioning.md)
+  [0076](0076-wire-cli-proof-fixtures.md), [0077](0077-wire-manifest-versioning.md),
+  [0084](0084-wire-tree-sitter-grammar.md)
 - **Proof track** (3): [0038](0038-wire-proof-track-theorem-ledger.md),
   [0078](0078-lean-wire-elaboration-kernel.md), [0079](0079-wire-admission-witness-schema.md)
 

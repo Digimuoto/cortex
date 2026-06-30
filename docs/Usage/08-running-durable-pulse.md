@@ -31,6 +31,28 @@ A Pulse process needs:
 The stock `cortex-pulse` binary supplies an empty task registry. Use it to inspect runtime
 configuration and health wiring; use a consumer-bound binary for real task execution.
 
+## Provisioning And Migration
+
+Fresh deployments should provision the `pulse` schema through
+`Cortex.Pulse.Database.provisionPulseSchema`. That call creates the schema from the checked-in
+`data/pulse-schema.sql` dump when absent and validates the current shape when present.
+
+Existing deployments must apply forward, idempotent files from `migrations/` before deploying code
+that depends on the new shape. Pulse does not ship an in-process migration runner; operators or
+deployment tooling own migration execution.
+
+## Managed Runs Versus Service Runs
+
+The durable service loop claims scheduled task definitions and runs them with lease renewal,
+recovery, and backpressure visibility. Haskell consumers that do not want a scheduler service can
+use the managed compiled-circuit facade instead. The managed facade creates one scheduler-inert task
+definition and run, executes it under lease renewal, and exposes resume-by-run-id for crash
+recovery.
+
+Both modes use the same Pulse tables, graph-state CAS discipline, signal protocol, and event
+catalog. The difference is ownership of scheduling: the service owns polling and task discovery; the
+managed facade is caller-driven.
+
 ## Start The Shell
 
 The executable requires a JWT secret file. Database password and service credential files are
@@ -65,6 +87,16 @@ A durable run leaves behind:
 
 Use [Pulse schema](../Reference/Pulse/schema.md), [events](../Reference/Pulse/events.md), and
 [signals](../Reference/Pulse/signals.md) for exact storage and event semantics.
+
+## Operational Boundaries
+
+- Only Pulse writes run status, graph state, signal rows, stage attempts, and events in the `pulse`
+  schema.
+- Durable graph-state writes cross the CAS-protected graph-state write seam.
+- Run-terminal signal delivery and terminal status writers use the governed run-terminal protocol
+  writer set.
+- Reserved signal families such as `run-terminal:` and `external-call:` are runtime-owned and are
+  not delivered through the public signal endpoint.
 
 ## Related
 

@@ -262,7 +262,9 @@ node = typed ports + executor body
 ```
 
 Ports stay first-class because the graph type-checker reasons about them. Executor config carries
-policy such as tools, memory authority, model choice, timeouts, budgets, and domain-specific fields.
+static metadata such as timeouts, budgets, memory strategy, and executor-specific policy fields.
+Cortex owns only the substrate interpretation of those fields: model choice, tool policy, reasoning
+behavior, and product-specific memory presets remain downstream executor or host-binding policy.
 
 ```wire
 let sectionWriter = @native.report_section_writer {

@@ -3,9 +3,10 @@
 Syntax highlighting + auto-indent + comment handling for `.wire` files.
 
 This uses a TextMate grammar (the default VS Code tokenizer). It doesn't wire up tree-sitter
-directly — VS Code doesn't natively support tree-sitter grammars yet. The tree-sitter grammar in the
-sibling `tree-sitter-wire/` directory is still the authoritative spec and powers Neovim/Helix; this
-extension is the pragmatic VS Code fallback.
+directly — VS Code doesn't natively support tree-sitter grammars yet. The normative syntax spec is
+`docs/Reference/Wire/grammar.md`, the production parser is `src/Cortex/Wire/Parser.hs`, and the
+tree-sitter grammar in the sibling `tree-sitter-wire/` directory powers Neovim/Helix; this extension
+is the pragmatic VS Code fallback.
 
 ## Install (local, for development)
 

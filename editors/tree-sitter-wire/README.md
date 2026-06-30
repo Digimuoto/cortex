@@ -4,7 +4,8 @@ Tree-sitter grammar for the Cortex **Wire** DSL. Checked-in examples and regress
 `.wire` files under `test/fixtures/wire/`.
 
 Source of truth for the syntax: `docs/Reference/Wire/grammar.md`. The production parser is
-`src/Cortex/Wire/Parser.hs`.
+`src/Cortex/Wire/Parser.hs`. ADR 0084 governs this directory as maintained editor/tooling grammar;
+semantic checks remain compiler-owned.
 
 ## What's here
 

@@ -100,8 +100,19 @@ Executor config may grant memory or retrieval authority:
 memory = topological { preset = "causal"; };
 ```
 
-That authority belongs to the executor binding. It is legal as registered config/tool authority, but
-it is not hidden node-to-node message passing and not part of the proven Wire topology core.
+That authority belongs to the admitted executor binding and Pulse memory strategy. It is legal as
+registered config/tool authority, but it is not hidden node-to-node message passing and not part of
+the proven Wire topology core.
+
+`memory = classic` and `memory = topological { ... }` are Cortex/Pulse substrate memory strategies:
+they select how a stage reads settled graph state at entry. Product-specific cognitive memory
+presets, ranking policy, model-provider choice, and tool-loop behavior remain downstream executor
+policy even when a node carries static metadata fields such as `toolLoopMinSteps`,
+`maxOutputTokens`, or `reasoningEnabled`.
+
+Runtime option fields are serialized for host binders and executors as static node metadata. They do
+not authorize IO, provider calls, model loops, or product reasoning behavior unless the registered
+executor projection and host binding already grant that authority.
 
 ## Relationship To Rewrites
 

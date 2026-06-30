@@ -181,14 +181,15 @@ pulse.signals
   run_id        uuid not null references pulse.runs(run_id) on delete cascade
   signal_name   text not null
   node_id       text                        -- nullable: which node registered the wait
-  status        text not null default 'pending'   -- pending | delivered | expired
+  status        text not null default 'pending'   -- pending | delivered | consumed | expired
   payload       jsonb                       -- null until delivered
   created_at    timestamptz not null
   delivered_at  timestamptz
   expires_at    timestamptz
 
   -- At most one pending signal per (run, name); the same name may be reused
-  -- across stages within a run once a prior wait has been delivered or expired.
+  -- across stages within a run once a prior wait has been delivered.
+  -- Reuse after expiry is reserved by schema/types until active expiry ships.
   unique index (run_id, signal_name) where status = 'pending'
   -- Run-terminal delivery updates pending signals by signal_name across runs;
   -- this partial index keeps that off a full pending-signal scan.
@@ -246,6 +247,10 @@ it applies the shipped schema data-file when `pulse` is absent, serializes concu
 provisioners with a transaction-scoped advisory lock, and rejects an existing schema that is missing
 required current tables, columns, or enum labels.
 
+ADR 0083 governs this lifecycle: fresh databases are provisioned from `data/pulse-schema.sql`;
+deployed databases are upgraded by explicit forward migrations; `provisionPulseSchema` validates the
+current shape but is not a general migration runner.
+
 ## Appendix B — Migrations
 
 This file is a generated dump of the applied `pulse` schema, and there is no in-repo migration
@@ -265,6 +270,8 @@ depends on the new shape — e.g. `migrations/0001_graph_rewrites_admission_mode
 - [./host-actions.md](./host-actions.md) — the Pulse → host callout contract.
 - [./signals.md](./signals.md) — signal protocol and delivery semantics.
 - [./events.md](./events.md) — run-event catalog.
+- [../../ADRs/0083-pulse-schema-lifecycle.md](../../ADRs/0083-pulse-schema-lifecycle.md) — schema
+  lifecycle and migration policy.
 
 ---
 
