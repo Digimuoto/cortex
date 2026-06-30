@@ -105,7 +105,7 @@ import Cortex.Wire.Compile
   )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
 import Cortex.Wire.EndpointUse qualified as EndpointUse
-import Cortex.Wire.Import (loadWireModuleClosure, renderWireImportError)
+import Cortex.Wire.Import (loadWireModuleClosureWithEnv, renderWireImportError)
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
   ( EmittedFixture (..)
@@ -119,10 +119,9 @@ import Cortex.Wire.LeanFixture
   )
 import Cortex.Wire.Package
   ( NamespaceRegistry
-  , packageConflicts
   , renderPackageConflict
   , stdOnlyRegistry
-  , wireCompileEnvWithPackages
+  , wireCompileEnvWithPackagesChecked
   )
 import Cortex.Wire.Package.Manifest
   ( loadWirePackageManifests
@@ -300,7 +299,7 @@ usageText =
 buildWire :: [FilePath] -> Maybe Text -> FilePath -> IO ()
 buildWire packagePaths maybeSelectedReturn path = do
   compileEnv <- loadCliWireCompileEnv packagePaths
-  modules <- loadWireModules path
+  modules <- loadWireModules compileEnv path
   let compile =
         maybe
           (compileWireModules compileEnv)
@@ -310,9 +309,9 @@ buildWire packagePaths maybeSelectedReturn path = do
   BSL.putStr (AesonPretty.encodePretty compiled)
   BSL.putStr "\n"
 
-loadWireModules :: FilePath -> IO (NonEmpty WireModule)
-loadWireModules path =
-  loadWireModuleClosure path
+loadWireModules :: WireCompileEnv -> FilePath -> IO (NonEmpty WireModule)
+loadWireModules compileEnv path =
+  loadWireModuleClosureWithEnv compileEnv path
     >>= either (dieText . renderWireImportError) pure
 
 {- | Inspect the endpoint-use / closure accounting of a compiled Wire file
@@ -324,7 +323,7 @@ it does not execute.
 frontierWire :: [FilePath] -> FrontierCommand -> IO ()
 frontierWire packagePaths frontierCommand = do
   compileEnv <- loadCliWireCompileEnv packagePaths
-  modules <- loadWireModules frontierCommand.frontierCommandFile
+  modules <- loadWireModules compileEnv frontierCommand.frontierCommandFile
   let compile =
         maybe
           (compileWireModules compileEnv)
@@ -440,7 +439,7 @@ fmtWireFile mode path = do
 runWire :: [FilePath] -> FilePath -> IO ()
 runWire packagePaths path = do
   compileEnv <- loadCliWireCompileEnv packagePaths
-  modules <- loadWireModules path
+  modules <- loadWireModules compileEnv path
   let namespaceRegistry =
         fromMaybe stdOnlyRegistry compileEnv.wireCompileEnvNamespaceRegistry
   let rootFile = (NE.last modules).wireModuleFile
@@ -497,9 +496,9 @@ loadCliWireCompileEnv explicitPaths = do
   manifestPaths <- cliWirePackageManifestPaths explicitPaths
   loadedPackages <- loadWirePackageManifests manifestPaths
   packages <- either (dieText . renderWirePackageManifestError) pure loadedPackages
-  case packageConflicts packages of
-    [] -> pure (wireCompileEnvWithPackages packages emptyWireCompileEnv)
-    conflicts ->
+  case wireCompileEnvWithPackagesChecked packages emptyWireCompileEnv of
+    Right compileEnv -> pure compileEnv
+    Left conflicts ->
       dieText
         ( "conflicting Wire packages:\n"
             <> T.intercalate "\n" (fmap (("  - " <>) . renderPackageConflict) conflicts)

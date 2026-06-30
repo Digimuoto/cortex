@@ -15,10 +15,12 @@ module Cortex.Wire.PackageSpec (spec) where
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as T
 import Test.Hspec
 
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
 import Cortex.Wire.Package
+import Cortex.Wire.Package.Manifest (decodeWirePackageManifest, renderWirePackageManifestError)
 import Cortex.Wire.Syntax (QName (..), UseItem (..), UseSpec (..))
 import Cortex.Wire.Use
 
@@ -86,6 +88,17 @@ useBeta =
 notTaken :: Text -> Bool
 notTaken = const False
 
+testPackage :: Text -> [NamespaceEntry] -> WirePackage
+testPackage packageId namespaceEntries =
+  WirePackage
+    { wpId = packageId
+    , wpNamespaceEntries = namespaceEntries
+    , wpExecutorProjections = []
+    , wpContractSpecs = []
+    , wpModuleSources = Map.empty
+    , wpModulePaths = []
+    }
+
 spec :: Spec
 spec = do
   describe "applyWireUseSpecs against a composed registry" $ do
@@ -114,7 +127,7 @@ spec = do
         `shouldBe` Left (WireUseUnknownItem "quantum.core" "@teleport")
 
   describe "packageNamespaceRegistry" . it "composes std.io with package namespaces" $ do
-    let reg = packageNamespaceRegistry [WirePackage "quantum" [quantumCore] [] []]
+    let reg = packageNamespaceRegistry [testPackage "quantum" [quantumCore]]
     namespaceRegistryNamespaces reg `shouldMatchList` ["std.io", "quantum.core"]
 
   describe "wireCompileEnvWithPackages"
@@ -122,11 +135,11 @@ spec = do
     $ do
       let envWithAlpha =
             wireCompileEnvWithPackages
-              [WirePackage "alpha" [alphaCore] [] []]
+              [testPackage "alpha" [alphaCore]]
               emptyWireCompileEnv
           envWithAlphaBeta =
             wireCompileEnvWithPackages
-              [WirePackage "beta" [betaCore] [] []]
+              [testPackage "beta" [betaCore]]
               envWithAlpha
 
       case envWithAlphaBeta.wireCompileEnvNamespaceRegistry of
@@ -144,11 +157,45 @@ spec = do
 
   describe "packageConflicts" $ do
     it "is empty for packages with disjoint ids and namespaces" $
-      packageConflicts [WirePackage "alpha" [alphaCore] [] [], WirePackage "beta" [betaCore] [] []]
+      packageConflicts [testPackage "alpha" [alphaCore], testPackage "beta" [betaCore]]
         `shouldBe` []
 
     it "reports duplicate package ids and namespaces" $ do
       let conflicts =
-            packageConflicts [WirePackage "dup" [alphaCore] [] [], WirePackage "dup" [alphaCore] [] []]
+            packageConflicts [testPackage "dup" [alphaCore], testPackage "dup" [alphaCore]]
       conflicts `shouldContain` [DuplicatePackageId "dup"]
       conflicts `shouldContain` [DuplicateNamespace "alpha.core"]
+
+    it "reports duplicate package module paths" $ do
+      let packageWithModule packageId =
+            (testPackage packageId [])
+              { wpModuleSources = Map.singleton "example/helpers.wire" "export let value = 1;"
+              , wpModulePaths = ["example/helpers.wire"]
+              }
+      packageConflicts [packageWithModule "alpha", packageWithModule "beta"]
+        `shouldContain` [DuplicateModulePath "example/helpers.wire"]
+
+    it "reports duplicate package module paths preserved from a single manifest" $ do
+      let package =
+            (testPackage "alpha" [])
+              { wpModuleSources = Map.singleton "example/helpers.wire" "export let value = 1;"
+              , wpModulePaths = ["example/helpers.wire", "example/helpers.wire"]
+              }
+      packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
+
+    it "reports duplicate package module paths decoded from one manifest" $ do
+      let source =
+            "[package]\n\
+            \id = \"alpha\"\n\
+            \\n\
+            \[[module]]\n\
+            \path = \"example/helpers.wire\"\n\
+            \source = \"export let value = 1;\"\n\
+            \\n\
+            \[[module]]\n\
+            \path = \"example/helpers.wire\"\n\
+            \source = \"export let value = 2;\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]

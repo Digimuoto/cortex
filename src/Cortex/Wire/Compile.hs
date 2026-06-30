@@ -23,6 +23,7 @@ module Cortex.Wire.Compile
   , compileWireTextWithReturnAndEnv
   , compileWireFragmentText
   , compileWireFragmentTextWithEnv
+  , WireModuleId (..)
   , WireModule (..)
   , WireModuleExports
   , compileWireModules
@@ -304,18 +305,23 @@ ordering are IO concerns owned by "Cortex.Wire.Import"; the compiler consumes
 an already-ordered closure purely (dependencies first, root last).
 -}
 data WireModule = WireModule
-  { wireModulePath :: !FilePath
-  -- ^ Canonical identity of the module file; unique within a closure.
+  { wireModulePath :: !WireModuleId
+  -- ^ Canonical identity of the module; unique within a closure.
   , wireModuleDisplayPath :: !Text
   -- ^ Path used in diagnostics.
   , wireModuleParseInfo :: !WireParseInfo
   , wireModuleFile :: !WireFile
-  , wireModuleImportPaths :: !(Map Text FilePath)
+  , wireModuleImportPaths :: !(Map Text WireModuleId)
   {- ^ Import path text as written in this module, resolved to the canonical
   path of the target module.
   -}
   }
   deriving stock (Eq, Show)
+
+data WireModuleId
+  = WireFileModule !FilePath
+  | WirePackageModule !Text
+  deriving stock (Eq, Ord, Show)
 
 -- | The importable surface of a lowered module.
 data WireModuleExports = WireModuleExports
@@ -391,16 +397,16 @@ compileModulesInternal maybeSelectedReturn compileEnv modules = do
 
 addModuleExports
   :: WireCompileEnv
-  -> Map FilePath WireModuleExports
+  -> Map WireModuleId WireModuleExports
   -> WireModule
-  -> Either WireCore.WireError (Map FilePath WireModuleExports)
+  -> Either WireCore.WireError (Map WireModuleId WireModuleExports)
 addModuleExports compileEnv exportsByPath wireModule = do
   importCtx <- moduleImportContext exportsByPath wireModule
   moduleExports <- lowerModuleExports compileEnv importCtx wireModule
   Right (Map.insert wireModule.wireModulePath moduleExports exportsByPath)
 
 moduleImportContext
-  :: Map FilePath WireModuleExports
+  :: Map WireModuleId WireModuleExports
   -> WireModule
   -> Either WireCore.WireError (Map Text WireModuleExports)
 moduleImportContext exportsByPath wireModule =

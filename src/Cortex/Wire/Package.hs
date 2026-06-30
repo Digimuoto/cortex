@@ -27,7 +27,9 @@ module Cortex.Wire.Package
   , stdOnlyRegistry
   , WirePackage (..)
   , packageNamespaceRegistry
+  , packageModuleSources
   , wireCompileEnvWithPackages
+  , wireCompileEnvWithPackagesChecked
   , PackageConflict (..)
   , packageConflicts
   , renderPackageConflict
@@ -72,6 +74,8 @@ data WirePackage = WirePackage
   , wpNamespaceEntries :: ![NamespaceEntry]
   , wpExecutorProjections :: ![WireExecutorProjection]
   , wpContractSpecs :: ![WireContractSpec]
+  , wpModuleSources :: !(Map.Map Text Text)
+  , wpModulePaths :: ![Text]
   }
 
 -- | Compose @std.io@ with the given Wire packages into one registry.
@@ -79,9 +83,15 @@ packageNamespaceRegistry :: [WirePackage] -> NamespaceRegistry
 packageNamespaceRegistry packages =
   namespaceRegistryFromEntries (stdNamespaceEntry : concatMap wpNamespaceEntries packages)
 
+-- | Package-owned Wire module sources keyed by stable import path.
+packageModuleSources :: [WirePackage] -> Map.Map Text Text
+packageModuleSources packages =
+  firstWins (concatMap (Map.toList . wpModuleSources) packages)
+
 {- | Add inert Wire packages to a compile environment. This supplies the `use`
 namespace registry and makes package contracts/executor projections available to
-strict compilation, but it grants no runtime authority.
+strict compilation, plus package-owned Wire module sources for import loading.
+It grants no runtime authority.
 -}
 wireCompileEnvWithPackages :: [WirePackage] -> WireCompileEnv -> WireCompileEnv
 wireCompileEnvWithPackages packages env =
@@ -96,6 +106,8 @@ wireCompileEnvWithPackages packages env =
         mergeExecutorRegistry env.wireCompileEnvExecutorRegistry packageExecutorRegistry
     , wireCompileEnvContractRegistry =
         Just (mergeContractRegistry env.wireCompileEnvContractRegistry packageContractRegistry)
+    , wireCompileEnvPackageModules =
+        env.wireCompileEnvPackageModules <> packageModuleSources packages
     }
   where
     packageNamespaceRegistry' =
@@ -114,6 +126,16 @@ wireCompileEnvWithPackages packages env =
             | spec <- concatMap wpContractSpecs packages
             ]
         )
+
+{- | Checked package composition for callers that load independent manifests.
+Conflicts are reported before the left-biased registries choose a winner.
+-}
+wireCompileEnvWithPackagesChecked
+  :: [WirePackage] -> WireCompileEnv -> Either [PackageConflict] WireCompileEnv
+wireCompileEnvWithPackagesChecked packages env =
+  case packageConflicts packages of
+    [] -> Right (wireCompileEnvWithPackages packages env)
+    conflicts -> Left conflicts
 
 {- | Keep the first binding for a duplicate key, matching the namespace registry's
 @Map.fromListWith (\\_ existing -> existing)@. Composition uses one precedence
@@ -143,6 +165,7 @@ data PackageConflict
   | DuplicateNamespace !Text
   | DuplicateExecutorId !Text
   | DuplicateContractId !Text
+  | DuplicateModulePath !Text
   deriving stock (Eq, Show)
 
 renderPackageConflict :: PackageConflict -> Text
@@ -151,6 +174,7 @@ renderPackageConflict = \case
   DuplicateNamespace namespace -> "duplicate namespace " <> namespace
   DuplicateExecutorId executorId -> "duplicate executor id " <> executorId
   DuplicateContractId contractId -> "duplicate contract id " <> contractId
+  DuplicateModulePath modulePath -> "duplicate package module path " <> modulePath
 
 {- | Every identifier claimed by more than one package among @packages@: package ids,
 exported namespaces, executor projection ids, and contract ids. An empty result means
@@ -170,7 +194,14 @@ packageConflicts packages =
           ]
     , DuplicateContractId
         <$> duplicates [spec.wireContractSpecId | package <- packages, spec <- package.wpContractSpecs]
+    , DuplicateModulePath
+        <$> duplicates [modulePath | package <- packages, modulePath <- packageModulePaths package]
     ]
   where
+    packageModulePaths package =
+      case package.wpModulePaths of
+        [] -> Map.keys package.wpModuleSources
+        paths -> paths
+
     duplicates :: Eq a => [a] -> [a]
     duplicates xs = nub [x | x <- xs, length (filter (== x) xs) > 1]

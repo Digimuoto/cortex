@@ -114,6 +114,7 @@ data WirePackageManifest = WirePackageManifest
   , wpmNamespaces :: ![NamespaceManifest]
   , wpmExecutorProjections :: ![WireExecutorProjection]
   , wpmContracts :: ![WireContractSpec]
+  , wpmModules :: ![ModuleManifest]
   }
   deriving stock (Eq, Show)
 
@@ -125,6 +126,7 @@ instance Toml.FromValue WirePackageManifest where
         <*> optionalList "namespace"
         <*> optionalList "executor"
         <*> optionalList "contract"
+        <*> optionalList "module"
 
 data PackageManifest = PackageManifest
   { pmId :: !Text
@@ -159,7 +161,24 @@ manifestToWirePackage manifest =
     , wpNamespaceEntries = fmap namespaceManifestEntry manifest.wpmNamespaces
     , wpExecutorProjections = manifest.wpmExecutorProjections
     , wpContractSpecs = manifest.wpmContracts
+    , wpModuleSources =
+        Map.fromList
+          [(packageModule.modulePath, packageModule.moduleSource) | packageModule <- manifest.wpmModules]
+    , wpModulePaths = fmap (.modulePath) manifest.wpmModules
     }
+
+data ModuleManifest = ModuleManifest
+  { modulePath :: !Text
+  , moduleSource :: !Text
+  }
+  deriving stock (Eq, Show)
+
+instance Toml.FromValue ModuleManifest where
+  fromValue =
+    Toml.parseTableFromValue $
+      ModuleManifest
+        <$> Toml.reqKey "path"
+        <*> Toml.reqKey "source"
 
 namespaceManifestEntry :: NamespaceManifest -> NamespaceEntry
 namespaceManifestEntry manifest =

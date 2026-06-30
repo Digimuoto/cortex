@@ -13,6 +13,7 @@ CorePure literals.
 -}
 module Cortex.Wire.Include
   ( expandWireSourceIncludes
+  , wireSourceIncludesPresent
   , wireSourceIncludeNames
   )
 where
@@ -60,6 +61,33 @@ expandWireSourceIncludes sourcePath sourceText =
     Right expanded -> pure (Right expanded)
   where
     baseDir = takeDirectory sourcePath
+
+-- | Detect source include forms outside comments and string literals.
+wireSourceIncludesPresent :: Text -> Bool
+wireSourceIncludesPresent sourceText =
+  case T.uncons sourceText of
+    Nothing ->
+      False
+    Just ('#', _) ->
+      scanAfter "\n" sourceText
+    Just ('"', _) ->
+      wireSourceIncludesPresent (snd (spanWireString sourceText))
+    Just ('/', _)
+      | "/*" `T.isPrefixOf` sourceText ->
+          scanAfter "*/" sourceText
+    Just ('\'', _)
+      | "''" `T.isPrefixOf` sourceText ->
+          scanAfter "''" (T.drop 2 sourceText)
+    _
+      | Just {} <- parseIncludeCall sourceText ->
+          True
+      | otherwise ->
+          wireSourceIncludesPresent (T.drop 1 sourceText)
+  where
+    scanAfter marker text =
+      let rest = snd (T.breakOn marker text)
+       in not (T.null rest)
+            && wireSourceIncludesPresent (T.drop (T.length marker) rest)
 
 expandSourceText :: FilePath -> Text -> IO Text
 expandSourceText baseDir sourceText =

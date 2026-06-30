@@ -88,6 +88,7 @@ data WireCompileEnv = WireCompileEnv
   , wireCompileEnvProjectionMode :: WireProjectionMode
   , wireCompileEnvContractRegistry :: Maybe WireContractRegistry
   , wireCompileEnvNamespaceRegistry :: !(Maybe NamespaceRegistry)
+  , wireCompileEnvPackageModules :: !(Map Text Text)
   }
   deriving stock (Eq, Show)
 
@@ -103,6 +104,7 @@ emptyWireCompileEnv =
     , wireCompileEnvProjectionMode = WireProjectionPermissive
     , wireCompileEnvContractRegistry = Nothing
     , wireCompileEnvNamespaceRegistry = Nothing
+    , wireCompileEnvPackageModules = Map.empty
     }
 
 wireCompileEnvWithContractRegistry :: WireContractRegistry -> WireCompileEnv
@@ -120,6 +122,7 @@ strictWireCompileEnv executorRegistry contractRegistry =
     , wireCompileEnvProjectionMode = WireProjectionStrict
     , wireCompileEnvContractRegistry = Just contractRegistry
     , wireCompileEnvNamespaceRegistry = Nothing
+    , wireCompileEnvPackageModules = Map.empty
     }
 
 portsMetadataValue :: WirePorts -> Aeson.Value

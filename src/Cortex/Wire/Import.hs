@@ -19,6 +19,7 @@ full requesting context.
 module Cortex.Wire.Import
   ( WireImportError (..)
   , loadWireModuleClosure
+  , loadWireModuleClosureWithEnv
   , renderWireImportError
   )
 where
@@ -34,8 +35,9 @@ import Data.Text.IO qualified as TIO
 import System.Directory (canonicalizePath, doesFileExist)
 import System.FilePath (isAbsolute, normalise, takeDirectory, (</>))
 
-import Cortex.Wire.Compile (WireModule (..))
-import Cortex.Wire.Include (expandWireSourceIncludes)
+import Cortex.Wire.Compile (WireModule (..), WireModuleId (..))
+import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
+import Cortex.Wire.Include (expandWireSourceIncludes, wireSourceIncludesPresent)
 import Cortex.Wire.Parser (WireParseInfo, parseWireFileWithInfo, renderParseError)
 import Cortex.Wire.Syntax (ImportSpec (..), TopForm (..), WireFile (..))
 
@@ -44,11 +46,13 @@ data WireImportError
     the missing file is not the root itself.
     -}
     WireImportFileNotFound !FilePath !(Maybe FilePath)
+  | WireImportPackageModuleNotFound !Text !(Maybe FilePath)
   | WireImportReadError !FilePath !Text
   | WireImportIncludeError !FilePath !Text
+  | WireImportPackageModuleIncludeError !Text
   | WireImportModuleParseError !FilePath !Text
   | -- | Import chain from the root to the repeated module, root first.
-    WireImportCycle ![FilePath]
+    WireImportCycle ![Text]
   deriving stock (Eq, Show)
 
 renderWireImportError :: WireImportError -> Text
@@ -57,17 +61,25 @@ renderWireImportError = \case
     "imported Wire file not found: "
       <> T.pack path
       <> maybe "" (\importer -> " (imported from " <> T.pack importer <> ")") requestedBy
+  WireImportPackageModuleNotFound path requestedBy ->
+    "package Wire module not found: "
+      <> path
+      <> maybe "" (\importer -> " (imported from " <> T.pack importer <> ")") requestedBy
   WireImportReadError path err ->
     "failed to read Wire file " <> T.pack path <> ": " <> err
   WireImportIncludeError path err ->
     "failed to expand includes in " <> T.pack path <> ": " <> err
+  WireImportPackageModuleIncludeError modulePath ->
+    "package Wire module "
+      <> modulePath
+      <> " uses include_str/include_dir, which are not allowed in package-owned modules"
   WireImportModuleParseError path err ->
     "failed to parse imported Wire file " <> T.pack path <> ":\n" <> err
   WireImportCycle chain ->
-    "Wire import cycle: " <> T.intercalate " -> " (fmap T.pack chain)
+    "Wire import cycle: " <> T.intercalate " -> " chain
 
 data LoadState = LoadState
-  { loadVisited :: !(Map FilePath WireModule)
+  { loadVisited :: !(Map WireModuleId WireModule)
   , loadOrdered :: ![WireModule]
   -- ^ Reverse dependency order; reversed once at the end.
   }
@@ -77,8 +89,13 @@ list is dependency-ordered with the root module last, ready for
 'Cortex.Wire.Compile.compileWireModules'.
 -}
 loadWireModuleClosure :: FilePath -> IO (Either WireImportError (NonEmpty WireModule))
-loadWireModuleClosure rootPath = do
-  result <- loadModule [] emptyLoadState Nothing rootPath
+loadWireModuleClosure =
+  loadWireModuleClosureWithEnv emptyWireCompileEnv
+
+loadWireModuleClosureWithEnv
+  :: WireCompileEnv -> FilePath -> IO (Either WireImportError (NonEmpty WireModule))
+loadWireModuleClosureWithEnv compileEnv rootPath = do
+  result <- loadFileModule compileEnv [] emptyLoadState Nothing rootPath
   pure $ do
     finalState <- result
     case NE.nonEmpty (reverse finalState.loadOrdered) of
@@ -88,32 +105,36 @@ loadWireModuleClosure rootPath = do
   where
     emptyLoadState = LoadState {loadVisited = Map.empty, loadOrdered = []}
 
-loadModule
-  :: [FilePath]
+loadFileModule
+  :: WireCompileEnv
+  -> [WireModuleId]
   -> LoadState
   -> Maybe FilePath
   -> FilePath
   -> IO (Either WireImportError LoadState)
-loadModule stack state requestedBy rawPath = do
+loadFileModule compileEnv stack state requestedBy rawPath = do
   exists <- doesFileExist rawPath
   if not exists
     then pure (Left (WireImportFileNotFound (normalise rawPath) requestedBy))
     else do
       path <- canonicalizePath rawPath
-      if Map.member path state.loadVisited
+      let moduleId = WireFileModule path
+      if Map.member moduleId state.loadVisited
         then pure (Right state)
         else
-          if path `elem` stack
-            then pure (Left (WireImportCycle (reverse (path : stack))))
-            else loadNewModule stack state path (normalise rawPath)
+          if moduleId `elem` stack
+            then
+              pure (Left (WireImportCycle (reverse (wireModuleIdText moduleId : fmap wireModuleIdText stack))))
+            else loadNewFileModule compileEnv stack state path (normalise rawPath)
 
-loadNewModule
-  :: [FilePath]
+loadNewFileModule
+  :: WireCompileEnv
+  -> [WireModuleId]
   -> LoadState
   -> FilePath
   -> FilePath
   -> IO (Either WireImportError LoadState)
-loadNewModule stack state path displayPath = do
+loadNewFileModule compileEnv stack state path displayPath = do
   sourceResult <- try @IOException (TIO.readFile path)
   case sourceResult of
     Left ioError' -> pure (Left (WireImportReadError displayPath (T.pack (show ioError'))))
@@ -125,23 +146,58 @@ loadNewModule stack state path displayPath = do
             Left parseError ->
               pure (Left (WireImportModuleParseError displayPath (renderParseError parseError)))
             Right (parseInfo, wireFile) ->
-              loadImports stack state path displayPath parseInfo wireFile
+              loadImports compileEnv stack state (WireFileModule path) path displayPath parseInfo wireFile
+
+loadPackageModule
+  :: WireCompileEnv
+  -> [WireModuleId]
+  -> LoadState
+  -> Maybe FilePath
+  -> Text
+  -> Text
+  -> IO (Either WireImportError LoadState)
+loadPackageModule compileEnv stack state _requestedBy modulePath source =
+  let moduleId = WirePackageModule modulePath
+   in if Map.member moduleId state.loadVisited
+        then pure (Right state)
+        else
+          if moduleId `elem` stack
+            then
+              pure (Left (WireImportCycle (reverse (wireModuleIdText moduleId : fmap wireModuleIdText stack))))
+            else
+              if wireSourceIncludesPresent source
+                then pure (Left (WireImportPackageModuleIncludeError modulePath))
+                else case parseWireFileWithInfo (T.unpack modulePath) source of
+                  Left parseError ->
+                    pure (Left (WireImportModuleParseError (T.unpack modulePath) (renderParseError parseError)))
+                  Right (parseInfo, wireFile) ->
+                    loadImports
+                      compileEnv
+                      stack
+                      state
+                      moduleId
+                      (T.unpack modulePath)
+                      (T.unpack modulePath)
+                      parseInfo
+                      wireFile
 
 loadImports
-  :: [FilePath]
+  :: WireCompileEnv
+  -> [WireModuleId]
   -> LoadState
+  -> WireModuleId
   -> FilePath
   -> FilePath
   -> WireParseInfo
   -> WireFile
   -> IO (Either WireImportError LoadState)
-loadImports stack state path displayPath parseInfo wireFile =
+loadImports compileEnv stack state moduleId path displayPath parseInfo wireFile =
   go state (importPathTexts wireFile) Map.empty
   where
     go currentState [] resolvedPaths =
       let wireModule =
             WireModule
-              { wireModulePath = path
+              { wireModulePath = moduleId
               , wireModuleDisplayPath = T.pack displayPath
               , wireModuleParseInfo = parseInfo
               , wireModuleFile = wireFile
@@ -150,18 +206,67 @@ loadImports stack state path displayPath parseInfo wireFile =
        in pure
             ( Right
                 currentState
-                  { loadVisited = Map.insert path wireModule currentState.loadVisited
+                  { loadVisited = Map.insert moduleId wireModule currentState.loadVisited
                   , loadOrdered = wireModule : currentState.loadOrdered
                   }
             )
     go currentState (pathText : rest) resolvedPaths = do
       let targetRaw = resolveImportPath path pathText
-      loadModule (path : stack) currentState (Just displayPath) targetRaw >>= \case
-        Left err -> pure (Left err)
-        Right nextState -> do
-          targetCanonical <- canonicalizePath targetRaw
-          go nextState rest (Map.insert pathText targetCanonical resolvedPaths)
+      resolveImportedModule
+        compileEnv
+        (moduleId : stack)
+        currentState
+        (Just displayPath)
+        moduleId
+        targetRaw
+        pathText
+        >>= \case
+          Left err -> pure (Left err)
+          Right (nextState, resolvedId) ->
+            go nextState rest (Map.insert pathText resolvedId resolvedPaths)
 
+resolveImportedModule
+  :: WireCompileEnv
+  -> [WireModuleId]
+  -> LoadState
+  -> Maybe FilePath
+  -> WireModuleId
+  -> FilePath
+  -> Text
+  -> IO (Either WireImportError (LoadState, WireModuleId))
+resolveImportedModule compileEnv stack currentState requestedBy importerId targetRaw pathText =
+  case importerId of
+    WirePackageModule _ ->
+      resolvePackageModule
+    WireFileModule _ -> do
+      exists <- doesFileExist targetRaw
+      if exists
+        then do
+          loaded <- loadFileModule compileEnv stack currentState requestedBy targetRaw
+          case loaded of
+            Left err -> pure (Left err)
+            Right nextState -> do
+              targetCanonical <- canonicalizePath targetRaw
+              pure (Right (nextState, WireFileModule targetCanonical))
+        else
+          if looksLikePackageModuleRef packageLookupPath
+            then resolvePackageModule
+            else pure (Left (WireImportFileNotFound (normalise targetRaw) requestedBy))
+  where
+    packageLookupPath =
+      if T.isPrefixOf "./" pathText || T.isPrefixOf "../" pathText
+        then T.pack (normalise targetRaw)
+        else pathText
+
+    resolvePackageModule =
+      case Map.lookup packageLookupPath compileEnv.wireCompileEnvPackageModules of
+        Just source -> do
+          loaded <- loadPackageModule compileEnv stack currentState requestedBy packageLookupPath source
+          pure $ case loaded of
+            Left err -> Left err
+            Right nextState -> Right (nextState, WirePackageModule packageLookupPath)
+        Nothing ->
+          pure (Left (WireImportPackageModuleNotFound packageLookupPath requestedBy))
 importPathTexts :: WireFile -> [Text]
 importPathTexts wireFile =
   [ importSpecPathText importSpec
@@ -179,3 +284,15 @@ resolveImportPath importerPath pathText =
    in if isAbsolute target
         then target
         else takeDirectory importerPath </> target
+
+looksLikePackageModuleRef :: Text -> Bool
+looksLikePackageModuleRef pathText =
+  not (T.isPrefixOf "./" pathText)
+    && not (T.isPrefixOf "../" pathText)
+    && not (T.isPrefixOf "/" pathText)
+    && T.any (== '/') pathText
+
+wireModuleIdText :: WireModuleId -> Text
+wireModuleIdText = \case
+  WireFileModule path -> T.pack path
+  WirePackageModule modulePath -> modulePath

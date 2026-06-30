@@ -68,14 +68,15 @@ A Wire package manifest is compile-time, inert data. The shape loaded today cont
 - namespace mappings from source contract names to canonical contract ids;
 - executor projections — the inert `WireExecutorProjection` (identity, ports, vocabulary, effect,
   config shape, port policy);
-- contract specs.
+- contract specs;
+- package-owned Wire module sources.
 
-Reserved for later slices, and not loaded by the current implementation: package dependencies,
-executor capability requirement slots (the ADR 0053 `RequirementSlot` data), and package-owned Wire
-module paths. When they are added they remain inert package data. The leaner
-`WireExecutorProjection` loaded today is deliberately distinct from the richer ADR 0053
-`AdmissionProjection`; only the latter carries projection version, requirement slots, replay class,
-isolation expectation, and await strategy, and Wire compilation never loads it.
+Reserved for later slices, and not loaded by the current implementation: package dependencies and
+executor capability requirement slots (the ADR 0053 `RequirementSlot` data). When they are added
+they remain inert package data. The leaner `WireExecutorProjection` loaded today is deliberately
+distinct from the richer ADR 0053 `AdmissionProjection`; only the latter carries projection version,
+requirement slots, replay class, isolation expectation, and await strategy, and Wire compilation
+never loads it.
 
 Loading a Wire package manifest never grants runtime authority. It only extends the namespace,
 contract, and executor-projection registries used by Wire compilation. Once requirement slots are
@@ -120,11 +121,17 @@ description = "Input accepted by the review analyzer."
 id = "example.ReviewReport"
 payload_kind = "json"
 description = "Report emitted by the review analyzer."
+
+[[module]]
+path = "example.review/helpers.wire"
+source = '''
+export let normalize = pure(x) { x };
+'''
 ```
 
 Future hardening slices may add manifest versioning, dependency declarations, conflict diagnostics,
-package-owned Wire module paths, and direct TOML syntax for ADR 0053 requirement slots. Those fields
-remain inert package data when they are added.
+and direct TOML syntax for ADR 0053 requirement slots. Those fields remain inert package data when
+they are added.
 
 ### Capability registration model
 
@@ -333,9 +340,23 @@ diagnostics for duplicate package ids, namespaces, executor ids, and contract id
 external manifests must reject a non-empty `packageConflicts` result before compilation.
 
 This discharges the earlier "future hardening" note for conflict diagnostics. Manifest versioning,
-dependency declarations, package-owned Wire module paths, and direct TOML syntax for future binding
-requirements remain deferred.
+dependency declarations, and direct TOML syntax for future binding requirements remain deferred.
 
 Traceability: `PackageConflict`, `packageConflicts`, and `renderPackageConflict` live in
 `src/Cortex/Wire/Package.hs`; the `wire` CLI rejects conflicts before constructing `WireCompileEnv`;
 coverage includes `test/Cortex/Wire/PackageSpec.hs` and `test/Cortex/Wire/QuantumPackageSpec.hs`.
+
+## Amendment - package-owned Wire modules (2026-06-30)
+
+Wire package manifests may include `[[module]]` entries. Each entry gives a logical package module
+`path` and a literal Wire `source` body. These modules are inert compile-time source: they do not
+grant runtime authority, do not imply filesystem access, and are loaded only when the selected
+compile environment contains the manifest. Because package modules do not imply filesystem access,
+the loader rejects `include_str` and `include_dir` forms inside package-owned module source.
+
+Package composition rejects duplicate module paths, matching the duplicate-package/namespace/id
+conflict policy above. File imports still resolve existing filesystem paths first. If an import path
+does not exist on disk and matches a package module path in the compile environment, the loader
+reads the package-owned source and gives it a package-module identity in the dependency closure.
+Missing package-style paths produce package-module diagnostics rather than pretending to be missing
+local files.

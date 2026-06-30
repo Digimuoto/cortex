@@ -13,32 +13,40 @@ Tests may import the surface they exercise, but they do not define downstream pr
 module Cortex.Wire.ImportSpec (spec) where
 
 import Data.Bifunctor (first)
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, withCurrentDirectory)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
 
+import Cortex.Quantum.Compile (compileExport)
 import Cortex.Wire (CircuitNodeRef (..), CompiledCircuit (..), renderWireError)
 import Cortex.Wire.Compile (compileWireModules)
-import Cortex.Wire.Contract (emptyWireCompileEnv)
+import Cortex.Wire.Contract (WireCompileEnv, emptyWireCompileEnv)
 import Cortex.Wire.Import
   ( WireImportError (..)
   , loadWireModuleClosure
+  , loadWireModuleClosureWithEnv
   , renderWireImportError
   )
+import Cortex.Wire.Package (WirePackage (..), wireCompileEnvWithPackages)
 
 {- | Load the import closure of a root file and compile it; both load and
 compile failures surface as rendered text so specs can match messages.
 -}
 compileAtPath :: FilePath -> IO (Either Text CompiledCircuit)
-compileAtPath path =
-  loadWireModuleClosure path >>= \case
+compileAtPath =
+  compileAtPathWithEnv emptyWireCompileEnv
+
+compileAtPathWithEnv :: WireCompileEnv -> FilePath -> IO (Either Text CompiledCircuit)
+compileAtPathWithEnv compileEnv path =
+  loadWireModuleClosureWithEnv compileEnv path >>= \case
     Left importError -> pure (Left (renderWireImportError importError))
     Right modules ->
-      pure (first renderWireError (compileWireModules emptyWireCompileEnv modules))
+      pure (first renderWireError (compileWireModules compileEnv modules))
 
 -- | Each spec gets its own scratch directory for fixture files.
 itInTempDir :: String -> (FilePath -> IO ()) -> Spec
@@ -98,6 +106,171 @@ spec = do
         Right compiled -> do
           fmap (.unCircuitNodeRef) compiled.compiledCircuitEntryNodes `shouldBe` ["greet_source"]
           fmap (.unCircuitNodeRef) compiled.compiledCircuitExitNodes `shouldBe` ["emit"]
+
+    itInTempDir "compiles an explicit import from a package-owned module" $ \dir -> do
+      let package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.singleton
+                    "example.pkg/helpers.wire"
+                    (T.unlines helperLibrary)
+              , wpModulePaths = ["example.pkg/helpers.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      writeFixture
+        (dir </> "main.wire")
+        (importerBody "import { greeting, greeter } from \"example.pkg/helpers.wire\";")
+      result <- compileAtPathWithEnv compileEnv (dir </> "main.wire")
+      case result of
+        Left err -> expectationFailure (T.unpack err)
+        Right compiled -> do
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitEntryNodes `shouldBe` ["greet_source"]
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitExitNodes `shouldBe` ["emit"]
+
+    itInTempDir "passes package modules through the quantum compile helper" $ \dir -> do
+      let package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.singleton
+                    "example.pkg/helpers.wire"
+                    (T.unlines helperLibrary)
+              , wpModulePaths = ["example.pkg/helpers.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      writeFixture
+        (dir </> "main.wire")
+        [ "import { greeter } from \"example.pkg/helpers.wire\";"
+        , ""
+        , "greeter"
+        ]
+      result <- compileExport compileEnv Nothing (dir </> "main.wire")
+      case result of
+        Left err -> expectationFailure (T.unpack err)
+        Right compiled ->
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitEntryNodes `shouldBe` ["greet_source"]
+
+    itInTempDir "resolves package module relative imports against the package path" $ \dir -> do
+      let helperModule =
+            [ "use std.io.{@stdin};"
+            , ""
+            , "import { politeness } from \"./shared.wire\";"
+            , ""
+            , "contract GreetingText;"
+            , ""
+            , "export let greeting = name: \"hello ${name}, ${politeness}\";"
+            , ""
+            , "node greet_source"
+            , "  -> message: GreetingText = @stdin { prompt = \"Name: \"; } (null);"
+            , ""
+            , "export let greeter = greet_source;"
+            ]
+          package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.fromList
+                    [ ("example.pkg/helpers.wire", T.unlines helperModule)
+                    , ("example.pkg/shared.wire", "export let politeness = \"please\";")
+                    ]
+              , wpModulePaths = ["example.pkg/helpers.wire", "example.pkg/shared.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      writeFixture
+        (dir </> "main.wire")
+        (importerBody "import { greeting, greeter } from \"example.pkg/helpers.wire\";")
+      result <- compileAtPathWithEnv compileEnv (dir </> "main.wire")
+      case result of
+        Left err -> expectationFailure (T.unpack err)
+        Right compiled -> do
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitEntryNodes `shouldBe` ["greet_source"]
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitExitNodes `shouldBe` ["emit"]
+
+    itInTempDir "does not probe cwd for package module relative imports" $ \dir -> do
+      let helperModule =
+            [ "use std.io.{@stdin};"
+            , ""
+            , "import { politeness } from \"./shared.wire\";"
+            , ""
+            , "contract GreetingText;"
+            , ""
+            , "export let greeting = name: \"hello ${name}, ${politeness}\";"
+            , ""
+            , "node greet_source"
+            , "  -> message: GreetingText = @stdin { prompt = \"Name: \"; } (null);"
+            , ""
+            , "export let greeter = greet_source;"
+            ]
+          package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.fromList
+                    [ ("example.pkg/helpers.wire", T.unlines helperModule)
+                    , ("example.pkg/shared.wire", "export let politeness = \"please\";")
+                    ]
+              , wpModulePaths = ["example.pkg/helpers.wire", "example.pkg/shared.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      createDirectoryIfMissing True (dir </> "example.pkg")
+      writeFixture
+        (dir </> "example.pkg" </> "shared.wire")
+        [ "let politeness = \"from filesystem\";"
+        ]
+      writeFixture
+        (dir </> "main.wire")
+        (importerBody "import { greeting, greeter } from \"example.pkg/helpers.wire\";")
+      result <- withCurrentDirectory dir (compileAtPathWithEnv compileEnv "main.wire")
+      case result of
+        Left err -> expectationFailure (T.unpack err)
+        Right compiled -> do
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitEntryNodes `shouldBe` ["greet_source"]
+          fmap (.unCircuitNodeRef) compiled.compiledCircuitExitNodes `shouldBe` ["emit"]
+
+    itInTempDir "does not load absolute filesystem imports from package modules" $ \dir -> do
+      let secretPath = dir </> "secret.wire"
+          helperModule =
+            [ "import { payload } from \"" <> T.pack secretPath <> "\";"
+            , ""
+            , "export let exposed = payload;"
+            ]
+          package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.singleton "example.pkg/helpers.wire" (T.unlines helperModule)
+              , wpModulePaths = ["example.pkg/helpers.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      writeFixture secretPath ["export let payload = \"from filesystem\";"]
+      writeFixture
+        (dir </> "main.wire")
+        [ "import { exposed } from \"example.pkg/helpers.wire\";"
+        , ""
+        , "exposed"
+        ]
+      result <- compileAtPathWithEnv compileEnv (dir </> "main.wire")
+      case result of
+        Left err -> do
+          err `shouldSatisfy` T.isInfixOf "package Wire module not found"
+          err `shouldSatisfy` T.isInfixOf (T.pack secretPath)
+        Right _compiled -> expectationFailure "expected package module absolute import rejection"
 
     itInTempDir "compiles a file-return import through the named form" $ \dir -> do
       writeFixture
@@ -178,12 +351,63 @@ spec = do
         Left err -> expectationFailure (T.unpack err)
         Right _compiled -> pure ()
 
+    itInTempDir "rejects include_str inside a package-owned module" $ \dir -> do
+      let package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.singleton
+                    "example.pkg/helpers.wire"
+                    "export let payload = include_str(\"/etc/passwd\");"
+              , wpModulePaths = ["example.pkg/helpers.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      writeFixture
+        (dir </> "main.wire")
+        [ "import { payload } from \"example.pkg/helpers.wire\";"
+        , ""
+        , "payload"
+        ]
+      result <- compileAtPathWithEnv compileEnv (dir </> "main.wire")
+      case result of
+        Left err -> do
+          err `shouldSatisfy` T.isInfixOf "include_str/include_dir"
+          err `shouldSatisfy` T.isInfixOf "package-owned modules"
+        Right _compiled -> expectationFailure "expected package module include rejection"
+
     itInTempDir "rejects importing a name that exists but is not exported" $ \dir -> do
       writeFixture (dir </> "helpers.wire") helperLibrary
       writeFixture
         (dir </> "main.wire")
         (importerBody "import { politeness, greeting, greeter } from \"./helpers.wire\";")
       result <- compileAtPath (dir </> "main.wire")
+      case result of
+        Left err -> do
+          err `shouldSatisfy` T.isInfixOf "does not export it"
+          err `shouldSatisfy` T.isInfixOf "politeness"
+        Right _compiled -> expectationFailure "expected a visibility error"
+
+    itInTempDir "rejects importing a private name from a package-owned module" $ \dir -> do
+      let package =
+            WirePackage
+              { wpId = "example.pkg"
+              , wpNamespaceEntries = []
+              , wpExecutorProjections = []
+              , wpContractSpecs = []
+              , wpModuleSources =
+                  Map.singleton
+                    "example.pkg/helpers.wire"
+                    (T.unlines helperLibrary)
+              , wpModulePaths = ["example.pkg/helpers.wire"]
+              }
+          compileEnv = wireCompileEnvWithPackages [package] emptyWireCompileEnv
+      writeFixture
+        (dir </> "main.wire")
+        (importerBody "import { politeness, greeting, greeter } from \"example.pkg/helpers.wire\";")
+      result <- compileAtPathWithEnv compileEnv (dir </> "main.wire")
       case result of
         Left err -> do
           err `shouldSatisfy` T.isInfixOf "does not export it"
@@ -212,6 +436,19 @@ spec = do
         Left otherError ->
           expectationFailure ("unexpected error: " <> T.unpack (renderWireImportError otherError))
         Right _modules -> expectationFailure "expected a missing-file error"
+
+    itInTempDir "rejects a missing package module distinctly from a missing file" $ \dir -> do
+      writeFixture
+        (dir </> "main.wire")
+        (importerBody "import { greeting, greeter } from \"example.pkg/absent.wire\";")
+      result <- loadWireModuleClosureWithEnv emptyWireCompileEnv (dir </> "main.wire")
+      case result of
+        Left (WireImportPackageModuleNotFound missingPath (Just requestedBy)) -> do
+          missingPath `shouldBe` "example.pkg/absent.wire"
+          requestedBy `shouldSatisfy` \path -> "main.wire" == T.unpack (T.takeWhileEnd (/= '/') (T.pack path))
+        Left otherError ->
+          expectationFailure ("unexpected error: " <> T.unpack (renderWireImportError otherError))
+        Right _modules -> expectationFailure "expected a missing package module error"
 
     itInTempDir "rejects a local binding that collides with an imported name" $ \dir -> do
       writeFixture (dir </> "helpers.wire") helperLibrary

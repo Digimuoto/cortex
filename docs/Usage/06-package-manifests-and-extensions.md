@@ -24,6 +24,30 @@ nix run .#wire -- \
 
 Repeat the flag when an example needs more than one package.
 
+## Package-Owned Modules
+
+A package can also publish helper Wire source through `[[module]]` entries:
+
+```toml
+[package]
+id = "example.review"
+
+[[module]]
+path = "example.review/helpers.wire"
+source = '''
+export let normalize = pure(x) { x };
+'''
+```
+
+Wire files compiled with that manifest can import the package module by its manifest path:
+
+```wire
+import { normalize } from "example.review/helpers.wire";
+```
+
+Package modules are compile-time source only. Loading a manifest does not grant runtime authority or
+filesystem access. Package-owned modules therefore cannot use `include_str` or `include_dir`.
+
 ## Environment Search Path
 
 If no `--wire-package` flags are present, the CLI reads `CORTEX_WIRE_PACKAGE_MANIFESTS` as a search

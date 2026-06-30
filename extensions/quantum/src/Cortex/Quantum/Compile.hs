@@ -24,7 +24,7 @@ import System.Environment (lookupEnv)
 import Cortex.Wire (CompiledCircuit, renderWireError)
 import Cortex.Wire.Compile (compileWireModules, compileWireModulesWithReturn)
 import Cortex.Wire.Contract (WireCompileEnv, emptyWireCompileEnv)
-import Cortex.Wire.Import (loadWireModuleClosure, renderWireImportError)
+import Cortex.Wire.Import (loadWireModuleClosureWithEnv, renderWireImportError)
 import Cortex.Wire.Package
   ( packageConflicts
   , renderPackageConflict
@@ -63,7 +63,7 @@ packageManifestPaths = do
 -}
 compileExport :: WireCompileEnv -> Maybe Text -> FilePath -> IO (Either Text CompiledCircuit)
 compileExport env selectedReturn path = do
-  closure <- loadWireModuleClosure path
+  closure <- loadWireModuleClosureWithEnv env path
   pure $ case closure of
     Left err -> Left (renderWireImportError err)
     Right modules ->
