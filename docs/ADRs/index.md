@@ -99,6 +99,9 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0082](0082-pulse-durable-signals.md)                              | Pulse Durable Signal Primitive                                             | proposed   |
 | [0083](0083-pulse-schema-lifecycle.md)                             | Pulse Schema Lifecycle and Migration Policy                                | proposed   |
 | [0084](0084-wire-tree-sitter-grammar.md)                           | tree-sitter-wire Grammar Governance                                        | proposed   |
+| [0085](0085-wire-contract-schema-as-type-enforcement.md)           | Wire Contract Schema-as-Type Enforcement and the No-Subtyping Ceiling      | proposed   |
+| [0086](0086-wire-scoped-graph-construction-rejection.md)           | Wire Scoped Graph Construction: Rejection of the Graph-Block Bundle        | proposed   |
+| [0087](0087-wire-edge-as-saturation-event.md)                      | Wire Edge as Saturation Event and the Port-Role Parametrization            | proposed   |
 
 ## By category
 
@@ -136,12 +139,14 @@ is shown here.
   [0007](0007-latent-branch-conditional-lowering.md),
   [0033](0033-wire-select-guarded-affine-collapse.md), [0035](0035-wire-rewrite-algebra-forms.md),
   [0037](0037-wire-latent-structural-control.md)
-- **Wire contracts & resources** (2): [0032](0032-wire-boundary-contract-resources.md),
-  [0081](0081-wire-endpoint-closure-accounting.md)
-- **Wire language & grammar** (6): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
+- **Wire contracts & resources** (4): [0032](0032-wire-boundary-contract-resources.md),
+  [0081](0081-wire-endpoint-closure-accounting.md),
+  [0085](0085-wire-contract-schema-as-type-enforcement.md),
+  [0087](0087-wire-edge-as-saturation-event.md)
+- **Wire language & grammar** (7): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
   [0022](0022-wire-node-clause-grammar.md), [0026](0026-wire-failure-taxonomy.md),
   [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),
-  [0070](0070-wire-file-imports.md)
+  [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md)
 - **Wire executor & node interface** (6): [0017](0017-wire-executor-and-port-catalog-boundary.md),
   [0024](0024-typed-executor-node-interface.md), [0025](0025-configured-executor-values.md),
   [0030](0030-wire-node-implementation-forms.md),

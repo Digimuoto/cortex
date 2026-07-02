@@ -382,42 +382,75 @@ properties are stated as graph invariants and preservation theorems. The languag
 commitments make these invariants directly expressible, which in turn makes them tractable targets
 for mechanized verification.
 
-### 3.4 Edges have kinds
+### 3.4 Edge kinds live in port roles
 
 A common objection is that "graph" and "edge" are too vague to support the paradigm's claims.
-Different communities use graph edges to mean very different things. We address this directly: in
-causal programming, an edge is not merely a "dependency"; it is a typed relation of a specific kind.
-We distinguish at least the following edge kinds:
+Different communities use graph edges to mean very different things. We address this directly, with
+the definition the substrate itself fixes
+([../../ADRs/0087-wire-edge-as-saturation-event.md](../../ADRs/0087-wire-edge-as-saturation-event.md)):
+in causal programming, an edge is a **saturated directed port pair**. At the typed layer, the edge
+is not an independent object; it is the event of composition matching one output endpoint against
+one input endpoint under linear side-conditions, and every typed property of the edge lives in the
+two endpoints — their contracts, labels, and roles. At the algebra layer, where edges are
+first-class ordered pairs, lowering has already forgotten port identity, polarity, labels, and
+contracts — the pair keeps only its source→target order; the graph laws this paper relies on hold
+only past that forgetting, so kinds cannot be stored on the relation-layer edge without destroying
+the algebra. An "edge kind" is therefore a **classification of the match, carried by the port
+roles** — a refinement of the compatibility relation between two endpoints, parametrized by
+multiplicity, relation family, and protocol state — never decoration on the graph edge and never
+computation on the wire.
 
-- _Value-flow edges_ carry typed values from a producing event to a consuming event.
-- _Effect-order edges_ impose causal sequencing between effects whose composition is
-  non-commutative.
-- _Resource edges_ represent ownership transfer of a resource (a database transaction, a lock, a
-  quota allocation).
-- _Durability edges_ express that a downstream event's recovery validity depends on an upstream
-  event's durable record.
-- _Observation edges_ record that a downstream event observed the result of an upstream effect.
-- _Policy edges_ express that an event's permission depends on a prior approval or validation.
+Under that definition, the kind vocabulary sorts into two groups. Three kinds are genuine
+refinements of the match:
 
-A single causal graph contains edges of multiple kinds. The runtime and the type system can project
-the graph along an edge kind to answer specific questions. Parallelism, for instance, requires
-absence of paths along value-flow, effect-order, _and_ resource projections. Replay semantics depend
-on durability and observation edges. Auditability draws on policy and observation edges. Treating
-"edges" as a single undifferentiated dependency relation collapses these distinctions and weakens
-the model. Treating edges as typed causal relations strengthens it.
+- _Value-flow_ carries a typed value from a producing event to a consuming event. This is the
+  degenerate relation family in use today: every Wire match is a value-flow at linear multiplicity.
+- _Resource_ represents ownership transfer (a database transaction, a lock, a quota allocation) — a
+  multiplicity-mode plus relation-family refinement of the same match.
+- _Effect-order_ imposes causal sequencing between effects whose composition is non-commutative —
+  the protocol axis, partially given today by linearity plus state-threading through nominal
+  contracts.
 
-We are explicit about implementation status. Wire today implements value-flow, observation,
-effect-boundary, and durability structure directly in the runtime. Rewrite-anchor resource use is
-also mechanized: each admitted structural rewrite carries a typed boundary-resource witness whose
-law is fixed by the rewrite kind (contract-preserving substitution for `expandNode`,
-append-continuation for `appendAfter`), and the proof side certifies that the runtime witness and
-the planner's budgeted cost agree. Policy edges remain represented through capability and contract
-boundaries, which carry the relevant information in the typed contracts of effect leaves rather than
-as first-class edge kinds in the graph. Richer per-edge projections of resource and policy edges are
-part of the broader causal-programming design space, and are work the program plans to do as the
-runtime matures. The paradigm-level claim is that the edge-kinds vocabulary is the right organizing
-principle; the implementation-level claim is more modest and bounded by what the artifact does
-today.
+Three are **not edge kinds** but first-class causal-graph citizens of a different shape — each
+transforms, persists, or authorizes, so each is a node or witness, and its "edges" are the ordinary
+value-flow and order edges incident to it:
+
+- _Durability_ (a downstream event's recovery validity depends on an upstream durable record) is a
+  commit event plus its witness.
+- _Observation_ (a downstream event observed an upstream effect's result) is an observer node — it
+  transforms a value into an observation of it.
+- _Policy_ (an event's permission depends on a prior approval) is an approval/validation node
+  carried by capability and contract boundaries.
+
+Projections survive this sorting, and become precise: the runtime records per-edge endpoint use in
+the admission witness, so projecting the graph "along a kind" is a derived view computed from that
+witness — filter the saturation events by their roles — not a stored color on the runtime graph.
+Parallelism requires absence of paths in the value-flow, effect-order, and resource projections;
+replay semantics read durability and observation nodes and their witnesses; auditability draws on
+policy nodes and provenance. Treating "edges" as a single undifferentiated dependency relation
+collapses these distinctions and weakens the model; treating kinds as typed classifications of the
+match strengthens it without breaking the algebra underneath. The vocabulary is also open in the
+right place: relation families and contracts are downstream-registered names fed into a closed
+matching rule — a family tag both sides must share can only reject a match, never manufacture one —
+while a kind's dynamic semantics (what a durable commit or an approval _does_) belongs to host
+bindings, executors, and witnesses.
+
+We are explicit about implementation status. Wire today implements exactly the degenerate instance:
+endpoint contracts, boundary-resource witnesses, and runtime provenance carry value-flow,
+observation, effect-boundary, and durability _structure_, but there is no `EdgeKind`/`valueFlow`
+type or relation in `src/` or `theory/`. Every non-degenerate instance is design-only, canonized as
+a definition by ADR 0087 and bounded by ADR 0085's refinement rule: a kind may only partition or
+grade an already-typed match between ports carrying the same contract, never relate two contract
+names
+([../../ADRs/0085-wire-contract-schema-as-type-enforcement.md](../../ADRs/0085-wire-contract-schema-as-type-enforcement.md)).
+Rewrite-anchor resource use is already mechanized: each admitted structural rewrite carries a typed
+boundary-resource witness whose law is fixed by the rewrite kind (contract-preserving substitution
+for `expandNode`, append-continuation for `appendAfter`), and the proof side certifies that the
+runtime witness and the planner's budgeted cost agree. Richer projections of resource and policy
+structure are part of the broader causal-programming design space, and are work the program plans to
+do as the runtime matures. The paradigm-level claim is that the kind vocabulary is the right
+organizing principle; the implementation-level claim is more modest and bounded by what the artifact
+does today.
 
 ### 3.5 Comparing the foundations
 
@@ -499,8 +532,13 @@ A causal program _execution state_ `G` consists of:
 - `Pout(e)`, `Pin(e)`: the named output and input port instances of `e ∈ E`.
 - `τ`: a port typing function assigning each port instance a contract type.
 - `→v`: value-flow edges from output port instances to input port instances, respecting `τ`.
-- `→k`: typed causal edges of kind `k` (effect-order, resource, durability, observation, policy).
-- `≤`: the causal partial order over `E` induced by the union of `→v` and `→k`.
+- `→k`: typed causal edges of kind `k` for the match-refinement kinds of §3.4 (effect-order,
+  resource) — refinements of the same port-pair match as `→v`, never a separate edge carrier.
+- `⇝w`: derived dependency relations (durability, observation, policy) — not edge kinds, but
+  relations over `E` induced by paths of `→v`/`→k` through the corresponding witness-bearing events
+  (a durable commit, an observer node, an approval node; §3.4).
+- `≤`: the causal partial order over `E` induced by the union of `→v` and `→k`; each `⇝w` is a
+  subrelation of `≤` obtained by restricting paths through its witness events.
 - `D ⊆ E`: the _durable prefix_, the subset of events whose results have been durably committed.
 - `Λ`: the latent branch families: typed descriptions of possible continuations that are not yet
   actualized.
@@ -526,9 +564,10 @@ that bounds the trusted leaves.
 The propositions in Section 4 are properties of `WF(G)` and its preservation under closed admitted
 transitions. Linearity is clauses 3–4 over actualized port obligations: internal values are consumed
 through `→v`, while terminal outputs are consumed by declared sink or egress boundaries. Parallelism
-is absence of paths under selected projections of `→k`. Replay determinism is preservation of
-`WF(G)` and recomputability of pure events under fixed `D`. Verification is the preservation of
-`WF(G)` under the closed admitted alphabet defined in Section 5.2.
+is absence of paths under the selected projections of `→v` and `→k`, together with the derived
+relations `⇝w` they induce through witness events. Replay determinism is preservation of `WF(G)` and
+recomputability of pure events under fixed `D`. Verification is the preservation of `WF(G)` under
+the closed admitted alphabet defined in Section 5.2.
 
 ## 4. What becomes native
 
@@ -836,10 +875,11 @@ operator view in which each node's events are addressable as structured graph qu
 ### 4.5 Parallelism is the default
 
 **The paradigm claim.** If two events have no causal path between them—no value-flow, effect-order,
-resource, or durability dependency—they are independent. The runtime can execute them concurrently
-without programmer annotation, without lock acquisition, without barrier synchronization, and
-without risk of race conditions, because the very thing that would be a race (a hidden ordering
-dependency) has been promoted to explicit graph structure.
+or resource edge, and no derived durability dependency (a path through a durable-commit event)—they
+are independent. The runtime can execute them concurrently without programmer annotation, without
+lock acquisition, without barrier synchronization, and without risk of race conditions, because the
+very thing that would be a race (a hidden ordering dependency) has been promoted to explicit graph
+structure.
 
 The slogan is **sequence is explicit; parallelism is the default**. A reader of an imperative
 program must scan for hidden state to determine whether two operations may be reordered. A reader of

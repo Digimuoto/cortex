@@ -420,12 +420,27 @@ def check_markdown_links(document: Document, errors: list[str]) -> None:
     current_headings: set[str] | None = None
     heading_cache: dict[Path, set[str]] = {}
 
+    # Links inside fenced code blocks are examples, not real references. Skip them,
+    # consistent with every other check in this file (see headings() and the
+    # Traceability scan), which this wholesale-text scan would otherwise miss.
+    fenced_lines: set[int] = set()
+    in_fence = False
+    for fence_line_no, line in enumerate(document.text.splitlines(), start=1):
+        if line.startswith("```"):
+            in_fence = not in_fence
+            fenced_lines.add(fence_line_no)
+            continue
+        if in_fence:
+            fenced_lines.add(fence_line_no)
+
     for match in link_pattern.finditer(document.text):
         target = unquote(match.group(1))
         if re.match(r"^[a-z][a-z0-9+.-]*:", target):
             continue
 
         line_no, _ = line_col(document.text, match.start())
+        if line_no in fenced_lines:
+            continue
         path_part, _, anchor = target.partition("#")
         if not path_part:
             target_path = document.path
