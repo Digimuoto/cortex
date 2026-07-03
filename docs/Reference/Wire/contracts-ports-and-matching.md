@@ -14,6 +14,7 @@ related:
   - docs/ADRs/0024-typed-executor-node-interface.md
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
+  - docs/ADRs/0085-wire-contract-schema-as-type-enforcement.md
 ---
 
 # Wire Reference — Contracts, Ports, and Matching
@@ -142,3 +143,40 @@ node log_event
 Wire does not assign special source/sink semantics in syntax. Empty boundary sides are ordinary
 typed interface facts. Terminal behavior comes from the registered executor or the explicit
 execution boundary that consumes or discharges the adjacent port instances.
+
+## Contract Schemas (ADR 0085)
+
+A registered contract may declare a `schema` (a JSON value, authored in the package manifest's
+`[[contract]]` stanza or supplied programmatically). Schema content never participates in contract
+identity or port matching — contracts remain equal iff their names are equal — but where a schema is
+declared, `json` and `artifact_ref` payloads are **decoded and validated against it** at the runtime
+node boundary, alongside the payload-kind shape check. A contract without a schema keeps the shallow
+check only. For `artifact_ref` contracts the validated payload is the reference object, not the
+resolved durable artifact content.
+
+### The pinned dialect (version 1)
+
+The supported dialect is the deliberately narrow subset upstreamed from Logos ADR 0015 as
+`Cortex.Wire.ContractValidation`. It is not a full JSON Schema implementation; unknown keywords are
+ignored.
+
+| Keyword                   | Semantics                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `type`                    | A string or array of strings over `object`/`array`/`string`/`number`/`integer`/`boolean`/`null`. An absent or empty list admits everything; an unknown name admits nothing. `integer` admits whole-valued numbers (`2.0` is an integer, `2.5` is not). |
+| `enum`                    | An array; structural membership with no type coercion (`"1"` never matches `1`).                                                                                                                                                                       |
+| `required`                | An array of keys that must be present on object payloads; independent of `properties`.                                                                                                                                                                 |
+| `properties`              | Sub-schemas applied to the payload keys that are present; absence is enforced only via `required`.                                                                                                                                                     |
+| `additionalProperties`    | **Boolean form only** (a schema-valued form is an invalid schema); `false` rejects payload keys not declared in `properties`.                                                                                                                          |
+| `items`                   | One sub-schema applied to every array element.                                                                                                                                                                                                         |
+| `minLength` / `maxLength` | Inclusive string length bounds, counted in Unicode code points.                                                                                                                                                                                        |
+| `minimum` / `maximum`     | Inclusive numeric bounds.                                                                                                                                                                                                                              |
+
+Validation is fail-fast with a fixed per-node check order (enum, type, string bounds, number bounds,
+object checks, array checks); errors carry the contract id and a JSON path (`$`, `$.prop`, `$[i]`).
+One recorded divergence from the Logos incubator: the payload-kind gate accepts `artifact_ref`
+alongside `json`.
+
+The dialect is versioned (`wireContractDialectVersion`, mirrored by the Lean constant
+`Cortex.Wire.ContractValidation.dialectVersion`) and mechanized: the Lean checker is proven sound
+and complete against the dialect semantics (`theory/Cortex/Wire/ContractValidationCheck.lean`), and
+generated fixtures pin Haskell and Lean against drift (see [proof-status](../proof-status.md)).

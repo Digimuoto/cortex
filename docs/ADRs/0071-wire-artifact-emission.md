@@ -157,9 +157,10 @@ edges, per ADR 0002.
 
 - Two artifact-flavoured boundaries now coexist (compiled-workflow artifact in ADR 0006, emitted
   artifact reference here); readers must keep them distinct.
-- The capability is partial: the `to` target namespace is unenforced, `artifact_ref` validates only
-  object-ness, and the substrate ships no persistence interpreter, so an authored emission node is
-  honest about intent but not end-to-end durable on its own.
+- The capability is partial: the `to` target namespace is unenforced, `artifact_ref` validates
+  object-ness (plus the reference object's declared schema where the contract carries one, ADR
+  0085), and the substrate ships no persistence interpreter, so an authored emission node is honest
+  about intent but not end-to-end durable on its own.
 
 ### Obligations
 

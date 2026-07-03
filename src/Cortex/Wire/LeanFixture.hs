@@ -25,15 +25,26 @@ module Cortex.Wire.LeanFixture
   , differentialFixtures
   , renderDifferentialModuleText
   , renderDifferentialUmbrellaModule
+  , ContractValidationFixture (..)
+  , contractValidationFixtures
+  , contractValidationFixtureModuleName
+  , renderContractValidationFixtureModule
+  , renderContractValidationUmbrellaModule
   ) where
 
+import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as AesonKeyMap
+import Data.Char qualified as Char
+import Data.Foldable (toList)
+import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
+import Data.Ratio (denominator, numerator)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Numeric (showHex)
 import Numeric.Natural (Natural)
 
 import Cortex.Wire.AST (Connection (..), EndpointRef (..))
@@ -42,6 +53,17 @@ import Cortex.Wire.AdmissionArtifact
 import Cortex.Wire.Circuit.Compiled (CompiledCircuit (..))
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Compile (compileWireFragmentTextWithEnv)
+import Cortex.Wire.ContractValidation
+  ( WireContractValidationError (..)
+  , WireJsonPath (..)
+  , optionalBoolField
+  , optionalIntegerField
+  , optionalNumberField
+  , optionalObjectField
+  , optionalTextArrayField
+  , schemaTypeValues
+  , wireContractDialectVersion
+  )
 import Cortex.Wire.Contracts
   ( WireCompileEnv (..)
   , WireContractSpec (..)
@@ -473,7 +495,12 @@ leanString = T.concatMap escape
       '"' -> "\\\""
       '\\' -> "\\\\"
       '\n' -> "\\n"
-      other -> T.singleton other
+      '\t' -> "\\t"
+      '\r' -> "\\r"
+      other
+        | other < ' ' ->
+            "\\u" <> T.justifyRight 4 '0' (T.pack (showHex (Char.ord other) ""))
+        | otherwise -> T.singleton other
 
 leanStringLit :: Text -> Text
 leanStringLit text = "\"" <> leanString text <> "\""
@@ -1100,5 +1127,463 @@ renderDifferentialUmbrellaModule fixtures =
            , "land on the same exposed boundary the artifact records. Regenerate with"
            , "`just wire-lean-fixtures`; the Haskell test suite fails on drift."
            , "-/"
+           ]
+    )
+
+-- Contract-validation fixture corpus (ADR 0085) -------------------------------
+
+{- | A contract-schema dialect fixture: one parsed schema, payloads it accepts,
+and payloads it rejects. Rendered as a generated Lean module under
+@theory/Cortex/Wire/ContractValidation/Emitted@ whose acceptance and rejection
+theorems are discharged by @native_decide@ against `schemaAcceptsCheck`.
+-}
+data ContractValidationFixture = ContractValidationFixture
+  { cvFixtureSlug :: !Text
+  , cvFixtureDescription :: !Text
+  , cvFixtureSchema :: !Aeson.Value
+  , cvFixtureAccepted :: ![Aeson.Value]
+  , cvFixtureRejected :: ![Aeson.Value]
+  }
+
+contractValidationFixtureModuleName :: ContractValidationFixture -> Text
+contractValidationFixtureModuleName fixture =
+  "Cortex.Wire.ContractValidation.Emitted." <> fixture.cvFixtureSlug
+
+contractValidationFixtureNamespace :: ContractValidationFixture -> Text
+contractValidationFixtureNamespace fixture =
+  "Emitted" <> fixture.cvFixtureSlug
+
+{- | The dialect-pinning corpus: the transcribable subset of the incubator
+spec cases plus the dialect asymmetries the Haskell spec asserts
+(`test/Cortex/Wire/ContractValidationSpec.hs`).
+-}
+contractValidationFixtures :: [ContractValidationFixture]
+contractValidationFixtures =
+  [ ContractValidationFixture
+      { cvFixtureSlug = "SubsetAccept"
+      , cvFixtureDescription = "the full supported-subset search schema"
+      , cvFixtureSchema =
+          Aeson.object
+            [ "type" .= ("object" :: Text)
+            , "additionalProperties" .= False
+            , "required" .= (["query", "filters", "tags"] :: [Text])
+            , "properties"
+                .= Aeson.object
+                  [ "query"
+                      .= Aeson.object
+                        [ "type" .= ("string" :: Text)
+                        , "minLength" .= (1 :: Int)
+                        , "maxLength" .= (40 :: Int)
+                        ]
+                  , "limit"
+                      .= Aeson.object
+                        [ "type" .= ("integer" :: Text)
+                        , "minimum" .= (1 :: Int)
+                        , "maximum" .= (100 :: Int)
+                        ]
+                  , "category"
+                      .= Aeson.object
+                        ["type" .= ("string" :: Text), "enum" .= (["news", "filings"] :: [Text])]
+                  , "filters"
+                      .= Aeson.object
+                        [ "type" .= ("object" :: Text)
+                        , "additionalProperties" .= False
+                        , "required" .= (["region"] :: [Text])
+                        , "properties"
+                            .= Aeson.object ["region" .= Aeson.object ["type" .= ("string" :: Text)]]
+                        ]
+                  , "tags"
+                      .= Aeson.object
+                        [ "type" .= ("array" :: Text)
+                        , "items"
+                            .= Aeson.object
+                              ["type" .= ("string" :: Text), "minLength" .= (1 :: Int)]
+                        ]
+                  ]
+            ]
+      , cvFixtureAccepted =
+          [ Aeson.object
+              [ "query" .= ("amd" :: Text)
+              , "limit" .= (10 :: Int)
+              , "category" .= ("filings" :: Text)
+              , "filters" .= Aeson.object ["region" .= ("us" :: Text)]
+              , "tags" .= (["filing", "earnings"] :: [Text])
+              ]
+          ]
+      , cvFixtureRejected =
+          [ Aeson.object
+              ["query" .= ("amd" :: Text), "tags" .= (["filing"] :: [Text])]
+          ]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "RequiredNested"
+      , cvFixtureDescription = "a nested required key inside a properties sub-schema"
+      , cvFixtureSchema =
+          Aeson.object
+            [ "type" .= ("object" :: Text)
+            , "required" .= (["filters"] :: [Text])
+            , "properties"
+                .= Aeson.object
+                  [ "filters"
+                      .= Aeson.object
+                        [ "type" .= ("object" :: Text)
+                        , "required" .= (["region"] :: [Text])
+                        ]
+                  ]
+            ]
+      , cvFixtureAccepted =
+          [Aeson.object ["filters" .= Aeson.object ["region" .= ("us" :: Text)]]]
+      , cvFixtureRejected = [Aeson.object ["filters" .= Aeson.object []]]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "AdditionalProperties"
+      , cvFixtureDescription = "boolean additionalProperties rejecting undeclared keys"
+      , cvFixtureSchema =
+          Aeson.object
+            [ "type" .= ("object" :: Text)
+            , "additionalProperties" .= False
+            , "properties" .= Aeson.object ["a" .= Aeson.object ["type" .= ("string" :: Text)]]
+            ]
+      , cvFixtureAccepted = [Aeson.object ["a" .= ("x" :: Text)]]
+      , cvFixtureRejected = [Aeson.object ["a" .= ("x" :: Text), "b" .= (1 :: Int)]]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "EnumMismatch"
+      , cvFixtureDescription = "structural enum membership with no type coercion"
+      , cvFixtureSchema =
+          Aeson.object ["enum" .= [Aeson.String "news", Aeson.String "filings", Aeson.Number 1]]
+      , cvFixtureAccepted = [Aeson.String "news", Aeson.Number 1]
+      , cvFixtureRejected = [Aeson.String "social", Aeson.String "1"]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "ItemsElement"
+      , cvFixtureDescription = "a single items sub-schema applied to every array element"
+      , cvFixtureSchema =
+          Aeson.object
+            [ "type" .= ("array" :: Text)
+            , "items" .= Aeson.object ["type" .= ("string" :: Text), "minLength" .= (1 :: Int)]
+            ]
+      , cvFixtureAccepted = [Aeson.toJSON (["a", "b"] :: [Text])]
+      , cvFixtureRejected =
+          [ Aeson.toJSON (["a", ""] :: [Text])
+          , Aeson.toJSON [Aeson.String "a", Aeson.Number 1]
+          ]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "StringBounds"
+      , cvFixtureDescription = "inclusive codepoint length bounds"
+      , cvFixtureSchema =
+          Aeson.object
+            ["type" .= ("string" :: Text), "minLength" .= (2 :: Int), "maxLength" .= (2 :: Int)]
+      , cvFixtureAccepted = [Aeson.String "ab"]
+      , cvFixtureRejected = [Aeson.String "a", Aeson.String "abc"]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "NumberBounds"
+      , cvFixtureDescription = "inclusive rational bounds with a decimal minimum"
+      , cvFixtureSchema =
+          Aeson.object ["minimum" .= (2.5 :: Double), "maximum" .= (10 :: Int)]
+      , cvFixtureAccepted = [Aeson.Number 2.5, Aeson.Number 10]
+      , cvFixtureRejected = [Aeson.Number 2, Aeson.Number 10.5]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "IntegerScalar"
+      , cvFixtureDescription = "integer admitting whole-valued decimals and rejecting fractions"
+      , cvFixtureSchema = Aeson.object ["type" .= ("integer" :: Text)]
+      , cvFixtureAccepted = [Aeson.Number 2, Aeson.Number 2.0]
+      , cvFixtureRejected = [Aeson.Number 2.5]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "TypeUnion"
+      , cvFixtureDescription = "type unions admitting any member; unknown names admit nothing"
+      , cvFixtureSchema = Aeson.object ["type" .= (["string", "null", "mystery"] :: [Text])]
+      , cvFixtureAccepted = [Aeson.String "ok", Aeson.Null]
+      , cvFixtureRejected = [Aeson.Bool True]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "EmptyEnum"
+      , cvFixtureDescription = "an empty enum rejecting every payload"
+      , cvFixtureSchema = Aeson.object ["enum" .= ([] :: [Aeson.Value])]
+      , cvFixtureAccepted = []
+      , cvFixtureRejected = [Aeson.Null, Aeson.String "x"]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "EmptyTypes"
+      , cvFixtureDescription = "an empty type list admitting every payload"
+      , cvFixtureSchema = Aeson.object ["type" .= ([] :: [Text])]
+      , cvFixtureAccepted = [Aeson.Null, Aeson.Bool True]
+      , cvFixtureRejected = []
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "BoundsVacuity"
+      , cvFixtureDescription = "string and number bounds constraining only their own payload kinds"
+      , cvFixtureSchema =
+          Aeson.object
+            [ "minLength" .= (5 :: Int)
+            , "maxLength" .= (5 :: Int)
+            , "minimum" .= (100 :: Int)
+            , "maximum" .= (100 :: Int)
+            ]
+      , cvFixtureAccepted =
+          [ Aeson.Bool True
+          , Aeson.Null
+          , Aeson.object []
+          , Aeson.String "12345"
+          , Aeson.Number 100
+          ]
+      , cvFixtureRejected = [Aeson.String "1234", Aeson.Number 99]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "ItemsVacuity"
+      , cvFixtureDescription = "items constraining only array payloads"
+      , cvFixtureSchema =
+          Aeson.object ["items" .= Aeson.object ["type" .= ("string" :: Text)]]
+      , cvFixtureAccepted =
+          [Aeson.Number 3, Aeson.object [], Aeson.toJSON (["a"] :: [Text])]
+      , cvFixtureRejected = [Aeson.toJSON [Aeson.Number 1]]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "AdditionalTrue"
+      , cvFixtureDescription = "explicit additionalProperties true admitting undeclared keys"
+      , cvFixtureSchema =
+          Aeson.object
+            [ "type" .= ("object" :: Text)
+            , "additionalProperties" .= True
+            , "properties" .= Aeson.object ["a" .= Aeson.object ["type" .= ("string" :: Text)]]
+            ]
+      , cvFixtureAccepted = [Aeson.object ["a" .= ("x" :: Text), "b" .= (1 :: Int)]]
+      , cvFixtureRejected = [Aeson.object ["a" .= (1 :: Int)]]
+      }
+  , ContractValidationFixture
+      { cvFixtureSlug = "RequiredVacuity"
+      , cvFixtureDescription = "required constraining only object payloads"
+      , cvFixtureSchema = Aeson.object ["required" .= (["k"] :: [Text])]
+      , cvFixtureAccepted = [Aeson.String "str", Aeson.Number 7]
+      , cvFixtureRejected = [Aeson.object []]
+      }
+  ]
+
+{- | Canonical Lean term for a JSON payload: object keys sorted ascending (the
+canonical-form invariant documented in
+@theory/Cortex/Wire/ContractValidation/Json.lean@), numbers as exact
+rationals via @mkRat@.
+-}
+contractValidationJsonValue :: Aeson.Value -> LeanValue
+contractValidationJsonValue = \case
+  Aeson.Null -> LeanAtom "Json.null"
+  Aeson.Bool flag -> LeanApp "Json.bool" [boolLeanAtom flag]
+  Aeson.Number scientific -> LeanApp "Json.num" [ratLeanValue (toRational scientific)]
+  Aeson.String text -> LeanApp "Json.str" [LeanAtom (leanStringLit text)]
+  Aeson.Array values ->
+    LeanApp "Json.arr" [LeanList (fmap contractValidationJsonValue (toList values))]
+  Aeson.Object obj ->
+    LeanApp "Json.obj" [LeanList (fmap fieldValue (sortedKeyMapEntries obj))]
+  where
+    fieldValue (key, value) =
+      LeanTuple [LeanAtom (leanStringLit key), contractValidationJsonValue value]
+
+sortedKeyMapEntries :: Aeson.Object -> [(Text, Aeson.Value)]
+sortedKeyMapEntries obj =
+  sortOn fst [(AesonKey.toText key, value) | (key, value) <- AesonKeyMap.toList obj]
+
+ratLeanValue :: Rational -> LeanValue
+ratLeanValue ratio =
+  LeanApp
+    "mkRat"
+    [intLeanAtom (numerator ratio), LeanAtom (T.pack (show (denominator ratio)))]
+
+intLeanAtom :: Integer -> LeanValue
+intLeanAtom n
+  | n < 0 = LeanAtom ("(" <> T.pack (show n) <> ")")
+  | otherwise = LeanAtom (T.pack (show n))
+
+boolLeanAtom :: Bool -> LeanValue
+boolLeanAtom flag = LeanAtom (if flag then "true" else "false")
+
+optionLeanValue :: Maybe LeanValue -> LeanValue
+optionLeanValue = maybe (LeanAtom "none") (\value -> LeanApp "some" [value])
+
+{- | Transcribe a raw schema into a parsed @SchemaNode@ term through the same
+exported keyword readers the enforcement pass uses, so the fixtures pin
+exactly what parses; any @InvalidSchema@ is surfaced instead of rendered.
+-}
+contractValidationSchemaValue
+  :: Text -> Aeson.Value -> Either WireContractValidationError LeanValue
+contractValidationSchemaValue contractId = go WireJsonPathRoot
+  where
+    go path value =
+      case value of
+        Aeson.Object schema -> do
+          types <- schemaTypeValues contractId path schema
+          enumValues <-
+            case AesonKeyMap.lookup "enum" schema of
+              Nothing -> Right Nothing
+              Just (Aeson.Array allowed) -> Right (Just (toList allowed))
+              Just _ ->
+                Left
+                  ( WireContractValidationInvalidSchema
+                      contractId
+                      (WireJsonPathProperty path "enum")
+                      "enum must be an array"
+                  )
+          required <- optionalTextArrayField contractId path "required" schema
+          properties <- optionalObjectField contractId path "properties" schema
+          additional <- optionalBoolField contractId path "additionalProperties" schema
+          items <-
+            case AesonKeyMap.lookup "items" schema of
+              Nothing -> Right Nothing
+              Just itemSchema -> Just <$> go (WireJsonPathProperty path "items") itemSchema
+          minLength <- optionalIntegerField contractId path "minLength" schema
+          maxLength <- optionalIntegerField contractId path "maxLength" schema
+          minimumValue <- optionalNumberField contractId path "minimum" schema
+          maximumValue <- optionalNumberField contractId path "maximum" schema
+          propertyPairs <- traverse (renderProperty path) (sortedKeyMapEntries properties)
+          Right
+            ( LeanApp
+                "SchemaNode.mk"
+                [ LeanList (fmap (LeanAtom . leanStringLit) types)
+                , optionLeanValue (fmap (LeanList . fmap contractValidationJsonValue) enumValues)
+                , LeanList (fmap (LeanAtom . leanStringLit) required)
+                , LeanList propertyPairs
+                , optionLeanValue (fmap boolLeanAtom additional)
+                , optionLeanValue items
+                , optionLeanValue (fmap (intLeanAtom . fromIntegral) minLength)
+                , optionLeanValue (fmap (intLeanAtom . fromIntegral) maxLength)
+                , optionLeanValue (fmap (ratLeanValue . toRational) minimumValue)
+                , optionLeanValue (fmap (ratLeanValue . toRational) maximumValue)
+                ]
+            )
+        _ ->
+          Left
+            ( WireContractValidationInvalidSchema
+                contractId
+                path
+                "schema node must be an object"
+            )
+    renderProperty path (key, subSchema) = do
+      subValue <- go (WireJsonPathProperty path key) subSchema
+      Right (LeanTuple [LeanAtom (leanStringLit key), subValue])
+
+-- | Render one dialect fixture as a generated Lean module.
+renderContractValidationFixtureModule
+  :: ContractValidationFixture -> Either WireContractValidationError Text
+renderContractValidationFixtureModule fixture = do
+  schemaTerm <- contractValidationSchemaValue fixture.cvFixtureSlug fixture.cvFixtureSchema
+  Right
+    ( T.unlines
+        ( [ "import Cortex.Wire.ContractValidationCheck"
+          , ""
+          , "/-!"
+          , "## Overview"
+          , ""
+          , "Contract-schema dialect fixture for the"
+          , T.concat ["`", fixture.cvFixtureSlug, "` case: ", fixture.cvFixtureDescription, "."]
+          , ""
+          , "GENERATED FILE - do not edit by hand. Regenerated by"
+          , "`just wire-lean-fixtures` from `Cortex.Wire.LeanFixture`; the Haskell test"
+          , "suite fails when this file drifts from the current renderer output."
+          , "Acceptance theorems route through `schemaAcceptsCheck_sound`; rejection"
+          , "theorems use the `Decidable` instance derived from completeness. Every"
+          , "payload also carries a `#guard` for `Json.canonicalCheck`, the"
+          , "canonical-form invariant structural equality relies on."
+          , "-/"
+          , ""
+          , "namespace Cortex.Wire"
+          , "namespace ContractValidation"
+          , "namespace " <> contractValidationFixtureNamespace fixture
+          ]
+            <> definition "SchemaNode" "schema" "Parsed dialect schema for this fixture." schemaTerm
+            <> concat
+              ( zipWith
+                  (payloadDefinition "accepted" "Payload the schema accepts.")
+                  [0 :: Int ..]
+                  fixture.cvFixtureAccepted
+              )
+            <> concat
+              ( zipWith
+                  (payloadDefinition "rejected" "Payload the schema rejects.")
+                  [0 :: Int ..]
+                  fixture.cvFixtureRejected
+              )
+            <> [""]
+            <> fmap
+              (\index -> "#guard (" <> payloadName "accepted" index <> ").canonicalCheck")
+              (payloadIndices fixture.cvFixtureAccepted)
+            <> fmap
+              (\index -> "#guard (" <> payloadName "rejected" index <> ").canonicalCheck")
+              (payloadIndices fixture.cvFixtureRejected)
+            <> fmap
+              (\index -> "#guard schemaAcceptsCheck schema " <> payloadName "accepted" index)
+              (payloadIndices fixture.cvFixtureAccepted)
+            <> fmap
+              (\index -> "#guard !(schemaAcceptsCheck schema " <> payloadName "rejected" index <> ")")
+              (payloadIndices fixture.cvFixtureRejected)
+            <> concatMap
+              ( \index ->
+                  [ ""
+                  , "/-- Accepted payload " <> T.pack (show index) <> " satisfies the schema. -/"
+                  , "theorem "
+                      <> payloadName "accepted" index
+                      <> "_accepts : SchemaAccepts schema "
+                      <> payloadName "accepted" index
+                      <> " :="
+                  , "  schemaAcceptsCheck_sound (by native_decide)"
+                  ]
+              )
+              (payloadIndices fixture.cvFixtureAccepted)
+            <> concatMap
+              ( \index ->
+                  [ ""
+                  , "/-- Rejected payload " <> T.pack (show index) <> " violates the schema. -/"
+                  , "theorem "
+                      <> payloadName "rejected" index
+                      <> "_rejects : \172 SchemaAccepts schema "
+                      <> payloadName "rejected" index
+                      <> " := by"
+                  , "  native_decide"
+                  ]
+              )
+              (payloadIndices fixture.cvFixtureRejected)
+            <> [ ""
+               , "end " <> contractValidationFixtureNamespace fixture
+               , "end ContractValidation"
+               , "end Cortex.Wire"
+               ]
+        )
+    )
+  where
+    payloadIndices values = fmap fst (zip [0 :: Int ..] values)
+    payloadName prefix index = prefix <> T.pack (show index)
+    definition typeName defName docText term =
+      [ ""
+      , "/-- " <> docText <> " -/"
+      , "def " <> defName <> " : " <> typeName <> " :="
+      ]
+        <> indentFirst 2 (renderLeanValue 2 term)
+    payloadDefinition prefix docText index value =
+      definition "Json" (payloadName prefix index) docText (contractValidationJsonValue value)
+
+{- | Umbrella module importing every generated dialect fixture and pinning the
+dialect version against the Haskell constant.
+-}
+renderContractValidationUmbrellaModule :: [ContractValidationFixture] -> Text
+renderContractValidationUmbrellaModule fixtures =
+  T.unlines
+    ( fmap (\fixture -> "import " <> contractValidationFixtureModuleName fixture) fixtures
+        <> [ ""
+           , "/-!"
+           , "## Overview"
+           , ""
+           , "Umbrella for the generated contract-schema dialect fixtures. Each import"
+           , "is a Lean module generated by `Cortex.Wire.LeanFixture`; regenerate with"
+           , "`just wire-lean-fixtures`. The Haskell test suite fails when any"
+           , "generated module drifts from the current renderer output."
+           , "-/"
+           , ""
+           , "-- Dialect version pin: mirrors `wireContractDialectVersion` in"
+           , "-- `src/Cortex/Wire/ContractValidation.hs`. A one-sided bump regenerates"
+           , "-- this umbrella; the build then fails until the Lean constant follows."
+           , "#guard Cortex.Wire.ContractValidation.dialectVersion == "
+               <> T.pack (show wireContractDialectVersion)
            ]
     )

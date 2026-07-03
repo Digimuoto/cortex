@@ -58,6 +58,10 @@ import Cortex.Wire.AST
   )
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Contract (WireContractRegistry (..), WireContractSpec (..))
+import Cortex.Wire.ContractValidation
+  ( renderWireContractValidationError
+  , validateJsonValueAgainstSchema
+  )
 import Cortex.Wire.Syntax (CorePureBinding, CorePureExpr)
 import Cortex.Wire.Value
   ( WirePayloadKind (..)
@@ -335,7 +339,7 @@ wrapProductBoundaryOutput maybeRegistry ctx outputValue =
                       <> " declared one output contract but did not expose exactly one output port."
                   )
           payloadKind <- payloadKindForContract maybeRegistry contractId
-          validateWireValuePayloadShape contractId payloadKind outputValue
+          validateWireValuePayloadShape maybeRegistry contractId payloadKind outputValue
           let wireValue =
                 (mkWireValue contractId payloadKind (Just (unNodeId ctx.boundaryEgressProducer)) outputValue)
                   { wireValueProvenance =
@@ -419,7 +423,7 @@ wrapNodeBoundaryOutputs maybeRegistry ctx outputValues =
           Just portSpec -> Right portSpec
           Nothing -> Left ("Wire output port " <> portName <> " is not offered by this node.")
       payloadKind <- payloadKindForContract maybeRegistry outputPort.wireOutputPortContract
-      validateWireValuePayloadShape outputPort.wireOutputPortContract payloadKind value
+      validateWireValuePayloadShape maybeRegistry outputPort.wireOutputPortContract payloadKind value
       Right
         ( ( mkWireValue
               outputPort.wireOutputPortContract
@@ -584,7 +588,11 @@ validateWireValue maybeRegistry ports wireValue = do
             <> ", expected "
             <> renderWirePayloadKind expectedKind
         )
-  validateWireValuePayloadShape wireValue.wireValueContract expectedKind wireValue.wireValueValue
+  validateWireValuePayloadShape
+    maybeRegistry
+    wireValue.wireValueContract
+    expectedKind
+    wireValue.wireValueValue
 
 data WireValuePortMatch
   = WireValuePortMatched
@@ -616,8 +624,14 @@ wireValuePortMatch ports wireValue =
             [_] -> WireValuePortMatched
             _ -> WireValuePortAmbiguous matchingPorts
 
-validateWireValuePayloadShape :: Text -> WirePayloadKind -> Aeson.Value -> Either Text ()
-validateWireValuePayloadShape contractId payloadKind value =
+{- | ADR 0085 boundary validation: the shallow payload-kind shape check,
+deepened by schema validation when the registered contract declares a
+schema and the payload kind is @json@ or @artifact_ref@. Contracts without
+a declared schema keep the shallow check only.
+-}
+validateWireValuePayloadShape
+  :: Maybe WireContractRegistry -> Text -> WirePayloadKind -> Aeson.Value -> Either Text ()
+validateWireValuePayloadShape maybeRegistry contractId payloadKind value = do
   case validateWirePayloadShape payloadKind value of
     Right () -> Right ()
     Left expectedShape ->
@@ -630,6 +644,23 @@ validateWireValuePayloadShape contractId payloadKind value =
             <> expectedShape
             <> "."
         )
+  case contractSchemaForContract maybeRegistry contractId of
+    Just schema
+      | payloadKind == WirePayloadJson || payloadKind == WirePayloadArtifactRef ->
+          case validateJsonValueAgainstSchema contractId schema value of
+            Right () -> Right ()
+            Left validationError ->
+              Left
+                ( "Wire output schema validation: "
+                    <> renderWireContractValidationError validationError
+                )
+    _ -> Right ()
+
+contractSchemaForContract :: Maybe WireContractRegistry -> Text -> Maybe Aeson.Value
+contractSchemaForContract maybeRegistry contractId = do
+  registry <- maybeRegistry
+  spec <- Map.lookup contractId registry.wireContractRegistryContracts
+  spec.wireContractSpecSchema
 
 payloadKindForContract :: Maybe WireContractRegistry -> Text -> Either Text WirePayloadKind
 payloadKindForContract Nothing _contractId =

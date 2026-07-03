@@ -91,6 +91,58 @@ spec = describe "Cortex.Wire runtime egress" $ do
       (Aeson.Number 1)
       `shouldBeLeftContaining` "value shape is invalid; expected a JSON string"
 
+  describe "ADR 0085 contract schema enforcement" $ do
+    it "accepts json outputs that satisfy the declared schema" $ do
+      result <-
+        requireRight $
+          wrapWireStageOutput
+            (Just schemaRegistry)
+            producer
+            runId
+            reportPorts
+            (Aeson.object ["title" Aeson..= ("Q1" :: Text)])
+      wireValue <- requireAesonSuccess (Aeson.fromJSON result :: Aeson.Result WireValue)
+      wireValue.wireValueContract `shouldBe` "Report"
+
+    it "rejects json outputs that violate the declared schema" $
+      wrapWireStageOutput
+        (Just schemaRegistry)
+        producer
+        runId
+        reportPorts
+        (Aeson.object [])
+        `shouldBeLeftContaining` "Wire output schema validation: Wire contract Report is missing required property title"
+
+    it "rejects schema violations with a JSON path" $
+      wrapWireStageOutput
+        (Just schemaRegistry)
+        producer
+        runId
+        reportPorts
+        (Aeson.object ["title" Aeson..= (7 :: Int)])
+        `shouldBeLeftContaining` "expected string at $.title, got integer"
+
+    it "rejects artifact_ref reference objects that violate the declared schema" $
+      wrapWireStageOutput
+        (Just schemaRegistry)
+        producer
+        runId
+        reportRefPorts
+        (Aeson.object ["digest" Aeson..= ("sha256:abc" :: Text)])
+        `shouldBeLeftContaining` "Wire contract ReportRef is missing required property artifact_id"
+
+    it "keeps schema-less contracts on the shallow check only" $ do
+      result <-
+        requireRight $
+          wrapWireStageOutput
+            (Just scoreRegistry)
+            producer
+            runId
+            scorePorts
+            (Aeson.object ["free" Aeson..= ("form" :: Text)])
+      wireValue <- requireAesonSuccess (Aeson.fromJSON result :: Aeson.Result WireValue)
+      wireValue.wireValueContract `shouldBe` "Score"
+
   -- Lean correspondence: mirrors `pureNode_evalOutputs_values_satisfy_outputContracts`
   -- and `pureNode_evalOutputs_values_satisfy_valueContracts` in
   -- `theory/Cortex/Wire/Pure.lean`. The runtime egress wraps a raw output in
@@ -279,6 +331,56 @@ textRegistry =
         , wireContractSpecDescription = "Text payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecExamples = []
+        }
+    ]
+
+reportPorts :: WirePorts
+reportPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs = Map.singleton "report" (WireOutputPort "Report" Nothing)
+    }
+
+reportRefPorts :: WirePorts
+reportRefPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs = Map.singleton "ref" (WireOutputPort "ReportRef" Nothing)
+    }
+
+schemaRegistry :: WireContractRegistry
+schemaRegistry =
+  wireContractRegistryFromList
+    [ WireContractSpec
+        { wireContractSpecId = "Report"
+        , wireContractSpecPayloadKind = WirePayloadJson
+        , wireContractSpecDescription = "Report payload."
+        , wireContractSpecRecordFields = Nothing
+        , wireContractSpecSchema =
+            Just
+              ( Aeson.object
+                  [ "type" Aeson..= ("object" :: Text)
+                  , "required" Aeson..= ["title" :: Text]
+                  , "properties"
+                      Aeson..= Aeson.object
+                        ["title" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]]
+                  ]
+              )
+        , wireContractSpecExamples = []
+        }
+    , WireContractSpec
+        { wireContractSpecId = "ReportRef"
+        , wireContractSpecPayloadKind = WirePayloadArtifactRef
+        , wireContractSpecDescription = "Report artifact reference."
+        , wireContractSpecRecordFields = Nothing
+        , wireContractSpecSchema =
+            Just
+              ( Aeson.object
+                  [ "type" Aeson..= ("object" :: Text)
+                  , "required" Aeson..= ["artifact_id" :: Text]
+                  ]
+              )
         , wireContractSpecExamples = []
         }
     ]

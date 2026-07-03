@@ -12,12 +12,22 @@ and @std.io@ still resolves as one entry among others.
 -}
 module Cortex.Wire.PackageSpec (spec) where
 
+import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.UUID qualified as UUID
 import Test.Hspec
 
+import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Wire
+  ( WireContractRegistry
+  , WireOutputPort (..)
+  , WirePorts (..)
+  , wireContractRegistryFromList
+  , wrapWireStageOutput
+  )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
 import Cortex.Wire.Package
 import Cortex.Wire.Package.Manifest (decodeWirePackageManifest, renderWirePackageManifestError)
@@ -199,3 +209,55 @@ spec = do
         Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
         Right package ->
           packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
+
+  describe "ADR 0085 manifest schema end-to-end" $ do
+    it "enforces a manifest-declared contract schema at runtime egress" $ do
+      registry' <- schemaManifestRegistry
+      wrapWireStageOutput
+        (Just registry')
+        (NodeId "reporter")
+        (UUID.fromWords 0 0 0 0)
+        reportPorts
+        (Aeson.object [])
+        `shouldSatisfy` \case
+          Left err -> "missing required property title" `T.isInfixOf` err
+          Right _ -> False
+
+    it "accepts a schema-satisfying payload from the same manifest registry" $ do
+      registry' <- schemaManifestRegistry
+      wrapWireStageOutput
+        (Just registry')
+        (NodeId "reporter")
+        (UUID.fromWords 0 0 0 0)
+        reportPorts
+        (Aeson.object ["title" Aeson..= ("Q1" :: Text)])
+        `shouldSatisfy` \case
+          Left _ -> False
+          Right _ -> True
+
+reportPorts :: WirePorts
+reportPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs = Map.singleton "report" (WireOutputPort "Report" Nothing)
+    }
+
+{- | Decodes a manifest whose @[[contract]]@ stanza declares a @schema@ and
+projects it into the runtime contract registry, proving the TOML->registry
+plumbing end-to-end (ADR 0085).
+-}
+schemaManifestRegistry :: IO WireContractRegistry
+schemaManifestRegistry =
+  case decodeWirePackageManifest "cortex.toml" manifestSource of
+    Left err -> fail (T.unpack (renderWirePackageManifestError err))
+    Right package -> pure (wireContractRegistryFromList package.wpContractSpecs)
+  where
+    manifestSource =
+      "[package]\n\
+      \id = \"reports\"\n\
+      \\n\
+      \[[contract]]\n\
+      \id = \"Report\"\n\
+      \payload_kind = \"json\"\n\
+      \description = \"Report payload\"\n\
+      \schema = { type = \"object\", required = [\"title\"], properties = { title = { type = \"string\" } } }\n"

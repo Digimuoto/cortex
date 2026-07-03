@@ -104,14 +104,19 @@ import Cortex.Wire.Compile
   , compileWireModulesWithReturn
   )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
+import Cortex.Wire.ContractValidation (renderWireContractValidationError)
 import Cortex.Wire.EndpointUse qualified as EndpointUse
 import Cortex.Wire.Import (loadWireModuleClosureWithEnv, renderWireImportError)
 import Cortex.Wire.Include (expandWireSourceIncludes)
 import Cortex.Wire.LeanFixture
-  ( EmittedFixture (..)
+  ( ContractValidationFixture (..)
+  , EmittedFixture (..)
   , compiledWireAdmissionArtifact
+  , contractValidationFixtures
   , differentialFixtures
   , emittedFixtures
+  , renderContractValidationFixtureModule
+  , renderContractValidationUmbrellaModule
   , renderDifferentialModuleText
   , renderDifferentialUmbrellaModule
   , renderEmittedFixtureModule
@@ -395,6 +400,23 @@ leanFixturesWire outDir = do
   let diffUmbrellaPath = takeDirectory outDir </> "Differential.lean"
   TIO.writeFile diffUmbrellaPath (renderDifferentialUmbrellaModule differentialFixtures)
   TIO.putStrLn ("wrote " <> T.pack diffUmbrellaPath)
+  let contractValidationDir =
+        takeDirectory (takeDirectory outDir) </> "ContractValidation" </> "Emitted"
+  createDirectoryIfMissing True contractValidationDir
+  forM_ contractValidationFixtures $ \fixture -> do
+    rendered <-
+      either
+        (dieText . renderWireContractValidationError)
+        pure
+        (renderContractValidationFixtureModule fixture)
+    let path = contractValidationDir </> T.unpack fixture.cvFixtureSlug <> ".lean"
+    TIO.writeFile path rendered
+    TIO.putStrLn ("wrote " <> T.pack path)
+  let contractValidationUmbrellaPath = takeDirectory contractValidationDir </> "Emitted.lean"
+  TIO.writeFile
+    contractValidationUmbrellaPath
+    (renderContractValidationUmbrellaModule contractValidationFixtures)
+  TIO.putStrLn ("wrote " <> T.pack contractValidationUmbrellaPath)
 
 -- | Parse-only acceptance check used by the grammar differential harness.
 parseWireOnly :: FilePath -> IO ()

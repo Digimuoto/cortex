@@ -73,7 +73,8 @@ A contract is a named classifier for what flows through a port. To Wire it is a 
   conversion: an `Outline` never passes where a `Result` is expected, even if the payloads happen to
   look alike.
 - Composition (`=>`) checks the names when the graph is admitted; the runtime boundary checks the
-  payload's declared kind (deeper schema enforcement is decided by ADR 0085 but not yet built).
+  payload's declared kind, and a contract that declares a schema has its payloads validated against
+  it at the same boundary (ADR 0085).
 
 What Wire deliberately does not know is what the value _means_ or how the host represents it. That
 meaning is supplied by whichever executors realize the graph. In the workflow above, `Outline` means

@@ -187,6 +187,7 @@ library
         Cortex.Wire.AdmissionBinding
         Cortex.Wire.Compile
         Cortex.Wire.Contract
+        Cortex.Wire.ContractValidation
         Cortex.Wire.EndpointUse
         Cortex.Wire.Executor
         Cortex.Wire.Import
@@ -431,6 +432,7 @@ test-suite cortex-test
         Cortex.Wire.Circuit.IRSpec
         Cortex.Wire.Cli.FrontierSpec
         Cortex.Wire.CompileSpec
+        Cortex.Wire.ContractValidationSpec
         Cortex.Wire.EndpointUseSpec
         Cortex.Wire.FormatSpec
         Cortex.Wire.ImportSpec

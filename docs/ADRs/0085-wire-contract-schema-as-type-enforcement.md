@@ -53,13 +53,13 @@ The runtime contract record carries six fields, but enforcement is uneven. `Wire
 `schema :: Maybe Aeson.Value`, and `examples`. Of these, only `payloadKind` (read via
 `payloadKindForContract`, `src/Cortex/Wire/NodeBoundary.hs:634-639`, shape-checked at
 `src/Cortex/Wire/NodeBoundary.hs:621`) and `recordFields` (`src/Cortex/Wire/Compile.hs:1972,1995`,
-for the `*` finite-product adapter) are ever read. The boundary shape check is **shallow**:
-`validateWirePayloadShape` returns `Right ()` unconditionally for `json` and only checks
-`Aeson.Object _` for `artifact_ref` (`src/Cortex/Wire/Value.hs:86-103`). The **`schema` field is
-dead weight** — it is declared (`Contracts.hs:50`), serialized (`Contracts.hs:62`), and otherwise
-only ever written as `Nothing` (`Std.hs:152,160`, `LeanFixture.hs:773`, test fixtures); a
-repository-wide grep finds **no reader that validates against it**. `description` and `examples` are
-likewise serialized-only.
+for the `*` finite-product adapter) are ever read. At decision time the boundary shape check was
+**shallow**: `validateWirePayloadShape` returned `Right ()` unconditionally for `json` and only
+checked `Aeson.Object _` for `artifact_ref` (`src/Cortex/Wire/Value.hs:86-103`). The **`schema`
+field was dead weight** — declared (`Contracts.hs:50`), serialized (`Contracts.hs:62`), and
+otherwise only ever written as `Nothing`; a repository-wide grep found **no reader that validates
+against it**. (The enforcement pass recorded under Traceability has since made the schema a
+read-and-enforce input.) `description` and `examples` remain serialized-only.
 
 This leaves the largest gap between "tag-with-a-name" and "type-with-content" exactly where it hurts
 most: the nominal discipline guarantees the _name_ on a port but says nothing about the _bytes_
@@ -194,37 +194,51 @@ no-subtyping / first-order ceiling explicitly. Concretely:
 - Adds a runtime decode-and-validate cost at the node boundary for contracts that declare a schema;
   contracts without a schema keep today's shallow check (no regression, no new guarantee).
 - The "validate against `Maybe Aeson.Value`" surface needs a Cortex-owned, versioned schema dialect.
-  The Logos subset is the starting point, but the upstream validator still has to pin the supported
-  keywords and any deliberate differences.
+  The upstream validator pins the Logos subset as dialect version 1 (`wireContractDialectVersion`),
+  with one recorded divergence: the payload-kind gate accepts `artifact_ref` alongside `json`.
 - The guarantee is at the **host boundary only** until mechanized; the Lean typed core
   (`FrontierTyped`) still ranges over names, not schema content (decision rule 5).
 
 ### Obligations
 
-- Implement the enforcement pass: make `validateWireValuePayloadShape`/`validateWirePayloadShape`
-  (`NodeBoundary.hs:621`, `Value.hs:86-103`) consult `wireContractSpecSchema` for `json` and
-  `artifact_ref`, with **negative-test guards** asserting a malformed payload is rejected.
-- Upstream the Logos-incubated validator subset into Cortex (or record a deliberate divergence) and
-  document the pinned dialect in `Reference/Wire/contracts-ports-and-matching.md`.
-- Mechanize the host-boundary content-validation contract in Lean once the dialect is fixed (a
-  deferred proof target, tracked as the "`artifact_ref` content/schema validation" row in
-  [proof-status](../Reference/proof-status.md)). Design precedes mechanization.
+- **Discharged — enforcement pass.** `validateWireValuePayloadShape`
+  (`src/Cortex/Wire/NodeBoundary.hs`) now consults `wireContractSpecSchema` for `json` and
+  `artifact_ref` payloads at all three egress sites, with negative-test guards in
+  `test/Cortex/Wire/RuntimeSpec.hs` (malformed payloads rejected with path-bearing errors),
+  `test/Cortex/Wire/ContractValidationSpec.hs`, and an end-to-end TOML-manifest case in
+  `test/Cortex/Wire/PackageSpec.hs`.
+- **Discharged — dialect upstreamed.** The Logos-incubated validator ships as
+  `Cortex.Wire.ContractValidation` with one recorded divergence: the payload-kind gate accepts
+  `artifact_ref` alongside `json` (the reference object is the payload the schema describes). The
+  pinned dialect is documented in `Reference/Wire/contracts-ports-and-matching.md`.
+- **Discharged — dialect mechanized.** `theory/Cortex/Wire/ContractValidation.lean` models the
+  parsed dialect (`SchemaAccepts`), `ContractValidationCheck.lean` proves the executable checker
+  sound **and** complete (`schemaAcceptsCheck_iff`), and generated fixtures under
+  `ContractValidation/Emitted/` pin Haskell↔Lean agreement (`native_decide` theorems, a
+  byte-equality drift test, and a shared `wireContractDialectVersion`/`dialectVersion` constant).
+  Validation of the **resolved durable artifact content** behind an `artifact_ref` (as opposed to
+  the reference object) remains open at the artifact-store boundary, as does ingress validation of
+  host-supplied inputs; both are named follow-ups, not part of this decision.
 - Decide the fate of the equally-inert `description`/`examples` fields (`Contracts.hs:48,51`) —
-  enforce, retire, or keep documentary — as a follow-up; this ADR governs `schema` only.
+  enforce, retire, or keep documentary — as a follow-up; this ADR governs `schema` only
+  (`validateWireContractExamples` ships as consumer API but is not wired into compilation).
 
 ## Traceability
 
 - Feature keys: `wire.contract_schema_enforcement`
 - Public surface: `Cortex.Wire`,
   [contracts-ports-and-matching](../Reference/Wire/contracts-ports-and-matching.md)
-- Implementation: `src/Cortex/Wire/Contracts.hs` (`WireContractSpec.wireContractSpecSchema`, the
-  hook being enforced), `src/Cortex/Wire/NodeBoundary.hs` (`validateWireValuePayloadShape`, boundary
-  validation site), `src/Cortex/Wire/Value.hs` (`validateWirePayloadShape`, the shape check being
-  deepened) — enforcement pass not yet built (Impl status `planned`)
-- Tests: `test/Cortex/Wire/CompileSpec.hs` (boundary-validation negatives, to be added)
-- Theory/proof: none (host-boundary content-validation mechanization is a deferred target, tracked
-  as the "`artifact_ref` content/schema validation" row in
-  [proof-status](../Reference/proof-status.md))
+- Implementation: `src/Cortex/Wire/ContractValidation.hs` (the dialect validator,
+  `wireContractDialectVersion`), `src/Cortex/Wire/NodeBoundary.hs` (`validateWireValuePayloadShape`
+  consults the registered spec's schema at the egress boundary), `src/Cortex/Wire/Contracts.hs`
+  (`WireContractSpec.wireContractSpecSchema`, the enforced hook) — Impl status `implemented`
+- Tests: `test/Cortex/Wire/ContractValidationSpec.hs` (dialect semantics + Lean-fixture drift gate),
+  `test/Cortex/Wire/RuntimeSpec.hs` (boundary-validation negatives),
+  `test/Cortex/Wire/PackageSpec.hs` (TOML-manifest schema end-to-end)
+- Theory/proof: `theory/Cortex/Wire/ContractValidation.lean` / `ContractValidationCheck.lean`
+  (`SchemaAccepts`, `schemaAcceptsCheck_iff`/`_sound`/`_complete`) plus generated
+  `ContractValidation/Emitted/` fixtures; tracked as the contract schema validation row in
+  [proof-status](../Reference/proof-status.md)
 
 ## Related
 
