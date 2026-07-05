@@ -34,6 +34,7 @@ module Cortex.Wire.Pure
   , pureWireExecutorId
   , pureWireExecutorProjection
   , pureExecutorConfigSchema
+  , canonicalJson
   )
 where
 
@@ -2087,6 +2088,12 @@ corePureValueKind = \case
   CorePureClosure {} -> "function"
   CorePureBuiltin {} -> "function"
 
+{- | Deterministic textual rendering of a JSON value: recursively key-sorted
+objects and canonical number rendering, so structurally equal values render
+identically regardless of construction order. This is the value-canonicalization
+surface CorePure string conversion uses, and the encoding content addressing
+(ADR 0089) hashes over.
+-}
 canonicalJson :: Aeson.Value -> Text
 canonicalJson = \case
   Aeson.Null -> "null"

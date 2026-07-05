@@ -44,6 +44,7 @@ module Cortex.Pulse.Rewrite
   , admissionModeFromText
   , admitRewriteDelta
   , admitWitnessedDelta
+  , admitExternalDelta
   , admittedDelta
   , admittedRemainingBudget
   , admittedAdmissionMode
@@ -521,15 +522,21 @@ data RewriteAdmissionWitness def = RewriteAdmissionWitness
   }
   deriving stock (Show, Generic)
 
-{- | Admission mode for a rewrite (ADR 0056). 'AdmissionGassed' rewrites debit
-the run-global 'RewriteBudget' at admission; 'AdmissionWitnessed' rewrites are
-compile-bounded, asserted shapes (e.g. a runtime-bounded-iteration self-append
-step under ADR 0055) whose structural cost is recorded but does not gate against
-the budget. Recovery is mode-aware: witnessed rows replay gas-neutral.
+{- | Admission mode for a rewrite (ADR 0056, extended by ADR 0088).
+'AdmissionGassed' rewrites debit the run-global 'RewriteBudget' at admission;
+'AdmissionWitnessed' rewrites are compile-bounded, asserted shapes (e.g. a
+runtime-bounded-iteration self-append step under ADR 0055) whose structural
+cost is recorded but does not gate against the budget. 'AdmissionExternal'
+rewrites share the witnessed shape provenance (a registered kernel digest) but
+are bounded by external causation instead of a compile-witnessed finite cap:
+each step is caused by a delivered durable signal (ADR 0082), so growth rate
+never exceeds host deliveries. Recovery is mode-aware: witnessed and external
+rows replay gas-neutral and are re-gated, never trusted from the tag alone.
 -}
 data AdmissionMode
   = AdmissionGassed
   | AdmissionWitnessed
+  | AdmissionExternal
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
@@ -538,6 +545,7 @@ admissionModeText :: AdmissionMode -> Text
 admissionModeText = \case
   AdmissionGassed -> "gassed"
   AdmissionWitnessed -> "witnessed"
+  AdmissionExternal -> "external"
 
 {- | Decode a persisted admission mode. Unknown values default to 'AdmissionGassed'
 so pre-existing rows (and any forward-compatible additions) stay on the metered
@@ -546,12 +554,13 @@ path rather than being silently treated as gas-neutral.
 admissionModeFromText :: Text -> AdmissionMode
 admissionModeFromText t
   | t == "witnessed" = AdmissionWitnessed
+  | t == "external" = AdmissionExternal
   | otherwise = AdmissionGassed
 
 {- | Witness that a rewrite delta has been admitted against a budget.
 The constructor is not exported — the only way to obtain an
-'AdmittedRewriteDelta' is through 'admitRewriteDelta' (gassed) or
-'admitWitnessedDelta' (gas-neutral).
+'AdmittedRewriteDelta' is through 'admitRewriteDelta' (gassed),
+'admitWitnessedDelta', or 'admitExternalDelta' (both gas-neutral).
 -}
 data AdmittedRewriteDelta def = AdmittedRewriteDelta
   { ardDelta :: PlannedRewriteDelta def
@@ -589,6 +598,22 @@ admitWitnessedDelta budget delta =
     { ardDelta = delta
     , ardRemainingBudget = budget
     , ardAdmissionMode = AdmissionWitnessed
+    }
+
+{- | Gas-neutral admission for an externally-driven step (ADR 0088). Mirrors
+'admitWitnessedDelta' — the cost is carried for provenance, the budget is
+returned unchanged — but the row is tagged 'AdmissionExternal' so the journal
+distinguishes "bounded by a compile-witnessed finite cap" from "bounded by one
+journaled external delivery per step". A caller must establish the
+externally-driven step gate (registered kernel digest, delivery-entry law,
+canonical step index) before calling this; the budget is not the gate.
+-}
+admitExternalDelta :: RewriteBudget -> PlannedRewriteDelta def -> AdmittedRewriteDelta def
+admitExternalDelta budget delta =
+  AdmittedRewriteDelta
+    { ardDelta = delta
+    , ardRemainingBudget = budget
+    , ardAdmissionMode = AdmissionExternal
     }
 
 admittedDelta :: AdmittedRewriteDelta def -> PlannedRewriteDelta def
@@ -766,6 +791,9 @@ validateAdmittedRewriteDelta budget delta admitted =
     -- Witnessed (e.g. a runtime-iteration self-append step) is gas-neutral:
     -- the cost is recorded but does not gate, so the budget is unchanged.
     AdmissionWitnessed -> expectRemaining budget
+    -- Externally-driven steps (ADR 0088) are gas-neutral the same way; the
+    -- bounding resource is external delivery, checked by the step gate.
+    AdmissionExternal -> expectRemaining budget
     -- Gassed admission debits every dimension.
     AdmissionGassed ->
       case consumeRewriteBudget budget delta.prdCost of

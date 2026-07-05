@@ -121,6 +121,14 @@ rewrite budget. The selected arm consumes ordinary rewrite budget when it is act
 deliberately weaker than a reserved-capacity policy: Cortex does not yet guarantee that every
 compiled latent arm can still materialize after unrelated rewrites have spent the remaining budget.
 
+Gas gates only **open** proposals — producer-authored topology whose shape is unknowable before the
+proposal returns. Certified self-append steps are gas-neutral with their cost recorded as a metric:
+an iteration-capped kernel step is bounded by its finite per-run bound (ADR 0055/0056, journaled as
+`witnessed`), and an externally-driven step is bounded by one delivered durable signal per step via
+the delivery-entry law, optionally tightened by an operator valve (ADR 0088, journaled as
+`external`). Replay re-validates both through the same security gate rather than trusting the stored
+mode.
+
 ## Admission policy
 
 Admission is the runtime's gate. A proposal is admitted only when every check passes:

@@ -35,6 +35,7 @@ import Data.Maybe (isJust)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Read qualified as TR
 import Data.Time (UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
@@ -70,8 +71,16 @@ import Cortex.Capability.Catalog.RuntimeBindingRecord
   ( RuntimeBindingRecord (..)
   , RuntimeStageActionRef (..)
   )
+import Cortex.Pulse.Artifact
+  ( ArtifactForRun (..)
+  , ArtifactHash (..)
+  , artifactAddress
+  , bindPulseArtifactBoundary
+  , listArtifactsForRun
+  )
 import Cortex.Pulse.Circuit
   ( CircuitRunError (..)
+  , ManagedRunOptions (..)
   , artifactStage
   , committedVariantBinder
   , committedVariantBinderWith
@@ -80,6 +89,7 @@ import Cortex.Pulse.Circuit
   , resumeCompiledCircuitManaged
   , runCompiledCircuit
   , runCompiledCircuitManaged
+  , runCompiledCircuitManagedWithOptions
   , signalStage
   , taskStage
   )
@@ -135,17 +145,21 @@ import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Iteration
   ( EffectiveBound (..)
   , EmittedAggregationPolicy (..)
+  , ExternalDeliveryPolicy (..)
   , FrontierShapeWitness (..)
   , FrontierStateRole (..)
   , FrontierWitnessAlgorithm (..)
   , IterationExhaustionPolicy (..)
   , KernelBoundary (..)
+  , LoopBoundSource (..)
+  , LoopCancellationPoint (..)
   , LoopKernelWitness
   , LoopOutcome (..)
   , LoopPolicy (..)
   , LoopRegistration (..)
   , LoopRewriteInteraction (..)
   , LoopStepWitness (..)
+  , externalLoopRegistration
   , kernelWitnessForLocalSpec
   )
 import Cortex.Pulse.Lowering.ExternalCallStage (bindExternalCallStage)
@@ -383,6 +397,20 @@ readManagedRunRows pool workflowKey =
       )
       True
 
+-- | Read a run's lineage columns: @(parent_run_id, trigger_source)@.
+readRunLineage :: Pool -> UUID -> IO (Maybe UUID, Text)
+readRunLineage pool runId =
+  runSession pool . Session.statement runId $
+    Statement
+      "SELECT parent_run_id, trigger_source::text FROM pulse.runs WHERE run_id = $1"
+      (Enc.encode1 (id, Enc.nonNullable Enc.uuid))
+      ( D.singleRow $
+          (,)
+            <$> D.column (D.nullable D.uuid)
+            <*> D.column (D.nonNullable D.text)
+      )
+      True
+
 mkTaskContext :: Pool -> IO (TVar Bool, TaskContext)
 mkTaskContext pool = do
   shutdownFlag <- newTVarIO False
@@ -504,7 +532,8 @@ nodeStage nodeId = taskStage nodeId SafeToReplay
 runtimeIterationPolicy :: Int -> FrontierShapeWitness -> LoopKernelWitness -> LoopPolicy
 runtimeIterationPolicy cap frontierWitness kernelWitness =
   LoopPolicy
-    { lpMaxIterations = fromIntegral cap
+    { lpBoundSource = BoundIterationCap
+    , lpMaxIterations = fromIntegral cap
     , lpExhaustion = IterationExhaustionFail
     , lpCheckpointCadence = 1
     , lpCancellationPoints = Set.empty
@@ -662,6 +691,7 @@ wireSmokePulseConfig =
     , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
     , circuitPulseBudgetExceededExhaustionPolicy = Nothing
     , circuitPulseMaxRewriteReExecutions = 2
+    , circuitPulseLoopRegistrations = Map.empty
     }
 
 wireSmokeBinder :: CircuitPulseBinder
@@ -717,6 +747,7 @@ selectVariantPulseConfig =
     , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
     , circuitPulseBudgetExceededExhaustionPolicy = Nothing
     , circuitPulseMaxRewriteReExecutions = 2
+    , circuitPulseLoopRegistrations = Map.empty
     }
 
 {- | A binder where the producer emits the committed @err@ variant (incrementing an
@@ -807,6 +838,7 @@ threeWaySelectPulseConfig =
     , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
     , circuitPulseBudgetExceededExhaustionPolicy = Nothing
     , circuitPulseMaxRewriteReExecutions = 8
+    , circuitPulseLoopRegistrations = Map.empty
     }
 
 {- | Binder for 'threeWaySelectSource': the producer commits the @b@ variant
@@ -1299,6 +1331,193 @@ spec = beforeAll setupTestDb $ do
                   resumedRunId `shouldBe` runId
                   resumedOutcome `shouldBe` OutcomeCompleted
               readIORef produceCount `shouldReturn` 1
+
+    it "links a caller-declared successor run via parent_run_id (#367)" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          compiled <-
+            case compileWireText selectVariantSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          let binder =
+                committedVariantBinder $ \taskNode ->
+                  let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                   in Right $ case unNodeId nodeId of
+                        "produce" ->
+                          taskStage nodeId Irreversible $ \_ ->
+                            pure
+                              ( StageComplete
+                                  ( Aeson.toJSON
+                                      ( (mkWireValue "P" WirePayloadJson Nothing (Aeson.object ["issue" Aeson..= ("rejected" :: Text)]))
+                                          { wireValuePort = Just "err"
+                                          }
+                                      )
+                                  )
+                              )
+                        _ ->
+                          taskStage nodeId Irreversible $ \_ -> pure (StageComplete (Aeson.String "done"))
+              workflowKey = "consumer-parent-lineage-test"
+          first <-
+            runCompiledCircuitManaged (tcConfig ctx) workflowKey selectVariantPulseConfig binder compiled
+          predecessorId <- case first of
+            Left err -> expectationFailure ("first managed run failed: " <> show err) >> fail "unreachable"
+            Right (runId, outcome) -> do
+              outcome `shouldBe` OutcomeCompleted
+              pure runId
+          -- The plain entrypoint leaves lineage NULL.
+          readRunLineage (tcPool ctx) predecessorId `shouldReturn` (Nothing, "manual")
+          successor <-
+            runCompiledCircuitManagedWithOptions
+              ManagedRunOptions {mroParentRunId = Just predecessorId}
+              (tcConfig ctx)
+              workflowKey
+              selectVariantPulseConfig
+              binder
+              compiled
+          case successor of
+            Left err -> expectationFailure ("successor managed run failed: " <> show err)
+            Right (successorId, outcome) -> do
+              outcome `shouldBe` OutcomeCompleted
+              -- Lineage is substrate-linked atomically with creation; the trigger
+              -- source stays 'manual' (retry lineage keeps 'retry').
+              readRunLineage (tcPool ctx) successorId `shouldReturn` (Just predecessorId, "manual")
+              -- Declaring a successor does not touch the predecessor's row.
+              readRunLineage (tcPool ctx) predecessorId `shouldReturn` (Nothing, "manual")
+
+    it "fails run setup for a nonexistent parent without creating a run (#367)" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          compiled <-
+            case compileWireText selectVariantSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          let binder =
+                committedVariantBinder $ \taskNode ->
+                  let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                   in Right . taskStage nodeId Irreversible $ \_ ->
+                        pure (StageComplete (Aeson.String "unreachable"))
+              workflowKey = "consumer-parent-missing-test"
+              missingParent = UUID.fromWords 0xdead 0xbeef 0xdead 0xbeef
+          result <-
+            runCompiledCircuitManagedWithOptions
+              ManagedRunOptions {mroParentRunId = Just missingParent}
+              (tcConfig ctx)
+              workflowKey
+              selectVariantPulseConfig
+              binder
+              compiled
+          case result of
+            Left (CircuitRunSetupError msg) -> msg `shouldSatisfy` T.isInfixOf "claim run"
+            other -> expectationFailure ("expected CircuitRunSetupError, got: " <> show other)
+          -- The self-FK rejects the insert, so no run row exists (the inert task
+          -- definition row is documented facade behavior and remains).
+          readManagedRunRows (tcPool ctx) workflowKey `shouldReturn` []
+
+    it "persists the parent at the query layer while the plain claim delegates NULL (#367)" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          let pool = tcPool ctx
+          parentTask <- insertTestTaskDef pool "parent-link-query-test" "parent-link-parent"
+          parentRun <- createTestRun pool parentTask
+          childTask <- insertTestTaskDef pool "parent-link-query-test" "parent-link-child"
+          now <- getCurrentTime
+          claimed <-
+            runTx pool $
+              Q.claimAndCreateRunWithParent childTask "test-owner" TriggerManual (Just parentRun) now 300
+          case claimed of
+            Nothing -> expectationFailure "expected the child run to be claimed"
+            Just childRun ->
+              readRunLineage pool childRun `shouldReturn` (Just parentRun, "manual")
+          -- createTestRun went through the delegating claimAndCreateRun wrapper.
+          readRunLineage pool parentRun `shouldReturn` (Nothing, "manual")
+
+    it "persists an artifact boundary through the stock Pulse binder (#368)" $ \_ -> do
+      mHost <- lookupEnv "PGHOST"
+      case mHost of
+        Nothing -> pendingWith "PGHOST not set; ephemeral-DB consumer test skipped"
+        Just _ -> withEphemeralPulseDb $ \ctx -> do
+          let artifactStoreSource =
+                T.unlines
+                  [ "node make_report"
+                  , "  -> report: ReportArtifact = @report.build ({}) ;"
+                  , "node persist_report"
+                  , "  <- report: ReportArtifact ;"
+                  , "  = @artifact.store { artifactKind = \"summary\"; to = artifacts.summaries; } (report) ;"
+                  , "make_report => persist_report"
+                  ]
+          compiled <-
+            case compileWireText artifactStoreSource of
+              Right circuit -> pure circuit
+              Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+          let reportPayload = Aeson.object ["finding" Aeson..= ("stable" :: Text)]
+              producedValue = mkWireValue "ReportArtifact" WirePayloadJson Nothing reportPayload
+              binder =
+                committedVariantBinderWith
+                  ( \taskNode ->
+                      let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+                       in Right . taskStage nodeId Irreversible $ \_ ->
+                            pure (StageComplete (Aeson.toJSON producedValue))
+                  )
+                  (\_ -> Left (CircuitBoundaryUnsupported "signal"))
+                  (bindPulseArtifactBoundary (tcPool ctx))
+                  (\_ -> Left (CircuitBoundaryUnsupported "rewrite"))
+              ArtifactHash expectedHash =
+                artifactAddress (Just "ReportArtifact") WirePayloadJson "application/json" reportPayload
+          result <-
+            runCompiledCircuitManaged
+              (tcConfig ctx)
+              "consumer-artifact-store-test"
+              selectVariantPulseConfig
+              binder
+              compiled
+          case result of
+            Left err -> expectationFailure ("managed run failed: " <> show err)
+            Right (runId, outcome) -> do
+              outcome `shouldBe` OutcomeCompleted
+              stored <- runTx (tcPool ctx) (listArtifactsForRun runId)
+              fmap (.afrHash) stored `shouldBe` [expectedHash]
+              fmap (.afrNodeId) stored `shouldBe` ["persist_report"]
+              fmap (.afrKind) stored `shouldBe` ["summary"]
+              fmap (.afrTarget) stored `shouldBe` [Just "artifacts.summaries"]
+              fmap (.afrPayload) stored `shouldBe` [reportPayload]
+              -- The boundary's durable output is an artifact_ref envelope
+              -- carrying the address (deterministic, replay-safe).
+              outputs <- readGraphNodeOutputs (tcPool ctx) runId
+              case outputs of
+                Nothing -> expectationFailure "Expected persisted outputs after artifact emission"
+                Just (m, _) ->
+                  case Map.lookup (NodeId "persist_report") m of
+                    Nothing -> expectationFailure "missing persist_report output"
+                    Just outputJson ->
+                      case Aeson.fromJSON outputJson :: Aeson.Result WireValue of
+                        Aeson.Error decodeErr ->
+                          expectationFailure ("artifact_ref decode failed: " <> decodeErr)
+                        Aeson.Success ref -> do
+                          ref.wireValuePayloadKind `shouldBe` WirePayloadArtifactRef
+                          case ref.wireValueValue of
+                            Aeson.Object fields ->
+                              KeyMap.lookup "artifactHash" fields
+                                `shouldBe` Just (Aeson.String expectedHash)
+                            other ->
+                              expectationFailure ("expected ref object, got: " <> show other)
+              -- Terminal managed resume returns the stored outcome without
+              -- re-driving the artifact stage; the store stays single-row.
+              resumed <-
+                resumeCompiledCircuitManaged
+                  (tcConfig ctx)
+                  runId
+                  selectVariantPulseConfig
+                  binder
+                  compiled
+              fmap snd resumed `shouldBe` Right OutcomeCompleted
+              storedAfter <- runTx (tcPool ctx) (listArtifactsForRun runId)
+              length storedAfter `shouldBe` 1
 
     it "does not swallow async managed execution cancellation" $ \_ -> do
       mHost <- lookupEnv "PGHOST"
@@ -5496,6 +5715,297 @@ spec = beforeAll setupTestDb $ do
         Just statuses -> do
           Map.lookup (NodeId "loop:iter_0:k") statuses `shouldBe` Just NodeRewritten
           Map.lookup (NodeId "loop:iter_5:k") statuses `shouldBe` Just NodeCompleted
+
+    it "externally-driven step evidence: gas-neutral growth past the ops budget (ADR 0088)" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-external-step-growth"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      -- 8 externally-driven appends against the default rewrite-gas ops budget
+      -- (4) and a deliberately tiny lpMaxIterations (1): neither is consulted,
+      -- proving the bounding resource is the external registration, not gas or
+      -- the iteration cap. Each instance is await -> turn with the await as the
+      -- registered delivery entry; the turn proposes the next step.
+      let extSteps = 8 :: Int
+          awaitTemplate = StageTemplateId "ext_await"
+          turnTemplate = StageTemplateId "ext_turn"
+          extFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "ext-kernel-v1"
+          turnIdx ctx = case T.stripPrefix "ext:iter_" (unNodeId ctx.scNodeId) of
+            Just rest -> case TR.decimal (T.takeWhile (/= ':') rest) of
+              Right (n, _) -> n
+              Left _ -> -1
+            Nothing -> -1 :: Int
+          awaitDef :: StageDefinition NodeId
+          awaitDef =
+            StageDefinition
+              { sdStageId = NodeId "await"
+              , sdTemplateId = awaitTemplate
+              , sdActionId = stageActionId (NodeId "await")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = \_ -> pure (StageComplete (Aeson.String "delivered"))
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          turnDef :: StageDefinition NodeId
+          turnDef =
+            StageDefinition
+              { sdStageId = NodeId "turn"
+              , sdTemplateId = turnTemplate
+              , sdActionId = stageActionId (NodeId "turn")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = turnAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          instanceSpec :: Int -> SubgraphSpec NodeId (StageDefinition NodeId)
+          instanceSpec n =
+            let prefix = "ext:iter_" <> T.pack (show n) <> ":"
+                awaitN = NodeId (prefix <> "await")
+                turnN = NodeId (prefix <> "turn")
+             in SubgraphSpec
+                  { sgsTopology = toRelation (edge awaitN turnN)
+                  , sgsDefinitions = Map.fromList [(awaitN, awaitDef), (turnN, turnDef)]
+                  , sgsEntryNodes = [awaitN]
+                  , sgsExitNodes = [turnN]
+                  }
+          turnAction ctx = do
+            let i = turnIdx ctx
+            if i >= extSteps - 1
+              then pure (StageComplete (Aeson.toJSON i))
+              else
+                pure
+                  ( StageLoopStep
+                      (Aeson.toJSON (i + 1))
+                      (LoopStepWitness extFrontierWitness [ctx.scNodeId])
+                      (AppendAfter ctx.scNodeId (instanceSpec (i + 1)))
+                  )
+          extKernelWitness =
+            kernelWitnessForLocalSpec
+              SubgraphSpec
+                { sgsTopology = toRelation (edge (NodeId "await") (NodeId "turn"))
+                , sgsDefinitions =
+                    Map.fromList
+                      [ (NodeId "await", toSerializableStageDefinition awaitDef)
+                      , (NodeId "turn", toSerializableStageDefinition turnDef)
+                      ]
+                , sgsEntryNodes = [NodeId "await"]
+                , sgsExitNodes = [NodeId "turn"]
+                }
+          extPolicy =
+            (runtimeIterationPolicy 1 extFrontierWitness extKernelWitness)
+              { lpNamespaceRoot = NodeId "ext"
+              , lpCancellationPoints = Set.fromList [CancelAtParkedAwait]
+              , lpBoundSource =
+                  BoundExternalDelivery
+                    ExternalDeliveryPolicy
+                      { edpDeliveryEntry = NodeId "await"
+                      , edpBootstrapProducers = Set.singleton (NodeId "seed")
+                      , edpMaxSteps = Nothing
+                      }
+              }
+          definitions = Map.singleton (NodeId "seed") turnDef
+      extRegistration <-
+        case externalLoopRegistration extPolicy of
+          Right registration -> pure registration
+          Left err -> expectationFailure ("external registration rejected: " <> show err) >> fail "unreachable"
+      let stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [NodeId "seed"])
+              , spDefinitions = definitions
+              , spTemplateRegistry =
+                  mkTemplateRegistry (definitions <> Map.singleton (NodeId "await") awaitDef)
+              , spLoopRegistrations =
+                  Map.singleton
+                    (LoopInstanceKey {likTemplateId = turnTemplate, likNamespaceRoot = NodeId "ext"})
+                    extRegistration
+              }
+      outcome <- executeStagePlan taskContext runId task stagePlan
+      outcome `shouldBe` OutcomeCompleted
+      rewriteRows <- runSession pool $ Q.readGraphRewrites runId
+      length rewriteRows `shouldBe` extSteps
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rewriteRows `shouldBe` replicate extSteps "external"
+      let externalDeltas =
+            [ rewriteDelta
+            | (_, _, _, _, Just (Aeson.Object rewriteDelta), _, "external") <- rewriteRows
+            ]
+      length externalDeltas `shouldBe` extSteps
+      forM_ externalDeltas $ \rewriteDelta -> do
+        rewriteDelta `shouldSatisfy` KeyMap.member "external_step"
+        case KeyMap.lookup "external_step" rewriteDelta of
+          Just (Aeson.Object metadata) -> do
+            metadata `shouldSatisfy` KeyMap.member "policy_version"
+            metadata `shouldSatisfy` KeyMap.member "steps_before"
+            metadata `shouldSatisfy` KeyMap.member "steps_after"
+            metadata `shouldSatisfy` KeyMap.member "step_witness"
+          _ -> expectationFailure "Expected external-step replay metadata object"
+      maybeStatuses <- readGraphNodeStatuses pool runId
+      case maybeStatuses of
+        Nothing -> expectationFailure "Expected persisted graph state after external steps"
+        Just statuses -> do
+          Map.lookup (NodeId "seed") statuses `shouldBe` Just NodeRewritten
+          -- flat 3-segment ids at every step: awaits complete, every turn but
+          -- the last is a rewrite anchor, and the last turn completes the run
+          Map.lookup (NodeId "ext:iter_0:await") statuses `shouldBe` Just NodeCompleted
+          Map.lookup (NodeId "ext:iter_0:turn") statuses `shouldBe` Just NodeRewritten
+          Map.lookup (NodeId ("ext:iter_" <> T.pack (show (extSteps - 1)) <> ":turn")) statuses
+            `shouldBe` Just NodeCompleted
+
+    it "externally-driven step evidence: park, deliver, resume (ADR 0088)" $ \mPool -> withDb mPool $ \pool -> do
+      (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-external-step-deliver"
+      runId <- createTestRun pool taskId
+      task <- loadTaskDef pool taskId
+      -- The await stage genuinely parks on a durable signal; growth happens only
+      -- when the host delivers. Resume replays the admitted external rows through
+      -- the control-aware gate before continuing.
+      let awaitTemplate = StageTemplateId "ext_await_park"
+          turnTemplate = StageTemplateId "ext_turn_park"
+          extFrontierWitness = FrontierShapeWitness FrontierWitnessV1 "ext-park-kernel-v1"
+          turnIdx ctx = case T.stripPrefix "ext:iter_" (unNodeId ctx.scNodeId) of
+            Just rest -> case TR.decimal (T.takeWhile (/= ':') rest) of
+              Right (n, _) -> n
+              Left _ -> -1
+            Nothing -> -1 :: Int
+          awaitDef :: StageDefinition NodeId
+          awaitDef =
+            StageDefinition
+              { sdStageId = NodeId "await"
+              , sdTemplateId = awaitTemplate
+              , sdActionId = stageActionId (NodeId "await")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = \_ -> pure (StageSuspend (SignalName "ext_input"))
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          turnDef :: StageDefinition NodeId
+          turnDef =
+            StageDefinition
+              { sdStageId = NodeId "turn"
+              , sdTemplateId = turnTemplate
+              , sdActionId = stageActionId (NodeId "turn")
+              , sdReplaySafety = SafeToReplay
+              , sdReplayPolicyOverride = Nothing
+              , sdTimeoutSeconds = Nothing
+              , sdRetryPolicy = Nothing
+              , sdAction = turnAction
+              , sdMemoryStrategy = defaultMemoryStrategy
+              }
+          instanceSpec :: Int -> SubgraphSpec NodeId (StageDefinition NodeId)
+          instanceSpec n =
+            let prefix = "ext:iter_" <> T.pack (show n) <> ":"
+                awaitN = NodeId (prefix <> "await")
+                turnN = NodeId (prefix <> "turn")
+             in SubgraphSpec
+                  { sgsTopology = toRelation (edge awaitN turnN)
+                  , sgsDefinitions = Map.fromList [(awaitN, awaitDef), (turnN, turnDef)]
+                  , sgsEntryNodes = [awaitN]
+                  , sgsExitNodes = [turnN]
+                  }
+          turnAction ctx = do
+            let delivered = case Map.elems ctx.scInputs of
+                  [v] -> v
+                  _ -> Aeson.Null
+                i = turnIdx ctx
+            if delivered == Aeson.String "stop"
+              then pure (StageComplete (Aeson.toJSON i))
+              else
+                pure
+                  ( StageLoopStep
+                      (Aeson.toJSON (i + 1))
+                      (LoopStepWitness extFrontierWitness [ctx.scNodeId])
+                      (AppendAfter ctx.scNodeId (instanceSpec (i + 1)))
+                  )
+          extKernelWitness =
+            kernelWitnessForLocalSpec
+              SubgraphSpec
+                { sgsTopology = toRelation (edge (NodeId "await") (NodeId "turn"))
+                , sgsDefinitions =
+                    Map.fromList
+                      [ (NodeId "await", toSerializableStageDefinition awaitDef)
+                      , (NodeId "turn", toSerializableStageDefinition turnDef)
+                      ]
+                , sgsEntryNodes = [NodeId "await"]
+                , sgsExitNodes = [NodeId "turn"]
+                }
+          extPolicy =
+            (runtimeIterationPolicy 1 extFrontierWitness extKernelWitness)
+              { lpNamespaceRoot = NodeId "ext"
+              , lpCancellationPoints = Set.fromList [CancelAtParkedAwait]
+              , lpBoundSource =
+                  BoundExternalDelivery
+                    ExternalDeliveryPolicy
+                      { edpDeliveryEntry = NodeId "await"
+                      , edpBootstrapProducers = Set.singleton (NodeId "seed")
+                      , edpMaxSteps = Nothing
+                      }
+              }
+          definitions = Map.singleton (NodeId "seed") turnDef
+      extRegistration <-
+        case externalLoopRegistration extPolicy of
+          Right registration -> pure registration
+          Left err -> expectationFailure ("external registration rejected: " <> show err) >> fail "unreachable"
+      let stagePlan =
+            StagePlan
+              { spInitialState = Aeson.Null
+              , spCheckpointRuntimeVersion = rewriteRuntimeVersion
+              , spReplayPolicy = ReplayPolicyWarn
+              , spInitialRewriteBudget = defaultRewriteBudget
+              , spRewriteExhaustionPolicy = RewriteExhaustionFail
+              , spBudgetExceededExhaustionPolicy = Nothing
+              , spMaxRewriteReExecutions = 2
+              , spTopology = toRelation (path [NodeId "seed"])
+              , spDefinitions = definitions
+              , spTemplateRegistry =
+                  mkTemplateRegistry (definitions <> Map.singleton (NodeId "await") awaitDef)
+              , spLoopRegistrations =
+                  Map.singleton
+                    (LoopInstanceKey {likTemplateId = turnTemplate, likNamespaceRoot = NodeId "ext"})
+                    extRegistration
+              }
+      -- Seed turn appends instance 0; its await parks on the durable signal.
+      outcome0 <- executeStagePlan taskContext runId task stagePlan
+      outcome0 `shouldBe` OutcomeSuspended
+      readRunStatus pool runId `shouldReturn` Just "waiting"
+      rows0 <- runSession pool $ Q.readGraphRewrites runId
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rows0 `shouldBe` ["external"]
+      -- No delivery, no growth: the run is parked and the journal is quiescent.
+      now1 <- getCurrentTime
+      delivered1 <- runTx pool $ Q.deliverSignal runId "ext_input" (Aeson.String "continue") now1
+      delivered1 `shouldBe` True
+      outcome1 <- resumeStagePlan taskContext runId task stagePlan
+      outcome1 `shouldBe` OutcomeSuspended
+      rows1 <- runSession pool $ Q.readGraphRewrites runId
+      fmap (\(_, _, _, _, _, _, mode) -> mode) rows1 `shouldBe` ["external", "external"]
+      now2 <- getCurrentTime
+      delivered2 <- runTx pool $ Q.deliverSignal runId "ext_input" (Aeson.String "stop") now2
+      delivered2 `shouldBe` True
+      outcome2 <- resumeStagePlan taskContext runId task stagePlan
+      outcome2 `shouldBe` OutcomeCompleted
+      maybeStatuses <- readGraphNodeStatuses pool runId
+      case maybeStatuses of
+        Nothing -> expectationFailure "Expected persisted graph state after delivered external steps"
+        Just statuses -> do
+          Map.lookup (NodeId "ext:iter_0:turn") statuses `shouldBe` Just NodeRewritten
+          Map.lookup (NodeId "ext:iter_1:turn") statuses `shouldBe` Just NodeCompleted
+      maybeOutputs <- readGraphNodeOutputs pool runId
+      case maybeOutputs of
+        Nothing -> expectationFailure "Expected persisted graph outputs after delivered external steps"
+        Just (outputs, _) ->
+          -- The delivered payload is the await's durable output.
+          Map.lookup (NodeId "ext:iter_1:await") outputs `shouldBe` Just (Aeson.String "stop")
 
     it "runtime-bounded iteration evidence: paginated ingest" $ \mPool -> withDb mPool $ \pool -> do
       (_shutdownFlag, taskContext) <- mkTaskContextWith pool 4

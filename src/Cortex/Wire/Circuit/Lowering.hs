@@ -31,9 +31,11 @@ module Cortex.Wire.Circuit.Lowering
   )
 where
 
+import Control.Monad (unless)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.Bifunctor (first)
+import Data.Foldable (traverse_)
 import Data.Int (Int32)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -52,10 +54,17 @@ import Cortex.Algebra.Graph
   , successors
   , validateDAG
   )
+import Cortex.Pulse.Iteration
+  ( ExternalDeliveryPolicy (..)
+  , LoopBoundSource (..)
+  , LoopPolicy (..)
+  , LoopRegistration (..)
+  )
 import Cortex.Pulse.Memory.Types (defaultMemoryStrategy)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
-  ( ReplayPolicy
+  ( LoopInstanceKey
+  , ReplayPolicy
   , RewriteExhaustionPolicy (..)
   , SomeStagePlan (..)
   , StageActionId
@@ -139,6 +148,15 @@ data CircuitPulseConfig = CircuitPulseConfig
   , circuitPulseRewriteExhaustionPolicy :: RewriteExhaustionPolicy
   , circuitPulseBudgetExceededExhaustionPolicy :: Maybe RewriteExhaustionPolicy
   , circuitPulseMaxRewriteReExecutions :: !Int
+  , circuitPulseLoopRegistrations :: Map LoopInstanceKey LoopRegistration
+  {- ^ Loop-kernel registrations threaded into the lowered plan's
+  @spLoopRegistrations@ (ADR 0055 capped self-append, ADR 0088 externally-driven
+  stepping). Host-injected beside the rewrite budget: registration carries the
+  author/compiler provenance that authorizes gas-neutral admission, so it lives
+  in lowering policy, never inside the circuit. Externally-driven registrations
+  are validated against the lowered topology (bootstrap producers must exist;
+  the namespace root must not prefix-collide with static node ids).
+  -}
   }
 
 data CircuitPulseBinder = CircuitPulseBinder
@@ -170,6 +188,12 @@ data CircuitLoweringError
     narrower than the circuit requires.
     -}
     CircuitBoundaryUnsupported !Text
+  | {- | A loop registration in 'circuitPulseLoopRegistrations' does not fit the
+    lowered topology: a bootstrap producer is not a node of the circuit, or the
+    namespace root prefix-collides with a static node id. Caught at lowering so
+    a wiring typo fails before any durable row exists.
+    -}
+    CircuitLoopRegistrationInvalid !Text
   deriving stock (Eq, Show)
 
 lowerCircuitIRToStagePlan
@@ -238,7 +262,8 @@ lowerCompiledCircuitInternal pulseConfig binder compiledCircuit = do
   let topology = mapRelation (NodeId . unCircuitNodeRef) compiledCircuit.compiledCircuitTopology
   case validateDAG topology of
     Left err -> Left (CircuitLoweredGraphInvalid err)
-    Right () ->
+    Right () -> do
+      validateLoopRegistrations topology pulseConfig.circuitPulseLoopRegistrations
       pure
         ( StagePlan
             { spInitialState = pulseConfig.circuitPulseInitialState
@@ -251,10 +276,48 @@ lowerCompiledCircuitInternal pulseConfig binder compiledCircuit = do
             , spTopology = topology
             , spDefinitions = actualDefinitions
             , spTemplateRegistry = templateRegistry
-            , spLoopRegistrations = Map.empty
+            , spLoopRegistrations = pulseConfig.circuitPulseLoopRegistrations
             }
         , latentConditions
         )
+
+{- | Check host-injected loop registrations against the lowered topology.
+Externally-driven registrations (ADR 0088) must name bootstrap producers that
+exist as circuit nodes, and no registration's namespace root may be a prefix of
+a static node id (a static id under @<root>:@ would collide with the flat
+instance namespace). Capped registrations carry no bootstrap producers; only
+the prefix rule applies to them.
+-}
+validateLoopRegistrations
+  :: Relation NodeId
+  -> Map LoopInstanceKey LoopRegistration
+  -> Either CircuitLoweringError ()
+validateLoopRegistrations topology registrations =
+  traverse_ validateOne (Map.toList registrations)
+  where
+    vertices = relVertices topology
+    validateOne (key, registration) = do
+      let policy = registration.lrPolicy
+          rootPrefix = unNodeId policy.lpNamespaceRoot <> ":"
+          shadowed =
+            [ nodeId
+            | nodeId <- Set.toList vertices
+            , rootPrefix `T.isPrefixOf` unNodeId nodeId
+            ]
+      unless (null shadowed) . Left . CircuitLoopRegistrationInvalid $
+        "loop registration "
+          <> T.pack (show key)
+          <> " namespace root prefix-collides with static node ids: "
+          <> T.intercalate ", " (fmap unNodeId shadowed)
+      case policy.lpBoundSource of
+        BoundIterationCap -> Right ()
+        BoundExternalDelivery ext -> do
+          let missing = Set.toList (Set.difference ext.edpBootstrapProducers vertices)
+          unless (null missing) . Left . CircuitLoopRegistrationInvalid $
+            "loop registration "
+              <> T.pack (show key)
+              <> " names bootstrap producers absent from the lowered circuit: "
+              <> T.intercalate ", " (fmap unNodeId missing)
 
 lowerNode
   :: CircuitPulseConfig
@@ -636,10 +699,12 @@ signalStage boundary =
     (\_ -> pure (StageSuspend (SignalName boundary.circuitSignalName)))
 
 {- | Lower an artifact boundary to a stage whose action and replay safety the caller
-supplies. Cortex has no built-in artifact runtime, so the caller defines what the
-artifact stage does (e.g. write the artifact, then 'StageComplete' its descriptor) and
-whether re-running it on resume is safe. The stage id is taken from the boundary ref so
-the lowering ref-check passes.
+supplies. The default binder rejects artifact boundaries, so the caller defines what
+the artifact stage does (e.g. write the artifact, then 'StageComplete' its descriptor)
+and whether re-running it on resume is safe;
+'Cortex.Pulse.Artifact.bindPulseArtifactBoundary' is the stock opt-in interpreter
+backed by the ADR 0089 content-addressed store. The stage id is taken from the
+boundary ref so the lowering ref-check passes.
 -}
 artifactStage
   :: CircuitArtifactBoundary

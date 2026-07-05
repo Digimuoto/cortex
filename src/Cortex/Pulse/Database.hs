@@ -207,6 +207,8 @@ pulseSchemaRequiredTables =
   , "external_call_attempts"
   , "run_events"
   , "signals"
+  , "artifacts"
+  , "artifact_provenance"
   ]
 
 pulseSchemaRequiredColumns :: [(BS.ByteString, BS.ByteString)]

@@ -18,6 +18,7 @@ module Cortex.Pulse.Materialization
   , NodeProvenance
   , applyPlannedRewrite
   , authorizeWitnessedReplayWithControl
+  , authorizeExternalReplayWithControl
   , computeTopologyHash
   , decodeOptionalJsonValue
   , hydratePersistedRewriteRow
@@ -27,6 +28,7 @@ module Cortex.Pulse.Materialization
   , reconcileGraphState
   , rewriteDeltaSummaryJson
   , witnessedRewriteDeltaSummaryJson
+  , externalRewriteDeltaSummaryJson
   , MaterializationHashMode (..)
   , materializePlannedRewrite
   , materializeRewrite
@@ -65,6 +67,7 @@ import Cortex.Pulse.Hydrate
   )
 import Cortex.Pulse.Iteration
   ( EffectiveBound (..)
+  , LoopBoundSource (..)
   , LoopControl (..)
   , LoopPolicy (..)
   , LoopRegistration (..)
@@ -91,6 +94,7 @@ import Cortex.Pulse.Rewrite
   , RewriteBudget
   , RewriteCost
   , admissionModeFromText
+  , admitExternalDelta
   , admitRewriteDelta
   , admitWitnessedDelta
   , admittedDelta
@@ -153,6 +157,45 @@ instance FromJSON WitnessedReplayEnvelope where
   parseJSON =
     Aeson.withObject "WitnessedReplayEnvelope" $ \object ->
       WitnessedReplayEnvelope <$> object Aeson..: "witnessed_loop_step"
+
+{- | Replay metadata persisted per externally-driven step row (ADR 0088). The
+capped counters do not apply; the cross-checked quantity is the admitted-step
+count before and after this row, matching 'lcAdmittedSteps' reconstruction.
+-}
+data ExternalReplayMetadata = ExternalReplayMetadata
+  { ermPolicyVersion :: !Int
+  , ermStepsBefore :: !Natural
+  , ermStepsAfter :: !Natural
+  , ermStepWitness :: !LoopStepWitness
+  }
+  deriving stock (Eq, Show, Generic)
+
+instance ToJSON ExternalReplayMetadata where
+  toJSON metadata =
+    Aeson.object
+      [ "policy_version" Aeson..= metadata.ermPolicyVersion
+      , "steps_before" Aeson..= metadata.ermStepsBefore
+      , "steps_after" Aeson..= metadata.ermStepsAfter
+      , "step_witness" Aeson..= metadata.ermStepWitness
+      ]
+
+instance FromJSON ExternalReplayMetadata where
+  parseJSON =
+    Aeson.withObject "ExternalReplayMetadata" $ \object ->
+      ExternalReplayMetadata
+        <$> object Aeson..: "policy_version"
+        <*> object Aeson..: "steps_before"
+        <*> object Aeson..: "steps_after"
+        <*> object Aeson..: "step_witness"
+
+newtype ExternalReplayEnvelope = ExternalReplayEnvelope
+  { ereExternalStep :: ExternalReplayMetadata
+  }
+
+instance FromJSON ExternalReplayEnvelope where
+  parseJSON =
+    Aeson.withObject "ExternalReplayEnvelope" $ \object ->
+      ExternalReplayEnvelope <$> object Aeson..: "external_step"
 
 type PersistedRewriteRow =
   ( Int64
@@ -315,10 +358,12 @@ resolveRewriteDeltaAndCost
   -> StagePlan stageId
   -> Either RewriteError (PlannedRewriteDelta (StageDefinition stageId), RewriteCost)
 resolveRewriteDeltaAndCost persistedRewrite plan = do
-  -- Witnessed loop-step specs are already flat-namespaced under the loop seed, so
-  -- they must be planned without re-namespacing under the anchor.
+  -- Witnessed loop-step and externally-driven specs are already flat-namespaced
+  -- under the loop seed, so they must be planned without re-namespacing under
+  -- the anchor.
   let planFn = case persistedRewrite.prAdmissionMode of
         AdmissionWitnessed -> planRewriteDeltaNamespaced
+        AdmissionExternal -> planRewriteDeltaNamespaced
         AdmissionGassed -> planRewriteDelta
   delta <- first RewriteValidationFailed (planFn persistedRewrite.prRewrite plan)
   pure (delta, fromMaybe delta.prdCost persistedRewrite.prRewriteCost)
@@ -356,6 +401,28 @@ witnessedRewriteDeltaSummaryJson policy witness control nextControl delta =
                }
          ]
 
+{- | Delta summary for an externally-driven step row: the shared delta fields
+plus the @external_step@ replay metadata cross-checked on resume.
+-}
+externalRewriteDeltaSummaryJson
+  :: LoopPolicy
+  -> LoopStepWitness
+  -> LoopControl
+  -> LoopControl
+  -> PlannedRewriteDelta def
+  -> Aeson.Value
+externalRewriteDeltaSummaryJson policy witness control nextControl delta =
+  Aeson.object $
+    rewriteDeltaSummaryFields delta
+      <> [ "external_step"
+             Aeson..= ExternalReplayMetadata
+               { ermPolicyVersion = lpPolicyVersion policy
+               , ermStepsBefore = lcAdmittedSteps control
+               , ermStepsAfter = lcAdmittedSteps nextControl
+               , ermStepWitness = witness
+               }
+         ]
+
 rewriteDeltaSummaryFields :: PlannedRewriteDelta def -> [Pair]
 rewriteDeltaSummaryFields delta =
   [ "anchor_node" Aeson..= unNodeId delta.prdAnchorNode
@@ -387,6 +454,23 @@ decodeWitnessedReplayMetadata persistedRewrite =
       envelope <-
         first RewriteHydrationFailed decodedEnvelope
       pure envelope.wreWitnessedLoopStep
+
+decodeExternalReplayMetadata
+  :: PersistedRewrite stageId -> Either RewriteError ExternalReplayMetadata
+decodeExternalReplayMetadata persistedRewrite =
+  case persistedRewrite.prRewriteDelta of
+    Nothing ->
+      Left . RewriteHydrationFailed $
+        "Externally-driven rewrite "
+          <> T.pack (show persistedRewrite.prRewriteId)
+          <> " is missing persisted external replay metadata"
+    Just rewriteDeltaJson -> do
+      let decodedEnvelope :: Either Text ExternalReplayEnvelope
+          decodedEnvelope =
+            decodeJsonValue "persisted external replay metadata" rewriteDeltaJson
+      envelope <-
+        first RewriteHydrationFailed decodedEnvelope
+      pure envelope.ereExternalStep
 
 reconcileGraphState
   :: Relation NodeId
@@ -426,6 +510,7 @@ authorizeWitnessedReplay
   -> Either RewriteError ()
 authorizeWitnessedReplay stagePlan persistedRewrite delta = do
   (producer, _templateId, policy) <- witnessedReplayPolicy stagePlan persistedRewrite
+  requireCappedBoundSource persistedRewrite policy
   metadata <- decodeWitnessedReplayMetadata persistedRewrite
   when (metadata.wrmPolicyVersion /= lpPolicyVersion policy) $
     Left
@@ -448,6 +533,7 @@ authorizeWitnessedReplayWithControl
   -> Either RewriteError (Map.Map LoopInstanceKey LoopControl)
 authorizeWitnessedReplayWithControl stagePlan persistedRewrite delta controls = do
   (producer, loopKey, policy) <- witnessedReplayPolicy stagePlan persistedRewrite
+  requireCappedBoundSource persistedRewrite policy
   control <-
     maybe
       ( Left . RewriteHydrationFailed $
@@ -516,15 +602,132 @@ witnessedReplayPolicy stagePlan persistedRewrite = do
       Left . RewriteHydrationFailed $
         "Witnessed rewrite at producer " <> unNodeId producer <> " is not an authorized loop kernel"
 
-witnessedPolicyVersionMismatchMessage
-  :: PersistedRewrite stageId -> LoopPolicy -> WitnessedReplayMetadata -> Text
-witnessedPolicyVersionMismatchMessage persistedRewrite policy metadata =
+{- | Re-run the static externally-driven admission gate on a persisted row
+(ADR 0088). Mirrors 'authorizeWitnessedReplay': the producer is the persisted
+@source_node_id@, the registration is resolved through the same key mechanism,
+and the row is additionally required to belong to a 'BoundExternalDelivery'
+registration — an @external@-tagged row for a capped registration (or vice
+versa) is a journal/registration mismatch, rejected rather than reinterpreted.
+-}
+authorizeExternalReplay
+  :: Aeson.ToJSON stageId
+  => StagePlan stageId
+  -> PersistedRewrite stageId
+  -> PlannedRewriteDelta (StageDefinition stageId)
+  -> Either RewriteError ()
+authorizeExternalReplay stagePlan persistedRewrite delta = do
+  (producer, _loopKey, policy) <- witnessedReplayPolicy stagePlan persistedRewrite
+  requireExternalBoundSource persistedRewrite policy
+  metadata <- decodeExternalReplayMetadata persistedRewrite
+  when (metadata.ermPolicyVersion /= lpPolicyVersion policy) $
+    Left
+      ( RewriteHydrationFailed
+          (policyVersionMismatchMessage persistedRewrite policy metadata.ermPolicyVersion)
+      )
+  let serializableRewrite = fmap toSerializableStageDefinition persistedRewrite.prRewrite
+  first (RewriteHydrationFailed . renderWitnessedStepViolation) $
+    authorizeWitnessedStep policy producer metadata.ermStepWitness serializableRewrite delta.prdCost
+
+{- | Control-aware replay validation for externally-driven rows. Used by resume
+when reconstructing topology from persisted lineage: the row's admitted-step
+counters must match the reconstructed control, which then advances exactly
+once. The full step gate (self-append anchor, canonical index, delivery entry,
+kernel digest, size envelope) re-runs inside
+'Cortex.Pulse.Iteration.authorizeWitnessedStepWithControl'.
+-}
+authorizeExternalReplayWithControl
+  :: Aeson.ToJSON stageId
+  => StagePlan stageId
+  -> PersistedRewrite stageId
+  -> PlannedRewriteDelta (StageDefinition stageId)
+  -> Map.Map LoopInstanceKey LoopControl
+  -> Either RewriteError (Map.Map LoopInstanceKey LoopControl)
+authorizeExternalReplayWithControl stagePlan persistedRewrite delta controls = do
+  (producer, loopKey, policy) <- witnessedReplayPolicy stagePlan persistedRewrite
+  requireExternalBoundSource persistedRewrite policy
+  control <-
+    maybe
+      ( Left . RewriteHydrationFailed $
+          "Externally-driven rewrite at producer "
+            <> unNodeId producer
+            <> " has no reconstructed loop control for template "
+            <> T.pack (show loopKey)
+      )
+      Right
+      (Map.lookup loopKey controls)
+  metadata <- decodeExternalReplayMetadata persistedRewrite
+  when (metadata.ermPolicyVersion /= lpPolicyVersion policy) $
+    Left
+      ( RewriteHydrationFailed
+          (policyVersionMismatchMessage persistedRewrite policy metadata.ermPolicyVersion)
+      )
+  when (metadata.ermStepsBefore /= lcAdmittedSteps control) $
+    Left
+      ( RewriteHydrationFailed $
+          witnessedControlMismatchMessage
+            persistedRewrite
+            "steps_before"
+            (Aeson.toJSON (lcAdmittedSteps control))
+            (Aeson.toJSON metadata.ermStepsBefore)
+      )
+  let serializableRewrite = fmap toSerializableStageDefinition persistedRewrite.prRewrite
+  nextControl <-
+    first (RewriteHydrationFailed . renderWitnessedStepViolation) $
+      authorizeWitnessedStepWithControl
+        policy
+        control
+        producer
+        metadata.ermStepWitness
+        persistedRewrite.prSourceNodeOutput
+        serializableRewrite
+        delta.prdCost
+  when (metadata.ermStepsAfter /= lcAdmittedSteps nextControl) $
+    Left
+      ( RewriteHydrationFailed $
+          witnessedControlMismatchMessage
+            persistedRewrite
+            "steps_after"
+            (Aeson.toJSON (lcAdmittedSteps nextControl))
+            (Aeson.toJSON metadata.ermStepsAfter)
+      )
+  pure (Map.insert loopKey nextControl controls)
+
+requireExternalBoundSource
+  :: PersistedRewrite stageId -> LoopPolicy -> Either RewriteError ()
+requireExternalBoundSource persistedRewrite policy =
+  case lpBoundSource policy of
+    BoundExternalDelivery _ -> Right ()
+    BoundIterationCap ->
+      Left . RewriteHydrationFailed $
+        "Externally-driven rewrite "
+          <> T.pack (show persistedRewrite.prRewriteId)
+          <> " resolves to a capped loop registration; admission mode and registration disagree"
+
+requireCappedBoundSource
+  :: PersistedRewrite stageId -> LoopPolicy -> Either RewriteError ()
+requireCappedBoundSource persistedRewrite policy =
+  case lpBoundSource policy of
+    BoundIterationCap -> Right ()
+    BoundExternalDelivery _ ->
+      Left . RewriteHydrationFailed $
+        "Witnessed rewrite "
+          <> T.pack (show persistedRewrite.prRewriteId)
+          <> " resolves to an externally-driven registration; admission mode and registration disagree"
+
+policyVersionMismatchMessage
+  :: PersistedRewrite stageId -> LoopPolicy -> Int -> Text
+policyVersionMismatchMessage persistedRewrite policy admittedVersion =
   "Witnessed rewrite "
     <> T.pack (show persistedRewrite.prRewriteId)
     <> " was admitted with loop policy version "
-    <> T.pack (show metadata.wrmPolicyVersion)
+    <> T.pack (show admittedVersion)
     <> " but the registered policy is version "
     <> T.pack (show (lpPolicyVersion policy))
+
+witnessedPolicyVersionMismatchMessage
+  :: PersistedRewrite stageId -> LoopPolicy -> WitnessedReplayMetadata -> Text
+witnessedPolicyVersionMismatchMessage persistedRewrite policy metadata =
+  policyVersionMismatchMessage persistedRewrite policy metadata.wrmPolicyVersion
 
 witnessedControlMismatchMessage
   :: PersistedRewrite stageId -> Text -> Aeson.Value -> Aeson.Value -> Text
@@ -569,6 +772,12 @@ materializePlannedRewrite hashMode validateWitnessed persistedRewrite delta stag
       when validateWitnessed $
         authorizeWitnessedReplay stagePlan persistedRewrite delta
       Right (admitWitnessedDelta persistedState.pgsRemainingRewriteBudget delta)
+    AdmissionExternal -> do
+      -- Externally-driven rows re-run the same step gate plus the
+      -- registration bound-source cross-check before gas-neutral admission.
+      when validateWitnessed $
+        authorizeExternalReplay stagePlan persistedRewrite delta
+      Right (admitExternalDelta persistedState.pgsRemainingRewriteBudget delta)
     AdmissionGassed ->
       first RewriteBudgetExhausted $
         admitRewriteDelta persistedState.pgsRemainingRewriteBudget delta

@@ -33,6 +33,10 @@ module Cortex.Pulse.Circuit
   , resumeCompiledCircuit
   , runCompiledCircuitManaged
   , runCompiledCircuitManagedOn
+  , runCompiledCircuitManagedWithOptions
+  , runCompiledCircuitManagedOnWithOptions
+  , ManagedRunOptions (..)
+  , defaultManagedRunOptions
   , resumeCompiledCircuitManaged
   , resumeCompiledCircuitManagedOn
   , lowerRunnableCircuit
@@ -92,7 +96,7 @@ import Cortex.Pulse.Plan
 import Cortex.Pulse.Query
   ( ManagedResumeClaim (..)
   , PulseTaskDefinitionInsert (..)
-  , claimAndCreateRun
+  , claimAndCreateRunWithParent
   , claimManagedRunForResume
   , createTaskDefinition
   , getTaskById
@@ -254,12 +258,8 @@ runCompiledCircuitManaged
   -> CircuitPulseBinder
   -> CompiledCircuit
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-runCompiledCircuitManaged pulseConfig workflowKey circuitConfig binder circuit =
-  case lowerRunnableCircuit circuitConfig binder circuit of
-    Left err -> pure (Left err)
-    Right lowered ->
-      withManagedPool pulseConfig $ \pool ->
-        runLoweredCompiledCircuitManagedOn pool pulseConfig workflowKey lowered
+runCompiledCircuitManaged =
+  runCompiledCircuitManagedWithOptions defaultManagedRunOptions
 
 {- | Pool-reuse variant of 'runCompiledCircuitManaged'. The caller owns schema
 provisioning and pool lifetime; this function still owns the durable managed run
@@ -273,20 +273,70 @@ runCompiledCircuitManagedOn
   -> CircuitPulseBinder
   -> CompiledCircuit
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-runCompiledCircuitManagedOn pool pulseConfig workflowKey circuitConfig binder circuit =
+runCompiledCircuitManagedOn =
+  runCompiledCircuitManagedOnWithOptions defaultManagedRunOptions
+
+{- | Per-invocation options for a fresh managed run. Distinct from the reusable
+'CircuitPulseConfig'/'PulseConfig' records: these fields describe one run, not a
+deployment.
+
+'mroParentRunId' links the new run to a predecessor via @pulse.runs.parent_run_id@,
+the same lineage column a Retry writes — a caller-declared successor (for example, a
+downstream segment rollover) is queryable from the run table alone. The link is
+lineage metadata only: no checkpoint inheritance, no cascade. The parent run must
+exist; a nonexistent parent fails run setup with 'CircuitRunSetupError' (the
+@pulse.runs@ self-FK is the validation).
+-}
+newtype ManagedRunOptions = ManagedRunOptions
+  { mroParentRunId :: Maybe UUID
+  }
+  deriving stock (Eq, Show)
+
+-- | Options for a plain managed run: no predecessor link.
+defaultManagedRunOptions :: ManagedRunOptions
+defaultManagedRunOptions = ManagedRunOptions {mroParentRunId = Nothing}
+
+-- | 'runCompiledCircuitManaged' with per-run 'ManagedRunOptions'.
+runCompiledCircuitManagedWithOptions
+  :: ManagedRunOptions
+  -> PulseConfig
+  -> Text
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+runCompiledCircuitManagedWithOptions options pulseConfig workflowKey circuitConfig binder circuit =
   case lowerRunnableCircuit circuitConfig binder circuit of
     Left err -> pure (Left err)
     Right lowered ->
-      runLoweredCompiledCircuitManagedOn pool pulseConfig workflowKey lowered
+      withManagedPool pulseConfig $ \pool ->
+        runLoweredCompiledCircuitManagedOn options pool pulseConfig workflowKey lowered
+
+-- | 'runCompiledCircuitManagedOn' with per-run 'ManagedRunOptions'.
+runCompiledCircuitManagedOnWithOptions
+  :: ManagedRunOptions
+  -> Pool
+  -> PulseConfig
+  -> Text
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+runCompiledCircuitManagedOnWithOptions options pool pulseConfig workflowKey circuitConfig binder circuit =
+  case lowerRunnableCircuit circuitConfig binder circuit of
+    Left err -> pure (Left err)
+    Right lowered ->
+      runLoweredCompiledCircuitManagedOn options pool pulseConfig workflowKey lowered
 
 runLoweredCompiledCircuitManagedOn
-  :: Pool
+  :: ManagedRunOptions
+  -> Pool
   -> PulseConfig
   -> Text
   -> SomeStagePlan
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-runLoweredCompiledCircuitManagedOn pool pulseConfig workflowKey (SomeStagePlan stagePlan _latentConditions) =
-  withManagedRun pool pulseConfig workflowKey $ \taskContext runId task ->
+runLoweredCompiledCircuitManagedOn options pool pulseConfig workflowKey (SomeStagePlan stagePlan _latentConditions) =
+  withManagedRun options pool pulseConfig workflowKey $ \taskContext runId task ->
     runManagedExecution taskContext.tcPool runId $
       withLeaseRenewal
         taskContext.tcPool
@@ -380,12 +430,13 @@ task is loaded /before/ the run is claimed, so a load failure leaves no orphaned
 action renews the lease under.
 -}
 withManagedRun
-  :: Pool
+  :: ManagedRunOptions
+  -> Pool
   -> PulseConfig
   -> Text
   -> (TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO (Either CircuitRunError RunOutcome))
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-withManagedRun pool pulseConfig workflowKey run = do
+withManagedRun options pool pulseConfig workflowKey run = do
   now <- getCurrentTime
   uniqueSuffix <- toText <$> UUIDv4.nextRandom
   let taskName = workflowKey <> "/" <> uniqueSuffix
@@ -402,10 +453,11 @@ withManagedRun pool pulseConfig workflowKey run = do
           claimed <-
             runTransaction
               pool
-              ( claimAndCreateRun
+              ( claimAndCreateRunWithParent
                   taskId
                   (pulseLeaseOwner pulseConfig)
                   TriggerManual
+                  (mroParentRunId options)
                   now
                   (leaseSecondsOf pulseConfig)
               )

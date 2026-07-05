@@ -174,6 +174,12 @@ leaving blob storage, large document rendering, or binary retrieval to the consu
 prevents the graph runtime from having to copy large artifacts through every edge while still
 keeping provenance and contract identity attached.
 
+For JSON run outputs, Pulse offers an opt-in content-addressed store (ADR 0089): immutable content
+rows keyed by a canonical typed-envelope hash, with per-emission provenance linking each row to the
+run and node that produced it, and a stock injectable binder for the artifact-emission boundary.
+Hosts still own product blob stores, retention, and access control; the substrate store is the same
+persistence tier that already holds node outputs, made immutable and addressable.
+
 ## Downstream bindings
 
 Consumer-specific artifact surfaces are downstream bindings on top of the generic envelope and

@@ -16,6 +16,7 @@ module Cortex.Pulse.Query
 
     -- * Run Management
   , claimAndCreateRun
+  , claimAndCreateRunWithParent
   , claimNextPendingRun
   , ManagedResumeClaim (..)
   , claimManagedRunForResume
@@ -465,14 +466,24 @@ getNextDueTask excludedTypes deprioritized skippedTaskIds now =
 
 -- | Atomically claim a task and create a run. Returns Nothing if already claimed.
 claimAndCreateRun :: UUID -> Text -> TriggerSource -> UTCTime -> Int32 -> Transaction (Maybe UUID)
-claimAndCreateRun tId leaseOwner triggerSource now leaseDurationSec =
-  Tx.statement (tId, leaseOwner, triggerSource, now, leaseDurationSec) $
+claimAndCreateRun tId leaseOwner triggerSource =
+  claimAndCreateRunWithParent tId leaseOwner triggerSource Nothing
+
+{- | 'claimAndCreateRun' with an optional predecessor link. A supplied parent is
+written to @parent_run_id@ atomically with run creation, so lineage is never
+observable half-set. The parent must exist ('pulse.runs' self-FK); a violation
+surfaces as the transaction's error path, not a silent NULL.
+-}
+claimAndCreateRunWithParent
+  :: UUID -> Text -> TriggerSource -> Maybe UUID -> UTCTime -> Int32 -> Transaction (Maybe UUID)
+claimAndCreateRunWithParent tId leaseOwner triggerSource parentRunId now leaseDurationSec =
+  Tx.statement (tId, leaseOwner, triggerSource, parentRunId, now, leaseDurationSec) $
     Statement
       "WITH inserted AS ( \
       \  INSERT INTO pulse.runs \
-      \    (task_id, status, trigger_source, started_at, lease_owner, lease_expires_at, user_id, created_at) \
+      \    (task_id, status, trigger_source, started_at, lease_owner, lease_expires_at, user_id, parent_run_id, created_at) \
       \  SELECT \
-      \    $1, 'running'::pulse.run_status, $3::pulse.trigger_source, $4, $2, $4 + make_interval(secs => $5::double precision), \
+      \    $1, 'running'::pulse.run_status, $3::pulse.trigger_source, $5, $2, $5 + make_interval(secs => $6::double precision), \
       \    COALESCE( \
       \      NULLIF(td.config #>> '{cortexTaskConfig,drwUserId}', '')::uuid, \
       \      NULLIF(td.config #>> '{cortexTaskConfig,sdcUserId}', '')::uuid, \
@@ -482,7 +493,8 @@ claimAndCreateRun tId leaseOwner triggerSource now leaseDurationSec =
       \      NULLIF(td.config #>> '{cortexTaskConfig,rerEvalUserId}', '')::uuid, \
       \      NULLIF(td.config #>> '{cortexTaskConfig,rawEvalUserId}', '')::uuid \
       \    ), \
-      \    $4 \
+      \    $4, \
+      \    $5 \
       \  FROM pulse.task_definitions td \
       \  WHERE task_id = $1 \
       \    AND next_run_at IS NOT NULL \
@@ -492,19 +504,20 @@ claimAndCreateRun tId leaseOwner triggerSource now leaseDurationSec =
       \), claimed AS ( \
       \  UPDATE pulse.task_definitions SET \
       \    scheduler_claimed = true, \
-      \    updated_at = $4 \
+      \    updated_at = $5 \
       \  WHERE task_id = $1 \
       \    AND EXISTS (SELECT 1 FROM inserted) \
       \  RETURNING task_id \
       \) \
       \SELECT run_id FROM inserted \
       \WHERE EXISTS (SELECT 1 FROM claimed)"
-      ( Enc.encode5
-          ((\(a, _, _, _, _) -> a), Enc.nonNullable Enc.uuid)
-          ((\(_, b, _, _, _) -> b), Enc.nonNullable Enc.text)
-          ((\(_, _, c, _, _) -> triggerSourceToText c), Enc.nonNullable Enc.text)
-          ((\(_, _, _, d, _) -> d), Enc.nonNullable Enc.timestamptz)
-          ((\(_, _, _, _, e) -> e), Enc.nonNullable Enc.int4)
+      ( Enc.encode6
+          ((\(a, _, _, _, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _, _, _, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c, _, _, _) -> triggerSourceToText c), Enc.nonNullable Enc.text)
+          ((\(_, _, _, d, _, _) -> d), Enc.nullable Enc.uuid)
+          ((\(_, _, _, _, e, _) -> e), Enc.nonNullable Enc.timestamptz)
+          ((\(_, _, _, _, _, f) -> f), Enc.nonNullable Enc.int4)
       )
       (D.rowMaybe (D.column (D.nonNullable D.uuid)))
       False

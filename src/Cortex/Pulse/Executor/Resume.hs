@@ -61,6 +61,7 @@ import Cortex.Pulse.Materialization
   , PersistedGraphState (..)
   , PersistedRewrite (..)
   , applyPlannedRewrite
+  , authorizeExternalReplayWithControl
   , authorizeWitnessedReplayWithControl
   , computeTopologyHash
   , decodeOptionalJsonValue
@@ -167,6 +168,12 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
               AdmissionWitnessed -> do
                 loopControls' <- authorizeWitnessedReplayWithControl plan persistedRewrite delta loopControls
                 pure (applyPlannedRewrite delta plan, remainingBudget, loopControls')
+              -- Externally-driven steps (ADR 0088) replay gas-neutral through
+              -- their own control-aware gate; the admitted-step count is
+              -- reconstructed from the journal exactly like the loop index.
+              AdmissionExternal -> do
+                loopControls' <- authorizeExternalReplayWithControl plan persistedRewrite delta loopControls
+                pure (applyPlannedRewrite delta plan, remainingBudget, loopControls')
               AdmissionGassed -> do
                 admitted <-
                   first RewriteBudgetExhausted $
@@ -232,6 +239,8 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                             loopControls' <- case persistedRewrite.prAdmissionMode of
                               AdmissionWitnessed ->
                                 authorizeWitnessedReplayWithControl plan persistedRewrite delta loopControls
+                              AdmissionExternal ->
+                                authorizeExternalReplayWithControl plan persistedRewrite delta loopControls
                               AdmissionGassed ->
                                 Right loopControls
                             (plan', persistedState') <-

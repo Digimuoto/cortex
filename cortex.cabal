@@ -154,6 +154,7 @@ library
         Cortex.Capability.Executor
         Cortex.Capability.Executor.Pure
         Cortex.Pulse
+        Cortex.Pulse.Artifact
         Cortex.Pulse.Attempt
         Cortex.Pulse.Checkpoint
         Cortex.Pulse.Circuit
@@ -230,6 +231,7 @@ library
         Cortex.Pulse.Plan
         Cortex.Pulse.PlanHydration
         Cortex.Pulse.Query
+        Cortex.Pulse.Query.Artifact
         Cortex.Pulse.Query.ExternalCall
         Cortex.Pulse.Rewrite
         Cortex.Pulse.Rewrite.Contract
@@ -420,6 +422,7 @@ test-suite cortex-test
         Cortex.Pulse.RewriteRetryHydrationSpec
         Cortex.Pulse.StageTemplateRegistrySpec
         Cortex.Pulse.Executor.EventsSpec
+        Cortex.Pulse.ArtifactSpec
         Cortex.Pulse.ExecutorSpec
         Cortex.Pulse.GraphRewriteSpec
         Cortex.Pulse.IterationSpec

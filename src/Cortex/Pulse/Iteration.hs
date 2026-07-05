@@ -36,6 +36,8 @@ module Cortex.Pulse.Iteration
   , EmittedAggregationPolicy (..)
   , LoopRewriteInteraction (..)
   , LoopCancellationPoint (..)
+  , LoopBoundSource (..)
+  , ExternalDeliveryPolicy (..)
 
     -- * Runtime bound admission
   , RequestedBound (..)
@@ -45,6 +47,7 @@ module Cortex.Pulse.Iteration
   , admitRuntimeBound
   , loopRegistrationFromRequestedBound
   , loopRegistrationAtPolicyCap
+  , externalLoopRegistration
 
     -- * Loop control carrier
   , AggregationState (..)
@@ -68,6 +71,7 @@ module Cortex.Pulse.Iteration
   , LoopStopReason (..)
   , iterationNamespaceSeed
   , planLoopStep
+  , planExternalStep
 
     -- * Witnessed-step authorization (security gate for gas-neutral admission)
   , WitnessedStepViolation (..)
@@ -75,6 +79,7 @@ module Cortex.Pulse.Iteration
   , authorizeWitnessedStep
   , authorizeWitnessedStepWithControl
   , checkKernelSizeBound
+  , checkDeliveryEntry
   )
 where
 
@@ -351,13 +356,62 @@ data LoopCancellationPoint
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
+{- | What bounds admitted self-append steps for a registered kernel.
+
+'BoundIterationCap' is ADR 0055 runtime-bounded iteration: a finite
+compile/runtime cap ('lpMaxIterations' clamped to a per-run 'EffectiveBound')
+gates every step.
+
+'BoundExternalDelivery' is ADR 0088 externally-driven stepping: each step is
+caused by a delivered durable signal (ADR 0082) because every admitted instance
+re-parks the run on its delivery-entry node before the next step's proposer can
+execute. The bounding resource is external causation — growth rate never
+exceeds host deliveries — optionally tightened by an operator step valve.
+-}
+data LoopBoundSource
+  = BoundIterationCap
+  | BoundExternalDelivery !ExternalDeliveryPolicy
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+{- | Policy carrier for an externally-driven step root (ADR 0088). Naming is
+substrate-generic: the delivery entry is whatever kernel-local stage parks on a
+durable signal; what the delivered payload means is downstream vocabulary.
+-}
+data ExternalDeliveryPolicy = ExternalDeliveryPolicy
+  { edpDeliveryEntry :: !NodeId
+  {- ^ The kernel-local segment (single, @:@-free, within 'lpMaxSegmentLen')
+  that parks on a durable signal. Every admitted instance's entry set must be
+  exactly this node ('checkDeliveryEntry'), so an admitted step cannot execute
+  past its entry without one delivered signal — the external-causation law.
+  -}
+  , edpBootstrapProducers :: !(Set NodeId)
+  {- ^ Static (non-namespace) node ids permitted to mint step index 0. Wire
+  source cannot author @:@-bearing ids, so the first externally-driven append
+  is proposed by an ordinary static node; each bootstrap producer can mint the
+  seed step exactly once (freshness plus the step-count law reject re-minting).
+  -}
+  , edpMaxSteps :: !(Maybe Natural)
+  {- ^ Optional operator safety valve on total admitted steps for this root.
+  'Nothing' means unbounded by count — bounded by external causation only.
+  -}
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
 {- | Pulse-owned static policy carrier for a runtime-bounded loop. The policy
 cap is a compile/runtime envelope; each run also admits an 'EffectiveBound' and
 tracks a mutable 'LoopControl'. Witnessed self-append admission must consult all
 three, not this static policy alone.
 -}
 data LoopPolicy = LoopPolicy
-  { lpMaxIterations :: !Natural
+  { lpBoundSource :: !LoopBoundSource
+  {- ^ What gates each self-append: the finite iteration cap (ADR 0055) or
+  external delivery causation (ADR 0088). Under 'BoundExternalDelivery',
+  'lpMaxIterations' is not consulted; the optional valve lives on the
+  'ExternalDeliveryPolicy'.
+  -}
+  , lpMaxIterations :: !Natural
   , lpExhaustion :: !IterationExhaustionPolicy
   , lpCheckpointCadence :: !Natural
   , lpCancellationPoints :: !(Set LoopCancellationPoint)
@@ -406,21 +460,41 @@ data LoopRegistration = LoopRegistration
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
--- | Why a requested runtime bound is rejected before the first body execution.
+{- | Why a requested runtime bound or registration is rejected before the first
+body execution.
+-}
 data BoundRejection
-  = -- | The validated, clamped bound is zero; a loop must run at least once.
+  = {- | The validated, clamped bound (or step valve) is zero; a loop must run at
+    least once.
+    -}
     BoundZeroNotAllowed
+  | {- | The policy's 'LoopBoundSource' does not match the registration
+    constructor: capped registration for an externally-driven policy, or
+    'externalLoopRegistration' for a capped policy.
+    -}
+    BoundSourceMismatch
+  | -- | The delivery-entry id is not a single bounded, @:@-free segment.
+    InvalidDeliveryEntry !NodeId
+  | {- | An externally-driven policy declares no bootstrap producers, so no
+    step 0 could ever be minted.
+    -}
+    EmptyBootstrapProducers
   deriving stock (Eq, Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
 {- | Admit a runtime-proposed bound against policy. The admitted effective bound
 is the minimum of the validated request and the configured policy cap. A zero
-effective bound is rejected: a loop must execute its body at least once.
+effective bound is rejected: a loop must execute its body at least once. Only
+capped policies admit runtime bounds; an externally-driven root has no per-run
+iteration bound to admit.
 -}
 admitRuntimeBound :: LoopPolicy -> RequestedBound -> Either BoundRejection EffectiveBound
 admitRuntimeBound policy (RequestedBound req) =
-  let eff = min req (lpMaxIterations policy)
-   in if eff == 0 then Left BoundZeroNotAllowed else Right (EffectiveBound eff)
+  case lpBoundSource policy of
+    BoundExternalDelivery _ -> Left BoundSourceMismatch
+    BoundIterationCap ->
+      let eff = min req (lpMaxIterations policy)
+       in if eff == 0 then Left BoundZeroNotAllowed else Right (EffectiveBound eff)
 
 loopRegistrationFromRequestedBound
   :: LoopPolicy -> RequestedBound -> Either BoundRejection LoopRegistration
@@ -430,6 +504,25 @@ loopRegistrationFromRequestedBound policy requested =
 loopRegistrationAtPolicyCap :: LoopPolicy -> Either BoundRejection LoopRegistration
 loopRegistrationAtPolicyCap policy =
   loopRegistrationFromRequestedBound policy (RequestedBound (lpMaxIterations policy))
+
+{- | Register an externally-driven step root (ADR 0088). Validates the
+'ExternalDeliveryPolicy' carrier: the delivery entry must be one bounded local
+segment, at least one bootstrap producer must exist (or step 0 could never be
+minted), and a step valve of zero is rejected like a zero bound. The carried
+'EffectiveBound' is a zero sentinel — the external control arm never consults
+it; the bounding resource is external causation plus the optional valve.
+-}
+externalLoopRegistration :: LoopPolicy -> Either BoundRejection LoopRegistration
+externalLoopRegistration policy = case lpBoundSource policy of
+  BoundIterationCap -> Left BoundSourceMismatch
+  BoundExternalDelivery ext -> do
+    unless (validSegment (lpMaxSegmentLen policy) (unNodeId (edpDeliveryEntry ext))) $
+      Left (InvalidDeliveryEntry (edpDeliveryEntry ext))
+    when (Set.null (edpBootstrapProducers ext)) $
+      Left EmptyBootstrapProducers
+    when (edpMaxSteps ext == Just 0) $
+      Left BoundZeroNotAllowed
+    pure (LoopRegistration policy (EffectiveBound 0))
 
 -- ---------------------------------------------------------------------------
 -- Loop control carrier
@@ -457,7 +550,14 @@ data LoopControl = LoopControl
   , lcEffectiveBound :: !EffectiveBound
   , lcRemainingIterations :: !Natural
   {- ^ Remaining self-append steps after the seed @iter_0@ body has consumed one
-  body-execution slot.
+  body-execution slot. Meaningless under 'BoundExternalDelivery' (never gates).
+  -}
+  , lcAdmittedSteps :: !Natural
+  {- ^ Count of admitted self-appends under this root. For an externally-driven
+  root this is authoritative: the next admissible step index must equal it (a
+  bootstrap append is only valid while it is zero). For a capped root it is an
+  informational meter; 'loopControlCompletedIterations' stays authoritative.
+  Reconstructed from the journal on resume, like the iteration index.
   -}
   , lcAggregation :: !AggregationState
   , lcNamespaceRoot :: !NodeId
@@ -468,7 +568,7 @@ data LoopControl = LoopControl
 
 {- | Build the initial loop control from policy and the admitted effective bound.
 @iter_0@ is the seed body execution, so the remaining counter tracks only
-post-seed self-appends.
+post-seed self-appends. No appends have been admitted yet in either mode.
 -}
 initLoopControl :: LoopPolicy -> EffectiveBound -> LoopControl
 initLoopControl policy effective@(EffectiveBound n) =
@@ -476,6 +576,7 @@ initLoopControl policy effective@(EffectiveBound n) =
     { lcPolicyVersion = lpPolicyVersion policy
     , lcEffectiveBound = effective
     , lcRemainingIterations = monus n 1
+    , lcAdmittedSteps = 0
     , lcAggregation = AggregationState {asItems = [], asCount = 0}
     , lcNamespaceRoot = lpNamespaceRoot policy
     , lcOutcome = Nothing
@@ -522,22 +623,34 @@ aggregateEmitted policy st memitted = case memitted of
             then st {asItems = asItems st <> [v], asCount = asCount st + 1}
             else st {asCount = asCount st + 1}
 
--- | Fold the current iteration's emitted value and consume one append slot.
+{- | Fold the current iteration's emitted value and record one admitted append.
+Under a capped bound source the append also consumes one remaining-iteration
+slot; under external delivery there is no slot to consume — the admitted-step
+counter alone advances the expected next index.
+-}
 advanceLoopControlForAppend :: LoopPolicy -> LoopControl -> Maybe Value -> LoopControl
 advanceLoopControlForAppend policy control emitted =
-  stepIterationBudget
-    control
-      { lcAggregation = aggregateEmitted policy (lcAggregation control) emitted
-      }
+  let folded =
+        control
+          { lcAggregation = aggregateEmitted policy (lcAggregation control) emitted
+          , lcAdmittedSteps = lcAdmittedSteps control + 1
+          }
+   in case lpBoundSource policy of
+        BoundIterationCap -> stepIterationBudget folded
+        BoundExternalDelivery _ -> folded
 
 {- | Finalize the run-local loop carrier when the body asks for another
 iteration after the admitted bound has been exhausted. The graph-carried output
-is still folded before the typed outcome is recorded.
+is still folded before the typed outcome is recorded. The completed count is
+the capped body-execution derivation for iteration-cap roots and the
+admitted-step count when an externally-driven root hits its operator valve.
 -}
 exhaustLoopControl :: LoopPolicy -> LoopControl -> Value -> LoopControl
 exhaustLoopControl policy control lastOutput =
   let aggregation = aggregateEmitted policy (lcAggregation control) (Just lastOutput)
-      completed = loopControlCompletedIterations control
+      completed = case lpBoundSource policy of
+        BoundIterationCap -> loopControlCompletedIterations control
+        BoundExternalDelivery _ -> lcAdmittedSteps control
    in control
         { lcAggregation = aggregation
         , lcOutcome = Just (budgetExhaustionOutcome policy completed lastOutput)
@@ -577,22 +690,29 @@ budgetExhaustionOutcome policy completed lastOutput = case lpExhaustion policy o
   IterationExhaustionPartial -> LoopPartial lastOutput completed
   IterationExhaustionFallback -> LoopFallback lastOutput
 
-{- | True when a materialized producer node belongs to a loop policy namespace.
-This is intentionally weaker than witnessed-step authorization: it identifies
-which loop instance owns a producer, while the full authorization gate still
-checks the canonical next index, frontier witness, kernel digest, and bound.
+{- | True when a materialized producer node belongs to a loop policy namespace,
+or is a registered bootstrap producer of an externally-driven root. This is
+intentionally weaker than witnessed-step authorization: it identifies which
+loop instance owns a producer, while the full authorization gate still checks
+the canonical next index, frontier witness, kernel digest, and bound.
 -}
 loopProducerMatchesPolicy :: LoopPolicy -> NodeId -> Bool
-loopProducerMatchesPolicy policy (NodeId producer) =
-  case T.stripPrefix (unNodeId (lpNamespaceRoot policy) <> ":iter_") producer of
-    Nothing -> False
-    Just rest ->
-      case T.breakOn ":" rest of
-        (idxText, segWithDelimiter)
-          | Just segment <- T.stripPrefix ":" segWithDelimiter ->
-              isJust (canonicalNatural idxText)
-                && validSegment (lpMaxSegmentLen policy) segment
-        _ -> False
+loopProducerMatchesPolicy policy nodeId@(NodeId producer) =
+  bootstrapProducer || namespaceProducer
+  where
+    bootstrapProducer = case lpBoundSource policy of
+      BoundIterationCap -> False
+      BoundExternalDelivery ext -> Set.member nodeId (edpBootstrapProducers ext)
+    namespaceProducer =
+      case T.stripPrefix (unNodeId (lpNamespaceRoot policy) <> ":iter_") producer of
+        Nothing -> False
+        Just rest ->
+          case T.breakOn ":" rest of
+            (idxText, segWithDelimiter)
+              | Just segment <- T.stripPrefix ":" segWithDelimiter ->
+                  isJust (canonicalNatural idxText)
+                    && validSegment (lpMaxSegmentLen policy) segment
+            _ -> False
 
 -- ---------------------------------------------------------------------------
 -- Self-append step
@@ -664,6 +784,29 @@ planLoopStep policy i remaining anchor exitWitness loopStateExits kernelSpec
           spec' = namespaceSubgraph seed kernelSpec
       pure (LoopContinue (AppendAfter anchor spec') (kbWitness (lpKernelBoundary policy)))
 
+{- | Plan an externally-driven step (ADR 0088). Unlike 'planLoopStep' there is
+no remaining-budget stop: the bounding resource is the delivered signal that
+woke the proposer, checked at admission by the delivery-entry law and the
+admitted-step count. @nextIdx@ is the index to mint — 0 when the proposer is a
+bootstrap producer, otherwise the proposer's own index plus one — and the
+caller admits the result through the flat-namespace path exactly like a loop
+step.
+-}
+planExternalStep
+  :: LoopPolicy
+  -> Natural
+  -> NodeId
+  -> FrontierShapeWitness
+  -> [NodeId]
+  -> SubgraphSpec NodeId def
+  -> Either FrontierShapeError (LoopStepDecision def)
+planExternalStep policy nextIdx anchor exitWitness loopStateExits kernelSpec = do
+  checkSelfAppendStep (lpKernelBoundary policy) exitWitness loopStateExits anchor
+  validateKernelLocalIds (lpMaxSegmentLen policy) kernelSpec
+  let seed = iterationNamespaceSeed (lpNamespaceRoot policy) nextIdx
+      spec' = namespaceSubgraph seed kernelSpec
+  pure (LoopContinue (AppendAfter anchor spec') (kbWitness (lpKernelBoundary policy)))
+
 -- ---------------------------------------------------------------------------
 -- Witnessed-step authorization (security gate for gas-neutral admission)
 -- ---------------------------------------------------------------------------
@@ -715,6 +858,13 @@ data WitnessedStepViolation
     StepIterationIndexMismatch !(ExpectedActual Natural)
   | -- | The run-local effective bound has no remaining self-append budget.
     StepIterationBudgetExhausted !Natural
+  | {- | An externally-driven step's entry set is not exactly the registered
+    delivery-entry node of the minted instance (ADR 0088). Carries the expected
+    entry id and the actual entry set. Without a single delivery entry the
+    appended instance could execute without a delivered signal, voiding the
+    external-causation bound.
+    -}
+    StepDeliveryEntryViolation !NodeId ![NodeId]
   deriving stock (Eq, Show, Generic)
 
 renderWitnessedStepViolation :: WitnessedStepViolation -> Text
@@ -754,6 +904,11 @@ renderWitnessedStepViolation = \case
     "witnessed loop step effective iteration budget is exhausted after "
       <> T.pack (show completed)
       <> " body executions"
+  StepDeliveryEntryViolation expected actual ->
+    "externally-driven step entry set ["
+      <> T.intercalate ", " (fmap unNodeId actual)
+      <> "] is not exactly the registered delivery entry "
+      <> unNodeId expected
 
 {- | Static witnessed-step authorization for the shape/kernel portion of a
 gas-neutral self-append. Given the authorizing policy, the GENUINE producer node
@@ -786,6 +941,7 @@ authorizeWitnessedStep policy producer witness rewrite cost = do
   checkKernelSizeBound policy cost
   nextIdx <- producerNextIteration policy producer
   checkCanonicalInsertedIds policy nextIdx spec
+  checkDeliveryEntry policy nextIdx spec
   checkKernelWitness policy nextIdx spec
 
 {- | Control-aware witnessed-step authorization for live admission and resume.
@@ -816,6 +972,7 @@ authorizeWitnessedStepWithControl policy control producer witness emitted rewrit
   nextIdx <- producerNextIteration policy producer
   checkLoopControl policy control nextIdx
   checkCanonicalInsertedIds policy nextIdx spec
+  checkDeliveryEntry policy nextIdx spec
   checkKernelWitness policy nextIdx spec
   pure (advanceLoopControlForAppend policy control emitted)
 
@@ -825,10 +982,10 @@ checkLoopControl policy control nextIdx = do
   when (lpCheckpointCadence policy == 0) . Left . StepLoopControlMismatch $
     "checkpoint cadence must be at least 1"
   unless
-    (Set.isSubsetOf (lpCancellationPoints policy) (Set.singleton CancelBetweenIterations))
+    (Set.isSubsetOf (lpCancellationPoints policy) allowedCancellationPoints)
     . Left
     . StepLoopControlMismatch
-    $ "v1 witnessed loop admission supports only between-iteration cancellation"
+    $ cancellationPointsMessage
   unless (lcPolicyVersion control == lpPolicyVersion policy) . Left . StepLoopControlMismatch $
     "policy version "
       <> T.pack (show (lcPolicyVersion control))
@@ -839,17 +996,38 @@ checkLoopControl policy control nextIdx = do
       <> unNodeId (lcNamespaceRoot control)
       <> " /= registered root "
       <> unNodeId (lpNamespaceRoot policy)
-  let EffectiveBound effective = lcEffectiveBound control
-  when (effective == 0 || effective > lpMaxIterations policy) . Left . StepLoopControlMismatch $
-    "effective bound "
-      <> T.pack (show effective)
-      <> " is outside policy cap "
-      <> T.pack (show (lpMaxIterations policy))
-  let expectedNext = loopControlCompletedIterations control
-  unless (nextIdx == expectedNext) $
-    Left (StepIterationIndexMismatch (ExpectedActual expectedNext nextIdx))
-  when (lcRemainingIterations control == 0) $
-    Left (StepIterationBudgetExhausted expectedNext)
+  case lpBoundSource policy of
+    BoundIterationCap -> do
+      let EffectiveBound effective = lcEffectiveBound control
+      when (effective == 0 || effective > lpMaxIterations policy) . Left . StepLoopControlMismatch $
+        "effective bound "
+          <> T.pack (show effective)
+          <> " is outside policy cap "
+          <> T.pack (show (lpMaxIterations policy))
+      let expectedNext = loopControlCompletedIterations control
+      unless (nextIdx == expectedNext) $
+        Left (StepIterationIndexMismatch (ExpectedActual expectedNext nextIdx))
+      when (lcRemainingIterations control == 0) $
+        Left (StepIterationBudgetExhausted expectedNext)
+    BoundExternalDelivery ext -> do
+      -- The admitted-step count is the authoritative next index: a bootstrap
+      -- append (index 0) is only admissible while zero steps exist, and every
+      -- namespace producer's next index must be the count of prior admissions.
+      let expectedNext = lcAdmittedSteps control
+      unless (nextIdx == expectedNext) $
+        Left (StepIterationIndexMismatch (ExpectedActual expectedNext nextIdx))
+      when (maybe False (lcAdmittedSteps control >=) (edpMaxSteps ext)) $
+        Left (StepIterationBudgetExhausted (lcAdmittedSteps control))
+  where
+    allowedCancellationPoints = case lpBoundSource policy of
+      BoundIterationCap -> Set.singleton CancelBetweenIterations
+      BoundExternalDelivery _ ->
+        Set.fromList [CancelBetweenIterations, CancelAtParkedAwait]
+    cancellationPointsMessage = case lpBoundSource policy of
+      BoundIterationCap ->
+        "v1 witnessed loop admission supports only between-iteration cancellation"
+      BoundExternalDelivery _ ->
+        "externally-driven step admission supports only between-iteration and parked-await cancellation"
 
 firstFrontierViolation :: Either FrontierShapeError () -> Either WitnessedStepViolation ()
 firstFrontierViolation =
@@ -901,29 +1079,42 @@ localSegment prefix maxSegmentLen nodeId@(NodeId raw) =
     _ -> Left (StepNamespaceViolation [nodeId])
 
 {- | Derive the producer's canonical next iteration index. The producer must be a
-loop-namespace node @<root>:iter_<i>:<seg>@; the next index is @i + 1@. Iteration
-ids are zero-based and @iter_0@ is the seed body, so @next >= lpMaxIterations@
-would exceed the maximum body-execution cap and is rejected. @i@ must be a
-canonical decimal so an aliased producer id cannot smuggle a different successor.
+loop-namespace node @<root>:iter_<i>:<seg>@ — or, for an externally-driven root,
+a registered bootstrap producer, which mints step index 0. For a namespace
+producer the next index is @i + 1@. Iteration ids are zero-based; under a capped
+bound source @iter_0@ is the seed body, so @next >= lpMaxIterations@ would
+exceed the maximum body-execution cap and is rejected — under external delivery
+only the optional operator valve caps the index. @i@ must be a canonical
+decimal so an aliased producer id cannot smuggle a different successor.
 -}
 producerNextIteration :: LoopPolicy -> NodeId -> Either WitnessedStepViolation Natural
-producerNextIteration policy producer@(NodeId p) =
-  case T.stripPrefix (unNodeId (lpNamespaceRoot policy) <> ":iter_") p of
-    Nothing -> Left (StepProducerNotInNamespace producer)
-    Just rest ->
-      case T.breakOn ":" rest of
-        (idxText, segWithDelimiter)
-          | Just segment <- T.stripPrefix ":" segWithDelimiter ->
-              if validSegment (lpMaxSegmentLen policy) segment
-                then case canonicalNatural idxText of
-                  Nothing -> Left (StepProducerNotInNamespace producer)
-                  Just i ->
-                    let next = i + 1
-                     in if next >= lpMaxIterations policy
-                          then Left (StepIterationCapExceeded next)
-                          else Right next
-                else Left (StepProducerNotInNamespace producer)
-        _ -> Left (StepProducerNotInNamespace producer)
+producerNextIteration policy producer@(NodeId p)
+  | bootstrapProducer = Right 0
+  | otherwise =
+      case T.stripPrefix (unNodeId (lpNamespaceRoot policy) <> ":iter_") p of
+        Nothing -> Left (StepProducerNotInNamespace producer)
+        Just rest ->
+          case T.breakOn ":" rest of
+            (idxText, segWithDelimiter)
+              | Just segment <- T.stripPrefix ":" segWithDelimiter ->
+                  if validSegment (lpMaxSegmentLen policy) segment
+                    then case canonicalNatural idxText of
+                      Nothing -> Left (StepProducerNotInNamespace producer)
+                      Just i ->
+                        let next = i + 1
+                         in case indexCap of
+                              Just cap
+                                | next >= cap -> Left (StepIterationCapExceeded next)
+                              _ -> Right next
+                    else Left (StepProducerNotInNamespace producer)
+            _ -> Left (StepProducerNotInNamespace producer)
+  where
+    bootstrapProducer = case lpBoundSource policy of
+      BoundIterationCap -> False
+      BoundExternalDelivery ext -> Set.member producer (edpBootstrapProducers ext)
+    indexCap = case lpBoundSource policy of
+      BoundIterationCap -> Just (lpMaxIterations policy)
+      BoundExternalDelivery ext -> edpMaxSteps ext
 
 validSegment :: Natural -> Text -> Bool
 validSegment maxSegmentLen segment =
@@ -942,6 +1133,25 @@ checkCanonicalInsertedIds policy next spec =
       ids = Map.keys (sgsDefinitions spec)
       bad = filter (not . validUnderPrefix prefix (lpMaxSegmentLen policy)) ids
    in if null bad then Right () else Left (StepNamespaceViolation bad)
+
+{- | The externally-driven delivery-entry law (ADR 0088): the minted instance's
+entry set must be exactly the registered delivery-entry node under the minted
+step's namespace. The @AppendAfter@ wiring routes every anchor successor edge
+through the entry set, so a single signal-parking entry dominating the instance
+means the next step's proposer cannot execute before one durable signal is
+delivered to this instance — growth rate is bounded by deliveries. Capped
+roots have no delivery entry; the check is external-only by construction.
+-}
+checkDeliveryEntry
+  :: LoopPolicy -> Natural -> SubgraphSpec NodeId def -> Either WitnessedStepViolation ()
+checkDeliveryEntry policy nextIdx spec = case lpBoundSource policy of
+  BoundIterationCap -> Right ()
+  BoundExternalDelivery ext ->
+    let NodeId seed = iterationNamespaceSeed (lpNamespaceRoot policy) nextIdx
+        expected = NodeId (seed <> ":" <> unNodeId (edpDeliveryEntry ext))
+     in case sgsEntryNodes spec of
+          [single] | single == expected -> Right ()
+          entries -> Left (StepDeliveryEntryViolation expected entries)
 
 validUnderPrefix :: Text -> Natural -> NodeId -> Bool
 validUnderPrefix prefix maxSegmentLen (NodeId nodeId) =

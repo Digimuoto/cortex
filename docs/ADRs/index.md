@@ -102,6 +102,8 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0085](0085-wire-contract-schema-as-type-enforcement.md)           | Wire Contract Schema-as-Type Enforcement and the No-Subtyping Ceiling      | proposed   |
 | [0086](0086-wire-scoped-graph-construction-rejection.md)           | Wire Scoped Graph Construction: Rejection of the Graph-Block Bundle        | proposed   |
 | [0087](0087-wire-edge-as-saturation-event.md)                      | Wire Edge as Saturation Event and the Port-Role Parametrization            | proposed   |
+| [0088](0088-pulse-externally-driven-step-admission.md)             | Externally-Driven Step Admission                                           | proposed   |
+| [0089](0089-pulse-content-addressed-artifact-store.md)             | Pulse-Owned Content-Addressed Run Artifact Store                           | proposed   |
 
 ## By category
 
@@ -127,14 +129,15 @@ is shown here.
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
   [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
   [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
-- **Rewrite admission & budget** (7):
+- **Rewrite admission & budget** (8):
   [0005](0005-budgeted-rewrite-admission-and-materialization.md),
   [0009](0009-rewrite-provenance-and-topology-integrity.md),
   [0034](0034-wire-pure-select-actualization-authority.md),
   [0036](0036-wire-latent-branch-budget-recovery.md),
   [0056](0056-admission-modes-witnessed-and-gas.md),
   [0057](0057-wire-latent-branch-witnessing-and-closure-charging.md),
-  [0069](0069-rewrite-planner-drift-witness.md)
+  [0069](0069-rewrite-planner-drift-witness.md),
+  [0088](0088-pulse-externally-driven-step-admission.md)
 - **Conditionals, selection & rewrite algebra** (4):
   [0007](0007-latent-branch-conditional-lowering.md),
   [0033](0033-wire-select-guarded-affine-collapse.md), [0035](0035-wire-rewrite-algebra-forms.md),
@@ -168,7 +171,8 @@ is shown here.
 - **Capability & executors** (4): [0014](0014-executor-taxonomy-model-vs-external-call.md),
   [0019](0019-executor-registration-and-binding.md), [0042](0042-wire-standard-effect-executors.md),
   [0053](0053-executor-catalog-manifests-and-pulse-bindings.md)
-- **Artifact & provenance** (1): [0071](0071-wire-artifact-emission.md)
+- **Artifact & provenance** (2): [0071](0071-wire-artifact-emission.md),
+  [0089](0089-pulse-content-addressed-artifact-store.md)
 - **Packaging, CLI & tooling** (8): [0041](0041-wire-cli-command-surface.md),
   [0054](0054-downstream-wire-packages-and-host-bindings.md),
   [0060](0060-filesystem-package-and-binding-manifests.md),

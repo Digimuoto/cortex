@@ -82,7 +82,9 @@ import Cortex.Pulse.GraphRuntime qualified as GraphRuntime
 import Cortex.Pulse.GraphStateRevision (GraphStateRevision (..))
 import Cortex.Pulse.Iteration
   ( EffectiveBound (..)
+  , ExternalDeliveryPolicy (..)
   , IterationExhaustionPolicy (..)
+  , LoopBoundSource (..)
   , LoopControl (..)
   , LoopOutcome (..)
   , LoopPolicy (..)
@@ -96,6 +98,7 @@ import Cortex.Pulse.Iteration
 import Cortex.Pulse.Materialization
   ( PersistedGraphState (..)
   , PersistedRewrite (..)
+  , externalRewriteDeltaSummaryJson
   , rewriteDeltaSummaryJson
   , witnessedRewriteDeltaSummaryJson
   )
@@ -129,6 +132,7 @@ import Cortex.Pulse.Rewrite
   , RewriteCost (..)
   , RewriteRejectionContext (..)
   , admissionModeText
+  , admitExternalDelta
   , admitRewriteDelta
   , admitWitnessedDelta
   , admittedDelta
@@ -768,6 +772,23 @@ admitWitnessedLoopStepInner
   -> IO (StageAttemptResult stageId)
 admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attemptRef stageEnd newOutput witness rewrite = do
   let policy = registration.lrPolicy
+      -- Bound source decides the persisted admission mode (ADR 0056/0088):
+      -- capped kernels admit witnessed; externally-driven kernels admit
+      -- external, and the pre-admission exhaustion guard checks the operator
+      -- step valve instead of the remaining-iteration counter.
+      admissionMode = case policy.lpBoundSource of
+        BoundIterationCap -> AdmissionWitnessed
+        BoundExternalDelivery _ -> AdmissionExternal
+      preAdmissionExhausted control = case policy.lpBoundSource of
+        BoundIterationCap -> control.lcRemainingIterations == 0
+        BoundExternalDelivery ext ->
+          maybe False (control.lcAdmittedSteps >=) ext.edpMaxSteps
+      stepEventName = case policy.lpBoundSource of
+        BoundIterationCap -> "stage.loop_step"
+        BoundExternalDelivery _ -> "stage.external_step"
+      stepEventMessage = case policy.lpBoundSource of
+        BoundIterationCap -> "Loop step admitted: " <> stageCall.scStageName
+        BoundExternalDelivery _ -> "Externally-driven step admitted: " <> stageCall.scStageName
   let completionSummary = attemptSummary attemptRef.sarAttempt
       serializableRewrite = fmap toSerializableStageDefinition rewrite
       checkpointState = buildCheckpointState env stageCall.scStageName newOutput
@@ -814,7 +835,7 @@ admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attempt
           rejType
           rejMsg
       Right control
-        | control.lcRemainingIterations == 0 ->
+        | preAdmissionExhausted control ->
             persistLoopBudgetExhaustion
               loopKey
               registration
@@ -852,9 +873,15 @@ admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attempt
               rejType
               rejMsg
           Right (delta, controlBefore, nextControl) -> do
-            let admitted = admitWitnessedDelta currentBudget delta
+            let admitted = case policy.lpBoundSource of
+                  BoundIterationCap -> admitWitnessedDelta currentBudget delta
+                  BoundExternalDelivery _ -> admitExternalDelta currentBudget delta
                 admDelta = admittedDelta admitted
-                rewriteDeltaJson = witnessedRewriteDeltaSummaryJson policy witness controlBefore nextControl admDelta
+                rewriteDeltaJson = case policy.lpBoundSource of
+                  BoundIterationCap ->
+                    witnessedRewriteDeltaSummaryJson policy witness controlBefore nextControl admDelta
+                  BoundExternalDelivery _ ->
+                    externalRewriteDeltaSummaryJson policy witness controlBefore nextControl admDelta
             cpResult <-
               requireTx env.sePool env.seRunId "write_checkpoint"
                 . PulseDB.runTransaction env.sePool
@@ -875,7 +902,7 @@ admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attempt
                         , griRejectionReason = Nothing
                         , griExceededDimensions = Nothing
                         , griCreatedAt = stageEnd
-                        , griAdmissionMode = admissionModeText AdmissionWitnessed
+                        , griAdmissionMode = admissionModeText admissionMode
                         }
                   Q.writeCheckpoint
                     env.seRunId
@@ -911,9 +938,9 @@ admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attempt
                       }
                 recordRunEvent
                   env
-                  "stage.loop_step"
+                  stepEventName
                   Q.RunEventInfo
-                  ("Loop step admitted: " <> stageCall.scStageName)
+                  stepEventMessage
                   (Just (Aeson.object ["stage" Aeson..= stageCall.scStageName]))
                 pure
                   ( StageAdvanceWithRewrite
@@ -925,7 +952,7 @@ admitWitnessedLoopStepInner loopKey registration env stagePlan stageCall attempt
                         , prRewriteCost = Just admDelta.prdCost
                         , prRewriteDelta = Just rewriteDeltaJson
                         , prRewrite = rewrite
-                        , prAdmissionMode = AdmissionWitnessed
+                        , prAdmissionMode = admissionMode
                         }
                   )
 
@@ -947,9 +974,12 @@ persistLoopBudgetExhaustion loopKey registration env attemptRef stageCall stageE
   let policy = registration.lrPolicy
       nextControl = exhaustLoopControl policy control newOutput
       EffectiveBound effectiveBound = control.lcEffectiveBound
+      completedCount = case policy.lpBoundSource of
+        BoundIterationCap -> effectiveBound
+        BoundExternalDelivery _ -> control.lcAdmittedSteps
       outcome =
         fromMaybe
-          (LoopBudgetExhausted effectiveBound)
+          (LoopBudgetExhausted completedCount)
           nextControl.lcOutcome
       outcomeJson = Aeson.toJSON outcome
   atomically $
@@ -966,7 +996,7 @@ persistLoopBudgetExhaustion loopKey registration env attemptRef stageCall stageE
         budgetCtx
         "loop_iteration_budget_exhausted"
         ( "Runtime-bounded loop exhausted its admitted iteration budget after "
-            <> T.pack (show effectiveBound)
+            <> T.pack (show completedCount)
             <> " body executions"
         )
     IterationExhaustionPartial ->

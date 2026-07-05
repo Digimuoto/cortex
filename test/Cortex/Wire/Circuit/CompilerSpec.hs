@@ -665,6 +665,7 @@ pulseConfig =
     , circuitPulseRewriteExhaustionPolicy = RewriteExhaustionFail
     , circuitPulseBudgetExceededExhaustionPolicy = Nothing
     , circuitPulseMaxRewriteReExecutions = 2
+    , circuitPulseLoopRegistrations = Map.empty
     }
 
 defaultBinder :: CircuitPulseBinder

@@ -81,10 +81,11 @@ pulse.runs
   created_at           timestamptz not null
 ```
 
-`parent_run_id` links a retry to its origin. Retry creates a fresh run and does not inherit the
-parent's checkpoint lineage — see
-[run identity](../../Architecture/06-pulse-runtime.md#run-identity-and-operator-verbs) for the full
-verb table.
+`parent_run_id` links a run to the run it succeeds: a retry to its origin
+(`trigger_source = 'retry'`), or a caller-declared successor to its predecessor (managed facade
+`ManagedRunOptions`, `trigger_source = 'manual'`). Neither inherits the parent's checkpoint lineage
+— see [run identity](../../Architecture/06-pulse-runtime.md#run-identity-and-operator-verbs) for the
+full verb table.
 
 ## 4. Checkpoints
 
@@ -235,6 +236,39 @@ typed backend failure is recorded in `failure_reason` and read back on resume, s
 the failure write and the node-completion graph write reproduces the same typed reason rather than
 losing it.
 
+## 11. Artifacts
+
+```text
+pulse.artifacts
+  artifact_hash  text primary key            -- "sha256:<64 hex>", the canonical content address
+  payload        jsonb not null
+  contract       text                        -- opaque contract name, nullable
+  payload_kind   text not null               -- rendered WirePayloadKind
+  media_type     text not null
+  byte_size      bigint not null             -- canonical-encoding byte length of payload
+  created_at     timestamptz not null
+
+pulse.artifact_provenance
+  provenance_id  bigserial primary key
+  artifact_hash  text not null references pulse.artifacts(artifact_hash)
+  run_id         uuid not null references pulse.runs(run_id) on delete cascade
+  node_id        text not null
+  kind           text not null               -- opaque ADR 0071 artifact kind
+  target         text                        -- opaque rendered `to` target
+  created_at     timestamptz not null
+
+  unique index (run_id, node_id, artifact_hash)
+```
+
+The ADR 0089 content-addressed run artifact store. The address is SHA-256 over the canonical UTF-8
+encoding (recursively key-sorted objects, canonical numbers) of the typed envelope
+`{contract, mediaType, payloadKind, value}`, so every content column is a pure function of the hash:
+writers upsert with `ON CONFLICT DO NOTHING`, identical content dedups across runs, and conflicting
+metadata is impossible rather than first-writer-wins. Content rows carry no run FK and are **never
+deleted by Cortex** — provenance cascades with its run, and unreferenced content is GC-able by an
+operator anti-join (retention policy is host-owned, ADR 0003). `kind` and `target` are recorded
+verbatim and interpreted by nothing (ADR 0071).
+
 ## Appendix A — Ownership
 
 The `pulse` DB role has full ownership of every table in this schema and no access to host tables.
@@ -259,7 +293,10 @@ shape, but it does not migrate a stale deployed schema in place. Forward, idempo
 bringing **deployed** databases up to the current shape lives in the repo-root `migrations/`
 directory (see `migrations/README.md`). Apply the relevant migration before rolling out code that
 depends on the new shape — e.g. `migrations/0001_graph_rewrites_admission_mode.sql` adds
-`pulse.graph_rewrites.admission_mode` (ADR 0055 / 0056), backfilling existing rows to `gassed`.
+`pulse.graph_rewrites.admission_mode` (ADR 0055 / 0056), backfilling existing rows to `gassed`;
+`migrations/0003_graph_rewrites_admission_mode_external.sql` widens that column's CHECK with the ADR
+0088 `external` mode; and `migrations/0004_pulse_artifacts.sql` adds the ADR 0089 artifact store
+tables.
 
 ## Related
 

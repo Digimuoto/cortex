@@ -114,7 +114,7 @@ CREATE TABLE pulse.graph_rewrites (
     exceeded_dimensions jsonb,
     admission_mode text DEFAULT 'gassed'::text NOT NULL,
     CONSTRAINT graph_rewrites_status_check CHECK ((status = ANY (ARRAY['admitted'::text, 'rejected'::text]))),
-    CONSTRAINT graph_rewrites_admission_mode_check CHECK ((admission_mode = ANY (ARRAY['gassed'::text, 'witnessed'::text])))
+    CONSTRAINT graph_rewrites_admission_mode_check CHECK ((admission_mode = ANY (ARRAY['gassed'::text, 'witnessed'::text, 'external'::text])))
 );
 
 
@@ -726,3 +726,49 @@ CREATE UNIQUE INDEX idx_pulse_external_call_attempts_key
 
 ALTER TABLE ONLY pulse.external_call_attempts
     ADD CONSTRAINT external_call_attempts_run_id_fkey FOREIGN KEY (run_id) REFERENCES pulse.runs(run_id) ON DELETE CASCADE;
+
+--
+-- Name: artifacts; Type: TABLE; Schema: pulse; Owner: -
+-- ADR 0089: immutable content-addressed store for run-output artifacts. The
+-- address is SHA-256 over the canonical UTF-8 encoding of the typed envelope
+-- {contract, mediaType, payloadKind, value}, rendered "sha256:<64 hex>", so
+-- every column is a pure function of the hash and ON CONFLICT DO NOTHING can
+-- never keep metadata a second writer disagreed with. Content rows are never
+-- deleted by Cortex; unreferenced rows are GC-able by an operator anti-join.
+--
+
+CREATE TABLE pulse.artifacts (
+    artifact_hash text PRIMARY KEY,
+    payload jsonb NOT NULL,
+    contract text,
+    payload_kind text NOT NULL,
+    media_type text NOT NULL,
+    byte_size bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: artifact_provenance; Type: TABLE; Schema: pulse; Owner: -
+-- ADR 0089: per-emission provenance linking a content row to the run/node that
+-- produced it. kind and target are opaque per ADR 0071. Provenance cascades
+-- with its run; the shared content row survives.
+--
+
+CREATE TABLE pulse.artifact_provenance (
+    provenance_id bigserial PRIMARY KEY,
+    artifact_hash text NOT NULL,
+    run_id uuid NOT NULL,
+    node_id text NOT NULL,
+    kind text NOT NULL,
+    target text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE UNIQUE INDEX idx_pulse_artifact_provenance_key
+    ON pulse.artifact_provenance USING btree (run_id, node_id, artifact_hash);
+
+ALTER TABLE ONLY pulse.artifact_provenance
+    ADD CONSTRAINT artifact_provenance_artifact_hash_fkey FOREIGN KEY (artifact_hash) REFERENCES pulse.artifacts(artifact_hash);
+
+ALTER TABLE ONLY pulse.artifact_provenance
+    ADD CONSTRAINT artifact_provenance_run_id_fkey FOREIGN KEY (run_id) REFERENCES pulse.runs(run_id) ON DELETE CASCADE;

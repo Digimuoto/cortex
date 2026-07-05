@@ -119,11 +119,14 @@ data StageResult
 `StageRewrite` carries **both** the stage's durable output and the proposed edit. Retained or
 appended subgraphs whose entry nodes depend on that output read it from the retained anchor on
 resume (see §5.1). Producing a rewrite is therefore "output _and_ rewrite," never "output _or_
-rewrite." `StageLoopStep` is the ADR 0055 witnessed self-append form; it carries the same durable
-output plus the loop-frontier witness the executor must check before gas-neutral admission. The
-witnessed path is authorized by the run's loop registration: static policy, admitted effective
-bound, and mutable loop control. A static policy match alone is not enough to admit a gas-neutral
-append.
+rewrite." `StageLoopStep` is the certified self-append form; it carries the same durable output plus
+the loop-frontier witness the executor must check before gas-neutral admission. The registration's
+bound source decides what gates each step: an iteration-capped registration (ADR 0055) admits
+`witnessed` against the finite per-run bound, while an externally-driven registration (ADR 0088)
+admits `external` — bounded by one delivered durable signal per step via the delivery-entry law,
+with an optional operator step valve. Either way the path is authorized by the run's loop
+registration: static policy, bound state, and mutable loop control. A static policy match alone is
+not enough to admit a gas-neutral append.
 
 A stage cannot both suspend and rewrite in a single outcome; the type makes this exclusive by
 construction.
@@ -313,10 +316,12 @@ For **every rewrite event**, admitted or rejected, the runtime persists:
 - raw `GraphRewrite` proposal,
 - admission decision — `admitted` or `rejected(code)` with the structured reason,
 - static `RewriteCost` and post-admission **remaining budget**,
-- the **admission mode** (`gassed` or `witnessed`): a gassed rewrite debits the budget at admission,
-  while a witnessed compile-bounded step (a runtime-bounded-iteration self-append, ADR 0055 /
-  ADR 0056) records its cost but is gas-neutral; recovery re-validates witnessed rows against the
-  loop policy and replays them gas-neutral rather than trusting the stored tag,
+- the **admission mode** (`gassed`, `witnessed`, or `external`): a gassed rewrite debits the budget
+  at admission; a witnessed compile-bounded step (a runtime-bounded-iteration self-append, ADR 0055
+  / ADR 0056) records its cost but is gas-neutral; an externally-driven step (ADR 0088) is likewise
+  gas-neutral with its repetition bounded by one delivered durable signal per step. Recovery
+  re-validates witnessed and external rows against the loop registration and replays them
+  gas-neutral rather than trusting the stored tag,
 - structural diff applied (node-state changes, edge changes),
 - any operator override (set / approved-by / reason).
 

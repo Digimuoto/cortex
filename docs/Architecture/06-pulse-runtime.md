@@ -166,6 +166,11 @@ lease has expired. Any future "restart from checkpoint" or "branch from run" cap
 modeled as a distinct Tier 2 operation with explicit version compatibility checks and side-effect
 fencing, not as a variant of retry.
 
+A managed-facade caller may also declare a predecessor at run creation (`ManagedRunOptions`): like
+Retry, the successor is a new `run_id` linked via `parent_run_id` with no checkpoint inheritance —
+caller-declared lineage metadata, not an operator verb and not the reserved "branch from run"
+operation above.
+
 ## Stage execution
 
 ### Typed stage identity
@@ -229,6 +234,12 @@ contract in full. The current runtime admits bounded, fail-fast rewrites during 
 persists enough anchor state to resume correctly after admission. The full contract — rewrite forms,
 gas, admission policy, materialization, and structural provenance — belongs to
 [Chapter 07](./07-rewrites-and-materialization.md).
+
+A long-lived interactive run composes the durable signal primitive with certified self-append: the
+run parks on a signal boundary, a host delivery wakes it, one registered kernel instance is appended
+gas-neutral (ADR 0088), and the appended instance parks the run again. Growth is bounded by external
+causation — one journaled delivery per step — rather than by rewrite gas or a finite iteration cap,
+so the run can serve external events indefinitely under one provenance lineage.
 
 ## Settled-State Queries
 

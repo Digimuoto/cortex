@@ -30,6 +30,9 @@ import Cortex.Pulse.Rewrite
   , RewriteBudget (..)
   , RewriteCost (..)
   , SubgraphSpec (..)
+  , admissionModeFromText
+  , admissionModeText
+  , admitExternalDelta
   , admitRewriteDelta
   , admitWitnessedDelta
   , admittedAdmissionMode
@@ -66,7 +69,8 @@ boundary w =
 mkPolicy :: Natural -> KernelBoundary -> LoopPolicy
 mkPolicy maxIters kb =
   LoopPolicy
-    { lpMaxIterations = maxIters
+    { lpBoundSource = BoundIterationCap
+    , lpMaxIterations = maxIters
     , lpExhaustion = IterationExhaustionFail
     , lpCheckpointCadence = 1
     , lpCancellationPoints = Set.empty
@@ -488,3 +492,239 @@ spec = describe "runtime-bounded iteration pure core" $ do
               case validateAdmittedRewriteDelta bigBudget delta gas of
                 Right () -> pure ()
                 Left errs -> expectationFailure $ "gassed validation failed: " <> show errs
+
+  describe "externally-driven step admission (ADR 0088)" $ do
+    -- Kernel: await -> turn; the await segment is the registered delivery entry.
+    let extKernel =
+          SubgraphSpec
+            { sgsTopology = toRelation (edge (NodeId "await") (NodeId "turn") :: Graph NodeId)
+            , sgsDefinitions = Map.fromList [(NodeId "await", ()), (NodeId "turn", ())]
+            , sgsEntryNodes = [NodeId "await"]
+            , sgsExitNodes = [NodeId "turn"]
+            }
+        instanceAt :: Int -> SubgraphSpec NodeId ()
+        instanceAt n =
+          let prefix = "loop_root:iter_" <> T.pack (show n) <> ":"
+              awaitN = NodeId (prefix <> "await")
+              turnN = NodeId (prefix <> "turn")
+           in SubgraphSpec
+                { sgsTopology = toRelation (edge awaitN turnN :: Graph NodeId)
+                , sgsDefinitions = Map.fromList [(awaitN, ()), (turnN, ())]
+                , sgsEntryNodes = [awaitN]
+                , sgsExitNodes = [turnN]
+                }
+        extDelivery valve =
+          ExternalDeliveryPolicy
+            { edpDeliveryEntry = NodeId "await"
+            , edpBootstrapProducers = Set.fromList [NodeId "seed"]
+            , edpMaxSteps = valve
+            }
+        extPolicy valve =
+          (mkPolicy 10 (boundary witnessA))
+            { lpBoundSource = BoundExternalDelivery (extDelivery valve)
+            , lpKernelWitness = kernelWitnessForLocalSpec extKernel
+            , lpCancellationPoints = Set.fromList [CancelAtParkedAwait]
+            }
+        smallCost =
+          RewriteCost
+            { rcAddedNodes = 2
+            , rcAddedEdges = 2
+            , rcAddedDepth = 2
+            , rcRewriteOps = 1
+            , rcFrontierDelta = 0
+            }
+        witnessFor producer = LoopStepWitness witnessA [producer]
+        extControlAt steps =
+          (initLoopControl (extPolicy Nothing) (EffectiveBound 0))
+            { lcAdmittedSteps = steps
+            }
+    it "lets a bootstrap producer mint step index 0 exactly once" $ do
+      let seed = NodeId "seed"
+          result =
+            authorizeWitnessedStepWithControl
+              (extPolicy Nothing)
+              (extControlAt 0)
+              seed
+              (witnessFor seed)
+              (Just (jint 0))
+              (AppendAfter seed (instanceAt 0))
+              smallCost
+      fmap lcAdmittedSteps result `shouldBe` Right 1
+    it "rejects a second bootstrap append once a step exists" $
+      case authorizeWitnessedStepWithControl
+        (extPolicy Nothing)
+        (extControlAt 1)
+        (NodeId "seed")
+        (witnessFor (NodeId "seed"))
+        Nothing
+        (AppendAfter (NodeId "seed") (instanceAt 0))
+        smallCost of
+        Left (StepIterationIndexMismatch _) -> pure ()
+        other -> expectationFailure $ "expected StepIterationIndexMismatch, got " <> show other
+    it "admits an index far beyond any iteration cap when no valve is set" $ do
+      let producer = NodeId "loop_root:iter_9999:turn"
+          result =
+            authorizeWitnessedStepWithControl
+              (extPolicy Nothing)
+              (extControlAt 10000)
+              producer
+              (witnessFor producer)
+              Nothing
+              (AppendAfter producer (instanceAt 10000))
+              smallCost
+      fmap lcAdmittedSteps result `shouldBe` Right 10001
+    it "does not decrement the (unused) remaining-iteration counter" $ do
+      let producer = NodeId "loop_root:iter_3:turn"
+          result =
+            authorizeWitnessedStepWithControl
+              (extPolicy Nothing)
+              (extControlAt 4)
+              producer
+              (witnessFor producer)
+              Nothing
+              (AppendAfter producer (instanceAt 4))
+              smallCost
+      fmap lcRemainingIterations result `shouldBe` Right 0
+    it "rejects at the operator step valve" $
+      case authorizeWitnessedStep
+        (extPolicy (Just 5))
+        (NodeId "loop_root:iter_4:turn")
+        (witnessFor (NodeId "loop_root:iter_4:turn"))
+        (AppendAfter (NodeId "loop_root:iter_4:turn") (instanceAt 5))
+        smallCost of
+        Left (StepIterationCapExceeded n) -> n `shouldBe` 5
+        other -> expectationFailure $ "expected StepIterationCapExceeded, got " <> show other
+    it "rejects an instance whose entry is not the registered delivery entry" $ do
+      -- turn -> await reverses the kernel: the entry becomes turn.
+      let producer = NodeId "loop_root:iter_0:turn"
+          awaitN = NodeId "loop_root:iter_1:await"
+          turnN = NodeId "loop_root:iter_1:turn"
+          reversedInstance =
+            SubgraphSpec
+              { sgsTopology = toRelation (edge turnN awaitN :: Graph NodeId)
+              , sgsDefinitions = Map.fromList [(awaitN, ()), (turnN, ())]
+              , sgsEntryNodes = [turnN]
+              , sgsExitNodes = [awaitN]
+              }
+      case authorizeWitnessedStep
+        (extPolicy Nothing)
+        producer
+        (witnessFor producer)
+        (AppendAfter producer reversedInstance)
+        smallCost of
+        Left (StepDeliveryEntryViolation expected actual) -> do
+          expected `shouldBe` NodeId "loop_root:iter_1:await"
+          actual `shouldBe` [turnN]
+        other -> expectationFailure $ "expected StepDeliveryEntryViolation, got " <> show other
+    it "rejects a multi-entry instance (delivery entry must dominate the step)" $ do
+      let producer = NodeId "loop_root:iter_0:turn"
+          awaitN = NodeId "loop_root:iter_1:await"
+          auxN = NodeId "loop_root:iter_1:aux"
+          turnN = NodeId "loop_root:iter_1:turn"
+          multiEntry =
+            SubgraphSpec
+              { sgsTopology =
+                  toRelation ((edge awaitN turnN <> edge auxN turnN) :: Graph NodeId)
+              , sgsDefinitions = Map.fromList [(awaitN, ()), (auxN, ()), (turnN, ())]
+              , sgsEntryNodes = [awaitN, auxN]
+              , sgsExitNodes = [turnN]
+              }
+      case authorizeWitnessedStep
+        (extPolicy Nothing)
+        producer
+        (witnessFor producer)
+        (AppendAfter producer multiEntry)
+        smallCost of
+        Left (StepDeliveryEntryViolation _ _) -> pure ()
+        other -> expectationFailure $ "expected StepDeliveryEntryViolation, got " <> show other
+    it "still pins the instance to the certified kernel digest" $ do
+      -- Same entry discipline, different second segment: await -> other.
+      let producer = NodeId "loop_root:iter_0:turn"
+          awaitN = NodeId "loop_root:iter_1:await"
+          otherN = NodeId "loop_root:iter_1:other"
+          differentKernel =
+            SubgraphSpec
+              { sgsTopology = toRelation (edge awaitN otherN :: Graph NodeId)
+              , sgsDefinitions = Map.fromList [(awaitN, ()), (otherN, ())]
+              , sgsEntryNodes = [awaitN]
+              , sgsExitNodes = [otherN]
+              }
+      case authorizeWitnessedStep
+        (extPolicy Nothing)
+        producer
+        (witnessFor producer)
+        (AppendAfter producer differentKernel)
+        smallCost of
+        Left (StepKernelWitnessMismatch _) -> pure ()
+        other -> expectationFailure $ "expected StepKernelWitnessMismatch, got " <> show other
+    it "planExternalStep mints the flat instance at the requested index" $
+      case planExternalStep (extPolicy Nothing) 0 (NodeId "seed") witnessA [NodeId "seed"] extKernel of
+        Right (LoopContinue (AppendAfter gotAnchor spec') w) -> do
+          gotAnchor `shouldBe` NodeId "seed"
+          sgsEntryNodes spec' `shouldBe` [NodeId "loop_root:iter_0:await"]
+          sgsExitNodes spec' `shouldBe` [NodeId "loop_root:iter_0:turn"]
+          w `shouldBe` witnessA
+        other -> expectationFailure $ "expected LoopContinue/AppendAfter, got " <> show other
+    it "admits external deltas gas-neutral with the honest journal tag" $ do
+      let topo = toRelation (path [NodeId "seed"] :: Graph NodeId)
+          defs = Map.fromList [(NodeId "seed", ())]
+      case planExternalStep (extPolicy Nothing) 0 (NodeId "seed") witnessA [NodeId "seed"] extKernel of
+        Right (LoopContinue rewrite _) ->
+          case planGraphRewriteNamespaced rewrite topo defs of
+            Left errs -> expectationFailure $ "planGraphRewriteNamespaced failed: " <> show errs
+            Right delta -> do
+              let admitted = admitExternalDelta bigBudget delta
+              admittedRemainingBudget admitted `shouldBe` bigBudget
+              admittedAdmissionMode admitted `shouldBe` AdmissionExternal
+              case validateAdmittedRewriteDelta bigBudget delta admitted of
+                Right () -> pure ()
+                Left errs -> expectationFailure $ "external validation failed: " <> show errs
+        other -> expectationFailure $ "expected LoopContinue, got " <> show other
+
+  describe "externalLoopRegistration and bound-source guards" $ do
+    let extDelivery =
+          ExternalDeliveryPolicy
+            { edpDeliveryEntry = NodeId "await"
+            , edpBootstrapProducers = Set.fromList [NodeId "seed"]
+            , edpMaxSteps = Nothing
+            }
+        extPolicy =
+          (mkPolicy 10 (boundary witnessA))
+            { lpBoundSource = BoundExternalDelivery extDelivery
+            }
+    it "registers a valid externally-driven policy" $
+      case externalLoopRegistration extPolicy of
+        Right registration -> lrPolicy registration `shouldBe` extPolicy
+        Left err -> expectationFailure $ "expected registration, got " <> show err
+    it "rejects a capped policy" $
+      externalLoopRegistration (mkPolicy 10 (boundary witnessA)) `shouldBe` Left BoundSourceMismatch
+    it "rejects a delivery entry that is not one bounded segment" $
+      case externalLoopRegistration
+        ( extPolicy
+            { lpBoundSource =
+                BoundExternalDelivery (extDelivery {edpDeliveryEntry = NodeId "has:colon"})
+            }
+        ) of
+        Left (InvalidDeliveryEntry _) -> pure ()
+        other -> expectationFailure $ "expected InvalidDeliveryEntry, got " <> show other
+    it "rejects an empty bootstrap producer set" $
+      externalLoopRegistration
+        ( extPolicy
+            { lpBoundSource =
+                BoundExternalDelivery (extDelivery {edpBootstrapProducers = Set.empty})
+            }
+        )
+        `shouldBe` Left EmptyBootstrapProducers
+    it "rejects a zero step valve like a zero bound" $
+      externalLoopRegistration
+        ( extPolicy
+            { lpBoundSource =
+                BoundExternalDelivery (extDelivery {edpMaxSteps = Just 0})
+            }
+        )
+        `shouldBe` Left BoundZeroNotAllowed
+    it "capped runtime-bound admission rejects an externally-driven policy" $
+      admitRuntimeBound extPolicy (RequestedBound 5) `shouldBe` Left BoundSourceMismatch
+    it "decodes the persisted mode totally: external roundtrips, unknown falls back gassed" $ do
+      admissionModeFromText (admissionModeText AdmissionExternal) `shouldBe` AdmissionExternal
+      admissionModeFromText "some-future-mode" `shouldBe` AdmissionGassed
