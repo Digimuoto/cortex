@@ -172,8 +172,6 @@
           "Cortex/Wire/Circuit/IR"
           "Cortex/Wire/Circuit/Lower"
           "Cortex/Wire/Circuit/Lowering"
-          "Cortex/Wire/Circuit/Node"
-          "Cortex/Wire/Circuit/NodeKind"
           "Cortex/Wire/Cli/Frontier"
           "Cortex/Pulse/GraphRuntime"
           "Cortex/Pulse/Health"

@@ -135,6 +135,9 @@ orientation.
   See [terminology.md](Reference/terminology.md#runtime-vocabulary).
 - **Materialized graph** — the plan graph plus all admitted rewrites — the live topology a run
   executes over. See [terminology.md](Reference/terminology.md#runtime-vocabulary).
+- **Compiled circuit node** — the structural classification of compiled-Circuit vertices (task,
+  signal boundary, artifact boundary, rewrite boundary, condition); the only node-classification
+  axis. See [terminology.md](Reference/terminology.md#runtime-vocabulary).
 - **Plan graph** — the initial Circuit compiled from Wire source, before any rewrites. See
   [terminology.md](Reference/terminology.md#runtime-vocabulary).
 - **Rewrite log** — the append-only record of rewrite proposals and admission decisions. See

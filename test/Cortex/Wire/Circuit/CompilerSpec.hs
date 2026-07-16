@@ -651,7 +651,6 @@ taskNode nodeRef label =
   CircuitTaskNode
     { circuitTaskNodeRef = CircuitNodeRef nodeRef
     , circuitTaskNodeLabel = label
-    , circuitTaskNodeKind = Nothing
     , circuitTaskNodeMetadata = Aeson.object []
     }
 
