@@ -256,7 +256,8 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "static uint8_t frontier_snapshot[CORTEX_WIRE_STORAGE_COUNT];\n" ++
   "static cortex_wire_program_v1_effect_api effect_api;\n" ++
   "static uint8_t initialized;\n" ++
-  "static uint8_t driving;\n\n" ++
+  "static uint8_t driving;\n" ++
+  "static uint8_t terminal_failed;\n\n" ++
   "static uint8_t status_unblocks(uint8_t status) {\n" ++
   "  return (uint8_t)(status == CORTEX_WIRE_STATUS_COMPLETED ||\n" ++
   "                   status == CORTEX_WIRE_STATUS_SKIPPED);\n" ++
@@ -305,12 +306,16 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "  }\n" ++
   "  return 1u;\n" ++
   "}\n\n" ++
-  "static void cancel_running(void) {\n" ++
+  "static void latch_terminal_failure(void) {\n" ++
   "  uint32_t node_id;\n" ++
-  "  if (effect_api.effect_cancel == 0) { return; }\n" ++
+  "  if (terminal_failed != 0u) { return; }\n" ++
+  "  terminal_failed = 1u;\n" ++
   "  for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
   "    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {\n" ++
-  "      effect_api.effect_cancel(node_id, effect_api.context);\n" ++
+  "      if (effect_api.effect_cancel != 0) {\n" ++
+  "        effect_api.effect_cancel(node_id, effect_api.context);\n" ++
+  "      }\n" ++
+  "      node_status[node_id] = CORTEX_WIRE_STATUS_FAILED;\n" ++
   "    }\n" ++
   "  }\n" ++
   "}\n\n" ++
@@ -325,18 +330,20 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "    output_handle[node_id] = 0u;\n" ++
   "    frontier_snapshot[node_id] = 0u;\n" ++
   "  }\n" ++
+  "  terminal_failed = 0u;\n" ++
   "  initialized = 1u;\n" ++
   "  return 0;\n" ++
   "}\n\n" ++
   "cortex_wire_program_v1_drive_result cortex_wire_program_v1_drive(void) {\n" ++
   "  uint32_t node_id;\n" ++
   "  if (initialized == 0u || driving != 0u) { return CORTEX_WIRE_DRIVE_ABI_ERROR; }\n" ++
+  "  if (terminal_failed != 0u) { return CORTEX_WIRE_DRIVE_FAILED; }\n" ++
   "  driving = 1u;\n" ++
   "  for (;;) {\n" ++
   "    uint32_t frontier_count = 0u;\n" ++
   "    propagate_failures();\n" ++
   "    if (any_status(CORTEX_WIRE_STATUS_FAILED)) {\n" ++
-  "      cancel_running(); driving = 0u; return CORTEX_WIRE_DRIVE_FAILED;\n" ++
+  "      latch_terminal_failure(); driving = 0u; return CORTEX_WIRE_DRIVE_FAILED;\n" ++
   "    }\n" ++
   "    for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
   "      frontier_snapshot[node_id] = node_ready(node_id);\n" ++
@@ -351,28 +358,23 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "      return CORTEX_WIRE_DRIVE_STUCK;\n" ++
   "    }\n" ++
   "    for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
-  "      if (frontier_snapshot[node_id] != 0u) {\n" ++
-  "        node_status[node_id] = CORTEX_WIRE_STATUS_RUNNING;\n" ++
+  "      cortex_wire_program_v1_effect_result effect;\n" ++
+  "      if (frontier_snapshot[node_id] == 0u) { continue; }\n" ++
+  "      node_status[node_id] = CORTEX_WIRE_STATUS_RUNNING;\n" ++
+  "      effect = effect_api.effect_begin(node_id, effect_api.context);\n" ++
+  "      switch (effect.kind) {\n" ++
+  "        case CORTEX_WIRE_EFFECT_ACCEPTED_ASYNC: break;\n" ++
+  "        case CORTEX_WIRE_EFFECT_SUCCESS:\n" ++
+  "          node_status[node_id] = CORTEX_WIRE_STATUS_COMPLETED;\n" ++
+  "          output_handle[node_id] = effect.payload_handle; break;\n" ++
+  "        case CORTEX_WIRE_EFFECT_SKIPPED:\n" ++
+  "          node_status[node_id] = CORTEX_WIRE_STATUS_SKIPPED; break;\n" ++
+  "        case CORTEX_WIRE_EFFECT_FAILURE:\n" ++
+  "          node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;\n" ++
+  "        default:\n" ++
+  "          node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;\n" ++
   "      }\n" ++
-  "    }\n" ++
-  "    for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
-  "      if (frontier_snapshot[node_id] != 0u &&\n" ++
-  "          !any_status(CORTEX_WIRE_STATUS_FAILED)) {\n" ++
-  "        cortex_wire_program_v1_effect_result effect =\n" ++
-  "            effect_api.effect_begin(node_id, effect_api.context);\n" ++
-  "        switch (effect.kind) {\n" ++
-  "          case CORTEX_WIRE_EFFECT_ACCEPTED_ASYNC: break;\n" ++
-  "          case CORTEX_WIRE_EFFECT_SUCCESS:\n" ++
-  "            node_status[node_id] = CORTEX_WIRE_STATUS_COMPLETED;\n" ++
-  "            output_handle[node_id] = effect.payload_handle; break;\n" ++
-  "          case CORTEX_WIRE_EFFECT_SKIPPED:\n" ++
-  "            node_status[node_id] = CORTEX_WIRE_STATUS_SKIPPED; break;\n" ++
-  "          case CORTEX_WIRE_EFFECT_FAILURE:\n" ++
-  "            node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;\n" ++
-  "          default:\n" ++
-  "            node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;\n" ++
-  "        }\n" ++
-  "      }\n" ++
+  "      if (node_status[node_id] == CORTEX_WIRE_STATUS_FAILED) { break; }\n" ++
   "    }\n" ++
   "  }\n" ++
   "}\n\n" ++
@@ -381,6 +383,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "  if (initialized == 0u || driving != 0u || node_id >= CORTEX_WIRE_NODE_COUNT) {\n" ++
   "    return CORTEX_WIRE_COMPLETION_INVALID;\n" ++
   "  }\n" ++
+  "  if (terminal_failed != 0u) { return CORTEX_WIRE_COMPLETION_STALE; }\n" ++
   "  if (node_status[node_id] != CORTEX_WIRE_STATUS_RUNNING) {\n" ++
   "    return CORTEX_WIRE_COMPLETION_STALE;\n" ++
   "  }\n" ++
@@ -391,14 +394,16 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "    case CORTEX_WIRE_EFFECT_SKIPPED:\n" ++
   "      node_status[node_id] = CORTEX_WIRE_STATUS_SKIPPED; break;\n" ++
   "    case CORTEX_WIRE_EFFECT_FAILURE:\n" ++
-  "      node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; cancel_running(); break;\n" ++
+  "      node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;\n" ++
   "    default: return CORTEX_WIRE_COMPLETION_INVALID;\n" ++
   "  }\n" ++
   "  return CORTEX_WIRE_COMPLETION_APPLIED;\n" ++
   "}\n\n" ++
   "cortex_wire_program_v1_terminal_state cortex_wire_program_v1_terminal(void) {\n" ++
   "  if (initialized == 0u) { return CORTEX_WIRE_TERMINAL_ACTIVE; }\n" ++
-  "  if (any_status(CORTEX_WIRE_STATUS_FAILED)) { return CORTEX_WIRE_TERMINAL_FAILED; }\n" ++
+  "  if (terminal_failed != 0u || any_status(CORTEX_WIRE_STATUS_FAILED)) {\n" ++
+  "    return CORTEX_WIRE_TERMINAL_FAILED;\n" ++
+  "  }\n" ++
   "  if (all_settled()) { return CORTEX_WIRE_TERMINAL_COMPLETED; }\n" ++
   "  return CORTEX_WIRE_TERMINAL_ACTIVE;\n" ++
   "}\n\n" ++

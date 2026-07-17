@@ -132,6 +132,7 @@ import Cortex.Wire.Package.Manifest
   ( loadWirePackageManifests
   , renderWirePackageManifestError
   )
+import Cortex.Wire.StaticDifferential (emitDifferentialCorpus)
 import Cortex.Wire.StaticProgram
   ( lowerCompiledCircuitToStaticProgram
   , renderStaticProgramError
@@ -151,6 +152,7 @@ data Command
   | CommandLeanFixtures !FilePath
   | CommandParse !FilePath
   | CommandFrontier !FrontierCommand
+  | CommandDifferential !FilePath
   | CommandHelp
   deriving stock (Eq, Show)
 
@@ -233,6 +235,7 @@ main = do
     Right (CommandLeanFixtures outDir) -> leanFixturesWire outDir
     Right (CommandParse path) -> parseWireOnly path
     Right (CommandFrontier frontierCommand) -> frontierWire packagePaths frontierCommand
+    Right (CommandDifferential outDir) -> differentialWire outDir
 
 {- | Pull repeatable @--wire-package PATH@ options out of the raw argv, returning the
 collected manifest paths and the remaining command arguments. These flags select which
@@ -261,6 +264,7 @@ parseCommand = \case
   "fmt" : args -> parseFmtCommand args
   ["run", path] -> Right (CommandRun path)
   ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
+  ["differential", "emit", outDir] -> Right (CommandDifferential outDir)
   ["parse", path] -> Right (CommandParse path)
   "frontier" : args -> CommandFrontier <$> parseFrontierCommand args
   [path] -> Right (CommandRun path)
@@ -268,6 +272,7 @@ parseCommand = \case
   "fmt" : _ -> Left "usage: wire fmt [--check | --stdout] FILE..."
   "run" : _ -> Left "usage: wire run FILE"
   "lean-fixtures" : _ -> Left "usage: wire lean-fixtures OUTDIR"
+  "differential" : _ -> Left "usage: wire differential emit OUTDIR"
   "parse" : _ -> Left "usage: wire parse FILE"
   _ -> Left usageText
 
@@ -302,6 +307,7 @@ usageText =
     , "  wire build [--target static-program-v1] [--return NAME] FILE"
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
+    , "  wire differential emit OUTDIR    (emit the static-C-backend differential corpus)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
     , "  wire frontier [--return NAME] [--closure | --open] [--node NODE] [--json] FILE"
     , "                              (inspect endpoint-use / closure accounting; no execution)"
@@ -439,6 +445,25 @@ leanFixturesWire outDir = do
     contractValidationUmbrellaPath
     (renderContractValidationUmbrellaModule contractValidationFixtures)
   TIO.putStrLn ("wrote " <> T.pack contractValidationUmbrellaPath)
+
+{- | Emit the ADR 0091 three-way differential corpus.
+
+Writes the shared scenario corpus, per-topology static-program artifacts, and
+the Haskell GraphRuntime reference traces under @outDir@ for the Lean driver and
+generated C harness to replay. Reports the covered topology and scenario counts.
+-}
+differentialWire :: FilePath -> IO ()
+differentialWire outDir = do
+  (topologies, scenarios) <- emitDifferentialCorpus outDir
+  TIO.putStrLn
+    ( "emitted differential corpus to "
+        <> T.pack outDir
+        <> " ("
+        <> T.pack (show topologies)
+        <> " topologies, "
+        <> T.pack (show scenarios)
+        <> " scenarios)"
+    )
 
 -- | Parse-only acceptance check used by the grammar differential harness.
 parseWireOnly :: FilePath -> IO ()

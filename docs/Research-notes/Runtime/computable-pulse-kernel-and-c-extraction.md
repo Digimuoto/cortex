@@ -37,6 +37,15 @@ Microkit runtime. The scalar Microkit boot is prior evidence that generated C ca
 boundary once object-runtime dependencies are absent. The new backend achieves that absence by
 construction rather than by reducing and porting the object runtime.
 
+The cross-implementation differential suite anticipated below is now realized as
+`checks.cortex-wire-differential`: a shared scenario corpus (exhaustive DAGs for `n <= 3` plus named
+four-node shapes, each with lifecycle and adversarial-completion cases) is replayed through the
+Haskell `GraphRuntime` reference driver, a core-Lean reference interpreter, and the generated
+freestanding C, and the three trace streams must match byte-for-byte. Building it surfaced and fixed
+two v1 lifecycle defects in the emitted drive loop — a sibling failure could strand an undispatched
+frontier member in the running state, and terminal failure neither latched nor cancelled running
+siblings exactly once — which the differential now pins across all three implementations.
+
 ## Context
 
 wireOS's residual-lifecycle roadmap exposed a more general missing Cortex artifact: a

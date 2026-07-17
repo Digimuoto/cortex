@@ -159,6 +159,7 @@
           "Cortex/Wire/Pure"
           "Cortex/Wire/Pure/Bounds"
           "Cortex/Wire/Std"
+          "Cortex/Wire/StaticDifferential"
           "Cortex/Wire/StaticProgram"
           "Cortex/Wire/Syntax"
           "Cortex/Wire/Package"
@@ -410,6 +411,7 @@
             "Cortex/Wire/ParserSpec"
             "Cortex/Wire/PureSpec"
             "Cortex/Wire/RuntimeSpec"
+            "Cortex/Wire/StaticDifferentialSpec"
             "Cortex/Wire/StaticProgramSpec"
           ];
           hsSourceDirs = [ "test" ];

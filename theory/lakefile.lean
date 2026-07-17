@@ -151,3 +151,10 @@ lean_exe «cortex-kernel-spike» where
 -- Host-side static Wire validator and freestanding C emitter (ADR 0091).
 lean_exe «cortex-wire-c» where
   root := `CortexWireC
+
+-- Lean reference interpreter for the ADR 0091 three-way differential suite.
+-- Replays the shared scenario corpus through the restricted target semantics
+-- and emits canonical trace lines for comparison against the generated C and
+-- the Haskell GraphRuntime driver. Core Lean only, like `cortex-wire-c`.
+lean_exe «cortex-wire-diff» where
+  root := `CortexWireDiff

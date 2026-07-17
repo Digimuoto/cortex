@@ -24,8 +24,11 @@ related:
 
 Proposed — the normalized Haskell artifact, two-node fixture, Lean target semantics and refinement
 lemmas, host compiler, generated v1 C ABI, Nix package, host and bare-aarch64 symbol/section gates,
-and native wireOS Microkit success/failure boots exist. Exhaustive cross-implementation differential
-testing remains an acceptance gate.
+and native wireOS Microkit success/failure boots exist. The cross-implementation differential suite
+now exists: the Haskell `GraphRuntime` reference driver, a core-Lean reference interpreter, and the
+generated freestanding C agree byte-for-byte over an exhaustive small-DAG and adversarial-lifecycle
+corpus (`checks.cortex-wire-differential`). A verified drive-loop refinement in Lean and larger
+representative topologies remain open.
 
 ## Context
 
@@ -111,17 +114,22 @@ bound directly from the manifest's node and edge counts.
 The `cortex_wire_program_v1_*` surface is single-threaded and non-reentrant:
 
 - `init` cold-initializes the static instance and installs a copied effect-function table;
-- `drive` snapshots the current frontier, marks every member running, invokes `effect_begin` in
-  ascending dense-node order, applies immediate outcomes, and repeats while local progress exists;
+- `drive` snapshots the current frontier, then for each member in ascending dense-node order marks
+  it running immediately before invoking its `effect_begin`, applying the immediate outcome; it
+  stops the pass at the first member that begins failed, leaving later members pending, and repeats
+  while local progress exists;
 - `complete` accepts one asynchronous success, skipped, or failure outcome and rejects invalid,
-  stale, or duplicate completion attempts;
+  stale, duplicate, or post-terminal completion attempts;
 - terminal and per-node queries expose structural state and opaque `uint64_t` output handles.
 
 `effect_begin` returns accepted-asynchronous, immediate success, immediate skipped, or immediate
 failure. Retryable and indeterminate provider state is not represented in this ABI; it belongs to
 the platform adapter. A failure propagates through pending descendants in topological order and
-causes best-effort cancellation of other running effects. Running effects return
-`awaiting_completions`; they are not sent through the closed-state Track 2 classifier.
+**latches** the run terminal: the latch cancels each still-running effect exactly once, moves it out
+of the running state, and freezes further drives and completions. Because a frontier member is only
+marked running immediately before its own begin, a sibling failure in the same frontier never
+strands an undispatched member in the running state. Running effects return `awaiting_completions`;
+they are not sent through the closed-state Track 2 classifier.
 
 The adapter derives idempotency identity from the admitted runtime-plan identity and dense node ID.
 The ABI does not claim that an external effect is idempotent merely because a completion is
@@ -183,10 +191,19 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
 
 ### Obligations
 
-- Differentially compare the Lean target interpreter, generated C, and Haskell `GraphRuntime` over
-  exhaustive small DAGs and adversarial lifecycle states.
-- Cover empty, singleton, chain, diamond, independent-frontier, failure-closure, stale completion,
-  duplicate completion, invalid endpoint, cycle, duplicate-edge, and overflow cases.
+- **Met.** Differentially compare the Lean reference interpreter, generated C, and Haskell
+  `GraphRuntime` over exhaustive small DAGs and adversarial lifecycle states. Realized by
+  `checks.cortex-wire-differential`: `wire differential emit` generates the shared corpus and the
+  Haskell reference traces, `cortex-wire-diff` replays it through the Lean interpreter, and the
+  generated C is compiled per topology and driven by a shared harness; the three trace streams must
+  match byte-for-byte, and the harness additionally asserts exactly-once cancellation.
+- **Met.** Cover empty, singleton, chain, diamond, independent-frontier, failure-closure, stale
+  completion, duplicate completion, invalid-completion, and post-terminal cases. The static-program
+  validator rejects invalid endpoint, cycle, duplicate-edge, and overflow inputs, exercised by
+  `cortex-wire-c-smoke`.
+- Extend the differential corpus toward larger representative embedded topologies as v2 dataflow
+  lands; the current exhaustive bound is DAGs for `n <= 3` plus named four-node shapes, logged by
+  the check rather than silently capped.
 - Compile generated C for host and `aarch64-none-elf`; reject undefined `lean_*`, allocation,
   pthread, libuv, and TLS symbols and reject `.tdata`/`.tbss` sections.
 - Keep the manifest node map and the platform effect table under an exact equality gate.
@@ -200,10 +217,12 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
 - Feature keys: `wire.static_c_backend`
 - Public surface: `wire build --target static-program-v1`, `cortex-wire-c`, and generated
   `cortex_wire_program_v1_*` declarations
-- Implementation: `src/Cortex/Wire/StaticProgram.hs`, `app/wire/Main.hs`,
-  `theory/Cortex/Wire/StaticC.lean`, `theory/CortexWireC.lean`, `theory/lakefile.lean`, and
-  `nix/lean.nix`
-- Tests: `test/Cortex/Wire/StaticProgramSpec.hs`, `examples/wire/freestanding-two-node.wire`, Lean
+- Implementation: `src/Cortex/Wire/StaticProgram.hs`, `src/Cortex/Wire/StaticDifferential.hs`,
+  `app/wire/Main.hs`, `theory/Cortex/Wire/StaticC.lean`, `theory/CortexWireC.lean`,
+  `theory/CortexWireDiff.lean`, `theory/lakefile.lean`, and `nix/lean.nix`
+- Tests: `test/Cortex/Wire/StaticProgramSpec.hs`, `test/Cortex/Wire/StaticDifferentialSpec.hs`,
+  `test/fixtures/wire/static-program-v1/differential-harness.c`,
+  `examples/wire/freestanding-two-node.wire`, the `cortex-wire-differential` three-way check, Lean
   build/lint gates, generated-C compile and symbol audits, and the consumer-owned wireOS two-node
   Microkit success/failure boot fixture
 - Theory/proof: `Cortex.Wire.StaticC.Program.ready_iff_directReady`,
@@ -220,4 +239,7 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
 
 ## Tracking
 
-- Acceptance requires the cross-implementation differential suite described above.
+- The cross-implementation differential suite is implemented as `checks.cortex-wire-differential`
+  and gates the corrected v1 lifecycle. Remaining acceptance work: a verified Lean refinement of the
+  whole `drive` transition (not only the local operators) and differential coverage of larger
+  representative topologies as v2 dataflow is designed.
