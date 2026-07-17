@@ -140,3 +140,9 @@ lean_lib «Cortex» where
 -- the Lake project compiles end-to-end without diving into the proof tree.
 lean_exe «cortex-theory» where
   root := `Main
+
+-- Extraction spike for the host-neutral fixed-topology Cortex kernel.
+-- Keeping this target separate from the whole-theory smoke executable makes
+-- its generated C and native linkage surface directly inspectable.
+lean_exe «cortex-kernel-spike» where
+  root := `CortexKernelSpike

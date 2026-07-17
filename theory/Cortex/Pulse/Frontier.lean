@@ -72,25 +72,73 @@ theorem directReady_ready_of_causalHistoryClosed
     · exact NodeStatus.unblocks_terminal (hDirect.2.2 predecessor hEdge)
     · exact hCausal direct (hDirect.2.2 direct hEdge) predecessor hPrefix
 
+/-- `ready_iff_on_nodes` bounds proof readiness to the finite topology domain. -/
+theorem ready_iff_on_nodes
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (node : ν) :
+    Ready G state node ↔
+      node ∈ G.nodes ∧
+        state.status node = NodeStatus.pending ∧
+          ∀ predecessor ∈ G.nodes,
+            G.reaches predecessor node → NodeStatus.terminal (state.status predecessor) := by
+  constructor
+  · intro hReady
+    exact ⟨hReady.1, hReady.2.1, fun predecessor _hNode => hReady.2.2 predecessor⟩
+  · intro hReady
+    refine ⟨hReady.1, hReady.2.1, ?_⟩
+    intro predecessor hReach
+    exact hReady.2.2 predecessor (G.reaches_source_mem hReach) hReach
+
+/-- `directReady_iff_on_nodes` bounds direct readiness to the finite topology domain. -/
+theorem directReady_iff_on_nodes
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (node : ν) :
+    DirectReady G state node ↔
+      node ∈ G.nodes ∧
+        state.status node = NodeStatus.pending ∧
+          ∀ predecessor ∈ G.nodes,
+            G.predecessor predecessor node →
+              NodeStatus.unblocksSuccessors (state.status predecessor) := by
+  constructor
+  · intro hReady
+    exact ⟨hReady.1, hReady.2.1, fun predecessor _hNode => hReady.2.2 predecessor⟩
+  · intro hReady
+    refine ⟨hReady.1, hReady.2.1, ?_⟩
+    intro predecessor hEdge
+    exact hReady.2.2 predecessor (G.edge_source_mem hEdge) hEdge
+
+/-- `readyDecidable` decides proof readiness from a finite scan and a reachability decider. -/
+def readyDecidable (G : DAG ν) [DecidableEq ν] [DecidableRel G.reaches]
+    (state : GraphState ν payload)
+    (node : ν) : Decidable (Ready G state node) := by
+  rw [ready_iff_on_nodes]
+  infer_instance
+
+/-- `directReadyDecidable` decides runtime readiness from direct boolean edges. -/
+def directReadyDecidable (G : DAG ν) [DecidableEq ν]
+    (state : GraphState ν payload)
+    (node : ν) : Decidable (DirectReady G state node) := by
+  rw [directReady_iff_on_nodes]
+  infer_instance
+
 /-! ## Finite Frontier -/
 
 /-- `readyNodes G state` is the finite frontier for a topology and state. -/
-noncomputable def readyNodes
-    (G : DAG ν)
+def readyNodes (G : DAG ν) [DecidableEq ν] [DecidableRel G.reaches]
     (state : GraphState ν payload) : Finset ν := by
-  classical
+  letI : DecidablePred (Ready G state) := readyDecidable G state
   exact G.nodes.filter (Ready G state)
 
 /-- `directReadyNodes G state` mirrors the runtime direct-predecessor frontier. -/
-noncomputable def directReadyNodes
-    (G : DAG ν)
+def directReadyNodes (G : DAG ν) [DecidableEq ν]
     (state : GraphState ν payload) : Finset ν := by
-  classical
+  letI : DecidablePred (DirectReady G state) := directReadyDecidable G state
   exact G.nodes.filter (DirectReady G state)
 
 /-- `mem_readyNodes` states that frontier membership is exactly readiness. -/
-theorem mem_readyNodes
-    (G : DAG ν)
+theorem mem_readyNodes (G : DAG ν) [DecidableEq ν] [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (node : ν) :
     node ∈ readyNodes G state ↔ node ∈ G.nodes ∧ Ready G state node := by
@@ -98,8 +146,7 @@ theorem mem_readyNodes
   simp [readyNodes]
 
 /-- `mem_directReadyNodes` states runtime frontier membership exactly. -/
-theorem mem_directReadyNodes
-    (G : DAG ν)
+theorem mem_directReadyNodes (G : DAG ν) [DecidableEq ν]
     (state : GraphState ν payload)
     (node : ν) :
     node ∈ directReadyNodes G state ↔ node ∈ G.nodes ∧ DirectReady G state node := by
@@ -107,8 +154,7 @@ theorem mem_directReadyNodes
   simp [directReadyNodes]
 
 /-- `frontier_only_ready` states that every frontier node is ready. -/
-theorem frontier_only_ready
-    (G : DAG ν)
+theorem frontier_only_ready (G : DAG ν) [DecidableEq ν] [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     ∀ node ∈ readyNodes G state, Ready G state node := by
   intro node hNode
@@ -134,8 +180,7 @@ theorem ready_not_reaches_ready
   exact NodeStatus.pending_not_terminal hTerminal
 
 /-- `frontier_antichain` proves the fixed-DAG frontier is a reachability antichain. -/
-theorem frontier_antichain
-    (G : DAG ν)
+theorem frontier_antichain (G : DAG ν) [DecidableEq ν] [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     PairwiseReachabilityIncomparable G (readyNodes G state) := by
   intro a hA b hB _hDistinct
