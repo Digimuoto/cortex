@@ -38,7 +38,7 @@ import Data.Aeson (Value (..), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (sortOn)
+import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -232,7 +232,7 @@ driveOnce rel sc machine
        in if hasFailedNodes rel closed
             then (driveFailed, Machine (latchTerminalFailure n closed) True)
             else
-              let frontier = fmap (read . T.unpack . unNodeId) (sortOn unNodeId (readyNodes rel closed))
+              let frontier = sort (fmap (read . T.unpack . unNodeId) (readyNodes rel closed))
                in if null frontier
                     then
                       if anyRunning closed
@@ -480,14 +480,70 @@ namedTopologies =
   , ("indfrontier4", 4, [(0, 2), (1, 3)])
   ]
 
--- | Topologies driven exhaustively for small @n@ plus the named composites.
+{- | Exhaustive-DAG coverage upper bound on node count. Also mirrored, from
+this single definition, in the @coverage@ metadata written to @index.json@.
+-}
+exhaustiveDagMaxN :: Int
+exhaustiveDagMaxN = 3
+
+{- | Seeds and node counts driving the deterministic pseudo-random
+representative topologies below. Kept as the one source both
+'representativeTopologies' and the @index.json@ coverage metadata read
+from, so the corpus and its self-reported coverage can't drift apart.
+-}
+representativeSeeds :: [(Int, Int)]
+representativeSeeds = [(17, 16), (91, 32)]
+
+{- | Deterministic larger DAGs exercise storage/index scaling and frontier
+ordering without turning failures into unreplayable fuzz cases. Edges only
+point from a lower dense identifier to a higher one, so acyclicity is
+immediate. The arithmetic selector is deliberately simple and stable: its
+seed, node bound, and complete edge set are retained in @index.json@.
+-}
+representativeTopologies :: [(Text, Int, [(Int, Int)])]
+representativeTopologies =
+  [ ("independent8", 8, [])
+  , ("chain16", 16, [(i, i + 1) | i <- [0 .. 14]])
+  , ("fanout16", 16, [(0, i) | i <- [1 .. 15]])
+  , ("fanin16", 16, [(i, 15) | i <- [0 .. 14]])
+  ,
+    ( "layered16"
+    , 16
+    , [(s, t) | s <- [0 .. 3], t <- [4 .. 11]] <> [(s, t) | s <- [4 .. 11], t <- [12 .. 15]]
+    )
+  ]
+    <> [ ("seed" <> T.pack (show seed) <> "-n" <> T.pack (show n), n, seededForwardDag seed n)
+       | (seed, n) <- representativeSeeds
+       ]
+  where
+    seededForwardDag seed n =
+      [ (source, target)
+      | source <- [0 .. n - 1]
+      , target <- [source + 1 .. n - 1]
+      , (seed + source * 37 + target * 101 + source * target * 13) `mod` 7 < 2
+      ]
+
+{- | Largest node count among the deterministic representative topologies.
+Derived from 'representativeTopologies' rather than restated, so the
+@index.json@ coverage metadata can't understate what the corpus covers. Folds
+from an explicit @0@ default rather than using the partial 'maximum', so an
+empty topology list reports a conspicuously wrong @0@ in the coverage
+metadata instead of crashing corpus emission.
+-}
+representativeNodeCountMax :: Int
+representativeNodeCountMax = foldr (\(_, n, _) acc -> max n acc) 0 representativeTopologies
+
+{- | Topologies driven exhaustively for small @n@ plus named and deterministic
+larger representatives.
+-}
 corpusTopologies :: [(Text, Int, [(Int, Int)])]
 corpusTopologies =
   [ ("t" <> T.pack (show n) <> "-" <> edgeTag es, n, es)
-  | n <- [0 .. 3]
+  | n <- [0 .. exhaustiveDagMaxN]
   , es <- acyclicTopologies n
   ]
     <> [("t4-" <> name, n, es) | (name, n, es) <- namedTopologies]
+    <> [("trep-" <> name, n, es) | (name, n, es) <- representativeTopologies]
 
 -- | Lifecycle scenarios generated for one topology.
 topologyScenarios :: Text -> Int -> [(Int, Int)] -> [Scenario]
@@ -672,6 +728,13 @@ emitDifferentialCorpus outDir = do
       Aeson.object
         [ "topology_count" .= length byTopology
         , "scenario_count" .= sum [length scs | (_, _, _, scs) <- byTopology]
+        , "coverage"
+            .= Aeson.object
+              [ "exhaustive_dag_node_count_max" .= exhaustiveDagMaxN
+              , "representative_node_count_max" .= representativeNodeCountMax
+              , "deterministic_seeds" .= fmap fst representativeSeeds
+              , "replayable" .= True
+              ]
         , "topologies"
             .= [ Aeson.object
                    [ "id" .= topoId

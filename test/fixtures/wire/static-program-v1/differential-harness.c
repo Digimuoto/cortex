@@ -289,6 +289,28 @@ static int run_scenario(const struct scenario *sc, char *trace, size_t cap) {
     }
   }
 
+  /*
+   * The invariant above only bounds cancellation from above (at most once,
+   * and only if dispatched); it never requires a cancellation to happen, and
+   * the shared trace format encodes final node status, not whether
+   * effect_cancel fired. So a regression that stopped invoking
+   * effect_cancel entirely, while still marking a running sibling FAILED
+   * directly, would pass every check above and every trace comparison in
+   * the Nix differential. Pin the one scenario built specifically to
+   * exercise terminal-failure cancellation: node 0 fails asynchronously on
+   * the two-node independent topology, which must cancel node 1 exactly
+   * once (see the "adversarial-post-terminal" scenario in
+   * src/Cortex/Wire/StaticDifferential.hs).
+   */
+  if (strcmp(sc->id, "t2-e-adversarial-post-terminal") == 0 && ctx.cancel_count[1] != 1u) {
+    fprintf(
+        stderr,
+        "expected exactly one cancellation of node 1 in %s, got %u\n",
+        sc->id,
+        ctx.cancel_count[1]);
+    return -1;
+  }
+
   {
     size_t len = strlen(trace);
     snprintf(trace + len, cap - len, "\t%d\t", terminal);

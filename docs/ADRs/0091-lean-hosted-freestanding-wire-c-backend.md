@@ -10,11 +10,13 @@ status: proposed
 date: 2026-07-17
 superseded_by: null
 related:
+  - docs/Architecture/02-ownership-and-boundaries.md
   - docs/Architecture/05-wire-language.md
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0078-lean-wire-elaboration-kernel.md
   - docs/ADRs/0079-wire-admission-witness-schema.md
   - docs/ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md
+  - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md
 ---
 
@@ -83,6 +85,38 @@ state, or runtime archive is part of the deployment artifact.
 - A platform consumer owns its adapter, effect policy, entrypoint, and final link. Cortex output is
   platform-neutral C and does not import Microkit headers or consumer identities.
 
+### Why the compiler is Cortex substrate, not consumer-owned
+
+`cortex-wire-c` and the generated ABI stay in Cortex rather than moving into wireOS or another
+platform consumer's repository, by the general substrate placement test in
+[Ownership and Boundaries](../Architecture/02-ownership-and-boundaries.md): a module belongs in the
+Cortex substrate when it is reusable outside any one host as runtime, Wire-language, or
+executor-registration infrastructure, and stays downstream when it knows about host domain
+semantics, model providers, or host tool authority.
+
+The freestanding backend is a second execution target for the same closed Wire semantics Cortex
+already owns alongside the Haskell `GraphRuntime` reference driver and the Lean reference
+interpreter — not a wireOS-specific capability. It imports no Microkit headers and knows nothing
+about UART, board layout, or any other host domain fact (see "Authority split" above). Its entire
+value is the differential obligation this ADR carries: proving that Cortex's own frontier, failure,
+and completion semantics survive a from-scratch freestanding reimplementation. Only Cortex is
+positioned to make that guarantee, since only Cortex has authority over, and visibility into, all
+three implementations being compared; a downstream consumer re-deriving this backend would have to
+re-prove Cortex's own semantics independently, per consumer, instead of once, upstream, for every
+consumer.
+
+This differs from [`extensions/quantum`](../../extensions/quantum/DESIGN.md), which sits outside
+Cortex core precisely because quantum gate vocabulary and backend binding are host domain semantics
+with no claim on Cortex's own execution semantics. wireOS's role here mirrors Logos's role with
+respect to `Cortex.Pulse`: it is the downstream consumer of a Cortex-owned capability, not the owner
+of that capability — ADR 0090 already names this relationship directly, stating that the wireOS
+deployment path is this ADR's Lean-hosted static C backend.
+
+What moves to the consumer, unchanged from "Authority split" above: the platform adapter
+(`effect_begin`/`effect_cancel` bindings to real hardware), entrypoint, final link, and any
+consumer-owned executor IDs registered under the consumer's own namespace (see
+[Executors and the Alphabet](../Reference/Wire/executors-and-alphabet.md#consumer-owned-executor-ids-in-permissive-compilation)).
+
 ### First static profile
 
 The v1 profile is a cold-boot, flat, fixed DAG containing only effectful task nodes. It rejects:
@@ -128,8 +162,12 @@ the platform adapter. A failure propagates through pending descendants in topolo
 **latches** the run terminal: the latch cancels each still-running effect exactly once, moves it out
 of the running state, and freezes further drives and completions. Because a frontier member is only
 marked running immediately before its own begin, a sibling failure in the same frontier never
-strands an undispatched member in the running state. Running effects return `awaiting_completions`;
-they are not sent through the closed-state Track 2 classifier.
+strands an undispatched member in the running state. Such an undispatched sibling remains `PENDING`
+after the terminal-failure latch and, because the latch freezes the instance, remains so for the
+lifetime of that initialization. This intentionally distinguishes “never begun” from a running
+sibling that was cancelled and moved to `FAILED`; consumers must use `terminal()` for the run result
+rather than infer it by requiring every per-node status to settle. Running effects return
+`awaiting_completions`; they are not sent through the closed-state Track 2 classifier.
 
 The adapter derives idempotency identity from the admitted runtime-plan identity and dense node ID.
 The ABI does not claim that an external effect is idempotent merely because a completion is
@@ -231,10 +269,12 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
 
 ## Related
 
+- [Ownership and Boundaries](../Architecture/02-ownership-and-boundaries.md)
 - [ADR 0021 — Wire Source Elaborates to Circuits](0021-wire-source-elaborates-to-circuits.md)
 - [ADR 0078 — Lean-Owned Wire Elaboration IR](0078-lean-wire-elaboration-kernel.md)
 - [ADR 0079 — Wire Admission Witness Schema](0079-wire-admission-witness-schema.md)
 - [ADR 0090 — Computable Pulse Kernel and Extraction Boundary](0090-computable-pulse-kernel-and-extraction-boundary.md)
+- [Wire Reference — Executors and the Alphabet](../Reference/Wire/executors-and-alphabet.md)
 - [Runtime extraction research memo](../Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md)
 
 ## Tracking

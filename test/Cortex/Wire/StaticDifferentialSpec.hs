@@ -6,9 +6,9 @@ License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
-Library-level guards for the ADR 0091 differential suite. The full three-way
-agreement between the Haskell reference driver, the Lean interpreter, and the
-generated C runs in the @cortex-wire-differential@ Nix check; here we pin the
+Library-level guards for the ADR 0091 differential suite. The full four-way
+agreement between the Haskell reference driver, Lean interpreter, and generated
+C compiled by Clang and GCC runs in the @cortex-wire-differential@ Nix check; here we pin the
 corpus shape and the corrected v1 lifecycle behaviour (no phantom running node
 on sibling failure, terminal-failure latch with post-terminal rejection) that
 the reference driver must encode for that check to be meaningful.
@@ -54,7 +54,7 @@ spec = do
   describe "differential corpus" $ do
     it "is non-empty and covers the mandated topologies" $ do
       let ids = fmap scId differentialCorpus
-      length differentialCorpus `shouldSatisfy` (> 500)
+      length differentialCorpus `shouldSatisfy` (> 900)
       -- Empty, singleton, independent-frontier, chain, diamond, and the named
       -- four-node shapes are all present.
       any (T.isPrefixOf "t0-e-") ids `shouldBe` True
@@ -62,6 +62,9 @@ spec = do
       any (T.isPrefixOf "t2-e-") ids `shouldBe` True
       any (T.isPrefixOf "t4-diamond4-") ids `shouldBe` True
       any (T.isPrefixOf "t4-indfrontier4-") ids `shouldBe` True
+      any (T.isPrefixOf "trep-chain16-") ids `shouldBe` True
+      any (T.isPrefixOf "trep-layered16-") ids `shouldBe` True
+      any (T.isPrefixOf "trep-seed91-n32-") ids `shouldBe` True
 
     it "assigns each scenario a unique identifier" $ do
       let ids = fmap scId differentialCorpus
@@ -76,9 +79,10 @@ spec = do
       badLines `shouldBe` []
 
   describe "corrected v1 lifecycle (reference driver)" $ do
-    it "does not strand an undispatched sibling running on synchronous failure" $ do
+    it "freezes an undispatched sibling as pending after terminal failure" $ do
       -- Two independent nodes; node 0 fails synchronously. Node 1 must remain
-      -- pending (status 0), never phantom-marked running (status 1).
+      -- pending (status 0), never phantom-marked running (status 1). The
+      -- terminal latch freezes this per-node status while terminal() is failed.
       terminalOf "t2-e-sync-failure-0" `shouldBe` "2"
       finalStatusOf "t2-e-sync-failure-0" `shouldBe` "3,0"
 

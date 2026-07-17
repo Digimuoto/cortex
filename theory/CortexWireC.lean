@@ -176,6 +176,63 @@ private def escapeJsonChar : Char → String
 private def escapeJson (value : String) : String :=
   String.join (value.toList.map escapeJsonChar)
 
+/-- One exported ABI function: its C declaration and any comment lines that
+must precede it. -/
+private structure ExportedFn where
+  name : String
+  returnType : String
+  params : String
+  precedingComment : List String := []
+
+/-- The freestanding C ABI's complete exported surface, in declaration order.
+This is the single source for both `renderHeader`'s declarations and the
+`program.exports.txt` inventory read by the Nix export-allowlist check, so
+the two can never drift from each other regardless of how the generated
+header text is formatted. -/
+private def exportedFns : List ExportedFn :=
+  [ { name := "cortex_wire_program_v1_init"
+    , returnType := "int"
+    , params := "const cortex_wire_program_v1_effect_api *api"
+    }
+  , { name := "cortex_wire_program_v1_drive"
+    , returnType := "cortex_wire_program_v1_drive_result"
+    , params := "void"
+    }
+  , { name := "cortex_wire_program_v1_complete"
+    , returnType := "cortex_wire_program_v1_completion_result"
+    , params :=
+        "uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload_handle"
+    }
+  , { name := "cortex_wire_program_v1_terminal"
+    , returnType := "cortex_wire_program_v1_terminal_state"
+    , params := "void"
+    }
+  , { name := "cortex_wire_program_v1_node_count"
+    , returnType := "uint32_t"
+    , params := "void"
+    }
+  , { name := "cortex_wire_program_v1_node_status"
+    , returnType := "cortex_wire_program_v1_status"
+    , params := "uint32_t node_id"
+    , precedingComment :=
+        [ "After terminal failure, an undispatched node may remain PENDING until the next init."
+        , "Use cortex_wire_program_v1_terminal() for the overall run result."
+        ]
+    }
+  , { name := "cortex_wire_program_v1_output_handle"
+    , returnType := "uint64_t"
+    , params := "uint32_t node_id"
+    }
+  ]
+
+private def renderExportedFnDecl (fn : ExportedFn) : String :=
+  String.join (fn.precedingComment.map fun c => "/* " ++ c ++ " */\n") ++
+    fn.returnType ++ " " ++ fn.name ++ "(" ++ fn.params ++ ");\n"
+
+/-- The exported-symbol inventory written to `program.exports.txt`. -/
+private def renderExportsList : String :=
+  String.join (exportedFns.map fun fn => fn.name ++ "\n")
+
 private def renderHeader : String :=
   "#ifndef CORTEX_WIRE_PROGRAM_V1_H\n" ++
   "#define CORTEX_WIRE_PROGRAM_V1_H\n\n" ++
@@ -224,14 +281,8 @@ private def renderHeader : String :=
   "  CORTEX_WIRE_TERMINAL_COMPLETED = 1,\n" ++
   "  CORTEX_WIRE_TERMINAL_FAILED = 2\n" ++
   "} cortex_wire_program_v1_terminal_state;\n\n" ++
-  "int cortex_wire_program_v1_init(const cortex_wire_program_v1_effect_api *api);\n" ++
-  "cortex_wire_program_v1_drive_result cortex_wire_program_v1_drive(void);\n" ++
-  "cortex_wire_program_v1_completion_result cortex_wire_program_v1_complete(\n" ++
-  "    uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload_handle);\n" ++
-  "cortex_wire_program_v1_terminal_state cortex_wire_program_v1_terminal(void);\n" ++
-  "uint32_t cortex_wire_program_v1_node_count(void);\n" ++
-  "cortex_wire_program_v1_status cortex_wire_program_v1_node_status(uint32_t node_id);\n" ++
-  "uint64_t cortex_wire_program_v1_output_handle(uint32_t node_id);\n\n" ++
+  String.join (exportedFns.map renderExportedFnDecl) ++
+  "\n" ++
   "#ifdef __cplusplus\n}\n#endif\n\n" ++
   "#endif\n"
 
@@ -243,8 +294,8 @@ private def renderSource (validated : ValidatedProgram) : String :=
   let nodeCount := program.nodes.length
   let storageCount := Nat.max 1 nodeCount
   "#include \"program.h\"\n\n" ++
-  s!"#define CORTEX_WIRE_NODE_COUNT {nodeCount}u\n" ++
   s!"#define CORTEX_WIRE_STORAGE_COUNT {storageCount}u\n\n" ++
+  s!"static const uint32_t cortex_wire_node_count = {nodeCount}u;\n\n" ++
   s!"static const uint32_t predecessor_offsets[{offsets.length}u] = " ++
   "{" ++ cArray offsets ++ "};\n" ++
   s!"static const uint32_t predecessor_nodes[{Nat.max 1 predecessorEntries.length}u] = " ++
@@ -281,7 +332,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "}\n\n" ++
   "static void propagate_failures(void) {\n" ++
   "  uint32_t order_index;\n" ++
-  "  for (order_index = 0u; order_index < CORTEX_WIRE_NODE_COUNT; ++order_index) {\n" ++
+  "  for (order_index = 0u; order_index < cortex_wire_node_count; ++order_index) {\n" ++
   "    uint32_t node_id = topological_order[order_index];\n" ++
   "    if (node_status[node_id] == CORTEX_WIRE_STATUS_PENDING &&\n" ++
   "        has_failed_predecessor(node_id)) {\n" ++
@@ -291,14 +342,14 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "}\n\n" ++
   "static uint8_t any_status(uint8_t expected) {\n" ++
   "  uint32_t node_id;\n" ++
-  "  for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
   "    if (node_status[node_id] == expected) { return 1u; }\n" ++
   "  }\n" ++
   "  return 0u;\n" ++
   "}\n\n" ++
   "static uint8_t all_settled(void) {\n" ++
   "  uint32_t node_id;\n" ++
-  "  for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
   "    uint8_t status = node_status[node_id];\n" ++
   "    if (status != CORTEX_WIRE_STATUS_COMPLETED &&\n" ++
   "        status != CORTEX_WIRE_STATUS_FAILED &&\n" ++
@@ -310,7 +361,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "  uint32_t node_id;\n" ++
   "  if (terminal_failed != 0u) { return; }\n" ++
   "  terminal_failed = 1u;\n" ++
-  "  for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
   "    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {\n" ++
   "      if (effect_api.effect_cancel != 0) {\n" ++
   "        effect_api.effect_cancel(node_id, effect_api.context);\n" ++
@@ -325,7 +376,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "    return -1;\n" ++
   "  }\n" ++
   "  effect_api = *api;\n" ++
-  "  for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
   "    node_status[node_id] = CORTEX_WIRE_STATUS_PENDING;\n" ++
   "    output_handle[node_id] = 0u;\n" ++
   "    frontier_snapshot[node_id] = 0u;\n" ++
@@ -345,7 +396,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "    if (any_status(CORTEX_WIRE_STATUS_FAILED)) {\n" ++
   "      latch_terminal_failure(); driving = 0u; return CORTEX_WIRE_DRIVE_FAILED;\n" ++
   "    }\n" ++
-  "    for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
+  "    for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
   "      frontier_snapshot[node_id] = node_ready(node_id);\n" ++
   "      if (frontier_snapshot[node_id] != 0u) { ++frontier_count; }\n" ++
   "    }\n" ++
@@ -357,7 +408,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "      if (all_settled()) { return CORTEX_WIRE_DRIVE_COMPLETED; }\n" ++
   "      return CORTEX_WIRE_DRIVE_STUCK;\n" ++
   "    }\n" ++
-  "    for (node_id = 0u; node_id < CORTEX_WIRE_NODE_COUNT; ++node_id) {\n" ++
+  "    for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
   "      cortex_wire_program_v1_effect_result effect;\n" ++
   "      if (frontier_snapshot[node_id] == 0u) { continue; }\n" ++
   "      node_status[node_id] = CORTEX_WIRE_STATUS_RUNNING;\n" ++
@@ -380,7 +431,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "}\n\n" ++
   "cortex_wire_program_v1_completion_result cortex_wire_program_v1_complete(\n" ++
   "    uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload) {\n" ++
-  "  if (initialized == 0u || driving != 0u || node_id >= CORTEX_WIRE_NODE_COUNT) {\n" ++
+  "  if (initialized == 0u || driving != 0u || node_id >= cortex_wire_node_count) {\n" ++
   "    return CORTEX_WIRE_COMPLETION_INVALID;\n" ++
   "  }\n" ++
   "  if (terminal_failed != 0u) { return CORTEX_WIRE_COMPLETION_STALE; }\n" ++
@@ -407,13 +458,13 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "  if (all_settled()) { return CORTEX_WIRE_TERMINAL_COMPLETED; }\n" ++
   "  return CORTEX_WIRE_TERMINAL_ACTIVE;\n" ++
   "}\n\n" ++
-  "uint32_t cortex_wire_program_v1_node_count(void) { return CORTEX_WIRE_NODE_COUNT; }\n\n" ++
+  "uint32_t cortex_wire_program_v1_node_count(void) { return cortex_wire_node_count; }\n\n" ++
   "cortex_wire_program_v1_status cortex_wire_program_v1_node_status(uint32_t node_id) {\n" ++
-  "  if (node_id >= CORTEX_WIRE_NODE_COUNT) { return CORTEX_WIRE_STATUS_INVALID; }\n" ++
+  "  if (node_id >= cortex_wire_node_count) { return CORTEX_WIRE_STATUS_INVALID; }\n" ++
   "  return (cortex_wire_program_v1_status)node_status[node_id];\n" ++
   "}\n\n" ++
   "uint64_t cortex_wire_program_v1_output_handle(uint32_t node_id) {\n" ++
-  "  if (node_id >= CORTEX_WIRE_NODE_COUNT) { return 0u; }\n" ++
+  "  if (node_id >= cortex_wire_node_count) { return 0u; }\n" ++
   "  return output_handle[node_id];\n" ++
   "}\n"
 
@@ -461,6 +512,7 @@ private def compileProgram (inputPath outputDirectory : String) : IO Unit := do
   IO.FS.writeFile
     (outputDirectory ++ "/program.manifest.json")
     (renderManifest validated)
+  IO.FS.writeFile (outputDirectory ++ "/program.exports.txt") renderExportsList
 
 /-- Command-line entry point for the host-side Wire C compiler. -/
 def main (args : List String) : IO UInt32 := do
