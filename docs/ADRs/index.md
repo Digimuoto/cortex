@@ -105,6 +105,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0088](0088-pulse-externally-driven-step-admission.md)             | Externally-Driven Step Admission                                           | proposed   |
 | [0089](0089-pulse-content-addressed-artifact-store.md)             | Pulse-Owned Content-Addressed Run Artifact Store                           | proposed   |
 | [0090](0090-computable-pulse-kernel-and-extraction-boundary.md)    | Computable Pulse Kernel and Extraction Boundary                            | proposed   |
+| [0091](0091-lean-hosted-freestanding-wire-c-backend.md)            | Lean-Hosted Freestanding Wire C Backend                                    | proposed   |
 
 ## By category
 
@@ -157,10 +158,11 @@ is shown here.
   [0030](0030-wire-node-implementation-forms.md),
   [0039](0039-wire-node-boundary-transform-normal-form.md),
   [0062](0062-typed-effect-variant-output-boundaries.md)
-- **Wire elaboration & compile-time generation** (4):
+- **Wire elaboration & compile-time generation** (5):
   [0021](0021-wire-source-elaborates-to-circuits.md),
   [0045](0045-wire-compile-time-node-body-kinds.md), [0046](0046-wire-compile-time-graph-forms.md),
-  [0051](0051-wire-source-includes-and-item-generation.md)
+  [0051](0051-wire-source-includes-and-item-generation.md),
+  [0091](0091-lean-hosted-freestanding-wire-c-backend.md)
 - **Wire topology composition** (4): [0028](0028-wire-topology-composition-and-boundary-labels.md),
   [0047](0047-wire-frontier-linearity-and-precedence.md),
   [0048](0048-wire-make-bounded-node-generation.md),

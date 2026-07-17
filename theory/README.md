@@ -126,14 +126,19 @@ recovery preconditions, then classifies the reset-and-failure-propagated recover
 continuing from materialized graph state.
 
 [ADR 0090](../docs/ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md) governs this
-constructive surface and the retained `CortexKernelSpike.lean` executable. The long-term target is a
-Cortex-owned, host-neutral `cortex-kernel` library: hosts pull a frontier, interpret node effects,
-and push opaque lifecycle facts back without placing Pulse's task registry or a consumer vocabulary
-inside the kernel. The spike exercises recovery, direct-frontier construction, and classification
-through Lean's generated-C path. It is reproducible extraction evidence, not a stable C ABI or a
-supported freestanding runtime; the
+constructive surface and the retained `CortexKernelSpike.lean` executable. The spike exercises
+recovery, direct-frontier construction, and classification through Lean's generated-C path. It is
+reproducible object-runtime evidence, not a stable target ABI or a supported freestanding runtime;
+the
 [runtime research memo](../docs/Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md)
 records the measured host linkage and Microkit gap.
+
+[ADR 0091](../docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md) selects a different
+deployment boundary for fixed Wire programs. `Cortex.Wire.StaticC` defines a `Fin n` target model
+whose readiness, completion application, failure closure, and closed-state classification refine
+Track 2. The host-side `cortex-wire-c` executable validates `static-program/v1` and emits a
+topology-specialized freestanding C module; Lean itself is not linked into the target. The emitter
+and topological C pass remain differential-test obligations rather than proved compiler output.
 
 ### Track 3 — Rewrite soundness
 
@@ -794,15 +799,18 @@ lake update     # first-time setup
 lake build      # builds the library/default targets
 lake build cortex-theory   # builds the smoke executable
 lake build cortex-kernel-spike   # builds the host-neutral Track 2 extraction spike
+lake build cortex-wire-c   # builds the host-side freestanding C emitter
 lake env Cortex.lean   # type-check the root module
 ./.lake/build/bin/cortex-theory  # smoke executable
 ./.lake/build/bin/cortex-kernel-spike  # recovery/frontier/classification spike
+./.lake/build/bin/cortex-wire-c INPUT.json OUTPUT-DIR  # validate and emit C
 ```
 
 Through the repo's nix flake:
 
 ```
 nix build .#cortex-theory
+nix build .#cortex-wire-c
 just lean-check
 ```
 

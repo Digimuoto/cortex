@@ -1,0 +1,13 @@
+{
+  "schema": "cortex.wire.static-program/v1",
+  "admission_schema_version": 4,
+  "program_id": "freestanding-two-node",
+  "program_identity": "fixture-freestanding-two-node-v1",
+  "nodes": [
+    { "id": 0, "ref": "first", "executor": "fixture.async" },
+    { "id": 1, "ref": "second", "executor": "fixture.immediate" }
+  ],
+  "edges": [
+    { "from": 0, "to": 1 }
+  ]
+}

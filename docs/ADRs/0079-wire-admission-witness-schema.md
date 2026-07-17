@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0053-executor-catalog-manifests-and-pulse-bindings.md
+  - docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md
 ---
 
 # ADR 0079 — Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema
@@ -89,6 +90,10 @@ Concretely:
    trace and replays it through the elaboration kernel (`CertifiedGraph.elaborate`), then `#guard`s
    that the kernel's exposed input/output frontier equals the frontier the compiler recorded. This
    checks composition, not the artifact's internal shape; it is frontier-level by construction.
+5. **Admission and deployment artifacts remain distinct.** ADR 0091's
+   `cortex.wire.static-program/v1` is derived only after the admission artifact is bound to its
+   `CompiledCircuit`. It carries dense target IDs and native executor identities for C emission; it
+   neither replaces `WireAdmissionArtifact` nor carries its proof-witness trace.
 
 The Lean-as-runtime-authority part is scoped as a recorded direction (see Obligations): the Lean
 checker is proven sound and runs at build time over the emitted-fixture corpus, but the runtime gate
@@ -173,9 +178,9 @@ reader refuse an artifact it was not built to understand.
   reflected in `AdmissionArtifact.validatorReadyCheck` and its soundness chain, and vice versa.
 - **Version every schema change.** Any field or encoding change bumps
   `wireAdmissionCurrentSchemaVersion` and regenerates the emitted fixtures.
-- If the compiler-authority decision chooses Lean as the compiler spec or implementation, revisit
-  whether the artifact remains an evidence record or becomes a Lean-constructed witness, and update
-  this ADR accordingly.
+- Preserve ADR 0091's artifact split: Haskell constructs this admission witness; the static
+  deployment artifact is derived only after binding succeeds. Moving admission construction into
+  Lean would require revisiting this decision.
 
 ## Traceability
 
@@ -211,4 +216,5 @@ reader refuse an artifact it was not built to understand.
 
 ## Tracking
 
-- #203 — compiler-authority decision after ADR 0078/0079.
+- ADR 0091 resolves the deployment compiler boundary while preserving this schema as the separate
+  Haskell-to-Lean proof-witness contract.

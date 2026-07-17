@@ -132,6 +132,10 @@ import Cortex.Wire.Package.Manifest
   ( loadWirePackageManifests
   , renderWirePackageManifestError
   )
+import Cortex.Wire.StaticProgram
+  ( lowerCompiledCircuitToStaticProgram
+  , renderStaticProgramError
+  )
 import Cortex.Wire.Use
   ( WireUseError (..)
   , WireUseScope
@@ -141,13 +145,18 @@ import Cortex.Wire.Use
   )
 
 data Command
-  = CommandBuild !(Maybe Text) !FilePath
+  = CommandBuild !BuildTarget !(Maybe Text) !FilePath
   | CommandFmt !FmtMode ![FilePath]
   | CommandRun !FilePath
   | CommandLeanFixtures !FilePath
   | CommandParse !FilePath
   | CommandFrontier !FrontierCommand
   | CommandHelp
+  deriving stock (Eq, Show)
+
+data BuildTarget
+  = BuildCompiledCircuit
+  | BuildStaticProgramV1
   deriving stock (Eq, Show)
 
 data FmtMode
@@ -217,7 +226,8 @@ main = do
   case parseCommand commandArgs of
     Left errText -> dieText errText
     Right CommandHelp -> TIO.putStr usageText
-    Right (CommandBuild maybeSelectedReturn path) -> buildWire packagePaths maybeSelectedReturn path
+    Right (CommandBuild target maybeSelectedReturn path) ->
+      buildWire packagePaths target maybeSelectedReturn path
     Right (CommandFmt mode paths) -> fmtWire mode paths
     Right (CommandRun path) -> runWire packagePaths path
     Right (CommandLeanFixtures outDir) -> leanFixturesWire outDir
@@ -241,16 +251,20 @@ parseCommand = \case
   [] -> Right CommandHelp
   ["--help"] -> Right CommandHelp
   ["-h"] -> Right CommandHelp
-  ["build", path] -> Right (CommandBuild Nothing path)
+  ["build", path] -> Right (CommandBuild BuildCompiledCircuit Nothing path)
   ["build", "--return", selectedReturn, path] ->
-    Right (CommandBuild (Just (T.pack selectedReturn)) path)
+    Right (CommandBuild BuildCompiledCircuit (Just (T.pack selectedReturn)) path)
+  ["build", "--target", "static-program-v1", path] ->
+    Right (CommandBuild BuildStaticProgramV1 Nothing path)
+  ["build", "--target", "static-program-v1", "--return", selectedReturn, path] ->
+    Right (CommandBuild BuildStaticProgramV1 (Just (T.pack selectedReturn)) path)
   "fmt" : args -> parseFmtCommand args
   ["run", path] -> Right (CommandRun path)
   ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
   ["parse", path] -> Right (CommandParse path)
   "frontier" : args -> CommandFrontier <$> parseFrontierCommand args
   [path] -> Right (CommandRun path)
-  "build" : _ -> Left "usage: wire build [--return NAME] FILE"
+  "build" : _ -> Left "usage: wire build [--target static-program-v1] [--return NAME] FILE"
   "fmt" : _ -> Left "usage: wire fmt [--check | --stdout] FILE..."
   "run" : _ -> Left "usage: wire run FILE"
   "lean-fixtures" : _ -> Left "usage: wire lean-fixtures OUTDIR"
@@ -285,7 +299,7 @@ usageText =
     , "usage:"
     , "  wire FILE                        (alias for `wire run FILE`)"
     , "  wire run FILE"
-    , "  wire build [--return NAME] FILE"
+    , "  wire build [--target static-program-v1] [--return NAME] FILE"
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
@@ -301,8 +315,8 @@ usageText =
     , "  stdin, stdout, command, readFile, writeFile."
     ]
 
-buildWire :: [FilePath] -> Maybe Text -> FilePath -> IO ()
-buildWire packagePaths maybeSelectedReturn path = do
+buildWire :: [FilePath] -> BuildTarget -> Maybe Text -> FilePath -> IO ()
+buildWire packagePaths target maybeSelectedReturn path = do
   compileEnv <- loadCliWireCompileEnv packagePaths
   modules <- loadWireModules compileEnv path
   let compile =
@@ -311,7 +325,15 @@ buildWire packagePaths maybeSelectedReturn path = do
           (compileWireModulesWithReturn compileEnv)
           maybeSelectedReturn
   compiled <- either (dieText . renderWireError) pure (compile modules)
-  BSL.putStr (AesonPretty.encodePretty compiled)
+  output <- case target of
+    BuildCompiledCircuit -> pure (Aeson.toJSON compiled)
+    BuildStaticProgramV1 ->
+      Aeson.toJSON
+        <$> either
+          (dieText . renderStaticProgramError)
+          pure
+          (lowerCompiledCircuitToStaticProgram compiled)
+  BSL.putStr (AesonPretty.encodePretty output)
   BSL.putStr "\n"
 
 loadWireModules :: WireCompileEnv -> FilePath -> IO (NonEmpty WireModule)

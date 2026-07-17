@@ -2,8 +2,8 @@
 title: "ADR 0078 — Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel"
 description:
   "Records that Cortex maintains a Lean-owned post-parse Wire elaboration IR and an executable,
-  soundness-by-construction certifying admission kernel for the primitive graph subset, without
-  deciding the open compiler-authority question."
+  soundness-by-construction certifying admission kernel, within a hybrid Haskell-front-end and
+  Lean-target-backend authority split."
 sidebar:
   label: "0078. Lean elaboration kernel"
   order: 78
@@ -18,16 +18,17 @@ related:
   - docs/ADRs/0021-wire-source-elaborates-to-circuits.md
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
+  - docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md
 ---
 
 # ADR 0078 — Lean-Owned Wire Elaboration IR and Executable Certifying Admission Kernel
 
 ## Status
 
-Proposed — this ADR records a proof-track artifact that already exists for the primitive graph
-subset and fixes the boundary it keeps. It is deliberately a **partial** answer to the larger
-compiler-authority question: it does not decide whether the Wire compiler stays Haskell-first,
-becomes a Lean-specified Haskell implementation, or moves into Lean. That decision remains open.
+Proposed — the proof-track artifact exists for the primitive graph subset. ADR 0091 now resolves the
+deployment compiler-authority question as a hybrid: Haskell remains authoritative through
+`CompiledCircuit` and the admission artifact; Lean validates the normalized static deployment input
+and owns the restricted target semantics and C emission.
 
 ## Context
 
@@ -109,8 +110,9 @@ that artifact keeps. Concretely:
   representative fixture corpus, **not** a proof that the compiler is extracted from or specified by
   the kernel.
 
-This records a proof-track representation and its boundary. It does **not** decide which layer is
-the normative authority for Wire elaboration; see Boundary Rules and Obligations.
+This records the proof-track representation and its boundary. ADR 0091 separately fixes how that
+representation participates in deployment compilation without moving source parsing or general Wire
+elaboration into Lean.
 
 ## Boundary Rules
 
@@ -138,8 +140,10 @@ cross when citing this ADR.
    oracle, or compiler-from-Lean is asserted. Programs outside the fixture set get the Haskell-side
    validator only.
 
-5. **No authority claim.** The kernel being executable and Lean-owned does not make Lean the
-   compiler spec or implementation. The authority model remains open; this ADR leaves it open.
+5. **Hybrid authority, not a monolithic Lean compiler.** Haskell remains authoritative for source
+   parsing, elaboration, `CompiledCircuit`, and admission-artifact production. Lean is authoritative
+   for the normalized static-profile validator, target semantics, and C emitter selected by
+   ADR 0091. This kernel alone still makes no completeness claim about the Haskell front end.
 
 ## Alternatives considered
 
@@ -184,10 +188,9 @@ cross when citing this ADR.
 
 ### Obligations
 
-- **Keep compiler authority open in canon.** Until the compiler-authority decision chooses the
-  authority model (Haskell-first, Lean-specified Haskell, or Lean implementation), this ADR must not
-  be read as choosing one. If that decision resolves, update or supersede this ADR — and ADR 0038 —
-  to reflect the chosen authority model.
+- Preserve ADR 0091's hybrid authority split: source and `CompiledCircuit` stay Haskell-owned;
+  static-profile validation and target emission stay Lean-owned. Moving either boundary requires a
+  new decision.
 - Keep the IR post-parse: do not add parser, filesystem, or runtime modelling to
   `Cortex.Wire.ElaborationIR` without a separate decision.
 - When a derived form joins the certifying kernel, update the primitive-subset scope statement and
@@ -198,13 +201,9 @@ cross when citing this ADR.
 
 ## Open questions
 
-- **Compiler authority.** This ADR records the Lean-owned elaboration IR and the executable
-  certifying kernel but does **not** decide the normative authority for Wire elaboration. The open
-  trichotomy is whether the Wire compiler (a) stays **Haskell-first** with Lean as a differential
-  check, (b) becomes a **Lean-specified Haskell implementation**, or (c) **moves into Lean**.
-  Recording the kernel is at most a partial input to that decision and must not be read as selecting
-  any branch. If that decision resolves, this ADR and ADR 0038 are updated or superseded to reflect
-  the chosen model.
+- Whether the primitive certifying kernel eventually becomes complete for all Haskell-accepted
+  static-profile programs remains open. That correspondence question does not reopen the hybrid
+  deployment authority split.
 
 ## Traceability
 
@@ -241,4 +240,5 @@ cross when citing this ADR.
 
 ## Tracking
 
-- #203 — compiler-authority decision after ADR 0078/0079.
+- ADR 0091 records the resolved hybrid deployment compiler boundary; completeness remains tracked
+  through the proof-status correspondence rows.

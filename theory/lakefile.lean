@@ -133,7 +133,8 @@ lean_lib «Cortex» where
     `Cortex.Wire.SelectRecovery,
     `Cortex.Wire.SelectAdmission,
     `Cortex.Wire.AdditiveFragment,
-    `Cortex.Wire.RunTrace
+    `Cortex.Wire.RunTrace,
+    `Cortex.Wire.StaticC
   ]
 
 -- Smoke-test executable. Prints a build banner; useful for confirming
@@ -146,3 +147,7 @@ lean_exe «cortex-theory» where
 -- its generated C and native linkage surface directly inspectable.
 lean_exe «cortex-kernel-spike» where
   root := `CortexKernelSpike
+
+-- Host-side static Wire validator and freestanding C emitter (ADR 0091).
+lean_exe «cortex-wire-c» where
+  root := `CortexWireC
