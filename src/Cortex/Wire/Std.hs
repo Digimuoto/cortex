@@ -53,7 +53,7 @@ import Cortex.Wire.Contract
   , wireContractRegistryFromList
   )
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
@@ -198,7 +198,7 @@ stdIoProjection executorId =
           , stdIoCommandResultContractId
           ]
     , wireExecutorProjectionEffect = WireExecutorHostEffect
-    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
     , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 

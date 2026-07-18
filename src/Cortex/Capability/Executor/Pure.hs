@@ -32,9 +32,9 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 
 import Cortex.Capability.Executor
-  ( ExecutorBindingAuthority (..)
+  ( ExecutorArgumentDecoder (..)
+  , ExecutorBindingAuthority (..)
   , ExecutorCodecBoundary (..)
-  , ExecutorConfigDecoder (..)
   , ExecutorSpec (..)
   )
 import Cortex.Pulse.Memory.Types (defaultMemoryStrategy)
@@ -54,7 +54,7 @@ import Cortex.Wire.Contract (WireContractRegistry, wirePortsFromMetadataValue)
 import Cortex.Wire.Executor (WireExecutorEffect (..))
 import Cortex.Wire.Pure
   ( evaluatePureTaskOutputs
-  , pureExecutorConfigSchema
+  , pureExecutorArgumentSchema
   , pureWireExecutorId
   , pureWireExecutorProjection
   , renderPureEvalError
@@ -81,7 +81,7 @@ pureExecutorSpec =
     { executorSpecId = pureWireExecutorId
     , executorSpecPorts = pureWireExecutorProjection
     , executorSpecEffect = WireExecutorPure
-    , executorSpecConfigDecoder = ExecutorConfigJsonSchema pureExecutorConfigSchema
+    , executorSpecArgumentDecoder = ExecutorArgumentJsonSchema pureExecutorArgumentSchema
     , executorSpecRequirements = Set.empty
     , executorSpecCodecBoundary =
         ExecutorCodecBoundary

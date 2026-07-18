@@ -33,7 +33,7 @@ module Cortex.Wire.Pure
   , corePureBuiltinAuthorityFree
   , pureWireExecutorId
   , pureWireExecutorProjection
-  , pureExecutorConfigSchema
+  , pureExecutorArgumentSchema
   , canonicalJson
   )
 where
@@ -61,7 +61,7 @@ import Data.Vector qualified as Vector
 import GHC.Generics (Generic)
 
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
@@ -2199,12 +2199,12 @@ pureWireExecutorProjection =
           }
     , wireExecutorProjectionVocabulary = Set.empty
     , wireExecutorProjectionEffect = WireExecutorPure
-    , wireExecutorProjectionConfigShape = WireExecutorConfigSchema pureExecutorConfigSchema
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentSchema pureExecutorArgumentSchema
     , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 
-pureExecutorConfigSchema :: Aeson.Value
-pureExecutorConfigSchema =
+pureExecutorArgumentSchema :: Aeson.Value
+pureExecutorArgumentSchema =
   Aeson.object
     [ "$schema" Aeson..= ("https://json-schema.org/draft/2020-12/schema" :: Text)
     , "type" Aeson..= ("object" :: Text)

@@ -29,12 +29,12 @@ contract Outline;
 contract Result;
 
 node plan
-  <- topic: Topic;
-  -> outline: Outline = @workflow.plan (topic);
+  <- topic: Topic
+  -> outline: Outline = @workflow.plan topic;
 
 node run
-  <- outline: Outline;
-  -> result: Result = @workflow.execute (outline);
+  <- outline: Outline
+  -> result: Result = @workflow.execute outline;
 
 plan
   => run
@@ -54,8 +54,7 @@ A node is a component with typed sockets. A **port** is one socket: a place wher
 enters or leaves the node. Read a port clause left to right:
 
 ```text
-<- topic: Topic;
-│  │      │
+<- topic: Topic│  │      │
 │  │      └─ contract — what the value is (Wire's type)
 │  └─ label — what the value is for at this node (the port's name)
 └─ direction — input (<-) or output (->)
@@ -98,8 +97,8 @@ any clash — the everyday shape of a pipeline stage:
 contract Draft;
 
 node polish
-  <- draft: Draft;
-  -> draft: Draft = @editor.polish (draft);
+  <- draft: Draft
+  -> draft: Draft = @editor.polish draft;
 ```
 
 The input `(<-, Draft, draft)` and the output `(->, Draft, draft)` are distinct ports. This is
@@ -113,7 +112,7 @@ out at `->`.
 
 The label does three jobs:
 
-1. **Binding name.** The node body refers to inputs by label: `@workflow.plan (topic)` receives
+1. **Binding name.** The node body refers to inputs by label: `@workflow.plan topic` receives
    whatever arrived on the port labeled `topic`.
 2. **Half of the match key.** `=>` connects an output to an input only when _both_ the contract and
    the label match. A port's full identity is `(direction, contract, label)`.
@@ -134,10 +133,10 @@ the role and the type genuinely differ:
 contract Draft;
 
 node reconcile
-  <- current: Draft;
-  <- proposed: Draft;
+  <- current: Draft
+  <- proposed: Draft
   -> merged: Draft
-  = @editor.reconcile ({ inherit current proposed; });
+  = @editor.reconcile { inherit current proposed;  };
 ```
 
 All three ports carry a `Draft`; only the labels say which draft is which. Without them the two
@@ -156,7 +155,7 @@ pairing; direction fixes which side contributes outputs and which contributes in
 - If `run` had instead declared `<- input: Outline;`, nothing would match. Both ports would stay
   exposed on the composed boundary, and the graph would later fail with "input has no producer." Fix
   it by renaming one side, or by inserting an explicit pure node that re-exposes the value under the
-  other label (`<- input: Outline; -> outline: Outline = input;`).
+  other label (`<- input: Outline -> outline: Outline = input;`).
 - An edge never transforms values — not their shape and not their name. All reshaping is a node.
 
 ## Pure Nodes
@@ -168,7 +167,7 @@ contract Score;
 contract Decision;
 
 node decide
-  <- score: Score;
+  <- score: Score
   -> decision: Decision = if score >= 0.7 then "accept" else "review";
 ```
 

@@ -28,10 +28,9 @@ A `node` declaration supplies both graph identity and a typed boundary:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet;
-  -> rejected: RejectedSet;
-  = @review.classify (evidence);
+  <- evidence: EvidenceSet
+  -> accepted: AcceptedSet
+  -> rejected: RejectedSet  = @review.classify evidence;
 ```
 
 The identifier `classify` names the node. The `<-` clauses declare input ports. The `->` clauses
@@ -58,11 +57,8 @@ flowchart LR
 
 ## Port Syntax
 
-```text
-<- label: Contract;
--> label: Contract;
--> ok: Value | error: ExecutorError;
-```
+````text
+<- label: Contract-> label: Contract-> ok: Value | error: ExecutorError```
 
 Authored ports require labels. Labels are routing identity. A labeled port never matches an
 unlabeled port, and there is no wildcard label.
@@ -73,7 +69,7 @@ A port key is:
 
 ```text
 (direction, contract, label)
-```
+````
 
 `=>` matches the contract and label, with direction reversed: output to input. Each endpoint port
 may participate in at most one edge created by a connect expression.
@@ -99,7 +95,7 @@ record↔ports adapter node that consumes the source once and produces fresh out
 
 ```wire
 node fan_out_score
-  <- score: Score;
+  <- score: Score
   -> for_audit: Score = score;
   -> for_decision: Score = score;
 ```
@@ -109,13 +105,13 @@ explicit transformation node:
 
 ```wire
 node merge
-  <- mechanism: AnalysisFragment;
-  <- timing: AnalysisFragment;
-  <- beneficiaries: AnalysisFragment;
-  -> merged: AnalysisFragment;
-  = @review.report_merge ({
+  <- mechanism: AnalysisFragment
+  <- timing: AnalysisFragment
+  <- beneficiaries: AnalysisFragment
+  -> merged: AnalysisFragment
+  = @review.report_merge {
     fragments = [mechanism, timing, beneficiaries];
-  });
+  };
 ```
 
 ## Sum Groups
@@ -123,7 +119,7 @@ node merge
 Sum groups are output-only:
 
 ```text
--> value: AnalysisFragment | error: ExecutorError;
+-> value: AnalysisFragment | error: ExecutorError
 ```
 
 Exactly one variant fires per evaluation. Each variant has its own label and contract and matches
@@ -136,8 +132,8 @@ admits that shape:
 
 ```wire
 node log_event
-  <- event: Event;
-  = @artifact.log (event);
+  <- event: Event
+  = @artifact.log event;
 ```
 
 Wire does not assign special source/sink semantics in syntax. Empty boundary sides are ordinary

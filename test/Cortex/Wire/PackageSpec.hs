@@ -210,6 +210,21 @@ spec = do
         Right package ->
           packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
 
+  describe "executor argument manifests" $ do
+    it "rejects the obsolete config_shape key" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \config_shape = \"unchecked\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
   describe "ADR 0085 manifest schema end-to-end" $ do
     it "enforces a manifest-declared contract schema at runtime egress" $ do
       registry' <- schemaManifestRegistry

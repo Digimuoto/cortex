@@ -164,11 +164,7 @@ The canonical implemented example is
 
 ```wire
 node prepare_dashboard
-  <- user: UserProfile;
-  -> profile: ProfileSummary;
-  -> posts_req: PostsRequest;
-  -> friends_req: FriendsRequest;
-  = @dashboard.prepare (user);
+  <- user: UserProfile  -> profile: ProfileSummary  -> posts_req: PostsRequest  -> friends_req: FriendsRequest  = @dashboard.prepare user;
 
 receive_request
   => fetch_user
@@ -256,19 +252,16 @@ contract IndexArtifact;
 contract PublishedIndex;
 
 node plan_index
-  -> plan: IndexPlan = @search.plan_index ({});
+  -> plan: IndexPlan = @search.plan_index;
 
 node spawn_index_run
-  <- plan: IndexPlan;
-  -> run: IndexRun = @pulse.spawn_index_run (plan);
+  <- plan: IndexPlan  -> run: IndexRun = @pulse.spawn_index_run plan;
 
 node await_index_run
-  <- run: IndexRun;
-  -> artifact: IndexArtifact = @pulse.await_index_run (run);
+  <- run: IndexRun  -> artifact: IndexArtifact = @pulse.await_index_run run;
 
 node publish_index
-  <- artifact: IndexArtifact;
-  -> published: PublishedIndex = @search.publish_index (artifact);
+  <- artifact: IndexArtifact  -> published: PublishedIndex = @search.publish_index artifact;
 
 plan_index
   => spawn_index_run
@@ -393,11 +386,7 @@ outputs:
 
 ```wire
 node prepare_dashboard
-  <- user: UserProfile;
-  -> profile: ProfileSummary;
-  -> posts_req: PostsRequest;
-  -> friends_req: FriendsRequest;
-  = @dashboard.prepare (user);
+  <- user: UserProfile  -> profile: ProfileSummary  -> posts_req: PostsRequest  -> friends_req: FriendsRequest  = @dashboard.prepare user;
 ```
 
 This is not a select, not a hidden copy, and not a `*` operation. It is a domain derivation event:
@@ -446,7 +435,7 @@ admitted rewrites or explicit executor/child-run boundaries.
 The hard unresolved case is a node result used as a loop bound:
 
 ```text
-count = @planner.count(...)
+count = @planner.count ...
 repeat graph count
 ```
 

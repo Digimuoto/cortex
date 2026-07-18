@@ -43,52 +43,52 @@ realizeId = WireExecutorId "quantum.realize"
 noRealizeCircuit :: Text
 noRealizeCircuit =
   "use quantum.core.{@prepare_zero, @measure_z, Qubit, Bit};\n\
-  \node p -> q: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node m <- q: Qubit; -> b: Bit = @measure_z {} (q);\n\
+  \node p -> q: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
   \p => m\n"
 
 twoRealizeCircuit :: Text
 twoRealizeCircuit =
   "use quantum.core.{@prepare_zero, @cnot, @measure_z, Qubit, Bit, QuantumResult};\n\
   \use quantum.braket.{@realize};\n\
-  \node pc -> control: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node pt -> target: Qubit = @prepare_zero { index = 1; } (null);\n\
+  \node pc -> control: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node pt -> target: Qubit = @prepare_zero { cfg = { index = 1; }; };\n\
   \node cx\n\
-  \  <- control: Qubit;\n\
-  \  <- target: Qubit;\n\
-  \  -> control: Qubit;\n\
-  \  -> target: Qubit;\n\
-  \  = @cnot ({ inherit control; inherit target; });\n\
-  \node mc <- control: Qubit; -> bc: Bit = @measure_z {} (control);\n\
-  \node mt <- target: Qubit; -> bt: Bit = @measure_z {} (target);\n\
-  \node r0 <- bc: Bit; -> res0: QuantumResult = @realize ({ inherit bc; });\n\
-  \node r1 <- bt: Bit; -> res1: QuantumResult = @realize ({ inherit bt; });\n\
+  \  <- control: Qubit\n\
+  \  <- target: Qubit\n\
+  \  -> control: Qubit\n\
+  \  -> target: Qubit\n\
+  \  = @cnot { inherit control target; };\n\
+  \node mc <- control: Qubit -> bc: Bit = @measure_z control;\n\
+  \node mt <- target: Qubit -> bt: Bit = @measure_z target;\n\
+  \node r0 <- bc: Bit -> res0: QuantumResult = @realize { inherit bc; };\n\
+  \node r1 <- bt: Bit -> res1: QuantumResult = @realize { inherit bt; };\n\
   \(pc <> pt) => cx => (mc <> mt) => (r0 <> r1)\n"
 
 fractionalIndexCircuit :: Text
 fractionalIndexCircuit =
   "use quantum.core.{@prepare_zero, @measure_z, Qubit, Bit, QuantumResult};\n\
   \use quantum.braket.{@realize};\n\
-  \node p -> q: Qubit = @prepare_zero { index = 0.6; } (null);\n\
-  \node m <- q: Qubit; -> b: Bit = @measure_z {} (q);\n\
-  \node r <- b: Bit; -> result: QuantumResult = @realize ({ inherit b; });\n\
+  \node p -> q: Qubit = @prepare_zero { cfg = { index = 0.6; }; };\n\
+  \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
+  \node r <- b: Bit -> result: QuantumResult = @realize { inherit b; };\n\
   \p => m => r\n"
 
 sideMeasurementCircuit :: Text
 sideMeasurementCircuit =
   "use quantum.core.{@prepare_zero, @cnot, @measure_z, Qubit, Bit, QuantumResult};\n\
   \use quantum.braket.{@realize};\n\
-  \node pc -> control: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node pt -> target: Qubit = @prepare_zero { index = 1; } (null);\n\
+  \node pc -> control: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node pt -> target: Qubit = @prepare_zero { cfg = { index = 1; }; };\n\
   \node entangle\n\
-  \  <- control: Qubit;\n\
-  \  <- target: Qubit;\n\
-  \  -> control: Qubit;\n\
-  \  -> target: Qubit;\n\
-  \  = @cnot ({ inherit control; inherit target; });\n\
-  \node mc <- control: Qubit; -> bc: Bit = @measure_z {} (control);\n\
-  \node mt <- target: Qubit; -> bt: Bit = @measure_z {} (target);\n\
-  \node r <- bc: Bit; -> result: QuantumResult = @realize ({ inherit bc; });\n\
+  \  <- control: Qubit\n\
+  \  <- target: Qubit\n\
+  \  -> control: Qubit\n\
+  \  -> target: Qubit\n\
+  \  = @cnot { inherit control target; };\n\
+  \node mc <- control: Qubit -> bc: Bit = @measure_z control;\n\
+  \node mt <- target: Qubit -> bt: Bit = @measure_z target;\n\
+  \node r <- bc: Bit -> result: QuantumResult = @realize { inherit bc; };\n\
   \(pc <> pt) => entangle => (mc <> mt) => r\n"
 
 spec :: Spec

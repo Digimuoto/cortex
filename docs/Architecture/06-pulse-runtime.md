@@ -342,9 +342,8 @@ routing-key filter, and top-N limit from `cfg`). Wire grammar:
 
 ```wire
 node reviewer
-  <- draft: AnalystDraft;
-  -> reviewed: ReviewerDraft | error: ExecutorError;
-  = @review.reviewer {
+  <- draft: AnalystDraft
+  -> reviewed: ReviewerDraft | error: ExecutorError  = @review.reviewer {
     memory = topological {
       preset = "influence_biased";
       routingKey = "analyst";

@@ -24,15 +24,13 @@ contract UserInput;
 contract Greeting;
 
 node read_name
-  -> name: UserInput = @cortex.io.stdin { prompt = "Name: "; } (null);
+  -> name: UserInput = @cortex.io.stdin { cfg = { prompt = "Name: "; }; };
 
 node greet
-  <- name: UserInput;
-  -> greeting: Greeting = "Hello, ${name}.";
+  <- name: UserInput  -> greeting: Greeting = "Hello, ${name}.";
 
 node print_greeting
-  <- greeting: Greeting;
-  = @cortex.io.stdout { newline = true; } (greeting);
+  <- greeting: Greeting = @cortex.io.stdout { payload = greeting; cfg = { newline = true; }; };
 
 read_name
   => greet

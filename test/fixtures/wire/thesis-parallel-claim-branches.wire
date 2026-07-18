@@ -17,111 +17,97 @@ let citation_rule = ''Cite evidenceRefs by toolCallId for every concrete claim.'
 
 let analyst_suffix = topo_awareness ++ weak_evidence_rule ++ citation_rule;
 
-# ---- configured executor values ----
-
-let gatherer_mechanism_exec = @review.gatherer {
-  memory = topological { preset = "causal"; };
-  tools = [getDate, searchAssets, getAssetFundamentals, webSearch];
-};
-
-let gatherer_timing_exec = @review.gatherer {
-  memory = topological { preset = "causal"; };
-  tools = [getDate, searchAssets, getAssetNews, webSearch];
-};
-
-let gatherer_beneficiaries_exec = @review.gatherer {
-  memory = topological { preset = "causal"; };
-  tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch];
-};
-
-let analyst_mechanism_exec = @review.analyst {
-  maxOutputTokens = 16384;
-  memory = topological { preset = "causal"; };
-  instructions = ''Attack the mechanism leg.'' ++ analyst_suffix;
-};
-
-let analyst_timing_exec = @review.analyst {
-  maxOutputTokens = 16384;
-  memory = topological { preset = "causal"; };
-  instructions = ''Attack the timing leg.'' ++ analyst_suffix;
-};
-
-let analyst_beneficiaries_exec = @review.analyst {
-  maxOutputTokens = 16384;
-  memory = topological { preset = "causal"; };
-  instructions = ''Attack the beneficiary leg.'' ++ analyst_suffix;
-};
-
 # ---- nodes ----
 
 node planner
-  -> mechanism_plan: PlannerOutput | timing_plan: PlannerOutput | beneficiaries_plan: PlannerOutput | planner_error: ExecutorError;
-  = @review.planner ({});
+  -> mechanism_plan: PlannerOutput | timing_plan: PlannerOutput | beneficiaries_plan: PlannerOutput | planner_error: ExecutorError
+  = @review.planner;
 
-node gatherer_mechanism
-  <- mechanism_plan: PlannerOutput;
-  -> mechanism: EvidenceBundle | gatherer_mechanism_error: ExecutorError;
-  = gatherer_mechanism_exec (mechanism_plan);
+node gatherer_mechanism with {
+  memory = topological { preset = "causal"; };
+  tools = [getDate, searchAssets, getAssetFundamentals, webSearch];
+}
+  <- mechanism_plan: PlannerOutput
+  -> mechanism: EvidenceBundle | gatherer_mechanism_error: ExecutorError
+  = @review.gatherer mechanism_plan;
 
-node gatherer_timing
-  <- timing_plan: PlannerOutput;
-  -> timing: EvidenceBundle | gatherer_timing_error: ExecutorError;
-  = gatherer_timing_exec (timing_plan);
+node gatherer_timing with {
+  memory = topological { preset = "causal"; };
+  tools = [getDate, searchAssets, getAssetNews, webSearch];
+}
+  <- timing_plan: PlannerOutput
+  -> timing: EvidenceBundle | gatherer_timing_error: ExecutorError
+  = @review.gatherer timing_plan;
 
-node gatherer_beneficiaries
-  <- beneficiaries_plan: PlannerOutput;
-  -> beneficiaries: EvidenceBundle | gatherer_beneficiaries_error: ExecutorError;
-  = gatherer_beneficiaries_exec (beneficiaries_plan);
+node gatherer_beneficiaries with {
+  memory = topological { preset = "causal"; };
+  tools = [getDate, searchAssets, getAnalystRatingChanges, webSearch];
+}
+  <- beneficiaries_plan: PlannerOutput
+  -> beneficiaries: EvidenceBundle | gatherer_beneficiaries_error: ExecutorError
+  = @review.gatherer beneficiaries_plan;
 
-node analyst_mechanism
-  <- mechanism: EvidenceBundle;
-  -> mechanism_fragment: AnalysisFragment | analyst_mechanism_error: ExecutorError;
-  = analyst_mechanism_exec (mechanism);
+node analyst_mechanism with {
+  maxOutputTokens = 16384;
+  memory = topological { preset = "causal"; };
+  instructions = ''Attack the mechanism leg.'' ++ analyst_suffix;
+}
+  <- mechanism: EvidenceBundle
+  -> mechanism_fragment: AnalysisFragment | analyst_mechanism_error: ExecutorError
+  = @review.analyst mechanism;
 
-node analyst_timing
-  <- timing: EvidenceBundle;
-  -> timing_fragment: AnalysisFragment | analyst_timing_error: ExecutorError;
-  = analyst_timing_exec (timing);
+node analyst_timing with {
+  maxOutputTokens = 16384;
+  memory = topological { preset = "causal"; };
+  instructions = ''Attack the timing leg.'' ++ analyst_suffix;
+}
+  <- timing: EvidenceBundle
+  -> timing_fragment: AnalysisFragment | analyst_timing_error: ExecutorError
+  = @review.analyst timing;
 
-node analyst_beneficiaries
-  <- beneficiaries: EvidenceBundle;
-  -> beneficiaries_fragment: AnalysisFragment | analyst_beneficiaries_error: ExecutorError;
-  = analyst_beneficiaries_exec (beneficiaries);
+node analyst_beneficiaries with {
+  maxOutputTokens = 16384;
+  memory = topological { preset = "causal"; };
+  instructions = ''Attack the beneficiary leg.'' ++ analyst_suffix;
+}
+  <- beneficiaries: EvidenceBundle
+  -> beneficiaries_fragment: AnalysisFragment | analyst_beneficiaries_error: ExecutorError
+  = @review.analyst beneficiaries;
 
 node merge
-  <- mechanism_fragment: AnalysisFragment;
-  <- timing_fragment: AnalysisFragment;
-  <- beneficiaries_fragment: AnalysisFragment;
-  -> merged: AnalysisFragment;
-  = @review.report_merge ({
+  <- mechanism_fragment: AnalysisFragment
+  <- timing_fragment: AnalysisFragment
+  <- beneficiaries_fragment: AnalysisFragment
+  -> merged: AnalysisFragment
+  = @review.report_merge {
     fragments = [mechanism_fragment, timing_fragment, beneficiaries_fragment];
-  });
+  };
 
 node review
-  <- merged: AnalysisFragment;
-  -> concerns: ReviewConcerns | review_error: ExecutorError;
-  = @review.review (merged);
+  <- merged: AnalysisFragment
+  -> concerns: ReviewConcerns | review_error: ExecutorError
+  = @review.review merged;
 
 node rewriter
-  <- merged: AnalysisFragment;
-  <- concerns: ReviewConcerns;
-  -> bundle: ReviewBundle | rewriter_error: ExecutorError;
-  = @review.rewriter ({
+  <- merged: AnalysisFragment
+  <- concerns: ReviewConcerns
+  -> bundle: ReviewBundle | rewriter_error: ExecutorError
+  = @review.rewriter {
     analysis = merged;
     inherit concerns;
-  });
+  };
 
 node error_sink
-  <- planner_error: ExecutorError;
-  <- gatherer_mechanism_error: ExecutorError;
-  <- gatherer_timing_error: ExecutorError;
-  <- gatherer_beneficiaries_error: ExecutorError;
-  <- analyst_mechanism_error: ExecutorError;
-  <- analyst_timing_error: ExecutorError;
-  <- analyst_beneficiaries_error: ExecutorError;
-  <- review_error: ExecutorError;
-  <- rewriter_error: ExecutorError;
-  = @artifact.log ({
+  <- planner_error: ExecutorError
+  <- gatherer_mechanism_error: ExecutorError
+  <- gatherer_timing_error: ExecutorError
+  <- gatherer_beneficiaries_error: ExecutorError
+  <- analyst_mechanism_error: ExecutorError
+  <- analyst_timing_error: ExecutorError
+  <- analyst_beneficiaries_error: ExecutorError
+  <- review_error: ExecutorError
+  <- rewriter_error: ExecutorError
+  = @artifact.log {
     errors = [
       planner_error,
       gatherer_mechanism_error,
@@ -133,11 +119,11 @@ node error_sink
       review_error,
       rewriter_error,
     ];
-  });
+  };
 
 node report
-  <- bundle: ReviewBundle;
-  -> artifact: ReportArtifactRef;
+  <- bundle: ReviewBundle
+  -> artifact: ReportArtifactRef
   = @cortex.deep_report {
     title = "Thesis Parallel Claim Branches";
     description = "Structural experiment in claim-scoped analyst branching.";

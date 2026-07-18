@@ -1,7 +1,7 @@
 ---
 title: "Wire Grammar Specification"
 description:
-  "Normative specification of the Wire grammar: declarations, typed ports, configured executors,
+  "Normative specification of the Wire grammar: declarations, typed ports, executor authorities,
   CorePure output equations, and graph composition."
 sidebar:
   label: Grammar
@@ -32,7 +32,7 @@ related:
 # The Wire Language — Specification
 
 Wire is the Cortex source language for authoring typed dataflow topology over a closed executor
-alphabet. A Wire file declares contracts, configured executor values, nodes, and graph composition.
+alphabet. A Wire file declares contracts, executor authority values, nodes, and graph composition.
 The compiler elaborates the source to a fixed circuit before Pulse evaluates it.
 
 This grammar is the production source surface. The current Lean proof boundary is downstream of it:
@@ -46,7 +46,7 @@ The current grammar is intentionally explicit:
 - every authored port has a label;
 - `@` names registered executor authority, never CorePure;
 - output equations are CorePure expressions inside Wire's deterministic expression layer;
-- configured executor values are reusable values, not graph vertices;
+- executor authority values are reusable values, not graph vertices;
 - fan-in and fan-out transformations are authored as nodes, not implicit context concatenation or
   implicit list aggregation.
 
@@ -60,7 +60,7 @@ Identifiers match `[A-Za-z_][A-Za-z0-9_]*`. Qualified identifiers join identifie
 Reserved words:
 
 ```text
-as contract else export false form from if import in kind let make node null pure select then true use where
+as contract else export false form from if import in kind let make node null pure select then true use where with
 ```
 
 Literal forms:
@@ -90,11 +90,11 @@ use_item         ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
 kind_decl        ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
 kind_param_list ::= kind_param ("," kind_param)* ","?
 kind_param       ::= ident ":" kind_param_class
-kind_param_class ::= "PortLabel" | "Contract" | "Value" | "ConfiguredExecutor"
+kind_param_class ::= "PortLabel" | "Contract" | "Value" | "Executor"
 form_decl        ::= "form" ident "(" form_param_list? ")" "=" "{" form_item* graph_expr ";" "}" ";"
 form_param_list ::= form_param ("," form_param)* ","?
 form_param       ::= ident ":" form_param_class
-form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "ConfiguredExecutor"
+form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "Executor"
 form_item        ::= node_decl | "let" let_target "=" let_rhs ";"
 let_binding      ::= ("export")? "let" let_target "=" let_rhs ";"
 let_target       ::= ident "[]"?
@@ -146,7 +146,7 @@ Module-level `let` is one syntax, not separate "ordinary" and "pure" declaration
 classifies the right-hand side by phase:
 
 - graph expressions are elaborated at compile time and bind graph values;
-- configured executor values and ordinary scalar, record, list, or string expressions bind
+- executor authority values and ordinary scalar, record, list, or string expressions bind
   compile-time values;
 - CorePure helper functions, such as `let pred = item: item.score >= 0.7;`, bind delayed helpers for
   pure evaluation;
@@ -155,7 +155,7 @@ classifies the right-hand side by phase:
   form applications.
 
 Authority-free compile-time data values are also available to delayed CorePure expressions as
-captured constants. Graph values and configured executor values are not.
+captured constants. Graph values and executor authority values are not.
 
 ## 3. Values
 
@@ -165,15 +165,15 @@ Wire has three relevant value classes.
 expressions, and `()`. Only graph values may appear in file-return position or on either side of
 graph operators.
 
-**Configured executor values** have the form:
+**Executor authority values** have the form:
 
 ```wire
-@qualified.executor { field = value; }
+@qualified.executor
 ```
 
-They are inert values containing executor identity plus pure config data. They are `let`-bindable
-and may be applied in node implementation bodies. They are not graph vertices and may not appear in
-graph position.
+They are inert values containing executor identity. They are `let`-bindable and may be applied in
+node implementation bodies with zero or one argument expression. They are not graph vertices and may
+not appear in graph position.
 
 **Ordinary values** are records, lists, strings, numbers, booleans, `null`, and tagged config
 constructors. They may be used in config records. When an ordinary value is made only from
@@ -193,9 +193,9 @@ empty finite product and exposes no indexed leaves.
 Port clauses:
 
 ```text
-<- label: Contract;
--> label: Contract;
--> label_a: ContractA | label_b: ContractB;
+<- label: Contract
+-> label: Contract
+-> label_a: ContractA | label_b: ContractB
 ```
 
 Labels are required on authored ports. A port key is `(direction, contract, label)`. `=>` connects
@@ -222,14 +222,14 @@ typed interface shapes.
 
 ```ebnf
 node_decl ::= "node" ident (node_definition | node_kind_application)
-node_definition ::= input_clause* node_body where_clause?
+node_definition ::= ("with" record)? input_clause* node_body where_clause?
 node_kind_application ::= "=" kind_application ";"
 kind_application ::= ident "(" kind_arg_list? ")"
 kind_arg_list ::= wire_expr ("," wire_expr)* ","?
 
 kind_body ::= input_clause* node_body where_clause?
 
-input_clause ::= "<-" ident ":" contract_ref ";"
+input_clause ::= "<-" ident ":" contract_ref
 where_clause ::= "where" corepure_expr ";"
 
 node_body ::=
@@ -238,7 +238,7 @@ node_body ::=
   | "->" output_variant "=" executor_call ";"
 
 pure_output_equation ::= "->" output_variant "=" corepure_expr ";"
-executor_output_clause ::= "->" output_body ";"
+executor_output_clause ::= "->" output_body
 output_body ::= output_variant ("|" output_variant)*
 output_variant ::= ident ":" contract_ref
 ```
@@ -252,12 +252,12 @@ body of one node, but not the node head. The vertex is still introduced by `node
 application site:
 
 ```wire
-let h_gate = @quantum.h {};
+let h_gate = @quantum.h;
 
-kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
-  <- label: Qubit;
-  -> label: Qubit;
-  = gate (label);
+kind one_qubit_gate(label: PortLabel, gate: Executor) =
+  <- label: Qubit
+  -> label: Qubit
+  = @gate label;
 
 node screen_h = one_qubit_gate(screen, h_gate);
 ```
@@ -267,9 +267,9 @@ ordinary node declaration:
 
 ```wire
 node screen_h
-  <- screen: Qubit;
-  -> screen: Qubit;
-  = h_gate (screen);
+  <- screen: Qubit
+  -> screen: Qubit
+  = @h_gate screen;
 ```
 
 Rules:
@@ -278,8 +278,7 @@ Rules:
 - a kind body does not contain a `node` head;
 - a kind application is valid only in `node <name> = kind_name(...);` position;
 - kind applications are not graph expressions, CorePure expressions, or standalone declarations;
-- parameter classes are syntactic classes: `PortLabel`, `Contract`, `Value`, and
-  `ConfiguredExecutor`;
+- parameter classes are syntactic classes: `PortLabel`, `Contract`, `Value`, and `Executor`;
 - `kind` declarations do not create graph values and cannot appear in file-return position.
 
 ### 5.2 Graph Forms
@@ -288,16 +287,16 @@ A `form` declaration is a compile-time graph abstraction. It may declare local n
 bindings, then returns one final graph expression:
 
 ```wire
-let h_gate = @quantum.h {};
+let h_gate = @quantum.h;
 
-kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
-  <- label: Qubit;
-  -> label: Qubit;
-  = gate (label);
+kind one_qubit_gate(label: PortLabel, gate: Executor) =
+  <- label: Qubit
+  -> label: Qubit
+  = @gate label;
 
 kind phase_gate(label: PortLabel, angle: Value) =
-  <- label: Qubit;
-  -> label: Qubit = @quantum.rz { inherit angle; } (label);
+  <- label: Qubit
+  -> label: Qubit = @quantum.rz { payload = label; cfg = { inherit angle; }; };
 
 form open_arm(phase: Value) = {
   node split = one_qubit_gate(screen, h_gate);
@@ -379,7 +378,7 @@ Pure nodes compute deterministic JSON-shaped values:
 let scoreThreshold = 0.7;
 
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter (item: item.score >= scoreThreshold);
   -> rejected: RejectedSet = evidence.items |> filter (item: item.score < scoreThreshold);
 ```
@@ -406,41 +405,40 @@ is an executor call:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  -> usage: UsageMetadata;
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord
+  -> usage: UsageMetadata
   = @review.analyzeWithUsage {
-    model = "gpt-5.4";
-  } (evidence);
+    payload = evidence;
+    cfg = { model = "gpt-5.4"; };
+  };
 ```
 
 Single-output executor nodes may use the shorthand:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord = @review.analyze (evidence);
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord = @review.analyze evidence;
 ```
 
 Zero-output executor nodes use an executor body with no output clauses:
 
 ```wire
 node log_event
-  <- event: Event;
-  = @artifact.log (event);
+  <- event: Event
+  = @artifact.log event;
 ```
 
-Configured executors are applied by name:
+Executor authorities can be bound and applied explicitly:
 
 ```wire
-let analyst = @review.analyst {
-  temperature = 0.2;
-};
+let analyst = @review.analyst;
 
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  = analyst (evidence);
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord
+  = @analyst { payload = evidence; cfg = { temperature = 0.2; }; };
 ```
 
 Semantically, the expression passed to the executor is the node's ingress adapter: it translates the
@@ -451,30 +449,27 @@ projection and runtime output validation form the egress adapter back to output 
 ## 6. Executor Calls And Config
 
 ```ebnf
-executor_call ::= inline_executor_call | configured_executor_call
-
-inline_executor_call     ::= "@" qname record? "(" corepure_expr ")"
-configured_executor_call ::= ident "(" corepure_expr ")"
+executor_call ::= "@" qname corepure_expr?
 ```
 
-The expression inside `(...)` is the executor input value. For multiple typed inputs, pass an
+The optional bare expression is the executor input value. For multiple typed inputs, pass an
 explicit CorePure record:
 
 ```wire
 node merge
-  <- mechanism: AnalysisFragment;
-  <- timing: AnalysisFragment;
-  <- beneficiaries: AnalysisFragment;
-  -> merged: AnalysisFragment;
-  = @review.report_merge ({
+  <- mechanism: AnalysisFragment
+  <- timing: AnalysisFragment
+  <- beneficiaries: AnalysisFragment
+  -> merged: AnalysisFragment
+  = @review.report_merge {
     fragments = [mechanism, timing, beneficiaries];
-  });
+  };
 ```
 
-Executor config is inert data. It may contain records, lists, strings, numbers, booleans, configured
-values admitted by the config schema, tool names, and tagged config constructors such as
-`topological { preset = "causal"; }`. The registry validates whether those fields are meaningful.
-Record fields support Nix-style `inherit name;` sugar, which desugars to `name = name;`.
+Executor arguments are inert data. They may contain records, lists, strings, numbers, booleans, tool
+names, and tagged constructors. The registry's runtime `argument_shape` validates whether those
+fields are meaningful. Record fields support Nix-style `inherit name;` sugar, which desugars to
+`name = name;`.
 
 ## 7. Graph Composition
 
@@ -615,7 +610,7 @@ value:
 
 ```wire
 node planner
-  -> plan: PlannerOutput = @review.planner ({});
+  -> plan: PlannerOutput = @review.planner;
 
 export let exported_planner = planner;
 ```
@@ -626,8 +621,8 @@ A program is well formed iff:
 
 1. every referenced contract is known;
 2. every executor reference names a registered executor;
-3. every configured executor value validates against its config schema where required by the binding
-   layer;
+3. every normalized executor record validates against its runtime `argument_shape` before binding
+   invocation;
 4. every executor call in graph position appears inside an explicit node declaration;
 5. every node's authored port boundary satisfies the executor projection or structural constraints;
 6. every graph expression contains only graph values;
@@ -644,16 +639,13 @@ every required input boundary must be supplied before Pulse can run it.
 ```wire
 let threshold = 0.7;
 
-let analyst = @review.analyst {
-  model = "gpt-5.4";
-  temperature = 0.2;
-};
+let analyst = @review.analyst;
 
 node gather
-  -> evidence: EvidenceSet = @review.gather ({});
+  -> evidence: EvidenceSet = @review.gather;
 
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = accepted;
   -> rejected: RejectedSet = rejected;
   -> summary: Report = ''
@@ -670,12 +662,12 @@ node classify
   { inherit items accepted rejected; };
 
 node analyze
-  <- accepted: AcceptedSet;
-  -> analysis: AnalysisRecord;
-  = analyst ({
-    inherit accepted;
-    instructions = "Analyze ${length accepted.items} accepted items.";
-  });
+  <- accepted: AcceptedSet
+  -> analysis: AnalysisRecord
+  = @analyst {
+    payload = accepted;
+    cfg = { instructions = "Analyze ${length accepted.items} accepted items."; };
+  };
 
 gather
   => classify
@@ -689,8 +681,8 @@ The implementation rejects the previous authoring surface:
 - `node name : ...`;
 - unlabeled authored ports;
 - `<- [Contract]` implicit list aggregation;
-- `@executor { ... }` in graph position;
+- parenthesized executor calls and split inline config/call syntax;
 - `pure (...)`, `@pure`, `@pure { expr = ... }`, and `pure { ... }`;
 - node-local `let ... in` blocks before node bodies;
-- configured-executor config merge with `//`;
+- executor-authority values and the `ConfiguredExecutor` parameter class;
 - comma overlay shorthand in file-return expressions.

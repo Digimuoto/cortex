@@ -237,7 +237,7 @@ This layer enforces:
 
 It delegates graph algebra to [Chapter 04](./04-graph-and-circuit.md), scheduling and checkpointing
 to [Chapter 06](./06-pulse-runtime.md), value-envelope provenance to
-[Chapter 08](./08-artifacts-and-provenance.md), and Wire grammar and configured-executor rules to
+[Chapter 08](./08-artifacts-and-provenance.md), and Wire grammar and executor-authority rules to
 [Chapter 05](./05-wire-language.md).
 
 ## Extensibility

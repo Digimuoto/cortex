@@ -9,29 +9,29 @@ contract Qubit;
 contract Bit;
 
 node prepare_control
-  -> control: Qubit = @quantum.prepare_zero { index = 0; } (null);
+  -> control: Qubit = @quantum.prepare_zero { cfg = { index = 0; }; };
 
 node prepare_target
-  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+  -> target: Qubit = @quantum.prepare_zero { cfg = { index = 1; }; };
 
 node hadamard_control
-  <- control: Qubit;
-  -> control: Qubit = @quantum.h {} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.h control;
 
 node entangle
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cnot ({ inherit control; inherit target; });
+  <- control: Qubit
+  <- target: Qubit
+  -> control: Qubit
+  -> target: Qubit
+  = @quantum.cnot { inherit control; inherit target; };
 
 node measure_control
-  <- control: Qubit;
-  -> control: Bit = @quantum.measure_z {} (control);
+  <- control: Qubit
+  -> control: Bit = @quantum.measure_z control;
 
 node measure_target
-  <- target: Qubit;
-  -> target: Bit = @quantum.measure_z {} (target);
+  <- target: Qubit
+  -> target: Bit = @quantum.measure_z target;
 
 (prepare_control
   => hadamard_control)

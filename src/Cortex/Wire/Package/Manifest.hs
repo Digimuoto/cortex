@@ -45,7 +45,7 @@ import Cortex.Wire.AST
   )
 import Cortex.Wire.Contract (WireContractSpec (..))
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
@@ -93,17 +93,28 @@ tryReadManifest path = try (TIO.readFile path)
 decodeWirePackageManifest
   :: FilePath -> Text -> Either WirePackageManifestError WirePackage
 decodeWirePackageManifest path source =
-  case Toml.decode source of
-    Toml.Failure errs ->
-      Left (WirePackageManifestDecodeError path (renderTomlMessages errs))
-    -- toml-parser reports unmatched keys as non-fatal warnings. A Wire package
-    -- manifest is a forward-compatible artifact (ADR 0060): an older binary must
-    -- accept a manifest that carries keys from a later slice — versioning,
-    -- dependencies, requirement slots — rather than reject the whole file. So we
-    -- ignore warnings and decode the keys this loader understands; only a hard
-    -- Toml.Failure is an error.
-    Toml.Success _warnings manifest ->
-      Right (manifestToWirePackage manifest)
+  if any isObsoleteConfigShapeKey (T.lines source)
+    then
+      Left
+        ( WirePackageManifestDecodeError
+            path
+            "config_shape was removed; use argument_shape"
+        )
+    else case Toml.decode source of
+      Toml.Failure errs ->
+        Left (WirePackageManifestDecodeError path (renderTomlMessages errs))
+      -- toml-parser reports unmatched keys as non-fatal warnings. A Wire package
+      -- manifest is a forward-compatible artifact (ADR 0060): an older binary must
+      -- accept a manifest that carries keys from a later slice — versioning,
+      -- dependencies, requirement slots — rather than reject the whole file. So we
+      -- ignore warnings and decode the keys this loader understands; only a hard
+      -- Toml.Failure is an error.
+      Toml.Success _warnings manifest ->
+        Right (manifestToWirePackage manifest)
+  where
+    isObsoleteConfigShapeKey line =
+      case T.breakOn "=" (T.strip line) of
+        (key, rest) -> T.strip key == "config_shape" && not (T.null rest)
 
 renderTomlMessages :: [String] -> Text
 renderTomlMessages =
@@ -209,7 +220,7 @@ instance Toml.FromValue WireExecutorProjection where
       <$> optionalValue "ports" emptyPorts
       <*> pure (Set.fromList rawVocabulary)
       <*> Toml.reqKey "effect"
-      <*> optionalValue "config_shape" WireExecutorConfigUnchecked
+      <*> optionalValue "argument_shape" WireExecutorArgumentUnchecked
       <*> optionalValue "port_policy" WireExecutorFixedPorts
 
 emptyPorts :: WirePorts
@@ -242,18 +253,18 @@ instance Toml.FromValue WireExecutorPortPolicy where
       "authordeclared" -> pure WireExecutorAuthorDeclaredPorts
       other -> fail ("unknown Wire executor port policy: " <> T.unpack other)
 
-instance Toml.FromValue WireExecutorConfigShape where
+instance Toml.FromValue WireExecutorArgumentShape where
   fromValue rawValue = parseUnchecked rawValue <|> parseSchema rawValue
     where
       parseUnchecked value = do
         raw <- Toml.fromValue value
         case T.toCaseFold (T.strip raw) of
-          "unchecked" -> pure WireExecutorConfigUnchecked
-          other -> fail ("unknown Wire executor config shape: " <> T.unpack other)
+          "unchecked" -> pure WireExecutorArgumentUnchecked
+          other -> fail ("unknown Wire executor argument shape: " <> T.unpack other)
 
       parseSchema =
         Toml.parseTableFromValue $
-          WireExecutorConfigSchema . unTomlJsonValue <$> Toml.reqKey "schema"
+          WireExecutorArgumentSchema . unTomlJsonValue <$> Toml.reqKey "schema"
 
 instance Toml.FromValue WirePorts where
   fromValue =

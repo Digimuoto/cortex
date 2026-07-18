@@ -493,15 +493,14 @@ contract UserInput;
 contract Greeting;
 
 node read_name
-  -> name: UserInput = @stdin { prompt = "Name: "; } (null);
+  -> name: UserInput = @stdin { cfg = { prompt = "Name: "; }; };
 
 node greet
-  <- name: UserInput;
-  -> greeting: Greeting = pure ("Hello, ${name}.");
+  <- name: UserInput
+  -> greeting: Greeting = "Hello, ${name}.";
 
 node print_greeting
-  <- greeting: Greeting;
-  = @stdout { newline = true; } (greeting);
+  <- greeting: Greeting = @stdout { payload = greeting; cfg = { newline = true; }; };
 
 read_name
   => greet
@@ -621,12 +620,10 @@ node receive_order
   -> order: Order = ...;
 
 node compute_score
-  <- order: Order;
-  -> score: Score = pure (calculate_score(order));
+  <- order: Order  -> score: Score = pure (calculate_score(order));
 
 node log_score
-  <- score: Score;
-  -> entry: LogEntry = @audit.log {} (score);
+  <- score: Score  -> entry: LogEntry = @audit.log score;
 
 receive_order
   => compute_score
@@ -656,21 +653,17 @@ node receive_order
   -> order: Order = ...;
 
 node compute_score
-  <- order: Order;
-  -> score: Score = pure (calculate_score(order));
+  <- order: Order  -> score: Score = pure (calculate_score(order));
 
 node fan_out
-  <- score: Score;
-  -> for_audit: Score = score;
+  <- score: Score  -> for_audit: Score = score;
   -> for_decision: Score = score;
 
 node log_score
-  <- for_audit: Score;
-  -> entry: LogEntry = @audit.log {} (for_audit);
+  <- for_audit: Score  -> entry: LogEntry = @audit.log for_audit;
 
 node decide_threshold
-  <- for_decision: Score;
-  -> ok: Decision = pure (for_decision > 0.5);
+  <- for_decision: Score  -> ok: Decision = pure (for_decision > 0.5);
 
 receive_order
   => compute_score
@@ -736,16 +729,13 @@ node client_send_request
   -> req: Request = pure (build_request(...));
 
 node server_handle
-  <- req: Request;
-  -> resp: Response = @service.handle {} (req);
+  <- req: Request  -> resp: Response = @service.handle req;
 
 node client_check_response
-  <- resp: Response;
-  -> ack: Ack = pure (validate(resp));
+  <- resp: Response  -> ack: Ack = pure (validate(resp));
 
 node server_recv_ack
-  <- ack: Ack;
-  = @service.complete {} (ack);
+  <- ack: Ack  = @service.complete ack;
 
 client_send_request
   => server_handle
@@ -1579,28 +1569,20 @@ node receive_order
   -> order: Order = ...;
 
 node reserve_inventory
-  <- order: Order;
-  -> reservation: Reservation = @inventory.reserve { idempotency_key = ...; } (order);
+  <- order: Order -> reservation: Reservation = @inventory.reserve { payload = order; cfg = { idempotency_key = ...; }; };
 
 node fan_reservation
-  <- reservation: Reservation;
-  -> for_charge: Reservation = reservation;
+  <- reservation: Reservation  -> for_charge: Reservation = reservation;
   -> for_recovery: Reservation = reservation;
 
 node charge_card
-  <- for_charge: Reservation;
-  -> success: Charge | failure: ChargeError;
-  = @payments.charge { idempotency_key = ...; } (for_charge);
+  <- for_charge: Reservation -> success: Charge | failure: ChargeError = @payments.charge { payload = for_charge; cfg = { idempotency_key = ...; }; };
 
 node issue_receipt
-  <- success: Charge;
-  <- for_recovery: Reservation;
-  -> receipt: Receipt = pure (build_receipt success for_recovery);
+  <- success: Charge  <- for_recovery: Reservation  -> receipt: Receipt = pure (build_receipt success for_recovery);
 
 node release_inventory_on_failure
-  <- failure: ChargeError;
-  <- for_recovery: Reservation;
-  -> compensation: Compensation = @inventory.release {} (for_recovery);
+  <- failure: ChargeError  <- for_recovery: Reservation  -> compensation: Compensation = @inventory.release for_recovery;
 
 # Composition. The postfix select is the latent branch family.
 receive_order
@@ -1702,17 +1684,14 @@ parameterized rotation, a single-qubit measurement, a two-qubit gate, and a hard
 Each is a typed sub-graph parameterized by port labels and gate values:
 
 ```wire
-kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
-  <- label: Qubit;
-  -> label: Qubit = gate (label);
+kind qubit_gate(label: PortLabel, gate: Executor) =
+  <- label: Qubit -> label: Qubit = @gate label;
 
 kind rz_gate(label: PortLabel, angle: Value) =
-  <- label: Qubit;
-  -> label: Qubit = @quantum.rz { inherit angle; } (label);
+  <- label: Qubit -> label: Qubit = @quantum.rz { payload = label; cfg = { inherit angle; }; };
 
 kind qubit_measure(input: PortLabel, output: PortLabel) =
-  <- input: Qubit;
-  -> output: Bit = quantum_measure_z (input);
+  <- input: Qubit -> output: Bit = @quantum_measure_z input;
 ```
 
 These are not values that the language passes by reference; they are graph fragments that compose
@@ -1748,12 +1727,11 @@ two-qubit circuit whose marker readout is _passed in as a graph_:
 ```wire
 form marked_circuit(phase_angle: Value, marker_readout: Graph) = {
   node ibm_runtime_config
-    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config {} (null);
+    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config;
   node prepare_screen
-    <- config: IBMQuantumConfig;
-    -> control: Qubit = @quantum.prepare_zero { index = 0; } (...);
+    <- config: IBMQuantumConfig -> control: Qubit = @quantum.prepare_zero { payload = config; cfg = { index = 0; }; };
   node prepare_marker
-    -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+    -> target: Qubit = @quantum.prepare_zero { cfg = { index = 1; }; };
   node phase_screen = rz_gate(control, phase_angle);
   node mark_cz = two_qubit_gate(control, target, quantum_cz);
   node measure_screen = qubit_measure(control, screen);

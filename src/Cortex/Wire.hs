@@ -45,6 +45,7 @@ module Cortex.Wire
   , wrapWireStageOutputs
   , wrapWireStageResult
   , wrapWireStageDefinition
+  , validateWireExecutorArgument
   , emptyWireCompileEnv
   , wireCompileEnvWithContractRegistry
   , wireCompileEnvWithExecutorRegistry
@@ -138,6 +139,7 @@ import Cortex.Wire.Runtime
   ( WireInputBundle (..)
   , unwrapWireStageInputs
   , unwrapWireStageValue
+  , validateWireExecutorArgument
   , wireInputBundleFromStageInputs
   , wireInputBundlePromptSummary
   , wrapWireStageDefinition

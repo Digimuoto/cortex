@@ -32,7 +32,7 @@ The source form is:
 let acceptedItem = item: item.score >= 0.7;
 
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter acceptedItem;
   -> rejected: RejectedSet = evidence.items |> filter (item: !(acceptedItem item));
 ```
@@ -157,8 +157,8 @@ For example:
 
 ```wire
 node score
-  <- evidence: EvidenceSet;
-  <- weights: WeightSet;
+  <- evidence: EvidenceSet
+  <- weights: WeightSet
   -> score: ScoreSet = {
     total = sum (zipWith (s: w: s * w) evidence.scores weights.values);
   };

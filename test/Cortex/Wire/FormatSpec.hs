@@ -36,9 +36,9 @@ spec = do
       formatWireSource "test" "a*b"
         `shouldBe` Right "a * b\n"
 
-    it "formats short configured graph atoms inline" $ do
-      formatWireSource "test" "@exec { mode = fast; }=>sink"
-        `shouldBe` Right "@exec { mode = fast; } => sink\n"
+    it "formats bare executor authority graph atoms inline" $ do
+      formatWireSource "test" "@exec=>sink"
+        `shouldBe` Right "@exec => sink\n"
 
     it "formats small frontiers horizontally inside connect chains" $ do
       formatWireSource "test" "a=>(b<>c<>d)=>e"
@@ -75,7 +75,7 @@ spec = do
     it "normalizes same-name record fields to inherit" $ do
       let source =
             "node summarize\n\
-            \  <- input: BuildReport;\n\
+            \  <- input: BuildReport\n\
             \  -> summary: Text = summary;\n\
             \  where let\n\
             \    summary = input.summary;\n\
@@ -83,7 +83,7 @@ spec = do
             \  { summary = summary; };\n"
           expected =
             "node summarize\n\
-            \  <- input: BuildReport;\n\
+            \  <- input: BuildReport\n\
             \  -> summary: Text = summary;\n\
             \  where let\n\
             \    summary = input.summary;\n\
@@ -92,6 +92,18 @@ spec = do
             \    inherit summary;\n\
             \  };\n"
       formatWireSource "test" source `shouldBe` Right expected
+
+    it "normalizes CorePure projections to source inheritance" $ do
+      formatWireSource
+        "test"
+        "node action -> out: T = @executor { payload = x.payload; cfg = x.cfg; };"
+        `shouldBe` Right
+          "node action -> out: T = @executor { inherit (x) payload cfg; };\n"
+
+    it "keeps executor nodes with multiline arguments topology-first" $ do
+      formatWireSource "test" "node action -> out: T = @executor ''line one\nline two'';"
+        `shouldBe` Right
+          "node action\n  -> out: T\n  = @executor \"line one\\nline two\";\n"
 
     it "is idempotent" $ do
       let source = "a\n  => b <> c <> d\n  => e\n"
@@ -110,18 +122,18 @@ spec = do
       let source =
             "contract T;\n\
             \node a\n\
-            \  <- input: T;\n\
+            \  <- input: T\n\
             \  -> input: T = input;\n\
             \a=>a\n"
           expected =
-            "contract T;\n\nnode a\n  <- input: T;\n  -> input: T = input;\n\na => a\n"
+            "contract T;\n\nnode a <- input: T -> input: T = input;\n\na => a\n"
       formatWireSource "test" source `shouldBe` Right expected
 
     it "preserves kind declarations rather than expanding them" $ do
       let source =
             "contract T;\n\
             \kind ident_kind(label: PortLabel) =\n\
-            \  <- label: T;\n\
+            \  <- label: T\n\
             \  -> label: T = label;\n\
             \node a = ident_kind(input);\n\
             \a\n"
@@ -148,7 +160,7 @@ spec = do
     it "preserves CorePure string interpolation rather than desugaring it" $ do
       let source =
             "node greet\n\
-            \  <- name: Text;\n\
+            \  <- name: Text\n\
             \  -> greeting: Text = \"Hello, ${name}!\";\n\
             \greet\n"
       formatWireSource "test" source `shouldBe` Right source
@@ -222,14 +234,12 @@ spec = do
     it "does not reject manual CorePure concat and toString calls" $ do
       let source =
             "node report\n\
-            \  <- score: Score;\n\
+            \  <- score: Score\n\
             \  -> text: Text = concat [toString score];\n\
             \report\n"
       formatWireSource "test" source
         `shouldBe` Right
-          "node report\n\
-          \  <- score: Score;\n\
-          \  -> text: Text = concat [toString score];\n\
+          "node report <- score: Score -> text: Text = concat [toString score];\n\
           \\n\
           \report\n"
 
@@ -237,16 +247,14 @@ spec = do
       let source =
             "let home = \"${HOME}\";\n\
             \node report\n\
-            \  <- score: Score;\n\
+            \  <- score: Score\n\
             \  -> text: Text = concat [toString score];\n\
             \home => report\n"
       formatWireSource "test" source
         `shouldBe` Right
           "let home = \"${HOME}\";\n\
           \\n\
-          \node report\n\
-          \  <- score: Score;\n\
-          \  -> text: Text = concat [toString score];\n\
+          \node report <- score: Score -> text: Text = concat [toString score];\n\
           \\n\
           \home => report\n"
 
@@ -276,14 +284,12 @@ spec = do
       let source =
             "contract T;\n\
             \node n\n\
-            \  <- input: T;\n\
+            \  <- input: T\n\
             \  -> out: T = input.field.subfield;\n"
       formatWireSource "test" source
         `shouldBe` Right
           "contract T;\n\n\
-          \node n\n\
-          \  <- input: T;\n\
-          \  -> out: T = input.field.subfield;\n"
+          \node n <- input: T -> out: T = input.field.subfield;\n"
 
     it "parenthesises nested lambda bodies" $ do
       let source = "let f = x: (y: y);\nf\n"

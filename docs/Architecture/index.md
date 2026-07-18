@@ -37,7 +37,7 @@ Then read these for the deeper rationale and host-boundary contract:
 | 02  | [Ownership and boundaries](02-ownership-and-boundaries.md)         | Substrate/host boundary, dependency direction, and what stays downstream.                                   |
 | 03  | [Algebraic foundations](03-formalism-stack.md)                     | Why the topology model is algebraic and why rewrites can stay law-preserving.                               |
 | 04  | [Graph and Circuit](04-graph-and-circuit.md)                       | Pure topology vs validated executable topology.                                                             |
-| 05  | [Wire language](05-wire-language.md)                               | Source-language architecture: registered authority, boundary typing, configured executors, runtime handoff. |
+| 05  | [Wire language](05-wire-language.md)                               | Source-language architecture: registered authority, boundary typing, executor authorities, runtime handoff. |
 | 06  | [Pulse runtime](06-pulse-runtime.md)                               | Durable execution service, service boundary, task types, checkpoints.                                       |
 | 07  | [Rewrites and materialization](07-rewrites-and-materialization.md) | Bounded dynamic graph evolution, gas, admission policy.                                                     |
 | 08  | [Artifacts and provenance](08-artifacts-and-provenance.md)         | Runtime outputs, contract envelopes, provenance chains.                                                     |

@@ -37,14 +37,14 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0019](0019-executor-registration-and-binding.md)                  | Executor Registration and Binding                                          | proposed   |
 | [0020](0020-wire-pure-output-equations.md)                         | Wire Pure Output Equations                                                 | accepted   |
 | [0021](0021-wire-source-elaborates-to-circuits.md)                 | Wire Source Elaborates to Circuits                                         | proposed   |
-| [0022](0022-wire-node-clause-grammar.md)                           | Wire Node Clause Grammar                                                   | proposed   |
+| [0022](0022-wire-node-clause-grammar.md)                           | Wire Node Clause Grammar                                                   | superseded |
 | [0023](0023-corepure-expression-surface.md)                        | CorePure Expression Surface                                                | proposed   |
-| [0024](0024-typed-executor-node-interface.md)                      | Typed Executor Node Interface                                              | proposed   |
-| [0025](0025-configured-executor-values.md)                         | Configured Executor Values                                                 | proposed   |
+| [0024](0024-typed-executor-node-interface.md)                      | Typed Executor Node Interface                                              | superseded |
+| [0025](0025-configured-executor-values.md)                         | Configured Executor Values                                                 | superseded |
 | [0026](0026-wire-failure-taxonomy.md)                              | Wire Failure Taxonomy                                                      | proposed   |
 | [0028](0028-wire-topology-composition-and-boundary-labels.md)      | Wire Topology Composition and Boundary Labels                              | proposed   |
 | [0029](0029-corepure-structured-serialization.md)                  | CorePure Structured Serialization                                          | proposed   |
-| [0030](0030-wire-node-implementation-forms.md)                     | Wire Node Implementation Forms                                             | proposed   |
+| [0030](0030-wire-node-implementation-forms.md)                     | Wire Node Implementation Forms                                             | superseded |
 | [0031](0031-wire-binding-forms-and-where-clauses.md)               | Wire Binding Forms and Node Where Clauses                                  | proposed   |
 | [0032](0032-wire-boundary-contract-resources.md)                   | Wire Boundary Contracts as Planning Resources                              | proposed   |
 | [0033](0033-wire-select-guarded-affine-collapse.md)                | Wire Select as Guarded Affine Collapse                                     | proposed   |
@@ -109,6 +109,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0092](0092-circuit-engine-runtime-host-boundary.md)               | Circuit Engine and Runtime-Host Boundary                                   | accepted   |
 | [0093](0093-versioned-circuit-state-event-control-protocol.md)     | Versioned Circuit State, Event, and Control Protocol                       | accepted   |
 | [0094](0094-hosted-x86-64-linux-executable-profile.md)             | Hosted x86_64 Linux Executable Profile                                     | accepted   |
+| [0095](0095-wire-single-record-executor-boundary.md)               | Wire Single-Record Executor Boundary                                       | accepted   |
 
 ## By category
 

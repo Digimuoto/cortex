@@ -280,8 +280,8 @@ pureSourceText :: Text
 pureSourceText =
   T.unlines
     [ "node score"
-    , "  <- evidence_score: Float ;"
-    , "  <- recency_score: Float ;"
+    , "  <- evidence_score: Float "
+    , "  <- recency_score: Float "
     , "  -> out: Float = evidence_score + recency_score ;"
     , "score"
     ]

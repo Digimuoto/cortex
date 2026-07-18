@@ -23,6 +23,31 @@ import Cortex.Wire
 
 spec :: Spec
 spec = describe "Cortex.Wire runtime egress" $ do
+  describe "one-record executor argument boundary" $ do
+    let schema =
+          WireExecutorArgumentSchema $
+            Aeson.object
+              [ "type" Aeson..= ("object" :: Text)
+              , "required" Aeson..= ["payload" :: Text]
+              , "additionalProperties" Aeson..= False
+              , "properties"
+                  Aeson..= Aeson.object
+                    [ "payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]
+                    ]
+              ]
+
+    it "returns the evaluated record unchanged after schema validation" $ do
+      let argument = Aeson.object ["payload" Aeson..= ("hello" :: Text)]
+      validateWireExecutorArgument schema argument `shouldBe` Right argument
+
+    it "rejects invalid arguments before a host binding can be invoked" $
+      validateWireExecutorArgument schema (Aeson.object ["payload" Aeson..= (7 :: Int)])
+        `shouldBeLeftContaining` "expected string at $.payload"
+
+    it "rejects non-record values even for unchecked executor projections" $
+      validateWireExecutorArgument WireExecutorArgumentUnchecked (Aeson.String "raw")
+        `shouldBeLeftContaining` "must be a normalized JSON object"
+
   it "wraps raw single-output JSON through the declared output port" $ do
     result <-
       requireRight $

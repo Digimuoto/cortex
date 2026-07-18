@@ -85,7 +85,7 @@ data CorePureIngress = CorePureIngress
 
 data ExecutorIngress = ExecutorIngress
   { executorIngressWhere :: !(Maybe CorePureExpr)
-  , executorIngressInput :: !CorePureExpr
+  , executorIngressArgument :: !CorePureExpr
   }
   deriving stock (Eq, Show)
 
@@ -103,7 +103,7 @@ newtype CorePureBody = CorePureBody
 
 data ExecutorBody = ExecutorBody
   { executorBodyExecutor :: !WireExecutor
-  , executorBodyConfig :: !(Maybe Aeson.Value)
+  , executorBodyArgument :: !Aeson.Value
   }
   deriving stock (Eq, Show)
 
@@ -173,9 +173,9 @@ executorNodeBoundaryNormalForm
   -> Maybe CorePureExpr
   -> CorePureExpr
   -> WireExecutor
-  -> Maybe Aeson.Value
+  -> Aeson.Value
   -> NodeBoundaryNormalForm
-executorNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr executor configValue =
+executorNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr executor argumentValue =
   NodeBoundaryNormalForm
     { nodeBoundaryRef = nodeRef
     , nodeBoundaryPorts = ports
@@ -183,13 +183,13 @@ executorNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr executor config
         NodeBoundaryExecutorIngress
           ExecutorIngress
             { executorIngressWhere = whereExpr
-            , executorIngressInput = inputExpr
+            , executorIngressArgument = inputExpr
             }
     , nodeBoundaryBody =
         NodeBoundaryExecutorBody
           ExecutorBody
             { executorBodyExecutor = executor
-            , executorBodyConfig = configValue
+            , executorBodyArgument = argumentValue
             }
     , nodeBoundaryEgress =
         NodeBoundaryEgress
@@ -212,7 +212,7 @@ signalNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr signalName =
         NodeBoundaryExecutorIngress
           ExecutorIngress
             { executorIngressWhere = whereExpr
-            , executorIngressInput = inputExpr
+            , executorIngressArgument = inputExpr
             }
     , nodeBoundaryBody =
         NodeBoundarySignalBody
@@ -241,7 +241,7 @@ artifactNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr artifactKind ta
         NodeBoundaryExecutorIngress
           ExecutorIngress
             { executorIngressWhere = whereExpr
-            , executorIngressInput = inputExpr
+            , executorIngressArgument = inputExpr
             }
     , nodeBoundaryBody =
         NodeBoundaryArtifactBody

@@ -16,6 +16,9 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable qualified as Foldable
+import Data.List (find)
+import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, mapMaybe)
 import Data.Scientific (Scientific, floatingOrInteger)
@@ -26,7 +29,14 @@ import Numeric.Natural (Natural)
 import Test.Hspec
 
 import Cortex.Algebra.Graph (successors)
-import Cortex.Wire (Connection (..), EndpointRef (..), WirePayloadKind (..), renderWireError)
+import Cortex.Wire
+  ( Connection (..)
+  , EndpointRef (..)
+  , WireInputCardinality (..)
+  , WireInputPort (..)
+  , WirePayloadKind (..)
+  , renderWireError
+  )
 import Cortex.Wire.AdmissionArtifact
   ( AdmissionBoundaryPort (..)
   , AdmissionConnection (..)
@@ -100,7 +110,7 @@ import Cortex.Wire.Contract
   , wireContractRegistryFromList
   )
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
@@ -120,6 +130,7 @@ import Cortex.Wire.LeanFixture
   , renderEmittedUmbrellaModule
   , renderFixtureModuleText
   )
+import Cortex.Wire.Package.Registry (NamespaceEntry (..), namespaceRegistryFromEntries)
 import Cortex.Wire.Pure (pureWireExecutorProjection)
 import Cortex.Wire.Std
   ( stdIoReadFileShapeMessage
@@ -2829,6 +2840,25 @@ spec = describe "Cortex.Wire.Compile" $ do
     compileWireFragmentText implicitFanOutSourceText
       `shouldSatisfy` isWireParseFailureContaining "would copy output endpoint"
 
+  it "duplicates one consumed input through fresh pure output equations" $ do
+    let source =
+          T.unlines
+            [ "contract T;"
+            , "node first -> result: T = @review.first;"
+            , "node selector"
+            , "  <- result: T"
+            , "  -> a: T = result;"
+            , "  -> b: T = result;"
+            , "node path_a <- a: T = @review.log a;"
+            , "node path_b <- b: T = @review.log b;"
+            , "first => selector => path_a <> path_b"
+            ]
+    compiled <- requireRight (compileWireText source)
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "first")
+      `shouldBe` Set.singleton (CircuitNodeRef "selector")
+    successors compiled.compiledCircuitTopology (CircuitNodeRef "selector")
+      `shouldBe` Set.fromList [CircuitNodeRef "path_a", CircuitNodeRef "path_b"]
+
   it "rejects implicit input fan-in through connect" $
     compileWireFragmentText implicitFanInSourceText
       `shouldSatisfy` isWireParseFailureContaining "would merge multiple output endpoints"
@@ -3167,20 +3197,89 @@ spec = describe "Cortex.Wire.Compile" $ do
     compileWireText indexedProductArityMismatchSourceText
       `shouldSatisfy` isWireParseFailureContaining "Expected [Sample; 3]"
 
-  it "compiles a configured executor value applied in a node body" $ do
-    compiled <- requireRight (compileWireText configuredExecutorSourceText)
+  it "compiles an executor authority applied in a node body" $ do
+    compiled <- requireRight (compileWireText executorAuthoritySourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
       Just (CompiledCircuitTask taskNode) ->
-        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasNumber "temperature" 0.2
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataArgumentCfgHasNumber "temperature" 0.2
       other ->
         expectationFailure ("expected task node, got: " <> show other)
+
+  it "normalizes a zero-argument executor call to an empty record" $ do
+    compiled <- requireRight (compileWireText "node fetch -> result: Result = @review.fetch;\nfetch")
+    case Map.lookup (CircuitNodeRef "fetch") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        metadataArgumentValue taskNode.circuitTaskNodeMetadata
+          `shouldBe` Just (Syntax.CorePureRecord [])
+      other -> expectationFailure ("expected task node, got: " <> show other)
+
+  it "auto-wraps a scalar executor argument under payload" $ do
+    compiled <-
+      requireRight
+        (compileWireText "node log <- value: Result = @review.log value;\nlog")
+    case Map.lookup (CircuitNodeRef "log") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        metadataArgumentValue taskNode.circuitTaskNodeMetadata
+          `shouldBe` Just
+            ( Syntax.CorePureRecord
+                [Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "value")]
+            )
+      other -> expectationFailure ("expected task node, got: " <> show other)
+
+  it "keeps an explicit executor argument record unchanged" $ do
+    compiled <-
+      requireRight
+        ( compileWireText
+            "node log <- value: Result = @review.log { payload = value; cfg = { mode = \"safe\"; }; };\nlog"
+        )
+    case Map.lookup (CircuitNodeRef "log") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        metadataArgumentValue taskNode.circuitTaskNodeMetadata
+          `shouldBe` Just
+            ( Syntax.CorePureRecord
+                [ Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "value")
+                , Syntax.CorePureField
+                    ("cfg" :| [])
+                    ( Syntax.CorePureRecord
+                        [ Syntax.CorePureField
+                            ("mode" :| [])
+                            (Syntax.CorePureLit (Syntax.CorePureString "safe"))
+                        ]
+                    )
+                ]
+            )
+      other -> expectationFailure ("expected task node, got: " <> show other)
+
+  it "rejects unknown compiler-owned node metadata" $
+    compileWireText "node fetch with { mystery = true; } -> result: Result = @review.fetch;"
+      `shouldBe` Left
+        (WireInvalidPorts (CircuitNodeRef "fetch") "unknown node metadata field mystery")
+
+  it "rejects dynamically evaluated compiler-owned node metadata" $
+    compileWireText "node fetch with { timeout = runtimeValue; } -> result: Result = @review.fetch;"
+      `shouldSatisfy` isLeft
+
+  it "applies compiler-owned metadata to pure nodes" $ do
+    compiled <-
+      requireRight $
+        compileWireText
+          "node identity with { label = \"Pure identity\"; timeout = 5; } <- value: T -> result: T = value;\nidentity"
+    case Map.lookup (CircuitNodeRef "identity") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        taskNode.circuitTaskNodeLabel `shouldBe` "Pure identity"
+      other -> expectationFailure ("expected pure task node, got: " <> show other)
+
+  it "rejects unknown metadata on pure nodes" $
+    compileWireText "node identity with { mystery = true; } <- value: T -> result: T = value;"
+      `shouldBe` Left
+        (WireInvalidPorts (CircuitNodeRef "identity") "unknown node metadata field mystery")
 
   it "compiles node-body kind applications into ordinary nodes" $ do
     compiled <- requireRight (compileWireText kindApplicationSourceText)
     Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "screen_h")
     case Map.lookup (CircuitNodeRef "screen_h") compiled.compiledCircuitNodes of
       Just (CompiledCircuitTask taskNode) ->
-        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasNumber "angle" 1.25
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataArgumentCfgHasNumber "angle" 1.25
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
@@ -3223,11 +3322,11 @@ spec = describe "Cortex.Wire.Compile" $ do
     compiled.compiledCircuitEntryNodes `shouldBe` [CircuitNodeRef "library"]
     Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "library")
 
-  it "lowers executor where records into executor config" $ do
+  it "lowers executor where records alongside the executor argument" $ do
     compiled <- requireRight (compileWireText executorWhereSourceText)
     case Map.lookup (CircuitNodeRef "analyze") compiled.compiledCircuitNodes of
       Just (CompiledCircuitTask taskNode) ->
-        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasKey "where"
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataArgumentHasKey "where"
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
@@ -3367,7 +3466,7 @@ spec = describe "Cortex.Wire.Compile" $ do
         ( T.unlines
             [ "contract LocalOnly;"
             , "node local"
-            , "  -> out: LocalOnly = @review.local ({}) ;"
+            , "  -> out: LocalOnly = @review.local ;"
             , "local"
             ]
         )
@@ -3442,6 +3541,14 @@ spec = describe "Cortex.Wire.Compile" $ do
     it "rejects mismatched ports in strict projection mode" $
       compileWireTextWithEnv strictExecutorEnv mismatchedExecutorPortsSourceText
         `shouldBe` Left (WireExecutorPortsMismatch (CircuitNodeRef "projected") "review.projected")
+
+    it "proves imported UART and log boundaries from strict registry projections" $
+      pendingWith "strict imported namespace projection fixture awaits package-backed registry wiring"
+
+    it "rejects a log node whose imported boundary differs from its strict projection" $
+      compileWireTextWithEnv wireosStrictEnv wireosWrongLogBoundarySourceText
+        `shouldBe` Left
+          (WireExecutorPortsMismatch (CircuitNodeRef "path") "wireos.kernel.log")
 
     it "allows author-declared ports for the pure executor in strict projection mode" $
       compileWireTextWithEnv strictExecutorEnv pureExecutorSourceText
@@ -3522,9 +3629,9 @@ spec = describe "Cortex.Wire.Compile" $ do
       compileWireTextWithEnv strictExecutorEnv legacyPureExecutorSourceText
         `shouldSatisfy` isParseFailure
 
-    it "rejects configured executor values inside CorePure output equations" $
-      compileWireText configuredExecutorInPureOutputSourceText
-        `shouldSatisfy` isCorePureScopeViolationOf "configured executor analyst_base"
+    it "rejects executor authority values inside CorePure output equations" $
+      compileWireText executorAuthorityInPureOutputSourceText
+        `shouldSatisfy` isCorePureScopeViolationOf "executor analyst_base"
 
     it "rejects graph values inside CorePure output equations" $
       compileWireText graphBindingInPureOutputSourceText
@@ -3748,7 +3855,7 @@ spec = describe "Cortex.Wire.Compile" $ do
       case Map.lookup (CircuitNodeRef "ibm_runtime_config") compiled.compiledCircuitNodes of
         Just (CompiledCircuitTask taskNode) ->
           taskNode.circuitTaskNodeMetadata
-            `shouldSatisfy` metadataConfigHasString
+            `shouldSatisfy` metadataArgumentCfgHasString
               "path"
               "quantum-ibm-runtime.local.json"
         other ->
@@ -4392,10 +4499,10 @@ simpleChainSourceText :: T.Text
 simpleChainSourceText =
   T.unlines
     [ "node planner"
-    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ;"
     , "node analyst"
-    , "  <- plan: PlannerOutput ;"
-    , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
+    , "  <- plan: PlannerOutput "
+    , "  -> analysis: AnalysisFragment = @review.analyst plan;"
     , "planner => analyst"
     ]
 
@@ -4403,9 +4510,9 @@ overlayFragmentSourceText :: T.Text
 overlayFragmentSourceText =
   T.unlines
     [ "node stress_alpha"
-    , "  -> fragment: AnalysisFragment = @review.alpha ({}) ;"
+    , "  -> fragment: AnalysisFragment = @review.alpha ;"
     , "node stress_beta"
-    , "  -> fragment: AnalysisFragment = @review.beta ({}) ;"
+    , "  -> fragment: AnalysisFragment = @review.beta ;"
     , "(stress_alpha) <> (stress_beta)"
     ]
 
@@ -4413,7 +4520,7 @@ repeatedGraphReferenceSourceText :: T.Text
 repeatedGraphReferenceSourceText =
   T.unlines
     [ "node source"
-    , "  -> out: T = @review.source ({}) ;"
+    , "  -> out: T = @review.source ;"
     , "source <> source"
     ]
 
@@ -4421,13 +4528,13 @@ implicitFanOutSourceText :: T.Text
 implicitFanOutSourceText =
   T.unlines
     [ "node source"
-    , "  -> plan: T = @review.source ({}) ;"
+    , "  -> plan: T = @review.source ;"
     , "node audit"
-    , "  <- plan: T ;"
-    , "  -> audit: U = @review.audit (plan) ;"
+    , "  <- plan: T "
+    , "  -> audit: U = @review.audit plan;"
     , "node decide"
-    , "  <- plan: T ;"
-    , "  -> decision: U = @review.decide (plan) ;"
+    , "  <- plan: T "
+    , "  -> decision: U = @review.decide plan;"
     , "source => (audit <> decide)"
     ]
 
@@ -4435,12 +4542,12 @@ implicitFanInSourceText :: T.Text
 implicitFanInSourceText =
   T.unlines
     [ "node left"
-    , "  -> value: T = @review.left ({}) ;"
+    , "  -> value: T = @review.left ;"
     , "node right"
-    , "  -> value: T = @review.right ({}) ;"
+    , "  -> value: T = @review.right ;"
     , "node sink"
-    , "  <- value: T ;"
-    , "  -> done: U = @review.sink (value) ;"
+    , "  <- value: T "
+    , "  -> done: U = @review.sink value ;"
     , "(left <> right) => sink"
     ]
 
@@ -4448,7 +4555,7 @@ makeExpansionSourceText :: T.Text
 makeExpansionSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "let workers = make(3, sample);"
     , "workers"
     ]
@@ -4457,7 +4564,7 @@ makeStaticCountSourceText :: T.Text
 makeStaticCountSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "let count = 2;"
     , "let workers = make(count, sample);"
     , "workers"
@@ -4467,9 +4574,9 @@ makeZeroSourceText :: T.Text
 makeZeroSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "node sink"
-    , "  -> done: Done = @review.sink ({}) ;"
+    , "  -> done: Done = @review.sink ;"
     , "let workers = make(0, sample);"
     , "workers <> sink"
     ]
@@ -4478,7 +4585,7 @@ indexedMakeProjectionSourceText :: T.Text
 indexedMakeProjectionSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "let workers[] = make(2, sample);"
     , "workers[1]"
     ]
@@ -4487,9 +4594,9 @@ unusedMakeFamilySourceText :: T.Text
 unusedMakeFamilySourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "node sink"
-    , "  -> done: Done = @review.sink ({}) ;"
+    , "  -> done: Done = @review.sink ;"
     , "let workers[] = make(2, sample);"
     , "sink"
     ]
@@ -4498,7 +4605,7 @@ formLocalMakeStaticCountSourceText :: T.Text
 formLocalMakeStaticCountSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "form batch_form() = {"
     , "  let count = 2;"
     , "  let workers = make(count, sample);"
@@ -4512,7 +4619,7 @@ makeEachSourceText :: T.Text
 makeEachSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "let worker_names = [\"alpha\", \"beta\"];"
     , "let workers = makeEach(worker_names, sample);"
     , "workers"
@@ -4522,9 +4629,9 @@ makeEachEmptySourceText :: T.Text
 makeEachEmptySourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "node sink"
-    , "  -> done: Done = @review.sink ({}) ;"
+    , "  -> done: Done = @review.sink ;"
     , "let workers = makeEach([], sample);"
     , "workers <> sink"
     ]
@@ -4564,12 +4671,12 @@ starGatherSourceText :: T.Text
 starGatherSourceText =
   T.unlines
     [ "node a"
-    , "  -> a: A = @review.a ({}) ;"
+    , "  -> a: A = @review.a ;"
     , "node b"
-    , "  -> b: B = @review.b ({}) ;"
+    , "  -> b: B = @review.b ;"
     , "node sink"
-    , "  <- pair: Pair ;"
-    , "  -> done: Done = @review.sink (pair) ;"
+    , "  <- pair: Pair "
+    , "  -> done: Done = @review.sink pair ;"
     , "(a <> b) * sink"
     ]
 
@@ -4577,10 +4684,10 @@ indexedProductGatherSourceText :: T.Text
 indexedProductGatherSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "node sink"
-    , "  <- samples: [Sample; 3] ;"
-    , "  -> done: Done = @review.sink (samples) ;"
+    , "  <- samples: [Sample; 3]"
+    , "  -> done: Done = @review.sink samples ;"
     , "let workers[] = make(3, sample);"
     , "workers * sink"
     ]
@@ -4589,10 +4696,10 @@ singletonIndexedProductGatherSourceText :: T.Text
 singletonIndexedProductGatherSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "node sink"
-    , "  <- samples: [Sample; 1] ;"
-    , "  -> done: Done = @review.sink (samples) ;"
+    , "  <- samples: [Sample; 1]"
+    , "  -> done: Done = @review.sink samples ;"
     , "let workers[] = make(1, sample);"
     , "workers * sink"
     ]
@@ -4601,13 +4708,13 @@ starScatterSourceText :: T.Text
 starScatterSourceText =
   T.unlines
     [ "node source"
-    , "  -> pair: Pair = @review.source ({}) ;"
+    , "  -> pair: Pair = @review.source ;"
     , "node a"
-    , "  <- a: A ;"
-    , "  -> done_a: Done = @review.a (a) ;"
+    , "  <- a: A "
+    , "  -> done_a: Done = @review.a a ;"
     , "node b"
-    , "  <- b: B ;"
-    , "  -> done_b: Done = @review.b (b) ;"
+    , "  <- b: B "
+    , "  -> done_b: Done = @review.b b ;"
     , "source * (a <> b)"
     ]
 
@@ -4615,10 +4722,10 @@ indexedProductScatterSourceText :: T.Text
 indexedProductScatterSourceText =
   T.unlines
     [ "node source"
-    , "  -> samples: [Sample; 3] = @review.source ({}) ;"
+    , "  -> samples: [Sample; 3] = @review.source ;"
     , "kind consume(label: PortLabel) ="
-    , "  <- label: Sample ;"
-    , "  -> label: Done = @review.consume (label) ;"
+    , "  <- label: Sample "
+    , "  -> label: Done = @review.consume label ;"
     , "let workers[] = make(3, consume);"
     , "source * workers"
     ]
@@ -4627,10 +4734,10 @@ singletonIndexedProductScatterSourceText :: T.Text
 singletonIndexedProductScatterSourceText =
   T.unlines
     [ "node source"
-    , "  -> samples: [Sample; 1] = @review.source ({}) ;"
+    , "  -> samples: [Sample; 1] = @review.source ;"
     , "kind consume(label: PortLabel) ="
-    , "  <- label: Sample ;"
-    , "  -> label: Done = @review.consume (label) ;"
+    , "  <- label: Sample "
+    , "  -> label: Done = @review.consume label ;"
     , "let workers[] = make(1, consume);"
     , "source * workers"
     ]
@@ -4639,7 +4746,7 @@ starEmptyScatterSourceText :: T.Text
 starEmptyScatterSourceText =
   T.unlines
     [ "node source"
-    , "  -> empty: EmptyRecord = @review.source ({}) ;"
+    , "  -> empty: EmptyRecord = @review.source ;"
     , "source * ()"
     ]
 
@@ -4647,10 +4754,10 @@ flatSingletonStarSourceText :: T.Text
 flatSingletonStarSourceText =
   T.unlines
     [ "node source"
-    , "  -> pair: Pair = @review.source ({}) ;"
+    , "  -> pair: Pair = @review.source ;"
     , "node sink"
-    , "  <- pair: Pair ;"
-    , "  -> done: Done = @review.sink (pair) ;"
+    , "  <- pair: Pair "
+    , "  -> done: Done = @review.sink pair ;"
     , "source * sink"
     ]
 
@@ -4658,24 +4765,24 @@ indexedProductArityMismatchSourceText :: T.Text
 indexedProductArityMismatchSourceText =
   T.unlines
     [ "kind sample(label: PortLabel) ="
-    , "  -> label: Sample = @review.sample ({}) ;"
+    , "  -> label: Sample = @review.sample ;"
     , "node sink"
-    , "  <- samples: [Sample; 3] ;"
-    , "  -> done: Done = @review.sink (samples) ;"
+    , "  <- samples: [Sample; 3]"
+    , "  -> done: Done = @review.sink samples ;"
     , "let workers[] = make(2, sample);"
     , "workers * sink"
     ]
 
-configuredExecutorSourceText :: T.Text
-configuredExecutorSourceText =
+executorAuthoritySourceText :: T.Text
+executorAuthoritySourceText =
   T.unlines
-    [ "let analyst_base = @review.analyst { temperature = 0.2 ; } ;"
+    [ "let analyst_base = @review.analyst;"
     , "node planner"
-    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ;"
     , "node analyst"
-    , "  <- plan: PlannerOutput ;"
-    , "  -> analysis: AnalysisFragment ;"
-    , "  = analyst_base (plan) ;"
+    , "  <- plan: PlannerOutput "
+    , "  -> analysis: AnalysisFragment "
+    , "  = @analyst_base { payload = plan; cfg = { temperature = 0.2; }; };"
     , "planner => analyst"
     ]
 
@@ -4683,8 +4790,8 @@ kindApplicationSourceText :: T.Text
 kindApplicationSourceText =
   T.unlines
     [ "kind phase_gate(label: PortLabel, portContract: Contract, angle: Value) ="
-    , "  <- label: portContract ;"
-    , "  -> label: portContract = @quantum.rz { angle = angle ; } (label) ;"
+    , "  <- label: portContract "
+    , "  -> label: portContract = @quantum.rz { payload = label; cfg = { angle = angle; }; };"
     , "node screen_h = phase_gate(screen, Qubit, 1.25);"
     , "screen_h"
     ]
@@ -4693,8 +4800,8 @@ graphFormSourceText :: T.Text
 graphFormSourceText =
   T.unlines
     [ "kind phase_gate(label: PortLabel, portContract: Contract, angle: Value) ="
-    , "  <- label: portContract ;"
-    , "  -> label: portContract = @quantum.rz { angle = angle ; } (label) ;"
+    , "  <- label: portContract "
+    , "  -> label: portContract = @quantum.rz { payload = label; cfg = { angle = angle; }; };"
     , "form two_phases(angle: Value) = {"
     , "  node first = phase_gate(screen, Qubit, angle);"
     , "  node second = phase_gate(screen, Qubit, angle);"
@@ -4708,11 +4815,11 @@ graphFormGraphParamSourceText :: T.Text
 graphFormGraphParamSourceText =
   T.unlines
     [ "node source"
-    , "  -> out: T = @review.source ({}) ;"
+    , "  -> out: T = @review.source ;"
     , "form append_tail(head: Graph) = {"
     , "  node tail"
-    , "    <- out: T ;"
-    , "    -> done: U = @review.tail (out) ;"
+    , "    <- out: T "
+    , "    -> done: U = @review.tail out ;"
     , "  head => tail;"
     , "};"
     , "let base = source;"
@@ -4726,13 +4833,13 @@ topLevelLetConfigSourceText =
     [ "let prefix = \"Audit \" ;"
     , "let suffix = \"now\" ;"
     , "let analyst_instructions = prefix ++ suffix ;"
-    , "let analyst_base = @review.analyst { instructions = analyst_instructions ; } ;"
+    , "let analyst_base = @review.analyst;"
     , "node planner"
-    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
-    , "node analyst"
-    , "  <- plan: PlannerOutput ;"
-    , "  -> analysis: AnalysisFragment ;"
-    , "  = analyst_base (plan) ;"
+    , "  -> plan: PlannerOutput = @review.planner ;"
+    , "node analyst with { instructions = analyst_instructions; }"
+    , "  <- plan: PlannerOutput "
+    , "  -> analysis: AnalysisFragment "
+    , "  = @analyst_base plan;"
     , "planner => analyst"
     ]
 
@@ -4740,10 +4847,10 @@ graphLetSourceText :: T.Text
 graphLetSourceText =
   T.unlines
     [ "node planner"
-    , "  -> plan: PlannerOutput = @review.planner ({}) ;"
+    , "  -> plan: PlannerOutput = @review.planner ;"
     , "node analyst"
-    , "  <- plan: PlannerOutput ;"
-    , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
+    , "  <- plan: PlannerOutput "
+    , "  -> analysis: AnalysisFragment = @review.analyst plan;"
     , "let pipeline = planner => analyst ;"
     , "pipeline"
     ]
@@ -4752,9 +4859,9 @@ exportedGraphLibrarySourceText :: T.Text
 exportedGraphLibrarySourceText =
   T.unlines
     [ "node library"
-    , "  -> out: LibraryOutput = @review.library ({}) ;"
+    , "  -> out: LibraryOutput = @review.library ;"
     , "node main"
-    , "  -> out: MainOutput = @review.main ({}) ;"
+    , "  -> out: MainOutput = @review.main ;"
     , "export let library_graph = library ;"
     , "main"
     ]
@@ -4763,10 +4870,10 @@ zeroOutputSourceText :: T.Text
 zeroOutputSourceText =
   T.unlines
     [ "node emit"
-    , "  -> event: Event = @review.event ({}) ;"
+    , "  -> event: Event = @review.event ;"
     , "node log_event"
-    , "  <- event: Event ;"
-    , "  = @artifact.log (event) ;"
+    , "  <- event: Event "
+    , "  = @artifact.log event;"
     , "emit => log_event"
     ]
 
@@ -4774,9 +4881,9 @@ executorWhereSourceText :: T.Text
 executorWhereSourceText =
   T.unlines
     [ "node analyze"
-    , "  <- evidence: EvidenceSet ;"
-    , "  -> analysis: AnalysisRecord ;"
-    , "  = @review.analyze (payload) ;"
+    , "  <- evidence: EvidenceSet "
+    , "  -> analysis: AnalysisRecord "
+    , "  = @review.analyze payload ;"
     , "  where { payload = { items = evidence.items ; } ; } ;"
     , "analyze"
     ]
@@ -4785,20 +4892,20 @@ selectSourceText :: T.Text
 selectSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan ;"
-    , "  -> ok: ResearchPlan | issue: PlanIssue ;"
-    , "  = @review.validate_plan (draft) ;"
+    , "  <- draft: DraftPlan "
+    , "  -> ok: ResearchPlan | issue: PlanIssue "
+    , "  = @review.validate_plan draft ;"
     , "node gather_missing_constraints"
-    , "  <- issue: PlanIssue ;"
-    , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> issue: PlanIssue = @review.gather_missing_constraints issue ;"
     , "node repair_plan"
-    , "  <- issue: PlanIssue ;"
-    , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> ok: ResearchPlan = @review.repair_plan issue ;"
     , "node publish_report"
-    , "  <- ok: ResearchPlan ;"
-    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "  <- ok: ResearchPlan "
+    , "  -> report: ReportArtifactRef = @artifact.publish_report ok ;"
     , "draft_plan => validate_plan select("
     , "  ok: (),"
     , "  issue: (gather_missing_constraints => repair_plan)"
@@ -4809,20 +4916,20 @@ selectReorderedArmsSourceText :: T.Text
 selectReorderedArmsSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan ;"
-    , "  -> ok: ResearchPlan | issue: PlanIssue ;"
-    , "  = @review.validate_plan (draft) ;"
+    , "  <- draft: DraftPlan "
+    , "  -> ok: ResearchPlan | issue: PlanIssue "
+    , "  = @review.validate_plan draft ;"
     , "node gather_missing_constraints"
-    , "  <- issue: PlanIssue ;"
-    , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> issue: PlanIssue = @review.gather_missing_constraints issue ;"
     , "node repair_plan"
-    , "  <- issue: PlanIssue ;"
-    , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> ok: ResearchPlan = @review.repair_plan issue ;"
     , "node publish_report"
-    , "  <- ok: ResearchPlan ;"
-    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "  <- ok: ResearchPlan "
+    , "  -> report: ReportArtifactRef = @artifact.publish_report ok ;"
     , "draft_plan => validate_plan select("
     , "  issue: (gather_missing_constraints => repair_plan),"
     , "  ok: ()"
@@ -4833,20 +4940,20 @@ selectReorderedNonIdentityArmsSourceText :: T.Text
 selectReorderedNonIdentityArmsSourceText =
   T.unlines
     [ "node decide"
-    , "  -> survived: SurvivedClaims | killed: CandidateRejection ;"
-    , "  = @demo.decide ({}) ;"
+    , "  -> survived: SurvivedClaims | killed: CandidateRejection "
+    , "  = @demo.decide ;"
     , "node kill_note_momentum"
-    , "  <- killed: CandidateRejection ;"
-    , "  -> out: Momentum = @demo.kill_note_momentum (killed) ;"
+    , "  <- killed: CandidateRejection "
+    , "  -> out: Momentum = @demo.kill_note_momentum killed ;"
     , "node themis_momentum"
-    , "  <- survived: SurvivedClaims ;"
-    , "  -> themis: ThemisMomentum = @demo.themis_momentum (survived) ;"
+    , "  <- survived: SurvivedClaims "
+    , "  -> themis: ThemisMomentum = @demo.themis_momentum survived ;"
     , "node techne_momentum"
-    , "  <- themis: ThemisMomentum ;"
-    , "  -> out: Momentum = @demo.techne_momentum (themis) ;"
+    , "  <- themis: ThemisMomentum "
+    , "  -> out: Momentum = @demo.techne_momentum themis ;"
     , "node publish"
-    , "  <- out: Momentum ;"
-    , "  -> report: Report = @demo.publish (out) ;"
+    , "  <- out: Momentum "
+    , "  -> report: Report = @demo.publish out ;"
     , "decide select("
     , "  killed: kill_note_momentum,"
     , "  survived: (themis_momentum => techne_momentum)"
@@ -4857,20 +4964,20 @@ selectContractFallbackSourceText :: T.Text
 selectContractFallbackSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan ;"
-    , "  -> valid: ResearchPlan | issue: PlanIssue ;"
-    , "  = @review.validate_plan (draft) ;"
+    , "  <- draft: DraftPlan "
+    , "  -> valid: ResearchPlan | issue: PlanIssue "
+    , "  = @review.validate_plan draft ;"
     , "node gather_missing_constraints"
-    , "  <- issue: PlanIssue ;"
-    , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> issue: PlanIssue = @review.gather_missing_constraints issue ;"
     , "node repair_plan"
-    , "  <- issue: PlanIssue ;"
-    , "  -> valid: ResearchPlan = @review.repair_plan (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> valid: ResearchPlan = @review.repair_plan issue ;"
     , "node publish_report"
-    , "  <- valid: ResearchPlan ;"
-    , "  -> report: ReportArtifactRef = @artifact.publish_report (valid) ;"
+    , "  <- valid: ResearchPlan "
+    , "  -> report: ReportArtifactRef = @artifact.publish_report valid ;"
     , "draft_plan => validate_plan select("
     , "  ResearchPlan: (),"
     , "  PlanIssue: (gather_missing_constraints => repair_plan)"
@@ -4881,12 +4988,12 @@ paperBuildPipelineSourceText :: T.Text
 paperBuildPipelineSourceText =
   T.unlines
     [ "node source"
-    , "  -> src: Sources = @demo.source ({});"
+    , "  -> src: Sources = @demo.source ;"
     , "node config"
-    , "  -> cfg: BuildConfig = @demo.config ({});"
+    , "  -> cfg: BuildConfig = @demo.config ;"
     , "node build"
-    , "  <- src: Sources;"
-    , "  <- cfg: BuildConfig;"
+    , "  <- src: Sources"
+    , "  <- cfg: BuildConfig"
     , "  -> bin: Binary = {"
     , "    src = src;"
     , "  };"
@@ -4894,7 +5001,7 @@ paperBuildPipelineSourceText =
     , "    cfg = cfg;"
     , "  };"
     , "node package"
-    , "  <- bin: Binary;"
+    , "  <- bin: Binary"
     , "  -> pkg: Package = {"
     , "    bin = bin;"
     , "  };"
@@ -4905,12 +5012,12 @@ paperBuildPipelineFanOutSourceText :: T.Text
 paperBuildPipelineFanOutSourceText =
   T.unlines
     [ "node source"
-    , "  -> src: Sources = @demo.source ({});"
+    , "  -> src: Sources = @demo.source ;"
     , "node config"
-    , "  -> cfg: BuildConfig = @demo.config ({});"
+    , "  -> cfg: BuildConfig = @demo.config ;"
     , "node build"
-    , "  <- src: Sources;"
-    , "  <- cfg: BuildConfig;"
+    , "  <- src: Sources"
+    , "  <- cfg: BuildConfig"
     , "  -> bin: Binary = {"
     , "    src = src;"
     , "  };"
@@ -4918,12 +5025,12 @@ paperBuildPipelineFanOutSourceText =
     , "    cfg = cfg;"
     , "  };"
     , "node package"
-    , "  <- bin: Binary;"
+    , "  <- bin: Binary"
     , "  -> pkg: Package = {"
     , "    bin = bin;"
     , "  };"
     , "node archive"
-    , "  <- bin: Binary;"
+    , "  <- bin: Binary"
     , "  -> arc: Archive = {"
     , "    bin = bin;"
     , "  };"
@@ -4934,7 +5041,7 @@ paperOpenInputSourceText :: T.Text
 paperOpenInputSourceText =
   T.unlines
     [ "node sink"
-    , "  <- x: Thing;"
+    , "  <- x: Thing"
     , "  -> y: Out = {"
     , "    x = x;"
     , "  };"
@@ -4945,11 +5052,11 @@ paperFanInSameKeySourceText :: T.Text
 paperFanInSameKeySourceText =
   T.unlines
     [ "node alpha"
-    , "  -> v: K = @demo.alpha ({});"
+    , "  -> v: K = @demo.alpha ;"
     , "node beta"
-    , "  -> v: K = @demo.beta ({});"
+    , "  -> v: K = @demo.beta ;"
     , "node gamma"
-    , "  <- v: K;"
+    , "  <- v: K"
     , "  -> out: Done = {"
     , "    v = v;"
     , "  };"
@@ -4960,14 +5067,14 @@ paperFanOutSameKeySourceText :: T.Text
 paperFanOutSameKeySourceText =
   T.unlines
     [ "node alpha"
-    , "  -> v: K = @demo.alpha ({});"
+    , "  -> v: K = @demo.alpha ;"
     , "node gammaOne"
-    , "  <- v: K;"
+    , "  <- v: K"
     , "  -> out: DoneOne = {"
     , "    v = v;"
     , "  };"
     , "node gammaTwo"
-    , "  <- v: K;"
+    , "  <- v: K"
     , "  -> res: DoneTwo = {"
     , "    v = v;"
     , "  };"
@@ -4978,16 +5085,16 @@ paperTwoTwoSameKeySourceText :: T.Text
 paperTwoTwoSameKeySourceText =
   T.unlines
     [ "node alpha"
-    , "  -> v: K = @demo.alpha ({});"
+    , "  -> v: K = @demo.alpha ;"
     , "node beta"
-    , "  -> v: K = @demo.beta ({});"
+    , "  -> v: K = @demo.beta ;"
     , "node gammaOne"
-    , "  <- v: K;"
+    , "  <- v: K"
     , "  -> out: DoneOne = {"
     , "    v = v;"
     , "  };"
     , "node gammaTwo"
-    , "  <- v: K;"
+    , "  <- v: K"
     , "  -> res: DoneTwo = {"
     , "    v = v;"
     , "  };"
@@ -4998,13 +5105,13 @@ paperSelectExtraExitSourceText :: T.Text
 paperSelectExtraExitSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({});"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan;"
-    , "  -> ok: ResearchPlan | issue: PlanIssue;"
-    , "  = @review.validate_plan (draft);"
+    , "  <- draft: DraftPlan"
+    , "  -> ok: ResearchPlan | issue: PlanIssue"
+    , "  = @review.validate_plan draft;"
     , "node side"
-    , "  -> extra: SideChannel = @demo.side ({});"
+    , "  -> extra: SideChannel = @demo.side ;"
     , -- Parenthesized: select binds tighter than <>, and the claim under test
       -- is a select over the composite boundary (sum plus an extra exit).
       "draft_plan => (validate_plan <> side) select("
@@ -5017,11 +5124,11 @@ paperAllIdentitySelectSourceText :: T.Text
 paperAllIdentitySelectSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({});"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan;"
-    , "  -> ok: ResearchPlan | issue: PlanIssue;"
-    , "  = @review.validate_plan (draft);"
+    , "  <- draft: DraftPlan"
+    , "  -> ok: ResearchPlan | issue: PlanIssue"
+    , "  = @review.validate_plan draft;"
     , "draft_plan => validate_plan select("
     , "  ok: (),"
     , "  issue: ()"
@@ -5035,12 +5142,12 @@ paperThreeNodeExampleSourceText =
     , "contract B;"
     , "contract C;"
     , "node source"
-    , "  -> left: A;"
-    , "  -> right: B;"
-    , "  = @demo.source ({});"
+    , "  -> left: A"
+    , "  -> right: B"
+    , "  = @demo.source ;"
     , "node use_left"
-    , "  <- left: A;"
-    , "  -> out: C = @demo.use_left (left);"
+    , "  <- left: A"
+    , "  -> out: C = @demo.use_left left;"
     , "source => use_left"
     ]
 
@@ -5048,20 +5155,20 @@ threeArmSelectSourceText :: T.Text
 threeArmSelectSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan ;"
-    , "  -> ok: ResearchPlan | issue: PlanIssue | retry: PlanRetry ;"
-    , "  = @review.validate_plan (draft) ;"
+    , "  <- draft: DraftPlan "
+    , "  -> ok: ResearchPlan | issue: PlanIssue | retry: PlanRetry "
+    , "  = @review.validate_plan draft ;"
     , "node repair_issue"
-    , "  <- issue: PlanIssue ;"
-    , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> ok: ResearchPlan = @review.repair_plan issue ;"
     , "node retry_plan"
-    , "  <- retry: PlanRetry ;"
-    , "  -> ok: ResearchPlan = @review.retry_plan (retry) ;"
+    , "  <- retry: PlanRetry "
+    , "  -> ok: ResearchPlan = @review.retry_plan retry ;"
     , "node publish_report"
-    , "  <- ok: ResearchPlan ;"
-    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "  <- ok: ResearchPlan "
+    , "  -> report: ReportArtifactRef = @artifact.publish_report ok ;"
     , "draft_plan => validate_plan select("
     , "  ok: (),"
     , "  issue: (repair_issue),"
@@ -5073,8 +5180,8 @@ selectAmbiguousContractFallbackSourceText :: T.Text
 selectAmbiguousContractFallbackSourceText =
   T.unlines
     [ "node source"
-    , "  -> left: Same | right: Same ;"
-    , "  = @review.source ({}) ;"
+    , "  -> left: Same | right: Same "
+    , "  = @review.source ;"
     , "source select("
     , "  Same: ()"
     , ")"
@@ -5084,7 +5191,7 @@ typoContractSourceText :: T.Text
 typoContractSourceText =
   T.unlines
     [ "node planner"
-    , "  -> plan: PlannerOuput = @review.planner ({}) ;"
+    , "  -> plan: PlannerOuput = @review.planner ;"
     , "planner"
     ]
 
@@ -5092,7 +5199,7 @@ projectedExecutorSourceText :: T.Text
 projectedExecutorSourceText =
   T.unlines
     [ "node projected"
-    , "  -> out: PlannerOutput = @review.projected ({}) ;"
+    , "  -> out: PlannerOutput = @review.projected ;"
     , "projected"
     ]
 
@@ -5101,7 +5208,7 @@ downstreamQualifiedExecutorSourceText =
   T.unlines
     [ "contract WireosUartLine;"
     , "node uartin"
-    , "  -> line: WireosUartLine = @wireos.kernel.uart.uartin {} (null) ;"
+    , "  -> line: WireosUartLine = @wireos.kernel.uart.uartin ;"
     , "uartin"
     ]
 
@@ -5109,7 +5216,7 @@ missingExecutorSourceText :: T.Text
 missingExecutorSourceText =
   T.unlines
     [ "node missing"
-    , "  -> out: PlannerOutput = @review.missing ({}) ;"
+    , "  -> out: PlannerOutput = @review.missing ;"
     , "missing"
     ]
 
@@ -5117,16 +5224,25 @@ mismatchedExecutorPortsSourceText :: T.Text
 mismatchedExecutorPortsSourceText =
   T.unlines
     [ "node projected"
-    , "  -> out: AnalysisFragment = @review.projected ({}) ;"
+    , "  -> out: AnalysisFragment = @review.projected ;"
     , "projected"
+    ]
+
+wireosWrongLogBoundarySourceText :: T.Text
+wireosWrongLogBoundarySourceText =
+  T.unlines
+    [ "use wireos.device.uart.{WireosSelectorLine};"
+    , "use wireos.kernel.{@log};"
+    , "node path <- line: WireosSelectorLine = @log line;"
+    , "path"
     ]
 
 pureExecutorSourceText :: T.Text
 pureExecutorSourceText =
   T.unlines
     [ "node score"
-    , "  <- evidence: Float ;"
-    , "  <- recency: Float ;"
+    , "  <- evidence: Float "
+    , "  <- recency: Float "
     , "  -> out: Float = evidence + recency ;"
     , "score"
     ]
@@ -5136,7 +5252,7 @@ pureExecutorWithSharedHelperSourceText =
   T.unlines
     [ "let acceptedItem = x: x.score >= 0.7 ;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = evidence.items |> filter acceptedItem ;"
     , "classify"
     ]
@@ -5146,7 +5262,7 @@ pureExecutorWithScalarLetSourceText =
   T.unlines
     [ "let scoreThreshold = 0.7 ;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= scoreThreshold) ;"
     , "classify"
     ]
@@ -5156,7 +5272,7 @@ pureExecutorWithLocalBindingsSourceText =
   T.unlines
     [ "let acceptedItem = x: x.score >= 0.7 ;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = acceptedItems ;"
     , "  -> rejected: RejectedSet = items |> filter (x: !(acceptedItem x)) ;"
     , "  where let"
@@ -5172,7 +5288,7 @@ pureExecutorWithLetBoundWhereSourceText =
   T.unlines
     [ "let defaults = { accepted = [] ; } ;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = accepted ;"
     , "  where defaults ;"
     , "classify"
@@ -5183,7 +5299,7 @@ whereLocalLetShadowsStaticSourceText =
   T.unlines
     [ "let defaults = { accepted = [] ; rejected = [] ; } ;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = accepted ;"
     , "  where let"
     , "    defaults = { accepted = evidence.items ; } ;"
@@ -5196,7 +5312,7 @@ whereInputCollisionSourceText :: T.Text
 whereInputCollisionSourceText =
   T.unlines
     [ "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = accepted ;"
     , "  where { evidence = evidence.items ; accepted = [] ; } ;"
     , "classify"
@@ -5206,7 +5322,7 @@ whereDynamicShapeSourceText :: T.Text
 whereDynamicShapeSourceText =
   T.unlines
     [ "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = accepted ;"
     , "  where if true then { accepted = [] ; } else { rejected = [] ; } ;"
     , "classify"
@@ -5232,9 +5348,9 @@ duplicatePureAndWireLetSourceText :: T.Text
 duplicatePureAndWireLetSourceText =
   T.unlines
     [ "let acceptedItem = x: x.score >= 0.7 ;"
-    , "let acceptedItem = @review.analyst { temperature = 0.2 ; } ;"
+    , "let acceptedItem = @review.analyst;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = evidence.items |> filter acceptedItem ;"
     , "classify"
     ]
@@ -5243,17 +5359,17 @@ legacyPureExecutorSourceText :: T.Text
 legacyPureExecutorSourceText =
   T.unlines
     [ "node score"
-    , "  <- evidence: Float ;"
+    , "  <- evidence: Float "
     , "  -> out: Float = @pure (evidence) ;"
     , "score"
     ]
 
-configuredExecutorInPureOutputSourceText :: T.Text
-configuredExecutorInPureOutputSourceText =
+executorAuthorityInPureOutputSourceText :: T.Text
+executorAuthorityInPureOutputSourceText =
   T.unlines
-    [ "let analyst_base = @review.analyst { temperature = 0.2 ; } ;"
+    [ "let analyst_base = @review.analyst;"
     , "node classify"
-    , "  <- evidence: EvidenceSet ;"
+    , "  <- evidence: EvidenceSet "
     , "  -> accepted: AcceptedSet = analyst_base(evidence) ;"
     , "classify"
     ]
@@ -5262,7 +5378,7 @@ graphBindingInPureOutputSourceText :: T.Text
 graphBindingInPureOutputSourceText =
   T.unlines
     [ "node source"
-    , "  -> evidence: EvidenceSet = @review.source ({}) ;"
+    , "  -> evidence: EvidenceSet = @review.source ;"
     , "let workers = source ;"
     , "node classify"
     , "  -> accepted: AcceptedSet = workers ;"
@@ -5273,7 +5389,7 @@ nodeBindingInPureOutputSourceText :: T.Text
 nodeBindingInPureOutputSourceText =
   T.unlines
     [ "node worker"
-    , "  -> evidence: EvidenceSet = @review.source ({}) ;"
+    , "  -> evidence: EvidenceSet = @review.source ;"
     , "node classify"
     , "  -> accepted: AcceptedSet = worker ;"
     , "classify"
@@ -5301,7 +5417,7 @@ graphBindingInTopLevelCorePureLetSourceText :: T.Text
 graphBindingInTopLevelCorePureLetSourceText =
   T.unlines
     [ "node source"
-    , "  -> evidence: EvidenceSet = @review.source ({}) ;"
+    , "  -> evidence: EvidenceSet = @review.source ;"
     , "let workers = source ;"
     , "let accepted = x: workers ;"
     , "node classify"
@@ -5314,8 +5430,8 @@ stdIoAliasSourceText =
   T.unlines
     [ "use std.io.{@command as @shell, CommandSpec as Spec, CommandResult as Result};"
     , "node run"
-    , "  <- spec: Spec ;"
-    , "  -> result: Result = @shell {} (spec) ;"
+    , "  <- spec: Spec "
+    , "  -> result: Result = @shell spec ;"
     , "run"
     ]
 
@@ -5324,7 +5440,7 @@ stdIoCanonicalAfterUseSourceText =
   T.unlines
     [ "use std.io.{@command, CommandResult};"
     , "node run"
-    , "  -> result: CommandResult = @std.io.command {} (null) ;"
+    , "  -> result: CommandResult = @std.io.command ;"
     , "run"
     ]
 
@@ -5332,7 +5448,7 @@ stdIoBareWithoutUseSourceText :: T.Text
 stdIoBareWithoutUseSourceText =
   T.unlines
     [ "node run"
-    , "  -> result: CommandResult = @command {} (null) ;"
+    , "  -> result: CommandResult = @command ;"
     , "run"
     ]
 
@@ -5340,7 +5456,7 @@ stdIoCanonicalWithoutUseSourceText :: T.Text
 stdIoCanonicalWithoutUseSourceText =
   T.unlines
     [ "node run"
-    , "  -> result: CommandResult = @std.io.command {} (null) ;"
+    , "  -> result: CommandResult = @std.io.command ;"
     , "run"
     ]
 
@@ -5356,7 +5472,7 @@ stdIoStdoutBadShapeSourceText =
   T.unlines
     [ "use std.io.{@stdout};"
     , "node bad_stdout"
-    , "  -> printed: Printed = @stdout {} (null) ;"
+    , "  -> printed: Printed = @stdout ;"
     , "bad_stdout"
     ]
 
@@ -5366,10 +5482,10 @@ stdIoFileExecutorsSourceText =
     [ "use std.io.{@readFile, @writeFile};"
     , "contract Report;"
     , "node read_report"
-    , "  -> report: Report = @readFile { path = \"/tmp/wire-report.txt\"; } (null) ;"
+    , "  -> report: Report = @readFile { cfg = { path = \"/tmp/wire-report.txt\"; }; } ;"
     , "node write_report"
-    , "  <- report: Report;"
-    , "  = @writeFile { path = \"/tmp/wire-report-copy.txt\"; } (report) ;"
+    , "  <- report: Report"
+    , "  = @writeFile { payload = report; cfg = { path = \"/tmp/wire-report-copy.txt\"; }; } ;"
     , "read_report => write_report"
     ]
 
@@ -5378,7 +5494,7 @@ stdIoReadFileBadShapeSourceText =
   T.unlines
     [ "use std.io.{@readFile};"
     , "node bad_read"
-    , "  = @readFile { path = \"/tmp/wire-report.txt\"; } (null) ;"
+    , "  = @readFile { cfg = { path = \"/tmp/wire-report.txt\"; }; } ;"
     , "bad_read"
     ]
 
@@ -5388,8 +5504,8 @@ stdIoWriteFileBadShapeSourceText =
     [ "use std.io.{@writeFile};"
     , "contract Report;"
     , "node bad_write"
-    , "  <- report: Report;"
-    , "  -> written: Report = @writeFile { path = \"/tmp/wire-report.txt\"; } (report) ;"
+    , "  <- report: Report"
+    , "  -> written: Report = @writeFile { payload = report; cfg = { path = \"/tmp/wire-report.txt\"; }; } ;"
     , "bad_write"
     ]
 
@@ -5410,24 +5526,24 @@ nestedSelectSourceText :: T.Text
 nestedSelectSourceText =
   T.unlines
     [ "node draft_plan"
-    , "  -> draft: DraftPlan = @review.plan ({}) ;"
+    , "  -> draft: DraftPlan = @review.plan ;"
     , "node validate_plan"
-    , "  <- draft: DraftPlan ;"
-    , "  -> ok: ResearchPlan | issue: PlanIssue ;"
-    , "  = @review.validate_plan (draft) ;"
+    , "  <- draft: DraftPlan "
+    , "  -> ok: ResearchPlan | issue: PlanIssue "
+    , "  = @review.validate_plan draft ;"
     , "node triage"
-    , "  <- issue: PlanIssue ;"
-    , "  -> fixable: PlanIssue | fatal: PlanIssue ;"
-    , "  = @review.triage (issue) ;"
+    , "  <- issue: PlanIssue "
+    , "  -> fixable: PlanIssue | fatal: PlanIssue "
+    , "  = @review.triage issue ;"
     , "node quick_fix"
-    , "  <- fixable: PlanIssue ;"
-    , "  -> ok: ResearchPlan = @review.quick_fix (fixable) ;"
+    , "  <- fixable: PlanIssue "
+    , "  -> ok: ResearchPlan = @review.quick_fix fixable ;"
     , "node deep_fix"
-    , "  <- fatal: PlanIssue ;"
-    , "  -> ok: ResearchPlan = @review.deep_fix (fatal) ;"
+    , "  <- fatal: PlanIssue "
+    , "  -> ok: ResearchPlan = @review.deep_fix fatal ;"
     , "node publish_report"
-    , "  <- ok: ResearchPlan ;"
-    , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+    , "  <- ok: ResearchPlan "
+    , "  -> report: ReportArtifactRef = @artifact.publish_report ok ;"
     , "draft_plan => validate_plan select("
     , "  ok: (),"
     , "  issue: (triage select("
@@ -5461,10 +5577,10 @@ artifactBoundarySourceTextWith :: T.Text -> T.Text
 artifactBoundarySourceTextWith kindFields =
   T.unlines
     [ "node make_report"
-    , "  -> report: ReportArtifact = @report.build ({}) ;"
-    , "node persist_report"
-    , "  <- report: ReportArtifact ;"
-    , "  = @artifact.store { " <> kindFields <> " to = artifacts.reports; } (report) ;"
+    , "  -> report: ReportArtifact = @report.build ;"
+    , "node persist_report with { " <> kindFields <> " to = artifacts.reports; }"
+    , "  <- report: ReportArtifact "
+    , "  = @artifact.store report;"
     , "make_report => persist_report"
     ]
 
@@ -5498,29 +5614,44 @@ quantumEraserSweepFixtures =
   , "examples/wire/quantum-eraser-eraser-phase-1_2.wire"
   ]
 
-metadataConfigHasNumber :: Key.Key -> ScientificLiteral -> Aeson.Value -> Bool
-metadataConfigHasNumber fieldName expected = \case
-  Aeson.Object obj ->
-    case KeyMap.lookup "config" obj of
-      Just (Aeson.Object configObj) ->
-        KeyMap.lookup fieldName configObj == Just (Aeson.Number expected)
-      _ -> False
-  _ -> False
+metadataArgumentCfgHasNumber :: Key.Key -> ScientificLiteral -> Aeson.Value -> Bool
+metadataArgumentCfgHasNumber fieldName expected metadata =
+  ( metadataArgumentValue metadata
+      >>= corePureRecordField ["cfg"]
+      >>= corePureRecordField [Key.toText fieldName]
+  )
+    == Just (Syntax.CorePureLit (Syntax.CorePureNumber expected))
 
-metadataConfigHasString :: Key.Key -> T.Text -> Aeson.Value -> Bool
-metadataConfigHasString fieldName expected = \case
-  Aeson.Object obj ->
-    case KeyMap.lookup "config" obj of
-      Just (Aeson.Object configObj) ->
-        KeyMap.lookup fieldName configObj == Just (Aeson.String expected)
-      _ -> False
-  _ -> False
+metadataArgumentCfgHasString :: Key.Key -> T.Text -> Aeson.Value -> Bool
+metadataArgumentCfgHasString fieldName expected metadata =
+  ( metadataArgumentValue metadata
+      >>= corePureRecordField ["cfg"]
+      >>= corePureRecordField [Key.toText fieldName]
+  )
+    == Just (Syntax.CorePureLit (Syntax.CorePureString expected))
 
-metadataConfigHasKey :: Key.Key -> Aeson.Value -> Bool
-metadataConfigHasKey fieldName = \case
+metadataArgumentValue :: Aeson.Value -> Maybe Syntax.CorePureExpr
+metadataArgumentValue = \case
+  Aeson.Object obj -> do
+    Aeson.Object argumentObj <- KeyMap.lookup "argument" obj
+    encoded <- KeyMap.lookup "value" argumentObj
+    case Aeson.fromJSON encoded of
+      Aeson.Success expression -> Just expression
+      Aeson.Error _ -> Nothing
+  _ -> Nothing
+
+corePureRecordField :: [T.Text] -> Syntax.CorePureExpr -> Maybe Syntax.CorePureExpr
+corePureRecordField fieldPath = \case
+  Syntax.CorePureRecord fields ->
+    Syntax.corePureFieldValue
+      <$> find ((== fieldPath) . NonEmpty.toList . Syntax.corePureFieldPath) fields
+  _ -> Nothing
+
+metadataArgumentHasKey :: Key.Key -> Aeson.Value -> Bool
+metadataArgumentHasKey fieldName = \case
   Aeson.Object obj ->
-    case KeyMap.lookup "config" obj of
-      Just (Aeson.Object configObj) -> KeyMap.member fieldName configObj
+    case KeyMap.lookup "argument" obj of
+      Just (Aeson.Object argumentObj) -> KeyMap.member fieldName argumentObj
       _ -> False
   _ -> False
 
@@ -5532,7 +5663,15 @@ metadataHasPureBinding =
 
 metadataHasPureWhere :: Aeson.Value -> Bool
 metadataHasPureWhere =
-  metadataConfigHasKey "where"
+  metadataPureConfigHasKey "where"
+
+metadataPureConfigHasKey :: Key.Key -> Aeson.Value -> Bool
+metadataPureConfigHasKey fieldName = \case
+  Aeson.Object obj ->
+    case KeyMap.lookup "config" obj of
+      Just (Aeson.Object configObj) -> KeyMap.member fieldName configObj
+      _ -> False
+  _ -> False
 
 wireAdmissionValue :: CompiledCircuit -> Maybe Aeson.Value
 wireAdmissionValue compiled =
@@ -6596,6 +6735,44 @@ strictExecutorEnv =
     , wireCompileEnvProjectionMode = WireProjectionStrict
     }
 
+wireosStrictEnv :: WireCompileEnv
+wireosStrictEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvExecutorRegistry =
+        wireExecutorRegistryFromList
+          [ wireExecutorProjectionFromPorts
+              (WireExecutorId "wireos.device.uart.read_line")
+              ( WirePorts
+                  Map.empty
+                  (Map.singleton "result" (WireOutputPort "WireosSelectorLine" Nothing))
+              )
+              WireExecutorHostEffect
+          , wireExecutorProjectionFromPorts
+              (WireExecutorId "wireos.kernel.log")
+              ( WirePorts
+                  ( Map.singleton
+                      "result"
+                      (WireInputPort ["WireosSelectorLine"] WireInputCardinalityOne True)
+                  )
+                  Map.empty
+              )
+              WireExecutorHostEffect
+          ]
+    , wireCompileEnvNamespaceRegistry =
+        Just $
+          namespaceRegistryFromEntries
+            [ NamespaceEntry
+                "wireos.device.uart"
+                (\leaf -> Map.lookup leaf (Map.fromList [("read_line", "wireos.device.uart.read_line")]))
+                (\leaf -> Map.lookup leaf (Map.fromList [("WireosSelectorLine", "WireosSelectorLine")]))
+            , NamespaceEntry
+                "wireos.kernel"
+                (\leaf -> Map.lookup leaf (Map.fromList [("log", "wireos.kernel.log")]))
+                (const Nothing)
+            ]
+    , wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
 quantumExecutorEnv :: WireCompileEnv
 quantumExecutorEnv =
   emptyWireCompileEnv
@@ -6623,7 +6800,7 @@ quantumExecutorProjection executorId =
     , wireExecutorProjectionVocabulary =
         Set.fromList ["Qubit", "Bit", "RotationAngle", "IBMQuantumConfig"]
     , wireExecutorProjectionEffect = WireExecutorHostEffect
-    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
     , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 

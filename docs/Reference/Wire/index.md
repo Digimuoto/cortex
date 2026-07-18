@@ -2,7 +2,7 @@
 title: Wire Language Reference
 description:
   Normative reference for the Wire source language. Grammar, module model, ports and matching,
-  configured executors and evaluation boundary.
+  executor authorities and evaluation boundary.
 sidebar:
   label: Wire
   order: 1
@@ -27,10 +27,10 @@ pages that factor out specific rule areas for quick consultation.
 - **[contracts-ports-and-matching.md](contracts-ports-and-matching.md)** — contract namespace, port
   declarations, sum groups, labels, `=>` port-key matching. Corresponds to grammar §4, §6.2–§6.5,
   §7.1, §7.6.
-- **[configured-executors-and-execution-boundary.md](configured-executors-and-execution-boundary.md)**
-  — configured executor values, explicit node admission, and the execution boundary.
+- **[executor-authorities-and-execution-boundary.md](executor-authorities-and-execution-boundary.md)**
+  — executor authority values, explicit node admission, and the execution boundary.
 - **[executors-and-alphabet.md](executors-and-alphabet.md)** — executor registration, `@` authority,
-  configured executor values, and ambient identifiers in config values.
+  executor authority values, and ambient identifiers in config values.
 - **[pure-execution.md](pure-execution.md)** — Wire-authored CorePure output equations, native pure
   evaluator lowering, input/output binding, builtins, and failure surface.
 - **[conditionality.md](conditionality.md)** — exclusive-output reduction with `select(...)`, latent

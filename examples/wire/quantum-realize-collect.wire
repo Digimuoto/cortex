@@ -13,31 +13,31 @@ use quantum.core.{@prepare_zero, @cnot, @measure_z, Qubit, Bit, QuantumResult};
 use quantum.braket.{@realize};
 
 node prep_control
-  -> control: Qubit = @prepare_zero { index = 0; } (null);
+  -> control: Qubit = @prepare_zero { cfg = { index = 0; }; };
 node prep_target
-  -> target: Qubit = @prepare_zero { index = 1; } (null);
+  -> target: Qubit = @prepare_zero { cfg = { index = 1; }; };
 
 node entangle
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @cnot ({ inherit control; inherit target; });
+  <- control: Qubit
+  <- target: Qubit
+  -> control: Qubit
+  -> target: Qubit
+  = @cnot { inherit control; inherit target; };
 
 node measure_control
-  <- control: Qubit;
-  -> m_control: Bit = @measure_z {} (control);
+  <- control: Qubit
+  -> m_control: Bit = @measure_z control;
 node measure_target
-  <- target: Qubit;
-  -> m_target: Bit = @measure_z {} (target);
+  <- target: Qubit
+  -> m_target: Bit = @measure_z target;
 
 # Collect the frontier: realize consumes the symbolic measurement bits and produces
 # one correlated QuantumResult the offline analyzer reads.
 node collect
-  <- m_control: Bit;
-  <- m_target: Bit;
+  <- m_control: Bit
+  <- m_target: Bit
   -> result: QuantumResult
-  = @realize ({ inherit m_control; inherit m_target; });
+  = @realize { inherit m_control; inherit m_target; };
 
 prep_control <> prep_target
   => entangle

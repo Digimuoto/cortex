@@ -30,9 +30,9 @@ sampleProjectionJSON =
   \,\"projectionVersion\":\"1\"\
   \,\"ports\":{\"inputs\":{\"shots\":{\"accepts\":[\"ShotCount\"],\"cardinality\":\"one\",\"required\":true}}\
   \,\"outputs\":{\"s01\":{\"contract\":\"MeasurementResult\"},\"s12\":{\"contract\":\"MeasurementResult\"}}}\
-  \,\"configSchemaRef\":{\"tag\":\"ConfigSchemaName\",\"contents\":\"braket-config\"}\
+  \,\"argumentShapeRef\":{\"tag\":\"ArgumentShapeName\",\"contents\":\"braket-config\"}\
   \,\"requirementSlots\":[{\"rsCapabilityKind\":\"provider\",\"rsBindingName\":\"braket\"\
-  \,\"rsConfigSelector\":\"config.device\",\"rsPermissionClass\":\"aws.braket\"}]\
+  \,\"rsArgumentSelector\":\"config.device\",\"rsPermissionClass\":\"aws.braket\"}]\
   \,\"replayClass\":\"idempotent_with_key\"\
   \,\"isolationExpectation\":\"subprocess_sandbox\"\
   \,\"effect\":\"host_effect\"\

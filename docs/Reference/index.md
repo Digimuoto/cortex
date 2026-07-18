@@ -24,10 +24,10 @@ front-to-back. If you are trying to do a task rather than look up a rule, start 
     model, import semantics, file-return rules.
   - **[contracts-ports-and-matching.md](Wire/contracts-ports-and-matching.md)** — contract
     namespace, port declarations, `=>` port-key matching.
-  - **[configured-executors-and-execution-boundary.md](Wire/configured-executors-and-execution-boundary.md)**
-    — configured executor values, explicit node admission, evaluation-boundary check.
+  - **[executor-authorities-and-execution-boundary.md](Wire/executor-authorities-and-execution-boundary.md)**
+    — executor authority values, explicit node admission, evaluation-boundary check.
   - **[executors-and-alphabet.md](Wire/executors-and-alphabet.md)** — executor registration, `@`
-    authority, configured executor values, ambient identifiers in config values.
+    authority, executor authority values, ambient identifiers in config values.
 - **[rewrites.md](rewrites.md)** — bounded dynamic rewrite algebra, budget, admission,
   materialization, hydration, provenance.
 - **[proof-status.md](proof-status.md)** — human-readable matrix of Lean proof claims and Haskell

@@ -13,10 +13,10 @@ contract UserInput;
 contract PlanSummary;
 
 node read_mode
-  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
+  -> answer: UserInput = @stdin { cfg = { prompt = "Planning mode (high/safe): "; }; };
 
 node build_plan
-  <- answer: UserInput;
+  <- answer: UserInput
   -> summary: PlanSummary = summary;
   where let
     highMode = answer == "high";
@@ -38,8 +38,8 @@ node build_plan
   { inherit summary; };
 
 node print_plan
-  <- summary: PlanSummary;
-  = @stdout { newline = true; } (summary);
+  <- summary: PlanSummary
+  = @stdout { payload = summary; cfg = { newline = true; }; };
 
 read_mode
   => build_plan

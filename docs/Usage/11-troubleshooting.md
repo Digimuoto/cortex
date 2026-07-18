@@ -36,7 +36,7 @@ Relevant references:
 - [Package manifests and extensions](06-package-manifests-and-extensions.md)
 - [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md)
 - [Executors and alphabet](../Reference/Wire/executors-and-alphabet.md)
-- [Configured executors](../Reference/Wire/configured-executors-and-execution-boundary.md)
+- [Executor authorities](../Reference/Wire/executor-authorities-and-execution-boundary.md)
 - [Pure execution](../Reference/Wire/pure-execution.md)
 
 ## `wire run` Rejects The Graph

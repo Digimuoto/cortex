@@ -41,8 +41,10 @@ module Cortex.Quantum.Plan
   )
 where
 
+import Control.Applicative ((<|>))
 import Control.Monad (foldM, when)
 import Data.Aeson (Value (..))
+import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable (toList)
@@ -75,6 +77,7 @@ import Cortex.Wire
   , CompiledCircuitNode (..)
   )
 import Cortex.Wire.Executor (WireExecutorId (..))
+import Cortex.Wire.Syntax (CorePureExpr (..), CorePureField (..), CorePureLiteral (..))
 
 {- | A terminal measurement: the qubit wire, its classical-bit slot, and the
 output port label the measuring @\@measure_z@ node produces.
@@ -205,8 +208,49 @@ decodeNodeInfo nodeRef taskNode = do
     maybe (Left (WalkMissingExecutor nodeRef)) Right $
       objLookup "executor" md >>= objLookup "target" >>= asText
   ports <- decodePorts nodeRef md
-  let config = maybe (Object KeyMap.empty) id (objLookup "config" md)
+  -- Executor arguments are stored under the one-record ABI's `argument`
+  -- metadata field. The compiler keeps the evaluated call value under
+  -- `argument.value`; quantum options conventionally live beneath `cfg`.
+  let rawArgument = objLookup "argument" md
+      argumentValue = rawArgument >>= objLookup "value" >>= decodeCorePureValue
+      argument = argumentValue <|> rawArgument <|> objLookup "config" md
+      config =
+        case argument of
+          Just value -> maybe value id (objLookup "cfg" value)
+          Nothing -> Object KeyMap.empty
   Right (NodeInfo target ports config)
+
+decodeCorePureValue :: Value -> Maybe Value
+decodeCorePureValue encoded =
+  case Aeson.fromJSON encoded of
+    Aeson.Success expression -> corePureJson expression
+    Aeson.Error _ -> Nothing
+  where
+    corePureJson = \case
+      CorePureLit literal ->
+        Just $ case literal of
+          CorePureString value -> String value
+          CorePureNumber value -> Number value
+          CorePureBool value -> Bool value
+          CorePureNull -> Null
+      CorePureList values -> Aeson.toJSON <$> traverse corePureJson values
+      CorePureRecord fields ->
+        Just (Object (foldl addField KeyMap.empty fields))
+      _ -> Nothing
+
+    addField object field =
+      case corePureJson field.corePureFieldValue of
+        Nothing -> object
+        Just value -> mergeObject object (nestedObject (toList field.corePureFieldPath) value)
+
+    nestedObject [name] value = KeyMap.singleton (Key.fromText name) value
+    nestedObject (name : rest) value =
+      KeyMap.singleton (Key.fromText name) (Object (nestedObject rest value))
+    nestedObject [] value = KeyMap.singleton (Key.fromText "value") value
+
+    mergeObject left right = KeyMap.unionWith mergeValues left right
+    mergeValues (Object left) (Object right) = Object (mergeObject left right)
+    mergeValues _ right = right
 
 decodePorts :: Text -> Value -> Either WalkError NodePorts
 decodePorts nodeRef md = do

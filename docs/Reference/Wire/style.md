@@ -156,7 +156,7 @@ Use two spaces inside node declarations, `where let` blocks, records, and lists:
 
 ```wire
 node summarize
-  <- input: BuildReport;
+  <- input: BuildReport
   -> summary: Text = summary;
   where let
     ok = input.ok;
@@ -181,7 +181,7 @@ non-whitespace token on that line:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = accepted;
 ```
 
@@ -193,14 +193,14 @@ Keep executor authority visible at the implementation boundary:
 use std.io.{@stdin};
 
 node read_mode
-  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
+  -> answer: UserInput = @stdin { cfg = { prompt = "Planning mode (high/safe): "; }; };
 ```
 
 Write CorePure output expressions directly:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter (item: item.score >= 0.7);
 ```
 

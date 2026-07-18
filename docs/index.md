@@ -53,20 +53,20 @@ contract Result;
 contract ArtifactRef;
 
 node plan
-  <- topic: Topic;
+  <- topic: Topic
   -> outline: Outline = @workflow.plan {
     mode = "concise";
   } (topic);
 
 node run
-  <- outline: Outline;
+  <- outline: Outline
   -> result: Result = @workflow.execute {
     retry = { max_attempts = 2; };
   } (outline);
 
 node publish
-  <- result: Result;
-  -> artifact: ArtifactRef = @host.artifact_store (result);
+  <- result: Result
+  -> artifact: ArtifactRef = @host.artifact_store result;
 
 plan
   => run

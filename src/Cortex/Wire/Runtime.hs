@@ -20,6 +20,7 @@ module Cortex.Wire.Runtime
   , wrapWireStageOutputs
   , wrapWireStageResult
   , wrapWireStageDefinition
+  , validateWireExecutorArgument
   )
 where
 
@@ -39,6 +40,11 @@ import Cortex.Pulse.Plan
   , StageResult (..)
   )
 import Cortex.Wire.Contract (WireContractRegistry)
+import Cortex.Wire.ContractValidation
+  ( renderWireContractValidationError
+  , validateJsonValueAgainstSchema
+  )
+import Cortex.Wire.Executor (WireExecutorArgumentShape (..))
 import Cortex.Wire.NodeBoundary
   ( BoundaryEgressContext (..)
   , wrapNodeBoundaryOutput
@@ -129,24 +135,51 @@ wireValuesFromStageValue value =
 
 wrapWireStageDefinition
   :: Maybe WireContractRegistry
+  -> WireExecutorArgumentShape
+  -> Aeson.Value
   -> WirePorts
   -> StageDefinition NodeId
   -> StageDefinition NodeId
-wrapWireStageDefinition maybeRegistry ports stageDef =
+wrapWireStageDefinition maybeRegistry argumentShape argument ports stageDef =
   stageDef
     { sdAction = \ctx -> do
-        let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
-            unwrappedCtx =
-              ctx
-                { scInputs = inputBundle.wireInputBundleUnwrappedInputs
-                }
-        stageResult <- stageDef.sdAction unwrappedCtx
-        case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId ports stageResult of
-          Right wrappedResult -> pure wrappedResult
-          -- An output that fails contract/variant validation is a typed terminal
-          -- failure (ADR 0062), not an untyped stage exception.
-          Left errText -> pure (StageFail "executor_output_validation_failure" errText)
+        case validateWireExecutorArgument argumentShape argument of
+          Left errText ->
+            pure (StageFail "executor_argument_validation_failure" errText)
+          Right _validatedArgument -> do
+            let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
+                unwrappedCtx =
+                  ctx
+                    { scInputs = inputBundle.wireInputBundleUnwrappedInputs
+                    }
+            stageResult <- stageDef.sdAction unwrappedCtx
+            case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId ports stageResult of
+              Right wrappedResult -> pure wrappedResult
+              -- An output that fails contract/variant validation is a typed terminal
+              -- failure (ADR 0062), not an untyped stage exception.
+              Left errText -> pure (StageFail "executor_output_validation_failure" errText)
     }
+
+{- | Validate the normalized one-record executor argument and return that exact
+value for delivery to the host binding. Validation therefore happens before
+invocation without decoding or rebuilding the binding payload.
+-}
+validateWireExecutorArgument
+  :: WireExecutorArgumentShape -> Aeson.Value -> Either Text Aeson.Value
+validateWireExecutorArgument shape argument = do
+  case argument of
+    Aeson.Object _ -> Right ()
+    _ -> Left "Wire executor argument must be a normalized JSON object"
+  case shape of
+    WireExecutorArgumentUnchecked -> Right argument
+    WireExecutorArgumentSchema schema ->
+      case validateJsonValueAgainstSchema "executor argument" schema argument of
+        Right () -> Right argument
+        Left validationError ->
+          Left
+            ( "Wire executor argument validation: "
+                <> renderWireContractValidationError validationError
+            )
 
 wrapWireStageResult
   :: Maybe WireContractRegistry

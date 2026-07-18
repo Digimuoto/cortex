@@ -345,65 +345,65 @@ contract Qubit;
 contract Bit;
 
 node ibm_runtime_config
-  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config {{ path = \"{config_path}\"; }} (null);
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config {{ cfg = {{ path = \"{config_path}\"; }}; }};
 
 node prepare_control
-  <- config: IBMQuantumConfig;
-  -> control: Qubit = @quantum.prepare_zero {{ index = 0; }} ({{ inherit config; }});
+  <- config: IBMQuantumConfig
+  -> control: Qubit = @quantum.prepare_zero {{ payload = {{ inherit config; }}; cfg = {{ index = 0; }}; }};
 
 node prepare_target
-  -> target: Qubit = @quantum.prepare_zero {{ index = 1; }} (null);
+  -> target: Qubit = @quantum.prepare_zero {{ cfg = {{ index = 1; }}; }};
 
 node target_x
-  <- target: Qubit;
-  -> target: Qubit = @quantum.x {{}} (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.x target;
 
 node h_control_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz {{ angle = {format_angle(HALF_PI)}; }} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz {{ payload = control; cfg = {{ angle = {format_angle(HALF_PI)}; }}; }};
 
 node h_control_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {{}} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.sx control;
 
 node h_control_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz {{ angle = {format_angle(HALF_PI)}; }} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz {{ payload = control; cfg = {{ angle = {format_angle(HALF_PI)}; }}; }};
 
 node phase_control_rz
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz {{ angle = {format_angle(half_theta)}; }} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz {{ payload = control; cfg = {{ angle = {format_angle(half_theta)}; }}; }};
 
 node phase_target_rz
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz {{ angle = {format_angle(half_theta)}; }} (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz {{ payload = target; cfg = {{ angle = {format_angle(half_theta)}; }}; }};
 
 node phase_rzz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.rzz {{ angle = {format_angle(-half_theta)}; }} ({{ inherit control; inherit target; }});
+  <- control: Qubit
+  <- target: Qubit
+  -> control: Qubit
+  -> target: Qubit
+  = @quantum.rzz {{ payload = {{ inherit control target; }}; cfg = {{ angle = {format_angle(-half_theta)}; }}; }};
 
 node feedback_control_rz
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz {{ angle = {format_angle(feedback_angle)}; }} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz {{ payload = control; cfg = {{ angle = {format_angle(feedback_angle)}; }}; }};
 
 node readout_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz {{ angle = {format_angle(HALF_PI)}; }} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz {{ payload = control; cfg = {{ angle = {format_angle(HALF_PI)}; }}; }};
 
 node readout_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {{}} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.sx control;
 
 node readout_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz {{ angle = {format_angle(HALF_PI)}; }} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz {{ payload = control; cfg = {{ angle = {format_angle(HALF_PI)}; }}; }};
 
 node measure_phase
-  <- control: Qubit;
-  -> phase_bit: Bit = @quantum.measure_z {{}} (control);
+  <- control: Qubit
+  -> phase_bit: Bit = @quantum.measure_z control;
 
 let prepare_eigenstate =
   prepare_target
