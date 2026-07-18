@@ -16,6 +16,7 @@ related:
   - docs/ADRs/0078-lean-wire-elaboration-kernel.md
   - docs/ADRs/0079-wire-admission-witness-schema.md
   - docs/ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md
+  - docs/ADRs/0096-certified-native-pure-region-compilation.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md
 ---
@@ -66,6 +67,15 @@ Wire source
 
 Lean is not linked into the target. No Lean-generated object, Lean initializer, allocator, TLS
 state, or runtime archive is part of the deployment artifact.
+
+### Separate NativePure v2 profile
+
+ADR 0096 specifies NativePure through a separate `static-program/v2` family and v2 runtime
+interfaces. It does not widen this ADR's first static profile or mutate any
+`cortex_wire_program_v1_*`, `engine/v1`, `engine-state/v1`, or `host-process/v1` contract. The
+planned v2 host compiler will reuse this ADR's staged Haskell-artifact-to-Lean architecture, but
+additionally reconstruct intrinsically typed pure kernels, compute resource bounds, and
+constructively lower them to typed C IR.
 
 ### Authority split
 

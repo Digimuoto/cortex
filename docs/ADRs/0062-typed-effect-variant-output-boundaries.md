@@ -7,7 +7,7 @@ description:
 sidebar:
   label: "0062. Typed variant output boundaries"
   order: 62
-status: proposed
+status: accepted
 date: 2026-06-27
 superseded_by: null
 related:
@@ -23,11 +23,11 @@ related:
 
 ## Status
 
-Proposed - extends ADR 0024, ADR 0033, and ADR 0053, fulfils the failure-routing hook left open by
-ADR 0026, generalises the typed-error-output option in ADR 0059, and discharges the exclusive-output
-grouping ADR 0017 specified but the runtime never implemented. It does not edit those ADRs; ADR 0033
-now distinguishes the committed-label guard source from the reusable `Cortex.Pulse.Circuit`
-production entrypoint that invokes it.
+Accepted and implemented - extends ADR 0024, ADR 0033, and ADR 0053, fulfils the failure-routing
+hook left open by ADR 0026, generalises the typed-error-output option in ADR 0059, and discharges
+the exclusive-output grouping ADR 0017 specified but the runtime never implemented. It does not edit
+those ADRs; ADR 0033 now distinguishes the committed-label guard source from the reusable
+`Cortex.Pulse.Circuit` production entrypoint that invokes it.
 
 ## Context
 
@@ -306,11 +306,3 @@ ADR remains a proposed-ADR cleanup question.
 - [0079 - Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema](0079-wire-admission-witness-schema.md)
   - the proof-side counterpart: the admission witness retains the select-variant exclusive-group
     provenance (`selectVariantsShareExclusiveGroup`) this ADR drops before runtime.
-
-## Tracking
-
-- #138 — select admission/materialization proof correspondence.
-- #313 — typed effect-variant emission boundary.
-- #314 — committed-label guard and lowering path.
-- #315 — codec/schema follow-up.
-- #320 — possible split of emission boundary and select runtime decisions.

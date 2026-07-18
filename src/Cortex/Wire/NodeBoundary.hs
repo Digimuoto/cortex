@@ -27,6 +27,7 @@ module Cortex.Wire.NodeBoundary
   , NodeBoundaryEgress (..)
   , BoundaryEgressContext (..)
   , pureNodeBoundaryNormalForm
+  , pureSumNodeBoundaryNormalForm
   , executorNodeBoundaryNormalForm
   , signalNodeBoundaryNormalForm
   , artifactNodeBoundaryNormalForm
@@ -96,9 +97,9 @@ data NodeBoundaryBody
   | NodeBoundaryArtifactBody !ArtifactBody
   deriving stock (Eq, Show)
 
-newtype CorePureBody = CorePureBody
-  { corePureBodyOutputs :: Map Text CorePureExpr
-  }
+data CorePureBody
+  = CorePureProductBody !(Map Text CorePureExpr)
+  | CorePureSumBody ![Text] !CorePureExpr
   deriving stock (Eq, Show)
 
 data ExecutorBody = ExecutorBody
@@ -157,10 +158,33 @@ pureNodeBoundaryNormalForm nodeRef ports bindings whereExpr outputExprs =
             , corePureIngressWhere = whereExpr
             }
     , nodeBoundaryBody =
-        NodeBoundaryCorePureBody
-          CorePureBody
-            { corePureBodyOutputs = outputExprs
+        NodeBoundaryCorePureBody (CorePureProductBody outputExprs)
+    , nodeBoundaryEgress =
+        NodeBoundaryEgress
+          { nodeBoundaryOutputPorts = ports.wirePortsOutputs
+          }
+    }
+
+pureSumNodeBoundaryNormalForm
+  :: CircuitNodeRef
+  -> WirePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> NodeBoundaryNormalForm
+pureSumNodeBoundaryNormalForm nodeRef ports bindings whereExpr variants bodyExpr =
+  NodeBoundaryNormalForm
+    { nodeBoundaryRef = nodeRef
+    , nodeBoundaryPorts = ports
+    , nodeBoundaryIngress =
+        NodeBoundaryCorePureIngress
+          CorePureIngress
+            { corePureIngressBindings = bindings
+            , corePureIngressWhere = whereExpr
             }
+    , nodeBoundaryBody =
+        NodeBoundaryCorePureBody (CorePureSumBody variants bodyExpr)
     , nodeBoundaryEgress =
         NodeBoundaryEgress
           { nodeBoundaryOutputPorts = ports.wirePortsOutputs

@@ -6822,6 +6822,7 @@ jsonContract contractId =
     , wireContractSpecDescription = contractId
     , wireContractSpecRecordFields = Nothing
     , wireContractSpecSchema = Nothing
+    , wireContractSpecNativeShape = Nothing
     , wireContractSpecExamples = []
     }
 

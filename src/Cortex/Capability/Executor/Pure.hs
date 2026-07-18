@@ -14,6 +14,7 @@ Cortex substrate modules stay consumer-neutral and keep downstream product polic
 -}
 module Cortex.Capability.Executor.Pure
   ( PureTaskConfig (..)
+  , PureVariantConfig (..)
   , pureExecutorSpec
   , pureTaskConfigFromMetadata
   , bindPureTaskNode
@@ -26,6 +27,7 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Types qualified as AesonTypes
 import Data.Int (Int32)
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -54,11 +56,13 @@ import Cortex.Wire.Contract (WireContractRegistry, wirePortsFromMetadataValue)
 import Cortex.Wire.Executor (WireExecutorEffect (..))
 import Cortex.Wire.Pure
   ( evaluatePureTaskOutputs
+  , evaluatePureTaskVariant
   , pureExecutorArgumentSchema
   , pureWireExecutorId
   , pureWireExecutorProjection
   , renderPureEvalError
   , validatePureTaskConfig
+  , validatePureVariantTaskConfig
   )
 import Cortex.Wire.Runtime
   ( wireInputBundleFromStageInputs
@@ -70,8 +74,15 @@ data PureTaskConfig = PureTaskConfig
   { pureTaskConfigBindings :: ![CorePureBinding]
   , pureTaskConfigWhere :: !(Maybe CorePureExpr)
   , pureTaskConfigOutputs :: !(Map Text CorePureExpr)
+  , pureTaskConfigVariant :: !(Maybe PureVariantConfig)
   , pureTaskConfigPorts :: !WirePorts
   , pureTaskConfigTimeoutSeconds :: !(Maybe Int32)
+  }
+  deriving stock (Eq, Show, Generic)
+
+data PureVariantConfig = PureVariantConfig
+  { pureVariantConfigLabels :: ![Text]
+  , pureVariantConfigExpression :: !CorePureExpr
   }
   deriving stock (Eq, Show, Generic)
 
@@ -97,13 +108,25 @@ pureTaskConfigFromMetadata taskNode = do
     case AesonTypes.parseEither parsePureTaskMetadata taskNode.circuitTaskNodeMetadata of
       Left err -> Left (T.pack err)
       Right parsedConfig -> Right parsedConfig
-  case validatePureTaskConfig
-    config.pureTaskConfigPorts
-    config.pureTaskConfigBindings
-    config.pureTaskConfigWhere
-    config.pureTaskConfigOutputs of
+  case validateConfig config of
     Left err -> Left (renderPureEvalError err)
     Right () -> Right config
+  where
+    validateConfig config =
+      case config.pureTaskConfigVariant of
+        Nothing ->
+          validatePureTaskConfig
+            config.pureTaskConfigPorts
+            config.pureTaskConfigBindings
+            config.pureTaskConfigWhere
+            config.pureTaskConfigOutputs
+        Just variant ->
+          validatePureVariantTaskConfig
+            config.pureTaskConfigPorts
+            config.pureTaskConfigBindings
+            config.pureTaskConfigWhere
+            variant.pureVariantConfigLabels
+            variant.pureVariantConfigExpression
 
 bindPureTaskNode
   :: Maybe WireContractRegistry -> CircuitTaskNode -> Either Text (StageDefinition NodeId)
@@ -121,12 +144,7 @@ bindPureTaskNode maybeRegistry taskNode = do
       , sdRetryPolicy = Nothing
       , sdAction = \ctx -> do
           let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
-          case evaluatePureTaskOutputs
-            config.pureTaskConfigPorts
-            inputBundle
-            config.pureTaskConfigBindings
-            config.pureTaskConfigWhere
-            config.pureTaskConfigOutputs of
+          case evaluateConfig config inputBundle of
             Left err -> fail (T.unpack (renderPureEvalError err))
             Right outputValues ->
               case wrapWireStageOutputs maybeRegistry ctx.scNodeId ctx.scRunId config.pureTaskConfigPorts outputValues of
@@ -134,6 +152,24 @@ bindPureTaskNode maybeRegistry taskNode = do
                 Right wrappedValue -> pure (StageComplete wrappedValue)
       , sdMemoryStrategy = defaultMemoryStrategy
       }
+  where
+    evaluateConfig config inputBundle =
+      case config.pureTaskConfigVariant of
+        Nothing ->
+          evaluatePureTaskOutputs
+            config.pureTaskConfigPorts
+            inputBundle
+            config.pureTaskConfigBindings
+            config.pureTaskConfigWhere
+            config.pureTaskConfigOutputs
+        Just variant ->
+          evaluatePureTaskVariant
+            config.pureTaskConfigPorts
+            inputBundle
+            config.pureTaskConfigBindings
+            config.pureTaskConfigWhere
+            variant.pureVariantConfigLabels
+            variant.pureVariantConfigExpression
 
 nodeIdFromCircuitRef :: CircuitNodeRef -> NodeId
 nodeIdFromCircuitRef nodeRef =
@@ -149,13 +185,14 @@ parsePureTaskMetadata = Aeson.withObject "Pure task metadata" $ \obj -> do
       Right parsedPorts -> pure parsedPorts
       Left err -> fail (T.unpack err)
   configValue <- obj Aeson..: "config"
-  (bindings, whereExpr, outputs) <- parsePureConfig configValue
+  (bindings, whereExpr, outputs, variant) <- parsePureConfig configValue
   timeoutSeconds <- obj Aeson..:? "timeoutSeconds"
   pure
     PureTaskConfig
       { pureTaskConfigBindings = bindings
       , pureTaskConfigWhere = whereExpr
       , pureTaskConfigOutputs = outputs
+      , pureTaskConfigVariant = variant
       , pureTaskConfigPorts = ports
       , pureTaskConfigTimeoutSeconds = timeoutSeconds
       }
@@ -169,18 +206,31 @@ parsePureExecutor = Aeson.withObject "Pure executor metadata" $ \obj -> do
     _ -> fail "task node does not reference the native pure executor"
 
 parsePureConfig
-  :: Aeson.Value -> AesonTypes.Parser ([CorePureBinding], Maybe CorePureExpr, Map Text CorePureExpr)
+  :: Aeson.Value
+  -> AesonTypes.Parser
+       ([CorePureBinding], Maybe CorePureExpr, Map Text CorePureExpr, Maybe PureVariantConfig)
 parsePureConfig = Aeson.withObject "Pure executor config" $ \obj -> do
   let extraKeys =
         [ keyText
         | key <- KeyMap.keys obj
         , let keyText = Key.toText key
-        , keyText /= "bindings" && keyText /= "where" && keyText /= "outputs"
+        , keyText /= "bindings" && keyText /= "where" && keyText /= "outputs" && keyText /= "variant"
         ]
   case extraKeys of
     [] -> do
       bindings <- obj Aeson..:? "bindings" Aeson..!= []
       whereExpr <- obj Aeson..:? "where"
-      outputs <- obj Aeson..: "outputs"
-      pure (bindings, whereExpr, outputs)
+      outputs <- obj Aeson..:? "outputs"
+      variant <- obj Aeson..:? "variant" >>= traverse parseVariantConfig
+      case (outputs, variant) of
+        (Just outputMap, Nothing) -> pure (bindings, whereExpr, outputMap, Nothing)
+        (Nothing, Just variantConfig) -> pure (bindings, whereExpr, Map.empty, Just variantConfig)
+        _ -> fail "pure executor config requires exactly one of outputs or variant"
     _ -> fail ("unsupported pure executor config fields: " <> T.unpack (T.intercalate ", " extraKeys))
+
+parseVariantConfig :: Aeson.Value -> AesonTypes.Parser PureVariantConfig
+parseVariantConfig = Aeson.withObject "Pure variant config" $ \obj -> do
+  let keys = Set.fromList (fmap Key.toText (KeyMap.keys obj))
+  if keys /= Set.fromList ["labels", "expression"]
+    then fail "pure variant config fields must be exactly labels and expression"
+    else PureVariantConfig <$> obj Aeson..: "labels" <*> obj Aeson..: "expression"

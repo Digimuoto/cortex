@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0038-wire-proof-track-theorem-ledger.md
   - docs/ADRs/0078-lean-wire-elaboration-kernel.md
   - docs/ADRs/0079-wire-admission-witness-schema.md
+  - docs/ADRs/0096-certified-native-pure-region-compilation.md
 ---
 
 # Cortex Proof Status
@@ -99,6 +100,20 @@ authoritative through `CompiledCircuit` and `WireAdmissionArtifact`, then Lean v
 normalized deployment input and owns the target semantics and C emission. Node-local egress
 projection and binding-phase semantics remain open; current node-boundary and artifact rows must not
 be read as having solved that projection rule.
+
+### NativePure proof boundary
+
+[ADR 0096](../ADRs/0096-certified-native-pure-region-compilation.md) adds a separate, partial proof
+surface. `theory/Cortex/Wire/NativePure.lean` defines an intrinsically typed kernel expression
+language, an executable evaluator, a distinct typed C-expression subset, the constructive `lower`
+function, and `lower_refines`, which proves evaluator equality for the implemented structural and
+checked-i64 slice. `CertifiedKernel.target` is that same lowering function, so the theorem covers
+the compiler implementation rather than a parallel generator model.
+
+This is not yet an end-to-end Haskell-to-ELF proof. Artifact decoding and typed CorePure elaboration
+into the Lean kernel, structured C module/statement lowering, printer correspondence, f64
+differential validation, and v2 runtime integration remain open. The Haskell plan and layout tests
+are correspondence hooks, not substitutes for those missing links.
 
 ## Matrix
 

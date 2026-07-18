@@ -1311,7 +1311,10 @@ nodeImplementationBody =
     ]
 
 pureImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
-pureImplementation = do
+pureImplementation = try pureSumImplementation <|> pureProductImplementation
+
+pureProductImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+pureProductImplementation = do
   outputEquations <-
     requireNonEmpty "pure node requires at least one output equation" =<< some (try pureOutputEquation)
   let outputs = fmap pureOutputEquationPortDecl (NE.toList outputEquations)
@@ -1321,7 +1324,26 @@ pureImplementation = do
         NodeBodyPure
           NodePureBody
             { nodePureBodyWhere = whereExpr
-            , nodePureBodyOutputs = outputEquations
+            , nodePureBodyResult = NodePureProduct outputEquations
+            }
+    )
+
+pureSumImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+pureSumImplementation = do
+  _ <- symbol "->"
+  firstVariant <- outputVariant
+  remainingVariants <- some (symbol "|" *> outputVariant)
+  _ <- symbol "="
+  bodyExpr <- pureOutputExpression
+  _ <- symbol ";"
+  let variants = firstVariant :| remainingVariants
+  pure
+    ( [PortOutputSumDecl variants]
+    , \whereExpr ->
+        NodeBodyPure
+          NodePureBody
+            { nodePureBodyWhere = whereExpr
+            , nodePureBodyResult = NodePureSum variants bodyExpr
             }
     )
 
@@ -2596,12 +2618,15 @@ rewriteNodeBodyLocalLets localLetNames = \case
         (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
         (rewriteExecutorCallLocalLets localLetNames executorCallValue)
   NodeBodyPure pureBody ->
-    Right . NodeBodyPure $
-      pureBody
-        { nodePureBodyWhere = fmap (rewriteCorePureLocalLets localLetNames) pureBody.nodePureBodyWhere
-        , nodePureBodyOutputs =
-            fmap (rewritePureOutputEquationLocalLets localLetNames) pureBody.nodePureBodyOutputs
-        }
+    Right . NodeBodyPure $ case pureBody of
+      NodePureBody whereExpr (NodePureProduct outputs) ->
+        NodePureBody
+          (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
+          (NodePureProduct (fmap (rewritePureOutputEquationLocalLets localLetNames) outputs))
+      NodePureBody whereExpr (NodePureSum variants bodyExpr) ->
+        NodePureBody
+          (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
+          (NodePureSum variants (rewriteCorePureLocalLets localLetNames bodyExpr))
 
 rewritePureOutputEquationLocalLets :: Map Text Text -> PureOutputEquation -> PureOutputEquation
 rewritePureOutputEquationLocalLets localLetNames outputEquation =
@@ -2793,10 +2818,18 @@ substituteNodeBody subst = \case
     NodeBodyPure <$> substitutePureBody subst pureBody
 
 substitutePureBody :: KindSubstitution -> NodePureBody -> Either String NodePureBody
-substitutePureBody subst pureBody =
-  NodePureBody
-    <$> traverse (substituteCorePureExpr subst) pureBody.nodePureBodyWhere
-    <*> traverse (substitutePureOutputEquation subst) pureBody.nodePureBodyOutputs
+substitutePureBody subst = \case
+  NodePureBody whereExpr (NodePureProduct outputs) ->
+    NodePureBody
+      <$> traverse (substituteCorePureExpr subst) whereExpr
+      <*> (NodePureProduct <$> traverse (substitutePureOutputEquation subst) outputs)
+  NodePureBody whereExpr (NodePureSum variants bodyExpr) ->
+    NodePureBody
+      <$> traverse (substituteCorePureExpr subst) whereExpr
+      <*> ( NodePureSum
+              <$> traverse (substituteSumVariant subst) variants
+              <*> substituteCorePureExpr subst bodyExpr
+          )
 
 substitutePureOutputEquation
   :: KindSubstitution -> PureOutputEquation -> Either String PureOutputEquation

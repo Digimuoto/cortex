@@ -56,6 +56,7 @@ module.exports = grammar({
     [$._core_pure_atom, $.qualified_ident],
     [$.inherit_field, $.core_pure_inherit_field],
     [$.pure_output_equation, $.output_body],
+    [$.pure_sum_body, $.output_body],
   ],
 
   rules: {
@@ -310,7 +311,19 @@ module.exports = grammar({
       field('contract', $.contract_ref),
     ),
 
-    pure_body: $ => repeat1($.pure_output_equation),
+    pure_body: $ => choice(
+      repeat1($.pure_output_equation),
+      $.pure_sum_body,
+    ),
+
+    pure_sum_body: $ => seq(
+      '->',
+      field('variant', $.output_variant),
+      repeat1(seq('|', field('variant', $.output_variant))),
+      '=',
+      field('body', $.pure_output_expr),
+      ';',
+    ),
 
     pure_output_equation: $ => seq(
       '->',

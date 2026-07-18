@@ -319,8 +319,8 @@ formatNodeDecl nodeDecl =
                       <> ["=", formatExecutorCall call <> ";"]
                 )
             NodeBodyPure pureBody
-              | Nothing <- pureBody.nodePureBodyWhere
-              , [equation] <- toList pureBody.nodePureBodyOutputs ->
+              | NodePureBody Nothing (NodePureProduct outputEquations) <- pureBody
+              , [equation] <- toList outputEquations ->
                   Just
                     ( T.unwords $
                         [nodeHeader]
@@ -331,9 +331,20 @@ formatNodeDecl nodeDecl =
 
 formatNodeBody :: [PortDecl] -> NodeBody -> [Text]
 formatNodeBody outputPorts = \case
-  NodeBodyPure pureBody ->
-    fmap (indentText 1 . formatPureOutputEquation) (toList pureBody.nodePureBodyOutputs)
-      <> formatWhereClause pureBody.nodePureBodyWhere
+  NodeBodyPure (NodePureBody whereExpr (NodePureProduct outputEquations)) ->
+    fmap (indentText 1 . formatPureOutputEquation) (toList outputEquations)
+      <> formatWhereClause whereExpr
+  NodeBodyPure (NodePureBody whereExpr (NodePureSum variants bodyExpr)) ->
+    [ indentText
+        1
+        ( "-> "
+            <> T.intercalate " | " (fmap formatSumVariant (toList variants))
+            <> " = "
+            <> formatCorePureExpr bodyExpr
+            <> ";"
+        )
+    ]
+      <> formatWhereClause whereExpr
   NodeBodyExecutor whereExpr call ->
     fmap (indentText 1 . formatPortDecl) outputPorts
       <> [indentText 1 ("= " <> formatExecutorCall call <> ";")]

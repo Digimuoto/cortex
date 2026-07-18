@@ -109,6 +109,24 @@ spec = describe "Cortex.Wire.Parser" $ do
     it "parses the quantum Bell-state example" $
       parseWireFixture "examples/wire/quantum-bell-state.wire"
 
+  describe "pure sum bodies" $ do
+    it "parses constructors only after one declared exclusive output boundary" $ do
+      let WireFile forms _ =
+            parseOrFail
+              "node classify <- score: Score -> accepted: Decision | rejected: RejectReason = if score >= 0 then accepted score else rejected score;"
+      case forms of
+        [ TopNode
+            NodeDecl
+              { nodeDeclBody =
+                NodeBodyPure
+                  ( NodePureBody
+                      Nothing
+                      (NodePureSum variants (CorePureIf {}))
+                    )
+              }
+          ] -> fmap (.svLabel) variants `shouldBe` Label "accepted" :| [Label "rejected"]
+        other -> expectationFailure ("unexpected pure sum parse: " <> show other)
+
     it "parses the IBM REST quantum Bell-state example" $
       parseWireFixture "examples/wire/quantum-bell-state-ibm-rest.wire"
 
@@ -546,7 +564,9 @@ spec = describe "Cortex.Wire.Parser" $ do
           case nodeDeclBody node of
             NodeBodyPure pureBody -> do
               nodePureBodyWhere pureBody `shouldSatisfy` isJust
-              length (nodePureBodyOutputs pureBody) `shouldBe` 2
+              case pureBody.nodePureBodyResult of
+                NodePureProduct outputs -> length outputs `shouldBe` 2
+                other -> expectationFailure ("expected product outputs, got: " <> show other)
             other -> expectationFailure ("expected pure body, got: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
@@ -727,8 +747,8 @@ parseCorePureNodeOutput source =
   case parseWireFile "test" program of
     Right (WireFile [TopNode node] _) ->
       case nodeDeclBody node of
-        NodeBodyPure pureBody ->
-          pureOutputEquationExpr (NE.head pureBody.nodePureBodyOutputs)
+        NodeBodyPure (NodePureBody _ (NodePureProduct outputs)) ->
+          pureOutputEquationExpr (NE.head outputs)
         other -> error ("unexpected node body: " <> show other)
     other -> error ("unexpected parse result: " <> show other)
   where

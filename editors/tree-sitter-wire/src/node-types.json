@@ -2739,6 +2739,10 @@
         {
           "type": "pure_output_equation",
           "named": true
+        },
+        {
+          "type": "pure_sum_body",
+          "named": true
         }
       ]
     }
@@ -2779,6 +2783,32 @@
         "types": [
           {
             "type": "core_pure_expr",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "pure_sum_body",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "pure_output_expr",
+            "named": true
+          }
+        ]
+      },
+      "variant": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "output_variant",
             "named": true
           }
         ]

@@ -126,6 +126,19 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
               <> showStageResult secondResult
           )
 
+  it "evaluates exactly one declared pure sum constructor" $ do
+    compiled <- requireRight (compileWireTextWithEnv pureCompileEnv pureSumSourceText)
+    taskNode <- requireCompiledTask "classify" compiled
+    stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) taskNode)
+    result <- stageDef.sdAction pureSumStageContext
+    case result of
+      StageComplete value -> do
+        wireValue <- requireAesonSuccess (Aeson.fromJSON value :: Aeson.Result WireValue)
+        wireValue.wireValuePort `shouldBe` Just "accepted"
+        wireValue.wireValueContract `shouldBe` "Float"
+        wireValue.wireValueValue `shouldBe` Aeson.Number (scientific 8 (-1))
+      other -> expectationFailure ("expected StageComplete, got " <> showStageResult other)
+
   it "rejects invalid pure port declarations before binding a stage" $
     case bindPureTaskNode (Just floatContractRegistry) noOutputTaskNode of
       Left err ->
@@ -286,6 +299,31 @@ pureSourceText =
     , "score"
     ]
 
+pureSumSourceText :: Text
+pureSumSourceText =
+  T.unlines
+    [ "node classify"
+    , "  <- evidence_score: Float"
+    , "  -> accepted: Float | rejected: Float ="
+    , "    if evidence_score >= 0 then accepted evidence_score else rejected evidence_score;"
+    , "classify"
+    ]
+
+pureSumStageContext :: StageContext
+pureSumStageContext =
+  weightedStageContext
+    { scNodeId = NodeId "classify"
+    , scInputs =
+        Map.singleton
+          (NodeId "evidence")
+          ( Aeson.toJSON
+              ( (mkWireValue "Float" WirePayloadJson (Just "evidence") (Aeson.Number (scientific 8 (-1))))
+                  { wireValuePort = Just "evidence_score"
+                  }
+              )
+          )
+    }
+
 floatContractRegistry :: WireContractRegistry
 floatContractRegistry =
   wireContractRegistryFromList [contractSpec WirePayloadJson]
@@ -302,6 +340,7 @@ contractSpec payloadKind =
     , wireContractSpecDescription = "Float"
     , wireContractSpecRecordFields = Nothing
     , wireContractSpecSchema = Nothing
+    , wireContractSpecNativeShape = Nothing
     , wireContractSpecExamples = []
     }
 

@@ -38,6 +38,7 @@ import Data.Text qualified as T
 
 import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Executor (WireExecutorRegistry, emptyWireExecutorRegistry)
+import Cortex.Wire.NativePure.Shape (NativeShapeProjection)
 import Cortex.Wire.Package.Registry (NamespaceRegistry)
 import Cortex.Wire.Syntax
 import Cortex.Wire.Value (WirePayloadKind, renderWirePayloadKind)
@@ -48,6 +49,7 @@ data WireContractSpec = WireContractSpec
   , wireContractSpecDescription :: !Text
   , wireContractSpecRecordFields :: !(Maybe (Map Text ContractId))
   , wireContractSpecSchema :: !(Maybe Aeson.Value)
+  , wireContractSpecNativeShape :: !(Maybe NativeShapeProjection)
   , wireContractSpecExamples :: ![Aeson.Value]
   }
   deriving stock (Eq, Show)
@@ -60,6 +62,7 @@ instance ToJSON WireContractSpec where
       , "description" .= spec.wireContractSpecDescription
       , "recordFields" .= fmap (fmap (.unContractId)) spec.wireContractSpecRecordFields
       , "schema" .= spec.wireContractSpecSchema
+      , "nativeShape" .= spec.wireContractSpecNativeShape
       , "examples" .= spec.wireContractSpecExamples
       ]
 

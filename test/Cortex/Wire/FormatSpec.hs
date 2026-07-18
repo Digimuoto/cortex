@@ -105,6 +105,13 @@ spec = do
         `shouldBe` Right
           "node action\n  -> out: T\n  = @executor \"line one\\nline two\";\n"
 
+    it "keeps pure sum bodies topology-first and preserves constructor branches" $ do
+      formatWireSource
+        "test"
+        "node classify <- score: Score -> accepted: Decision|rejected: RejectReason=if score>=0 then accepted score else rejected score;"
+        `shouldBe` Right
+          "node classify\n  <- score: Score\n  -> accepted: Decision | rejected: RejectReason = if (score >= 0) then accepted score else rejected score;\n"
+
     it "is idempotent" $ do
       let source = "a\n  => b <> c <> d\n  => e\n"
       formatted <- requireRight (formatWireSource "test" source)

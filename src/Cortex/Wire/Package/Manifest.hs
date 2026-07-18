@@ -51,6 +51,7 @@ import Cortex.Wire.Executor
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
   )
+import Cortex.Wire.NativePure.Shape (NativeShapeProjection)
 import Cortex.Wire.Package (NamespaceEntry (..), WirePackage (..))
 import Cortex.Wire.Syntax (ContractId (..))
 import Cortex.Wire.Value (WirePayloadKind, parseWirePayloadKindText)
@@ -203,6 +204,7 @@ instance Toml.FromValue WireContractSpec where
   fromValue = Toml.parseTableFromValue $ do
     rawFields <- Toml.optKey "record_fields"
     rawSchema <- Toml.optKey "schema"
+    rawNativeShape <- Toml.optKey "native_shape"
     rawExamples <- optionalList "examples"
     WireContractSpec
       <$> Toml.reqKey "id"
@@ -210,6 +212,7 @@ instance Toml.FromValue WireContractSpec where
       <*> optionalText "description"
       <*> pure (fmap (fmap ContractId) rawFields)
       <*> pure (fmap unTomlJsonValue rawSchema)
+      <*> pure (fmap unTomlNativeShape rawNativeShape)
       <*> pure (fmap unTomlJsonValue rawExamples)
 
 instance Toml.FromValue WireExecutorProjection where
@@ -222,6 +225,17 @@ instance Toml.FromValue WireExecutorProjection where
       <*> Toml.reqKey "effect"
       <*> optionalValue "argument_shape" WireExecutorArgumentUnchecked
       <*> optionalValue "port_policy" WireExecutorFixedPorts
+
+newtype TomlNativeShape = TomlNativeShape
+  { unTomlNativeShape :: NativeShapeProjection
+  }
+  deriving stock (Eq, Show)
+
+instance Toml.FromValue TomlNativeShape where
+  fromValue value =
+    case Aeson.fromJSON (tomlValueToAeson value) of
+      Aeson.Error message -> fail message
+      Aeson.Success nativeShape -> pure (TomlNativeShape nativeShape)
 
 emptyPorts :: WirePorts
 emptyPorts =

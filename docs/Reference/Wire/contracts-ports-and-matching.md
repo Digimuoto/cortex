@@ -15,6 +15,7 @@ related:
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0085-wire-contract-schema-as-type-enforcement.md
+  - docs/ADRs/0096-certified-native-pure-region-compilation.md
 ---
 
 # Wire Reference — Contracts, Ports, and Matching
@@ -176,3 +177,27 @@ The dialect is versioned (`wireContractDialectVersion`, mirrored by the Lean con
 `Cortex.Wire.ContractValidation.dialectVersion`) and mechanized: the Lean checker is proven sound
 and complete against the dialect semantics (`theory/Cortex/Wire/ContractValidationCheck.lean`), and
 generated fixtures pin Haskell and Lean against drift (see [proof-status](../proof-status.md)).
+
+## Native Representation Projection
+
+The opt-in NativePure profile additionally requires every crossing contract to declare a versioned
+`native_shape`. This is a fixed-layout representation contract, not a substitute for the runtime
+value schema:
+
+```toml
+[[contract]]
+id = "Score"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
+
+[[contract]]
+id = "Name"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = { kind = "text", capacity = 64 } }
+```
+
+Version 1 admits unit, bool, i64, u64, f64, bounded UTF-8 text, bounded vectors, fixed records, and
+tagged sums. Option is encoded as a `none`/`some` sum. Unknown projection versions or fields,
+unbounded values, empty record or sum shapes, and layout overflow are hard admission failures.
+Hosted execution does not require this projection; NativePure never falls back to an inferred or
+permissive layout.

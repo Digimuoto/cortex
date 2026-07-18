@@ -1302,11 +1302,73 @@
       ]
     },
     "pure_body": {
-      "type": "REPEAT1",
-      "content": {
-        "type": "SYMBOL",
-        "name": "pure_output_equation"
-      }
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pure_output_equation"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "pure_sum_body"
+        }
+      ]
+    },
+    "pure_sum_body": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "->"
+        },
+        {
+          "type": "FIELD",
+          "name": "variant",
+          "content": {
+            "type": "SYMBOL",
+            "name": "output_variant"
+          }
+        },
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "|"
+              },
+              {
+                "type": "FIELD",
+                "name": "variant",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "output_variant"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "="
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pure_output_expr"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ";"
+        }
+      ]
     },
     "pure_output_equation": {
       "type": "SEQ",
@@ -3429,6 +3491,10 @@
     ],
     [
       "pure_output_equation",
+      "output_body"
+    ],
+    [
+      "pure_sum_body",
       "output_body"
     ]
   ],

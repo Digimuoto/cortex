@@ -42,6 +42,7 @@ lean_lib «Cortex» where
     `Cortex.Pulse.Classify,
     `Cortex.Pulse.RunSafety,
     `Cortex.Wire.Pure,
+    `Cortex.Wire.NativePure,
     `Cortex.Wire.Registry,
     `Cortex.Wire.Rewrite,
     `Cortex.Wire.Admission,

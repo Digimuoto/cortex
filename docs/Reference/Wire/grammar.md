@@ -234,10 +234,12 @@ where_clause ::= "where" corepure_expr ";"
 
 node_body ::=
     pure_output_equation+
+  | pure_sum_body
   | executor_output_clause* "=" executor_call ";"
   | "->" output_variant "=" executor_call ";"
 
 pure_output_equation ::= "->" output_variant "=" corepure_expr ";"
+pure_sum_body ::= "->" output_variant ("|" output_variant)+ "=" corepure_expr ";"
 executor_output_clause ::= "->" output_body
 output_body ::= output_variant ("|" output_variant)*
 output_variant ::= ident ":" contract_ref
@@ -388,7 +390,10 @@ Rules:
 - pure output equations write the CorePure expression directly after `=`;
 - `pure (...)`, `@pure`, `pure { ... }`, and string-valued `expr = ...` configs are rejected;
 - every pure equation declares exactly one output port;
-- pure equations do not declare sum groups;
+- alternatively, one exclusive output group may share one CorePure body whose control-flow paths
+  return declared constructors such as `accepted value` or `rejected reason`;
+- constructor names resolve only against that output group's labels, may not be shadowed, take one
+  payload, and every path must select exactly one variant;
 - an optional trailing `where <record-expr>;` clause opens statically known record fields into all
   equations in the node;
 - node-local `let ... in` blocks before the body are rejected;
