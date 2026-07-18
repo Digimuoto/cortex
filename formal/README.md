@@ -22,6 +22,19 @@ the protocol shape:
 The negative config (`Split.cfg`) is expected to fail; `scripts/check-tla.sh` asserts it reproduces
 its documented violation, so the model cannot vacuously pass.
 
+### `HostedProtocol.tla` — the Wire process-host lifecycle
+
+This model covers the concurrency owned by the process host rather than the engine value semantics:
+atomic worker registration, checkpoint acknowledgement, direct and buffered completions, operator
+and interruption-driven cancellation, independent deadline identities, completed/failed/cancelled
+terminal precedence, and abnormal child exit. Lean separately proves snapshot validity and the
+engine checkpoint gate.
+
+The positive `HostedProtocol.cfg` checks the production policy. Three expected-failure configs prove
+the central race checks are non-vacuous by respectively forwarding a buffered completion after
+cancellation, clearing a deadline when a successor request crosses a completion, and replacing an
+outstanding deadline on unrelated traffic.
+
 ## Note on multi-await lock ordering (no model required)
 
 An earlier draft modelled `SELECT … FOR SHARE` acquisition ordering for deadlock-avoidance. That was
