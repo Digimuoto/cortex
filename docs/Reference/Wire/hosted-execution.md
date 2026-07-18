@@ -145,11 +145,18 @@ lifecycle is a separate state machine:
 - `Cortex.Wire.Circuit.HostedSpec` refines the policy against real pipes, workers, cancellation, and
   child processes through scripted engines.
 
-TLC checks atomic worker registration, acknowledgement before successor work, buffered-completion
-gating, terminal-checkpoint authority, cancellation liveness after interruption, independent
-non-extending deadlines, committed terminal precedence over abnormal exit, and the prohibition on
-forwarding completions after cancellation. Run both the Wire host model and the existing Pulse
-run-terminal signal model with:
+TLC checks acknowledgement before successor work, buffered-completion gating, successful-terminal
+quiescence, operator and interruption-driven cancellation liveness, crossing-checkpoint deadline
+preservation, unrelated-traffic deadline stability, terminal precedence after child exit, and the
+prohibition on forwarding direct or buffered completions after cancellation or terminal authority.
+Four expected-failure configurations remove one protection at a time, including post-terminal
+completion dropping, so those completion and deadline properties exercise a reachable violation.
+
+The proof boundary is deliberate: Lean proves that an accepted engine completion cannot unlock
+successor drive before the checkpoint gate, while TLA+ proves the host lifecycle ordering around
+workers, acknowledgements, cancellation, clocks, and child exit. Neither model is described as
+proving the other's state space. Run both the Wire host model and the existing Pulse run-terminal
+signal model with:
 
 ```sh
 just tla-check

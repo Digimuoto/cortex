@@ -15,8 +15,9 @@ example, an effect completion after cancellation).
 -}
 module Cortex.Wire.Circuit.HostedSpec (spec) where
 
-import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar)
-import Control.Exception (AsyncException (ThreadKilled), throwIO)
+import Control.Concurrent.Async (wait, withAsync)
+import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, tryTakeMVar)
+import Control.Exception (AsyncException (ThreadKilled), finally, throwIO)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -331,6 +332,147 @@ spec = describe "Cortex.Wire.Circuit.Hosted" $ do
         Left err ->
           T.unpack err.hostedRunErrorMessage
             `shouldContain` "mandated protocol output did not arrive"
+
+  it "rejects successor work after a terminal checkpoint without executing it" $ do
+    let steps =
+          [ Emit hello
+          , Await -- start
+          , Emit (checkpoint (engineState 1 EngineSucceeded [EngineCompleted, EngineCompleted] [7, 9]))
+          , Await -- ack 1
+          , Emit (effectRequested 1 0)
+          , Await -- host tears the child down
+          ]
+    withFakeEngine steps $ \artifact -> do
+      executed <- newEmptyMVar
+      let runtimeHost =
+            succeedingHost
+              { hostedExecuteEffect = \_nodeId -> do
+                  putMVar executed ()
+                  pure (EffectResolved EffectSkipped)
+              }
+      result <- runHost runtimeHost artifact
+      case result of
+        Right _state -> expectationFailure "expected a post-terminal-checkpoint protocol fault"
+        Left err ->
+          T.unpack err.hostedRunErrorMessage
+            `shouldContain` "after a terminal checkpoint"
+      tryTakeMVar executed `shouldReturn` Nothing
+
+  it "rejects checkpoints after the terminal event without replacing authority" $ do
+    let committed = engineState 1 EngineSucceeded [EngineCompleted, EngineCompleted] [7, 9]
+        extra = engineState 2 EngineSucceeded [EngineCompleted, EngineCompleted] [7, 9]
+        steps =
+          [ Emit hello
+          , Await -- start
+          , Emit (checkpoint committed)
+          , Await -- ack 1
+          , Emit (terminalEvent EngineSucceeded)
+          , Await -- shutdown
+          , Emit (checkpoint extra)
+          , Await -- host tears the child down
+          ]
+    withFakeEngine steps $ \artifact -> do
+      result <- runHost succeedingHost artifact
+      case result of
+        Right _state -> expectationFailure "expected a post-terminal checkpoint fault"
+        Left err -> do
+          T.unpack err.hostedRunErrorMessage `shouldContain` "checkpoint after terminal"
+          (.esCheckpointSequence) <$> err.hostedRunLastCommitted `shouldBe` Just 1
+
+  it "rejects duplicate terminal events without indefinitely refreshing shutdown" $ do
+    let steps =
+          [ Emit hello
+          , Await -- start
+          , Emit (checkpoint (engineState 1 EngineSucceeded [EngineCompleted, EngineCompleted] [7, 9]))
+          , Await -- ack 1
+          , Emit (terminalEvent EngineSucceeded)
+          , Await -- shutdown
+          , Emit (terminalEvent EngineSucceeded)
+          , Await -- host tears the child down
+          ]
+    withFakeEngine steps $ \artifact -> do
+      result <- runHost succeedingHost artifact
+      case result of
+        Right _state -> expectationFailure "expected a duplicate terminal fault"
+        Left err -> T.unpack err.hostedRunErrorMessage `shouldContain` "duplicate terminal"
+
+  it "honors failed terminal authority and cancels a still-running sibling" $ do
+    let steps =
+          [ Emit hello
+          , Await -- start
+          , Emit (checkpoint (engineState 1 EngineActive [EnginePending, EnginePending] [0, 0]))
+          , Await -- ack 1
+          , Emit (effectRequested 1 0)
+          , Emit (effectRequested 2 1)
+          , Await -- failed completion for node 0
+          , Emit (checkpoint (engineState 2 EngineTerminalFailed [EngineFailed, EngineRunning] [0, 0]))
+          , Await -- ack 2
+          , Emit (terminalEvent EngineTerminalFailed)
+          , Await -- shutdown
+          ]
+    withFakeEngine steps $ \artifact -> do
+      releasePrimary <- newEmptyMVar
+      neverResolves <- newEmptyMVar
+      siblingStarted <- newEmptyMVar
+      siblingCancelled <- newEmptyMVar
+      let runtimeHost =
+            succeedingHost
+              { hostedExecuteEffect = \case
+                  0 -> do
+                    readMVar releasePrimary
+                    pure (EffectResolved (EffectFailed "primary failed"))
+                  _otherNode ->
+                    do
+                      putMVar siblingStarted ()
+                      readMVar neverResolves
+                        `finally` putMVar siblingCancelled ()
+              }
+      result <- withAsync (runHost runtimeHost artifact) $ \running -> do
+        readMVar siblingStarted
+        putMVar releasePrimary ()
+        wait running
+      case result of
+        Left err -> expectationFailure ("expected committed failure, got: " <> show err)
+        Right finalState -> finalState.esTerminal `shouldBe` EngineTerminalFailed
+      timeout 1000000 (readMVar siblingCancelled) `shouldReturn` Just ()
+
+  it "intentionally drops a host exception once cancellation wins" $ do
+    let steps =
+          [ Emit hello
+          , Await -- start
+          , Emit (checkpoint (engineState 1 EngineActive [EnginePending, EnginePending] [0, 0]))
+          , Await -- ack 1
+          , Emit (effectRequested 1 0)
+          , AwaitNotCompletion -- cancel, never the host exception
+          , Emit (checkpoint (engineState 2 EngineCancelled [EnginePending, EnginePending] [0, 0]))
+          , Await -- ack 2
+          , Emit (terminalEvent EngineCancelled)
+          , Await -- shutdown
+          ]
+    withFakeEngine steps $ \artifact -> do
+      effectStarted <- newEmptyMVar
+      cancellationIssued <- newEmptyMVar
+      releaseException <- newEmptyMVar
+      let runtimeHost =
+            HostedRuntimeHost
+              { hostedCommitCheckpoint = \_state -> pure CheckpointCommitAccepted
+              , hostedExecuteEffect = \_nodeId -> do
+                  putMVar effectStarted ()
+                  readMVar releaseException
+                  ioError (userError "host exception after cancellation")
+              , hostedAwaitCancellation =
+                  Just $ do
+                    readMVar effectStarted
+                    putMVar cancellationIssued ()
+                    pure (Right "operator cancellation")
+              }
+      result <- withAsync (runHost runtimeHost artifact) $ \running -> do
+        readMVar cancellationIssued
+        putMVar releaseException ()
+        wait running
+      case result of
+        Left err -> expectationFailure ("expected cancellation authority, got: " <> show err)
+        Right finalState -> finalState.esTerminal `shouldBe` EngineCancelled
 
   it "fails closed when an interrupted effect is not followed by an authorized cancel" $ do
     let steps =
