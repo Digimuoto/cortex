@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Model-check the Pulse run-terminal signal protocol with TLC.
+# Model-check the Pulse signal and Wire process-host protocols with TLC.
 #
 # Positive specs must verify. The two NEGATIVE specs must reproduce the bug they
 # document (lost wakeup / deadlock) -- proving the models actually catch the bug
@@ -46,6 +46,7 @@ expect_violation() { # $1 cfg, $2 spec, $3 needle
 
 echo "TLA+ positive checks (must verify):"
 expect_pass Atomic.cfg RunTerminalSignal.tla
+expect_pass HostedProtocol.cfg HostedProtocol.tla
 
 echo "TLA+ negative checks (must reproduce the documented bug):"
 expect_violation Split.cfg RunTerminalSignal.tla "NoStuckWaiter is violated"
