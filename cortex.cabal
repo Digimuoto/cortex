@@ -21,7 +21,9 @@ extra-source-files:
 -- Pulse-owned schema shipped as a library data-file (ADR 0003); applied by
 -- Cortex.Pulse.Database.provisionPulseSchema via Paths_cortex.getDataFileName.
 data-dir:           data
-data-files:         pulse-schema.sql
+data-files:
+    pulse-schema.sql
+    cortex-wire-hosted-runner-v1.c
 
 common shared-properties
     default-language: GHC2024
@@ -211,6 +213,8 @@ library
         Cortex.Wire.Circuit.Compile
         Cortex.Wire.Circuit.Compiled
         Cortex.Wire.Circuit.Compiler
+        Cortex.Wire.Circuit.Engine
+        Cortex.Wire.Circuit.Hosted
         Cortex.Wire.Circuit.IR
         Cortex.Wire.Circuit.Lower
         Cortex.Wire.Circuit.Lowering
@@ -432,6 +436,7 @@ test-suite cortex-test
         Cortex.Pulse.SchedulerSpec
         Cortex.Pulse.TypesSpec
         Cortex.Wire.Circuit.CompilerSpec
+        Cortex.Wire.Circuit.EngineSpec
         Cortex.Wire.Circuit.IRSpec
         Cortex.Wire.Cli.FrontierSpec
         Cortex.Wire.CompileSpec

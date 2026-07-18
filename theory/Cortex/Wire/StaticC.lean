@@ -291,4 +291,184 @@ theorem interpretClosed_refines_classifyClosedGraphState
         (classifyClosedGraphState program.toDAG state.toGraphState) := by
   simp [interpretClosed, hNoRunning]
 
+/-! ## Versioned Engine State -/
+
+/-- Terminal state carried by the separately versioned hosted engine ABI. -/
+inductive EngineTerminal : Type where
+  | active
+  | completed
+  | failed
+  | cancelled
+  deriving Repr, DecidableEq
+
+/-- Checkpoint-gated engine state. Runtime authority remains outside this value. -/
+structure EngineState (n : Nat) where
+  /-- Fixed-topology lifecycle and opaque output handles. -/
+  machine : MachineState n
+  /-- Monotonic durable-checkpoint sequence. -/
+  checkpointSequence : Nat
+  /-- Whether the current sequence must be acknowledged before another drive. -/
+  checkpointPending : Bool
+  /-- Structural terminal state. -/
+  terminal : EngineTerminal
+
+/-- Typed durable representation exported across the engine/host boundary. -/
+structure Snapshot (n : Nat) where
+  /-- Program node lifecycle statuses. -/
+  status : Fin n → Status
+  /-- Opaque, host-stable output handles. -/
+  output : Fin n → Option UInt64
+  /-- Monotonic durable-checkpoint sequence. -/
+  checkpointSequence : Nat
+  /-- Structural terminal state. -/
+  terminal : EngineTerminal
+
+namespace Snapshot
+
+/-- Restore validation rejects volatile running state. -/
+def Normalized (snapshot : Snapshot n) : Prop :=
+  ∀ node : Fin n, snapshot.status node ≠ Status.running
+
+/-- Output presence and nonzero-handle validity agree with lifecycle status. -/
+def HandlesValid (snapshot : Snapshot n) : Prop :=
+  ∀ node : Fin n,
+    match snapshot.status node with
+    | .completed => ∃ handle, snapshot.output node = some handle ∧ handle ≠ 0
+    | .pending | .running | .failed | .skipped => snapshot.output node = none
+
+/-- Completed and skipped nodes carry closed direct dependency history. -/
+def DependencyClosed (program : Program n) (snapshot : Snapshot n) : Prop :=
+  ∀ node : Fin n,
+    Status.unblocksSuccessors (snapshot.status node) →
+      ∀ predecessor : Fin n,
+        program.edge predecessor node = true →
+          Status.unblocksSuccessors (snapshot.status predecessor)
+
+/-- Restore-valid snapshots combine sequencing, normalization, handles, and closure. -/
+structure Valid (program : Program n) (snapshot : Snapshot n) : Prop where
+  /-- Checkpoint zero is never exported. -/
+  sequencePositive : 0 < snapshot.checkpointSequence
+  /-- Volatile running statuses are replay-normalized by the host before restore. -/
+  normalized : snapshot.Normalized
+  /-- Only completed nodes carry nonzero opaque handles. -/
+  handlesValid : snapshot.HandlesValid
+  /-- Successful nodes have successful direct predecessor history. -/
+  dependencyClosed : snapshot.DependencyClosed program
+
+end Snapshot
+
+/-- Export omits the transient acknowledgement gate and carries no runtime authority. -/
+def exportSnapshot (state : EngineState n) : Snapshot n where
+  status := state.machine.status
+  output := state.machine.output
+  checkpointSequence := state.checkpointSequence
+  terminal := state.terminal
+
+/-- Import raises the checkpoint gate so the host must acknowledge restored durability. -/
+def importSnapshot (snapshot : Snapshot n) : EngineState n where
+  machine := { status := snapshot.status, output := snapshot.output }
+  checkpointSequence := snapshot.checkpointSequence
+  checkpointPending := true
+  terminal := snapshot.terminal
+
+/-- Export after import is an exact typed snapshot round trip. -/
+theorem export_import_snapshot (snapshot : Snapshot n) :
+    exportSnapshot (importSnapshot snapshot) = snapshot :=
+  rfl
+
+/-- Import after export preserves all durable state and raises only the acknowledgement gate. -/
+theorem import_export_snapshot (state : EngineState n) :
+    importSnapshot (exportSnapshot state) =
+      { state with checkpointPending := true } :=
+  rfl
+
+/-- Snapshot validity is unchanged by an import/export round trip. -/
+theorem valid_export_import
+    (program : Program n)
+    (snapshot : Snapshot n)
+    (hValid : snapshot.Valid program) :
+    (exportSnapshot (importSnapshot snapshot)).Valid program := by
+  simpa [export_import_snapshot] using hValid
+
+/-! ## Checkpoint-Gated Whole Drive -/
+
+/-- Whole-drive decision exposed by the target-independent circuit engine. -/
+inductive EngineDriveResult (n : Nat) : Type 2 where
+  | checkpointRequired
+  | awaitingCompletions
+  | decided (result : StepResult (Fin n) UInt64)
+  | terminal (result : EngineTerminal)
+
+/-- The whole engine decision, including durable acknowledgement gating. -/
+def driveEngine
+    (program : Program n)
+    (state : EngineState n) : EngineDriveResult n :=
+  if state.checkpointPending then
+    .checkpointRequired
+  else if state.terminal ≠ EngineTerminal.active then
+    .terminal state.terminal
+  else
+    match interpretClosed program state.machine with
+    | .awaitingCompletions => .awaitingCompletions
+    | .classified result => .decided result
+
+/-- A pending checkpoint blocks all scheduling and terminal observation. -/
+theorem driveEngine_checkpointRequired
+    (program : Program n)
+    (state : EngineState n)
+    (hPending : state.checkpointPending = true) :
+    driveEngine program state = .checkpointRequired := by
+  simp [driveEngine, hPending]
+
+/-- With an acknowledged checkpoint and active run, whole-drive running
+detection refines Track 2. -/
+theorem driveEngine_awaiting_refinement
+    (program : Program n)
+    (state : EngineState n)
+    (hAcknowledged : state.checkpointPending = false)
+    (hActive : state.terminal = EngineTerminal.active)
+    (hRunning : hasRunning state.machine) :
+    driveEngine program state = .awaitingCompletions := by
+  simp [driveEngine, hAcknowledged, hActive, interpretClosed, hRunning]
+
+/-- With an acknowledged checkpoint and no running effect, whole drive is exactly classification. -/
+theorem driveEngine_classification_refinement
+    (program : Program n)
+    (state : EngineState n)
+    (hAcknowledged : state.checkpointPending = false)
+    (hActive : state.terminal = EngineTerminal.active)
+    (hNoRunning : ¬ hasRunning state.machine) :
+    driveEngine program state =
+      .decided (classifyClosedGraphState program.toDAG state.machine.toGraphState) := by
+  simp [driveEngine, hAcknowledged, hActive, interpretClosed, hNoRunning]
+
+/-- An accepted completion advances the sequence and raises the checkpoint gate. -/
+def acceptCompletion
+    (node : Fin n)
+    (completion : Completion)
+    (state : EngineState n) : EngineState n :=
+  { state with
+    machine := applyCompletion node completion state.machine
+    checkpointSequence := state.checkpointSequence + 1
+    checkpointPending := true }
+
+/-- Accepted completions advance the checkpoint sequence exactly once. -/
+theorem acceptCompletion_sequence
+    (node : Fin n)
+    (completion : Completion)
+    (state : EngineState n) :
+    (acceptCompletion node completion state).checkpointSequence =
+      state.checkpointSequence + 1 :=
+  rfl
+
+/-- Accepted completions cannot unlock another drive before durable acknowledgement. -/
+theorem acceptCompletion_blocks_drive
+    (program : Program n)
+    (node : Fin n)
+    (completion : Completion)
+    (state : EngineState n) :
+    driveEngine program (acceptCompletion node completion state) =
+      .checkpointRequired := by
+  simp [acceptCompletion, driveEngine]
+
 end Cortex.Wire.StaticC

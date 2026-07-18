@@ -25,7 +25,7 @@
       detailLevel = "FullDetails";
       licenseFiles = [ "LICENSE" ];
       dataDir = "data";
-      dataFiles = [ "pulse-schema.sql" ];
+      dataFiles = [ "pulse-schema.sql" "cortex-wire-hosted-runner-v1.c" ];
       extraSrcFiles = [ "README.md" "NOTICE" ];
       extraTmpFiles = [];
       extraDocFiles = [];
@@ -171,6 +171,8 @@
           "Cortex/Wire/Circuit/Compile"
           "Cortex/Wire/Circuit/Compiled"
           "Cortex/Wire/Circuit/Compiler"
+          "Cortex/Wire/Circuit/Engine"
+          "Cortex/Wire/Circuit/Hosted"
           "Cortex/Wire/Circuit/IR"
           "Cortex/Wire/Circuit/Lower"
           "Cortex/Wire/Circuit/Lowering"
@@ -401,6 +403,7 @@
             "Cortex/Pulse/SchedulerSpec"
             "Cortex/Pulse/TypesSpec"
             "Cortex/Wire/Circuit/CompilerSpec"
+            "Cortex/Wire/Circuit/EngineSpec"
             "Cortex/Wire/Circuit/IRSpec"
             "Cortex/Wire/Cli/FrontierSpec"
             "Cortex/Wire/CompileSpec"

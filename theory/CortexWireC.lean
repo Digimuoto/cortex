@@ -176,6 +176,17 @@ private def escapeJsonChar : Char → String
 private def escapeJson (value : String) : String :=
   String.join (value.toList.map escapeJsonChar)
 
+private def escapeCChar : Char → String
+  | '"' => "\\\""
+  | '\\' => "\\\\"
+  | '\n' => "\\n"
+  | '\r' => "\\r"
+  | '\t' => "\\t"
+  | char => String.singleton char
+
+private def escapeC (value : String) : String :=
+  String.join (value.toList.map escapeCChar)
+
 /-- One exported ABI function: its C declaration and any comment lines that
 must precede it. -/
 private structure ExportedFn where
@@ -222,6 +233,48 @@ private def exportedFns : List ExportedFn :=
   , { name := "cortex_wire_program_v1_output_handle"
     , returnType := "uint64_t"
     , params := "uint32_t node_id"
+    }
+  , { name := "cortex_wire_engine_v1_program_identity"
+    , returnType := "const char *"
+    , params := "void"
+    }
+  , { name := "cortex_wire_engine_v1_init"
+    , returnType := "int"
+    , params := "const cortex_wire_engine_v1_host_api *api"
+    }
+  , { name := "cortex_wire_engine_v1_drive"
+    , returnType := "cortex_wire_engine_v1_drive_result"
+    , params := "void"
+    }
+  , { name := "cortex_wire_engine_v1_complete"
+    , returnType := "cortex_wire_program_v1_completion_result"
+    , params :=
+        "uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload_handle"
+    }
+  , { name := "cortex_wire_engine_v1_checkpoint_committed"
+    , returnType := "cortex_wire_engine_v1_state_result"
+    , params := "uint64_t checkpoint_sequence"
+    }
+  , { name := "cortex_wire_engine_v1_export_state"
+    , returnType := "cortex_wire_engine_v1_state_result"
+    , params :=
+        "cortex_wire_engine_v1_state_header *header, uint8_t *statuses, " ++
+          "uint64_t *output_handles, uint32_t capacity"
+    }
+  , { name := "cortex_wire_engine_v1_import_state"
+    , returnType := "cortex_wire_engine_v1_state_result"
+    , params :=
+        "const cortex_wire_engine_v1_host_api *api, const char *program_identity, " ++
+          "const cortex_wire_engine_v1_state_header *header, const uint8_t *statuses, " ++
+            "const uint64_t *output_handles, uint32_t capacity"
+    }
+  , { name := "cortex_wire_engine_v1_cancel"
+    , returnType := "cortex_wire_engine_v1_state_result"
+    , params := "void"
+    }
+  , { name := "cortex_wire_engine_v1_terminal"
+    , returnType := "cortex_wire_engine_v1_terminal_state"
+    , params := "void"
     }
   ]
 
@@ -281,6 +334,38 @@ private def renderHeader : String :=
   "  CORTEX_WIRE_TERMINAL_COMPLETED = 1,\n" ++
   "  CORTEX_WIRE_TERMINAL_FAILED = 2\n" ++
   "} cortex_wire_program_v1_terminal_state;\n\n" ++
+  "#define CORTEX_WIRE_ENGINE_STATE_SCHEMA_VERSION 1u\n\n" ++
+  "typedef void (*cortex_wire_engine_v1_effect_request_fn)(uint32_t node_id, void *context);\n" ++
+  "typedef void (*cortex_wire_engine_v1_effect_cancel_fn)(uint32_t node_id, void *context);\n\n" ++
+  "typedef struct {\n" ++
+  "  cortex_wire_engine_v1_effect_request_fn effect_request;\n" ++
+  "  cortex_wire_engine_v1_effect_cancel_fn effect_cancel;\n" ++
+  "  void *context;\n" ++
+  "} cortex_wire_engine_v1_host_api;\n\n" ++
+  "typedef enum {\n" ++
+  "  CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE = 0,\n" ++
+  "  CORTEX_WIRE_ENGINE_TERMINAL_COMPLETED = 1,\n" ++
+  "  CORTEX_WIRE_ENGINE_TERMINAL_FAILED = 2,\n" ++
+  "  CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED = 3\n" ++
+  "} cortex_wire_engine_v1_terminal_state;\n\n" ++
+  "typedef struct {\n" ++
+  "  uint32_t schema_version;\n" ++
+  "  uint32_t node_count;\n" ++
+  "  uint64_t checkpoint_sequence;\n" ++
+  "  cortex_wire_engine_v1_terminal_state terminal;\n" ++
+  "} cortex_wire_engine_v1_state_header;\n\n" ++
+  "typedef enum {\n" ++
+  "  CORTEX_WIRE_ENGINE_STATE_OK = 0,\n" ++
+  "  CORTEX_WIRE_ENGINE_STATE_INVALID = 1,\n" ++
+  "  CORTEX_WIRE_ENGINE_STATE_IDENTITY_MISMATCH = 2\n" ++
+  "} cortex_wire_engine_v1_state_result;\n\n" ++
+  "typedef enum {\n" ++
+  "  CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED = 0,\n" ++
+  "  CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS = 1,\n" ++
+  "  CORTEX_WIRE_ENGINE_DRIVE_TERMINAL = 2,\n" ++
+  "  CORTEX_WIRE_ENGINE_DRIVE_STUCK = 3,\n" ++
+  "  CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR = 4\n" ++
+  "} cortex_wire_engine_v1_drive_result;\n\n" ++
   String.join (exportedFns.map renderExportedFnDecl) ++
   "\n" ++
   "#ifdef __cplusplus\n}\n#endif\n\n" ++
@@ -308,7 +393,12 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "static cortex_wire_program_v1_effect_api effect_api;\n" ++
   "static uint8_t initialized;\n" ++
   "static uint8_t driving;\n" ++
-  "static uint8_t terminal_failed;\n\n" ++
+  "static uint8_t terminal_failed;\n" ++
+  "static uint64_t engine_checkpoint_sequence;\n" ++
+  "static uint8_t engine_checkpoint_pending;\n" ++
+  "static cortex_wire_engine_v1_terminal_state engine_terminal;\n" ++
+  "static cortex_wire_engine_v1_host_api engine_host_api;\n" ++
+  s!"static const char engine_program_identity[] = \"{escapeC program.programIdentity}\";\n\n" ++
   "static uint8_t status_unblocks(uint8_t status) {\n" ++
   "  return (uint8_t)(status == CORTEX_WIRE_STATUS_COMPLETED ||\n" ++
   "                   status == CORTEX_WIRE_STATUS_SKIPPED);\n" ++
@@ -466,6 +556,216 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "uint64_t cortex_wire_program_v1_output_handle(uint32_t node_id) {\n" ++
   "  if (node_id >= cortex_wire_node_count) { return 0u; }\n" ++
   "  return output_handle[node_id];\n" ++
+  "}\n\n" ++
+  "static uint8_t engine_identity_matches(const char *candidate) {\n" ++
+  "  uint32_t cursor = 0u;\n" ++
+  "  if (candidate == 0) { return 0u; }\n" ++
+  "  for (;;) {\n" ++
+  "    if (candidate[cursor] != engine_program_identity[cursor]) { return 0u; }\n" ++
+  "    if (engine_program_identity[cursor] == '\\0') { return 1u; }\n" ++
+  "    ++cursor;\n" ++
+  "  }\n" ++
+  "}\n\n" ++
+  "static uint8_t engine_status_valid(uint8_t status) {\n" ++
+  "  return (uint8_t)(status == CORTEX_WIRE_STATUS_PENDING ||\n" ++
+  "                   status == CORTEX_WIRE_STATUS_COMPLETED ||\n" ++
+  "                   status == CORTEX_WIRE_STATUS_FAILED ||\n" ++
+  "                   status == CORTEX_WIRE_STATUS_SKIPPED);\n" ++
+  "}\n\n" ++
+  "static cortex_wire_engine_v1_state_result engine_validate_state(\n" ++
+  "    const char *program_identity,\n" ++
+  "    const cortex_wire_engine_v1_state_header *header,\n" ++
+  "    const uint8_t *statuses, const uint64_t *handles, uint32_t capacity) {\n" ++
+  "  uint32_t node_id;\n" ++
+  "  uint8_t any_failed = 0u;\n" ++
+  "  uint8_t settled = 1u;\n" ++
+  "  if (!engine_identity_matches(program_identity)) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_IDENTITY_MISMATCH;\n" ++
+  "  }\n" ++
+  "  if (header == 0 || statuses == 0 || handles == 0 ||\n" ++
+  "      header->schema_version != CORTEX_WIRE_ENGINE_STATE_SCHEMA_VERSION ||\n" ++
+  "      header->node_count != cortex_wire_node_count ||\n" ++
+  "      header->checkpoint_sequence == 0u || capacity < cortex_wire_node_count ||\n" ++
+  "      header->terminal > CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "  }\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
+  "    uint32_t cursor;\n" ++
+  "    uint8_t status = statuses[node_id];\n" ++
+  "    if (!engine_status_valid(status)) { return CORTEX_WIRE_ENGINE_STATE_INVALID; }\n" ++
+  "    if ((status == CORTEX_WIRE_STATUS_COMPLETED && handles[node_id] == 0u) ||\n" ++
+  "        (status != CORTEX_WIRE_STATUS_COMPLETED && handles[node_id] != 0u)) {\n" ++
+  "      return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "    }\n" ++
+  "    if (status == CORTEX_WIRE_STATUS_FAILED) { any_failed = 1u; }\n" ++
+  "    if (status == CORTEX_WIRE_STATUS_PENDING) { settled = 0u; }\n" ++
+  "    if (status == CORTEX_WIRE_STATUS_COMPLETED || status == CORTEX_WIRE_STATUS_SKIPPED) {\n" ++
+  "      for (cursor = predecessor_offsets[node_id];\n" ++
+  "           cursor < predecessor_offsets[node_id + 1u]; ++cursor) {\n" ++
+  "        if (!status_unblocks(statuses[predecessor_nodes[cursor]])) {\n" ++
+  "          return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "        }\n" ++
+  "      }\n" ++
+  "    }\n" ++
+  "  }\n" ++
+  "  if (header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_COMPLETED &&\n" ++
+  "      (!settled || any_failed)) { return CORTEX_WIRE_ENGINE_STATE_INVALID; }\n" ++
+  "  if (header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_FAILED && !any_failed) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "  }\n" ++
+  "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
+  "}\n\n" ++
+  "const char *cortex_wire_engine_v1_program_identity(void) {\n" ++
+  "  return engine_program_identity;\n" ++
+  "}\n\n" ++
+  "static cortex_wire_program_v1_effect_result engine_request_effect(\n" ++
+  "    uint32_t node_id, void *context) {\n" ++
+  "  cortex_wire_program_v1_effect_result result;\n" ++
+  "  (void)context;\n" ++
+  "  engine_host_api.effect_request(node_id, engine_host_api.context);\n" ++
+  "  result.kind = CORTEX_WIRE_EFFECT_ACCEPTED_ASYNC;\n" ++
+  "  result.payload_handle = 0u;\n" ++
+  "  return result;\n" ++
+  "}\n\n" ++
+  "static void engine_cancel_effect(uint32_t node_id, void *context) {\n" ++
+  "  (void)context;\n" ++
+  "  if (engine_host_api.effect_cancel != 0) {\n" ++
+  "    engine_host_api.effect_cancel(node_id, engine_host_api.context);\n" ++
+  "  }\n" ++
+  "}\n\n" ++
+  "int cortex_wire_engine_v1_init(const cortex_wire_engine_v1_host_api *api) {\n" ++
+  "  cortex_wire_program_v1_effect_api program_api;\n" ++
+  "  int result;\n" ++
+  "  if (api == 0 || api->effect_request == 0) { return -1; }\n" ++
+  "  engine_host_api = *api;\n" ++
+  "  program_api.effect_begin = engine_request_effect;\n" ++
+  "  program_api.effect_cancel = engine_cancel_effect;\n" ++
+  "  program_api.context = 0;\n" ++
+  "  result = cortex_wire_program_v1_init(&program_api);\n" ++
+  "  if (result != 0) { return result; }\n" ++
+  "  engine_checkpoint_sequence = 1u;\n" ++
+  "  engine_checkpoint_pending = 1u;\n" ++
+  "  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE;\n" ++
+  "  return 0;\n" ++
+  "}\n\n" ++
+  "cortex_wire_engine_v1_drive_result cortex_wire_engine_v1_drive(void) {\n" ++
+  "  cortex_wire_program_v1_drive_result result;\n" ++
+  "  if (initialized == 0u || driving != 0u) { return CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR; }\n" ++
+  "  if (engine_checkpoint_pending != 0u) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED;\n" ++
+  "  }\n" ++
+  "  if (engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_DRIVE_TERMINAL;\n" ++
+  "  }\n" ++
+  "  result = cortex_wire_program_v1_drive();\n" ++
+  "  switch (result) {\n" ++
+  "    case CORTEX_WIRE_DRIVE_AWAITING_COMPLETIONS:\n" ++
+  "      return CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS;\n" ++
+  "    case CORTEX_WIRE_DRIVE_COMPLETED:\n" ++
+  "      engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_COMPLETED; break;\n" ++
+  "    case CORTEX_WIRE_DRIVE_FAILED:\n" ++
+  "      engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_FAILED; break;\n" ++
+  "    case CORTEX_WIRE_DRIVE_STUCK: return CORTEX_WIRE_ENGINE_DRIVE_STUCK;\n" ++
+  "    case CORTEX_WIRE_DRIVE_ABI_ERROR: return CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR;\n" ++
+  "    default: return CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR;\n" ++
+  "  }\n" ++
+  "  ++engine_checkpoint_sequence;\n" ++
+  "  engine_checkpoint_pending = 1u;\n" ++
+  "  return CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED;\n" ++
+  "}\n\n" ++
+  "cortex_wire_program_v1_completion_result cortex_wire_engine_v1_complete(\n" ++
+  "    uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload) {\n" ++
+  "  cortex_wire_program_v1_completion_result result;\n" ++
+  "  if (engine_checkpoint_pending != 0u ||\n" ++
+  "      engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {\n" ++
+  "    return CORTEX_WIRE_COMPLETION_STALE;\n" ++
+  "  }\n" ++
+  "  if ((outcome == CORTEX_WIRE_EFFECT_SUCCESS && payload == 0u) ||\n" ++
+  "      (outcome != CORTEX_WIRE_EFFECT_SUCCESS && payload != 0u)) {\n" ++
+  "    return CORTEX_WIRE_COMPLETION_INVALID;\n" ++
+  "  }\n" ++
+  "  result = cortex_wire_program_v1_complete(node_id, outcome, payload);\n" ++
+  "  if (result == CORTEX_WIRE_COMPLETION_APPLIED) {\n" ++
+  "    ++engine_checkpoint_sequence;\n" ++
+  "    engine_checkpoint_pending = 1u;\n" ++
+  "  }\n" ++
+  "  return result;\n" ++
+  "}\n\n" ++
+  "cortex_wire_engine_v1_state_result cortex_wire_engine_v1_checkpoint_committed(\n" ++
+  "    uint64_t checkpoint_sequence) {\n" ++
+  "  if (initialized == 0u || engine_checkpoint_pending == 0u ||\n" ++
+  "      checkpoint_sequence != engine_checkpoint_sequence) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "  }\n" ++
+  "  engine_checkpoint_pending = 0u;\n" ++
+  "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
+  "}\n\n" ++
+  "cortex_wire_engine_v1_state_result cortex_wire_engine_v1_export_state(\n" ++
+  "    cortex_wire_engine_v1_state_header *header, uint8_t *statuses,\n" ++
+  "    uint64_t *handles, uint32_t capacity) {\n" ++
+  "  uint32_t node_id;\n" ++
+  "  if (initialized == 0u || header == 0 || statuses == 0 || handles == 0 ||\n" ++
+  "      capacity < cortex_wire_node_count) { return CORTEX_WIRE_ENGINE_STATE_INVALID; }\n" ++
+  "  header->schema_version = CORTEX_WIRE_ENGINE_STATE_SCHEMA_VERSION;\n" ++
+  "  header->node_count = cortex_wire_node_count;\n" ++
+  "  header->checkpoint_sequence = engine_checkpoint_sequence;\n" ++
+  "  header->terminal = engine_terminal;\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
+  "    statuses[node_id] = node_status[node_id];\n" ++
+  "    handles[node_id] = output_handle[node_id];\n" ++
+  "  }\n" ++
+  "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
+  "}\n\n" ++
+  "cortex_wire_engine_v1_state_result cortex_wire_engine_v1_import_state(\n" ++
+  "    const cortex_wire_engine_v1_host_api *api, const char *program_identity,\n" ++
+  "    const cortex_wire_engine_v1_state_header *header, const uint8_t *statuses,\n" ++
+  "    const uint64_t *handles, uint32_t capacity) {\n" ++
+  "  uint32_t node_id;\n" ++
+  "  cortex_wire_engine_v1_state_result validation;\n" ++
+  "  if (api == 0 || api->effect_request == 0 || initialized != 0u || driving != 0u) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "  }\n" ++
+  "  validation = engine_validate_state(\n" ++
+  "      program_identity, header, statuses, handles, capacity);\n" ++
+  "  if (validation != CORTEX_WIRE_ENGINE_STATE_OK) { return validation; }\n" ++
+  "  engine_host_api = *api;\n" ++
+  "  effect_api.effect_begin = engine_request_effect;\n" ++
+  "  effect_api.effect_cancel = engine_cancel_effect;\n" ++
+  "  effect_api.context = 0;\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
+  "    node_status[node_id] = statuses[node_id];\n" ++
+  "    output_handle[node_id] = handles[node_id];\n" ++
+  "    frontier_snapshot[node_id] = 0u;\n" ++
+  "  }\n" ++
+  "  terminal_failed = (uint8_t)(header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_FAILED);\n" ++
+  "  engine_checkpoint_sequence = header->checkpoint_sequence;\n" ++
+  "  engine_checkpoint_pending = 1u;\n" ++
+  "  engine_terminal = header->terminal;\n" ++
+  "  initialized = 1u;\n" ++
+  "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
+  "}\n\n" ++
+  "cortex_wire_engine_v1_state_result cortex_wire_engine_v1_cancel(void) {\n" ++
+  "  uint32_t node_id;\n" ++
+  "  if (initialized == 0u || driving != 0u ||\n" ++
+  "      engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
+  "  }\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
+  "    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {\n" ++
+  "      if (effect_api.effect_cancel != 0) {\n" ++
+  "        effect_api.effect_cancel(node_id, effect_api.context);\n" ++
+  "      }\n" ++
+  "      node_status[node_id] = CORTEX_WIRE_STATUS_PENDING;\n" ++
+  "      output_handle[node_id] = 0u;\n" ++
+  "    }\n" ++
+  "  }\n" ++
+  "  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED;\n" ++
+  "  ++engine_checkpoint_sequence;\n" ++
+  "  engine_checkpoint_pending = 1u;\n" ++
+  "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
+  "}\n\n" ++
+  "cortex_wire_engine_v1_terminal_state cortex_wire_engine_v1_terminal(void) {\n" ++
+  "  return engine_terminal;\n" ++
   "}\n"
 
 private def renderManifest (validated : ValidatedProgram) : String :=

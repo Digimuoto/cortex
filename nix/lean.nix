@@ -55,6 +55,16 @@
           mainProgram = "cortex-wire-diff";
         };
       });
+    wire = pkgs.symlinkJoin {
+      name = "wire";
+      paths = [config.packages.wire-unwrapped];
+      nativeBuildInputs = [pkgs.makeWrapper];
+      postBuild = ''
+        wrapProgram "$out/bin/wire" \
+          --set CORTEX_WIRE_C_BIN "${cortexWireC}/bin/cortex-wire-c" \
+          --set CORTEX_CLANG_BIN "${pkgs.llvmPackages_18.clang}/bin/clang"
+      '';
+    };
     cortexWireCSmoke =
       pkgs.runCommand "cortex-wire-c-smoke" {
         nativeBuildInputs = [
@@ -189,10 +199,11 @@
         # (uint32 each) per storage slot (~8 bytes/node) plus predecessor_nodes
         # (uint32) per edge slot (~4 bytes/edge). The multipliers below keep
         # headroom over those measured widths for alignment padding and small
-        # future additions.
+        # future additions. The engine ABI adds only constant-size checkpoint,
+        # terminal, and host-callback state, covered by the fixed allowance.
         storageCount=$((nodeCount > 0 ? nodeCount : 1))
         edgeStorage=$((edgeCount > 0 ? edgeCount : 1))
-        bssBound=$((12 * storageCount + 64))
+        bssBound=$((12 * storageCount + 96))
         rodataBound=$((8 * storageCount + 4 * edgeStorage + 64))
         if [ "$bssSize" -gt "$bssBound" ]; then
           echo "generated target .bss exceeds manifest-derived bound: $bssSize > $bssBound" >&2
@@ -224,6 +235,31 @@
           -o "$TMPDIR/two-node-harness-sanitized"
         ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/two-node-harness-sanitized" s
         ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/two-node-harness-sanitized" f
+
+        clang -std=c11 -Wall -Wextra -Werror \
+          -I "$generated" "$generated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/two-node-engine-harness.c} \
+          -o "$TMPDIR/two-node-engine-harness"
+        for mode in s x c i n h d r t; do
+          "$TMPDIR/two-node-engine-harness" "$mode"
+        done
+
+        gcc -std=c11 -pedantic-errors -Wall -Wextra -Werror -Wconversion -Wshadow \
+          -I "$generated" "$generated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/two-node-engine-harness.c} \
+          -o "$TMPDIR/two-node-engine-harness-gcc"
+        for mode in s x c i n h d r t; do
+          "$TMPDIR/two-node-engine-harness-gcc" "$mode"
+        done
+
+        clang -std=c11 -Wall -Wextra -Werror \
+          -fsanitize=address,undefined,bounds -fno-omit-frame-pointer \
+          -I "$generated" "$generated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/two-node-engine-harness.c} \
+          -o "$TMPDIR/two-node-engine-harness-sanitized"
+        for mode in s x c i n h d r t; do
+          ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/two-node-engine-harness-sanitized" "$mode"
+        done
 
         generatedAgain="$TMPDIR/generated-again"
         cortex-wire-c ${../test/fixtures/wire/static-program-v1/two-node.json} "$generatedAgain"
@@ -303,6 +339,220 @@
           "$TMPDIR/aarch64-section-table" \
           "$TMPDIR/exports-actual" \
           "$TMPDIR/smoke-evidence.json" "$out/"
+      '';
+    cortexWireHostedSmoke =
+      pkgs.runCommand "cortex-wire-hosted-linux-smoke" {
+        nativeBuildInputs = [
+          wire
+          pkgs.jq
+          pkgs.llvmPackages_18.clang
+          pkgs.llvmPackages_18.llvm
+        ];
+      } ''
+        bundleOne="$TMPDIR/bundle-one"
+        bundleTwo="$TMPDIR/bundle-two"
+        wire build --target x86_64-linux-v1 --output "$bundleOne" \
+          ${../examples/wire/freestanding-two-node.wire}
+        wire build --target x86_64-linux-v1 --output "$bundleTwo" \
+          ${../examples/wire/freestanding-two-node.wire}
+
+        jq -e '
+          .schema == "cortex.wire.hosted-program-manifest/v1" and
+          .target == "cortex.wire.target/x86_64-linux-v1" and
+          .target_triple == "x86_64-unknown-linux-gnu" and
+          .protocol == "cortex.wire.host-process/v1" and
+          .engine_state_schema == "cortex.wire.engine-state/v1" and
+          .engine_abi == "cortex.wire.engine/v1" and
+          .executable == "circuit-engine" and
+          (.node_executors | length) == 2
+        ' "$bundleOne/hosted.manifest.json" >/dev/null
+
+        executableSha=$(sha256sum "$bundleOne/circuit-engine" | cut -d ' ' -f1)
+        staticSha=$(sha256sum "$bundleOne/static-program.json" | cut -d ' ' -f1)
+        test "$executableSha" = "$(jq -r .executable_sha256 "$bundleOne/hosted.manifest.json")"
+        test "$staticSha" = "$(jq -r .static_program_sha256 "$bundleOne/hosted.manifest.json")"
+
+        for name in circuit-engine executor-map.json hosted.manifest.json \
+          program.c program.h program.manifest.json static-program.json; do
+          cmp "$bundleOne/$name" "$bundleTwo/$name"
+        done
+
+        llvm-readelf -h "$bundleOne/circuit-engine" > "$TMPDIR/elf-header"
+        grep -E 'Type:[[:space:]]+DYN' "$TMPDIR/elf-header" >/dev/null
+        grep -E 'Machine:[[:space:]]+Advanced Micro Devices X86-64' \
+          "$TMPDIR/elf-header" >/dev/null
+        llvm-readelf -S "$bundleOne/circuit-engine" > "$TMPDIR/elf-sections"
+        if grep -E '[[:space:]][A-Z]*W[A-Z]*X[A-Z]*[[:space:]]' "$TMPDIR/elf-sections"; then
+          echo "hosted ELF contains a writable executable section" >&2
+          exit 1
+        fi
+        llvm-nm --undefined-only "$bundleOne/circuit-engine" > "$TMPDIR/elf-undefined"
+        if grep -E '(socket|connect|listen|accept|dlopen|system|execve|fork)' \
+          "$TMPDIR/elf-undefined"; then
+          echo "hosted ELF imports a forbidden attachment or authority primitive" >&2
+          exit 1
+        fi
+
+        wire hosted-reference "$bundleOne" > "$TMPDIR/reference-result.json"
+        jq -e '
+          .schema == "cortex.wire.engine-state/v1" and
+          .checkpoint_sequence == 4 and
+          .terminal == "completed" and
+          .node_statuses == ["completed", "completed"] and
+          .output_handles == [1, 2]
+        ' "$TMPDIR/reference-result.json" >/dev/null
+
+        printf '%s\n' \
+          '{"type":"start","protocol":"cortex.wire.host-process/v2","run_id":"bad"}' \
+          > "$TMPDIR/bad-version.jsonl"
+        if "$bundleOne/circuit-engine" < "$TMPDIR/bad-version.jsonl" \
+          > "$TMPDIR/bad-version.out" 2> "$TMPDIR/bad-version.err"; then
+          echo "hosted runner accepted a protocol version mismatch" >&2
+          exit 1
+        fi
+        jq -e -s 'any(.[]; .type == "protocol_error")' \
+          "$TMPDIR/bad-version.out" >/dev/null
+
+        awk 'BEGIN { for (i = 0; i < 2097153; i++) printf "x" }' \
+          > "$TMPDIR/oversized.jsonl"
+        if "$bundleOne/circuit-engine" < "$TMPDIR/oversized.jsonl" \
+          > "$TMPDIR/oversized.out" 2> "$TMPDIR/oversized.err"; then
+          echo "hosted runner accepted an oversized JSONL command" >&2
+          exit 1
+        fi
+        jq -e -s 'any(.[]; .type == "protocol_error")' \
+          "$TMPDIR/oversized.out" >/dev/null
+
+        clang -std=c11 -Wall -Wextra -Werror \
+          -fsanitize=address,undefined,bounds -fno-omit-frame-pointer \
+          -I "$bundleOne" "$bundleOne/program.c" \
+          ${../data/cortex-wire-hosted-runner-v1.c} \
+          -o "$TMPDIR/circuit-engine-sanitized"
+        identity=$(jq -r .program_identity "$bundleOne/static-program.json")
+        commands="$TMPDIR/sanitized-commands.jsonl"
+        jq -nc --arg run smoke \
+          '{type:"start",protocol:"cortex.wire.host-process/v1",run_id:$run}' > "$commands"
+        jq -nc --arg run smoke \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1}' >> "$commands"
+        jq -nc --arg run smoke \
+          '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1,node_id:0,outcome:"success",output_handle:1,message:null}' >> "$commands"
+        jq -nc --arg run smoke \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2}' >> "$commands"
+        jq -nc --arg run smoke \
+          '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2,node_id:1,outcome:"success",output_handle:2,message:null}' >> "$commands"
+        jq -nc --arg run smoke \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:3}' >> "$commands"
+        jq -nc --arg run smoke \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:4}' >> "$commands"
+        jq -nc --arg run smoke \
+          '{type:"shutdown",protocol:"cortex.wire.host-process/v1",run_id:$run}' >> "$commands"
+        ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/circuit-engine-sanitized" \
+          < "$commands" > "$TMPDIR/sanitized.out"
+        jq -e -s 'any(.[]; .type == "terminal" and .terminal == "completed")' \
+          "$TMPDIR/sanitized.out" >/dev/null
+        jq -e -s 'all(.[]; .type != "protocol_error")' \
+          "$TMPDIR/sanitized.out" >/dev/null
+
+        runRestore() {
+          sequence="$1"
+          terminal="$2"
+          statuses="$3"
+          handles="$4"
+          run="restore-$sequence"
+          restoreCommands="$TMPDIR/restore-$sequence.jsonl"
+          restoreOutput="$TMPDIR/restore-$sequence.out"
+          jq -nc \
+            --arg run "$run" \
+            --arg identity "$identity" \
+            --arg terminal "$terminal" \
+            --argjson sequence "$sequence" \
+            --argjson statuses "$statuses" \
+            --argjson handles "$handles" \
+            '{
+              type: "restore",
+              protocol: "cortex.wire.host-process/v1",
+              run_id: $run,
+              state: {
+                schema: "cortex.wire.engine-state/v1",
+                program_identity: $identity,
+                checkpoint_sequence: $sequence,
+                terminal: $terminal,
+                node_statuses: $statuses,
+                output_handles: $handles
+              }
+            }' > "$restoreCommands"
+          jq -nc --arg run "$run" --argjson sequence "$sequence" \
+            '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:$sequence}' \
+            >> "$restoreCommands"
+          case "$sequence" in
+            1)
+              jq -nc --arg run "$run" \
+                '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1,node_id:0,outcome:"success",output_handle:1,message:null}' >> "$restoreCommands"
+              jq -nc --arg run "$run" \
+                '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2}' >> "$restoreCommands"
+              jq -nc --arg run "$run" \
+                '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2,node_id:1,outcome:"success",output_handle:2,message:null}' >> "$restoreCommands"
+              jq -nc --arg run "$run" \
+                '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:3}' >> "$restoreCommands"
+              jq -nc --arg run "$run" \
+                '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:4}' >> "$restoreCommands"
+              ;;
+            2)
+              jq -nc --arg run "$run" \
+                '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1,node_id:1,outcome:"success",output_handle:2,message:null}' >> "$restoreCommands"
+              jq -nc --arg run "$run" \
+                '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:3}' >> "$restoreCommands"
+              jq -nc --arg run "$run" \
+                '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:4}' >> "$restoreCommands"
+              ;;
+            3)
+              jq -nc --arg run "$run" \
+                '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:4}' >> "$restoreCommands"
+              ;;
+            4) ;;
+          esac
+          jq -nc --arg run "$run" \
+            '{type:"shutdown",protocol:"cortex.wire.host-process/v1",run_id:$run}' \
+            >> "$restoreCommands"
+          ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/circuit-engine-sanitized" \
+            < "$restoreCommands" > "$restoreOutput"
+          jq -e -s '
+            any(.[]; .type == "terminal" and .terminal == "completed") and
+            all(.[]; .type != "protocol_error")
+          ' "$restoreOutput" >/dev/null
+        }
+
+        runRestore 1 active '["pending", "pending"]' '[0, 0]'
+        runRestore 2 active '["completed", "pending"]' '[1, 0]'
+        runRestore 3 active '["completed", "completed"]' '[1, 2]'
+        runRestore 4 completed '["completed", "completed"]' '[1, 2]'
+
+        jq -n \
+          --arg schema "cortex.wire.hosted-linux-evidence/v1" \
+          --arg executable_sha256 "$executableSha" \
+          --arg program_identity "$identity" \
+          '{
+            schema: $schema,
+            target: "cortex.wire.target/x86_64-linux-v1",
+            executable_sha256: $executable_sha256,
+            program_identity: $program_identity,
+            gates: {
+              deterministic_bundle: true,
+              manifest_digests: true,
+              elf_x86_64_pie: true,
+              no_writable_executable_sections: true,
+              no_attachment_primitives: true,
+              reference_host: true,
+              malformed_protocol_rejected: true,
+              oversized_protocol_rejected: true,
+              asan_ubsan_bounds: true,
+              restore_at_every_checkpoint: true
+            }
+          }' > "$TMPDIR/hosted-evidence.json"
+
+        mkdir -p "$out"
+        cp "$TMPDIR/hosted-evidence.json" "$TMPDIR/reference-result.json" \
+          "$TMPDIR/elf-header" "$TMPDIR/elf-sections" "$TMPDIR/elf-undefined" "$out/"
       '';
     # ADR 0091 differential: the Haskell GraphRuntime reference driver, the Lean
     # reference interpreter, and generated freestanding C compiled by Clang and
@@ -526,10 +776,12 @@
     packages.cortex-theory = cortexTheory;
     packages.cortex-wire-c = cortexWireC;
     packages.cortex-wire-diff = cortexWireDiff;
+    packages.wire = wire;
 
     checks.cortex-theory = cortexTheory;
     checks.cortex-wire-c = cortexWireC;
     checks.cortex-wire-c-smoke = cortexWireCSmoke;
+    checks.cortex-wire-hosted-linux-smoke = cortexWireHostedSmoke;
     checks.cortex-wire-differential = cortexWireDifferential;
     checks.cortex-wire-cfat-1-assurance = cortexWireAssurance;
   };

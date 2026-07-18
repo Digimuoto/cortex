@@ -6,9 +6,9 @@ License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
-The command exposes the public Wire compile surface and a local runner for
-CorePure nodes plus the standard std.io executors. Durable execution remains
-the job of Pulse.
+The command exposes the public Wire compile surface, a local runner for
+CorePure nodes plus standard std.io executors, and a minimal host for generated
+Circuit engine bundles. Pulse remains the production durable host.
 -}
 module Main (main) where
 
@@ -20,23 +20,26 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as AesonKeyMap
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (nub)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
+import Paths_cortex (getDataFileName)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (splitSearchPath, takeDirectory, (</>))
 import System.IO (hFlush, stderr, stdout)
+import System.Info (arch, os)
 import System.Process (CreateProcess (cwd), proc, readCreateProcessWithExitCode)
 
 import Cortex.Algebra.Graph (Relation, predecessors, relVertices)
@@ -54,6 +57,7 @@ import Cortex.Wire
   , ExecutorCall (..)
   , Expr (..)
   , Field (..)
+  , HostedProgramManifest (..)
   , Literal (..)
   , NodeBody (..)
   , NodeDecl (..)
@@ -74,13 +78,23 @@ import Cortex.Wire
   , WirePorts (..)
   , WireValue (..)
   , WireValueSet (..)
+  , engineAbi
+  , engineStateSchema
   , evaluatePureTaskOutputs
   , formatWireSourceWithExpanded
+  , hostedLinuxTarget
+  , hostedProcessProtocol
+  , hostedProgramManifestSchema
+  , loadHostedProgramArtifact
   , parseWireFile
+  , renderHostedProgramError
+  , renderHostedRunError
   , renderParseError
   , renderPureEvalError
   , renderWireError
   , renderWireFormatError
+  , runHostedReferenceHost
+  , sha256Hex
   , stdIoCommandExecutorId
   , stdIoReadFileExecutorId
   , stdIoStdinExecutorId
@@ -134,7 +148,9 @@ import Cortex.Wire.Package.Manifest
   )
 import Cortex.Wire.StaticDifferential (emitDifferentialCorpus)
 import Cortex.Wire.StaticProgram
-  ( lowerCompiledCircuitToStaticProgram
+  ( StaticProgram (..)
+  , StaticProgramNode (..)
+  , lowerCompiledCircuitToStaticProgram
   , renderStaticProgramError
   )
 import Cortex.Wire.Use
@@ -146,7 +162,8 @@ import Cortex.Wire.Use
   )
 
 data Command
-  = CommandBuild !BuildTarget !(Maybe Text) !FilePath
+  = CommandBuild !BuildOptions
+  | CommandHostedReference !FilePath
   | CommandFmt !FmtMode ![FilePath]
   | CommandRun !FilePath
   | CommandLeanFixtures !FilePath
@@ -159,6 +176,15 @@ data Command
 data BuildTarget
   = BuildCompiledCircuit
   | BuildStaticProgramV1
+  | BuildX86_64LinuxV1
+  deriving stock (Eq, Show)
+
+data BuildOptions = BuildOptions
+  { buildTarget :: !BuildTarget
+  , buildOutputDirectory :: !(Maybe FilePath)
+  , buildSelectedReturn :: !(Maybe Text)
+  , buildInputFile :: !FilePath
+  }
   deriving stock (Eq, Show)
 
 data FmtMode
@@ -228,8 +254,8 @@ main = do
   case parseCommand commandArgs of
     Left errText -> dieText errText
     Right CommandHelp -> TIO.putStr usageText
-    Right (CommandBuild target maybeSelectedReturn path) ->
-      buildWire packagePaths target maybeSelectedReturn path
+    Right (CommandBuild options) -> buildWire packagePaths options
+    Right (CommandHostedReference directory) -> hostedReference directory
     Right (CommandFmt mode paths) -> fmtWire mode paths
     Right (CommandRun path) -> runWire packagePaths path
     Right (CommandLeanFixtures outDir) -> leanFixturesWire outDir
@@ -254,13 +280,8 @@ parseCommand = \case
   [] -> Right CommandHelp
   ["--help"] -> Right CommandHelp
   ["-h"] -> Right CommandHelp
-  ["build", path] -> Right (CommandBuild BuildCompiledCircuit Nothing path)
-  ["build", "--return", selectedReturn, path] ->
-    Right (CommandBuild BuildCompiledCircuit (Just (T.pack selectedReturn)) path)
-  ["build", "--target", "static-program-v1", path] ->
-    Right (CommandBuild BuildStaticProgramV1 Nothing path)
-  ["build", "--target", "static-program-v1", "--return", selectedReturn, path] ->
-    Right (CommandBuild BuildStaticProgramV1 (Just (T.pack selectedReturn)) path)
+  "build" : args -> CommandBuild <$> parseBuildCommand args
+  ["hosted-reference", directory] -> Right (CommandHostedReference directory)
   "fmt" : args -> parseFmtCommand args
   ["run", path] -> Right (CommandRun path)
   ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
@@ -268,13 +289,55 @@ parseCommand = \case
   ["parse", path] -> Right (CommandParse path)
   "frontier" : args -> CommandFrontier <$> parseFrontierCommand args
   [path] -> Right (CommandRun path)
-  "build" : _ -> Left "usage: wire build [--target static-program-v1] [--return NAME] FILE"
-  "fmt" : _ -> Left "usage: wire fmt [--check | --stdout] FILE..."
   "run" : _ -> Left "usage: wire run FILE"
+  "hosted-reference" : _ -> Left "usage: wire hosted-reference BUNDLE_DIR"
   "lean-fixtures" : _ -> Left "usage: wire lean-fixtures OUTDIR"
   "differential" : _ -> Left "usage: wire differential emit OUTDIR"
   "parse" : _ -> Left "usage: wire parse FILE"
   _ -> Left usageText
+
+parseBuildCommand :: [String] -> Either Text BuildOptions
+parseBuildCommand = go BuildCompiledCircuit Nothing Nothing []
+  where
+    go target output selectedReturn files = \case
+      [] ->
+        case reverse files of
+          [path]
+            | target == BuildX86_64LinuxV1 && isNothing output ->
+                Left "wire build --target x86_64-linux-v1 requires --output DIR."
+            | target /= BuildX86_64LinuxV1 && isJust output ->
+                Left "wire build --output is supported only by x86_64-linux-v1."
+            | otherwise ->
+                Right
+                  BuildOptions
+                    { buildTarget = target
+                    , buildOutputDirectory = output
+                    , buildSelectedReturn = selectedReturn
+                    , buildInputFile = path
+                    }
+          _paths -> Left buildUsageText
+      "--target" : value : rest -> do
+        parsedTarget <- parseBuildTarget value
+        go parsedTarget output selectedReturn files rest
+      "--output" : directory : rest ->
+        go target (Just directory) selectedReturn files rest
+      "--return" : name : rest ->
+        go target output (Just (T.pack name)) files rest
+      option : _rest
+        | "--" `T.isPrefixOf` T.pack option -> Left buildUsageText
+      path : rest -> go target output selectedReturn (path : files) rest
+
+parseBuildTarget :: String -> Either Text BuildTarget
+parseBuildTarget = \case
+  "compiled-circuit" -> Right BuildCompiledCircuit
+  "static-program-v1" -> Right BuildStaticProgramV1
+  "x86_64-linux-v1" -> Right BuildX86_64LinuxV1
+  target -> Left ("unsupported Wire build target: " <> T.pack target)
+
+buildUsageText :: Text
+buildUsageText =
+  "usage: wire build [--target compiled-circuit|static-program-v1|x86_64-linux-v1] "
+    <> "[--output DIR] [--return NAME] FILE"
 
 parseFmtCommand :: [String] -> Either Text Command
 parseFmtCommand args = do
@@ -304,7 +367,9 @@ usageText =
     , "usage:"
     , "  wire FILE                        (alias for `wire run FILE`)"
     , "  wire run FILE"
-    , "  wire build [--target static-program-v1] [--return NAME] FILE"
+    , "  wire build [--target compiled-circuit|static-program-v1] [--return NAME] FILE"
+    , "  wire build --target x86_64-linux-v1 --output DIR [--return NAME] FILE"
+    , "  wire hosted-reference BUNDLE_DIR"
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire differential emit OUTDIR    (emit the static-C-backend differential corpus)"
@@ -319,28 +384,197 @@ usageText =
     , ""
     , "The local runner supports CorePure DAG frontiers plus standard std.io executors:"
     , "  stdin, stdout, command, readFile, writeFile."
+    , "The hosted reference command executes every admitted effect with an inert success host."
     ]
 
-buildWire :: [FilePath] -> BuildTarget -> Maybe Text -> FilePath -> IO ()
-buildWire packagePaths target maybeSelectedReturn path = do
+hostedReference :: FilePath -> IO ()
+hostedReference directory = do
+  artifact <-
+    loadHostedProgramArtifact directory
+      >>= either (dieText . renderHostedProgramError) pure
+  finalState <-
+    runHostedReferenceHost artifact
+      >>= either (dieText . renderHostedRunError) pure
+  writeJsonStdout finalState
+
+buildWire :: [FilePath] -> BuildOptions -> IO ()
+buildWire packagePaths options = do
   compileEnv <- loadCliWireCompileEnv packagePaths
-  modules <- loadWireModules compileEnv path
+  modules <- loadWireModules compileEnv options.buildInputFile
   let compile =
         maybe
           (compileWireModules compileEnv)
           (compileWireModulesWithReturn compileEnv)
-          maybeSelectedReturn
+          options.buildSelectedReturn
   compiled <- either (dieText . renderWireError) pure (compile modules)
-  output <- case target of
-    BuildCompiledCircuit -> pure (Aeson.toJSON compiled)
-    BuildStaticProgramV1 ->
-      Aeson.toJSON
-        <$> either
-          (dieText . renderStaticProgramError)
-          pure
-          (lowerCompiledCircuitToStaticProgram compiled)
-  BSL.putStr (AesonPretty.encodePretty output)
+  case options.buildTarget of
+    BuildCompiledCircuit -> writeJsonStdout compiled
+    BuildStaticProgramV1 -> do
+      staticProgram <- lowerStaticProgram compiled
+      writeJsonStdout staticProgram
+    BuildX86_64LinuxV1 -> do
+      staticProgram <- lowerStaticProgram compiled
+      case options.buildOutputDirectory of
+        Nothing -> dieText "x86_64-linux-v1 requires an output directory"
+        Just directory -> buildHostedLinux directory staticProgram
+
+lowerStaticProgram :: CompiledCircuit -> IO StaticProgram
+lowerStaticProgram compiled =
+  either
+    (dieText . renderStaticProgramError)
+    pure
+    (lowerCompiledCircuitToStaticProgram compiled)
+
+writeJsonStdout :: Aeson.ToJSON value => value -> IO ()
+writeJsonStdout value = do
+  BSL.putStr (AesonPretty.encodePretty value)
   BSL.putStr "\n"
+
+buildHostedLinux :: FilePath -> StaticProgram -> IO ()
+buildHostedLinux outputDirectory staticProgram = do
+  unless (arch == "x86_64" && os == "linux") $
+    dieText
+      ( "x86_64-linux-v1 builds require an x86_64 Linux build host; detected "
+          <> T.pack arch
+          <> "-"
+          <> T.pack os
+      )
+  createDirectoryIfMissing True outputDirectory
+  compiler <- fromMaybe "cortex-wire-c" <$> lookupEnv "CORTEX_WIRE_C_BIN"
+  clang <- fromMaybe "clang" <$> lookupEnv "CORTEX_CLANG_BIN"
+  runnerSource <- getDataFileName "cortex-wire-hosted-runner-v1.c"
+  let staticProgramPath = outputDirectory </> "static-program.json"
+      executorMapPath = outputDirectory </> "executor-map.json"
+      executablePath = outputDirectory </> "circuit-engine"
+      programSourcePath = outputDirectory </> "program.c"
+      programHeaderPath = outputDirectory </> "program.h"
+      programManifestPath = outputDirectory </> "program.manifest.json"
+      hostedManifestPath = outputDirectory </> "hosted.manifest.json"
+      staticProgramBytes = prettyJsonBytes staticProgram
+      executorMapBytes = prettyJsonBytes (executorMapValue staticProgram)
+  BS.writeFile staticProgramPath staticProgramBytes
+  runBuildTool
+    "Lean-hosted C generation"
+    compiler
+    [staticProgramPath, outputDirectory]
+  BS.writeFile executorMapPath executorMapBytes
+  runBuildTool
+    "x86_64 Linux compilation"
+    clang
+    [ "-std=c11"
+    , "-O2"
+    , "-fPIE"
+    , "-pie"
+    , "-D_FORTIFY_SOURCE=2"
+    , "-fstack-protector-strong"
+    , "-Wall"
+    , "-Wextra"
+    , "-Werror"
+    , "-Wl,-z,relro,-z,now"
+    , "-Wl,--build-id=sha1"
+    , "-I"
+    , outputDirectory
+    , programSourcePath
+    , runnerSource
+    , "-o"
+    , executablePath
+    ]
+  clangVersion <- toolVersion clang
+  executableDigest <- sha256File executablePath
+  programSourceDigest <- sha256File programSourcePath
+  programHeaderDigest <- sha256File programHeaderPath
+  programManifestDigest <- sha256File programManifestPath
+  runnerDigest <- sha256File runnerSource
+  let manifest =
+        HostedProgramManifest
+          { hpmSchema = hostedProgramManifestSchema
+          , hpmTarget = hostedLinuxTarget
+          , hpmTargetTriple = "x86_64-unknown-linux-gnu"
+          , hpmProtocol = hostedProcessProtocol
+          , hpmEngineStateSchema = engineStateSchema
+          , hpmEngineAbi = engineAbi
+          , hpmProgramIdentity = staticProgram.staticProgramIdentity
+          , hpmExecutable = "circuit-engine"
+          , hpmExecutableSha256 = executableDigest
+          , hpmStaticProgramSha256 = sha256Hex staticProgramBytes
+          , hpmNodeExecutors =
+              Map.fromList
+                [ (node.staticProgramNodeId, node.staticProgramNodeExecutor)
+                | node <- staticProgram.staticProgramNodes
+                ]
+          , hpmGeneratedDigests =
+              Map.fromList
+                [ ("executor-map.json", sha256Hex executorMapBytes)
+                , ("program.c", programSourceDigest)
+                , ("program.h", programHeaderDigest)
+                , ("program.manifest.json", programManifestDigest)
+                , ("runner.c", runnerDigest)
+                ]
+          , hpmToolchainProvenance =
+              Map.fromList
+                [ ("cortex_wire_c", T.pack compiler)
+                , ("clang", clangVersion)
+                ]
+          }
+  BS.writeFile hostedManifestPath (prettyJsonBytes manifest)
+  TIO.putStrLn ("built x86_64-linux-v1 circuit bundle in " <> T.pack outputDirectory)
+
+prettyJsonBytes :: Aeson.ToJSON value => value -> BS.ByteString
+prettyJsonBytes = BSL.toStrict . (<> "\n") . AesonPretty.encodePretty
+
+executorMapValue :: StaticProgram -> Aeson.Value
+executorMapValue staticProgram =
+  Aeson.object
+    [ "schema" Aeson..= ("cortex.wire.executor-map/v1" :: Text)
+    , "program_identity" Aeson..= staticProgram.staticProgramIdentity
+    , "nodes"
+        Aeson..= [ Aeson.object
+                     [ "id" Aeson..= node.staticProgramNodeId
+                     , "ref" Aeson..= node.staticProgramNodeRef.unCircuitNodeRef
+                     , "executor" Aeson..= node.staticProgramNodeExecutor
+                     ]
+                 | node <- staticProgram.staticProgramNodes
+                 ]
+    ]
+
+sha256File :: FilePath -> IO Text
+sha256File path = do
+  result <- try @IOException (BS.readFile path)
+  case result of
+    Left err -> dieText ("reading generated file " <> T.pack path <> ": " <> tshow err)
+    Right bytes -> pure (sha256Hex bytes)
+
+toolVersion :: FilePath -> IO Text
+toolVersion tool = do
+  result <- try @IOException (readCreateProcessWithExitCode (proc tool ["--version"]) "")
+  case result of
+    Left err -> dieText ("running tool " <> T.pack tool <> ": " <> tshow err)
+    Right (ExitSuccess, output, _stderrText) ->
+      pure (T.takeWhile (/= '\n') (T.pack output))
+    Right (ExitFailure code, _output, stderrText) ->
+      dieText
+        ( "tool "
+            <> T.pack tool
+            <> " --version failed with exit "
+            <> tshow code
+            <> ": "
+            <> T.take 4096 (T.pack stderrText)
+        )
+
+runBuildTool :: Text -> FilePath -> [String] -> IO ()
+runBuildTool label tool arguments = do
+  result <- try @IOException (readCreateProcessWithExitCode (proc tool arguments) "")
+  case result of
+    Left err -> dieText (label <> " failed to start: " <> tshow err)
+    Right (ExitSuccess, _output, _stderrText) -> pure ()
+    Right (ExitFailure code, output, stderrText) ->
+      dieText
+        ( label
+            <> " failed with exit "
+            <> tshow code
+            <> ": "
+            <> T.take 4096 (T.pack (stderrText <> output))
+        )
 
 loadWireModules :: WireCompileEnv -> FilePath -> IO (NonEmpty WireModule)
 loadWireModules compileEnv path =
