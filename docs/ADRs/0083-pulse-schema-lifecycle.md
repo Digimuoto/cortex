@@ -6,7 +6,7 @@ description:
 sidebar:
   label: "0083. Pulse schema lifecycle"
   order: 83
-status: proposed
+status: accepted
 date: 2026-06-30
 superseded_by: null
 related:
@@ -21,9 +21,10 @@ related:
 
 ## Status
 
-Proposed. This records the current Pulse schema lifecycle. The policy is implemented by
-`provisionPulseSchema`, the checked-in full schema dump, and forward migration files; the drift
-guard between the dump and migrations is tracked separately.
+Accepted. The policy is implemented by `provisionPulseSchema`, the checked-in full schema dump,
+idempotent forward migration files, provisioning checks, and the required `pulse-schema-drift` Nix
+gate. The guard loads the full dump, replays every migration in lexical order, normalizes `pg_dump`
+session tokens, compares the resulting `pulse` schemas, and verifies the recorded migration head.
 
 ## Context
 
@@ -45,6 +46,8 @@ Pulse uses a split schema lifecycle:
   applied in lexical order by the operator or deployment pipeline.
 - A schema-changing PR must update the full dump, add or amend the relevant migration file for
   deployed databases, and update the schema reference when the public shape changes.
+- `checks.pulse-schema-drift` must prove that applying the complete migration set to the full dump
+  is a no-op and that the dump's recorded migration head names the latest migration.
 - Downstreams must apply required migrations before rolling out code that depends on the new shape.
 
 ## Consequences
@@ -58,13 +61,14 @@ Pulse uses a split schema lifecycle:
 ### Negative
 
 - A stale deployed database is rejected or fails validation until the operator applies migrations.
-- The full dump and migration files can drift unless checked by tests or docs tooling.
+- Schema changes pay the cost of maintaining both the curated dump and the forward migration, plus
+  the database-backed drift check.
 
 ### Obligations
 
 - Keep `docs/Reference/Pulse/schema.md` and `migrations/README.md` aligned with this policy.
 - Keep migration files idempotent and safe to re-run.
-- Add or maintain a drift guard that checks `data/pulse-schema.sql` against the migration set.
+- Maintain `checks.pulse-schema-drift` and `just schema-drift-check` as required gates.
 - Do not introduce implicit destructive migrations into `provisionPulseSchema`.
 
 ## Traceability
@@ -73,7 +77,8 @@ Pulse uses a split schema lifecycle:
 - Public surface: `Cortex.Pulse.Database.provisionPulseSchema`, `docs/Reference/Pulse/schema.md`,
   `migrations/README.md`
 - Implementation: `src/Cortex/Pulse/Database.hs`, `data/pulse-schema.sql`, `migrations/`
-- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Pulse/SchedulerSpec.hs`
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Pulse/SchedulerSpec.hs`,
+  `checks.pulse-schema-drift`
 - Theory/proof: none
 
 ## Related

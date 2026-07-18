@@ -6,6 +6,7 @@
 -- of psql meta-commands (\restrict/\unrestrict, SET, set_config) so it applies
 -- through hasql. Do not edit by hand; regenerate when the Pulse schema changes
 -- and re-strip the psql meta-commands.
+-- Migration head: 0005_circuit_execution_profile.sql.
 
 --
 -- PostgreSQL database dump
@@ -145,7 +146,9 @@ CREATE TABLE pulse.graph_state (
     applied_rewrite_id bigint,
     remaining_rewrite_budget jsonb,
     node_provenance jsonb,
-    topology_hash text
+    topology_hash text,
+    hosted_checkpoint_sequence bigint,
+    CONSTRAINT pulse_graph_state_hosted_checkpoint_positive CHECK (((hosted_checkpoint_sequence IS NULL) OR (hosted_checkpoint_sequence > 0)))
 );
 
 
@@ -233,7 +236,12 @@ CREATE TABLE pulse.runs (
     skip_reason text,
     parent_run_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    user_id uuid
+    user_id uuid,
+    execution_backend text,
+    program_identity text,
+    artifact_digest text,
+    protocol_version text,
+    CONSTRAINT pulse_runs_execution_profile_consistent CHECK (((execution_backend IS NULL) AND (program_identity IS NULL) AND (artifact_digest IS NULL) AND (protocol_version IS NULL)) OR ((execution_backend = 'pulse_graph_runtime_v1'::text) AND (program_identity IS NOT NULL) AND (artifact_digest IS NULL) AND (protocol_version IS NULL)) OR ((execution_backend = 'hosted_x86_64_linux_v1'::text) AND (program_identity IS NOT NULL) AND (artifact_digest ~ '^[0-9a-f]{64}$'::text) AND (protocol_version IS NOT NULL) AND (protocol_version <> ''::text)))
 );
 
 

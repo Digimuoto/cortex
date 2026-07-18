@@ -13,9 +13,10 @@ status: active
 
 Cortex is a standalone runtime and Wire language substrate. This chapter sets the core architectural
 frame: Graph, Circuit, and Wire are separate layers; Cortex owns reusable runtime and language
-concerns; downstream products own domain semantics and the operator edge. Pulse can run Circuits in
-an ephemeral local profile or a durable service profile. Use this page to orient yourself. Use the
-later chapters for subsystem detail and the ADRs for settled decisions.
+concerns; downstream products own domain semantics and the operator edge. An admitted Circuit can
+run through the Haskell graph runtime or, for the fixed effect-only profile, through a generated C
+engine hosted by Pulse or another runtime host. Use this page to orient yourself. Use the later
+chapters for subsystem detail and the ADRs for settled decisions.
 
 ## Three Layers
 
@@ -85,8 +86,9 @@ Cortex is not a thin provider wrapper. It owns the reusable substrate end to end
   [Wire Grammar](../Reference/Wire/grammar.md).
 - **Topology and compilation** — Graph and Circuit as the formal and executable layers below Wire;
   see [Chapter 04 — Graph and Circuit](04-graph-and-circuit.md).
-- **Runtime execution** — Pulse as the runtime that executes compiled circuits in ephemeral or
-  durable profiles; see [Chapter 06 — Pulse runtime](06-pulse-runtime.md).
+- **Runtime execution** — the target-independent circuit-engine decision kernel plus runtime hosts;
+  Pulse is the default Haskell graph runtime and a durable host for generated executables. See
+  [Chapter 06 — Pulse runtime](06-pulse-runtime.md).
 - **Runtime evolution** — admitted rewrites, materialization, and graph-native execution; see
   [Chapter 07 — Rewrites and materialization](07-rewrites-and-materialization.md).
 - **Capability substrate** — executor registration and native pure-executor capability surfaces.

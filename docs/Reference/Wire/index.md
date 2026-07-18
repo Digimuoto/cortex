@@ -15,6 +15,9 @@ pages that factor out specific rule areas for quick consultation.
 
 ## Contents
 
+- **[hosted-execution.md](hosted-execution.md)** — `x86_64-linux-v1` build bundle, validated
+  artifact, engine state, JSONL protocol, runtime-host boundary, and Pulse backend selection.
+
 - **[grammar.md](grammar.md)** — the normative grammar specification. The authoritative document;
   other pages in this directory point into its sections.
 - **[style.md](style.md)** — canonical formatting and layout conventions for Wire source files,

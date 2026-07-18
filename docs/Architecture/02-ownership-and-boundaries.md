@@ -85,9 +85,10 @@ layers:
   (`Empty | Vertex | Overlay | Connect`), DAG validation, the validated executable Circuit, and the
   Wire source language that authors circuits. Normative Wire grammar lives at
   [`../Reference/Wire/grammar.md`](../Reference/Wire/grammar.md).
-- **Runtime layer.** Pulse executes Circuits in an ephemeral local profile or a durable service
-  profile. Durable Pulse adds checkpointing, rewrite hydration, frontier scheduling, run lifecycle,
-  and stage events as service-owned state.
+- **Runtime layer.** Cortex owns the target-independent circuit-engine decisions and runtime-host
+  interfaces. Pulse is the default Haskell graph runtime and a durable host for eligible generated
+  executables; it adds checkpointing, rewrite hydration, effect execution, run lifecycle, and stage
+  events as service-owned state.
 - **Capability layer.** Executor registration and native pure-executor capability surfaces.
 
 ### Product binding

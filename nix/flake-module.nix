@@ -18,6 +18,7 @@
     ./devshell.nix
     ./quantum.nix
     ./docs.nix
+    ./schema.nix
     ./editors.nix
     ./ci
   ];

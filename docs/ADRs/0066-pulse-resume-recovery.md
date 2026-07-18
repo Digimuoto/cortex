@@ -8,7 +8,7 @@ description:
 sidebar:
   label: "0066. Resume & recovery preconditions"
   order: 66
-status: proposed
+status: accepted
 date: 2026-06-27
 superseded_by: null
 related:
@@ -24,11 +24,11 @@ related:
 
 ## Status
 
-Proposed. The resume/recovery path is implemented in the durable executor
-(`Cortex.Pulse.Executor.Resume`, `Cortex.Pulse.GraphRuntime`); this ADR records the decision and its
-proof correspondence to `theory/Cortex/Pulse/Recovery.lean`. Implementation status is tracked as the
-`pulse.resume_recovery` row in [`feature-status.md`](../Reference/feature-status.md), not in this
-ADR's status field.
+Accepted. The durable executor implements the replay, re-authorization, normalization, precondition,
+and classification pipeline and the Lean recovery model names its proof hypotheses. The
+hosted-Circuit backend reuses this pipeline, deterministically reconstructs
+`cortex.wire.engine-state/v1` from the normalized Pulse snapshot, and restores a fresh verified
+child process without persisting an opaque competing state blob.
 
 ## Context
 
@@ -120,6 +120,13 @@ Resume never best-effort continues past a failed precondition.
 > frontier or terminal outcome. A precondition that does not hold is a typed run failure, not a
 > guess.
 
+For a hosted static Circuit, successful completion of this pipeline has one additional deterministic
+projection: logical node statuses and outputs become dense engine statuses and stable handles
+`node_id + 1`, with zero reserved for no output. The persisted hosted checkpoint sequence is carried
+into the imported engine state. Import validation then independently rechecks identity, node count,
+normalization, dependency closure, terminal consistency, and handle presence before the child is
+allowed to drive.
+
 ## Boundary Rules
 
 - **The watermark is the replay boundary.** `pgssAppliedRewriteId` partitions durable rewrite
@@ -205,7 +212,8 @@ Resume never best-effort continues past a failed precondition.
 - Feature keys: `pulse.resume_recovery`
 - Public surface: `Cortex.Pulse`
 - Implementation: `src/Cortex/Pulse/Executor/Resume.hs`, `src/Cortex/Pulse/GraphRuntime.hs`
-- Tests: `test/Cortex/Pulse/ExecutorSpec.hs`
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs` (resume/recovery hardening and hosted backend identity
+  and resume), `checks.cortex-wire-hosted-linux-smoke`, `checks.cortex-wire-hosted-pulse`
 - Theory/proof: [Pulse recovery envelope row](../Reference/proof-status.md) (Lean
   `theory/Cortex/Pulse/Recovery.lean` — `persistence_safety`, `PersistedRecoveryPreconditions`)
 

@@ -17,6 +17,11 @@ module Cortex.Pulse.Query
     -- * Run Management
   , claimAndCreateRun
   , claimAndCreateRunWithParent
+  , claimAndCreateRunWithParentAndProfile
+  , RunExecutionProfile (..)
+  , RunExecutionProfileFreezeResult (..)
+  , freezeRunExecutionProfile
+  , readRunExecutionProfile
   , claimNextPendingRun
   , ManagedResumeClaim (..)
   , claimManagedRunForResume
@@ -246,6 +251,10 @@ data PulseRunAdminView = PulseRunAdminView
   , pravErrorRetryable :: Maybe Bool
   , pravSkipReason :: Maybe Text
   , pravParentRunId :: Maybe UUID
+  , pravExecutionBackend :: Maybe Text
+  , pravProgramIdentity :: Maybe Text
+  , pravArtifactDigest :: Maybe Text
+  , pravProtocolVersion :: Maybe Text
   , pravCreatedAt :: UTCTime
   , pravLatestStageName :: Maybe Text
   , pravLatestStageStatus :: Maybe Text
@@ -291,6 +300,7 @@ data PulseGraphStateAdminView = PulseGraphStateAdminView
   , pgsavAppliedRewriteId :: Maybe Int64
   , pgsavNodeProvenance :: Maybe Value
   , pgsavTopologyHash :: Maybe Text
+  , pgsavHostedCheckpointSequence :: Maybe Int64
   , pgsavUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
@@ -303,6 +313,7 @@ data PulseGraphStateSnapshot = PulseGraphStateSnapshot
   , pgssAppliedRewriteId :: Maybe Int64
   , pgssNodeProvenance :: Maybe Value
   , pgssTopologyHash :: Maybe Text
+  , pgssHostedCheckpointSequence :: Maybe Int64
   , pgssRevision :: GraphStateRevision
   }
   deriving stock (Eq, Show)
@@ -386,6 +397,7 @@ data GraphStateWrite = GraphStateWrite
   , gswAppliedRewriteId :: Maybe Int64
   , gswNodeProvenance :: Maybe Value
   , gswTopologyHash :: Maybe Text
+  , gswHostedCheckpointSequence :: Maybe Int64
   , gswUpdatedAt :: UTCTime
   , gswExpectedRevision :: Maybe GraphStateRevision
   }
@@ -407,6 +419,31 @@ data ManagedResumeClaim = ManagedResumeClaim
   , mrcClaimed :: Bool
   }
   deriving stock (Eq, Show)
+
+-- | Immutable identity of the whole-run executor selected for a compiled Circuit.
+data RunExecutionProfile = RunExecutionProfile
+  { repExecutionBackend :: !Text
+  , repProgramIdentity :: !Text
+  , repArtifactDigest :: !(Maybe Text)
+  , repProtocolVersion :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+data RunExecutionProfileFreezeResult
+  = RunExecutionProfileFrozen
+  | RunExecutionProfileMismatch !RunExecutionProfile
+  | RunExecutionProfileRunMissing
+  deriving stock (Eq, Show)
+
+data ManagedRunClaimInput = ManagedRunClaimInput
+  { mrciTaskId :: !UUID
+  , mrciLeaseOwner :: !Text
+  , mrciTriggerSource :: !TriggerSource
+  , mrciParentRunId :: !(Maybe UUID)
+  , mrciNow :: !UTCTime
+  , mrciLeaseDurationSeconds :: !Int32
+  , mrciExecutionProfile :: !(Maybe RunExecutionProfile)
+  }
 
 data PulseExpiredRunRecovery = PulseExpiredRunRecovery
   { perrRunId :: UUID
@@ -477,11 +514,48 @@ surfaces as the transaction's error path, not a silent NULL.
 claimAndCreateRunWithParent
   :: UUID -> Text -> TriggerSource -> Maybe UUID -> UTCTime -> Int32 -> Transaction (Maybe UUID)
 claimAndCreateRunWithParent tId leaseOwner triggerSource parentRunId now leaseDurationSec =
-  Tx.statement (tId, leaseOwner, triggerSource, parentRunId, now, leaseDurationSec) $
+  claimAndCreateManagedRun
+    ManagedRunClaimInput
+      { mrciTaskId = tId
+      , mrciLeaseOwner = leaseOwner
+      , mrciTriggerSource = triggerSource
+      , mrciParentRunId = parentRunId
+      , mrciNow = now
+      , mrciLeaseDurationSeconds = leaseDurationSec
+      , mrciExecutionProfile = Nothing
+      }
+
+{- | Managed Circuit claim with the immutable execution profile written in the
+same INSERT as the run identity.
+-}
+claimAndCreateRunWithParentAndProfile
+  :: UUID
+  -> Text
+  -> TriggerSource
+  -> Maybe UUID
+  -> UTCTime
+  -> Int32
+  -> RunExecutionProfile
+  -> Transaction (Maybe UUID)
+claimAndCreateRunWithParentAndProfile tId leaseOwner triggerSource parentRunId now leaseDurationSec profile =
+  claimAndCreateManagedRun
+    ManagedRunClaimInput
+      { mrciTaskId = tId
+      , mrciLeaseOwner = leaseOwner
+      , mrciTriggerSource = triggerSource
+      , mrciParentRunId = parentRunId
+      , mrciNow = now
+      , mrciLeaseDurationSeconds = leaseDurationSec
+      , mrciExecutionProfile = Just profile
+      }
+
+claimAndCreateManagedRun :: ManagedRunClaimInput -> Transaction (Maybe UUID)
+claimAndCreateManagedRun input =
+  Tx.statement input $
     Statement
       "WITH inserted AS ( \
       \  INSERT INTO pulse.runs \
-      \    (task_id, status, trigger_source, started_at, lease_owner, lease_expires_at, user_id, parent_run_id, created_at) \
+      \    (task_id, status, trigger_source, started_at, lease_owner, lease_expires_at, user_id, parent_run_id, execution_backend, program_identity, artifact_digest, protocol_version, created_at) \
       \  SELECT \
       \    $1, 'running'::pulse.run_status, $3::pulse.trigger_source, $5, $2, $5 + make_interval(secs => $6::double precision), \
       \    COALESCE( \
@@ -493,8 +567,7 @@ claimAndCreateRunWithParent tId leaseOwner triggerSource parentRunId now leaseDu
       \      NULLIF(td.config #>> '{cortexTaskConfig,rerEvalUserId}', '')::uuid, \
       \      NULLIF(td.config #>> '{cortexTaskConfig,rawEvalUserId}', '')::uuid \
       \    ), \
-      \    $4, \
-      \    $5 \
+      \    $4, $7, $8, $9, $10, $5 \
       \  FROM pulse.task_definitions td \
       \  WHERE task_id = $1 \
       \    AND next_run_at IS NOT NULL \
@@ -511,16 +584,84 @@ claimAndCreateRunWithParent tId leaseOwner triggerSource parentRunId now leaseDu
       \) \
       \SELECT run_id FROM inserted \
       \WHERE EXISTS (SELECT 1 FROM claimed)"
-      ( Enc.encode6
-          ((\(a, _, _, _, _, _) -> a), Enc.nonNullable Enc.uuid)
-          ((\(_, b, _, _, _, _) -> b), Enc.nonNullable Enc.text)
-          ((\(_, _, c, _, _, _) -> triggerSourceToText c), Enc.nonNullable Enc.text)
-          ((\(_, _, _, d, _, _) -> d), Enc.nullable Enc.uuid)
-          ((\(_, _, _, _, e, _) -> e), Enc.nonNullable Enc.timestamptz)
-          ((\(_, _, _, _, _, f) -> f), Enc.nonNullable Enc.int4)
+      ( Enc.encodeParams $
+          Enc.col (.mrciTaskId) (Enc.nonNullable Enc.uuid)
+            :| [ Enc.col (.mrciLeaseOwner) (Enc.nonNullable Enc.text)
+               , Enc.col (triggerSourceToText . (.mrciTriggerSource)) (Enc.nonNullable Enc.text)
+               , Enc.col (.mrciParentRunId) (Enc.nullable Enc.uuid)
+               , Enc.col (.mrciNow) (Enc.nonNullable Enc.timestamptz)
+               , Enc.col (.mrciLeaseDurationSeconds) (Enc.nonNullable Enc.int4)
+               , Enc.col
+                   (fmap (.repExecutionBackend) . (.mrciExecutionProfile))
+                   (Enc.nullable Enc.text)
+               , Enc.col
+                   (fmap (.repProgramIdentity) . (.mrciExecutionProfile))
+                   (Enc.nullable Enc.text)
+               , Enc.col
+                   (\claim -> claim.mrciExecutionProfile >>= (.repArtifactDigest))
+                   (Enc.nullable Enc.text)
+               , Enc.col
+                   (\claim -> claim.mrciExecutionProfile >>= (.repProtocolVersion))
+                   (Enc.nullable Enc.text)
+               ]
       )
       (D.rowMaybe (D.column (D.nonNullable D.uuid)))
       False
+
+freezeRunExecutionProfile
+  :: UUID -> RunExecutionProfile -> Transaction RunExecutionProfileFreezeResult
+freezeRunExecutionProfile runId expected = do
+  actual <-
+    Tx.statement (runId, expected) $
+      Statement
+        "WITH target AS ( \
+        \  SELECT run_id, execution_backend, program_identity, artifact_digest, protocol_version \
+        \  FROM pulse.runs WHERE run_id = $1 FOR UPDATE \
+        \), frozen AS ( \
+        \  UPDATE pulse.runs r SET \
+        \    execution_backend = $2, program_identity = $3, artifact_digest = $4, protocol_version = $5 \
+        \  FROM target t \
+        \  WHERE r.run_id = t.run_id \
+        \    AND t.execution_backend IS NULL AND t.program_identity IS NULL \
+        \    AND t.artifact_digest IS NULL AND t.protocol_version IS NULL \
+        \  RETURNING r.execution_backend, r.program_identity, r.artifact_digest, r.protocol_version \
+        \) \
+        \SELECT execution_backend, program_identity, artifact_digest, protocol_version FROM frozen \
+        \UNION ALL \
+        \SELECT execution_backend, program_identity, artifact_digest, protocol_version FROM target \
+        \WHERE NOT EXISTS (SELECT 1 FROM frozen)"
+        ( Enc.encode5
+            (fst, Enc.nonNullable Enc.uuid)
+            ((\(_, b) -> b.repExecutionBackend), Enc.nonNullable Enc.text)
+            ((\(_, b) -> b.repProgramIdentity), Enc.nonNullable Enc.text)
+            ((\(_, b) -> b.repArtifactDigest), Enc.nullable Enc.text)
+            ((\(_, b) -> b.repProtocolVersion), Enc.nullable Enc.text)
+        )
+        (D.rowMaybe runExecutionProfileDecoder)
+        False
+  pure $ case actual of
+    Nothing -> RunExecutionProfileRunMissing
+    Just profile
+      | profile == expected -> RunExecutionProfileFrozen
+      | otherwise -> RunExecutionProfileMismatch profile
+
+readRunExecutionProfile :: UUID -> Session (Maybe RunExecutionProfile)
+readRunExecutionProfile runId =
+  Session.statement runId $
+    Statement
+      "SELECT execution_backend, program_identity, artifact_digest, protocol_version \
+      \FROM pulse.runs WHERE run_id = $1 AND execution_backend IS NOT NULL"
+      (E.param (E.nonNullable E.uuid))
+      (D.rowMaybe runExecutionProfileDecoder)
+      True
+
+runExecutionProfileDecoder :: D.Row RunExecutionProfile
+runExecutionProfileDecoder =
+  RunExecutionProfile
+    <$> D.column (D.nonNullable D.text)
+    <*> D.column (D.nonNullable D.text)
+    <*> D.column (D.nullable D.text)
+    <*> D.column (D.nullable D.text)
 
 {- | Claim the next pending run, with scheduling controls:
 
@@ -1681,6 +1822,10 @@ runAdminViewSelectSql =
   \r.error_retryable, \
   \r.skip_reason, \
   \r.parent_run_id, \
+  \r.execution_backend, \
+  \r.program_identity, \
+  \r.artifact_digest, \
+  \r.protocol_version, \
   \r.created_at, \
   \latest.stage_name, \
   \latest.status, \
@@ -1717,6 +1862,10 @@ pulseRunAdminViewDecoder =
     <*> D.column (D.nullable D.bool) -- r.error_retryable
     <*> D.column (D.nullable D.text) -- r.skip_reason
     <*> D.column (D.nullable D.uuid) -- r.parent_run_id
+    <*> D.column (D.nullable D.text) -- r.execution_backend
+    <*> D.column (D.nullable D.text) -- r.program_identity
+    <*> D.column (D.nullable D.text) -- r.artifact_digest
+    <*> D.column (D.nullable D.text) -- r.protocol_version
     <*> D.column (D.nonNullable D.timestamptz) -- r.created_at
     <*> D.column (D.nullable D.text) -- latest.stage_name
     <*> D.column (D.nullable D.text) -- latest.status
@@ -1814,7 +1963,7 @@ readGraphState runId =
   Session.statement runId $
     Statement
       "SELECT node_statuses, node_outputs, remaining_rewrite_budget, runtime_version, \
-      \applied_rewrite_id, node_provenance, topology_hash, updated_at \
+      \applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at \
       \FROM pulse.graph_state WHERE run_id = $1"
       (Enc.encode1 (Prelude.id, Enc.nonNullable Enc.uuid))
       (D.rowMaybe graphStateDecoder)
@@ -1829,6 +1978,7 @@ readGraphState runId =
         <*> D.column (D.nullable D.int8) -- applied_rewrite_id
         <*> D.column (D.nullable D.jsonb) -- node_provenance
         <*> D.column (D.nullable D.text) -- topology_hash
+        <*> D.column (D.nullable D.int8) -- hosted_checkpoint_sequence
         <*> (GraphStateRevision <$> D.column (D.nonNullable D.timestamptz)) -- updated_at
 
 -- | Read persisted graph state for admin display.
@@ -1837,7 +1987,7 @@ readGraphStateForAdmin runId =
   Session.statement runId $
     Statement
       "SELECT node_statuses, node_outputs, remaining_rewrite_budget, runtime_version, \
-      \applied_rewrite_id, node_provenance, topology_hash, updated_at \
+      \applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at \
       \FROM pulse.graph_state WHERE run_id = $1"
       (Enc.encode1 (Prelude.id, Enc.nonNullable Enc.uuid))
       (D.rowMaybe adminGraphStateDecoder)
@@ -1852,6 +2002,7 @@ readGraphStateForAdmin runId =
         <*> D.column (D.nullable D.int8) -- applied_rewrite_id
         <*> D.column (D.nullable D.jsonb) -- node_provenance
         <*> D.column (D.nullable D.text) -- topology_hash
+        <*> D.column (D.nullable D.int8) -- hosted_checkpoint_sequence
         <*> D.column (D.nonNullable D.timestamptz) -- updated_at
 
 {- | Persist graph state using optimistic compare-and-swap semantics.
@@ -1878,14 +2029,15 @@ writeGraphState input =
       \    $6::int8 AS applied_rewrite_id, \
       \    $7::jsonb AS node_provenance, \
       \    $8::text AS topology_hash, \
-      \    $9::timestamptz AS updated_at, \
-      \    $10::timestamptz AS expected_revision \
+      \    $9::int8 AS hosted_checkpoint_sequence, \
+      \    $10::timestamptz AS updated_at, \
+      \    $11::timestamptz AS expected_revision \
       \), inserted AS ( \
       \  INSERT INTO pulse.graph_state \
       \    (run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
-      \     runtime_version, applied_rewrite_id, node_provenance, topology_hash, updated_at) \
+      \     runtime_version, applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at) \
       \  SELECT run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
-      \         runtime_version, applied_rewrite_id, node_provenance, topology_hash, updated_at \
+      \         runtime_version, applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at \
       \  FROM input \
       \  WHERE expected_revision IS NULL \
       \  ON CONFLICT (run_id) DO NOTHING \
@@ -1899,6 +2051,7 @@ writeGraphState input =
       \    applied_rewrite_id = input.applied_rewrite_id, \
       \    node_provenance = input.node_provenance, \
       \    topology_hash = input.topology_hash, \
+      \    hosted_checkpoint_sequence = input.hosted_checkpoint_sequence, \
       \    updated_at = input.updated_at \
       \  FROM input \
       \  WHERE input.expected_revision IS NOT NULL \
@@ -1919,6 +2072,7 @@ writeGraphState input =
                  , Enc.col (.gswAppliedRewriteId) (Enc.nullable Enc.int8)
                  , Enc.col (.gswNodeProvenance) (Enc.nullable Enc.jsonb)
                  , Enc.col (.gswTopologyHash) (Enc.nullable Enc.text)
+                 , Enc.col (.gswHostedCheckpointSequence) (Enc.nullable Enc.int8)
                  , Enc.col (.gswUpdatedAt) (Enc.nonNullable Enc.timestamptz)
                  , Enc.col
                      (fmap unGraphStateRevision . (.gswExpectedRevision))

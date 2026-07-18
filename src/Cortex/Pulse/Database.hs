@@ -216,6 +216,11 @@ pulseSchemaRequiredColumns =
   [ ("task_definitions", "scheduler_claimed")
   , ("graph_rewrites", "admission_mode")
   , ("runs", "lease_owner")
+  , ("runs", "execution_backend")
+  , ("runs", "program_identity")
+  , ("runs", "artifact_digest")
+  , ("runs", "protocol_version")
+  , ("graph_state", "hosted_checkpoint_sequence")
   ]
 
 pulseSchemaRequiredRunStatusLabels :: [BS.ByteString]

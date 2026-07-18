@@ -39,8 +39,9 @@ node classify
 
 CorePure output equations are not `@` executor applications. Authored `@pure { ... }` and retired
 `pure (...)` wrappers are rejected. The compiler lowers CorePure output equations to an internal
-native pure task because Pulse executes materialized tasks, but that lowering is not source-level
-authority.
+native pure task because the general Pulse graph backend executes materialized tasks, but that
+lowering is not source-level authority. The fixed effect-only hosted executable profile rejects
+CorePure residue rather than moving evaluation into the generated engine.
 
 ## Rule Sources
 

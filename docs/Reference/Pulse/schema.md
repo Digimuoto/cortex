@@ -78,6 +78,10 @@ pulse.runs
   error_retryable      boolean
   skip_reason          text
   parent_run_id        uuid references pulse.runs(run_id)
+  execution_backend    text                  -- null for non-compiled/pre-profile runs
+  program_identity     text
+  artifact_digest      text                  -- hosted executable SHA-256
+  protocol_version     text                  -- hosted process protocol
   created_at           timestamptz not null
 ```
 
@@ -86,6 +90,14 @@ pulse.runs
 `ManagedRunOptions`, `trigger_source = 'manual'`). Neither inherits the parent's checkpoint lineage
 — see [run identity](../../Architecture/06-pulse-runtime.md#run-identity-and-operator-verbs) for the
 full verb table.
+
+The four execution-profile columns are frozen identity for compiled-Circuit runs. They are either
+all null, the Haskell profile (`pulse_graph_runtime_v1`, non-null program identity, null artifact
+digest/protocol), or the hosted profile (`hosted_x86_64_linux_v1`, non-null program identity,
+64-character lowercase SHA-256 artifact digest, and non-empty protocol version). Managed fresh runs
+write the profile atomically with run creation; caller-owned compiled runs may freeze an all-null
+profile exactly once. Resume must match it exactly before ownership is claimed. Pulse stores no
+executable bytes or artifact path.
 
 ## 4. Checkpoints
 
@@ -163,11 +175,16 @@ pulse.graph_state
   applied_rewrite_id        bigint references pulse.graph_rewrites(rewrite_id)
   node_provenance           jsonb
   topology_hash             text
+  hosted_checkpoint_sequence bigint          -- positive acknowledged engine sequence
   updated_at                timestamptz not null
 ```
 
 Mutable latest graph snapshot for durable resume. `node_statuses` and `node_outputs` carry the
 runtime graph-state maps; rewrite fields bind the snapshot to the materialized rewrite lineage.
+
+`hosted_checkpoint_sequence` is null for the Haskell backend and positive for a committed hosted
+engine snapshot. It is correlation and restore sequencing only. `node_statuses` and `node_outputs`
+remain the sole authoritative recovery snapshot; Pulse does not persist an opaque engine-state blob.
 
 `updated_at` is also the optimistic compare-and-swap revision token. The first graph-state write is
 insert-only. Later writes update the row only when the caller's expected revision matches the
@@ -296,7 +313,10 @@ depends on the new shape — e.g. `migrations/0001_graph_rewrites_admission_mode
 `pulse.graph_rewrites.admission_mode` (ADR 0055 / 0056), backfilling existing rows to `gassed`;
 `migrations/0003_graph_rewrites_admission_mode_external.sql` widens that column's CHECK with the ADR
 0088 `external` mode; and `migrations/0004_pulse_artifacts.sql` adds the ADR 0089 artifact store
-tables.
+tables. `migrations/0005_circuit_execution_profile.sql` adds the consistency-checked compiled-run
+execution profile and positive hosted checkpoint sequence. `checks.pulse-schema-drift` (also
+`just schema-drift-check`) loads the full dump, reapplies every migration, compares normalized
+`pg_dump` output, and verifies this dump's recorded migration head.
 
 ## Related
 
@@ -307,6 +327,8 @@ tables.
 - [./host-actions.md](./host-actions.md) — the Pulse → host callout contract.
 - [./signals.md](./signals.md) — signal protocol and delivery semantics.
 - [./events.md](./events.md) — run-event catalog.
+- [../Wire/hosted-execution.md](../Wire/hosted-execution.md) — engine protocol and Pulse-hosted
+  recovery mapping.
 - [../../ADRs/0083-pulse-schema-lifecycle.md](../../ADRs/0083-pulse-schema-lifecycle.md) — schema
   lifecycle and migration policy.
 

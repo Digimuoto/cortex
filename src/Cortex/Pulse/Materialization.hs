@@ -226,6 +226,7 @@ data PersistedGraphState = PersistedGraphState
   , pgsAppliedRewriteId :: Maybe Int64
   , pgsNodeProvenance :: NodeProvenance
   , pgsTopologyHash :: Maybe Text
+  , pgsHostedCheckpointSequence :: Maybe Int64
   , pgsRevision :: Maybe GraphStateRevision
   }
   deriving stock (Eq, Show)

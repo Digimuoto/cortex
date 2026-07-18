@@ -84,12 +84,17 @@ import Cortex.Pulse.Circuit
   , artifactStage
   , committedVariantBinder
   , committedVariantBinderWith
+  , defaultManagedRunOptions
   , ensureRunnable
   , resumeCompiledCircuit
   , resumeCompiledCircuitManaged
+  , resumeCompiledCircuitManagedOn
+  , resumeCompiledCircuitManagedOnWithOptions
   , runCompiledCircuit
   , runCompiledCircuitManaged
+  , runCompiledCircuitManagedOnWithOptions
   , runCompiledCircuitManagedWithOptions
+  , runCompiledCircuitWithOptions
   , signalStage
   , taskStage
   )
@@ -233,6 +238,14 @@ import Cortex.Wire
   , wireExecutorRegistryFromList
   )
 import Cortex.Wire.Circuit.Artifact (CompiledCircuit (..))
+import Cortex.Wire.Circuit.Engine
+  ( CircuitExecutionBackend (..)
+  , CircuitRunOptions (..)
+  , HostedProgramManifest (..)
+  , hostedProcessProtocol
+  , hostedProgramManifest
+  , loadHostedProgramArtifact
+  )
 import Cortex.Wire.Circuit.IR
   ( CircuitArtifactBoundary (..)
   , CircuitNodeRef (..)
@@ -716,6 +729,22 @@ wireSmokeBinder =
     , bindCircuitConditionNode = \_ -> Left (CircuitTemplateRegistryInvalid "Wire smoke does not support condition nodes")
     }
 
+hostedTwoNodeSource :: Text
+hostedTwoNodeSource =
+  T.unlines
+    [ "use std.io.{@command, @stdout, CommandResult};"
+    , ""
+    , "node first"
+    , "  -> result: CommandResult = @command {} (null);"
+    , ""
+    , "node second"
+    , "  <- result: CommandResult;"
+    , "  = @stdout {} (result);"
+    , ""
+    , "first"
+    , "  => second"
+    ]
+
 -- | A select over a producer that emits one of two output variants (ADR 0062 #314).
 selectVariantSource :: Text
 selectVariantSource =
@@ -1037,6 +1066,7 @@ writeGraphStateCompat pool runId statuses outputs runtimeVersion appliedRewriteI
           , gswAppliedRewriteId = appliedRewriteId
           , gswNodeProvenance = Nothing
           , gswTopologyHash = Nothing
+          , gswHostedCheckpointSequence = Nothing
           , gswUpdatedAt = now
           , gswExpectedRevision = fmap Q.pgssRevision snapshot
           }
@@ -1256,6 +1286,206 @@ spec = beforeAll setupTestDb $ do
           compiled
       outcome `shouldBe` Left (CircuitRunLoweringError loweringErr)
 
+    it "runs and resumes the hosted Circuit backend without fallback" $ \mPool -> withDb mPool $ \pool -> do
+      maybeBundle <- lookupEnv "CORTEX_HOSTED_TEST_BUNDLE"
+      bundle <- case maybeBundle of
+        Nothing -> pendingWith "CORTEX_HOSTED_TEST_BUNDLE not set; real hosted ELF test skipped" >> fail "pending"
+        Just bundlePath -> pure bundlePath
+      artifactResult <- loadHostedProgramArtifact bundle
+      artifact <- case artifactResult of
+        Left err -> expectationFailure ("hosted artifact load failed: " <> show err) >> fail "unreachable"
+        Right loaded -> pure loaded
+      compiled <-
+        case compileWireText hostedTwoNodeSource of
+          Right circuit -> pure circuit
+          Left err -> expectationFailure ("compile failed: " <> show err) >> fail "unreachable"
+      effectCount <- newIORef (0 :: Int)
+      let binder =
+            committedVariantBinder $ \taskNode ->
+              let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+               in Right . taskStage nodeId SafeToReplay $ \_ -> do
+                    atomicModifyIORef' effectCount (\count -> (count + 1, ()))
+                    pure . StageComplete $ case unNodeId nodeId of
+                      "first" ->
+                        Aeson.toJSON
+                          ( mkWireValue
+                              "std.io.CommandResult.v1"
+                              WirePayloadJson
+                              Nothing
+                              (Aeson.object ["exitCode" Aeson..= (0 :: Int)])
+                          )
+                      _other -> Aeson.Null
+          runOptions =
+            CircuitRunOptions
+              { croExecutionBackend = HostedX86_64LinuxV1 artifact
+              }
+          managedOptions =
+            defaultManagedRunOptions
+              { mroCircuitRunOptions = runOptions
+              }
+      result <-
+        runCompiledCircuitManagedOnWithOptions
+          managedOptions
+          pool
+          testPulseConfig
+          "hosted-circuit-backend-test"
+          wireSmokePulseConfig
+          binder
+          compiled
+      (runId, outcome) <- case result of
+        Left err -> expectationFailure ("hosted managed run failed: " <> show err) >> fail "unreachable"
+        Right completed -> pure completed
+      outcome `shouldBe` OutcomeCompleted
+      readIORef effectCount `shouldReturn` 2
+
+      let manifest = hostedProgramManifest artifact
+      profile <- runSession pool (Q.readRunExecutionProfile runId)
+      profile
+        `shouldBe` Just
+          Q.RunExecutionProfile
+            { Q.repExecutionBackend = "hosted_x86_64_linux_v1"
+            , Q.repProgramIdentity = manifest.hpmProgramIdentity
+            , Q.repArtifactDigest = Just manifest.hpmExecutableSha256
+            , Q.repProtocolVersion = Just hostedProcessProtocol
+            }
+      snapshot <- runSession pool (Q.readGraphState runId)
+      fmap (.pgssHostedCheckpointSequence) snapshot `shouldBe` Just (Just 4)
+
+      mismatched <-
+        resumeCompiledCircuitManagedOn
+          pool
+          testPulseConfig
+          runId
+          wireSmokePulseConfig
+          binder
+          compiled
+      mismatched `shouldSatisfy` \case
+        Left CircuitRunExecutionProfileMismatch {} -> True
+        _other -> False
+      readIORef effectCount `shouldReturn` 2
+
+      resumed <-
+        resumeCompiledCircuitManagedOnWithOptions
+          runOptions
+          pool
+          testPulseConfig
+          runId
+          wireSmokePulseConfig
+          binder
+          compiled
+      resumed `shouldBe` Right (runId, OutcomeCompleted)
+      readIORef effectCount `shouldReturn` 2
+
+      (_, taskContext) <- mkTaskContext pool
+      durabilityTaskId <-
+        insertTestTaskDef pool "paper_portfolio_cycle" "hosted-successor-after-durable-checkpoint"
+      durabilityRunId <- createTestRun pool durabilityTaskId
+      durabilityTask <- loadTaskDef pool durabilityTaskId
+      successorObservedDurablePredecessor <- newIORef False
+      let durabilityBinder =
+            committedVariantBinder $ \taskNode ->
+              let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+               in Right . taskStage nodeId SafeToReplay $ \_ ->
+                    case unNodeId nodeId of
+                      "first" ->
+                        pure . StageComplete . Aeson.toJSON $
+                          mkWireValue
+                            "std.io.CommandResult.v1"
+                            WirePayloadJson
+                            Nothing
+                            (Aeson.object ["exitCode" Aeson..= (0 :: Int)])
+                      "second" -> do
+                        statuses <- readGraphNodeStatuses pool durabilityRunId
+                        (Map.lookup (NodeId "first") =<< statuses)
+                          `shouldBe` Just NodeCompleted
+                        persistedOutputs <- readGraphNodeOutputs pool durabilityRunId
+                        fmap (Map.member (NodeId "first") . fst) persistedOutputs
+                          `shouldBe` Just True
+                        durableSnapshot <- expectGraphStateSnapshot pool durabilityRunId
+                        durableSnapshot.pgssHostedCheckpointSequence `shouldBe` Just 2
+                        writeIORef successorObservedDurablePredecessor True
+                        pure (StageComplete Aeson.Null)
+                      unexpectedNode ->
+                        expectationFailure ("unexpected hosted node: " <> T.unpack unexpectedNode)
+                          >> pure (StageFail "hosted_test_node" "unexpected hosted node")
+      durabilityOutcome <-
+        runCompiledCircuitWithOptions
+          runOptions
+          taskContext
+          durabilityRunId
+          durabilityTask
+          wireSmokePulseConfig
+          durabilityBinder
+          compiled
+      durabilityOutcome `shouldBe` Right OutcomeCompleted
+      readIORef successorObservedDurablePredecessor `shouldReturn` True
+
+      liveRunTaskId <-
+        insertTestTaskDef pool "paper_portfolio_cycle" "hosted-live-resume-profile-guard"
+      liveRunId <- createTestRun pool liveRunTaskId
+      rejectedLiveResume <-
+        resumeCompiledCircuitManagedOnWithOptions
+          runOptions
+          pool
+          testPulseConfig
+          liveRunId
+          wireSmokePulseConfig
+          binder
+          compiled
+      rejectedLiveResume `shouldSatisfy` \case
+        Left CircuitRunResumeRejected {} -> True
+        _other -> False
+      runSession pool (Q.readRunExecutionProfile liveRunId) `shouldReturn` Nothing
+
+      failedStageTaskId <-
+        insertTestTaskDef pool "paper_portfolio_cycle" "hosted-terminal-failure-persistence"
+      failedStageRunId <- createTestRun pool failedStageTaskId
+      failedStageTask <- loadTaskDef pool failedStageTaskId
+      let failingBinder =
+            committedVariantBinder $ \taskNode ->
+              let nodeId = nodeIdFromCircuitRef taskNode.circuitTaskNodeRef
+               in Right . taskStage nodeId SafeToReplay $ \_ ->
+                    pure (StageFail "hosted_test_failure" "hosted effect failed")
+      failedStageOutcome <-
+        runCompiledCircuitWithOptions
+          runOptions
+          taskContext
+          failedStageRunId
+          failedStageTask
+          wireSmokePulseConfig
+          failingBinder
+          compiled
+      failedStageOutcome `shouldBe` Right OutcomeFailed
+      failedStageView <- runSession pool (Q.getRunAdminView failedStageRunId)
+      fmap Q.pravStatus failedStageView `shouldBe` Just "failed"
+
+      failureTaskId <-
+        insertTestTaskDef pool "paper_portfolio_cycle" "hosted-initial-checkpoint-failure"
+      failureRunId <- createTestRun pool failureTaskId
+      failureTask <- loadTaskDef pool failureTaskId
+      writeIORef effectCount 0
+      failed <-
+        withInjectedGraphStateWriteFailure pool failureRunId 1 $
+          runCompiledCircuitWithOptions
+            runOptions
+            taskContext
+            failureRunId
+            failureTask
+            wireSmokePulseConfig
+            binder
+            compiled
+      failed `shouldBe` Right OutcomeFailed
+      readIORef effectCount `shouldReturn` 0
+      runSession pool (Q.readGraphState failureRunId) `shouldReturn` Nothing
+      runSession pool (Q.readRunExecutionProfile failureRunId)
+        `shouldReturn` Just
+          Q.RunExecutionProfile
+            { Q.repExecutionBackend = "hosted_x86_64_linux_v1"
+            , Q.repProgramIdentity = manifest.hpmProgramIdentity
+            , Q.repArtifactDigest = Just manifest.hpmExecutableSha256
+            , Q.repProtocolVersion = Just hostedProcessProtocol
+            }
+
     it "provisions idempotently and runs a committed-variant select end-to-end via the managed facade" $ \_ -> do
       mHost <- lookupEnv "PGHOST"
       case mHost of
@@ -1370,7 +1600,7 @@ spec = beforeAll setupTestDb $ do
           readRunLineage (tcPool ctx) predecessorId `shouldReturn` (Nothing, "manual")
           successor <-
             runCompiledCircuitManagedWithOptions
-              ManagedRunOptions {mroParentRunId = Just predecessorId}
+              defaultManagedRunOptions {mroParentRunId = Just predecessorId}
               (tcConfig ctx)
               workflowKey
               selectVariantPulseConfig
@@ -1404,7 +1634,7 @@ spec = beforeAll setupTestDb $ do
               missingParent = UUID.fromWords 0xdead 0xbeef 0xdead 0xbeef
           result <-
             runCompiledCircuitManagedWithOptions
-              ManagedRunOptions {mroParentRunId = Just missingParent}
+              defaultManagedRunOptions {mroParentRunId = Just missingParent}
               (tcConfig ctx)
               workflowKey
               selectVariantPulseConfig
@@ -2033,6 +2263,35 @@ spec = beforeAll setupTestDb $ do
         Right attemptId ->
           expectationFailure $
             "Expected attempt_number constraint failure, got attempt_id " <> show attemptId
+
+    it "freezes a compiled-run execution profile exactly once" $ \mPool -> withDb mPool $ \pool -> do
+      taskId <- insertTestTaskDef pool "paper_portfolio_cycle" "test-execution-profile-freeze"
+      runId <- createTestRun pool taskId
+      let graphProfile =
+            Q.RunExecutionProfile
+              { Q.repExecutionBackend = "pulse_graph_runtime_v1"
+              , Q.repProgramIdentity = "program-alpha"
+              , Q.repArtifactDigest = Nothing
+              , Q.repProtocolVersion = Nothing
+              }
+          hostedProfile =
+            Q.RunExecutionProfile
+              { Q.repExecutionBackend = "hosted_x86_64_linux_v1"
+              , Q.repProgramIdentity = "program-alpha"
+              , Q.repArtifactDigest = Just (T.replicate 64 "a")
+              , Q.repProtocolVersion = Just "cortex.wire.host-process/v1"
+              }
+          missingRunId = UUID.fromWords 0xfeed 0xcafe 0xfeed 0xcafe
+      runSession pool (Q.readRunExecutionProfile runId) `shouldReturn` Nothing
+      runTx pool (Q.freezeRunExecutionProfile runId graphProfile)
+        `shouldReturn` Q.RunExecutionProfileFrozen
+      runTx pool (Q.freezeRunExecutionProfile runId graphProfile)
+        `shouldReturn` Q.RunExecutionProfileFrozen
+      runTx pool (Q.freezeRunExecutionProfile runId hostedProfile)
+        `shouldReturn` Q.RunExecutionProfileMismatch graphProfile
+      runSession pool (Q.readRunExecutionProfile runId) `shouldReturn` Just graphProfile
+      runTx pool (Q.freezeRunExecutionProfile missingRunId graphProfile)
+        `shouldReturn` Q.RunExecutionProfileRunMissing
 
     it "executes all stages for a fresh run (stub actions)" $ \mPool -> withDb mPool $ \pool -> do
       (_, taskContext) <- mkTaskContext pool
@@ -4794,6 +5053,7 @@ spec = beforeAll setupTestDb $ do
               , gswAppliedRewriteId = Nothing
               , gswNodeProvenance = Just (Aeson.toJSON (initialProvenance stagePlan.spTopology))
               , gswTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , gswHostedCheckpointSequence = Nothing
               , gswUpdatedAt = unGraphStateRevision revision
               , gswExpectedRevision = Just snapshot0.pgssRevision
               }
@@ -4836,6 +5096,7 @@ spec = beforeAll setupTestDb $ do
               , gswAppliedRewriteId = Nothing
               , gswNodeProvenance = Just (Aeson.toJSON (initialProvenance stagePlan.spTopology))
               , gswTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , gswHostedCheckpointSequence = Nothing
               , gswUpdatedAt = unGraphStateRevision winnerRevision
               , gswExpectedRevision = Just snapshot0.pgssRevision
               }
@@ -4846,6 +5107,7 @@ spec = beforeAll setupTestDb $ do
               , pgsAppliedRewriteId = Nothing
               , pgsNodeProvenance = initialProvenance stagePlan.spTopology
               , pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , pgsHostedCheckpointSequence = Nothing
               , pgsRevision = Just snapshot0.pgssRevision
               }
       winnerResult <- runTx pool $ Q.writeGraphState winnerWrite

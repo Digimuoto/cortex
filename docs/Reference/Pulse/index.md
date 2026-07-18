@@ -25,6 +25,8 @@ Consultable normative material for the Pulse runtime. Architectural framing live
 - **[host-actions.md](host-actions.md)** — outbound contract for Pulse → host callouts.
 - **[signals.md](signals.md)** — signal protocol, state machine, producer and consumer semantics.
 - **[events.md](events.md)** — run-event catalog: lifecycle, stage, and rewrite events.
+- **[../Wire/hosted-execution.md](../Wire/hosted-execution.md)** — generated circuit-engine protocol
+  and Pulse's opt-in hosted whole-run backend.
 
 ## Related
 

@@ -77,9 +77,10 @@ field maps constructed outside the parser.
 ## Evaluation Boundary
 
 Wire type-checking admits graph values with open boundaries. Runtime preparation is stricter:
-required input boundaries must be supplied before Pulse evaluates the circuit.
+required input boundaries must be supplied before a runtime backend evaluates the circuit.
 
-Pulse evaluates materialized nodes only after the compiler and binding layer have established:
+Pulse or another runtime host evaluates materialized nodes only after the compiler and binding layer
+have established:
 
 - executor identity;
 - validated config;

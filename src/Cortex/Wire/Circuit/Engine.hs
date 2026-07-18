@@ -19,6 +19,10 @@ module Cortex.Wire.Circuit.Engine
   , HostedProgramArtifact
   , HostedProgramManifest (..)
   , HostedProgramError (..)
+  , CircuitExecutionBackend (..)
+  , circuitExecutionBackendTag
+  , CircuitRunOptions (..)
+  , defaultCircuitRunOptions
   , loadHostedProgramArtifact
   , hostedProgramExecutable
   , hostedProgramManifest
@@ -127,6 +131,27 @@ data HostedProgramArtifact = HostedProgramArtifact
   , hostedProgramManifest :: !HostedProgramManifest
   }
   deriving stock (Eq, Show)
+
+-- | Whole-run execution backend selected for one compiled Circuit run.
+data CircuitExecutionBackend
+  = PulseGraphRuntimeV1
+  | HostedX86_64LinuxV1 !HostedProgramArtifact
+  deriving stock (Eq, Show)
+
+-- | Stable database/manifest tag for the selected whole-run backend.
+circuitExecutionBackendTag :: CircuitExecutionBackend -> Text
+circuitExecutionBackendTag = \case
+  PulseGraphRuntimeV1 -> "pulse_graph_runtime_v1"
+  HostedX86_64LinuxV1 _artifact -> "hosted_x86_64_linux_v1"
+
+-- | Per-run execution options. The graph-native Pulse runtime remains the default.
+newtype CircuitRunOptions = CircuitRunOptions
+  { croExecutionBackend :: CircuitExecutionBackend
+  }
+  deriving stock (Eq, Show)
+
+defaultCircuitRunOptions :: CircuitRunOptions
+defaultCircuitRunOptions = CircuitRunOptions {croExecutionBackend = PulseGraphRuntimeV1}
 
 data HostedProgramError
   = HostedManifestMissing !FilePath

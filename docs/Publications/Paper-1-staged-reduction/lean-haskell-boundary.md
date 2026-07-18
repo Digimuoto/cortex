@@ -1,10 +1,10 @@
 ---
 title: "Paper 1 — Lean-Haskell Pulse Boundary"
 description:
-  "Companion artifact note for the Staged Reduction paper: what the Lean Pulse kernel models, what
-  the Haskell runtime must establish, and where assumptions remain."
+  "Companion artifact note for the Staged Reduction paper: what the Lean circuit-engine kernel
+  models, what the Pulse host must establish, and where assumptions remain."
 date: 2026-04-28
-updated: 2026-04-28
+updated: 2026-07-18
 status: draft
 related:
   - docs/Publications/Paper-1-staged-reduction/manuscript.md
@@ -14,9 +14,10 @@ related:
 
 # Paper 1 — Lean-Haskell Pulse Boundary
 
-This note states the boundary between the fixed-topology Pulse kernel mechanized in Lean and the
-live Haskell Pulse runtime. It is the artifact note for the Staged Reduction manuscript's
-implementation claim.
+This note states the boundary between the target-independent fixed-topology circuit-engine kernel
+mechanized in Lean and the live Haskell Pulse runtime host. It is the artifact note for the Staged
+Reduction manuscript's implementation claim. Pulse is one durable host of this kernel, not the
+exclusive definition of its scheduling semantics.
 
 ## Boundary Summary
 

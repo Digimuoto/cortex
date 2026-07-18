@@ -40,7 +40,7 @@ static void write_json_string(const char *value) {
     } else if (current == '\t') {
       fputs("\\t", stdout);
     } else if (current < 32u) {
-      fputs("\\u001f", stdout);
+      fprintf(stdout, "\\u%04x", (unsigned int)current);
     } else {
       fputc((int)current, stdout);
     }
@@ -82,6 +82,72 @@ static const char *find_value(const char *line, const char *key) {
   return cursor;
 }
 
+static int hex_digit(unsigned char value, uint32_t *digit) {
+  if (value >= '0' && value <= '9') {
+    *digit = (uint32_t)(value - '0');
+    return 1;
+  }
+  if (value >= 'a' && value <= 'f') {
+    *digit = (uint32_t)(value - 'a') + 10u;
+    return 1;
+  }
+  if (value >= 'A' && value <= 'F') {
+    *digit = (uint32_t)(value - 'A') + 10u;
+    return 1;
+  }
+  return 0;
+}
+
+static int parse_hex_quad(const char *cursor, uint32_t *value) {
+  size_t index;
+  uint32_t parsed = 0u;
+  for (index = 0u; index < 4u; ++index) {
+    uint32_t digit;
+    if (!hex_digit((unsigned char)cursor[index], &digit)) { return 0; }
+    parsed = (parsed << 4u) | digit;
+  }
+  *value = parsed;
+  return 1;
+}
+
+static int append_codepoint(
+    uint32_t codepoint,
+    char *output,
+    size_t capacity,
+    size_t *length) {
+  unsigned char encoded[4];
+  size_t count;
+  size_t index;
+  if (codepoint <= 0x7fu) {
+    encoded[0] = (unsigned char)codepoint;
+    count = 1u;
+  } else if (codepoint <= 0x7ffu) {
+    encoded[0] = (unsigned char)(0xc0u | (codepoint >> 6u));
+    encoded[1] = (unsigned char)(0x80u | (codepoint & 0x3fu));
+    count = 2u;
+  } else if (codepoint <= 0xffffu) {
+    if (codepoint >= 0xd800u && codepoint <= 0xdfffu) { return 0; }
+    encoded[0] = (unsigned char)(0xe0u | (codepoint >> 12u));
+    encoded[1] = (unsigned char)(0x80u | ((codepoint >> 6u) & 0x3fu));
+    encoded[2] = (unsigned char)(0x80u | (codepoint & 0x3fu));
+    count = 3u;
+  } else if (codepoint <= 0x10ffffu) {
+    encoded[0] = (unsigned char)(0xf0u | (codepoint >> 18u));
+    encoded[1] = (unsigned char)(0x80u | ((codepoint >> 12u) & 0x3fu));
+    encoded[2] = (unsigned char)(0x80u | ((codepoint >> 6u) & 0x3fu));
+    encoded[3] = (unsigned char)(0x80u | (codepoint & 0x3fu));
+    count = 4u;
+  } else {
+    return 0;
+  }
+  if (*length + count >= capacity) { return 0; }
+  for (index = 0u; index < count; ++index) {
+    output[*length + index] = (char)encoded[index];
+  }
+  *length += count;
+  return 1;
+}
+
 static int parse_string(
     const char *line,
     const char *key,
@@ -93,14 +159,163 @@ static int parse_string(
   ++cursor;
   while (*cursor != 0 && *cursor != '"') {
     unsigned char current = (unsigned char)*cursor;
-    if (current == '\\' || current < 32u || length + 1u >= capacity) { return 0; }
-    output[length] = (char)current;
-    ++length;
-    ++cursor;
+    if (current < 32u) { return 0; }
+    if (current != '\\') {
+      if (length + 1u >= capacity) { return 0; }
+      output[length++] = (char)current;
+      ++cursor;
+    } else {
+      uint32_t codepoint;
+      ++cursor;
+      switch (*cursor) {
+        case '"': codepoint = '"'; ++cursor; break;
+        case '\\': codepoint = '\\'; ++cursor; break;
+        case '/': codepoint = '/'; ++cursor; break;
+        case 'b': codepoint = '\b'; ++cursor; break;
+        case 'f': codepoint = '\f'; ++cursor; break;
+        case 'n': codepoint = '\n'; ++cursor; break;
+        case 'r': codepoint = '\r'; ++cursor; break;
+        case 't': codepoint = '\t'; ++cursor; break;
+        case 'u': {
+          uint32_t high;
+          ++cursor;
+          if (!parse_hex_quad(cursor, &high)) { return 0; }
+          cursor += 4;
+          if (high >= 0xd800u && high <= 0xdbffu) {
+            uint32_t low;
+            if (cursor[0] != '\\' || cursor[1] != 'u' ||
+                !parse_hex_quad(cursor + 2, &low) ||
+                low < 0xdc00u || low > 0xdfffu) {
+              return 0;
+            }
+            cursor += 6;
+            codepoint = 0x10000u + ((high - 0xd800u) << 10u) + (low - 0xdc00u);
+          } else if (high >= 0xdc00u && high <= 0xdfffu) {
+            return 0;
+          } else {
+            codepoint = high;
+          }
+          break;
+        }
+        default: return 0;
+      }
+      if (!append_codepoint(codepoint, output, capacity, &length)) { return 0; }
+    }
   }
   if (*cursor != '"') { return 0; }
   output[length] = '\0';
   return 1;
+}
+
+static void skip_json_whitespace(const char **cursor) {
+  while (isspace((unsigned char)**cursor) != 0) { ++*cursor; }
+}
+
+static int validate_json_string_cursor(const char **cursor) {
+  if (**cursor != '"') { return 0; }
+  ++*cursor;
+  while (**cursor != 0 && **cursor != '"') {
+    unsigned char current = (unsigned char)**cursor;
+    if (current < 32u) { return 0; }
+    if (current != '\\') {
+      ++*cursor;
+    } else {
+      ++*cursor;
+      if (**cursor == 'u') {
+        uint32_t high;
+        ++*cursor;
+        if (!parse_hex_quad(*cursor, &high)) { return 0; }
+        *cursor += 4;
+        if (high >= 0xd800u && high <= 0xdbffu) {
+          uint32_t low;
+          if ((*cursor)[0] != '\\' || (*cursor)[1] != 'u' ||
+              !parse_hex_quad(*cursor + 2, &low) ||
+              low < 0xdc00u || low > 0xdfffu) {
+            return 0;
+          }
+          *cursor += 6;
+        } else if (high >= 0xdc00u && high <= 0xdfffu) {
+          return 0;
+        }
+      } else if (strchr("\"\\/bfnrt", **cursor) != NULL) {
+        ++*cursor;
+      } else {
+        return 0;
+      }
+    }
+  }
+  if (**cursor != '"') { return 0; }
+  ++*cursor;
+  return 1;
+}
+
+static int validate_json_value(const char **cursor, unsigned int depth);
+
+static int validate_json_object_cursor(const char **cursor, unsigned int depth) {
+  if (**cursor != '{' || depth >= 4u) { return 0; }
+  ++*cursor;
+  skip_json_whitespace(cursor);
+  if (**cursor == '}') {
+    ++*cursor;
+    return 1;
+  }
+  for (;;) {
+    if (!validate_json_string_cursor(cursor)) { return 0; }
+    skip_json_whitespace(cursor);
+    if (**cursor != ':') { return 0; }
+    ++*cursor;
+    if (!validate_json_value(cursor, depth + 1u)) { return 0; }
+    skip_json_whitespace(cursor);
+    if (**cursor == '}') {
+      ++*cursor;
+      return 1;
+    }
+    if (**cursor != ',') { return 0; }
+    ++*cursor;
+    skip_json_whitespace(cursor);
+  }
+}
+
+static int validate_json_value(const char **cursor, unsigned int depth) {
+  skip_json_whitespace(cursor);
+  if (**cursor == '"') { return validate_json_string_cursor(cursor); }
+  if (strncmp(*cursor, "null", 4u) == 0) {
+    *cursor += 4;
+    return 1;
+  }
+  if (isdigit((unsigned char)**cursor) != 0) {
+    if (**cursor == '0' && isdigit((unsigned char)(*cursor)[1]) != 0) { return 0; }
+    while (isdigit((unsigned char)**cursor) != 0) { ++*cursor; }
+    return 1;
+  }
+  if (**cursor == '{') { return validate_json_object_cursor(cursor, depth); }
+  if (**cursor == '[' && depth < 4u) {
+    ++*cursor;
+    skip_json_whitespace(cursor);
+    if (**cursor == ']') {
+      ++*cursor;
+      return 1;
+    }
+    for (;;) {
+      if (!validate_json_value(cursor, depth + 1u)) { return 0; }
+      skip_json_whitespace(cursor);
+      if (**cursor == ']') {
+        ++*cursor;
+        return 1;
+      }
+      if (**cursor != ',') { return 0; }
+      ++*cursor;
+    }
+  }
+  return 0;
+}
+
+static int validate_json_object(const char *line) {
+  const char *cursor = line;
+  skip_json_whitespace(&cursor);
+  if (!validate_json_object_cursor(&cursor, 0u)) { return 0; }
+  skip_json_whitespace(&cursor);
+  return *cursor == 0;
 }
 
 static int parse_u64_value(const char *cursor, uint64_t *output, const char **end) {
@@ -445,7 +660,9 @@ static int dispatch_command(
     const char *line,
     cortex_wire_engine_v1_host_api *api) {
   char type[48];
-  if (!require_protocol(line) || !parse_string(line, "type", type, sizeof(type))) {
+  if (!validate_json_object(line) ||
+      !require_protocol(line) ||
+      !parse_string(line, "type", type, sizeof(type))) {
     return fail_protocol("malformed or version-mismatched host command");
   }
   if (strcmp(type, "start") == 0) { return begin_fresh(line, api); }

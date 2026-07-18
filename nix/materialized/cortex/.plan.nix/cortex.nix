@@ -118,6 +118,7 @@
           "Cortex/Pulse/Attempt"
           "Cortex/Pulse/Checkpoint"
           "Cortex/Pulse/Circuit"
+          "Cortex/Pulse/Circuit/Hosted"
           "Cortex/Pulse/Database"
           "Cortex/Pulse/Event"
           "Cortex/Pulse/Executor"
@@ -436,6 +437,17 @@
           ];
           buildable = true;
           hsSourceDirs = [ "bench/pure-wire" ];
+        };
+        "hosted-protocol-bench" = {
+          depends = [
+            (hsPkgs."base" or (errorHandler.buildDepError "base"))
+            (hsPkgs."cortex" or (errorHandler.buildDepError "cortex"))
+            (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
+            (hsPkgs."criterion" or (errorHandler.buildDepError "criterion"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
+          ];
+          buildable = true;
+          hsSourceDirs = [ "bench/hosted-protocol" ];
         };
       };
     };

@@ -80,6 +80,15 @@ just bench-pure-wire -- -n 1 -L 1 --match prefix weighted-score
 just bench-pure-wire -- --list
 ```
 
+`just bench-hosted-protocol` runs the separate opt-in Criterion suite for the hosted Circuit JSONL
+boundary. It covers host-command encoding, engine-event round trips, restore snapshots, and a batch
+of checkpoint events. The suite records protocol overhead without imposing a timing threshold:
+
+```sh
+just bench-hosted-protocol
+just bench-hosted-protocol -- --list
+```
+
 ## Documentation
 
 | Command                                        | Purpose                                 |

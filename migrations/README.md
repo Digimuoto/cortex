@@ -26,3 +26,4 @@ psql -v ON_ERROR_STOP=1 -f migrations/0001_graph_rewrites_admission_mode.sql
 | `0002_external_call_attempts.sql`                 | `pulse.external_call_attempts` table, key index, run FK, `failure_reason` | ADR 0059 §3 durable submit/park/resume external-call stages |
 | `0003_graph_rewrites_admission_mode_external.sql` | `'external'` in the `admission_mode` CHECK                                | ADR 0088 externally-driven step admission                   |
 | `0004_pulse_artifacts.sql`                        | `pulse.artifacts` + `pulse.artifact_provenance` tables, index, FKs        | ADR 0089 content-addressed run artifact store               |
+| `0005_circuit_execution_profile.sql`              | Frozen Circuit backend identity + hosted checkpoint sequence              | ADR 0092–0094 hosted Circuit execution                      |

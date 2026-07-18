@@ -195,5 +195,17 @@ isDigestMismatch = \case
 isNodeMapInvalid :: Either HostedProgramError HostedProgramArtifact -> Bool
 isNodeMapInvalid = \case
   Left HostedNodeMapInvalid {} -> True
-  Left _other -> False
+  Left HostedManifestMissing {} -> False
+  Left HostedManifestReadFailed {} -> False
+  Left HostedManifestDecodeFailed {} -> False
+  Left HostedManifestSchemaMismatch {} -> False
+  Left HostedTargetMismatch {} -> False
+  Left HostedTargetTripleMismatch {} -> False
+  Left HostedProtocolMismatch {} -> False
+  Left HostedStateSchemaMismatch {} -> False
+  Left HostedEngineAbiMismatch {} -> False
+  Left HostedExecutableMissing {} -> False
+  Left HostedExecutablePathInvalid {} -> False
+  Left HostedExecutableReadFailed {} -> False
+  Left HostedExecutableDigestMismatch {} -> False
   Right _artifact -> False

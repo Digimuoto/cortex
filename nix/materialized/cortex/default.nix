@@ -690,6 +690,7 @@
           "cortex".components.library.planned = lib.mkOverride 900 true;
           "OneTuple".components.library.planned = lib.mkOverride 900 true;
           "resource-pool".components.library.planned = lib.mkOverride 900 true;
+          "cortex".components.benchmarks."hosted-protocol-bench".planned = lib.mkOverride 900 true;
           "witherable".components.library.planned = lib.mkOverride 900 true;
           "happy".components.exes."happy".planned = lib.mkOverride 900 true;
           "http-semantics".components.library.planned = lib.mkOverride 900 true;

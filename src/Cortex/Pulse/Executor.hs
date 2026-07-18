@@ -146,6 +146,7 @@ executeStagePlan taskContext runId task stagePlan = do
               , pgsAppliedRewriteId = Nothing
               , pgsNodeProvenance = initialProvenance stagePlan.spTopology
               , pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+              , pgsHostedCheckpointSequence = Nothing
               , pgsRevision = Nothing
               }
       gsVar <- newTVarIO initialPersistedState

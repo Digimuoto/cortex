@@ -33,6 +33,12 @@ bench-pure-wire *ARGS:
     @echo "📈 Running pure Wire benchmarks..."
     nix run .#pure-wire-bench {{ ARGS }}
 
+# Run opt-in Criterion benchmarks for hosted Circuit JSONL protocol overhead.
+# Informational only: this target deliberately has no timing threshold.
+bench-hosted-protocol *ARGS:
+    @echo "📈 Running hosted Circuit protocol benchmarks..."
+    nix run .#hosted-protocol-bench {{ ARGS }}
+
 # Run the cortex-test suite (hspec-discover)
 # Differential parse: megaparsec vs tree-sitter over the Wire corpus
 wire-grammar-diff:
@@ -200,6 +206,12 @@ tla-check:
 test-db *ARGS:
     @echo "🧪 Running tests against an ephemeral Pulse test database..."
     nix shell nixpkgs#postgresql -c scripts/with-test-db.sh nix run .#cortex-tests -- {{ ARGS }}
+
+# Verify that the curated full schema is unchanged by replaying every migration
+# and that its recorded migration head is current.
+schema-drift-check:
+    @echo "🗄️  Checking Pulse schema dump against migrations..."
+    nix build .#pulse-schema-drift
 
 # Build and run the smoke executable
 lean-run: lean-build

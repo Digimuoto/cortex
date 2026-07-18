@@ -28,9 +28,15 @@ rather than executed partially. With the current compiler this never fires; it
 guards the public entrypoint against future deferred forms.
 -}
 module Cortex.Pulse.Circuit
-  ( CircuitRunError (..)
+  ( CircuitExecutionBackend (..)
+  , CircuitRunOptions (..)
+  , defaultCircuitRunOptions
+  , HostedProgramArtifact
+  , CircuitRunError (..)
   , runCompiledCircuit
+  , runCompiledCircuitWithOptions
   , resumeCompiledCircuit
+  , resumeCompiledCircuitWithOptions
   , runCompiledCircuitManaged
   , runCompiledCircuitManagedOn
   , runCompiledCircuitManagedWithOptions
@@ -38,7 +44,9 @@ module Cortex.Pulse.Circuit
   , ManagedRunOptions (..)
   , defaultManagedRunOptions
   , resumeCompiledCircuitManaged
+  , resumeCompiledCircuitManagedWithOptions
   , resumeCompiledCircuitManagedOn
+  , resumeCompiledCircuitManagedOnWithOptions
   , lowerRunnableCircuit
   , ensureRunnable
   , committedVariantBinder
@@ -74,6 +82,8 @@ import Data.UUID.V4 qualified as UUIDv4
 import Hasql.Pool qualified as HP
 import Rel8 (Result)
 
+import Cortex.Algebra.Graph (edges, toRelation, vertices)
+import Cortex.Pulse.Circuit.Hosted (executeHostedCircuit, resumeHostedCircuit)
 import Cortex.Pulse.Database
   ( ConnectionConfig (..)
   , Pool
@@ -83,10 +93,11 @@ import Cortex.Pulse.Database
   )
 import Cortex.Pulse.Executor (TaskContext (..), executeStagePlan, resumeStagePlan)
 import Cortex.Pulse.Executor.Persistence (failRun)
-import Cortex.Pulse.Node (NodeId)
+import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
   ( SomeStagePlan (..)
   , StageLatentCondition (..)
+  , StagePlan (..)
   , StageReplaySafety (..)
   , slbNestedConditions
   , slbNodes
@@ -96,16 +107,34 @@ import Cortex.Pulse.Plan
 import Cortex.Pulse.Query
   ( ManagedResumeClaim (..)
   , PulseTaskDefinitionInsert (..)
-  , claimAndCreateRunWithParent
+  , RunExecutionProfile (..)
+  , RunExecutionProfileFreezeResult (..)
+  , claimAndCreateRunWithParentAndProfile
   , claimManagedRunForResume
   , createTaskDefinition
+  , freezeRunExecutionProfile
   , getTaskById
   , getTaskForRun
+  , readRunExecutionProfile
   )
 import Cortex.Pulse.Scheduler (withLeaseRenewal)
 import Cortex.Pulse.Schema (PulseTaskDefinitionRow)
 import Cortex.Pulse.Types (PulseConfig (..))
-import Cortex.Wire.Circuit.Artifact (CompiledCircuit)
+import Cortex.Wire.Circuit.Artifact
+  ( CircuitCompatibilityWitness (..)
+  , CompiledCircuit (..)
+  )
+import Cortex.Wire.Circuit.Engine
+  ( CircuitExecutionBackend (..)
+  , CircuitRunOptions (..)
+  , HostedProgramArtifact
+  , HostedProgramManifest (..)
+  , circuitExecutionBackendTag
+  , defaultCircuitRunOptions
+  , hostedProcessProtocol
+  , hostedProgramManifest
+  )
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 import Cortex.Wire.Circuit.Lowering
   ( CircuitLoweringError
   , CircuitPulseBinder
@@ -115,6 +144,13 @@ import Cortex.Wire.Circuit.Lowering
   , committedVariantBinderWith
   , lowerCompiledCircuitToSomeStagePlan
   , signalStage
+  )
+import Cortex.Wire.StaticProgram
+  ( StaticProgram (..)
+  , StaticProgramEdge (..)
+  , StaticProgramNode (..)
+  , lowerCompiledCircuitToStaticProgram
+  , renderStaticProgramError
   )
 
 import Platform.DurableTask.Types
@@ -149,7 +185,20 @@ data CircuitRunError
     CircuitRunResumeRejected Text
   | -- | Circuit execution raised an exception after a durable run was claimed.
     CircuitRunExecutionError Text
+  | -- | The Circuit is outside the hosted fixed-topology effect-only profile.
+    CircuitRunHostedEligibilityError Text
+  | -- | The caller-supplied artifact disagrees with the lowered Circuit.
+    CircuitRunHostedArtifactMismatch Text
+  | -- | The run has already frozen a different execution profile.
+    CircuitRunExecutionProfileMismatch Text
   deriving stock (Eq, Show)
+
+data PreparedCircuitExecution = PreparedCircuitExecution
+  { pcePlan :: !SomeStagePlan
+  , pceStaticProgram :: !(Maybe StaticProgram)
+  , pceOptions :: !CircuitRunOptions
+  , pceProfile :: !RunExecutionProfile
+  }
 
 {- | Reject a lowered plan this entrypoint cannot execute.
 
@@ -192,6 +241,95 @@ lowerRunnableCircuit pulseConfig binder compiledCircuit =
     (lowerCompiledCircuitToSomeStagePlan pulseConfig binder compiledCircuit)
     >>= ensureRunnable
 
+prepareCircuitExecution
+  :: CircuitRunOptions
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> Either CircuitRunError PreparedCircuitExecution
+prepareCircuitExecution options pulseConfig binder compiledCircuit = do
+  plan <- lowerRunnableCircuit pulseConfig binder compiledCircuit
+  case options.croExecutionBackend of
+    PulseGraphRuntimeV1 ->
+      Right
+        PreparedCircuitExecution
+          { pcePlan = plan
+          , pceStaticProgram = Nothing
+          , pceOptions = options
+          , pceProfile =
+              RunExecutionProfile
+                { repExecutionBackend = circuitExecutionBackendTag PulseGraphRuntimeV1
+                , repProgramIdentity = compiledProgramIdentity compiledCircuit
+                , repArtifactDigest = Nothing
+                , repProtocolVersion = Nothing
+                }
+          }
+    HostedX86_64LinuxV1 artifact -> do
+      staticProgram <-
+        first
+          (CircuitRunHostedEligibilityError . renderStaticProgramError)
+          (lowerCompiledCircuitToStaticProgram compiledCircuit)
+      validateHostedAgreement plan staticProgram artifact
+      let manifest = hostedProgramManifest artifact
+      Right
+        PreparedCircuitExecution
+          { pcePlan = plan
+          , pceStaticProgram = Just staticProgram
+          , pceOptions = options
+          , pceProfile =
+              RunExecutionProfile
+                { repExecutionBackend = circuitExecutionBackendTag (HostedX86_64LinuxV1 artifact)
+                , repProgramIdentity = staticProgram.staticProgramIdentity
+                , repArtifactDigest = Just manifest.hpmExecutableSha256
+                , repProtocolVersion = Just hostedProcessProtocol
+                }
+          }
+
+compiledProgramIdentity :: CompiledCircuit -> Text
+compiledProgramIdentity compiledCircuit =
+  compiledCircuit.compiledCircuitCompatibility.circuitCompatibilityDigest
+
+validateHostedAgreement
+  :: SomeStagePlan
+  -> StaticProgram
+  -> HostedProgramArtifact
+  -> Either CircuitRunError ()
+validateHostedAgreement (SomeStagePlan stagePlan _latentConditions) staticProgram artifact = do
+  let manifest = hostedProgramManifest artifact
+      denseNodes =
+        Map.fromList
+          [ (node.staticProgramNodeId, NodeId node.staticProgramNodeRef.unCircuitNodeRef)
+          | node <- staticProgram.staticProgramNodes
+          ]
+      expectedExecutors =
+        Map.fromList
+          [ (node.staticProgramNodeId, node.staticProgramNodeExecutor)
+          | node <- staticProgram.staticProgramNodes
+          ]
+      expectedTopology =
+        toRelation $
+          vertices (Map.elems denseNodes)
+            <> edges
+              [ (source, target)
+              | edge <- staticProgram.staticProgramEdges
+              , Just source <- [Map.lookup edge.staticProgramEdgeFrom denseNodes]
+              , Just target <- [Map.lookup edge.staticProgramEdgeTo denseNodes]
+              ]
+  if manifest.hpmProgramIdentity /= staticProgram.staticProgramIdentity
+    then
+      Left
+        (CircuitRunHostedArtifactMismatch "artifact program identity does not match the admitted Circuit")
+    else
+      if manifest.hpmNodeExecutors /= expectedExecutors
+        then
+          Left (CircuitRunHostedArtifactMismatch "artifact executor map does not match the admitted Circuit")
+        else
+          if stagePlan.spTopology /= expectedTopology
+            then
+              Left
+                (CircuitRunHostedArtifactMismatch "Pulse plan topology does not match the static Circuit program")
+            else Right ()
+
 {- | Lower and execute a compiled Wire circuit as a fresh durable run, dispatching
 @select(...)@ on committed variant labels. Returns 'Left' if lowering fails or the
 plan carries an unsupported latent form; otherwise the executor 'RunOutcome'.
@@ -204,11 +342,25 @@ runCompiledCircuit
   -> CircuitPulseBinder
   -> CompiledCircuit
   -> IO (Either CircuitRunError RunOutcome)
-runCompiledCircuit taskContext runId task pulseConfig binder compiledCircuit =
-  case lowerRunnableCircuit pulseConfig binder compiledCircuit of
+runCompiledCircuit = runCompiledCircuitWithOptions defaultCircuitRunOptions
+
+runCompiledCircuitWithOptions
+  :: CircuitRunOptions
+  -> TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError RunOutcome)
+runCompiledCircuitWithOptions options taskContext runId task pulseConfig binder compiledCircuit =
+  case prepareCircuitExecution options pulseConfig binder compiledCircuit of
     Left err -> pure (Left err)
-    Right (SomeStagePlan stagePlan _latentConditions) ->
-      Right <$> executeStagePlan taskContext runId task stagePlan
+    Right prepared -> do
+      frozen <- freezeExecutionProfile taskContext.tcPool runId prepared.pceProfile
+      case frozen of
+        Left err -> pure (Left err)
+        Right () -> executePreparedFresh taskContext runId task prepared
 
 {- | Lower a compiled Wire circuit and resume its durable run from persisted graph
 state. Re-evaluating a committed-variant selector reads the persisted label and
@@ -222,11 +374,88 @@ resumeCompiledCircuit
   -> CircuitPulseBinder
   -> CompiledCircuit
   -> IO (Either CircuitRunError RunOutcome)
-resumeCompiledCircuit taskContext runId task pulseConfig binder compiledCircuit =
-  case lowerRunnableCircuit pulseConfig binder compiledCircuit of
+resumeCompiledCircuit = resumeCompiledCircuitWithOptions defaultCircuitRunOptions
+
+resumeCompiledCircuitWithOptions
+  :: CircuitRunOptions
+  -> TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError RunOutcome)
+resumeCompiledCircuitWithOptions options taskContext runId task pulseConfig binder compiledCircuit =
+  case prepareCircuitExecution options pulseConfig binder compiledCircuit of
     Left err -> pure (Left err)
-    Right (SomeStagePlan stagePlan _latentConditions) ->
+    Right prepared -> do
+      frozen <- freezeExecutionProfile taskContext.tcPool runId prepared.pceProfile
+      case frozen of
+        Left err -> pure (Left err)
+        Right () -> executePreparedResume taskContext runId task prepared
+
+executePreparedFresh
+  :: TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> PreparedCircuitExecution
+  -> IO (Either CircuitRunError RunOutcome)
+executePreparedFresh taskContext runId task prepared =
+  case (prepared.pceOptions.croExecutionBackend, prepared.pceStaticProgram, prepared.pcePlan) of
+    (PulseGraphRuntimeV1, Nothing, SomeStagePlan stagePlan _latentConditions) ->
+      Right <$> executeStagePlan taskContext runId task stagePlan
+    (HostedX86_64LinuxV1 artifact, Just staticProgram, SomeStagePlan stagePlan _latentConditions) ->
+      Right <$> executeHostedCircuit taskContext runId task stagePlan staticProgram artifact
+    _invalid -> pure (Left (CircuitRunExecutionError "invalid prepared Circuit execution backend"))
+
+executePreparedResume
+  :: TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> PreparedCircuitExecution
+  -> IO (Either CircuitRunError RunOutcome)
+executePreparedResume taskContext runId task prepared =
+  case (prepared.pceOptions.croExecutionBackend, prepared.pceStaticProgram, prepared.pcePlan) of
+    (PulseGraphRuntimeV1, Nothing, SomeStagePlan stagePlan _latentConditions) ->
       Right <$> resumeStagePlan taskContext runId task stagePlan
+    (HostedX86_64LinuxV1 artifact, Just staticProgram, SomeStagePlan stagePlan _latentConditions) ->
+      Right <$> resumeHostedCircuit taskContext runId task stagePlan staticProgram artifact
+    _invalid -> pure (Left (CircuitRunExecutionError "invalid prepared Circuit execution backend"))
+
+executePreparedOutcome
+  :: ( TaskContext
+       -> UUID
+       -> PulseTaskDefinitionRow Result
+       -> PreparedCircuitExecution
+       -> IO (Either CircuitRunError RunOutcome)
+     )
+  -> TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> PreparedCircuitExecution
+  -> IO RunOutcome
+executePreparedOutcome execute taskContext runId task prepared = do
+  result <- execute taskContext runId task prepared
+  case result of
+    Left err -> throwIO (userError (show err))
+    Right outcome -> pure outcome
+
+freezeExecutionProfile :: Pool -> UUID -> RunExecutionProfile -> IO (Either CircuitRunError ())
+freezeExecutionProfile pool runId expected = do
+  result <- runTransaction pool (freezeRunExecutionProfile runId expected)
+  pure $ case result of
+    Left err -> setupError "freeze Circuit execution profile" err
+    Right RunExecutionProfileFrozen -> Right ()
+    Right RunExecutionProfileRunMissing -> Left (CircuitRunSetupError "freeze Circuit execution profile: run not found")
+    Right (RunExecutionProfileMismatch actual) ->
+      Left
+        ( CircuitRunExecutionProfileMismatch
+            ( "persisted profile "
+                <> T.pack (show actual)
+                <> " does not match requested profile "
+                <> T.pack (show expected)
+            )
+        )
 
 {- | Lower and execute a compiled Wire circuit as a fresh, durable, *managed* run:
 open a pool from the 'PulseConfig', create a task definition + run, execute it under a
@@ -287,14 +516,19 @@ lineage metadata only: no checkpoint inheritance, no cascade. The parent run mus
 exist; a nonexistent parent fails run setup with 'CircuitRunSetupError' (the
 @pulse.runs@ self-FK is the validation).
 -}
-newtype ManagedRunOptions = ManagedRunOptions
-  { mroParentRunId :: Maybe UUID
+data ManagedRunOptions = ManagedRunOptions
+  { mroParentRunId :: !(Maybe UUID)
+  , mroCircuitRunOptions :: !CircuitRunOptions
   }
   deriving stock (Eq, Show)
 
 -- | Options for a plain managed run: no predecessor link.
 defaultManagedRunOptions :: ManagedRunOptions
-defaultManagedRunOptions = ManagedRunOptions {mroParentRunId = Nothing}
+defaultManagedRunOptions =
+  ManagedRunOptions
+    { mroParentRunId = Nothing
+    , mroCircuitRunOptions = defaultCircuitRunOptions
+    }
 
 -- | 'runCompiledCircuitManaged' with per-run 'ManagedRunOptions'.
 runCompiledCircuitManagedWithOptions
@@ -306,11 +540,11 @@ runCompiledCircuitManagedWithOptions
   -> CompiledCircuit
   -> IO (Either CircuitRunError (UUID, RunOutcome))
 runCompiledCircuitManagedWithOptions options pulseConfig workflowKey circuitConfig binder circuit =
-  case lowerRunnableCircuit circuitConfig binder circuit of
+  case prepareCircuitExecution options.mroCircuitRunOptions circuitConfig binder circuit of
     Left err -> pure (Left err)
-    Right lowered ->
+    Right prepared ->
       withManagedPool pulseConfig $ \pool ->
-        runLoweredCompiledCircuitManagedOn options pool pulseConfig workflowKey lowered
+        runPreparedCompiledCircuitManagedOn options pool pulseConfig workflowKey prepared
 
 -- | 'runCompiledCircuitManagedOn' with per-run 'ManagedRunOptions'.
 runCompiledCircuitManagedOnWithOptions
@@ -323,27 +557,27 @@ runCompiledCircuitManagedOnWithOptions
   -> CompiledCircuit
   -> IO (Either CircuitRunError (UUID, RunOutcome))
 runCompiledCircuitManagedOnWithOptions options pool pulseConfig workflowKey circuitConfig binder circuit =
-  case lowerRunnableCircuit circuitConfig binder circuit of
+  case prepareCircuitExecution options.mroCircuitRunOptions circuitConfig binder circuit of
     Left err -> pure (Left err)
-    Right lowered ->
-      runLoweredCompiledCircuitManagedOn options pool pulseConfig workflowKey lowered
+    Right prepared ->
+      runPreparedCompiledCircuitManagedOn options pool pulseConfig workflowKey prepared
 
-runLoweredCompiledCircuitManagedOn
+runPreparedCompiledCircuitManagedOn
   :: ManagedRunOptions
   -> Pool
   -> PulseConfig
   -> Text
-  -> SomeStagePlan
+  -> PreparedCircuitExecution
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-runLoweredCompiledCircuitManagedOn options pool pulseConfig workflowKey (SomeStagePlan stagePlan _latentConditions) =
-  withManagedRun options pool pulseConfig workflowKey $ \taskContext runId task ->
+runPreparedCompiledCircuitManagedOn options pool pulseConfig workflowKey prepared =
+  withManagedRun options prepared.pceProfile pool pulseConfig workflowKey $ \taskContext runId task ->
     runManagedExecution taskContext.tcPool runId $
       withLeaseRenewal
         taskContext.tcPool
         runId
         (pulseLeaseOwner pulseConfig)
         (leaseSecondsOf pulseConfig)
-        (executeStagePlan taskContext runId task stagePlan)
+        (executePreparedOutcome executePreparedFresh taskContext runId task prepared)
 
 {- | Resume a durable, *managed* run from persisted graph state, addressed by the run
 id 'runCompiledCircuitManaged' returned. Opens a pool from the 'PulseConfig' and
@@ -363,12 +597,23 @@ resumeCompiledCircuitManaged
   -> CircuitPulseBinder
   -> CompiledCircuit
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-resumeCompiledCircuitManaged pulseConfig runId circuitConfig binder circuit =
-  case lowerRunnableCircuit circuitConfig binder circuit of
+resumeCompiledCircuitManaged =
+  resumeCompiledCircuitManagedWithOptions defaultCircuitRunOptions
+
+resumeCompiledCircuitManagedWithOptions
+  :: CircuitRunOptions
+  -> PulseConfig
+  -> UUID
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+resumeCompiledCircuitManagedWithOptions options pulseConfig runId circuitConfig binder circuit =
+  case prepareCircuitExecution options circuitConfig binder circuit of
     Left err -> pure (Left err)
-    Right lowered ->
+    Right prepared ->
       withManagedPool pulseConfig $ \pool ->
-        resumeLoweredCompiledCircuitManagedOn pool pulseConfig runId lowered
+        resumePreparedCompiledCircuitManagedOn pool pulseConfig runId prepared
 
 {- | Pool-reuse variant of 'resumeCompiledCircuitManaged'. The caller owns schema
 provisioning and pool lifetime. The resume path still atomically claims ownership
@@ -382,27 +627,39 @@ resumeCompiledCircuitManagedOn
   -> CircuitPulseBinder
   -> CompiledCircuit
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-resumeCompiledCircuitManagedOn pool pulseConfig runId circuitConfig binder circuit =
-  case lowerRunnableCircuit circuitConfig binder circuit of
-    Left err -> pure (Left err)
-    Right lowered ->
-      resumeLoweredCompiledCircuitManagedOn pool pulseConfig runId lowered
+resumeCompiledCircuitManagedOn =
+  resumeCompiledCircuitManagedOnWithOptions defaultCircuitRunOptions
 
-resumeLoweredCompiledCircuitManagedOn
+resumeCompiledCircuitManagedOnWithOptions
+  :: CircuitRunOptions
+  -> Pool
+  -> PulseConfig
+  -> UUID
+  -> CircuitPulseConfig
+  -> CircuitPulseBinder
+  -> CompiledCircuit
+  -> IO (Either CircuitRunError (UUID, RunOutcome))
+resumeCompiledCircuitManagedOnWithOptions options pool pulseConfig runId circuitConfig binder circuit =
+  case prepareCircuitExecution options circuitConfig binder circuit of
+    Left err -> pure (Left err)
+    Right prepared ->
+      resumePreparedCompiledCircuitManagedOn pool pulseConfig runId prepared
+
+resumePreparedCompiledCircuitManagedOn
   :: Pool
   -> PulseConfig
   -> UUID
-  -> SomeStagePlan
+  -> PreparedCircuitExecution
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-resumeLoweredCompiledCircuitManagedOn pool pulseConfig runId (SomeStagePlan stagePlan _latentConditions) =
-  withManagedResume pool pulseConfig runId $ \taskContext task ->
+resumePreparedCompiledCircuitManagedOn pool pulseConfig runId prepared =
+  withManagedResume prepared.pceProfile pool pulseConfig runId $ \taskContext task ->
     runManagedExecution taskContext.tcPool runId $
       withLeaseRenewal
         taskContext.tcPool
         runId
         (pulseLeaseOwner pulseConfig)
         (leaseSecondsOf pulseConfig)
-        (resumeStagePlan taskContext runId task stagePlan)
+        (executePreparedOutcome executePreparedResume taskContext runId task prepared)
 
 -- | The configured lease duration as the 'Int32' seconds the run/claim API expects.
 leaseSecondsOf :: PulseConfig -> Int32
@@ -431,12 +688,13 @@ action renews the lease under.
 -}
 withManagedRun
   :: ManagedRunOptions
+  -> RunExecutionProfile
   -> Pool
   -> PulseConfig
   -> Text
   -> (TaskContext -> UUID -> PulseTaskDefinitionRow Result -> IO (Either CircuitRunError RunOutcome))
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-withManagedRun options pool pulseConfig workflowKey run = do
+withManagedRun options executionProfile pool pulseConfig workflowKey run = do
   now <- getCurrentTime
   uniqueSuffix <- toText <$> UUIDv4.nextRandom
   let taskName = workflowKey <> "/" <> uniqueSuffix
@@ -453,13 +711,14 @@ withManagedRun options pool pulseConfig workflowKey run = do
           claimed <-
             runTransaction
               pool
-              ( claimAndCreateRunWithParent
+              ( claimAndCreateRunWithParentAndProfile
                   taskId
                   (pulseLeaseOwner pulseConfig)
                   TriggerManual
                   (mroParentRunId options)
                   now
                   (leaseSecondsOf pulseConfig)
+                  executionProfile
               )
           case claimed of
             Left err -> pure (setupError "claim run" err)
@@ -478,17 +737,26 @@ a 'TaskContext', run the action, and pair its outcome with the run id. A missing
 or a load failure becomes a 'CircuitRunSetupError' before the claim is attempted.
 -}
 withManagedResume
-  :: Pool
+  :: RunExecutionProfile
+  -> Pool
   -> PulseConfig
   -> UUID
   -> (TaskContext -> PulseTaskDefinitionRow Result -> IO (Either CircuitRunError RunOutcome))
   -> IO (Either CircuitRunError (UUID, RunOutcome))
-withManagedResume pool pulseConfig runId run = do
+withManagedResume executionProfile pool pulseConfig runId run = do
   loaded <- withConnection pool (getTaskForRun runId)
   case loaded of
     Left err -> pure (setupError "load run task" err)
     Right Nothing -> pure (Left (CircuitRunSetupError "load run task: run not found"))
     Right (Just task) -> do
+      persistedProfile <- withConnection pool (readRunExecutionProfile runId)
+      case persistedProfile of
+        Left err -> pure (setupError "read Circuit execution profile" err)
+        Right (Just actual)
+          | actual /= executionProfile -> pure (profileMismatch executionProfile actual)
+        Right _matchingOrLegacy -> claimAndResume task
+  where
+    claimAndResume task = do
       now <- getCurrentTime
       claimed <-
         runTransaction
@@ -498,16 +766,12 @@ withManagedResume pool pulseConfig runId run = do
         Left err -> pure (setupError "claim resume run" err)
         Right Nothing -> pure (Left (CircuitRunSetupError "claim resume run: run not found"))
         Right (Just claim)
-          | claim.mrcClaimed -> do
-              shutdownFlag <- newTVarIO False
-              outcome <-
-                run
-                  TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
-                  task
-              pure (fmap (runId,) outcome)
+          | claim.mrcClaimed -> withClaimedProfile task
           | otherwise ->
               case runOutcomeForStoredStatus claim.mrcStatus of
-                Just outcome -> pure (Right (runId, outcome))
+                Just outcome -> do
+                  frozen <- freezeExecutionProfile pool runId executionProfile
+                  pure (fmap (const (runId, outcome)) frozen)
                 Nothing ->
                   pure
                     ( Left
@@ -515,6 +779,29 @@ withManagedResume pool pulseConfig runId run = do
                             ("run is not resumable while status is " <> claim.mrcStatus)
                         )
                     )
+
+    withClaimedProfile task = do
+      frozen <- freezeExecutionProfile pool runId executionProfile
+      case frozen of
+        Left err -> pure (Left err)
+        Right () -> do
+          shutdownFlag <- newTVarIO False
+          outcome <-
+            run
+              TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
+              task
+          pure (fmap (runId,) outcome)
+
+profileMismatch :: RunExecutionProfile -> RunExecutionProfile -> Either CircuitRunError value
+profileMismatch expected actual =
+  Left
+    ( CircuitRunExecutionProfileMismatch
+        ( "persisted profile "
+            <> T.pack (show actual)
+            <> " does not match requested profile "
+            <> T.pack (show expected)
+        )
+    )
 
 -- | Tag a setup-phase DB failure with the phase that produced it.
 setupError :: Text -> String -> Either CircuitRunError a

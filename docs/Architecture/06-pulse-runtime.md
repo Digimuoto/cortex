@@ -1,8 +1,8 @@
 ---
 title: "Chapter 06 — Pulse Runtime"
 description:
-  "Runtime profiles for executing Circuits: ephemeral in-memory execution and durable execution with
-  checkpoints, provenance, observability, and recovery."
+  "Pulse as a graph runtime and durable runtime host, including the opt-in generated circuit-engine
+  backend, checkpoints, provenance, observability, and recovery."
 sidebar:
   label: "06. Pulse runtime"
   order: 6
@@ -11,16 +11,29 @@ status: active
 
 # Chapter 06 — Pulse Runtime
 
-Pulse is the runtime that executes Circuits. It is the mechanical realization of the Circuit
-semantics laid out in chapters 03 and 04. The same admitted Circuit can run in two profiles:
+Pulse is Cortex's default graph runtime and its durable production runtime host. Circuit scheduling
+semantics are not Pulse-exclusive: for the fixed effect-only DAG profile, the same admitted Circuit
+can lower to a generated C circuit engine whose decisions are hosted by Pulse or by the reference
+host. Pulse remains authoritative for effects, durable state, recovery, leases, observability, and
+control when it hosts that engine.
+
+Retention and execution backend are independent choices. Pulse provides two retention profiles:
 
 - **Ephemeral Pulse** runs in process memory, like a script runner. It needs no database,
   observability stack, durable checkpoint table, or provenance store.
 - **Durable Pulse** runs the same transition model with persisted events, checkpoints, provenance,
   observability, lease recovery, and rewrite materialization for long-lived Cortex runs.
 
-This chapter covers both profiles, then spells out the durable service boundary and memory surface.
-The contract is generic; consumer-specific bindings live outside the substrate.
+Within compiled-Circuit entrypoints, Pulse also provides two execution backends:
+
+- **`PulseGraphRuntimeV1`** is the default Haskell graph executor and supports the general Pulse
+  profile, including dynamic topology and other non-static Circuit forms.
+- **`HostedX86_64LinuxV1 artifact`** explicitly spawns the verified artifact and hosts its
+  target-independent scheduling decisions for eligible fixed effect-only DAGs.
+
+This chapter covers both retention profiles and execution backends, then spells out the durable
+service boundary and memory surface. The contract is generic; consumer-specific bindings live
+outside the substrate.
 
 If you are evaluating Cortex rather than implementing against Pulse directly, the core model and
 service boundary are the key sections. The later sections spell out the runtime mechanics in detail.
@@ -31,18 +44,20 @@ Wire source examples on this page use the canonical grammar. The normative gramm
 
 ## Core model
 
-Pulse is a runtime, not an algebra. It interprets a compiled Circuit as a sequence of stage
-transitions. Durability is an execution policy layered on top of those transitions, not part of Wire
-semantics.
+Pulse is a runtime host, not an algebra. In the default backend it interprets a compiled Circuit as
+stage transitions. In the hosted backend the generated engine decides readiness and validates
+transitions while Pulse executes requested effects and commits each structural checkpoint.
+Durability is an execution policy layered on top of those transitions, not part of Wire semantics.
 
 | Profile       | Storage                  | Role                                                                   |
 | ------------- | ------------------------ | ---------------------------------------------------------------------- |
 | **Ephemeral** | Process memory           | Run an admitted Circuit locally with the same topology and port rules. |
 | **Durable**   | Persistent run substrate | Add checkpoints, resume, provenance, observability, and recovery.      |
 
-Both profiles own stage execution: drive a Circuit's stage plan forward, one admitted transition at
-a time. Durable Pulse additionally owns scheduling, checkpoint persistence, lease recovery,
-cancellation persistence, rewrite materialization lineage, and service-level observability.
+Both retention profiles own effect execution. The selected backend drives the Circuit forward one
+admitted transition at a time. Durable Pulse additionally owns checkpoint persistence, lease
+recovery, cancellation persistence, rewrite materialization lineage, and service-level
+observability.
 
 Pulse does not define task semantics. Consumers register task types and provide the stage actions;
 Pulse executes them. The generic contract is captured in
@@ -50,6 +65,27 @@ Pulse executes them. The generic contract is captured in
 [`../Consumers/`](../Consumers/).
 
 ## Execution profiles
+
+### Backend selection and hosted checkpoint barrier
+
+The public `CircuitRunOptions` selects a backend per compiled-Circuit run. Existing APIs are
+compatibility wrappers that choose `PulseGraphRuntimeV1`. Hosted selection is explicit, is frozen
+with program identity and artifact digest before the first effect, and never falls back to Haskell.
+
+The hosted process owns only decision state. It emits an initial checkpoint before requesting any
+effect; Pulse acknowledges only after the graph-state CAS is durable. Every accepted completion
+produces another checkpoint, and no dependent effect is unlocked before its acknowledgement. Ready
+effects can execute concurrently, but Pulse serializes completion/checkpoint commits and buffers
+finished workers. The final checkpoint is committed before the terminal event.
+
+Pulse's existing `node_statuses` and `node_outputs` remain the sole recovery snapshot. The hosted
+checkpoint sequence is additional correlation, not an opaque engine-state store. Resume normalizes
+the Pulse graph state, reconstructs dense statuses and stable output handles, validates the exact
+caller-supplied artifact against the frozen profile, and restores a fresh child process.
+
+The hosted runner uses bounded JSONL over inherited pipes. It has no socket, attach token, embedded
+key, or runtime credential. See the
+[hosted execution reference](../Reference/Wire/hosted-execution.md) and ADRs 0092–0094.
 
 ### Ephemeral profile
 

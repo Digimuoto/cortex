@@ -6,7 +6,7 @@ description:
 sidebar:
   label: "0091. Freestanding Wire C backend"
   order: 91
-status: proposed
+status: accepted
 date: 2026-07-17
 superseded_by: null
 related:
@@ -24,13 +24,11 @@ related:
 
 ## Status
 
-Proposed — the normalized Haskell artifact, two-node fixture, Lean target semantics and refinement
-lemmas, host compiler, generated v1 C ABI, Nix package, host and bare-aarch64 symbol/section gates,
-and native wireOS Microkit success/failure boots exist. The cross-implementation differential suite
-now exists: the Haskell `GraphRuntime` reference driver, a core-Lean reference interpreter, and the
-generated freestanding C agree byte-for-byte over an exhaustive small-DAG and adversarial-lifecycle
-corpus (`checks.cortex-wire-differential`). A verified drive-loop refinement in Lean and larger
-representative topologies remain open.
+Accepted. The normalized Haskell artifact, Lean target semantics, host compiler, generated v1 C ABI,
+Nix package, host/bare-aarch64 gates, native Microkit fixtures, and cross-implementation
+differential suite are implemented. `StaticC.driveEngine_*` supplies the whole-drive refinement, and
+the differential corpus covers all DAGs through three nodes plus named and deterministic
+representatives through 32 nodes with adversarial lifecycle cases.
 
 ## Context
 
@@ -125,7 +123,12 @@ The v1 profile is a cold-boot, flat, fixed DAG containing only effectful task no
 - conditions, select, nested fragments, rewrites, signals, and artifacts;
 - cycles, duplicate direct edges, noncanonical dense identifiers, invalid endpoints, and values that
   do not fit the fixed-width C representation; and
-- runtime topology loading or durable-state import.
+- runtime topology loading or durable-state import through the freestanding
+  `cortex_wire_program_v1_*` surface.
+
+That freestanding ABI remains unchanged. ADR 0093 adds a separate `cortex_wire_engine_v1_*` ABI for
+typed snapshot import/export, checkpoint sequencing, and cancellation; it does not widen or mutate
+the v1 platform-adapter contract decided here.
 
 The Haskell lowering assigns dense `uint32_t` identifiers in durable node-reference order and emits
 edges lexicographically. The manifest preserves the durable-reference and executor map so the
@@ -185,9 +188,13 @@ surface establishes:
 - when no effect is running, target classification is Track 2 `classifyClosedGraphState`, while a
   running effect takes the separate awaiting branch.
 
-The generated C realizes failure closure with a topological pass. Correspondence between that
-implementation and the target semantics is an explicit differential-test obligation until a verified
-lowering or compiler is introduced. The ADR does not label the text emitter as proved.
+`driveEngine_checkpointRequired`, `driveEngine_awaiting_refinement`, and
+`driveEngine_classification_refinement` cover the whole decision split around durable
+acknowledgement, running effects, and closed-state classification. `acceptCompletion_blocks_drive`
+proves that an accepted completion cannot unlock another drive before acknowledgement. The generated
+C topological pass and text emitter remain outside the proof boundary and are pinned by
+differential, compile, symbol, section, sanitizer, and hosted-executable checks; this ADR does not
+label the text emitter or C compiler as proved.
 
 ## Alternatives considered
 
@@ -224,8 +231,8 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
 - The backend initially supports only a small subset of Wire.
 - The pretty-printer and C compiler remain trusted and require strong differential and boot gates.
 - Each topology change regenerates and relinks the program module.
-- Cold-boot-only v1 does not provide durable recovery; adding it requires a versioned state contract
-  and compatibility decision.
+- The freestanding program ABI remains cold-boot-only; durable recovery uses ADR 0093's separately
+  versioned engine ABI and an authority-bearing host.
 
 ### Obligations
 
@@ -239,16 +246,18 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
   completion, duplicate completion, invalid-completion, and post-terminal cases. The static-program
   validator rejects invalid endpoint, cycle, duplicate-edge, and overflow inputs, exercised by
   `cortex-wire-c-smoke`.
-- Extend the differential corpus toward larger representative embedded topologies as v2 dataflow
-  lands; the current exhaustive bound is DAGs for `n <= 3` plus named four-node shapes, logged by
-  the check rather than silently capped.
-- Compile generated C for host and `aarch64-none-elf`; reject undefined `lean_*`, allocation,
-  pthread, libuv, and TLS symbols and reject `.tdata`/`.tbss` sections.
-- Keep the manifest node map and the platform effect table under an exact equality gate.
-- Boot a two-node target fixture in which the first effect completes asynchronously and unlocks an
-  immediate second effect. Its failure variant must show that descendants are never dispatched.
-- Raise separate decisions before adding durable state import/export, CorePure evaluation,
-  conditions/select, signals/artifacts, or post-boot rewrites.
+- **Met.** Cover larger representative topologies. The corpus includes independent-8, chain-16,
+  layered-16, and deterministic seeded DAGs through 32 nodes; the index records the bound and seeds.
+- **Met.** Compile generated C for host and `aarch64-none-elf`; reject undefined `lean_*`,
+  allocation, pthread, libuv, and TLS symbols and reject `.tdata`/`.tbss` sections.
+- **Met.** Keep the manifest node map and the platform effect table under an exact equality gate.
+- **Met.** Boot a two-node target fixture in which the first effect completes asynchronously and
+  unlocks an immediate second effect. Its failure variant must show that descendants are never
+  dispatched.
+- **Met.** Prove the whole-drive decision split and acknowledgement gate in Lean through
+  `driveEngine_*` and `acceptCompletion_blocks_drive`.
+- Raise separate decisions before adding CorePure evaluation, conditions/select, signals/artifacts,
+  or post-boot rewrites.
 
 ## Traceability
 
@@ -265,7 +274,9 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
   Microkit success/failure boot fixture
 - Theory/proof: `Cortex.Wire.StaticC.Program.ready_iff_directReady`,
   `applyCompletion_refines_applyNodeFact`, `closeFailures_refines_propagateFailure`,
-  `interpretClosed_refines_classifyClosedGraphState`, and `Program.nodeIndex_lt_count`
+  `interpretClosed_refines_classifyClosedGraphState`, `driveEngine_checkpointRequired`,
+  `driveEngine_awaiting_refinement`, `driveEngine_classification_refinement`,
+  `acceptCompletion_blocks_drive`, and `Program.nodeIndex_lt_count`
 
 ## Related
 
@@ -273,13 +284,8 @@ lowering or compiler is introduced. The ADR does not label the text emitter as p
 - [ADR 0021 — Wire Source Elaborates to Circuits](0021-wire-source-elaborates-to-circuits.md)
 - [ADR 0078 — Lean-Owned Wire Elaboration IR](0078-lean-wire-elaboration-kernel.md)
 - [ADR 0079 — Wire Admission Witness Schema](0079-wire-admission-witness-schema.md)
-- [ADR 0090 — Computable Pulse Kernel and Extraction Boundary](0090-computable-pulse-kernel-and-extraction-boundary.md)
+- [ADR 0090 — Computable Circuit-Engine Decision Kernel](0090-computable-pulse-kernel-and-extraction-boundary.md)
+- [ADR 0092 — Circuit Engine and Runtime-Host Boundary](0092-circuit-engine-runtime-host-boundary.md)
+- [ADR 0093 — Versioned Circuit State, Event, and Control Protocol](0093-versioned-circuit-state-event-control-protocol.md)
 - [Wire Reference — Executors and the Alphabet](../Reference/Wire/executors-and-alphabet.md)
 - [Runtime extraction research memo](../Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md)
-
-## Tracking
-
-- The cross-implementation differential suite is implemented as `checks.cortex-wire-differential`
-  and gates the corrected v1 lifecycle. Remaining acceptance work: a verified Lean refinement of the
-  whole `drive` transition (not only the local operators) and differential coverage of larger
-  representative topologies as v2 dataflow is designed.

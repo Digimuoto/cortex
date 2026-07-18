@@ -468,7 +468,7 @@ checks must land together before ADR 0090 can be accepted.
 
 ## Related
 
-- [ADR 0090 — Computable Pulse Kernel and Extraction Boundary](../../ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md)
+- [ADR 0090 — Computable Circuit-Engine Decision Kernel and Extraction Boundary](../../ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md)
 - [Cortex Proof Status](../../Reference/proof-status.md)
 - [Paper 1 — Lean-Haskell Pulse Boundary](../../Publications/Paper-1-staged-reduction/lean-haskell-boundary.md)
 - [Theory track roadmap](../../../theory/README.md)

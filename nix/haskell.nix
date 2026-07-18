@@ -174,6 +174,8 @@
       wire-quantum-qec-repetition-braket-bin = projectFlake.packages."cortex:exe:wire-quantum-qec-repetition-braket" or null;
       # Opt-in Criterion benchmark for Wire pure evaluation.
       pure-wire-bench = projectFlake.packages."cortex:bench:pure-wire-bench" or null;
+      # Opt-in Criterion benchmark for hosted Circuit protocol overhead.
+      hosted-protocol-bench = projectFlake.packages."cortex:bench:hosted-protocol-bench" or null;
       # Test suite (built, not run — `nix run .#cortex-tests` to execute).
       cortex-tests = projectFlake.packages."cortex:test:cortex-test" or null;
       # Locked upstream source snapshot for dependency visibility.
@@ -192,6 +194,7 @@
           != null
           && name != "cortex:test:cortex-test"
           && name != "cortex:bench:pure-wire-bench"
+          && name != "cortex:bench:hosted-protocol-bench"
           && name != "haskell-platform:test:platform-test"
           && name != "haskell-platform:test:platform-integration-test"
       )
@@ -208,6 +211,11 @@
         type = "app";
         program = "${projectFlake.packages."cortex:bench:pure-wire-bench"}/bin/pure-wire-bench";
         meta.description = "Run Criterion benchmarks for Wire pure evaluation";
+      };
+      hosted-protocol-bench = {
+        type = "app";
+        program = "${projectFlake.packages."cortex:bench:hosted-protocol-bench"}/bin/hosted-protocol-bench";
+        meta.description = "Run Criterion benchmarks for hosted Circuit protocol overhead";
       };
       update-materialized = {
         type = "app";

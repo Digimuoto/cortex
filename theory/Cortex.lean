@@ -117,7 +117,7 @@ import Cortex.Wire.StaticC
 
 This is the root mechanization module. Pulling `import Cortex` into a
 downstream file exposes the full proof surface: graph algebra, the
-fixed-topology Pulse kernel, and Wire rewrite obligations.
+target-independent fixed-topology circuit-engine kernel, and Wire rewrite obligations.
 
 ## Context
 

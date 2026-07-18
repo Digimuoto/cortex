@@ -226,6 +226,7 @@ resumeFromPersistedState pool pulseConfig shutdownFlag runId task initialStagePl
                           , pgsAppliedRewriteId = persistedSnapshot.pgssAppliedRewriteId
                           , pgsNodeProvenance = restoredProvenance
                           , pgsTopologyHash = persistedSnapshot.pgssTopologyHash
+                          , pgsHostedCheckpointSequence = persistedSnapshot.pgssHostedCheckpointSequence
                           , pgsRevision = Just persistedSnapshot.pgssRevision
                           }
                       topology0 = spTopology materializedStagePlan

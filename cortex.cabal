@@ -160,6 +160,7 @@ library
         Cortex.Pulse.Attempt
         Cortex.Pulse.Checkpoint
         Cortex.Pulse.Circuit
+        Cortex.Pulse.Circuit.Hosted
         Cortex.Pulse.Database
         Cortex.Pulse.Event
         Cortex.Pulse.Executor
@@ -386,6 +387,20 @@ benchmark pure-wire-bench
         scientific >=0.3,
         text >=2.0,
         vector >=0.13
+    ghc-options:      -O2 -threaded -rtsopts -with-rtsopts=-N
+
+-- Opt-in Criterion benchmarks for the hosted Circuit JSONL protocol.
+benchmark hosted-protocol-bench
+    import:           shared-properties
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   bench/hosted-protocol
+    main-is:          Main.hs
+    build-depends:
+        base >=4.16 && <5,
+        cortex,
+        bytestring >=0.11,
+        criterion >=1.6 && <1.7,
+        text >=2.0
     ghc-options:      -O2 -threaded -rtsopts -with-rtsopts=-N
 
 -- Cortex test suite (hspec-discover).

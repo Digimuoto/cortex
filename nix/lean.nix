@@ -402,6 +402,29 @@
           .output_handles == [1, 2]
         ' "$TMPDIR/reference-result.json" >/dev/null
 
+        crashBundle="$TMPDIR/crash-bundle"
+        mkdir -p "$crashBundle"
+        cp "$bundleOne/hosted.manifest.json" "$crashBundle/hosted.manifest.json"
+        crashIdentity=$(jq -r .program_identity "$bundleOne/hosted.manifest.json")
+        {
+          printf '%s\n' '#!/bin/sh'
+          printf '%s\n' "printf '%s\\n' '{\"type\":\"hello\",\"protocol\":\"cortex.wire.host-process/v1\",\"run_id\":null,\"program_identity\":\"$crashIdentity\",\"engine_abi\":\"cortex.wire.engine/v1\"}'"
+          printf '%s\n' "printf '%s\\n' 'specific hosted crash diagnostic' >&2"
+          printf '%s\n' 'exit 17'
+        } > "$crashBundle/circuit-engine"
+        chmod +x "$crashBundle/circuit-engine"
+        crashSha=$(sha256sum "$crashBundle/circuit-engine" | cut -d ' ' -f1)
+        jq --arg digest "$crashSha" \
+          '.executable_sha256 = $digest' \
+          "$crashBundle/hosted.manifest.json" > "$crashBundle/manifest.tmp"
+        mv "$crashBundle/manifest.tmp" "$crashBundle/hosted.manifest.json"
+        if wire hosted-reference "$crashBundle" \
+          > "$TMPDIR/crash.out" 2> "$TMPDIR/crash.err"; then
+          echo "hosted reference accepted an early child exit" >&2
+          exit 1
+        fi
+        grep 'specific hosted crash diagnostic' "$TMPDIR/crash.err" >/dev/null
+
         printf '%s\n' \
           '{"type":"start","protocol":"cortex.wire.host-process/v2","run_id":"bad"}' \
           > "$TMPDIR/bad-version.jsonl"
@@ -412,6 +435,17 @@
         fi
         jq -e -s 'any(.[]; .type == "protocol_error")' \
           "$TMPDIR/bad-version.out" >/dev/null
+
+        printf '%s\n' \
+          '{"type":"start","protocol":"cortex.wire.host-process/v1","run_id":"bad"} trailing' \
+          > "$TMPDIR/malformed.jsonl"
+        if "$bundleOne/circuit-engine" < "$TMPDIR/malformed.jsonl" \
+          > "$TMPDIR/malformed.out" 2> "$TMPDIR/malformed.err"; then
+          echo "hosted runner accepted malformed structured JSON" >&2
+          exit 1
+        fi
+        jq -e -s 'any(.[]; .type == "protocol_error")' \
+          "$TMPDIR/malformed.out" >/dev/null
 
         awk 'BEGIN { for (i = 0; i < 2097153; i++) printf "x" }' \
           > "$TMPDIR/oversized.jsonl"
@@ -452,6 +486,24 @@
           "$TMPDIR/sanitized.out" >/dev/null
         jq -e -s 'all(.[]; .type != "protocol_error")' \
           "$TMPDIR/sanitized.out" >/dev/null
+
+        cancelCommands="$TMPDIR/cancel-commands.jsonl"
+        jq -nc --arg run cancel-smoke \
+          '{type:"start",protocol:"cortex.wire.host-process/v1",run_id:$run}' > "$cancelCommands"
+        jq -nc --arg run cancel-smoke \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1}' >> "$cancelCommands"
+        jq -nc --arg run cancel-smoke --arg reason 'operator said "stop" \\ now ☃' \
+          '{type:"cancel",protocol:"cortex.wire.host-process/v1",run_id:$run,reason:$reason}' >> "$cancelCommands"
+        jq -nc --arg run cancel-smoke \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2}' >> "$cancelCommands"
+        jq -nc --arg run cancel-smoke \
+          '{type:"shutdown",protocol:"cortex.wire.host-process/v1",run_id:$run}' >> "$cancelCommands"
+        ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/circuit-engine-sanitized" \
+          < "$cancelCommands" > "$TMPDIR/cancel.out"
+        jq -e -s 'any(.[]; .type == "terminal" and .terminal == "cancelled")' \
+          "$TMPDIR/cancel.out" >/dev/null
+        jq -e -s 'all(.[]; .type != "protocol_error")' \
+          "$TMPDIR/cancel.out" >/dev/null
 
         runRestore() {
           sequence="$1"
@@ -554,11 +606,48 @@
         cp "$TMPDIR/hosted-evidence.json" "$TMPDIR/reference-result.json" \
           "$TMPDIR/elf-header" "$TMPDIR/elf-sections" "$TMPDIR/elf-undefined" "$out/"
       '';
+    cortexWireHostedPulse =
+      pkgs.runCommand "cortex-wire-hosted-pulse" {
+        nativeBuildInputs = [
+          wire
+          config.packages.cortex-tests
+          pkgs.postgresql_17
+        ];
+      } ''
+        export LC_ALL=C
+        export PGDATA="$TMPDIR/postgres"
+        export PGHOST="$TMPDIR/socket"
+        export PGPORT=54328
+        export PGUSER=postgres
+        export PGDATABASE=cortex_hosted_pulse
+        mkdir -p "$PGHOST"
+
+        initdb -D "$PGDATA" -U postgres --auth=trust >/dev/null
+        pg_ctl -D "$PGDATA" \
+          -o "-p $PGPORT -c listen_addresses=127.0.0.1 -c unix_socket_directories='$PGHOST' -c fsync=off" \
+          -w start >/dev/null
+        trap 'pg_ctl -D "$PGDATA" stop -m immediate >/dev/null 2>&1 || true' EXIT
+
+        createdb "$PGDATABASE"
+        psql -v ON_ERROR_STOP=1 -q -f ${../data/pulse-schema.sql}
+        psql -v ON_ERROR_STOP=1 -q -f ${../test/sql/test-support.sql}
+
+        export CORTEX_HOSTED_TEST_BUNDLE="$TMPDIR/bundle"
+        wire build --target x86_64-linux-v1 \
+          --output "$CORTEX_HOSTED_TEST_BUNDLE" \
+          ${../examples/wire/freestanding-two-node.wire}
+        cd ${../.}
+        cortex-test -m "hosted Circuit backend"
+
+        mkdir -p "$out"
+        cp "$CORTEX_HOSTED_TEST_BUNDLE/hosted.manifest.json" "$out/"
+      '';
     # ADR 0091 differential: the Haskell GraphRuntime reference driver, the Lean
     # reference interpreter, and generated freestanding C compiled by Clang and
     # GCC must agree byte-for-byte over exhaustive small DAGs plus deterministic,
-    # replayable larger representatives and their lifecycle scenarios. This gates
-    # the unverified topological C drive loop against both semantic models.
+    # replayable larger representatives and their lifecycle scenarios. The
+    # whole-drive decision split is mechanized in StaticC; this gates the
+    # unverified emitted C topological pass against both semantic models.
     cortexWireDifferential =
       pkgs.runCommand "cortex-wire-differential" {
         nativeBuildInputs = [
@@ -741,11 +830,10 @@
           '{
             schema: $schema,
             classification: {
-              theory: "machine-checked Lean proofs for the existing StaticC local operators",
+              theory: "machine-checked Lean proofs for StaticC local operators, whole-drive decisions, checkpoint gating, and snapshot round trips",
               differential: "exhaustively checked to the recorded bounded topology corpus",
               c_hygiene: "compiled, instrumented, reproducibility-checked, and object-audited",
               assumed: [
-                "whole-drive refinement to StaticC",
                 "Haskell lowering exactness beyond tested correspondence",
                 "C compiler semantic preservation",
                 "assembler, linker, loader, OS, adapter effects, devices, and hardware"
@@ -782,6 +870,7 @@
     checks.cortex-wire-c = cortexWireC;
     checks.cortex-wire-c-smoke = cortexWireCSmoke;
     checks.cortex-wire-hosted-linux-smoke = cortexWireHostedSmoke;
+    checks.cortex-wire-hosted-pulse = cortexWireHostedPulse;
     checks.cortex-wire-differential = cortexWireDifferential;
     checks.cortex-wire-cfat-1-assurance = cortexWireAssurance;
   };

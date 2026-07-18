@@ -7,7 +7,7 @@ description:
 sidebar:
   label: "0064. Graph-state CAS"
   order: 64
-status: proposed
+status: accepted
 date: 2026-06-27
 superseded_by: null
 related:
@@ -24,10 +24,10 @@ related:
 
 ## Status
 
-Proposed. The mechanism is implemented and covered by the `graph-state persistence hardening` suite
-in `test/Cortex/Pulse/ExecutorSpec.hs`; this ADR records the durability contract it already
-enforces. The Reference (`schema.md`, `events.md`) already documents the column and the event; no
-governing ADR existed.
+Accepted. The graph-state persistence hardening suite covers direct, sequential, concurrent,
+suspend-settlement, and stale-owner CAS behavior. The hosted-Circuit integration additionally proves
+that an uncommitted initial engine checkpoint starts no effect and that hosted checkpoint
+acknowledgement crosses the same CAS seam before successor work is unlocked.
 
 ## Context
 
@@ -101,6 +101,10 @@ CAS token, stale-write behavior, event emission, and suspend-settlement ordering
   result writes (`Executor/Frontier.hs`), the loop's post-rewrite write (`Executor/Loop.hs`), and
   resume's rehydration write (`Executor/Resume.hs`). Each carries the expected revision it last
   read, so no path can bypass the check.
+- **Hosted engine checkpoints use the same seam.** The Pulse runtime host maps every engine
+  checkpoint into `PersistedGraphState` and calls `requireGraphStatePersistVar`; it sends
+  `checkpoint_committed` only after that CAS succeeds. A stale owner, persistence error, or lost
+  lease terminates the child and workers without advancing from an uncommitted snapshot.
 - **CAS-first inside the suspend transaction.** The run-terminal suspend settlement (ADR 0058) does
   read/lock-only signal-wait planning first, then runs its `writeGraphState` as the **first durable
   mutation** in the transaction; a `GraphStateWriteStale` there becomes
@@ -167,7 +171,8 @@ CAS token, stale-write behavior, event emission, and suspend-settlement ordering
 - Implementation: `src/Cortex/Pulse/GraphStateRevision.hs`, `src/Cortex/Pulse/Query.hs`
   (`writeGraphState`), `src/Cortex/Pulse/Executor/Persistence.hs` (`persistGraphState`,
   `nextGraphStateRevision`, `handleGraphStatePersistError`, `settleSuspend`)
-- Tests: `test/Cortex/Pulse/ExecutorSpec.hs` (`graph-state persistence hardening`)
+- Tests: `test/Cortex/Pulse/ExecutorSpec.hs` (`graph-state persistence hardening` and hosted Circuit
+  backend), `checks.cortex-wire-hosted-pulse`
 - Theory/proof: none
 
 ## Related

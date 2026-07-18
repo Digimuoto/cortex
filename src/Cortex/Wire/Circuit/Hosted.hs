@@ -20,8 +20,26 @@ module Cortex.Wire.Circuit.Hosted
 where
 
 import Control.Concurrent.Async (Async, async, cancel, waitCatch)
-import Control.Concurrent.STM (TQueue, atomically, newTQueueIO, readTQueue, writeTQueue)
-import Control.Exception (Exception, IOException, SomeException, displayException, try)
+import Control.Concurrent.STM
+  ( TQueue
+  , TVar
+  , atomically
+  , modifyTVar'
+  , newTQueueIO
+  , newTVarIO
+  , readTQueue
+  , readTVarIO
+  , writeTQueue
+  )
+import Control.Exception
+  ( Exception
+  , IOException
+  , SomeException
+  , displayException
+  , finally
+  , mask_
+  , try
+  )
 import Control.Monad (forM_, unless)
 import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum)
@@ -33,6 +51,7 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Data.Text.Encoding.Error (lenientDecode)
 import Data.Word (Word32, Word64)
 import System.Exit (ExitCode (..))
 import System.IO
@@ -80,7 +99,8 @@ maxDiagnosticBytes = 64 * 1024
 data HostedRuntimeHost = HostedRuntimeHost
   { hostedCommitCheckpoint :: EngineState -> IO (Either Text ())
   , hostedExecuteEffect :: Word32 -> IO EffectCompletion
-  , hostedAwaitCancellation :: !(Maybe (IO Text))
+  , hostedAwaitCancellation :: !(Maybe (IO (Either Text Text)))
+  -- ^ Wait for either a host failure or an authorized cancellation reason.
   }
 
 data HostedRunError = HostedRunError
@@ -104,6 +124,7 @@ data HostInput
   = HostEngineEvent !(Either Text EngineEvent)
   | HostEffectFinished !Word64 !Word32 !(Either Text EffectCompletion)
   | HostCancellationRequested !Text
+  | HostRuntimeFailed !Text
   | HostChildExited !ExitCode
 
 data LoopState = LoopState
@@ -173,45 +194,51 @@ runHostedProgram artifact runId runtimeHost maybeRestore =
     supervise childInput childOutput childError processHandle = do
       mapM_ configurePipe [childInput, childOutput, childError]
       queue <- newTQueueIO
+      workerRegistry <- newTVarIO Map.empty
       reader <- async (readProtocolEvents childOutput queue)
-      diagnostics <- async (drainDiagnostics childError)
+      diagnosticBuffer <- newTVarIO BS.empty
+      diagnostics <- async (drainDiagnostics childError diagnosticBuffer)
       childWatcher <-
         async
           (waitForProcess processHandle >>= atomically . writeTQueue queue . HostChildExited)
       cancellationWatcher <-
         traverse (async . watchCancellation queue) runtimeHost.hostedAwaitCancellation
-      helloResult <- awaitHello manifest queue
-      (runResult, finalState) <- case helloResult of
-        Left message -> pure (Left (HostedRunError message Nothing), startingState)
-        Right () -> do
-          let command = maybe (HostStart runId) (HostRestore runId) maybeRestore
-          startResult <- try @IOException (writeCommand childInput command)
-          case startResult of
-            Left err ->
-              pure
-                ( Left (HostedRunError ("starting hosted run: " <> exceptionText err) Nothing)
-                , startingState
-                )
-            Right () ->
-              eventLoop
-                runId
-                manifest.hpmProgramIdentity
-                nodeCount
-                childInput
-                queue
-                runtimeHost
-                startingState
-      cleanupProcess
-        childInput
-        childOutput
-        childError
-        processHandle
-        reader
-        diagnostics
-        childWatcher
-        cancellationWatcher
-        finalState
-      pure runResult
+      let run = do
+            helloResult <- awaitHello manifest queue
+            case helloResult of
+              Left message -> pure (Left (HostedRunError message Nothing))
+              Right () -> do
+                let command = maybe (HostStart runId) (HostRestore runId) maybeRestore
+                startResult <- try @IOException (writeCommand childInput command)
+                case startResult of
+                  Left err ->
+                    pure
+                      (Left (HostedRunError ("starting hosted run: " <> exceptionText err) Nothing))
+                  Right () ->
+                    fst
+                      <$> eventLoop
+                        runId
+                        manifest.hpmProgramIdentity
+                        nodeCount
+                        childInput
+                        queue
+                        workerRegistry
+                        runtimeHost
+                        startingState
+          cleanup =
+            cleanupProcess
+              childInput
+              childOutput
+              childError
+              processHandle
+              reader
+              diagnostics
+              childWatcher
+              cancellationWatcher
+              workerRegistry
+      result <- run `finally` cleanup
+      capturedDiagnostics <- readTVarIO diagnosticBuffer
+      pure (attachDiagnostics capturedDiagnostics result)
 
 runHostedReferenceHost
   :: HostedProgramArtifact
@@ -261,9 +288,10 @@ configurePipe handle = do
 writeCommand :: Handle -> HostCommand -> IO ()
 writeCommand handle command = BS.hPut handle (encodeHostCommand command) >> hFlush handle
 
-watchCancellation :: TQueue HostInput -> IO Text -> IO ()
+watchCancellation :: TQueue HostInput -> IO (Either Text Text) -> IO ()
 watchCancellation queue awaitCancellation =
-  awaitCancellation >>= atomically . writeTQueue queue . HostCancellationRequested
+  awaitCancellation
+    >>= atomically . writeTQueue queue . either HostRuntimeFailed HostCancellationRequested
 
 readProtocolEvents :: Handle -> TQueue HostInput -> IO ()
 readProtocolEvents handle queue = go BS.empty
@@ -295,16 +323,35 @@ readProtocolEvents handle queue = go BS.empty
 
     emitError = atomically . writeTQueue queue . HostEngineEvent . Left
 
-drainDiagnostics :: Handle -> IO BS.ByteString
-drainDiagnostics handle = go BS.empty
+drainDiagnostics :: Handle -> TVar BS.ByteString -> IO ()
+drainDiagnostics handle captured = go
   where
-    go captured = do
+    go = do
       chunkResult <- try @IOException (BS.hGetSome handle 4096)
       case chunkResult of
-        Left _err -> pure captured
+        Left _err -> pure ()
         Right chunk
-          | BS.null chunk -> pure captured
-          | otherwise -> go (BS.take maxDiagnosticBytes (captured <> chunk))
+          | BS.null chunk -> pure ()
+          | otherwise -> do
+              atomically $
+                modifyTVar' captured (BS.take maxDiagnosticBytes . (<> chunk))
+              go
+
+attachDiagnostics
+  :: BS.ByteString
+  -> Either HostedRunError EngineState
+  -> Either HostedRunError EngineState
+attachDiagnostics captured = \case
+  Left err
+    | not (BS.null captured) ->
+        Left
+          err
+            { hostedRunErrorMessage =
+                err.hostedRunErrorMessage
+                  <> "; child stderr: "
+                  <> T.strip (TE.decodeUtf8With lenientDecode captured)
+            }
+  result -> result
 
 awaitHello
   :: HostedProgramManifest
@@ -324,6 +371,7 @@ awaitHello manifest queue = do
       Left ("hosted engine exited before hello: " <> T.pack (show exitCode))
     HostEffectFinished {} -> Left "host effect completed before engine hello"
     HostCancellationRequested _reason -> Left "hosted run cancelled before engine hello"
+    HostRuntimeFailed message -> Left ("host runtime failed before engine hello: " <> message)
 
 eventLoop
   :: Text
@@ -331,10 +379,11 @@ eventLoop
   -> Word32
   -> Handle
   -> TQueue HostInput
+  -> TVar (Map Word64 (Async ()))
   -> HostedRuntimeHost
   -> LoopState
   -> IO (Either HostedRunError EngineState, LoopState)
-eventLoop runId programIdentity nodeCount childInput queue runtimeHost = go
+eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtimeHost = go
   where
     go state = do
       input <- atomically (readTQueue queue)
@@ -348,6 +397,7 @@ eventLoop runId programIdentity nodeCount childInput queue runtimeHost = go
           case commandResult of
             Left err -> failWith state ("sending cancellation: " <> exceptionText err)
             Right () -> go state
+        HostRuntimeFailed message -> failWith state ("host runtime failed: " <> message)
         HostChildExited ExitSuccess ->
           case state.loopTerminalSeen of
             Just _terminal -> finish state
@@ -405,13 +455,16 @@ eventLoop runId programIdentity nodeCount childInput queue runtimeHost = go
       | isJust state.loopTerminalSeen =
           failWith state "engine requested an effect after terminal"
       | otherwise = do
-          worker <-
-            async $ do
-              completion <- try @SomeException (runtimeHost.hostedExecuteEffect nodeId)
-              atomically $
-                writeTQueue
-                  queue
-                  (HostEffectFinished sequenceNumber nodeId (firstException completion))
+          worker <- mask_ $ do
+            spawned <-
+              async $ do
+                completion <- try @SomeException (runtimeHost.hostedExecuteEffect nodeId)
+                atomically $
+                  writeTQueue
+                    queue
+                    (HostEffectFinished sequenceNumber nodeId (firstException completion))
+            atomically (modifyTVar' workerRegistry (Map.insert sequenceNumber spawned))
+            pure spawned
           go
             state
               { loopNextRequestSequence = sequenceNumber + 1
@@ -424,20 +477,21 @@ eventLoop runId programIdentity nodeCount childInput queue runtimeHost = go
         Nothing -> failWith state "received an unknown or duplicate effect completion"
         Just (expectedNodeId, _worker)
           | expectedNodeId /= nodeId -> failWith state "effect completion node mismatch"
-          | otherwise ->
+          | otherwise -> do
+              atomically (modifyTVar' workerRegistry (Map.delete sequenceNumber))
               let completedState =
                     state
                       { loopWorkers = Map.delete sequenceNumber state.loopWorkers
                       , loopActiveNodes = Set.delete nodeId state.loopActiveNodes
                       }
-               in if completedState.loopAwaitingCheckpoint
-                    then
-                      go
-                        completedState
-                          { loopBufferedCompletions =
-                              Map.insert sequenceNumber (nodeId, completion) completedState.loopBufferedCompletions
-                          }
-                    else sendCompletion completedState sequenceNumber nodeId completion
+              if completedState.loopAwaitingCheckpoint
+                then
+                  go
+                    completedState
+                      { loopBufferedCompletions =
+                          Map.insert sequenceNumber (nodeId, completion) completedState.loopBufferedCompletions
+                      }
+                else sendCompletion completedState sequenceNumber nodeId completion
 
     sendCompletion state sequenceNumber nodeId = \case
       Left message -> failWith state ("effect host threw: " <> message)
@@ -502,13 +556,14 @@ cleanupProcess
   -> Handle
   -> ProcessHandle
   -> Async ()
-  -> Async BS.ByteString
+  -> Async ()
   -> Async ()
   -> Maybe (Async ())
-  -> LoopState
+  -> TVar (Map Word64 (Async ()))
   -> IO ()
-cleanupProcess childInput childOutput childError processHandle reader diagnostics childWatcher cancellationWatcher state = do
-  forM_ state.loopWorkers (cancel . snd)
+cleanupProcess childInput childOutput childError processHandle reader diagnostics childWatcher cancellationWatcher workerRegistry = do
+  workers <- readTVarIO workerRegistry
+  forM_ workers cancel
   forM_ cancellationWatcher cancel
   cancel reader
   running <- getProcessExitCode processHandle
@@ -516,6 +571,7 @@ cleanupProcess childInput childOutput childError processHandle reader diagnostic
     Nothing -> terminateProcess processHandle
     Just _exitCode -> pure ()
   _ <- waitCatch childWatcher
+  _ <- waitCatch reader
   _ <- waitCatch diagnostics
   mapM_ closeQuietly [childInput, childOutput, childError]
 

@@ -126,6 +126,7 @@ initialPersistedState =
     , pgsAppliedRewriteId = Nothing
     , pgsNodeProvenance = Map.empty
     , pgsTopologyHash = Nothing
+    , pgsHostedCheckpointSequence = Nothing
     , pgsRevision = Nothing
     }
 

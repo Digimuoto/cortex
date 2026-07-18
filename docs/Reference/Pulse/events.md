@@ -100,6 +100,17 @@ Common `details` fields observed across events (present when applicable):
 
 ## 4. Persistence contract
 
+### Hosted engine diagnostics
+
+The `cortex.wire.host-process/v1` JSONL stream is a control protocol, not a second Pulse run-event
+stream, and is not copied into `pulse.run_events`. Hosted engine, framing, identity, child-exit, or
+runtime-host failures fail the run with `pulse.runs.error_type = hosted_engine_error`; the bounded
+message includes the last committed engine checkpoint sequence when one exists. Checkpoint database
+errors and stale-owner races retain the existing `run.graph_state_persist_failed` and
+`run.graph_state_stale_write` events because hosted checkpoints cross the same graph-state CAS seam.
+Operator cancellation retains `run.cancelled` behavior. Raw protocol lines and stderr are not
+durable event payloads.
+
 - Persistence is best-effort: a write failure is logged and the run continues. Event history is
   supplementary observability and is never load-bearing for correctness.
 - Events are append-only once written; there is no update path.

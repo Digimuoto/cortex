@@ -2,7 +2,7 @@
 title: "Chapter 04 — Graph and Circuit"
 description:
   "Pure topology vs validated executable topology. The two substrate layers that sit below Wire and
-  above Pulse."
+  above runtime hosts."
 sidebar:
   label: "04. Graph and Circuit"
   order: 4
@@ -14,8 +14,9 @@ status: active
 Chapter 03 establishes the algebraic basis. This chapter picks up one level later and defines the
 artifacts that matter operationally: Graph as pure topology, the linear port graph as Wire's
 typed-frontier surface, and Circuit as validated executable topology. Graph keeps the formalism
-maximally reusable. Circuit is the point where a topology becomes an artifact that Pulse can execute
-in memory or through a durable runtime profile.
+maximally reusable. Circuit is the point where a topology becomes an executable artifact. The
+default Haskell graph backend drives it directly; the fixed effect-only profile can instead lower to
+a static program and generated C circuit engine that Pulse or another runtime host executes.
 
 ## Core Model
 
@@ -28,7 +29,7 @@ The distinction is simple:
 | **Circuit**           | Executable topology: stable nodes, compatible endpoints, boundary markers, runtime-facing metadata. | Scheduling, persistence policy, operator APIs        |
 
 Wire authors topology through the linear port graph surface and lowers admitted topology to Graph
-relations. Pulse executes Circuits. The boundary looks like this:
+relations. Circuit admission precedes either execution backend. The boundary looks like this:
 
 ```mermaid
 flowchart LR
@@ -36,7 +37,10 @@ flowchart LR
     L --> G[Graph relation]
     L --> C[Circuit]
     G --> C
-    C --> P[Pulse]
+    C --> P[Pulse graph runtime]
+    C --> S[Static program]
+    S --> E[Generated C engine]
+    E --> H[Runtime host]
 ```
 
 Each boundary narrows freedom:
@@ -45,8 +49,10 @@ Each boundary narrows freedom:
 - The linear port graph checks one-use endpoint resources and exposes the frontier.
 - Graph carries only denotational topology.
 - Circuit checks that the topology is executable.
-- Pulse executes the resulting object; the durable profile persists execution over time.
-- Durable run state is owned by Pulse and read by downstream artifact and provenance surfaces.
+- A selected backend executes the resulting object. The Haskell Pulse graph runtime is the default;
+  the generated engine is available only for the fixed effect-only DAG profile.
+- Runtime hosts own effects and authority. Durable Pulse additionally owns run state and exposes it
+  to downstream artifact and provenance surfaces.
 
 ## Graph
 

@@ -13,6 +13,8 @@ Pulse modules implement durable runtime mechanics without binding consumer task 
 module Cortex.Pulse.Executor.Frontier
   ( runFrontierSequential
   , runFrontierConcurrent
+  , executeNodeWorker
+  , computeNodeInputs
   , resolveDeliveredSignals
   )
 where

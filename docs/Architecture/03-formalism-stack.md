@@ -31,9 +31,11 @@ Three layers, each defined over the previous:
 | Circuit | Validated executable topology: nodes plus ports.      | Graph plus DAG invariant, port linearity, and contract compatibility. |
 | Wire    | Source language that authors Circuits.                | Linear-port `<>` and `=>`, plus value and structural authoring forms. |
 
-Pulse is the runtime that executes Circuits. It is not a new algebra; it interprets the Circuit
-object and applies admitted rewrites at runtime. The algebraic stack itself ends at Circuit — Pulse
-is the mechanical realization of its semantics in either an ephemeral or durable execution profile.
+The algebraic stack ends at Circuit. Execution is a separate interpretation layer: the default Pulse
+graph runtime drives the general Circuit profile, while the fixed effect-only profile can use the
+target-independent generated circuit engine under Pulse or another runtime host. Pulse is not a new
+algebra; when hosting the engine it owns effects, durability, rewrites, and control rather than
+redefining the engine's structural decisions.
 
 The proof stack currently cuts in **after parsing**. The production Wire parser and source include
 front end are Haskell-owned admission surfaces; they are tested and documented, but they are not the
