@@ -102,6 +102,7 @@ data Step
   = Emit Text
   | Await
   | PauseMilliseconds Int
+  | ExitWith Int
   | -- | Read a line and exit 7 if the host forwarded an effect completion.
     AwaitNotCompletion
 
@@ -121,6 +122,7 @@ renderScript steps =
       Await -> ["read -r line || exit 9"]
       PauseMilliseconds milliseconds ->
         ["sleep " <> T.pack (show milliseconds) <> "e-3"]
+      ExitWith exitCode -> ["exit " <> T.pack (show exitCode)]
       AwaitNotCompletion ->
         [ "read -r line || exit 9"
         , "case \"$line\" in *effect_completed*) exit 7 ;; esac"
@@ -226,6 +228,22 @@ spec = describe "Cortex.Wire.Circuit.Hosted" $ do
         Right finalState -> do
           finalState.esTerminal `shouldBe` EngineSucceeded
           finalState.esCheckpointSequence `shouldBe` 3
+
+  it "honors a committed terminal when the child exits nonzero after shutdown" $ do
+    let steps =
+          [ Emit hello
+          , Await -- start
+          , Emit (checkpoint (engineState 1 EngineSucceeded [EngineCompleted, EngineCompleted] [7, 9]))
+          , Await -- ack 1
+          , Emit (terminalEvent EngineSucceeded)
+          , Await -- shutdown
+          , ExitWith 7
+          ]
+    withFakeEngine steps $ \artifact -> do
+      result <- runHost succeedingHost artifact
+      case result of
+        Left err -> expectationFailure ("expected committed success, got: " <> show err)
+        Right finalState -> finalState.esTerminal `shouldBe` EngineSucceeded
 
   it "cancels a run with an effect in flight without failing it" $ do
     let steps =

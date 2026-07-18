@@ -20,9 +20,8 @@ import Cortex.Pulse.Circuit.Hosted
   ( HostedCancellation (..)
   , TerminalSettlement (..)
   , effectResolution
-  , parseEngineTerminal
+  , persistedEngineTerminal
   , pulseStateFromEngine
-  , renderEngineTerminal
   , terminalSettlement
   )
 import Cortex.Pulse.GraphRuntime (FailureDetail (..), GraphState (..), NodeOutcome (..))
@@ -35,6 +34,8 @@ import Cortex.Wire.Circuit.Engine
   , EngineState (..)
   , EngineTerminalState (..)
   , engineStateSchema
+  , parseEngineTerminalState
+  , renderEngineTerminalState
   )
 import Cortex.Wire.Circuit.Hosted (EffectResolution (..))
 
@@ -92,6 +93,12 @@ spec = describe "Cortex.Pulse.Circuit.Hosted" $ do
         `shouldBe` Right (Just "failed")
 
   describe "terminal settlement precedence" $ do
+    it "keeps a committed completion authoritative over a racing operator cancel" $ do
+      let committed = baseState {pgsHostedTerminalState = Just "completed"}
+      persistedEngineTerminal committed `shouldBe` Right (Just EngineSucceeded)
+      terminalSettlement EngineSucceeded (Just HostedOperatorCancellation) Nothing
+        `shouldBe` SettleRunOutcome OutcomeCompleted
+
     it "does not let concurrent shutdown replace a genuine engine failure" $
       terminalSettlement
         EngineTerminalFailed
@@ -109,7 +116,7 @@ spec = describe "Cortex.Pulse.Circuit.Hosted" $ do
     . it "parses every rendered terminal back to itself"
     $ mapM_
       ( \terminal ->
-          parseEngineTerminal (renderEngineTerminal terminal) `shouldBe` Right terminal
+          parseEngineTerminalState (renderEngineTerminalState terminal) `shouldBe` Right terminal
       )
       [EngineActive, EngineSucceeded, EngineTerminalFailed, EngineCancelled]
 

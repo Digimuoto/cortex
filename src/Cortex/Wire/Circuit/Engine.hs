@@ -31,6 +31,8 @@ module Cortex.Wire.Circuit.Engine
   , sha256Hex
   , EngineNodeStatus (..)
   , EngineTerminalState (..)
+  , renderEngineTerminalState
+  , parseEngineTerminalState
   , EngineState (..)
   , validateEngineState
   , validateRestorableEngineState
@@ -318,12 +320,9 @@ instance ToJSON EngineTerminalState where
 
 instance FromJSON EngineTerminalState where
   parseJSON = Aeson.withText "EngineTerminalState" $ \value ->
-    case value of
-      "active" -> pure EngineActive
-      "completed" -> pure EngineSucceeded
-      "failed" -> pure EngineTerminalFailed
-      "cancelled" -> pure EngineCancelled
-      _other -> fail ("invalid engine terminal state: " <> T.unpack value)
+    case parseEngineTerminalState value of
+      Left message -> fail (T.unpack message)
+      Right terminal -> pure terminal
 
 renderEngineTerminalState :: EngineTerminalState -> Text
 renderEngineTerminalState = \case
@@ -331,6 +330,14 @@ renderEngineTerminalState = \case
   EngineSucceeded -> "completed"
   EngineTerminalFailed -> "failed"
   EngineCancelled -> "cancelled"
+
+parseEngineTerminalState :: Text -> Either Text EngineTerminalState
+parseEngineTerminalState = \case
+  "active" -> Right EngineActive
+  "completed" -> Right EngineSucceeded
+  "failed" -> Right EngineTerminalFailed
+  "cancelled" -> Right EngineCancelled
+  other -> Left ("invalid engine terminal state: " <> other)
 
 data EngineState = EngineState
   { esSchema :: !Text

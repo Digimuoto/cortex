@@ -30,8 +30,7 @@ module Cortex.Pulse.Circuit.Hosted
   , HostedCancellation (..)
   , TerminalSettlement (..)
   , terminalSettlement
-  , renderEngineTerminal
-  , parseEngineTerminal
+  , persistedEngineTerminal
   )
 where
 
@@ -86,6 +85,8 @@ import Cortex.Wire.Circuit.Engine
   , EngineTerminalState (..)
   , HostedProgramArtifact
   , engineStateSchema
+  , parseEngineTerminalState
+  , renderEngineTerminalState
   )
 import Cortex.Wire.Circuit.Hosted
   ( CheckpointCommitResult (..)
@@ -186,20 +187,18 @@ resumeHostedCircuit taskContext runId task stagePlan staticProgram artifact = do
         stagePlan
         snapshot
         ( \resumedPlan persistedState _loopControls _frontier ->
-            case persistedState.pgsHostedTerminalState of
+            case persistedEngineTerminal persistedState of
               -- The engine's committed terminal decision is durable
               -- authority. A crash between the terminal checkpoint and the
               -- run-row settlement must settle here, without booting an
               -- engine just to have it re-announce a decision it already
               -- committed.
-              Just stored
-                | stored /= "active" ->
-                    case parseEngineTerminal stored of
-                      Left message -> hostedFailure taskContext.tcPool runId message
-                      Right terminal -> do
-                        env <- transientStageEnv taskContext runId task resumedPlan persistedState
-                        settleTerminal env persistedState.pgsGraphState terminal Nothing Nothing
-              _activeOrAbsent ->
+              Left message -> hostedFailure taskContext.tcPool runId message
+              Right (Just terminal)
+                | terminal /= EngineActive -> do
+                    env <- transientStageEnv taskContext runId task resumedPlan persistedState
+                    settleTerminal env persistedState.pgsGraphState terminal Nothing Nothing
+              Right _activeOrAbsent ->
                 case engineStateFromPulse staticProgram persistedState of
                   Left message -> hostedFailure taskContext.tcPool runId message
                   Right engineState ->
@@ -227,7 +226,22 @@ transientStageEnv
   -> PersistedGraphState
   -> IO StageEnv
 transientStageEnv taskContext runId task stagePlan persistedState = do
-  gsVar <- newTVarIO persistedState
+  (env, _gsVar) <- newHostedStageEnv taskContext runId task stagePlan persistedState
+  pure env
+
+newHostedStageEnv
+  :: TaskContext
+  -> UUID
+  -> PulseTaskDefinitionRow Result
+  -> StagePlan stageId
+  -> PersistedGraphState
+  -> IO (StageEnv, TVar PersistedGraphState)
+newHostedStageEnv taskContext runId task stagePlan persistedState = do
+  let stateWithTopologyHash =
+        persistedState
+          { pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
+          }
+  gsVar <- newTVarIO stateWithTopologyHash
   nodeCompletedAtVar <- newTVarIO Map.empty
   topologyVar <- newTVarIO stagePlan.spTopology
   loopControlsVar <- newTVarIO (initialLoopControls stagePlan)
@@ -247,6 +261,7 @@ transientStageEnv taskContext runId task stagePlan persistedState = do
         task
         stagePlan
         tvars
+    , gsVar
     )
 
 runWithState
@@ -261,32 +276,13 @@ runWithState
   -> Maybe EngineState
   -> IO RunOutcome
 runWithState taskContext runId task stagePlan staticProgram artifact persistedState maybeRestore = do
-  gsVar <- newTVarIO persistedState
-  nodeCompletedAtVar <- newTVarIO Map.empty
-  topologyVar <- newTVarIO stagePlan.spTopology
-  loopControlsVar <- newTVarIO (initialLoopControls stagePlan)
+  (env, gsVar) <- newHostedStageEnv taskContext runId task stagePlan persistedState
   remainingBudgetVar <- newTVarIO persistedState.pgsRemainingRewriteBudget
   admissionLock <- newMVar ()
   completionOutcomes <- newTVarIO Map.empty
   cancellationOutcome <- newTVarIO Nothing
   abortOutcome <- newTVarIO Nothing
-  let tvars =
-        RunTVars
-          { rvGsVar = gsVar
-          , rvNodeCompletedAtVar = nodeCompletedAtVar
-          , rvTopologyVar = topologyVar
-          , rvLoopControlsVar = loopControlsVar
-          }
-      env =
-        mkStageEnv
-          taskContext.tcPool
-          taskContext.tcConfig
-          taskContext.tcShutdownFlag
-          runId
-          task
-          stagePlan
-          tvars
-      rewriteAdmission =
+  let rewriteAdmission =
         RewriteAdmissionState
           { rasRemainingBudget = remainingBudgetVar
           , rasAdmissionLock = admissionLock
@@ -317,42 +313,21 @@ runWithState taskContext runId task stagePlan staticProgram artifact persistedSt
           aborted <- readTVarIO abortOutcome
           pure (fromMaybe OutcomeFailed aborted)
     Left err -> do
+      persistedAfterFault <- readTVarIO gsVar
       cancellationResult <- readTVarIO cancellationOutcome
-      case cancellationResult of
-        -- A fault while the host is shutting down (dying pipes, a child
-        -- torn down mid-cancel) must not durably fail a resumable run: the
-        -- run row stays 'running' and is reclaimed after restart, exactly
-        -- like a crash. A genuine engine fault re-surfaces on the resume,
-        -- where no shutdown is in progress to mask it.
-        Just HostedShutdownCancellation -> do
-          recordRunEvent
-            env
-            "run.hosted_shutdown_interrupted"
-            Q.RunEventWarn
-            ("hosted engine stopped during Pulse shutdown: " <> renderHostedRunError err)
-            Nothing
-          pure OutcomeShutdown
-        -- The operator asked for cancellation and the cancellation is
-        -- durable in the run row; a child that died mid-cancel fulfils it
-        -- rather than converting the operator's intent into a failure.
-        Just HostedOperatorCancellation -> do
-          now <- getCurrentTime
-          cancelled <-
-            PulseDB.runTransaction
-              taskContext.tcPool
-              ( Q.updateRunCancelled
-                  runId
-                  now
-                  ("operator cancellation (hosted engine stopped: " <> renderHostedRunError err <> ")")
-              )
-          case cancelled of
-            Left cancelErr ->
-              hostedFailure
-                taskContext.tcPool
-                runId
-                ("persisting cancellation after hosted fault: " <> T.pack cancelErr)
-            Right () -> pure OutcomeCancelled
-        Nothing -> hostedRunFailure taskContext.tcPool runId err
+      case persistedEngineTerminal persistedAfterFault of
+        Left message -> hostedFailure taskContext.tcPool runId message
+        Right (Just terminal)
+          | terminal /= EngineActive -> do
+              outcomes <- readTVarIO completionOutcomes
+              settleTerminal
+                env
+                persistedAfterFault.pgsGraphState
+                terminal
+                cancellationResult
+                (deterministicTerminalOutcome denseNodes outcomes)
+        Right _activeOrAbsent ->
+          handleUncommittedFault taskContext env runId cancellationResult err
     Right finalState -> do
       persistedFinal <- readTVarIO gsVar
       cancellationResult <- readTVarIO cancellationOutcome
@@ -364,6 +339,47 @@ runWithState taskContext runId task stagePlan staticProgram artifact persistedSt
         finalState.esTerminal
         cancellationResult
         nodeOutcome
+
+handleUncommittedFault
+  :: TaskContext
+  -> StageEnv
+  -> UUID
+  -> Maybe HostedCancellation
+  -> HostedRunError
+  -> IO RunOutcome
+handleUncommittedFault taskContext env runId cancellationResult err =
+  case cancellationResult of
+    -- A fault while the host is shutting down (dying pipes, a child torn down
+    -- mid-cancel) must not durably fail a resumable run: the run row stays
+    -- running and is reclaimed after restart, exactly like a crash.
+    Just HostedShutdownCancellation -> do
+      recordRunEvent
+        env
+        "run.hosted_shutdown_interrupted"
+        Q.RunEventWarn
+        ("hosted engine stopped during Pulse shutdown: " <> renderHostedRunError err)
+        Nothing
+      pure OutcomeShutdown
+    -- The operator asked for cancellation and no terminal checkpoint was
+    -- committed. A child that died mid-cancel fulfils that durable intent.
+    Just HostedOperatorCancellation -> do
+      now <- getCurrentTime
+      cancelled <-
+        PulseDB.runTransaction
+          taskContext.tcPool
+          ( Q.updateRunCancelled
+              runId
+              now
+              ("operator cancellation (hosted engine stopped: " <> renderHostedRunError err <> ")")
+          )
+      case cancelled of
+        Left cancelErr ->
+          hostedFailure
+            taskContext.tcPool
+            runId
+            ("persisting cancellation after hosted fault: " <> T.pack cancelErr)
+        Right () -> pure OutcomeCancelled
+    Nothing -> hostedRunFailure taskContext.tcPool runId err
 
 denseNodeMap :: StaticProgram -> Map Word32 NodeId
 denseNodeMap staticProgram =
@@ -544,12 +560,16 @@ persistedTerminal :: Maybe HostedCancellation -> EngineTerminalState -> Text
 persistedTerminal cancellation = \case
   EngineCancelled ->
     case cancellation of
-      Just HostedShutdownCancellation -> renderEngineTerminal EngineActive
-      Just HostedOperatorCancellation -> renderEngineTerminal EngineCancelled
-      Nothing -> renderEngineTerminal EngineCancelled
-  EngineActive -> renderEngineTerminal EngineActive
-  EngineSucceeded -> renderEngineTerminal EngineSucceeded
-  EngineTerminalFailed -> renderEngineTerminal EngineTerminalFailed
+      Just HostedShutdownCancellation -> renderEngineTerminalState EngineActive
+      Just HostedOperatorCancellation -> renderEngineTerminalState EngineCancelled
+      Nothing -> renderEngineTerminalState EngineCancelled
+  EngineActive -> renderEngineTerminalState EngineActive
+  EngineSucceeded -> renderEngineTerminalState EngineSucceeded
+  EngineTerminalFailed -> renderEngineTerminalState EngineTerminalFailed
+
+persistedEngineTerminal :: PersistedGraphState -> Either Text (Maybe EngineTerminalState)
+persistedEngineTerminal persistedState =
+  traverse parseEngineTerminalState persistedState.pgsHostedTerminalState
 
 engineStateFromPulse :: StaticProgram -> PersistedGraphState -> Either Text EngineState
 engineStateFromPulse staticProgram persistedState = do
@@ -595,21 +615,6 @@ engineStateFromPulse staticProgram persistedState = do
       NodeInterrupted _reason -> Left "Pulse replay normalization left an interrupted node"
       NodeRewritten -> Left "hosted executable profile forbids rewritten nodes"
       NodeWaiting _signal -> Left "hosted executable profile forbids waiting nodes"
-
-renderEngineTerminal :: EngineTerminalState -> Text
-renderEngineTerminal = \case
-  EngineActive -> "active"
-  EngineSucceeded -> "completed"
-  EngineTerminalFailed -> "failed"
-  EngineCancelled -> "cancelled"
-
-parseEngineTerminal :: Text -> Either Text EngineTerminalState
-parseEngineTerminal = \case
-  "active" -> Right EngineActive
-  "completed" -> Right EngineSucceeded
-  "failed" -> Right EngineTerminalFailed
-  "cancelled" -> Right EngineCancelled
-  other -> Left ("invalid persisted hosted terminal state: " <> other)
 
 word64ToInt64 :: Word64 -> Either Text Int64
 word64ToInt64 value
