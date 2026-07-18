@@ -1,18 +1,22 @@
 ------------------------------ MODULE HostedProtocol ------------------------------
 (*******************************************************************************)
-(* Bounded model of the Wire process-host protocol around the circuit engine.   *)
-(* The engine snapshot semantics live in Lean; this model covers host-owned      *)
-(* concurrency: atomic worker registration, serialized completions, checkpoint   *)
-(* acknowledgement, cancellation, independent watchdogs, terminal authority,    *)
-(* and child exit.  The vocabulary mirrors Cortex.Wire.Circuit.HostProtocol.     *)
+(* Bounded model of the Wire process-host protocol. Lean proves engine snapshot  *)
+(* semantics and checkpoint acceptance; this model covers host-owned workers,     *)
+(* serialized completions, cancellation, independent deadlines, terminal          *)
+(* precedence, and child exit. Three constants deliberately weaken race handling   *)
+(* in negative configurations so the principal invariants are non-vacuous.         *)
 (*******************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
-CONSTANTS Timeout, MaxClock
+CONSTANTS Timeout, MaxClock,
+          DropBufferedAfterCancellation,
+          DropCompletionAfterTerminal,
+          PreserveCrossingDeadline,
+          StableDeadlineUnderTraffic
 
 Workers == {"w1", "w2"}
-Terminals == {"active", "succeeded", "cancelled"}
-Outcomes == {"none", "fault", "succeeded", "cancelled"}
+Terminals == {"active", "succeeded", "failed", "cancelled"}
+Outcomes == {"none", "fault", "succeeded", "failed", "cancelled"}
 
 VARIABLES
   checkpointPending,
@@ -24,8 +28,12 @@ VARIABLES
   workerRegistered,
   interrupted,
   buffered,
+  operatorCancelPending,
   cancelSent,
   completionAfterCancellation,
+  completionAfterTerminal,
+  crossingDeadlineLost,
+  deadlineExtendedByTraffic,
   engineObligation,
   engineStarted,
   engineDeadline,
@@ -47,8 +55,12 @@ vars == <<
   workerRegistered,
   interrupted,
   buffered,
+  operatorCancelPending,
   cancelSent,
   completionAfterCancellation,
+  completionAfterTerminal,
+  crossingDeadlineLost,
+  deadlineExtendedByTraffic,
   engineObligation,
   engineStarted,
   engineDeadline,
@@ -71,8 +83,12 @@ TypeOK ==
   /\ workerRegistered \subseteq Workers
   /\ interrupted \subseteq Workers
   /\ buffered \subseteq Workers
+  /\ operatorCancelPending \in BOOLEAN
   /\ cancelSent \in BOOLEAN
   /\ completionAfterCancellation \in BOOLEAN
+  /\ completionAfterTerminal \in BOOLEAN
+  /\ crossingDeadlineLost \in BOOLEAN
+  /\ deadlineExtendedByTraffic \in BOOLEAN
   /\ engineObligation \in BOOLEAN
   /\ engineStarted \in 0..MaxClock
   /\ engineDeadline \in 0..(MaxClock + Timeout)
@@ -94,8 +110,12 @@ Init ==
   /\ workerRegistered = {}
   /\ interrupted = {}
   /\ buffered = {}
+  /\ operatorCancelPending \in BOOLEAN
   /\ cancelSent = FALSE
   /\ completionAfterCancellation = FALSE
+  /\ completionAfterTerminal = FALSE
+  /\ crossingDeadlineLost = FALSE
+  /\ deadlineExtendedByTraffic = FALSE
   /\ engineObligation = TRUE
   /\ engineStarted = 0
   /\ engineDeadline = Timeout
@@ -108,6 +128,7 @@ Init ==
   /\ traffic = 0
 
 ReceiveInitialCheckpoint ==
+  \E terminal \in Terminals:
   /\ outcome = "none"
   /\ terminalSeen = "none"
   /\ ~checkpointAcknowledged
@@ -115,14 +136,16 @@ ReceiveInitialCheckpoint ==
   /\ engineObligation
   /\ checkpointPending' = TRUE
   /\ awaitingCheckpoint' = TRUE
-  /\ committedTerminal' = "active"
+  /\ committedTerminal' = terminal
   /\ engineObligation' = FALSE
   /\ UNCHANGED <<
        checkpointAcknowledged, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
-       engineStarted, engineDeadline, cancellationObligation,
-       cancellationStarted, cancellationDeadline, childExited, outcome,
-       clock, traffic
+       interrupted, buffered, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
+       engineStarted, engineDeadline,
+       cancellationObligation, cancellationStarted, cancellationDeadline,
+       childExited, outcome, clock, traffic
      >>
 
 StartSuccessor ==
@@ -137,11 +160,20 @@ StartSuccessor ==
     /\ worker \notin workerRunning
     /\ workerRunning' = workerRunning \cup {worker}
     /\ workerRegistered' = workerRegistered \cup {worker}
-    /\ engineObligation' = FALSE
+    /\ IF awaitingCheckpoint /\ engineObligation
+          THEN IF PreserveCrossingDeadline
+            THEN /\ engineObligation' = engineObligation
+                 /\ crossingDeadlineLost' = crossingDeadlineLost
+            ELSE /\ engineObligation' = FALSE
+                 /\ crossingDeadlineLost' = TRUE
+          ELSE /\ engineObligation' = FALSE
+               /\ crossingDeadlineLost' = crossingDeadlineLost
     /\ UNCHANGED <<
          checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
-         committedTerminal, terminalSeen, interrupted, buffered, cancelSent,
-         completionAfterCancellation, engineStarted, engineDeadline,
+         committedTerminal, terminalSeen, interrupted, buffered,
+         operatorCancelPending, cancelSent, completionAfterCancellation,
+         completionAfterTerminal, deadlineExtendedByTraffic,
+         engineStarted, engineDeadline,
          cancellationObligation, cancellationStarted, cancellationDeadline,
          childExited, outcome, clock, traffic
        >>
@@ -151,13 +183,19 @@ FinishWorker ==
     /\ outcome = "none"
     /\ workerRunning' = workerRunning \ {worker}
     /\ workerRegistered' = workerRegistered \ {worker}
-    /\ IF cancelSent \/ interrupted # {}
+    /\ IF committedTerminal # "active" \/ terminalSeen # "none" \/ cancelSent \/ interrupted # {}
           THEN /\ buffered' = buffered
                /\ awaitingCheckpoint' = awaitingCheckpoint
                /\ engineObligation' = engineObligation
                /\ engineStarted' = engineStarted
                /\ engineDeadline' = engineDeadline
                /\ completionAfterCancellation' = completionAfterCancellation
+               /\ completionAfterTerminal' =
+                    IF committedTerminal # "active" \/ terminalSeen # "none"
+                      THEN IF DropCompletionAfterTerminal
+                        THEN completionAfterTerminal
+                        ELSE TRUE
+                      ELSE completionAfterTerminal
           ELSE IF awaitingCheckpoint
             THEN /\ buffered' = buffered \cup {worker}
                  /\ awaitingCheckpoint' = awaitingCheckpoint
@@ -165,23 +203,27 @@ FinishWorker ==
                  /\ engineStarted' = engineStarted
                  /\ engineDeadline' = engineDeadline
                  /\ completionAfterCancellation' = completionAfterCancellation
+                 /\ completionAfterTerminal' = completionAfterTerminal
             ELSE /\ buffered' = buffered
                  /\ awaitingCheckpoint' = TRUE
                  /\ engineObligation' = TRUE
                  /\ engineStarted' = clock
                  /\ engineDeadline' = clock + Timeout
-                 /\ completionAfterCancellation' =
-                      completionAfterCancellation \/ cancelSent
+                 /\ completionAfterCancellation' = completionAfterCancellation \/ cancelSent
+                 /\ completionAfterTerminal' = completionAfterTerminal \/ committedTerminal # "active" \/ terminalSeen # "none"
     /\ UNCHANGED <<
          checkpointPending, checkpointAcknowledged, committedTerminal,
-         terminalSeen, interrupted, cancelSent, cancellationObligation,
-         cancellationStarted, cancellationDeadline, childExited, outcome,
-         clock, traffic
+         terminalSeen, interrupted, operatorCancelPending, cancelSent,
+         crossingDeadlineLost, deadlineExtendedByTraffic,
+         cancellationObligation, cancellationStarted, cancellationDeadline,
+         childExited, outcome, clock, traffic
        >>
 
 InterruptWorker ==
   \E worker \in workerRunning:
     /\ outcome = "none"
+    /\ committedTerminal = "active"
+    /\ terminalSeen = "none"
     /\ ~cancelSent
     /\ workerRunning' = workerRunning \ {worker}
     /\ workerRegistered' = workerRegistered \ {worker}
@@ -194,15 +236,20 @@ InterruptWorker ==
                /\ cancellationDeadline' = clock + Timeout
     /\ UNCHANGED <<
          checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
-         committedTerminal, terminalSeen, buffered, cancelSent,
-         completionAfterCancellation, engineObligation, engineStarted,
-         engineDeadline, childExited, outcome, clock, traffic
+         committedTerminal, terminalSeen, buffered, operatorCancelPending,
+         cancelSent, completionAfterCancellation, completionAfterTerminal,
+         crossingDeadlineLost, deadlineExtendedByTraffic,
+         engineObligation, engineStarted, engineDeadline,
+         childExited, outcome, clock, traffic
        >>
 
 SendCancellation ==
   /\ outcome = "none"
-  /\ interrupted # {}
+  /\ committedTerminal = "active"
+  /\ terminalSeen = "none"
+  /\ operatorCancelPending \/ interrupted # {}
   /\ ~cancelSent
+  /\ operatorCancelPending' = FALSE
   /\ cancelSent' = TRUE
   /\ cancellationObligation' = FALSE
   /\ IF engineObligation
@@ -216,19 +263,20 @@ SendCancellation ==
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
        interrupted, buffered, completionAfterCancellation,
-       cancellationStarted, cancellationDeadline, childExited, outcome,
-       clock, traffic
+       completionAfterTerminal, crossingDeadlineLost,
+       deadlineExtendedByTraffic, cancellationStarted,
+       cancellationDeadline, childExited, outcome, clock, traffic
      >>
 
 ReceiveActiveCheckpoint ==
   /\ outcome = "none"
   /\ terminalSeen = "none"
+  /\ committedTerminal = "active"
   /\ checkpointAcknowledged
   /\ ~checkpointPending
   /\ engineObligation
   /\ checkpointPending' = TRUE
   /\ awaitingCheckpoint' = TRUE
-  /\ committedTerminal' = "active"
   /\ IF cancelSent
         THEN /\ engineObligation' = engineObligation
              /\ engineStarted' = engineStarted
@@ -237,20 +285,23 @@ ReceiveActiveCheckpoint ==
              /\ engineStarted' = engineStarted
              /\ engineDeadline' = engineDeadline
   /\ UNCHANGED <<
-       checkpointAcknowledged, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
-       cancellationObligation, cancellationStarted, cancellationDeadline,
-       childExited, outcome, clock, traffic
+       checkpointAcknowledged, committedTerminal, terminalSeen,
+       workerRunning, workerRegistered, interrupted, buffered,
+       operatorCancelPending, cancelSent, completionAfterCancellation,
+       completionAfterTerminal, crossingDeadlineLost,
+       deadlineExtendedByTraffic, cancellationObligation,
+       cancellationStarted, cancellationDeadline, childExited,
+       outcome, clock, traffic
      >>
 
 ReceiveTerminalCheckpoint ==
-  \E terminal \in {"succeeded", "cancelled"}:
+  \E terminal \in {"succeeded", "failed", "cancelled"}:
     /\ outcome = "none"
     /\ terminalSeen = "none"
+    /\ committedTerminal = "active"
     /\ checkpointAcknowledged
     /\ ~checkpointPending
     /\ engineObligation
-    /\ IF terminal = "cancelled" THEN cancelSent ELSE ~cancelSent
     /\ IF terminal = "succeeded"
           THEN workerRunning = {} /\ interrupted = {} /\ buffered = {}
           ELSE TRUE
@@ -258,12 +309,15 @@ ReceiveTerminalCheckpoint ==
     /\ awaitingCheckpoint' = TRUE
     /\ committedTerminal' = terminal
     /\ engineObligation' = FALSE
+    /\ cancellationObligation' = FALSE
     /\ UNCHANGED <<
          checkpointAcknowledged, terminalSeen, workerRunning,
-         workerRegistered, interrupted, buffered, cancelSent,
-         completionAfterCancellation, engineStarted, engineDeadline,
-         cancellationObligation, cancellationStarted, cancellationDeadline,
-         childExited, outcome, clock, traffic
+         workerRegistered, interrupted, buffered, operatorCancelPending,
+         cancelSent, completionAfterCancellation, completionAfterTerminal,
+         crossingDeadlineLost, deadlineExtendedByTraffic,
+         engineStarted, engineDeadline,
+         cancellationStarted, cancellationDeadline, childExited,
+         outcome, clock, traffic
        >>
 
 AcknowledgeCheckpoint ==
@@ -271,32 +325,70 @@ AcknowledgeCheckpoint ==
   /\ checkpointPending
   /\ checkpointPending' = FALSE
   /\ checkpointAcknowledged' = TRUE
-  /\ IF cancelSent /\ buffered # {}
+  /\ IF committedTerminal # "active"
         THEN /\ buffered' = {}
              /\ awaitingCheckpoint' = FALSE
              /\ engineObligation' = TRUE
-             /\ engineStarted' = engineStarted
-             /\ engineDeadline' = engineDeadline
-        ELSE IF buffered # {}
-          THEN /\ buffered' = buffered \ {CHOOSE worker \in buffered: TRUE}
-               /\ awaitingCheckpoint' = TRUE
-               /\ engineObligation' = TRUE
-               /\ engineStarted' = clock
-               /\ engineDeadline' = clock + Timeout
-          ELSE /\ buffered' = buffered
+             /\ engineStarted' = clock
+             /\ engineDeadline' = clock + Timeout
+             /\ completionAfterCancellation' =
+                  IF DropBufferedAfterCancellation
+                    THEN completionAfterCancellation
+                    ELSE completionAfterCancellation \/ (cancelSent /\ buffered # {})
+             /\ completionAfterTerminal' = completionAfterTerminal
+        ELSE IF cancelSent /\ buffered # {}
+          THEN /\ buffered' = {}
                /\ awaitingCheckpoint' = FALSE
                /\ engineObligation' = TRUE
-               /\ engineStarted' = clock
-               /\ engineDeadline' = clock + Timeout
+               /\ engineStarted' = engineStarted
+               /\ engineDeadline' = engineDeadline
+               /\ completionAfterCancellation' =
+                    IF DropBufferedAfterCancellation
+                      THEN completionAfterCancellation
+                      ELSE TRUE
+               /\ completionAfterTerminal' = completionAfterTerminal
+          ELSE IF buffered # {}
+            THEN /\ buffered' = buffered \ {CHOOSE worker \in buffered: TRUE}
+                 /\ awaitingCheckpoint' = TRUE
+                 /\ engineObligation' = TRUE
+                 /\ engineStarted' = clock
+                 /\ engineDeadline' = clock + Timeout
+                 /\ completionAfterCancellation' = completionAfterCancellation \/ cancelSent
+                 /\ completionAfterTerminal' = completionAfterTerminal \/ committedTerminal # "active"
+            ELSE IF cancelSent
+              THEN /\ buffered' = buffered
+                   /\ awaitingCheckpoint' = FALSE
+                   /\ engineObligation' = TRUE
+                   /\ engineStarted' = engineStarted
+                   /\ engineDeadline' = engineDeadline
+                   /\ completionAfterCancellation' = completionAfterCancellation
+                   /\ completionAfterTerminal' = completionAfterTerminal
+              ELSE IF workerRunning # {} \/ interrupted # {}
+                THEN /\ buffered' = buffered
+                     /\ awaitingCheckpoint' = FALSE
+                     /\ engineObligation' = FALSE
+                     /\ engineStarted' = engineStarted
+                     /\ engineDeadline' = engineDeadline
+                     /\ completionAfterCancellation' = completionAfterCancellation
+                     /\ completionAfterTerminal' = completionAfterTerminal
+                ELSE /\ buffered' = buffered
+                     /\ awaitingCheckpoint' = FALSE
+                     /\ engineObligation' = TRUE
+                     /\ engineStarted' = clock
+                     /\ engineDeadline' = clock + Timeout
+                     /\ completionAfterCancellation' = completionAfterCancellation
+                     /\ completionAfterTerminal' = completionAfterTerminal
   /\ UNCHANGED <<
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
-       interrupted, cancelSent, completionAfterCancellation,
+       interrupted, operatorCancelPending, cancelSent,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
        cancellationObligation, cancellationStarted, cancellationDeadline,
        childExited, outcome, clock, traffic
      >>
 
 ObserveTerminal ==
   /\ outcome = "none"
+  /\ terminalSeen = "none"
   /\ committedTerminal # "active"
   /\ checkpointAcknowledged
   /\ ~checkpointPending
@@ -312,25 +404,30 @@ ObserveTerminal ==
   /\ engineObligation' = TRUE
   /\ engineStarted' = clock
   /\ engineDeadline' = clock + Timeout
+  /\ cancellationObligation' = FALSE
   /\ UNCHANGED <<
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
-       committedTerminal, cancelSent, completionAfterCancellation,
-       cancellationObligation, cancellationStarted, cancellationDeadline,
-       childExited, outcome, clock, traffic
+       committedTerminal, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
+       cancellationStarted, cancellationDeadline, childExited,
+       outcome, clock, traffic
      >>
 
 AbnormalChildExit ==
   /\ outcome = "none"
-  /\ terminalSeen # "none"
   /\ childExited' = TRUE
-  /\ outcome' = terminalSeen
+  /\ outcome' = IF terminalSeen # "none" THEN terminalSeen ELSE "fault"
   /\ engineObligation' = FALSE
   /\ UNCHANGED <<
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
-       engineStarted, engineDeadline, cancellationObligation,
-       cancellationStarted, cancellationDeadline, clock, traffic
+       interrupted, buffered, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
+       engineStarted, engineDeadline,
+       cancellationObligation, cancellationStarted,
+       cancellationDeadline, clock, traffic
      >>
 
 EngineTimeout ==
@@ -342,9 +439,12 @@ EngineTimeout ==
   /\ UNCHANGED <<
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
-       engineStarted, engineDeadline, cancellationObligation,
-       cancellationStarted, cancellationDeadline, childExited, clock, traffic
+       interrupted, buffered, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
+       engineStarted, engineDeadline,
+       cancellationObligation, cancellationStarted,
+       cancellationDeadline, childExited, clock, traffic
      >>
 
 CancellationTimeout ==
@@ -356,8 +456,11 @@ CancellationTimeout ==
   /\ UNCHANGED <<
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
-       engineObligation, engineStarted, engineDeadline, cancellationStarted,
+       interrupted, buffered, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
+       engineObligation, engineStarted, engineDeadline,
+       cancellationStarted,
        cancellationDeadline, childExited, clock, traffic
      >>
 
@@ -368,22 +471,33 @@ Tick ==
   /\ UNCHANGED <<
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
+       interrupted, buffered, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, deadlineExtendedByTraffic,
        engineObligation, engineStarted, engineDeadline,
-       cancellationObligation, cancellationStarted, cancellationDeadline,
-       childExited, outcome, traffic
+       cancellationObligation,
+       cancellationStarted, cancellationDeadline, childExited,
+       outcome, traffic
      >>
 
 UnrelatedTraffic ==
   /\ outcome = "none"
   /\ traffic' = 1 - traffic
+  /\ IF ~StableDeadlineUnderTraffic /\ engineObligation
+        THEN /\ engineStarted' = clock
+             /\ engineDeadline' = clock + Timeout
+             /\ deadlineExtendedByTraffic' = TRUE
+        ELSE /\ engineStarted' = engineStarted
+             /\ engineDeadline' = engineDeadline
+             /\ deadlineExtendedByTraffic' = deadlineExtendedByTraffic
   /\ UNCHANGED <<
        checkpointPending, checkpointAcknowledged, awaitingCheckpoint,
        committedTerminal, terminalSeen, workerRunning, workerRegistered,
-       interrupted, buffered, cancelSent, completionAfterCancellation,
-       engineObligation, engineStarted, engineDeadline,
-       cancellationObligation, cancellationStarted, cancellationDeadline,
-       childExited, outcome, clock
+       interrupted, buffered, operatorCancelPending, cancelSent,
+       completionAfterCancellation, completionAfterTerminal,
+       crossingDeadlineLost, engineObligation,
+       cancellationObligation, cancellationStarted,
+       cancellationDeadline, childExited, outcome, clock
      >>
 
 Done ==
@@ -409,14 +523,15 @@ Next ==
 
 Fairness ==
   /\ WF_vars(SendCancellation)
+  /\ WF_vars(AcknowledgeCheckpoint)
+  /\ WF_vars(ObserveTerminal)
   /\ WF_vars(EngineTimeout)
   /\ WF_vars(CancellationTimeout)
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
 (************************ Model-checked host obligations ************************)
-AcknowledgementBeforeSuccessor ==
-  workerRunning # {} => checkpointAcknowledged
+AcknowledgementBeforeSuccessor == workerRunning # {} => checkpointAcknowledged
 
 WorkerRegistrationAtomic == workerRunning \subseteq workerRegistered
 
@@ -424,10 +539,20 @@ TerminalCheckpointAuthority ==
   terminalSeen # "none" =>
     terminalSeen = committedTerminal /\ checkpointAcknowledged /\ ~checkpointPending
 
+TerminalCheckpointQuiescence ==
+  committedTerminal = "succeeded" =>
+    workerRunning = {} /\ interrupted = {} /\ buffered = {}
+
 NoCompletionAfterCancellation == ~completionAfterCancellation
+
+NoCompletionAfterTerminal == ~completionAfterTerminal
+
+CrossingCheckpointDeadlinePreserved == ~crossingDeadlineLost
 
 EngineDeadlineNotExtended ==
   engineObligation => engineDeadline = engineStarted + Timeout
+
+DeadlineStableUnderUnrelatedTraffic == ~deadlineExtendedByTraffic
 
 CancellationDeadlineIndependent ==
   cancellationObligation => cancellationDeadline = cancellationStarted + Timeout
@@ -435,9 +560,10 @@ CancellationDeadlineIndependent ==
 BufferedCompletionIsGated == buffered # {} => awaitingCheckpoint
 
 CommittedTerminalSurvivesAbnormalExit ==
-  childExited => outcome = committedTerminal
+  childExited /\ terminalSeen # "none" => outcome = committedTerminal
 
-CancellationLivenessAfterInterruption ==
-  [](interrupted # {} => <>(cancelSent \/ outcome # "none"))
+CancellationLiveness ==
+  []( (operatorCancelPending \/ interrupted # {})
+      => <>(cancelSent \/ committedTerminal # "active" \/ outcome # "none") )
 
 =============================================================================

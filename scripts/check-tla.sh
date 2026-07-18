@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Model-check the Pulse signal and Wire process-host protocols with TLC.
 #
-# Positive specs must verify. The two NEGATIVE specs must reproduce the bug they
-# document (lost wakeup / deadlock) -- proving the models actually catch the bug
-# class rather than vacuously passing. Requires `tlc` on PATH (nixpkgs#tlaplus).
+# Positive specs must verify. NEGATIVE specs deliberately weaken one protocol
+# rule and must reproduce the named invariant violation, proving the checks are
+# not vacuous. Requires `tlc` on PATH (nixpkgs#tlaplus).
 set -euo pipefail
 
 cd "$(dirname "$0")/../formal"
@@ -50,6 +50,10 @@ expect_pass HostedProtocol.cfg HostedProtocol.tla
 
 echo "TLA+ negative checks (must reproduce the documented bug):"
 expect_violation Split.cfg RunTerminalSignal.tla "NoStuckWaiter is violated"
+expect_violation HostedProtocolForwardAfterCancel.cfg HostedProtocol.tla "NoCompletionAfterCancellation is violated"
+expect_violation HostedProtocolForwardAfterTerminal.cfg HostedProtocol.tla "NoCompletionAfterTerminal is violated"
+expect_violation HostedProtocolLoseCrossingDeadline.cfg HostedProtocol.tla "CrossingCheckpointDeadlinePreserved is violated"
+expect_violation HostedProtocolExtendDeadline.cfg HostedProtocol.tla "DeadlineStableUnderUnrelatedTraffic is violated"
 
 if [ "$fail" -ne 0 ]; then
   echo "TLA+ protocol checks FAILED." >&2
