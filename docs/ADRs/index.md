@@ -104,6 +104,8 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0087](0087-wire-edge-as-saturation-event.md)                      | Wire Edge as Saturation Event and the Port-Role Parametrization            | proposed   |
 | [0088](0088-pulse-externally-driven-step-admission.md)             | Externally-Driven Step Admission                                           | proposed   |
 | [0089](0089-pulse-content-addressed-artifact-store.md)             | Pulse-Owned Content-Addressed Run Artifact Store                           | proposed   |
+| [0090](0090-computable-pulse-kernel-and-extraction-boundary.md)    | Computable Pulse Kernel and Extraction Boundary                            | proposed   |
+| [0091](0091-lean-hosted-freestanding-wire-c-backend.md)            | Lean-Hosted Freestanding Wire C Backend                                    | proposed   |
 
 ## By category
 
@@ -119,7 +121,7 @@ is shown here.
   [0018](0018-canonical-haskell-module-tree.md), [0040](0040-logos-owned-reasoning-surfaces.md),
   [0063](0063-adr-traceability-and-feature-status-canon.md),
   [0080](0080-wire-binder-construction-boundary.md)
-- **Pulse runtime & durability** (15): [0004](0004-graph-native-pulse-execution.md),
+- **Pulse runtime & durability** (16): [0004](0004-graph-native-pulse-execution.md),
   [0008](0008-pulse-operator-visibility-surfaces.md),
   [0011](0011-compatibility-barriers-and-fresh-run-recovery.md),
   [0012](0012-topological-memory-as-deterministic-graph-query.md),
@@ -128,7 +130,8 @@ is shown here.
   [0059](0059-durable-external-call-frontiers-on-pulse.md), [0064](0064-pulse-graph-state-cas.md),
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
   [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
-  [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
+  [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md),
+  [0090](0090-computable-pulse-kernel-and-extraction-boundary.md)
 - **Rewrite admission & budget** (8):
   [0005](0005-budgeted-rewrite-admission-and-materialization.md),
   [0009](0009-rewrite-provenance-and-topology-integrity.md),
@@ -155,10 +158,11 @@ is shown here.
   [0030](0030-wire-node-implementation-forms.md),
   [0039](0039-wire-node-boundary-transform-normal-form.md),
   [0062](0062-typed-effect-variant-output-boundaries.md)
-- **Wire elaboration & compile-time generation** (4):
+- **Wire elaboration & compile-time generation** (5):
   [0021](0021-wire-source-elaborates-to-circuits.md),
   [0045](0045-wire-compile-time-node-body-kinds.md), [0046](0046-wire-compile-time-graph-forms.md),
-  [0051](0051-wire-source-includes-and-item-generation.md)
+  [0051](0051-wire-source-includes-and-item-generation.md),
+  [0091](0091-lean-hosted-freestanding-wire-c-backend.md)
 - **Wire topology composition** (4): [0028](0028-wire-topology-composition-and-boundary-labels.md),
   [0047](0047-wire-frontier-linearity-and-precedence.md),
   [0048](0048-wire-make-bounded-node-generation.md),

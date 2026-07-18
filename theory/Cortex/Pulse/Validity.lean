@@ -31,7 +31,7 @@ variable {ν : Type u} {payload : Type v}
 def frontierBridge
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
-  readyNodes G state = directReadyNodes G state
+  ∀ node : ν, Ready G state node ↔ DirectReady G state node
 
 /-- `directReady_sound` proves executable-direct readiness implies proof readiness. -/
 theorem directReady_sound
@@ -85,6 +85,8 @@ theorem ready_iff_directReady_of_closed_causal
 /-- `readyNodes_eq_directReadyNodes` connects the proof frontier to the runtime frontier. -/
 theorem readyNodes_eq_directReadyNodes
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hClosure : failureClosureComplete G state)
     (hCausal : CausalHistoryClosed G state) :
@@ -109,8 +111,9 @@ theorem frontierBridge_of_closed_causal
     (state : GraphState ν payload)
     (hClosure : failureClosureComplete G state)
     (hCausal : CausalHistoryClosed G state) :
-    frontierBridge G state :=
-  readyNodes_eq_directReadyNodes G state hClosure hCausal
+    frontierBridge G state := by
+  intro node
+  exact ready_iff_directReady_of_closed_causal G state hClosure hCausal node
 
 /-! ## Recovered-State Validity -/
 
@@ -140,5 +143,17 @@ abbrev wellFormedGraphState
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
   WellFormedGraphState G state
+
+/-- A well-formed state's semantic bridge preserves the frontier-set equality theorem. -/
+theorem WellFormedGraphState.readyNodes_eq_directReadyNodes
+    (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
+    (state : GraphState ν payload)
+    (hWellFormed : WellFormedGraphState G state) :
+    readyNodes G state = directReadyNodes G state := by
+  ext node
+  rw [mem_readyNodes, mem_directReadyNodes]
+  exact and_congr_right fun _hNode => hWellFormed.frontierBridge node
 
 end Cortex.Pulse

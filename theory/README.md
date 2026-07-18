@@ -58,15 +58,26 @@ Mechanized bridge results now include:
 
 ### Track 2 — Fixed-topology Pulse kernel
 
-`Cortex.Pulse.DAG`, `State`, `Fact`, `Frontier`, `Closure`, `Validity`, and `Recovery` model the
-Paper 1 fixed-topology staged-reduction kernel. The current model is extensional: a finite node
-type, an edge-derived DAG reachability relation, abstract payloads, node-local facts,
-reachability-level readiness, direct-predecessor runtime readiness, topology-domain validity, and
-failure closure over the DAG. It avoids runtime UUID/database shapes and keeps payload and failure
-details abstract.
+`Cortex.Pulse.DAG`, `State`, `Fact`, `Frontier`, `Closure`, `Validity`, `Recovery`, `Classify`, and
+`RunSafety` model the Paper 1 fixed-topology staged-reduction kernel. The current model is
+extensional: a finite node type, an edge-derived DAG reachability relation, abstract payloads,
+node-local facts, reachability-level readiness, direct-predecessor runtime readiness,
+topology-domain validity, and failure closure over the DAG. It avoids runtime UUID/database shapes
+and keeps payload and failure details abstract.
+
+The full named Track 2 decision path is constructive. Direct readiness, pending-node scans, and the
+closed-state classifier require decidable node equality. Proof-level readiness, failed-ancestor
+closure, recovery, the closure-wrapping classifier, and normalized fact folds additionally require
+an explicit `DecidableRel G.reaches`. The latter is a concrete-runtime correspondence obligation:
+finite nodes do not automatically provide a decision procedure for an arbitrary `EdgePath`
+proposition. No Track 2 definition is declared `noncomputable`.
 
 Mechanized results now include:
 
+- `readyDecidable` and `directReadyDecidable`: proof and direct readiness reduce to bounded topology
+  scans, with strict reachability supplied explicitly only for the proof-facing predicate.
+- `hasFailedAncestorDecidable`: failed ancestry reduces to a bounded topology scan under the same
+  explicit strict-reachability decision.
 - `frontier_only_ready`: frontier membership implies readiness.
 - `frontier_antichain`: frontier nodes are mutually incomparable by strict reachability.
 - `NodeResult.applyNodeFact_comm`: node-local facts for distinct nodes commute.
@@ -113,6 +124,21 @@ now validates that the post-decode, post-reconciliation, post-rewrite-materializ
 post-signal-resolution resume input state satisfies the Haskell counterpart of the persisted
 recovery preconditions, then classifies the reset-and-failure-propagated recovered state before
 continuing from materialized graph state.
+
+[ADR 0090](../docs/ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md) governs this
+constructive surface and the retained `CortexKernelSpike.lean` executable. The spike exercises
+recovery, direct-frontier construction, and classification through Lean's generated-C path. It is
+reproducible object-runtime evidence, not a stable target ABI or a supported freestanding runtime;
+the
+[runtime research memo](../docs/Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md)
+records the measured host linkage and Microkit gap.
+
+[ADR 0091](../docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md) selects a different
+deployment boundary for fixed Wire programs. `Cortex.Wire.StaticC` defines a `Fin n` target model
+whose readiness, completion application, failure closure, and closed-state classification refine
+Track 2. The host-side `cortex-wire-c` executable validates `static-program/v1` and emits a
+topology-specialized freestanding C module; Lean itself is not linked into the target. The emitter
+and topological C pass remain differential-test obligations rather than proved compiler output.
 
 ### Track 3 — Rewrite soundness
 
@@ -724,6 +750,12 @@ exclusion of unselected `select(...)` branch bodies from the outer compiled circ
 The remaining Track 3 correspondence obligations are now tracked in
 `docs/ADRs/0038-wire-proof-track-theorem-ledger.md`. The next slices are:
 
+Track 3 is not part of the first fixed-topology extraction boundary. Six construction projections
+remain noncomputable because `graphOfRelation` chooses a syntax representative for an unordered
+finite relation. If a downstream residual executor must plan or materialize live rewrites after
+boot, canonical graph construction, rewrite lineage, and those six definitions require a separate
+computability decision. A pre-realized fixed topology does not.
+
 - Haskell correspondence for full CorePure evaluator/value semantics, compiler admission gates such
   as duplicate record-path coverage outside the native-pure lowering path, executor body
   certificates, and full Wire output contract wrapping;
@@ -749,6 +781,10 @@ Per ADR 0002, the Cortex runtime never imports the structured reasoning library 
 module. A Lean encoding of the import graph as a strict partial order makes this enforceable
 mechanically rather than by code review.
 
+The ADR 0090 host-neutral kernel boundary gives this future proof a concrete outbound consumer seam,
+but does not discharge it: Track 5 remains unstarted and no import-graph theorem lands in the
+computability slice.
+
 Track 5 sits inside the substrate proof; Track 4 sits between the substrate and external
 nondeterminism.
 
@@ -762,14 +798,19 @@ cd theory
 lake update     # first-time setup
 lake build      # builds the library/default targets
 lake build cortex-theory   # builds the smoke executable
+lake build cortex-kernel-spike   # builds the host-neutral Track 2 extraction spike
+lake build cortex-wire-c   # builds the host-side freestanding C emitter
 lake env Cortex.lean   # type-check the root module
 ./.lake/build/bin/cortex-theory  # smoke executable
+./.lake/build/bin/cortex-kernel-spike  # recovery/frontier/classification spike
+./.lake/build/bin/cortex-wire-c INPUT.json OUTPUT-DIR  # validate and emit C
 ```
 
 Through the repo's nix flake:
 
 ```
 nix build .#cortex-theory
+nix build .#cortex-wire-c
 just lean-check
 ```
 
@@ -784,7 +825,7 @@ The repo's pre-commit hook checks theory changes through the flake surface
 | 1a. Graph relation semantics     | finite relation denotation + Mokhov laws                                                                                                      | relation-level laws                                                                                                                                                                                                                                                                                                                                                                                                                       | none        |
 | 1b. Graph denotational AST laws  | AST laws over graph equivalence                                                                                                               | denotational law surface                                                                                                                                                                                                                                                                                                                                                                                                                  | none        |
 | 1c. Graph quotient laws          | lifted quotient equality laws                                                                                                                 | `AlgGraph` quotient carrier, lifted operations, quotient equality bridge, Mokhov laws as `=`                                                                                                                                                                                                                                                                                                                                              | none        |
-| 2. Fixed-topology Pulse kernel   | edge-derived DAG/state/fact/frontier/closure/recovery/classification/run-safety surface                                                       | frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness, recovery/execution safe-state envelope, replay determinism modulo fixed outcomes                                                                                                          | none        |
+| 2. Fixed-topology Pulse kernel   | constructive edge-derived DAG/state/fact/frontier/closure/recovery/classification/run-safety surface                                          | finite readiness/failed-ancestry decisions, executable recovery and classification, frontier antichain, direct/runtime frontier bridge, fact commutativity, admissible fact recovery, closure idempotence, topology-domain/output/volatile-state/causal preservation, structural recovery predicate, classification exhaustiveness, recovery/execution safe-state envelope, replay determinism modulo fixed outcomes                      | none        |
 | 3. Rewrite soundness             | CorePure proof subset + registry-boundary model + proof-carrying rewrite certificate + runtime admission bridge + closed Wire/Pulse run trace | pure evaluator determinism/static-field soundness/lowering preservation, CorePure success-fact bridge, node/edge registry predicates, port-use linearity witnesses, runtime planning predicates, acyclicity/contract/budget projections, admitted planned-delta bridge, chain-level preservation, step bound by rewrite-operation budget, SelectActualize lowering, closed admitted-run trace preservation over materialized Pulse states | none        |
 | 4. Provider / sparks             | —                                                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                         | not started |
 | 5. Substrate / consumer boundary | —                                                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                         | not started |

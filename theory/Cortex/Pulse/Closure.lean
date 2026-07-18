@@ -35,6 +35,29 @@ def hasFailedAncestor
   ∃ failedNode : ν,
     state.status failedNode = NodeStatus.failed ∧ G.reaches failedNode node
 
+/-- `hasFailedAncestor_iff_on_nodes` bounds failed-ancestor search to the finite topology. -/
+theorem hasFailedAncestor_iff_on_nodes
+    (G : DAG ν)
+    (state : GraphState ν payload)
+    (node : ν) :
+    hasFailedAncestor G state node ↔
+      ∃ failedNode ∈ G.nodes,
+        state.status failedNode = NodeStatus.failed ∧ G.reaches failedNode node := by
+  constructor
+  · intro hAncestor
+    rcases hAncestor with ⟨failedNode, hFailed, hReach⟩
+    exact ⟨failedNode, G.reaches_source_mem hReach, hFailed, hReach⟩
+  · intro hAncestor
+    rcases hAncestor with ⟨failedNode, _hNode, hFailed, hReach⟩
+    exact ⟨failedNode, hFailed, hReach⟩
+
+/-- `hasFailedAncestorDecidable` decides failed ancestry through a finite topology scan. -/
+def hasFailedAncestorDecidable (G : DAG ν) [DecidableEq ν] [DecidableRel G.reaches]
+    (state : GraphState ν payload)
+    (node : ν) : Decidable (hasFailedAncestor G state node) := by
+  rw [hasFailedAncestor_iff_on_nodes]
+  infer_instance
+
 /-- `failureClosureComplete G state` means failure is closed over propagatable descendants.
 
 A state is failure-closed when propagatable descendants of failed nodes
@@ -51,11 +74,14 @@ def failureClosureComplete
 /-! ## Closure Operator -/
 
 /-- `propagateStatus G state node` is the single-node failure-closure status update. -/
-noncomputable def propagateStatus
+def propagateStatus
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (node : ν) : NodeStatus := by
-  classical
+  letI : Decidable (hasFailedAncestor G state node) :=
+    hasFailedAncestorDecidable G state node
   exact
     if NodeStatus.propagatable (state.status node) ∧ hasFailedAncestor G state node then
       NodeStatus.failed
@@ -63,8 +89,10 @@ noncomputable def propagateStatus
       state.status node
 
 /-- `propagateFailure G state` propagates failure to pending or waiting descendants. -/
-noncomputable def propagateFailure
+def propagateFailure
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) : GraphState ν payload where
   status := fun node => propagateStatus G state node
   output := state.output
@@ -74,6 +102,8 @@ noncomputable def propagateFailure
 /-- `propagateFailure_preserves_failed` shows existing failed nodes stay failed. -/
 theorem propagateFailure_preserves_failed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {node : ν}
     (hFailed : state.status node = NodeStatus.failed) :
@@ -84,6 +114,8 @@ theorem propagateFailure_preserves_failed
 /-- `propagateFailure_marks_failed_descendant` marks propagatable failed descendants. -/
 theorem propagateFailure_marks_failed_descendant
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {node : ν}
     (hPropagatable : NodeStatus.propagatable (state.status node))
@@ -95,6 +127,8 @@ theorem propagateFailure_marks_failed_descendant
 /-- `propagatable_of_propagate` recovers original propagatability after propagation. -/
 theorem propagatable_of_propagate
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {node : ν}
     (hPropagatable :
@@ -112,6 +146,8 @@ Every failed node after propagation either was failed already or had an
 original failed ancestor. -/
 theorem failed_after_propagate
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {node : ν}
     (hFailed : (propagateFailure G state).status node = NodeStatus.failed) :
@@ -130,6 +166,8 @@ A failed node produced by propagation still traces back to an original
 failed ancestor for every descendant it reaches. -/
 theorem hasFailedAncestor_of_failed_after_reaches
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {failedNode node : ν}
     (hFailed : (propagateFailure G state).status failedNode = NodeStatus.failed)
@@ -158,6 +196,8 @@ already-failed set. Use `propagateFailure_monotone` for whole-state
 failure-growth reasoning through `GraphState.failureLe`. -/
 theorem propagateFailure_extensive
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     ∀ node : ν,
       state.status node = NodeStatus.failed →
@@ -168,6 +208,8 @@ theorem propagateFailure_extensive
 /-- `propagateStatus_monotone` proves node-local failure propagation is monotone. -/
 theorem propagateStatus_monotone
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     {left right : GraphState ν payload}
     (hLe : GraphState.failureLe left right)
     (node : ν) :
@@ -201,6 +243,8 @@ theorem propagateStatus_monotone
 /-- `propagateFailure_monotone` proves failure closure is monotone over failure-growth. -/
 theorem propagateFailure_monotone
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     {left right : GraphState ν payload}
     (hLe : GraphState.failureLe left right) :
     GraphState.failureLe (propagateFailure G left) (propagateFailure G right) := by
@@ -210,6 +254,8 @@ theorem propagateFailure_monotone
 /-- `propagateFailure_failureClosureComplete` proves propagation reaches closure. -/
 theorem propagateFailure_failureClosureComplete
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     failureClosureComplete G (propagateFailure G state) := by
   intro failedNode node hFailed hReach hPropagatable
@@ -224,6 +270,8 @@ theorem propagateFailure_failureClosureComplete
 /-- `propagateFailure_preserves_noRunning` preserves the absence of running nodes. -/
 theorem propagateFailure_preserves_noRunning
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hNoRunning : GraphState.noRunningNodes state) :
     GraphState.noRunningNodes (propagateFailure G state) := by
@@ -238,6 +286,8 @@ theorem propagateFailure_preserves_noRunning
 /-- `propagateFailure_preserves_noInterrupted` preserves the absence of interrupted nodes. -/
 theorem propagateFailure_preserves_noInterrupted
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hNoInterrupted : GraphState.noInterruptedNodes state) :
     GraphState.noInterruptedNodes (propagateFailure G state) := by
@@ -252,6 +302,8 @@ theorem propagateFailure_preserves_noInterrupted
 /-- `propagateFailure_preserves_topologyDomain` preserves off-topology absence. -/
 theorem propagateFailure_preserves_topologyDomain
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hDomain : GraphState.topologyDomain G state) :
     GraphState.topologyDomain G (propagateFailure G state) := by
@@ -269,6 +321,8 @@ theorem propagateFailure_preserves_topologyDomain
 /-- `propagateFailure_preserves_outputsRespectStatuses` preserves output ownership. -/
 theorem propagateFailure_preserves_outputsRespectStatuses
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hOutputs : GraphState.outputsRespectStatuses state) :
     GraphState.outputsRespectStatuses (propagateFailure G state) := by
@@ -290,6 +344,8 @@ theorem propagateFailure_preserves_outputsRespectStatuses
 /-- `propagateFailure_preserves_outputsCompleteForStatuses` preserves required outputs. -/
 theorem propagateFailure_preserves_outputsCompleteForStatuses
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hOutputs : GraphState.outputsCompleteForStatuses state) :
     GraphState.outputsCompleteForStatuses (propagateFailure G state) := by
@@ -314,6 +370,8 @@ theorem propagateFailure_preserves_outputsCompleteForStatuses
 /-- `propagateFailure_of_failureClosureComplete` makes failure-closed states fixed points. -/
 theorem propagateFailure_of_failureClosureComplete
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hComplete : failureClosureComplete G state) :
     propagateFailure G state = state := by
@@ -331,6 +389,8 @@ theorem propagateFailure_of_failureClosureComplete
 /-- `propagateFailure_idempotent` proves failure propagation is idempotent. -/
 theorem propagateFailure_idempotent
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     propagateFailure G (propagateFailure G state) = propagateFailure G state := by
   exact

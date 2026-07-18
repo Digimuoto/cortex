@@ -61,7 +61,7 @@ spec = do
                              )
                          )
                          ( Just
-                             (CircuitTask (CircuitTaskNode (CircuitNodeRef "fallback") "Fallback" Nothing (Aeson.object [])))
+                             (CircuitTask (CircuitTaskNode (CircuitNodeRef "fallback") "Fallback" (Aeson.object [])))
                          )
                      ]
               )

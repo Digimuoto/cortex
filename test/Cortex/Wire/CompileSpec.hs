@@ -3418,6 +3418,19 @@ spec = describe "Cortex.Wire.Compile" $ do
         Right _compiled -> expectationFailure "expected a missing-field error"
 
   describe "executor projections" $ do
+    it "preserves a consumer-owned qualified executor in permissive mode" $ do
+      compiled <- requireRight (compileWireText downstreamQualifiedExecutorSourceText)
+      case Map.lookup (CircuitNodeRef "uartin") compiled.compiledCircuitNodes of
+        Just (CompiledCircuitTask taskNode) ->
+          taskNode.circuitTaskNodeMetadata
+            `shouldSatisfy` metadataHasExecutorTarget "wireos.kernel.uart.uartin"
+        other -> expectationFailure ("expected uartin task node, got: " <> show other)
+
+    it "rejects that consumer-owned executor in strict mode without a projection" $
+      compileWireTextWithEnv strictExecutorEnv downstreamQualifiedExecutorSourceText
+        `shouldBe` Left
+          (WireUnknownExecutor (CircuitNodeRef "uartin") "wireos.kernel.uart.uartin")
+
     it "allows a strict registered executor projection with matching ports" $
       compileWireTextWithEnv strictExecutorEnv projectedExecutorSourceText
         `shouldSatisfy` isRight
@@ -5081,6 +5094,15 @@ projectedExecutorSourceText =
     [ "node projected"
     , "  -> out: PlannerOutput = @review.projected ({}) ;"
     , "projected"
+    ]
+
+downstreamQualifiedExecutorSourceText :: T.Text
+downstreamQualifiedExecutorSourceText =
+  T.unlines
+    [ "contract WireosUartLine;"
+    , "node uartin"
+    , "  -> line: WireosUartLine = @wireos.kernel.uart.uartin {} (null) ;"
+    , "uartin"
     ]
 
 missingExecutorSourceText :: T.Text

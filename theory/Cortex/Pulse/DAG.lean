@@ -145,6 +145,11 @@ def reaches (a b : ν) : Prop :=
 def predecessor (a b : ν) : Prop :=
   G.edge a b = true
 
+/-- Direct predecessor membership is constructively decidable from the boolean edge relation. -/
+instance instDecidablePredecessor (a b : ν) : Decidable (G.predecessor a b) := by
+  unfold predecessor
+  infer_instance
+
 /-- `reaches_of_edge` turns a direct edge into a strict reachability witness. -/
 theorem reaches_of_edge {a b : ν} (hEdge : G.predecessor a b) :
     G.reaches a b :=

@@ -22,8 +22,9 @@ related:
 
 # Wire Reference — Executors and the Alphabet
 
-`@` is Wire's executor-authority marker. It references a registered executor from the closed
-alphabet and pairs it with inert config data:
+`@` is Wire's executor-authority marker. In a strict compile environment it references a projected
+executor from the closed alphabet and pairs it with inert config data. The ordinary permissive
+compiler also supports consumer-owned qualified executor IDs as described below:
 
 ```wire
 let analyst = @review.analyst {
@@ -108,13 +109,46 @@ executor-call argument is the node's ingress adapter: it translates typed input 
 CorePure helpers into the one value presented to the registered body. Output projection, validation,
 and wrapping are the egress obligation before edges consume output ports.
 
+## Consumer-owned executor IDs in permissive compilation
+
+The permissive compile environment deliberately preserves a non-standard fully qualified executor ID
+without requiring a `use` import or a Cortex-owned registry entry. This is the compatibility path
+for a downstream host that owns both the namespace and its runtime adapter:
+
+```wire
+contract WireosUartLine;
+
+node uartin
+  -> line: WireosUartLine
+  = @wireos.kernel.uart.uartin {} (null);
+```
+
+This path has precise limits:
+
+- the name should be fully qualified to provide a collision-resistant downstream ID;
+- the source must declare or otherwise provide every contract used by the node boundary;
+- compilation preserves the executor ID and authored ports, but does **not** prove that an executor,
+  config schema, effect classification, or runtime binding exists;
+- the consuming host must bind the exact admitted executor ID and validate its own effect boundary;
+- `use consumer.namespace.{...}` still requires that namespace in the composed registry; a direct
+  qualified reference does not perform that namespace lookup;
+- `std.io.*` IDs are reserved standard vocabulary and remain unavailable without the corresponding
+  `use std.io.{...}` import; and
+- strict projection mode rejects the same unregistered ID with `WireUnknownExecutor`.
+
+This is a supported pre-package compatibility contract, not a substitute for ADR 0054 packages. Once
+a consumer publishes an inert `WirePackage`, `use` plus registered projections provides better
+static checking and diagnostics while the host runtime binding pack remains the authority-bearing
+half.
+
 ## Registry Admission
 
-Before an executor call becomes a materialized node, the registry and binding layer establish:
+For imported/package vocabulary or strict projection compilation, the registry and binding layer
+establish:
 
 | Obligation              | Meaning                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| Executor exists         | The qualified name is present in the loaded executor alphabet.                                   |
+| Executor exists         | The qualified name is present in the loaded executor alphabet (strict/projected mode).           |
 | Config validates        | The config record conforms to the executor schema.                                               |
 | Ports are concrete      | The authored node boundary is checked against the executor projection or structural constraints. |
 | Contracts are known     | Every input/output contract is declared by the program or registry.                              |
@@ -167,11 +201,17 @@ At runtime a materialized node carries:
 - effect/purity metadata for the host interpreter.
 
 The executor may still fail, time out, call a provider, write an artifact, or return invalid output.
-Cortex's guarantee is that this authority was explicit and admitted before runtime.
+For imported/package vocabulary and strict projection compilation, Cortex's guarantee is that this
+authority was explicit and admitted before runtime. Permissive-mode consumer-owned executor IDs (see
+above) do not carry that guarantee: admission there only confirms the ID and its ports were
+explicitly authored, and authority, effect classification, and output validation remain the
+consuming host's obligation.
 
 ## Summary
 
 - `@qualified.name { ... }` creates a configured executor value.
+- Permissive compilation preserves consumer-owned qualified IDs without registry lookup; strict
+  compilation requires a registered projection.
 - Configured executors are not graph vertices.
 - Executors run only through explicit typed node bodies.
 - Executor-call input expressions are ingress adapters from input ports to one body argument.

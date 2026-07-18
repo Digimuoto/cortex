@@ -57,7 +57,8 @@ structure WirePulseSnapshot
 namespace WirePulseSnapshot
 
 /-- The snapshot reached by applying Pulse recovery to the persisted graph state. -/
-noncomputable def recovered (snapshot : WirePulseSnapshot executor config authority payload) :
+def recovered (snapshot : WirePulseSnapshot executor config authority payload)
+    [DecidableRel snapshot.G.reaches] :
     WirePulseSnapshot executor config authority payload :=
   { remainingBudget := snapshot.remainingBudget
     context := snapshot.context
@@ -87,12 +88,21 @@ theorem runStart_establishes_safeRunState
     {registry : ExecutorRegistry executor config contract authority}
     {initialBudget : RewriteBudget}
     (snapshot : WirePulseSnapshot executor config authority payload)
+    [DecidableRel snapshot.G.reaches]
     (hSourceValid : SourcePlanningContextValid snapshot.context)
     (hBoundary : _root_.Cortex.Wire.registryBoundary registry snapshot.context.topology)
     (hBridge : WireTopologyDAGBridge snapshot.context.topology snapshot.G)
     (hBudget : snapshot.remainingBudget.le initialBudget)
     (hPersisted : persistedRecoveryPreconditions snapshot.G snapshot.state) :
     SafeWirePulseSnapshot registry initialBudget snapshot.recovered := by
+  change
+    SafeWireRunState
+      registry
+      initialBudget
+      snapshot.remainingBudget
+      snapshot.context
+      snapshot.G
+      (recoveredState snapshot.G snapshot.state)
   exact
     SafeWireRunState.wirePulseRecoveryStep_establishes_safeRunState
       hSourceValid
@@ -124,7 +134,8 @@ inductive AdmittedWirePulseStep
           Prop where
   | recovery
       {payload : Type}
-      (snapshot : WirePulseSnapshot executor config authority payload) :
+      (snapshot : WirePulseSnapshot executor config authority payload)
+      [DecidableRel snapshot.G.reaches] :
       AdmittedWirePulseStep
         registry
         initialBudget
@@ -134,6 +145,7 @@ inductive AdmittedWirePulseStep
   | frontierFacts
       {payload : Type}
       (snapshot : WirePulseSnapshot executor config authority payload)
+      [DecidableRel snapshot.G.reaches]
       (results : List (NodeResult (WireNode executor config authority) payload))
       (hResults : NodeResult.AllAdmissibleFold snapshot.G snapshot.state results) :
       AdmittedWirePulseStep
@@ -156,6 +168,7 @@ inductive AdmittedWirePulseStep
       (snapshot :
         WirePulseSnapshot executor config authority
           (CorePure.Name → Option CorePure.Value))
+      [DecidableRel snapshot.G.reaches]
       (hNode : CorePure.PureNodeAdmitted ctx pureNode)
       (hEval : pureNode.evalOutputs env = Except.ok lookup)
       (hContracts :
@@ -300,6 +313,14 @@ theorem preserves_safeRunState
     SafeWirePulseSnapshot registry initialBudget after := by
   cases transition with
   | recovery snapshot =>
+      change
+        SafeWireRunState
+          registry
+          initialBudget
+          before.remainingBudget
+          before.context
+          before.G
+          (recoveredState before.G before.state)
       exact SafeWireRunState.wirePulseRecoveryStep_preserves_safeRunState hSafe
   | frontierFacts snapshot results hResults =>
       exact
@@ -383,6 +404,7 @@ theorem preserves_safeRunState_from_runStart
     {initialBudget : RewriteBudget}
     {payload : Type}
     {start last : WirePulseSnapshot executor config authority payload}
+    [DecidableRel start.G.reaches]
     (trace : AdmittedWirePulseTrace registry initialBudget payload start.recovered last)
     (hSourceValid : SourcePlanningContextValid start.context)
     (hBoundary : _root_.Cortex.Wire.registryBoundary registry start.context.topology)
@@ -405,6 +427,7 @@ theorem final_not_stuck
     {initialBudget : RewriteBudget}
     {payload : Type}
     {first last : WirePulseSnapshot executor config authority payload}
+    [DecidableRel last.G.reaches]
     (trace : AdmittedWirePulseTrace registry initialBudget payload first last)
     (hSafe : SafeWirePulseSnapshot registry initialBudget first)
     (stuckState : GraphState (WireNode executor config authority) payload) :
@@ -425,6 +448,8 @@ theorem final_not_stuck_from_runStart
     {initialBudget : RewriteBudget}
     {payload : Type}
     {start last : WirePulseSnapshot executor config authority payload}
+    [DecidableRel start.G.reaches]
+    [DecidableRel last.G.reaches]
     (trace : AdmittedWirePulseTrace registry initialBudget payload start.recovered last)
     (hSourceValid : SourcePlanningContextValid start.context)
     (hBoundary : _root_.Cortex.Wire.registryBoundary registry start.context.topology)

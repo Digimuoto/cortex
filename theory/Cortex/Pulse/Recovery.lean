@@ -30,8 +30,10 @@ variable {ν : Type u} {payload : Type v}
 /-! ## Recovery Operator -/
 
 /-- `recoveredState G state` is crash-recovery normalization for the fixed-topology kernel. -/
-noncomputable def recoveredState
+def recoveredState
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) : GraphState ν payload :=
   propagateFailure G (GraphState.resetRunningToPending state)
 
@@ -40,6 +42,8 @@ noncomputable def recoveredState
 /-- `recovered_noRunning` proves recovery normalization removes running nodes. -/
 theorem recovered_noRunning
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     GraphState.noRunningNodes (recoveredState G state) :=
   propagateFailure_preserves_noRunning
@@ -50,6 +54,8 @@ theorem recovered_noRunning
 /-- `recovered_noInterrupted` proves recovery normalization removes interrupted nodes. -/
 theorem recovered_noInterrupted
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     GraphState.noInterruptedNodes (recoveredState G state) :=
   propagateFailure_preserves_noInterrupted
@@ -60,6 +66,8 @@ theorem recovered_noInterrupted
 /-- `recovered_topologyDomain` preserves the persisted topology-domain invariant. -/
 theorem recovered_topologyDomain
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hDomain : GraphState.topologyDomain G state) :
     GraphState.topologyDomain G (recoveredState G state) :=
@@ -71,6 +79,8 @@ theorem recovered_topologyDomain
 /-- `recovered_failureClosureComplete` proves recovery normalization is failure-closed. -/
 theorem recovered_failureClosureComplete
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) :
     failureClosureComplete G (recoveredState G state) :=
   propagateFailure_failureClosureComplete G (GraphState.resetRunningToPending state)
@@ -95,6 +105,8 @@ theorem resetRunning_preserves_causalHistoryClosed
 /-- `propagateFailure_preserves_causalHistoryClosed` preserves causal history closure. -/
 theorem propagateFailure_preserves_causalHistoryClosed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hCausal : CausalHistoryClosed G state) :
     CausalHistoryClosed G (propagateFailure G state) := by
@@ -120,6 +132,8 @@ theorem propagateFailure_preserves_causalHistoryClosed
 /-- `recovered_causalHistoryClosed` preserves causal history through recovery. -/
 theorem recovered_causalHistoryClosed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hCausal : CausalHistoryClosed G state) :
     CausalHistoryClosed G (recoveredState G state) :=
@@ -131,6 +145,8 @@ theorem recovered_causalHistoryClosed
 /-- `recovered_frontierBridge` proves recovery aligns proof and runtime frontiers. -/
 theorem recovered_frontierBridge
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hCausal : CausalHistoryClosed G state) :
     frontierBridge G (recoveredState G state) :=
@@ -143,6 +159,8 @@ theorem recovered_frontierBridge
 /-- `recovered_outputsRespectStatuses` preserves output ownership through recovery. -/
 theorem recovered_outputsRespectStatuses
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hOutputs : GraphState.outputsRespectStatuses state) :
     GraphState.outputsRespectStatuses (recoveredState G state) :=
@@ -154,6 +172,8 @@ theorem recovered_outputsRespectStatuses
 /-- `recovered_outputsCompleteForStatuses` preserves required outputs through recovery. -/
 theorem recovered_outputsCompleteForStatuses
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hOutputs : GraphState.outputsCompleteForStatuses state) :
     GraphState.outputsCompleteForStatuses (recoveredState G state) :=
@@ -192,6 +212,8 @@ no-running, no-interrupted, failure-closure, and the proof/runtime
 frontier bridge. -/
 theorem persistence_safety
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hPersisted : persistedRecoveryPreconditions G state) :
     wellFormedGraphState G (recoveredState G state) := by
@@ -208,8 +230,10 @@ theorem persistence_safety
       frontierBridge := recovered_frontierBridge G state hPersisted.causalHistoryClosed }
 
 /-- `frontierFacts_recovered_wellFormedGraphState` safely recovers admissible fact folds. -/
-theorem frontierFacts_recovered_wellFormedGraphState [DecidableEq ν]
+theorem frontierFacts_recovered_wellFormedGraphState
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (results : List (NodeResult ν payload))
     (hWellFormed : wellFormedGraphState G state)

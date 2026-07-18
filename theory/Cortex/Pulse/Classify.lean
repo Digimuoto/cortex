@@ -49,11 +49,9 @@ inductive StepResult (ν : Type u) (payload : Type v) :
   | stuck : GraphState ν payload → StepResult ν payload
 
 /-- `pendingNodes G state` is the topology-scoped pending-node set. -/
-noncomputable def pendingNodes
-    (G : DAG ν)
-    (state : GraphState ν payload) : Finset ν := by
-  classical
-  exact G.nodes.filter fun node => state.status node = NodeStatus.pending
+def pendingNodes (G : DAG ν) [DecidableEq ν]
+    (state : GraphState ν payload) : Finset ν :=
+  G.nodes.filter fun node => state.status node = NodeStatus.pending
 
 /-- `hasFailedNodes G state` checks for a failed node in the topology. -/
 def hasFailedNodes
@@ -61,11 +59,23 @@ def hasFailedNodes
     (state : GraphState ν payload) : Prop :=
   ∃ node : ν, node ∈ G.nodes ∧ state.status node = NodeStatus.failed
 
+/-- `hasFailedNodesDecidable` decides topology-scoped failure by a finite scan. -/
+def hasFailedNodesDecidable (G : DAG ν) [DecidableEq ν]
+    (state : GraphState ν payload) : Decidable (hasFailedNodes G state) := by
+  unfold hasFailedNodes
+  infer_instance
+
 /-- `allSettled G state` says every topology node is terminal. -/
 def allSettled
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
   ∀ node : ν, node ∈ G.nodes → NodeStatus.terminal (state.status node)
+
+/-- `allSettledDecidable` decides topology settlement by a finite scan. -/
+def allSettledDecidable (G : DAG ν) [DecidableEq ν]
+    (state : GraphState ν payload) : Decidable (allSettled G state) := by
+  unfold allSettled
+  infer_instance
 
 /-- `hasWaitingNodes G state` checks for topology-scoped waiting nodes.
 
@@ -76,6 +86,12 @@ def hasWaitingNodes
     (G : DAG ν)
     (state : GraphState ν payload) : Prop :=
   ∃ node : ν, node ∈ G.nodes ∧ state.status node = NodeStatus.waiting
+
+/-- `hasWaitingNodesDecidable` decides topology-scoped waiting by a finite scan. -/
+def hasWaitingNodesDecidable (G : DAG ν) [DecidableEq ν]
+    (state : GraphState ν payload) : Decidable (hasWaitingNodes G state) := by
+  unfold hasWaitingNodes
+  infer_instance
 
 /-- `hasAmbientWaitingNodes state` models a raw status-map scan for waiting statuses. -/
 def hasAmbientWaitingNodes
@@ -104,10 +120,11 @@ theorem hasWaitingNodes_iff_hasAmbientWaitingNodes_of_topologyDomain
 /-! ## Classifier -/
 
 /-- `classifyClosedGraphState G state` classifies a topology-valid failure-closed state. -/
-noncomputable def classifyClosedGraphState
-    (G : DAG ν)
+def classifyClosedGraphState (G : DAG ν) [DecidableEq ν]
     (state : GraphState ν payload) : StepResult ν payload := by
-  classical
+  letI : Decidable (hasFailedNodes G state) := hasFailedNodesDecidable G state
+  letI : Decidable (allSettled G state) := allSettledDecidable G state
+  letI : Decidable (hasWaitingNodes G state) := hasWaitingNodesDecidable G state
   exact
     if hasFailedNodes G state then
       StepResult.settled state RunOutcome.failed
@@ -121,8 +138,10 @@ noncomputable def classifyClosedGraphState
       StepResult.stuck state
 
 /-- `classifyGraphState G state` is the topology-scoped classifier after failure closure. -/
-noncomputable def classifyGraphState
+def classifyGraphState
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload) : StepResult ν payload :=
   classifyClosedGraphState G (propagateFailure G state)
 
@@ -131,6 +150,7 @@ noncomputable def classifyGraphState
 /-- Failed nodes take classification precedence over all other branches. -/
 theorem classifyClosedGraphState_failed
     (G : DAG ν)
+    [DecidableEq ν]
     (state : GraphState ν payload)
     (hFailed : hasFailedNodes G state) :
     classifyClosedGraphState G state = StepResult.settled state RunOutcome.failed := by
@@ -140,6 +160,7 @@ theorem classifyClosedGraphState_failed
 /-- A nonempty frontier progresses when no failed node is present. -/
 theorem classifyClosedGraphState_progressing
     (G : DAG ν)
+    [DecidableEq ν]
     (state : GraphState ν payload)
     (hNoFailed : ¬ hasFailedNodes G state)
     (hFrontier : (directReadyNodes G state).Nonempty) :
@@ -151,6 +172,7 @@ theorem classifyClosedGraphState_progressing
 /-- Settled completion applies after failed and frontier branches are absent. -/
 theorem classifyClosedGraphState_settled_completed
     (G : DAG ν)
+    [DecidableEq ν]
     (state : GraphState ν payload)
     (hNoFailed : ¬ hasFailedNodes G state)
     (hNoFrontier : ¬ (directReadyNodes G state).Nonempty)
@@ -163,6 +185,7 @@ theorem classifyClosedGraphState_settled_completed
 /-- Suspension applies when no earlier branch fires and a topology node is waiting. -/
 theorem classifyClosedGraphState_suspended
     (G : DAG ν)
+    [DecidableEq ν]
     (state : GraphState ν payload)
     (hNoFailed : ¬ hasFailedNodes G state)
     (hNoFrontier : ¬ (directReadyNodes G state).Nonempty)
@@ -175,6 +198,7 @@ theorem classifyClosedGraphState_suspended
 /-- The stuck branch records the structural complement of the earlier branches. -/
 theorem classifyClosedGraphState_stuck
     (G : DAG ν)
+    [DecidableEq ν]
     (state : GraphState ν payload)
     (hNoFailed : ¬ hasFailedNodes G state)
     (hNoFrontier : ¬ (directReadyNodes G state).Nonempty)
@@ -231,6 +255,8 @@ theorem status_eq_pending_of_not_terminal
 /-- A normalized nonfailed, nonsettled, nonwaiting state has a proof frontier. -/
 theorem readyNodes_nonempty_of_normalized
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hNormalized : ClassificationNormalized state)
     (hNoFailed : ¬ hasFailedNodes G state)
@@ -289,13 +315,15 @@ theorem readyNodes_nonempty_of_normalized
 /-- A well-formed nonfailed, nonsettled, nonwaiting state has a runtime frontier. -/
 theorem directReadyNodes_nonempty_of_wellFormed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hWellFormed : wellFormedGraphState G state)
     (hNoFailed : ¬ hasFailedNodes G state)
     (hNotSettled : ¬ allSettled G state)
     (hNoWaiting : ¬ hasWaitingNodes G state) :
     (directReadyNodes G state).Nonempty := by
-  rw [← hWellFormed.frontierBridge]
+  rw [← hWellFormed.readyNodes_eq_directReadyNodes G state]
   exact
     readyNodes_nonempty_of_normalized
       G
@@ -308,6 +336,8 @@ theorem directReadyNodes_nonempty_of_wellFormed
 /-- Well-formed closed states classify into one of the non-stuck branches. -/
 theorem classifyClosedGraphState_exhaustive_of_wellFormed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hWellFormed : wellFormedGraphState G state) :
     (hasFailedNodes G state ∧
@@ -364,6 +394,8 @@ theorem classifyClosedGraphState_exhaustive_of_wellFormed
 /-- Well-formed closed states cannot classify as stuck. -/
 theorem classifyClosedGraphState_not_stuck_of_wellFormed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hWellFormed : wellFormedGraphState G state)
     (stuckState : GraphState ν payload) :
@@ -401,6 +433,8 @@ theorem classifyClosedGraphState_not_stuck_of_wellFormed
 /-- On well-formed states, runtime-style classification is already closed-state classification. -/
 theorem classifyGraphState_eq_closed_of_wellFormed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hWellFormed : wellFormedGraphState G state) :
     classifyGraphState G state = classifyClosedGraphState G state := by
@@ -410,6 +444,8 @@ theorem classifyGraphState_eq_closed_of_wellFormed
 /-- Well-formed graph states cannot classify as stuck after the runtime closure step. -/
 theorem classifyGraphState_not_stuck_of_wellFormed
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hWellFormed : wellFormedGraphState G state)
     (stuckState : GraphState ν payload) :

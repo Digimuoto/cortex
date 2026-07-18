@@ -133,10 +133,28 @@ lean_lib «Cortex» where
     `Cortex.Wire.SelectRecovery,
     `Cortex.Wire.SelectAdmission,
     `Cortex.Wire.AdditiveFragment,
-    `Cortex.Wire.RunTrace
+    `Cortex.Wire.RunTrace,
+    `Cortex.Wire.StaticC
   ]
 
 -- Smoke-test executable. Prints a build banner; useful for confirming
 -- the Lake project compiles end-to-end without diving into the proof tree.
 lean_exe «cortex-theory» where
   root := `Main
+
+-- Extraction spike for the host-neutral fixed-topology Cortex kernel.
+-- Keeping this target separate from the whole-theory smoke executable makes
+-- its generated C and native linkage surface directly inspectable.
+lean_exe «cortex-kernel-spike» where
+  root := `CortexKernelSpike
+
+-- Host-side static Wire validator and freestanding C emitter (ADR 0091).
+lean_exe «cortex-wire-c» where
+  root := `CortexWireC
+
+-- Lean reference interpreter for the ADR 0091 three-way differential suite.
+-- Replays the shared scenario corpus through the restricted target semantics
+-- and emits canonical trace lines for comparison against the generated C and
+-- the Haskell GraphRuntime driver. Core Lean only, like `cortex-wire-c`.
+lean_exe «cortex-wire-diff» where
+  root := `CortexWireDiff

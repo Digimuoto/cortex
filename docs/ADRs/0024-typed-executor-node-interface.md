@@ -99,6 +99,11 @@ The boundary rule is therefore: every admitted vertex has a concrete typed port 
 side of that boundary may be empty if the registered projection permits it. Empty arity does not
 grant a node hidden context, implicit scheduling authority, or a distinguished workflow role.
 
+`CircuitTaskNode` therefore carries no separate semantic node-kind field. Retiring the former
+nullable `CircuitNodeKind` field deliberately changes serialized `CircuitIR` shape and its
+compatibility digest; structural Circuit constructors and typed executor metadata remain
+authoritative.
+
 ### Configured Executors Are Not Vertices
 
 This is an intentional breaking change from the older partial-node model. A configured executor

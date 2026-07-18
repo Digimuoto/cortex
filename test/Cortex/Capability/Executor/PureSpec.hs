@@ -143,7 +143,6 @@ weightedTaskNode =
   CircuitTaskNode
     { circuitTaskNodeRef = CircuitNodeRef "weighted_score"
     , circuitTaskNodeLabel = "weighted_score"
-    , circuitTaskNodeKind = Nothing
     , circuitTaskNodeMetadata =
         Aeson.object
           [ "executor"

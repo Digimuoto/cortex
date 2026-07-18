@@ -1,0 +1,13 @@
+# Two-node static-program/v1 fixture for the freestanding C backend.
+
+use std.io.{@command, @stdout, CommandResult};
+
+node first
+  -> result: CommandResult = @command {} (null);
+
+node second
+  <- result: CommandResult;
+  = @stdout {} (result);
+
+first
+  => second

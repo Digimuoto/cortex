@@ -203,6 +203,7 @@ This is the crash-recovery entry point: the input state may still contain volati
 `interrupted` statuses. Pulse recovery normalizes those states and proves `wellFormedGraphState`
 from the weaker persisted preconditions. -/
 theorem wirePulseRecoveryStep_establishes_safeRunState
+    [DecidableRel G.reaches]
     (hSourceValid : SourcePlanningContextValid context)
     (hBoundary : _root_.Cortex.Wire.registryBoundary registry context.topology)
     (hBridge : WireTopologyDAGBridge context.topology G)
@@ -223,6 +224,7 @@ theorem wirePulseRecoveryStep_establishes_safeRunState
 
 /-- Recovery preserves the Wire/Pulse safety envelope for an already safe materialized topology. -/
 theorem wirePulseRecoveryStep_preserves_safeRunState
+    [DecidableRel G.reaches]
     (hSafe :
       SafeWireRunState registry initialBudget remainingBudget context G state) :
     SafeWireRunState
@@ -247,6 +249,7 @@ theorem wirePulseRecoveryStep_preserves_safeRunState
 
 /-- Admissible frontier facts, followed by recovery, preserve the Wire/Pulse safety envelope. -/
 theorem wirePulseExecutionStep_preserves_safeRunState
+    [DecidableRel G.reaches]
     (hSafe :
       SafeWireRunState registry initialBudget remainingBudget context G state)
     (results : List (NodeResult (WireNode executor config authority) payload))
@@ -276,6 +279,7 @@ recovered state, provided facts target distinct nodes.
 This is intentionally a no-retry theorem. Same-node retries or supersession need a separate runtime
 policy before a deterministic theorem can state which fact wins. -/
 theorem wirePulseExecutionFacts_replay_deterministic
+    [DecidableRel G.reaches]
     {left right : List (NodeResult (WireNode executor config authority) payload)}
     (hPerm : left.Perm right)
     (hDistinct : left.Pairwise (fun first second => first.node ≠ second.node))
@@ -295,6 +299,7 @@ the emitted success payload. The theorem does not prove that `node` is the compi
 `pureNode`; that identity binding is a caller-supplied compiler/runtime correspondence
 obligation. -/
 theorem corePureExecutionStep_preserves_safeRunState
+    [DecidableRel G.reaches]
     {ctx : CorePure.StaticContext}
     {env : CorePure.Env}
     {pureNode : CorePure.PureNode}

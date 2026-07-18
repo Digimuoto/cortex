@@ -43,8 +43,6 @@ import Data.OpenApi
 import Data.Text (Text)
 import GHC.Generics (Generic)
 
-import Cortex.Wire.Circuit.Node (CircuitNodeKind)
-
 newtype CircuitNodeRef = CircuitNodeRef
   { unCircuitNodeRef :: Text
   }
@@ -82,7 +80,6 @@ data CircuitExpr
 data CircuitTaskNode = CircuitTaskNode
   { circuitTaskNodeRef :: CircuitNodeRef
   , circuitTaskNodeLabel :: Text
-  , circuitTaskNodeKind :: Maybe CircuitNodeKind
   , circuitTaskNodeMetadata :: Value
   }
   deriving stock (Eq, Show, Generic)

@@ -14,6 +14,7 @@ Execution-layer research synthesis: Pulse, graph execution, rewrites, and memory
 
 | Date       | Title                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------ |
+| 2026-07-17 | [Computable Pulse Kernel and C Extraction](computable-pulse-kernel-and-c-extraction.md)          |
 | 2026-04-24 | [Topological Memory - Iteration Synthesis](2026-04-24-topological-memory-iteration-synthesis.md) |
 
 ## Related

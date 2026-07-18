@@ -67,6 +67,8 @@ theorem safePulseRunState_persistedRecoveryPreconditions
 /-- Crash recovery preserves the Pulse safe-state predicate. -/
 theorem pulseRecoveryStep_preserves_safeRunState
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hSafe : SafePulseRunState G state) :
     SafePulseRunState G (recoveredState G state) :=
@@ -75,6 +77,8 @@ theorem pulseRecoveryStep_preserves_safeRunState
 /-- Recovery followed by classification cannot expose the stuck branch from a safe state. -/
 theorem pulseRecoveryStep_classifyGraphState_not_stuck
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (hSafe : SafePulseRunState G state)
     (stuckState : GraphState ν payload) :
@@ -97,15 +101,19 @@ the ordinary non-crash runtime frontier transition; it is the proof surface
 for reasoning about a fact fold once the state has been put back through the
 recovery envelope.
 -/
-noncomputable def normalizedFrontierFactsState [DecidableEq ν]
+def normalizedFrontierFactsState
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (results : List (NodeResult ν payload)) : GraphState ν payload :=
   recoveredState G (NodeResult.applyNodeFacts results state)
 
 /-- Admissible frontier facts preserve structural safety after recovery normalization. -/
-theorem pulseExecutionStep_preserves_safeRunState [DecidableEq ν]
+theorem pulseExecutionStep_preserves_safeRunState
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (results : List (NodeResult ν payload))
     (hSafe : SafePulseRunState G state)
@@ -115,8 +123,10 @@ theorem pulseExecutionStep_preserves_safeRunState [DecidableEq ν]
     frontierFacts_recovered_wellFormedGraphState G state results hSafe hResults
 
 /-- A normalized admissible frontier fact fold cannot classify as stuck. -/
-theorem pulseExecutionStep_classifyGraphState_not_stuck [DecidableEq ν]
+theorem pulseExecutionStep_classifyGraphState_not_stuck
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     (results : List (NodeResult ν payload))
     (hSafe : SafePulseRunState G state)
@@ -141,8 +151,10 @@ This equality theorem intentionally requires only distinct-node facts plus
 permutation. Admissibility is required by the preservation theorem when the
 claim is safety, not plain replay equality.
 -/
-theorem pulseExecutionStep_recoveredState_perm_invariant [DecidableEq ν]
+theorem pulseExecutionStep_recoveredState_perm_invariant
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {left right : List (NodeResult ν payload)}
     (hPerm : left.Perm right)
@@ -156,8 +168,10 @@ theorem pulseExecutionStep_recoveredState_perm_invariant [DecidableEq ν]
   exact congrArg (fun accumulated => recoveredState G accumulated) hFacts
 
 /-- Fixed external outcomes classify the same after any permutation of distinct-node facts. -/
-theorem pulseReplayDeterminism_modulo_fixedOutcomes [DecidableEq ν]
+theorem pulseReplayDeterminism_modulo_fixedOutcomes
     (G : DAG ν)
+    [DecidableEq ν]
+    [DecidableRel G.reaches]
     (state : GraphState ν payload)
     {left right : List (NodeResult ν payload)}
     (hPerm : left.Perm right)

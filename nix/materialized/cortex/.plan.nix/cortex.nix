@@ -159,6 +159,8 @@
           "Cortex/Wire/Pure"
           "Cortex/Wire/Pure/Bounds"
           "Cortex/Wire/Std"
+          "Cortex/Wire/StaticDifferential"
+          "Cortex/Wire/StaticProgram"
           "Cortex/Wire/Syntax"
           "Cortex/Wire/Package"
           "Cortex/Wire/Package/Manifest"
@@ -172,8 +174,6 @@
           "Cortex/Wire/Circuit/IR"
           "Cortex/Wire/Circuit/Lower"
           "Cortex/Wire/Circuit/Lowering"
-          "Cortex/Wire/Circuit/Node"
-          "Cortex/Wire/Circuit/NodeKind"
           "Cortex/Wire/Cli/Frontier"
           "Cortex/Pulse/GraphRuntime"
           "Cortex/Pulse/Health"
@@ -411,6 +411,8 @@
             "Cortex/Wire/ParserSpec"
             "Cortex/Wire/PureSpec"
             "Cortex/Wire/RuntimeSpec"
+            "Cortex/Wire/StaticDifferentialSpec"
+            "Cortex/Wire/StaticProgramSpec"
           ];
           hsSourceDirs = [ "test" ];
           mainPath = [ "Spec.hs" ];

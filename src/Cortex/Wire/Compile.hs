@@ -118,7 +118,6 @@ import Cortex.Wire.Circuit.IR
   , CircuitSignalBoundary (..)
   , CircuitTaskNode (..)
   )
-import Cortex.Wire.Circuit.Node (CircuitNodeKind (Act))
 import Cortex.Wire.Contract
   ( WireCompileEnv (..)
   , WireContractRegistry (..)
@@ -3089,7 +3088,6 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
               CircuitTaskNode
                 { circuitTaskNodeRef = nodeRef
                 , circuitTaskNodeLabel = defaultNodeLabel nodeRef label
-                , circuitTaskNodeKind = Just Act
                 , circuitTaskNodeMetadata =
                     actMetadata
                       nodeRef
@@ -3235,7 +3233,6 @@ loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports topLevelBindings wh
             CircuitTaskNode
               { circuitTaskNodeRef = nodeRef
               , circuitTaskNodeLabel = defaultNodeLabel nodeRef Nothing
-              , circuitTaskNodeKind = Just Act
               , circuitTaskNodeMetadata =
                   actMetadata
                     nodeRef

@@ -97,6 +97,27 @@ def unblocksSuccessors : NodeStatus → Prop
   | interrupted => False
   | waiting => False
 
+/-- Lifecycle terminality is constructively decidable for every node status. -/
+instance instDecidableTerminal (status : NodeStatus) : Decidable (terminal status) := by
+  cases status <;> simp only [terminal] <;> infer_instance
+
+/-- Failure propagatability is constructively decidable for every node status. -/
+instance instDecidablePropagatable (status : NodeStatus) : Decidable (propagatable status) := by
+  cases status <;> simp only [propagatable] <;> infer_instance
+
+/-- Output ownership is constructively decidable for every node status. -/
+instance instDecidableMayHaveOutput (status : NodeStatus) : Decidable (mayHaveOutput status) := by
+  cases status <;> simp only [mayHaveOutput] <;> infer_instance
+
+/-- Required-output status is constructively decidable for every node status. -/
+instance instDecidableRequiresOutput (status : NodeStatus) : Decidable (requiresOutput status) := by
+  cases status <;> simp only [requiresOutput] <;> infer_instance
+
+/-- Successor-unblocking status is constructively decidable for every node status. -/
+instance instDecidableUnblocksSuccessors (status : NodeStatus) :
+    Decidable (unblocksSuccessors status) := by
+  cases status <;> simp only [unblocksSuccessors] <;> infer_instance
+
 /-- `failureLe before after` orders states by failure-propagation growth.
 
 A status can stay unchanged, or a still-propagatable status can become

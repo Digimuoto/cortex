@@ -110,6 +110,7 @@ import Cortex.Wire.SelectRecovery
 import Cortex.Wire.SelectAdmission
 import Cortex.Wire.AdditiveFragment
 import Cortex.Wire.RunTrace
+import Cortex.Wire.StaticC
 
 /-!
 ## Overview
