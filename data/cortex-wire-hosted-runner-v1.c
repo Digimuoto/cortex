@@ -25,6 +25,14 @@ static uint8_t *snapshot_statuses;
 static uint64_t *snapshot_handles;
 static uint32_t node_count;
 
+/* Result of one host command. Keep the process-control result separate from
+ * boolean parser helpers: a legal no-op must not share the fatal sentinel. */
+typedef enum {
+  CORTEX_RUNNER_COMMAND_FAILED,
+  CORTEX_RUNNER_COMMAND_CONTINUE,
+  CORTEX_RUNNER_COMMAND_SHUTDOWN
+} cortex_runner_command_result;
+
 static void write_json_string(const char *value) {
   const unsigned char *cursor = (const unsigned char *)value;
   fputc('"', stdout);
@@ -49,7 +57,7 @@ static void write_json_string(const char *value) {
   fputc('"', stdout);
 }
 
-static int fail_protocol(const char *message) {
+static cortex_runner_command_result fail_protocol(const char *message) {
   fputs("{\"type\":\"protocol_error\",\"protocol\":\"" CORTEX_PROTOCOL
         "\",\"run_id\":", stdout);
   if (run_started != 0u) {
@@ -63,7 +71,7 @@ static int fail_protocol(const char *message) {
   fflush(stdout);
   fprintf(stderr, "cortex hosted runner: %s\n", message);
   runner_fault = 1u;
-  return 0;
+  return CORTEX_RUNNER_COMMAND_FAILED;
 }
 
 static const char *find_value(const char *line, const char *key) {
@@ -490,7 +498,7 @@ static void cancel_effect(uint32_t node_id, void *context) {
   if (node_id < node_count) { request_sequences[node_id] = 0u; }
 }
 
-static int emit_checkpoint(void) {
+static cortex_runner_command_result emit_checkpoint(void) {
   cortex_wire_engine_v1_state_header header;
   uint32_t node_id;
   const char *terminal;
@@ -523,10 +531,10 @@ static int emit_checkpoint(void) {
   }
   fputs("]}}\n", stdout);
   fflush(stdout);
-  return 1;
+  return CORTEX_RUNNER_COMMAND_CONTINUE;
 }
 
-static int emit_terminal(void) {
+static cortex_runner_command_result emit_terminal(void) {
   const char *terminal = terminal_text(cortex_wire_engine_v1_terminal());
   if (terminal == NULL || strcmp(terminal, "active") == 0) {
     return fail_protocol("engine reported invalid terminal transition");
@@ -537,15 +545,16 @@ static int emit_terminal(void) {
   fprintf(stdout, ",\"terminal\":\"%s\"}\n", terminal);
   fflush(stdout);
   terminal_emitted = 1u;
-  return 1;
+  return CORTEX_RUNNER_COMMAND_CONTINUE;
 }
 
-static int drive_and_emit(void) {
+static cortex_runner_command_result drive_and_emit(void) {
   cortex_wire_engine_v1_drive_result result = cortex_wire_engine_v1_drive();
   if (runner_fault != 0u) { return fail_protocol("effect request state violation"); }
   switch (result) {
     case CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED: return emit_checkpoint();
-    case CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS: return 1;
+    case CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS:
+      return CORTEX_RUNNER_COMMAND_CONTINUE;
     case CORTEX_WIRE_ENGINE_DRIVE_TERMINAL: return emit_terminal();
     case CORTEX_WIRE_ENGINE_DRIVE_STUCK: return fail_protocol("engine became stuck");
     case CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR: return fail_protocol("engine ABI error");
@@ -553,7 +562,9 @@ static int drive_and_emit(void) {
   }
 }
 
-static int begin_fresh(const char *line, cortex_wire_engine_v1_host_api *api) {
+static cortex_runner_command_result begin_fresh(
+    const char *line,
+    cortex_wire_engine_v1_host_api *api) {
   if (run_started != 0u ||
       !parse_string(line, "run_id", run_id, sizeof(run_id)) ||
       run_id[0] == '\0') {
@@ -566,7 +577,9 @@ static int begin_fresh(const char *line, cortex_wire_engine_v1_host_api *api) {
   return emit_checkpoint();
 }
 
-static int begin_restore(const char *line, cortex_wire_engine_v1_host_api *api) {
+static cortex_runner_command_result begin_restore(
+    const char *line,
+    cortex_wire_engine_v1_host_api *api) {
   cortex_wire_engine_v1_state_header header;
   char schema[64];
   char identity[256];
@@ -599,7 +612,7 @@ static int begin_restore(const char *line, cortex_wire_engine_v1_host_api *api) 
   return emit_checkpoint();
 }
 
-static int complete_effect(const char *line) {
+static cortex_runner_command_result complete_effect(const char *line) {
   char outcome[32];
   uint64_t sequence;
   uint64_t handle;
@@ -631,7 +644,7 @@ static int complete_effect(const char *line) {
   return emit_checkpoint();
 }
 
-static int commit_checkpoint(const char *line) {
+static cortex_runner_command_result commit_checkpoint(const char *line) {
   uint64_t sequence;
   if (!parse_u64(line, "sequence", &sequence) ||
       cortex_wire_engine_v1_checkpoint_committed(sequence) !=
@@ -641,13 +654,27 @@ static int commit_checkpoint(const char *line) {
   return drive_and_emit();
 }
 
-static int cancel_run(const char *line) {
+static cortex_runner_command_result cancel_run(const char *line) {
   char reason[CORTEX_MAX_REASON + 1u];
   uint32_t node_id;
+  cortex_wire_engine_v1_state_result result;
   if (!parse_string(line, "reason", reason, sizeof(reason))) {
     return fail_protocol("invalid cancel command");
   }
-  if (cortex_wire_engine_v1_cancel() != CORTEX_WIRE_ENGINE_STATE_OK) {
+  /* The terminal decision precedes its terminal event by one durable
+   * checkpoint acknowledgement. A host can therefore race a valid cancel
+   * against that final checkpoint before terminal_emitted is set. The strict
+   * engine ABI rejects mutation after a terminal decision; the process
+   * adapter absorbs this transport race as an idempotent no-op. */
+  if (cortex_wire_engine_v1_terminal() !=
+      CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {
+    return CORTEX_RUNNER_COMMAND_CONTINUE;
+  }
+  result = cortex_wire_engine_v1_cancel();
+  if (result == CORTEX_WIRE_ENGINE_STATE_CANCEL_DEFERRED) {
+    return CORTEX_RUNNER_COMMAND_CONTINUE;
+  }
+  if (result != CORTEX_WIRE_ENGINE_STATE_OK) {
     return fail_protocol("engine rejected cancellation");
   }
   for (node_id = 0u; node_id < node_count; ++node_id) {
@@ -656,7 +683,7 @@ static int cancel_run(const char *line) {
   return emit_checkpoint();
 }
 
-static int dispatch_command(
+static cortex_runner_command_result dispatch_command(
     const char *line,
     cortex_wire_engine_v1_host_api *api) {
   char type[48];
@@ -671,7 +698,15 @@ static int dispatch_command(
     return fail_protocol("host command run correlation mismatch");
   }
   if (terminal_emitted != 0u) {
-    if (strcmp(type, "shutdown") == 0) { return 2; }
+    if (strcmp(type, "shutdown") == 0) {
+      return CORTEX_RUNNER_COMMAND_SHUTDOWN;
+    }
+    /* Cancellation legally races the terminal event: the host may have
+     * written cancel before it processed the terminal already in flight.
+     * A late cancel is a no-op — the committed terminal stands. */
+    if (strcmp(type, "cancel") == 0) {
+      return CORTEX_RUNNER_COMMAND_CONTINUE;
+    }
     return fail_protocol("unexpected command after terminal event");
   }
   if (strcmp(type, "effect_completed") == 0) { return complete_effect(line); }
@@ -709,17 +744,19 @@ int main(void) {
   emit_hello();
   while (fgets(line, (int)CORTEX_MAX_LINE_BYTES + 1, stdin) != NULL) {
     size_t length = strlen(line);
-    int result;
+    cortex_runner_command_result result;
     if (length == 0u || line[length - 1u] != '\n') {
       fail_protocol("oversized or unterminated JSONL command");
       goto cleanup;
     }
     result = dispatch_command(line, &api);
-    if (result == 2) {
+    if (result == CORTEX_RUNNER_COMMAND_SHUTDOWN) {
       exit_code = 0;
       goto cleanup;
     }
-    if (result == 0 || runner_fault != 0u) { goto cleanup; }
+    if (result == CORTEX_RUNNER_COMMAND_FAILED || runner_fault != 0u) {
+      goto cleanup;
+    }
   }
   if (terminal_emitted != 0u) { exit_code = 0; }
 

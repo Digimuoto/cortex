@@ -25,6 +25,7 @@ module Cortex.Pulse.Query
   , claimNextPendingRun
   , ManagedResumeClaim (..)
   , claimManagedRunForResume
+  , expireManagedRunLease
   , createPendingRun
   , getRunStatusForUpdate
   , TerminalRunStatus (..)
@@ -301,6 +302,7 @@ data PulseGraphStateAdminView = PulseGraphStateAdminView
   , pgsavNodeProvenance :: Maybe Value
   , pgsavTopologyHash :: Maybe Text
   , pgsavHostedCheckpointSequence :: Maybe Int64
+  , pgsavHostedTerminalState :: Maybe Text
   , pgsavUpdatedAt :: UTCTime
   }
   deriving stock (Eq, Show)
@@ -314,6 +316,7 @@ data PulseGraphStateSnapshot = PulseGraphStateSnapshot
   , pgssNodeProvenance :: Maybe Value
   , pgssTopologyHash :: Maybe Text
   , pgssHostedCheckpointSequence :: Maybe Int64
+  , pgssHostedTerminalState :: Maybe Text
   , pgssRevision :: GraphStateRevision
   }
   deriving stock (Eq, Show)
@@ -398,6 +401,7 @@ data GraphStateWrite = GraphStateWrite
   , gswNodeProvenance :: Maybe Value
   , gswTopologyHash :: Maybe Text
   , gswHostedCheckpointSequence :: Maybe Int64
+  , gswHostedTerminalState :: Maybe Text
   , gswUpdatedAt :: UTCTime
   , gswExpectedRevision :: Maybe GraphStateRevision
   }
@@ -778,6 +782,28 @@ claimManagedRunForResume runId leaseOwner now leaseDurationSec =
             <$> D.column (D.nonNullable D.text)
             <*> D.column (D.nonNullable D.bool)
       )
+      False
+
+{- | Hand back a resume claim this owner took but will not act on: expire the
+lease immediately so another backend can claim the run without waiting out the
+full lease duration. Scoped to the owner and the running status so a claim
+that already moved on is untouched.
+-}
+expireManagedRunLease :: UUID -> Text -> UTCTime -> Transaction ()
+expireManagedRunLease runId leaseOwner now =
+  Tx.statement (runId, leaseOwner, now) $
+    Statement
+      "UPDATE pulse.runs \
+      \SET lease_expires_at = $3 \
+      \WHERE run_id = $1 \
+      \  AND lease_owner = $2 \
+      \  AND status = 'running'::pulse.run_status"
+      ( Enc.encode3
+          ((\(a, _, _) -> a), Enc.nonNullable Enc.uuid)
+          ((\(_, b, _) -> b), Enc.nonNullable Enc.text)
+          ((\(_, _, c) -> c), Enc.nonNullable Enc.timestamptz)
+      )
+      D.noResult
       False
 
 createPendingRun
@@ -1963,7 +1989,7 @@ readGraphState runId =
   Session.statement runId $
     Statement
       "SELECT node_statuses, node_outputs, remaining_rewrite_budget, runtime_version, \
-      \applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at \
+      \applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, hosted_terminal_state, updated_at \
       \FROM pulse.graph_state WHERE run_id = $1"
       (Enc.encode1 (Prelude.id, Enc.nonNullable Enc.uuid))
       (D.rowMaybe graphStateDecoder)
@@ -1979,6 +2005,7 @@ readGraphState runId =
         <*> D.column (D.nullable D.jsonb) -- node_provenance
         <*> D.column (D.nullable D.text) -- topology_hash
         <*> D.column (D.nullable D.int8) -- hosted_checkpoint_sequence
+        <*> D.column (D.nullable D.text) -- hosted_terminal_state
         <*> (GraphStateRevision <$> D.column (D.nonNullable D.timestamptz)) -- updated_at
 
 -- | Read persisted graph state for admin display.
@@ -1987,7 +2014,7 @@ readGraphStateForAdmin runId =
   Session.statement runId $
     Statement
       "SELECT node_statuses, node_outputs, remaining_rewrite_budget, runtime_version, \
-      \applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at \
+      \applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, hosted_terminal_state, updated_at \
       \FROM pulse.graph_state WHERE run_id = $1"
       (Enc.encode1 (Prelude.id, Enc.nonNullable Enc.uuid))
       (D.rowMaybe adminGraphStateDecoder)
@@ -2003,6 +2030,7 @@ readGraphStateForAdmin runId =
         <*> D.column (D.nullable D.jsonb) -- node_provenance
         <*> D.column (D.nullable D.text) -- topology_hash
         <*> D.column (D.nullable D.int8) -- hosted_checkpoint_sequence
+        <*> D.column (D.nullable D.text) -- hosted_terminal_state
         <*> D.column (D.nonNullable D.timestamptz) -- updated_at
 
 {- | Persist graph state using optimistic compare-and-swap semantics.
@@ -2030,14 +2058,15 @@ writeGraphState input =
       \    $7::jsonb AS node_provenance, \
       \    $8::text AS topology_hash, \
       \    $9::int8 AS hosted_checkpoint_sequence, \
-      \    $10::timestamptz AS updated_at, \
-      \    $11::timestamptz AS expected_revision \
+      \    $10::text AS hosted_terminal_state, \
+      \    $11::timestamptz AS updated_at, \
+      \    $12::timestamptz AS expected_revision \
       \), inserted AS ( \
       \  INSERT INTO pulse.graph_state \
       \    (run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
-      \     runtime_version, applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at) \
+      \     runtime_version, applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, hosted_terminal_state, updated_at) \
       \  SELECT run_id, node_statuses, node_outputs, remaining_rewrite_budget, \
-      \         runtime_version, applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, updated_at \
+      \         runtime_version, applied_rewrite_id, node_provenance, topology_hash, hosted_checkpoint_sequence, hosted_terminal_state, updated_at \
       \  FROM input \
       \  WHERE expected_revision IS NULL \
       \  ON CONFLICT (run_id) DO NOTHING \
@@ -2052,6 +2081,7 @@ writeGraphState input =
       \    node_provenance = input.node_provenance, \
       \    topology_hash = input.topology_hash, \
       \    hosted_checkpoint_sequence = input.hosted_checkpoint_sequence, \
+      \    hosted_terminal_state = input.hosted_terminal_state, \
       \    updated_at = input.updated_at \
       \  FROM input \
       \  WHERE input.expected_revision IS NOT NULL \
@@ -2073,6 +2103,7 @@ writeGraphState input =
                  , Enc.col (.gswNodeProvenance) (Enc.nullable Enc.jsonb)
                  , Enc.col (.gswTopologyHash) (Enc.nullable Enc.text)
                  , Enc.col (.gswHostedCheckpointSequence) (Enc.nullable Enc.int8)
+                 , Enc.col (.gswHostedTerminalState) (Enc.nullable Enc.text)
                  , Enc.col (.gswUpdatedAt) (Enc.nonNullable Enc.timestamptz)
                  , Enc.col
                      (fmap unGraphStateRevision . (.gswExpectedRevision))

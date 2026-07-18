@@ -240,7 +240,7 @@
           -I "$generated" "$generated/program.c" \
           ${../test/fixtures/wire/static-program-v1/two-node-engine-harness.c} \
           -o "$TMPDIR/two-node-engine-harness"
-        for mode in s x c i n h d r t; do
+        for mode in s x c m i n h d r t; do
           "$TMPDIR/two-node-engine-harness" "$mode"
         done
 
@@ -248,7 +248,7 @@
           -I "$generated" "$generated/program.c" \
           ${../test/fixtures/wire/static-program-v1/two-node-engine-harness.c} \
           -o "$TMPDIR/two-node-engine-harness-gcc"
-        for mode in s x c i n h d r t; do
+        for mode in s x c m i n h d r t; do
           "$TMPDIR/two-node-engine-harness-gcc" "$mode"
         done
 
@@ -257,7 +257,7 @@
           -I "$generated" "$generated/program.c" \
           ${../test/fixtures/wire/static-program-v1/two-node-engine-harness.c} \
           -o "$TMPDIR/two-node-engine-harness-sanitized"
-        for mode in s x c i n h d r t; do
+        for mode in s x c m i n h d r t; do
           ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/two-node-engine-harness-sanitized" "$mode"
         done
 
@@ -505,6 +505,64 @@
         jq -e -s 'all(.[]; .type != "protocol_error")' \
           "$TMPDIR/cancel.out" >/dev/null
 
+        deferredCancelCommands="$TMPDIR/deferred-cancel-commands.jsonl"
+        jq -nc --arg run deferred-cancel \
+          '{type:"start",protocol:"cortex.wire.host-process/v1",run_id:$run}' > "$deferredCancelCommands"
+        jq -nc --arg run deferred-cancel --arg reason 'cancel before initial checkpoint acknowledgement' \
+          '{type:"cancel",protocol:"cortex.wire.host-process/v1",run_id:$run,reason:$reason}' >> "$deferredCancelCommands"
+        jq -nc --arg run deferred-cancel \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1}' >> "$deferredCancelCommands"
+        jq -nc --arg run deferred-cancel \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2}' >> "$deferredCancelCommands"
+        jq -nc --arg run deferred-cancel \
+          '{type:"shutdown",protocol:"cortex.wire.host-process/v1",run_id:$run}' >> "$deferredCancelCommands"
+        ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/circuit-engine-sanitized" \
+          < "$deferredCancelCommands" > "$TMPDIR/deferred-cancel.out"
+        jq -e -s '
+          any(.[]; .type == "terminal" and .terminal == "cancelled") and
+          all(.[]; .type != "protocol_error")
+        ' "$TMPDIR/deferred-cancel.out" >/dev/null
+
+        finalCheckpointCancelCommands="$TMPDIR/final-checkpoint-cancel-commands.jsonl"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"start",protocol:"cortex.wire.host-process/v1",run_id:$run}' > "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:1,node_id:0,outcome:"success",output_handle:1,message:null}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"effect_completed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:2,node_id:1,outcome:"success",output_handle:2,message:null}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:3}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel --arg reason 'cancel raced final checkpoint' \
+          '{type:"cancel",protocol:"cortex.wire.host-process/v1",run_id:$run,reason:$reason}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"checkpoint_committed",protocol:"cortex.wire.host-process/v1",run_id:$run,sequence:4}' >> "$finalCheckpointCancelCommands"
+        jq -nc --arg run final-checkpoint-cancel \
+          '{type:"shutdown",protocol:"cortex.wire.host-process/v1",run_id:$run}' >> "$finalCheckpointCancelCommands"
+        ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/circuit-engine-sanitized" \
+          < "$finalCheckpointCancelCommands" > "$TMPDIR/final-checkpoint-cancel.out"
+        jq -e -s '
+          any(.[]; .type == "terminal" and .terminal == "completed") and
+          all(.[]; .type != "protocol_error")
+        ' "$TMPDIR/final-checkpoint-cancel.out" >/dev/null
+
+        postTerminalCancelCommands="$TMPDIR/post-terminal-cancel-commands.jsonl"
+        cp "$commands" "$postTerminalCancelCommands"
+        sed -i '$d' "$postTerminalCancelCommands"
+        jq -nc --arg run smoke --arg reason 'cancel raced terminal event' \
+          '{type:"cancel",protocol:"cortex.wire.host-process/v1",run_id:$run,reason:$reason}' >> "$postTerminalCancelCommands"
+        jq -nc --arg run smoke \
+          '{type:"shutdown",protocol:"cortex.wire.host-process/v1",run_id:$run}' >> "$postTerminalCancelCommands"
+        ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/circuit-engine-sanitized" \
+          < "$postTerminalCancelCommands" > "$TMPDIR/post-terminal-cancel.out"
+        jq -e -s '
+          any(.[]; .type == "terminal" and .terminal == "completed") and
+          all(.[]; .type != "protocol_error")
+        ' "$TMPDIR/post-terminal-cancel.out" >/dev/null
+
         runRestore() {
           sequence="$1"
           terminal="$2"
@@ -597,6 +655,7 @@
               reference_host: true,
               malformed_protocol_rejected: true,
               oversized_protocol_rejected: true,
+              cancellation_races: true,
               asan_ubsan_bounds: true,
               restore_at_every_checkpoint: true
             }

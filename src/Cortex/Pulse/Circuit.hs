@@ -72,6 +72,7 @@ import Data.Aeson qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Int (Int32)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -92,6 +93,7 @@ import Cortex.Pulse.Database
   , withConnection
   )
 import Cortex.Pulse.Executor (TaskContext (..), executeStagePlan, resumeStagePlan)
+import Cortex.Pulse.Executor.Events (ExecutorEvent (EvtDbCritical))
 import Cortex.Pulse.Executor.Persistence (failRun)
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
@@ -106,15 +108,18 @@ import Cortex.Pulse.Plan
   )
 import Cortex.Pulse.Query
   ( ManagedResumeClaim (..)
+  , PulseGraphStateSnapshot (..)
   , PulseTaskDefinitionInsert (..)
   , RunExecutionProfile (..)
   , RunExecutionProfileFreezeResult (..)
   , claimAndCreateRunWithParentAndProfile
   , claimManagedRunForResume
   , createTaskDefinition
+  , expireManagedRunLease
   , freezeRunExecutionProfile
   , getTaskById
   , getTaskForRun
+  , readGraphState
   , readRunExecutionProfile
   )
 import Cortex.Pulse.Scheduler (withLeaseRenewal)
@@ -131,6 +136,7 @@ import Cortex.Wire.Circuit.Engine
   , HostedProgramManifest (..)
   , circuitExecutionBackendTag
   , defaultCircuitRunOptions
+  , hostedBackendTag
   , hostedProcessProtocol
   , hostedProgramManifest
   )
@@ -159,6 +165,7 @@ import Platform.DurableTask.Types
   , TriggerSource (..)
   , runStatusFromText
   )
+import Platform.Observability (emitObsEvent)
 
 -- | Why a compiled circuit could not be run through this entrypoint.
 data CircuitRunError
@@ -754,9 +761,9 @@ withManagedResume executionProfile pool pulseConfig runId run = do
         Left err -> pure (setupError "read Circuit execution profile" err)
         Right (Just actual)
           | actual /= executionProfile -> pure (profileMismatch executionProfile actual)
-        Right _matchingOrLegacy -> claimAndResume task
+        Right maybeProfile -> claimAndResume task maybeProfile
   where
-    claimAndResume task = do
+    claimAndResume task persistedProfile = do
       now <- getCurrentTime
       claimed <-
         runTransaction
@@ -766,12 +773,10 @@ withManagedResume executionProfile pool pulseConfig runId run = do
         Left err -> pure (setupError "claim resume run" err)
         Right Nothing -> pure (Left (CircuitRunSetupError "claim resume run: run not found"))
         Right (Just claim)
-          | claim.mrcClaimed -> withClaimedProfile task
+          | claim.mrcClaimed -> withClaimedProfile task persistedProfile
           | otherwise ->
               case runOutcomeForStoredStatus claim.mrcStatus of
-                Just outcome -> do
-                  frozen <- freezeExecutionProfile pool runId executionProfile
-                  pure (fmap (const (runId, outcome)) frozen)
+                Just outcome -> pure (Right (runId, outcome))
                 Nothing ->
                   pure
                     ( Left
@@ -780,17 +785,55 @@ withManagedResume executionProfile pool pulseConfig runId run = do
                         )
                     )
 
-    withClaimedProfile task = do
-      frozen <- freezeExecutionProfile pool runId executionProfile
-      case frozen of
-        Left err -> pure (Left err)
+    withClaimedProfile task persistedProfile = do
+      legacyEligible <- validateLegacyHostedResume persistedProfile
+      case legacyEligible of
+        Left err -> releaseRejectedClaim err
         Right () -> do
-          shutdownFlag <- newTVarIO False
-          outcome <-
-            run
-              TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
-              task
-          pure (fmap (runId,) outcome)
+          frozen <- freezeExecutionProfile pool runId executionProfile
+          case frozen of
+            Left err -> releaseRejectedClaim err
+            Right () -> do
+              shutdownFlag <- newTVarIO False
+              outcome <-
+                run
+                  TaskContext {tcPool = pool, tcConfig = pulseConfig, tcShutdownFlag = shutdownFlag}
+                  task
+              pure (fmap (runId,) outcome)
+
+    -- The claim above stamped a fresh lease; rejecting the resume without
+    -- expiring it would block a legitimate claim by another backend for a
+    -- full lease duration. The release is best-effort — if it fails, the
+    -- lease simply expires on its own schedule.
+    releaseRejectedClaim err = do
+      now <- getCurrentTime
+      released <- runTransaction pool (expireManagedRunLease runId (pulseLeaseOwner pulseConfig) now)
+      case released of
+        Left releaseErr ->
+          emitObsEvent
+            ( EvtDbCritical
+                runId
+                "expire_rejected_managed_resume_claim"
+                (T.pack releaseErr)
+            )
+        Right () -> pure ()
+      pure (Left err)
+
+    validateLegacyHostedResume = \case
+      Just _profile -> pure (Right ())
+      Nothing
+        | executionProfile.repExecutionBackend /= hostedBackendTag -> pure (Right ())
+        | otherwise -> do
+            persistedState <- withConnection pool (readGraphState runId)
+            pure $ case persistedState of
+              Left err -> setupError "read legacy graph state" err
+              Right (Just snapshot)
+                | isNothing snapshot.pgssHostedCheckpointSequence ->
+                    Left
+                      ( CircuitRunResumeRejected
+                          "cannot select the hosted backend for a legacy graph-runtime snapshot"
+                      )
+              Right _other -> Right ()
 
 profileMismatch :: RunExecutionProfile -> RunExecutionProfile -> Either CircuitRunError value
 profileMismatch expected actual =

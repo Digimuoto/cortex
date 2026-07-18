@@ -176,6 +176,7 @@ pulse.graph_state
   node_provenance           jsonb
   topology_hash             text
   hosted_checkpoint_sequence bigint          -- positive acknowledged engine sequence
+  hosted_terminal_state     text             -- active/completed/failed/cancelled
   updated_at                timestamptz not null
 ```
 
@@ -183,7 +184,12 @@ Mutable latest graph snapshot for durable resume. `node_statuses` and `node_outp
 runtime graph-state maps; rewrite fields bind the snapshot to the materialized rewrite lineage.
 
 `hosted_checkpoint_sequence` is null for the Haskell backend and positive for a committed hosted
-engine snapshot. It is correlation and restore sequencing only. `node_statuses` and `node_outputs`
+engine snapshot. `hosted_terminal_state` records the durable _resume disposition_ of that snapshot,
+not the complete Pulse run outcome: `active` restores an engine, while any other value settles the
+run without booting a child. Failure details and distinctions such as stage timeout remain in the
+run and stage records. A cancellation initiated by graceful Pulse shutdown is normalized to
+`active`, because the run is still in progress and a graceful shutdown must leave exactly the state
+a crash would; only operator cancellation persists `cancelled`. `node_statuses` and `node_outputs`
 remain the sole authoritative recovery snapshot; Pulse does not persist an opaque engine-state blob.
 
 `updated_at` is also the optimistic compare-and-swap revision token. The first graph-state write is
@@ -314,9 +320,10 @@ depends on the new shape — e.g. `migrations/0001_graph_rewrites_admission_mode
 `migrations/0003_graph_rewrites_admission_mode_external.sql` widens that column's CHECK with the ADR
 0088 `external` mode; and `migrations/0004_pulse_artifacts.sql` adds the ADR 0089 artifact store
 tables. `migrations/0005_circuit_execution_profile.sql` adds the consistency-checked compiled-run
-execution profile and positive hosted checkpoint sequence. `checks.pulse-schema-drift` (also
-`just schema-drift-check`) loads the full dump, reapplies every migration, compares normalized
-`pg_dump` output, and verifies this dump's recorded migration head.
+execution profile and positive hosted checkpoint sequence;
+`migrations/0006_hosted_engine_terminal_state.sql` adds the durable hosted terminal marker.
+`checks.pulse-schema-drift` (also `just schema-drift-check`) loads the full dump, reapplies every
+migration, compares normalized `pg_dump` output, and verifies this dump's recorded migration head.
 
 ## Related
 

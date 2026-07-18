@@ -6,7 +6,7 @@
 -- of psql meta-commands (\restrict/\unrestrict, SET, set_config) so it applies
 -- through hasql. Do not edit by hand; regenerate when the Pulse schema changes
 -- and re-strip the psql meta-commands.
--- Migration head: 0005_circuit_execution_profile.sql.
+-- Migration head: 0006_hosted_engine_terminal_state.sql.
 
 --
 -- PostgreSQL database dump
@@ -148,7 +148,9 @@ CREATE TABLE pulse.graph_state (
     node_provenance jsonb,
     topology_hash text,
     hosted_checkpoint_sequence bigint,
-    CONSTRAINT pulse_graph_state_hosted_checkpoint_positive CHECK (((hosted_checkpoint_sequence IS NULL) OR (hosted_checkpoint_sequence > 0)))
+    hosted_terminal_state text,
+    CONSTRAINT pulse_graph_state_hosted_checkpoint_positive CHECK (((hosted_checkpoint_sequence IS NULL) OR (hosted_checkpoint_sequence > 0))),
+    CONSTRAINT pulse_graph_state_hosted_terminal_state_valid CHECK (((hosted_terminal_state IS NULL) OR (hosted_terminal_state = ANY (ARRAY['active'::text, 'completed'::text, 'failed'::text, 'cancelled'::text]))))
 );
 
 

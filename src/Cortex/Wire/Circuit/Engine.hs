@@ -21,6 +21,7 @@ module Cortex.Wire.Circuit.Engine
   , HostedProgramError (..)
   , CircuitExecutionBackend (..)
   , circuitExecutionBackendTag
+  , hostedBackendTag
   , CircuitRunOptions (..)
   , defaultCircuitRunOptions
   , loadHostedProgramArtifact
@@ -138,11 +139,15 @@ data CircuitExecutionBackend
   | HostedX86_64LinuxV1 !HostedProgramArtifact
   deriving stock (Eq, Show)
 
+-- | Stable database/manifest tag for the hosted Linux backend.
+hostedBackendTag :: Text
+hostedBackendTag = "hosted_x86_64_linux_v1"
+
 -- | Stable database/manifest tag for the selected whole-run backend.
 circuitExecutionBackendTag :: CircuitExecutionBackend -> Text
 circuitExecutionBackendTag = \case
   PulseGraphRuntimeV1 -> "pulse_graph_runtime_v1"
-  HostedX86_64LinuxV1 _artifact -> "hosted_x86_64_linux_v1"
+  HostedX86_64LinuxV1 _artifact -> hostedBackendTag
 
 -- | Per-run execution options. The graph-native Pulse runtime remains the default.
 newtype CircuitRunOptions = CircuitRunOptions

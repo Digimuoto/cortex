@@ -221,6 +221,7 @@ pulseSchemaRequiredColumns =
   , ("runs", "artifact_digest")
   , ("runs", "protocol_version")
   , ("graph_state", "hosted_checkpoint_sequence")
+  , ("graph_state", "hosted_terminal_state")
   ]
 
 pulseSchemaRequiredRunStatusLabels :: [BS.ByteString]

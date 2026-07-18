@@ -357,7 +357,8 @@ private def renderHeader : String :=
   "typedef enum {\n" ++
   "  CORTEX_WIRE_ENGINE_STATE_OK = 0,\n" ++
   "  CORTEX_WIRE_ENGINE_STATE_INVALID = 1,\n" ++
-  "  CORTEX_WIRE_ENGINE_STATE_IDENTITY_MISMATCH = 2\n" ++
+  "  CORTEX_WIRE_ENGINE_STATE_IDENTITY_MISMATCH = 2,\n" ++
+  "  CORTEX_WIRE_ENGINE_STATE_CANCEL_DEFERRED = 3\n" ++
   "} cortex_wire_engine_v1_state_result;\n\n" ++
   "typedef enum {\n" ++
   "  CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED = 0,\n" ++
@@ -396,6 +397,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "static uint8_t terminal_failed;\n" ++
   "static uint64_t engine_checkpoint_sequence;\n" ++
   "static uint8_t engine_checkpoint_pending;\n" ++
+  "static uint8_t engine_cancel_requested;\n" ++
   "static cortex_wire_engine_v1_terminal_state engine_terminal;\n" ++
   "static cortex_wire_engine_v1_host_api engine_host_api;\n" ++
   s!"static const char engine_program_identity[] = \"{escapeC program.programIdentity}\";\n\n" ++
@@ -633,6 +635,21 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "    engine_host_api.effect_cancel(node_id, engine_host_api.context);\n" ++
   "  }\n" ++
   "}\n\n" ++
+  "static void apply_engine_cancel(void) {\n" ++
+  "  uint32_t node_id;\n" ++
+  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
+  "    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {\n" ++
+  "      if (effect_api.effect_cancel != 0) {\n" ++
+  "        effect_api.effect_cancel(node_id, effect_api.context);\n" ++
+  "      }\n" ++
+  "      node_status[node_id] = CORTEX_WIRE_STATUS_PENDING;\n" ++
+  "      output_handle[node_id] = 0u;\n" ++
+  "    }\n" ++
+  "  }\n" ++
+  "  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED;\n" ++
+  "  ++engine_checkpoint_sequence;\n" ++
+  "  engine_checkpoint_pending = 1u;\n" ++
+  "}\n\n" ++
   "int cortex_wire_engine_v1_init(const cortex_wire_engine_v1_host_api *api) {\n" ++
   "  cortex_wire_program_v1_effect_api program_api;\n" ++
   "  int result;\n" ++
@@ -645,6 +662,7 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "  if (result != 0) { return result; }\n" ++
   "  engine_checkpoint_sequence = 1u;\n" ++
   "  engine_checkpoint_pending = 1u;\n" ++
+  "  engine_cancel_requested = 0u;\n" ++
   "  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE;\n" ++
   "  return 0;\n" ++
   "}\n\n" ++
@@ -698,6 +716,10 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
   "  }\n" ++
   "  engine_checkpoint_pending = 0u;\n" ++
+  "  if (engine_cancel_requested != 0u) {\n" ++
+  "    engine_cancel_requested = 0u;\n" ++
+  "    apply_engine_cancel();\n" ++
+  "  }\n" ++
   "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
   "}\n\n" ++
   "cortex_wire_engine_v1_state_result cortex_wire_engine_v1_export_state(\n" ++
@@ -740,28 +762,25 @@ private def renderSource (validated : ValidatedProgram) : String :=
   "  terminal_failed = (uint8_t)(header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_FAILED);\n" ++
   "  engine_checkpoint_sequence = header->checkpoint_sequence;\n" ++
   "  engine_checkpoint_pending = 1u;\n" ++
+  "  /* The cancel latch is session state, not exported state: a deferred\n" ++
+  "   * cancel does not survive export/import. The host re-issues the cancel\n" ++
+  "   * after a restore because the cancellation request itself is durable\n" ++
+  "   * on the host side. */\n" ++
+  "  engine_cancel_requested = 0u;\n" ++
   "  engine_terminal = header->terminal;\n" ++
   "  initialized = 1u;\n" ++
   "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
   "}\n\n" ++
   "cortex_wire_engine_v1_state_result cortex_wire_engine_v1_cancel(void) {\n" ++
-  "  uint32_t node_id;\n" ++
   "  if (initialized == 0u || driving != 0u ||\n" ++
   "      engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {\n" ++
   "    return CORTEX_WIRE_ENGINE_STATE_INVALID;\n" ++
   "  }\n" ++
-  "  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {\n" ++
-  "    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {\n" ++
-  "      if (effect_api.effect_cancel != 0) {\n" ++
-  "        effect_api.effect_cancel(node_id, effect_api.context);\n" ++
-  "      }\n" ++
-  "      node_status[node_id] = CORTEX_WIRE_STATUS_PENDING;\n" ++
-  "      output_handle[node_id] = 0u;\n" ++
-  "    }\n" ++
+  "  if (engine_checkpoint_pending != 0u) {\n" ++
+  "    engine_cancel_requested = 1u;\n" ++
+  "    return CORTEX_WIRE_ENGINE_STATE_CANCEL_DEFERRED;\n" ++
   "  }\n" ++
-  "  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED;\n" ++
-  "  ++engine_checkpoint_sequence;\n" ++
-  "  engine_checkpoint_pending = 1u;\n" ++
+  "  apply_engine_cancel();\n" ++
   "  return CORTEX_WIRE_ENGINE_STATE_OK;\n" ++
   "}\n\n" ++
   "cortex_wire_engine_v1_terminal_state cortex_wire_engine_v1_terminal(void) {\n" ++

@@ -1067,6 +1067,7 @@ writeGraphStateCompat pool runId statuses outputs runtimeVersion appliedRewriteI
           , gswNodeProvenance = Nothing
           , gswTopologyHash = Nothing
           , gswHostedCheckpointSequence = Nothing
+          , gswHostedTerminalState = Nothing
           , gswUpdatedAt = now
           , gswExpectedRevision = fmap Q.pgssRevision snapshot
           }
@@ -5054,6 +5055,7 @@ spec = beforeAll setupTestDb $ do
               , gswNodeProvenance = Just (Aeson.toJSON (initialProvenance stagePlan.spTopology))
               , gswTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
               , gswHostedCheckpointSequence = Nothing
+              , gswHostedTerminalState = Nothing
               , gswUpdatedAt = unGraphStateRevision revision
               , gswExpectedRevision = Just snapshot0.pgssRevision
               }
@@ -5097,6 +5099,7 @@ spec = beforeAll setupTestDb $ do
               , gswNodeProvenance = Just (Aeson.toJSON (initialProvenance stagePlan.spTopology))
               , gswTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
               , gswHostedCheckpointSequence = Nothing
+              , gswHostedTerminalState = Nothing
               , gswUpdatedAt = unGraphStateRevision winnerRevision
               , gswExpectedRevision = Just snapshot0.pgssRevision
               }
@@ -5108,6 +5111,7 @@ spec = beforeAll setupTestDb $ do
               , pgsNodeProvenance = initialProvenance stagePlan.spTopology
               , pgsTopologyHash = Just (computeTopologyHash stagePlan.spTopology)
               , pgsHostedCheckpointSequence = Nothing
+              , pgsHostedTerminalState = Nothing
               , pgsRevision = Just snapshot0.pgssRevision
               }
       winnerResult <- runTx pool $ Q.writeGraphState winnerWrite

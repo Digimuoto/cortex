@@ -232,16 +232,24 @@ static int cancellation(
     cortex_wire_engine_v1_host_api *api,
     struct fixture_state *state) {
   if (cortex_wire_engine_v1_init(api) != 0) { return 70; }
-  if (cortex_wire_engine_v1_checkpoint_committed(1u) !=
-      CORTEX_WIRE_ENGINE_STATE_OK) {
+  if (cortex_wire_engine_v1_cancel() !=
+      CORTEX_WIRE_ENGINE_STATE_CANCEL_DEFERRED) {
     return 71;
   }
-  if (cortex_wire_engine_v1_drive() !=
-      CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS) {
+  if (!export_matches(
+          1u,
+          CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE,
+          CORTEX_WIRE_STATUS_PENDING,
+          CORTEX_WIRE_STATUS_PENDING,
+          0u,
+          0u)) {
     return 72;
   }
-  if (cortex_wire_engine_v1_cancel() != CORTEX_WIRE_ENGINE_STATE_OK) { return 73; }
-  if (state->cancellations != 1u) { return 74; }
+  if (cortex_wire_engine_v1_checkpoint_committed(1u) !=
+      CORTEX_WIRE_ENGINE_STATE_OK) {
+    return 73;
+  }
+  if (state->cancellations != 0u) { return 74; }
   if (!export_matches(
           2u,
           CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED,
@@ -261,6 +269,52 @@ static int cancellation(
   return 0;
 }
 
+static int cancellation_mid_effect(
+    cortex_wire_engine_v1_host_api *api,
+    struct fixture_state *state) {
+  if (cortex_wire_engine_v1_init(api) != 0) { return 80; }
+  if (cortex_wire_engine_v1_drive() !=
+      CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED) {
+    return 81;
+  }
+  if (cortex_wire_engine_v1_checkpoint_committed(1u) !=
+      CORTEX_WIRE_ENGINE_STATE_OK) {
+    return 82;
+  }
+  if (cortex_wire_engine_v1_drive() !=
+      CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS) {
+    return 83;
+  }
+  if (state->first_requests != 1u) { return 84; }
+  /* No checkpoint is pending, so the cancel applies immediately and the
+   * running node is torn down through effect_cancel. */
+  if (cortex_wire_engine_v1_cancel() != CORTEX_WIRE_ENGINE_STATE_OK) {
+    return 85;
+  }
+  if (state->cancellations != 1u) { return 86; }
+  if (!export_matches(
+          2u,
+          CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED,
+          CORTEX_WIRE_STATUS_PENDING,
+          CORTEX_WIRE_STATUS_PENDING,
+          0u,
+          0u)) {
+    return 87;
+  }
+  if (cortex_wire_engine_v1_checkpoint_committed(2u) !=
+      CORTEX_WIRE_ENGINE_STATE_OK) {
+    return 88;
+  }
+  if (cortex_wire_engine_v1_drive() != CORTEX_WIRE_ENGINE_DRIVE_TERMINAL) {
+    return 89;
+  }
+  if (cortex_wire_engine_v1_terminal() !=
+      CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED) {
+    return 90;
+  }
+  return 0;
+}
+
 int main(int argc, char **argv) {
   struct fixture_state state = {0u, 0u, 0u};
   cortex_wire_engine_v1_host_api api = {request_effect, cancel_effect, &state};
@@ -268,5 +322,6 @@ int main(int argc, char **argv) {
   if (argv[1][0] == 's') { return fresh_success(&api, &state); }
   if (argv[1][0] == 'x') { return restore_success(&api, &state); }
   if (argv[1][0] == 'c') { return cancellation(&api, &state); }
+  if (argv[1][0] == 'm') { return cancellation_mid_effect(&api, &state); }
   return restore_rejected(&api, argv[1][0]);
 }

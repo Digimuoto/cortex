@@ -437,6 +437,7 @@ test-suite cortex-test
         Cortex.Capability.Executor.PureSpec
         Cortex.PublicPreludeSpec
         Cortex.Pulse.CheckpointSpec
+        Cortex.Pulse.Circuit.HostedSpec
         Cortex.Pulse.RewriteAnchorValidationSpec
         Cortex.Pulse.RewriteRetryHydrationSpec
         Cortex.Pulse.StageTemplateRegistrySpec
@@ -452,6 +453,7 @@ test-suite cortex-test
         Cortex.Pulse.TypesSpec
         Cortex.Wire.Circuit.CompilerSpec
         Cortex.Wire.Circuit.EngineSpec
+        Cortex.Wire.Circuit.HostedSpec
         Cortex.Wire.Circuit.IRSpec
         Cortex.Wire.Cli.FrontierSpec
         Cortex.Wire.CompileSpec

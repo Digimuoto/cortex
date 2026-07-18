@@ -65,8 +65,21 @@ carry their applicable monotonic sequence.
 
 Protocol lines are limited to 2 MiB. Stdout is protocol-only. Stderr is drained as diagnostics and
 captured only up to 64 KiB. Oversized, malformed, unterminated, version-mismatched, out-of-sequence,
-wrong-run, duplicate, stale, post-terminal, or otherwise unexpected messages fail closed and
-terminate the hosted run.
+wrong-run, duplicate, stale, or otherwise unexpected messages fail closed and terminate the hosted
+run. Cancellation is the sole race-tolerant exception: `cancel` is an idempotent no-op once the
+engine has made a terminal decision, including while its final checkpoint or terminal event is in
+flight. `shutdown` remains the only command accepted after the terminal handshake.
+
+If `cancel` crosses an unacknowledged checkpoint, the runner defers it until that checkpoint is
+acknowledged, then exports the cancelled checkpoint. Once the host requests cancellation it starts
+no newly observed effect work and discards late or buffered worker completions; the cancelled
+checkpoint is the durable authority for the reset. A host-side worker interruption is never sent as
+an effect failure. It is legal only with a cancellation watcher installed, and the watcher must
+produce an authorized run-level cancel within the bounded response deadline.
+
+Async cancellation used by lease and process supervision is control flow, not a host callback
+failure. Hosts must let it propagate to the supervisor rather than convert it into a durable run
+fault.
 
 ### Durability barrier
 
@@ -121,6 +134,7 @@ fresh child process.
 - Reject non-normalized or inconsistent restore state rather than repairing it in the engine.
 - Keep protocol and state schema versions independent from the freestanding program ABI.
 - Benchmark protocol overhead without imposing a threshold; revisit transport only with evidence.
+- Time each mandatory response without extending its deadline on unrelated traffic.
 
 ## Traceability
 

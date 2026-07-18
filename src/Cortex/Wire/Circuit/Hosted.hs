@@ -9,35 +9,58 @@ Stability   : experimental
 The generated executable owns circuit scheduling and transition validation.
 This module owns process lifecycle, bounded JSONL framing, durable checkpoint
 acknowledgement, and dispatch to authority-bearing host callbacks.
+
+Cancellation is inherently racy against engine output: a cancel request can
+cross an effect request, a buffered completion, or the terminal event in
+flight. The loop therefore treats every legal crossing as a drop, never a
+protocol fault: post-cancel effect requests and completions are discarded, and
+the engine's cancelled checkpoint is the single durable authority for what was
+undone.
 -}
 module Cortex.Wire.Circuit.Hosted
   ( HostedRuntimeHost (..)
+  , HostedResponseTimeout
+  , defaultHostedResponseTimeout
+  , mkHostedResponseTimeout
+  , CheckpointCommitResult (..)
+  , EffectResolution (..)
   , HostedRunError (..)
+  , HostedRunErrorKind (..)
   , runHostedProgram
+  , runHostedProgramWithResponseTimeout
   , runHostedReferenceHost
   , renderHostedRunError
   )
 where
 
-import Control.Concurrent.Async (Async, async, cancel, waitCatch)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (Async, AsyncCancelled, asyncWithUnmask, cancel, withAsync)
 import Control.Concurrent.STM
   ( TQueue
   , TVar
   , atomically
+  , check
   , modifyTVar'
   , newTQueueIO
   , newTVarIO
+  , orElse
   , readTQueue
+  , readTVar
   , readTVarIO
+  , registerDelay
   , writeTQueue
   )
 import Control.Exception
   ( Exception
   , IOException
+  , SomeAsyncException
   , SomeException
+  , bracket
   , displayException
   , finally
+  , fromException
   , mask_
+  , throwIO
   , try
   )
 import Control.Monad (forM_, unless)
@@ -45,7 +68,7 @@ import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isJust)
+import Data.Maybe (catMaybes, isJust, isNothing)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -62,11 +85,13 @@ import System.IO
   , hSetBinaryMode
   , hSetBuffering
   )
+import System.Posix.Signals (sigKILL, signalProcess)
 import System.Process
   ( CreateProcess (close_fds, std_err, std_in, std_out)
   , ProcessHandle
   , StdStream (CreatePipe)
   , createProcess
+  , getPid
   , getProcessExitCode
   , proc
   , terminateProcess
@@ -86,6 +111,7 @@ import Cortex.Wire.Circuit.Engine
   , engineAbi
   , hostedProgramExecutable
   , hostedProgramManifest
+  , sha256Hex
   , validateEngineState
   , validateRestorableEngineState
   )
@@ -96,15 +122,75 @@ maxProtocolLineBytes = 2 * 1024 * 1024
 maxDiagnosticBytes :: Int
 maxDiagnosticBytes = 64 * 1024
 
+-- | Validated deadline for any response the hosted protocol mandates.
+newtype HostedResponseTimeout = HostedResponseTimeout Int
+  deriving stock (Eq, Show)
+
+{- | Construct a positive hosted protocol response deadline in microseconds.
+The deadline covers mandated engine output, cancellation follow-up after an
+interrupted effect, and child exit after shutdown; it never times host effect
+execution or checkpoint persistence.
+-}
+mkHostedResponseTimeout :: Int -> Either Text HostedResponseTimeout
+mkHostedResponseTimeout timeoutMicros
+  | timeoutMicros <= 0 = Left "hosted response timeout must be positive"
+  | otherwise = Right (HostedResponseTimeout timeoutMicros)
+
+-- | Production default: sixty seconds per mandatory response.
+defaultHostedResponseTimeout :: HostedResponseTimeout
+defaultHostedResponseTimeout = HostedResponseTimeout (60 * 1000000)
+
+{- | Result of the durable checkpoint commit callback.
+
+'CheckpointCommitAbortRun' means the run must stop here but has already been settled
+by the callback's own authority (ownership lost to a newer claimant, or the
+persistence layer already recorded the failure). The host terminates the child
+and reports 'HostedRunAborted' — it must NOT be treated as a fresh fault to
+record, or a run owned elsewhere gets clobbered.
+-}
+data CheckpointCommitResult
+  = CheckpointCommitAccepted
+  | -- | The snapshot is unacceptable; fail the run.
+    CheckpointCommitRejected !Text
+  | -- | Stop cleanly; the callback already settled or disowned the run.
+    CheckpointCommitAbortRun !Text
+  deriving stock (Eq, Show)
+
+{- | Result of one effect execution.
+
+'EffectInterrupted' means the worker was torn down by an imminent run-level
+cancellation (operator cancel or host shutdown), not that the effect failed.
+The host never forwards it to the engine: the node stays running from the
+engine's perspective until the cancellation resets it to pending, so durable
+state never records an interruption as a node failure. It is only legal when a
+cancellation watcher is installed, because the watcher is what guarantees the
+cancel that releases the engine follows promptly.
+-}
+data EffectResolution
+  = EffectResolved !EffectCompletion
+  | EffectInterrupted !Text
+  deriving stock (Eq, Show)
+
 data HostedRuntimeHost = HostedRuntimeHost
-  { hostedCommitCheckpoint :: EngineState -> IO (Either Text ())
-  , hostedExecuteEffect :: Word32 -> IO EffectCompletion
+  { hostedCommitCheckpoint :: EngineState -> IO CheckpointCommitResult
+  , hostedExecuteEffect :: Word32 -> IO EffectResolution
   , hostedAwaitCancellation :: !(Maybe (IO (Either Text Text)))
   -- ^ Wait for either a host failure or an authorized cancellation reason.
   }
 
+-- | Why a hosted run stopped without a terminal snapshot.
+data HostedRunErrorKind
+  = -- | A protocol, process, or host fault: the caller should record a failure.
+    HostedRunFault
+  | {- | The commit callback aborted the run after settling it itself: the
+    caller must NOT record another outcome on top.
+    -}
+    HostedRunAborted
+  deriving stock (Eq, Show)
+
 data HostedRunError = HostedRunError
-  { hostedRunErrorMessage :: !Text
+  { hostedRunErrorKind :: !HostedRunErrorKind
+  , hostedRunErrorMessage :: !Text
   , hostedRunLastCommitted :: !(Maybe EngineState)
   }
   deriving stock (Eq, Show)
@@ -122,7 +208,7 @@ renderHostedRunError err =
 
 data HostInput
   = HostEngineEvent !(Either Text EngineEvent)
-  | HostEffectFinished !Word64 !Word32 !(Either Text EffectCompletion)
+  | HostEffectFinished !Word64 !Word32 !(Either Text EffectResolution)
   | HostCancellationRequested !Text
   | HostRuntimeFailed !Text
   | HostChildExited !ExitCode
@@ -134,8 +220,17 @@ data LoopState = LoopState
   , loopAwaitingCheckpoint :: !Bool
   , loopWorkers :: !(Map Word64 (Word32, Async ()))
   , loopActiveNodes :: !(Set Word32)
-  , loopBufferedCompletions :: !(Map Word64 (Word32, Either Text EffectCompletion))
+  , loopInterruptedNodes :: !(Set Word32)
+  , loopBufferedCompletions :: !(Map Word64 (Word32, Either Text EffectResolution))
   , loopTerminalSeen :: !(Maybe EngineTerminalState)
+  , loopCancellationSent :: !Bool
+  , loopDeadline :: !(Maybe (TVar Bool))
+  {- ^ The timer for the currently outstanding mandatory response. Receiving
+  the response clears the timer before host-side persistence begins; sending
+  the next command arms a fresh timer for the next obligation. 'Nothing'
+  means the host is waiting on live effect workers rather than the engine or
+  cancellation watcher.
+  -}
   }
 
 initialLoopState :: Maybe EngineState -> LoopState
@@ -148,9 +243,27 @@ initialLoopState maybeRestore =
     , loopAwaitingCheckpoint = False
     , loopWorkers = Map.empty
     , loopActiveNodes = Set.empty
+    , loopInterruptedNodes = Set.empty
     , loopBufferedCompletions = Map.empty
     , loopTerminalSeen = Nothing
+    , loopCancellationSent = False
+    , loopDeadline = Nothing
     }
+
+-- | Start a fresh deadline for a newly-created response obligation.
+armFreshDeadline :: Int -> LoopState -> IO LoopState
+armFreshDeadline responseTimeoutMicros state = do
+  deadline <- registerDelay responseTimeoutMicros
+  pure state {loopDeadline = Just deadline}
+
+{- | Ensure a response deadline exists without extending an outstanding one.
+This is used when cancellation crosses an already-mandated checkpoint: the
+same earliest deadline continues to govern the combined obligation.
+-}
+ensureDeadline :: Int -> LoopState -> IO LoopState
+ensureDeadline responseTimeoutMicros state = case state.loopDeadline of
+  Just _existing -> pure state
+  Nothing -> armFreshDeadline responseTimeoutMicros state
 
 runHostedProgram
   :: HostedProgramArtifact
@@ -158,87 +271,108 @@ runHostedProgram
   -> HostedRuntimeHost
   -> Maybe EngineState
   -> IO (Either HostedRunError EngineState)
-runHostedProgram artifact runId runtimeHost maybeRestore =
+runHostedProgram = runHostedProgramWithResponseTimeout defaultHostedResponseTimeout
+
+{- | 'runHostedProgram' with an explicit validated response deadline. Hosts
+normally use 'defaultHostedResponseTimeout'; a shorter value is useful for
+tightly supervised environments and deterministic protocol tests.
+-}
+runHostedProgramWithResponseTimeout
+  :: HostedResponseTimeout
+  -> HostedProgramArtifact
+  -> Text
+  -> HostedRuntimeHost
+  -> Maybe EngineState
+  -> IO (Either HostedRunError EngineState)
+runHostedProgramWithResponseTimeout (HostedResponseTimeout responseTimeoutMicros) artifact runId runtimeHost maybeRestore =
   case validateRunId runId of
-    Left message -> pure (Left (HostedRunError message Nothing))
+    Left message -> pure (Left (fault message))
     Right () ->
       case validateInitialState artifact maybeRestore of
-        Left message -> pure (Left (HostedRunError message Nothing))
-        Right () -> runChild
+        Left message -> pure (Left (fault message))
+        Right () -> do
+          digestResult <- validateExecutableDigest artifact
+          case digestResult of
+            Left message -> pure (Left (fault message))
+            Right () -> runChild
   where
+    fault message = HostedRunError HostedRunFault message Nothing
     manifest = hostedProgramManifest artifact
     nodeCount = fromIntegral (Map.size manifest.hpmNodeExecutors)
     startingState = initialLoopState maybeRestore
 
-    runChild = do
-      processResult <-
-        try @IOException $
-          createProcess
-            (proc (hostedProgramExecutable artifact) [])
-              { std_in = CreatePipe
-              , std_out = CreatePipe
-              , std_err = CreatePipe
-              , close_fds = True
-              }
-      case processResult of
-        Left err ->
-          pure
-            ( Left
-                (HostedRunError ("starting hosted circuit engine: " <> exceptionText err) Nothing)
-            )
-        Right (Just childInput, Just childOutput, Just childError, processHandle) ->
-          supervise childInput childOutput childError processHandle
-        Right _other ->
-          pure (Left (HostedRunError "hosted circuit engine did not provide dedicated pipes" Nothing))
+    -- 'bracket' masks acquisition, so an async exception between spawn and
+    -- supervision can no longer leak the child process.
+    runChild =
+      bracket
+        (try @IOException spawnChild)
+        releaseChild
+        superviseChild
+
+    spawnChild =
+      createProcess
+        (proc (hostedProgramExecutable artifact) [])
+          { std_in = CreatePipe
+          , std_out = CreatePipe
+          , std_err = CreatePipe
+          , close_fds = True
+          }
+
+    releaseChild = \case
+      Left (_err :: IOException) -> pure ()
+      Right (maybeInput, maybeOutput, maybeError, processHandle) -> do
+        terminateWithEscalation processHandle
+        mapM_ closeQuietly (catMaybes [maybeInput, maybeOutput, maybeError])
+
+    superviseChild = \case
+      Left err ->
+        pure
+          (Left (fault ("starting hosted circuit engine: " <> exceptionText err)))
+      Right (Just childInput, Just childOutput, Just childError, processHandle) ->
+        supervise childInput childOutput childError processHandle
+      Right _other ->
+        pure (Left (fault "hosted circuit engine did not provide dedicated pipes"))
 
     supervise childInput childOutput childError processHandle = do
       mapM_ configurePipe [childInput, childOutput, childError]
       queue <- newTQueueIO
       workerRegistry <- newTVarIO Map.empty
-      reader <- async (readProtocolEvents childOutput queue)
       diagnosticBuffer <- newTVarIO BS.empty
-      diagnostics <- async (drainDiagnostics childError diagnosticBuffer)
-      childWatcher <-
-        async
-          (waitForProcess processHandle >>= atomically . writeTQueue queue . HostChildExited)
-      cancellationWatcher <-
-        traverse (async . watchCancellation queue) runtimeHost.hostedAwaitCancellation
-      let run = do
-            helloResult <- awaitHello manifest queue
-            case helloResult of
-              Left message -> pure (Left (HostedRunError message Nothing))
-              Right () -> do
-                let command = maybe (HostStart runId) (HostRestore runId) maybeRestore
-                startResult <- try @IOException (writeCommand childInput command)
-                case startResult of
-                  Left err ->
-                    pure
-                      (Left (HostedRunError ("starting hosted run: " <> exceptionText err) Nothing))
-                  Right () ->
-                    fst
-                      <$> eventLoop
-                        runId
-                        manifest.hpmProgramIdentity
-                        nodeCount
-                        childInput
-                        queue
-                        workerRegistry
-                        runtimeHost
-                        startingState
-          cleanup =
-            cleanupProcess
-              childInput
-              childOutput
-              childError
-              processHandle
-              reader
-              diagnostics
-              childWatcher
-              cancellationWatcher
-              workerRegistry
-      result <- run `finally` cleanup
+      result <-
+        withAsync (readProtocolEvents childOutput queue) $ \_reader ->
+          withAsync (drainDiagnostics childError diagnosticBuffer) $ \_diagnostics ->
+            withAsync (watchChildExit processHandle queue) $ \_childWatcher ->
+              withMaybeAsync (watchCancellation queue <$> runtimeHost.hostedAwaitCancellation) $ \_cancellationWatcher -> do
+                let run = do
+                      helloResult <- awaitHello responseTimeoutMicros manifest queue
+                      case helloResult of
+                        Left message -> pure (Left (fault message))
+                        Right () -> do
+                          let command = maybe (HostStart runId) (HostRestore runId) maybeRestore
+                          startResult <- try @IOException (writeCommand childInput command)
+                          case startResult of
+                            Left err ->
+                              pure
+                                (Left (fault ("starting hosted run: " <> exceptionText err)))
+                            Right () -> do
+                              armedState <- armFreshDeadline responseTimeoutMicros startingState
+                              fst
+                                <$> eventLoop
+                                  responseTimeoutMicros
+                                  runId
+                                  manifest.hpmProgramIdentity
+                                  nodeCount
+                                  childInput
+                                  queue
+                                  workerRegistry
+                                  runtimeHost
+                                  armedState
+                run `finally` cancelRegisteredWorkers workerRegistry
       capturedDiagnostics <- readTVarIO diagnosticBuffer
       pure (attachDiagnostics capturedDiagnostics result)
+
+    watchChildExit processHandle queue =
+      waitForProcess processHandle >>= atomically . writeTQueue queue . HostChildExited
 
 runHostedReferenceHost
   :: HostedProgramArtifact
@@ -248,11 +382,20 @@ runHostedReferenceHost artifact =
     artifact
     "reference-host"
     HostedRuntimeHost
-      { hostedCommitCheckpoint = \_state -> pure (Right ())
-      , hostedExecuteEffect = \nodeId -> pure (EffectSucceeded (fromIntegral nodeId + 1))
+      { hostedCommitCheckpoint = \_state -> pure CheckpointCommitAccepted
+      , hostedExecuteEffect = \nodeId ->
+          pure (EffectResolved (EffectSucceeded (fromIntegral nodeId + 1)))
       , hostedAwaitCancellation = Nothing
       }
     Nothing
+
+withMaybeAsync :: Maybe (IO ()) -> (Maybe (Async ()) -> IO r) -> IO r
+withMaybeAsync = \case
+  Nothing -> \use -> use Nothing
+  Just action -> \use -> withAsync action (use . Just)
+
+cancelRegisteredWorkers :: TVar (Map Word64 (Async ())) -> IO ()
+cancelRegisteredWorkers workerRegistry = readTVarIO workerRegistry >>= mapM_ cancel
 
 validateRunId :: Text -> Either Text ()
 validateRunId runId
@@ -280,6 +423,27 @@ validateInitialState artifact = \case
   where
     manifest = hostedProgramManifest artifact
 
+{- | A loaded artifact is an immutable descriptor, not a promise that the file at
+its path still contains the verified bytes. Recheck immediately before every
+spawn, including resumes.
+
+A hash-then-exec of a path cannot be fully atomic with 'createProcess': a
+replacement between this read and the exec is still possible. The residual
+window is milliseconds instead of the artifact's whole lifetime; closing it
+entirely would require pinning an @O_PATH@ descriptor and @fexecve@, which the
+portable process API does not expose.
+-}
+validateExecutableDigest :: HostedProgramArtifact -> IO (Either Text ())
+validateExecutableDigest artifact = do
+  bytesResult <- try @IOException (BS.readFile (hostedProgramExecutable artifact))
+  pure $ case bytesResult of
+    Left err -> Left ("reading hosted executable before spawn: " <> exceptionText err)
+    Right bytes
+      | sha256Hex bytes == manifest.hpmExecutableSha256 -> Right ()
+      | otherwise -> Left "hosted executable digest changed after artifact load"
+  where
+    manifest = hostedProgramManifest artifact
+
 configurePipe :: Handle -> IO ()
 configurePipe handle = do
   hSetBinaryMode handle True
@@ -289,9 +453,13 @@ writeCommand :: Handle -> HostCommand -> IO ()
 writeCommand handle command = BS.hPut handle (encodeHostCommand command) >> hFlush handle
 
 watchCancellation :: TQueue HostInput -> IO (Either Text Text) -> IO ()
-watchCancellation queue awaitCancellation =
-  awaitCancellation
-    >>= atomically . writeTQueue queue . either HostRuntimeFailed HostCancellationRequested
+watchCancellation queue awaitCancellation = do
+  watcherResult <- trySynchronous awaitCancellation
+  let input = case watcherResult of
+        Left err -> HostRuntimeFailed ("cancellation watcher threw: " <> exceptionText err)
+        Right (Left message) -> HostRuntimeFailed message
+        Right (Right reason) -> HostCancellationRequested reason
+  atomically (writeTQueue queue input)
 
 readProtocolEvents :: Handle -> TQueue HostInput -> IO ()
 readProtocolEvents handle queue = go BS.empty
@@ -353,28 +521,46 @@ attachDiagnostics captured = \case
             }
   result -> result
 
+{- | Read the next input against a single persistent deadline. The deadline
+alternative is tried first, so an already-elapsed deadline always wins over a
+continuously ready queue — a wedged or flooding engine cannot starve the
+timeout by keeping something (even something the caller will simply drop)
+available to read.
+-}
+readInputWithDeadline :: TQueue HostInput -> Maybe (TVar Bool) -> IO (Maybe HostInput)
+readInputWithDeadline queue = \case
+  Nothing -> Just <$> atomically (readTQueue queue)
+  Just deadline ->
+    atomically $
+      (readTVar deadline >>= check >> pure Nothing)
+        `orElse` (Just <$> readTQueue queue)
+
 awaitHello
-  :: HostedProgramManifest
+  :: Int
+  -> HostedProgramManifest
   -> TQueue HostInput
   -> IO (Either Text ())
-awaitHello manifest queue = do
-  input <- atomically (readTQueue queue)
+awaitHello responseTimeoutMicros manifest queue = do
+  deadline <- registerDelay responseTimeoutMicros
+  input <- readInputWithDeadline queue (Just deadline)
   pure $ case input of
-    HostEngineEvent (Right (EngineHello programIdentity reportedAbi))
+    Nothing -> Left "hosted engine did not emit hello within the response deadline"
+    Just (HostEngineEvent (Right (EngineHello programIdentity reportedAbi)))
       | programIdentity /= manifest.hpmProgramIdentity ->
           Left "hosted engine hello has the wrong program identity"
       | reportedAbi /= engineAbi -> Left "hosted engine hello has the wrong engine ABI"
       | otherwise -> Right ()
-    HostEngineEvent (Right _other) -> Left "hosted engine did not emit hello first"
-    HostEngineEvent (Left message) -> Left message
-    HostChildExited exitCode ->
+    Just (HostEngineEvent (Right _other)) -> Left "hosted engine did not emit hello first"
+    Just (HostEngineEvent (Left message)) -> Left message
+    Just (HostChildExited exitCode) ->
       Left ("hosted engine exited before hello: " <> T.pack (show exitCode))
-    HostEffectFinished {} -> Left "host effect completed before engine hello"
-    HostCancellationRequested _reason -> Left "hosted run cancelled before engine hello"
-    HostRuntimeFailed message -> Left ("host runtime failed before engine hello: " <> message)
+    Just HostEffectFinished {} -> Left "host effect completed before engine hello"
+    Just (HostCancellationRequested _reason) -> Left "hosted run cancelled before engine hello"
+    Just (HostRuntimeFailed message) -> Left ("host runtime failed before engine hello: " <> message)
 
 eventLoop
-  :: Text
+  :: Int
+  -> Text
   -> Text
   -> Word32
   -> Handle
@@ -383,27 +569,53 @@ eventLoop
   -> HostedRuntimeHost
   -> LoopState
   -> IO (Either HostedRunError EngineState, LoopState)
-eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtimeHost = go
+eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue workerRegistry runtimeHost = go
   where
     go state = do
-      input <- atomically (readTQueue queue)
-      case input of
-        HostEngineEvent (Left message) -> failWith state message
-        HostEngineEvent (Right event) -> handleEvent state event
-        HostEffectFinished sequenceNumber nodeId completion ->
-          handleCompletion state sequenceNumber nodeId completion
-        HostCancellationRequested reason -> do
-          commandResult <- try @IOException (writeCommand childInput (HostCancel runId reason))
-          case commandResult of
-            Left err -> failWith state ("sending cancellation: " <> exceptionText err)
-            Right () -> go state
-        HostRuntimeFailed message -> failWith state ("host runtime failed: " <> message)
-        HostChildExited ExitSuccess ->
-          case state.loopTerminalSeen of
-            Just _terminal -> finish state
-            Nothing -> failWith state "hosted engine exited before a terminal event"
-        HostChildExited exitCode ->
-          failWith state ("hosted engine exited unexpectedly: " <> T.pack (show exitCode))
+      maybeInput <- readInputWithDeadline queue state.loopDeadline
+      case maybeInput of
+        Nothing
+          -- After the terminal handshake only child exit remains; a child
+          -- that never exits is torn down by process cleanup, and the run's
+          -- committed terminal snapshot stands.
+          | isJust state.loopTerminalSeen -> finish state
+          | not state.loopCancellationSent
+              && not (Set.null state.loopInterruptedNodes) ->
+              failWith
+                state
+                "host cancellation did not follow an interrupted effect within the response deadline"
+          | otherwise ->
+              failWith
+                state
+                "hosted engine unresponsive: mandated protocol output did not arrive within the response deadline"
+        Just input -> dispatch state input
+
+    dispatch state = \case
+      HostEngineEvent (Left message) -> failWith state message
+      HostEngineEvent (Right event) -> handleEvent state event
+      HostEffectFinished sequenceNumber nodeId resolution ->
+        handleCompletion state sequenceNumber nodeId resolution
+      HostCancellationRequested _reason
+        | isJust state.loopTerminalSeen -> go state
+      HostCancellationRequested _reason
+        | state.loopCancellationSent -> go state
+      HostCancellationRequested reason -> do
+        commandResult <- try @IOException (writeCommand childInput (HostCancel runId reason))
+        case commandResult of
+          Left err -> failWith state ("sending cancellation: " <> exceptionText err)
+          Right () -> do
+            -- A cancelled checkpoint is now mandated. If another checkpoint
+            -- is already outstanding, cancellation is deferred behind it and
+            -- inherits its earlier deadline.
+            armed <- ensureDeadline responseTimeoutMicros state
+            go armed {loopCancellationSent = True}
+      HostRuntimeFailed message -> failWith state ("host runtime failed: " <> message)
+      HostChildExited ExitSuccess ->
+        case state.loopTerminalSeen of
+          Just _terminal -> finish state
+          Nothing -> failWith state "hosted engine exited before a terminal event"
+      HostChildExited exitCode ->
+        failWith state ("hosted engine exited unexpectedly: " <> T.pack (show exitCode))
 
     handleEvent state = \case
       EngineHello {} -> failWith state "hosted engine emitted duplicate hello"
@@ -426,21 +638,24 @@ eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtim
           case expectedCheckpoint state snapshot.esCheckpointSequence of
             Left message -> failWith state message
             Right () -> do
-              commitResult <- try @SomeException (runtimeHost.hostedCommitCheckpoint snapshot)
+              let checkpointReceived = state {loopDeadline = Nothing}
+              commitResult <- trySynchronous (runtimeHost.hostedCommitCheckpoint snapshot)
               case commitResult of
-                Left err -> failWith state ("checkpoint host threw: " <> exceptionText err)
-                Right (Left message) -> failWith state ("checkpoint commit failed: " <> message)
-                Right (Right ()) -> do
+                Left err -> failWith checkpointReceived ("checkpoint host threw: " <> exceptionText err)
+                Right (CheckpointCommitRejected message) ->
+                  failWith checkpointReceived ("checkpoint commit failed: " <> message)
+                Right (CheckpointCommitAbortRun message) -> abortWith checkpointReceived message
+                Right CheckpointCommitAccepted -> do
                   writeResult <-
                     try @IOException $
                       writeCommand
                         childInput
                         (HostCheckpointCommitted runId snapshot.esCheckpointSequence)
                   case writeResult of
-                    Left err -> failWith state ("acknowledging checkpoint: " <> exceptionText err)
+                    Left err -> failWith checkpointReceived ("acknowledging checkpoint: " <> exceptionText err)
                     Right () ->
                       dispatchBuffered
-                        state
+                        checkpointReceived
                           { loopLastCommitted = Just snapshot
                           , loopLastCheckpointSequence = Just snapshot.esCheckpointSequence
                           , loopAwaitingCheckpoint = False
@@ -448,32 +663,60 @@ eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtim
 
     handleRequest state sequenceNumber nodeId
       | nodeId >= nodeCount = failWith state "engine requested an out-of-range node"
+      | isNothing state.loopLastCommitted =
+          failWith state "engine requested an effect before its initial checkpoint was committed"
       | sequenceNumber /= state.loopNextRequestSequence =
           failWith state "engine effect request sequence is not monotonic"
-      | nodeId `Set.member` state.loopActiveNodes =
+      | nodeId `Set.member` state.loopActiveNodes
+          || nodeId `Set.member` state.loopInterruptedNodes =
           failWith state "engine requested a node already in flight"
       | isJust state.loopTerminalSeen =
           failWith state "engine requested an effect after terminal"
+      | state.loopCancellationSent =
+          -- The engine wrote this request before it read the cancel; the
+          -- cancelled checkpoint will reset the node. Track the sequence so
+          -- monotonicity still holds, but start no work. loopDeadline is
+          -- untouched: the cancelled checkpoint is still due.
+          go state {loopNextRequestSequence = sequenceNumber + 1}
+      | not (Set.null state.loopInterruptedNodes) =
+          -- A run-level cancel is required after an interruption. Requests
+          -- already emitted by the engine are left running in its state and
+          -- will be reset by that cancel; no new host work starts meanwhile.
+          go state {loopNextRequestSequence = sequenceNumber + 1}
       | otherwise = do
+          -- Spawn-and-register is masked so an async exception cannot leave
+          -- a live worker outside the registry; the worker body itself runs
+          -- unmasked so it stays promptly cancellable.
           worker <- mask_ $ do
-            spawned <-
-              async $ do
-                completion <- try @SomeException (runtimeHost.hostedExecuteEffect nodeId)
-                atomically $
-                  writeTQueue
-                    queue
-                    (HostEffectFinished sequenceNumber nodeId (firstException completion))
+            spawned <- asyncWithUnmask $ \unmask -> do
+              resolution <-
+                trySynchronous (unmask (runtimeHost.hostedExecuteEffect nodeId))
+              atomically $
+                writeTQueue
+                  queue
+                  (HostEffectFinished sequenceNumber nodeId (firstException resolution))
             atomically (modifyTVar' workerRegistry (Map.insert sequenceNumber spawned))
             pure spawned
+          -- A valid effect request satisfies the engine-progress obligation
+          -- only when no completion checkpoint is already outstanding. A
+          -- request can cross an effect completion in the host queue; in
+          -- that case the completion's checkpoint remains mandatory and its
+          -- original deadline must survive while this worker runs.
           go
             state
               { loopNextRequestSequence = sequenceNumber + 1
               , loopWorkers = Map.insert sequenceNumber (nodeId, worker) state.loopWorkers
               , loopActiveNodes = Set.insert nodeId state.loopActiveNodes
+              , loopDeadline =
+                  if state.loopAwaitingCheckpoint
+                    then state.loopDeadline
+                    else Nothing
               }
 
-    handleCompletion state sequenceNumber nodeId completion =
+    handleCompletion state sequenceNumber nodeId resolution =
       case Map.lookup sequenceNumber state.loopWorkers of
+        Nothing
+          | state.loopCancellationSent -> go state
         Nothing -> failWith state "received an unknown or duplicate effect completion"
         Just (expectedNodeId, _worker)
           | expectedNodeId /= nodeId -> failWith state "effect completion node mismatch"
@@ -484,18 +727,47 @@ eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtim
                       { loopWorkers = Map.delete sequenceNumber state.loopWorkers
                       , loopActiveNodes = Set.delete nodeId state.loopActiveNodes
                       }
-              if completedState.loopAwaitingCheckpoint
-                then
-                  go
-                    completedState
-                      { loopBufferedCompletions =
-                          Map.insert sequenceNumber (nodeId, completion) completedState.loopBufferedCompletions
-                      }
-                else sendCompletion completedState sequenceNumber nodeId completion
+              case resolution of
+                Right (EffectInterrupted _reason)
+                  | completedState.loopCancellationSent -> go completedState
+                  | isNothing runtimeHost.hostedAwaitCancellation ->
+                      failWith
+                        completedState
+                        "effect reported interruption but no cancellation watcher is installed"
+                  | otherwise ->
+                      -- The run-level cancel that interrupted the worker is
+                      -- in flight; the engine keeps the node running until
+                      -- that cancel resets it to pending.
+                      ensureDeadline
+                        responseTimeoutMicros
+                        ( completedState
+                            { loopInterruptedNodes =
+                                Set.insert nodeId completedState.loopInterruptedNodes
+                            }
+                        )
+                        >>= go
+                _resolvedOrThrew
+                  | completedState.loopCancellationSent -> go completedState
+                  | not (Set.null completedState.loopInterruptedNodes) -> go completedState
+                  | completedState.loopAwaitingCheckpoint ->
+                      go
+                        completedState
+                          { loopBufferedCompletions =
+                              Map.insert
+                                sequenceNumber
+                                (nodeId, resolution)
+                                completedState.loopBufferedCompletions
+                          }
+                  | otherwise ->
+                      sendCompletion completedState sequenceNumber nodeId resolution
 
     sendCompletion state sequenceNumber nodeId = \case
       Left message -> failWith state ("effect host threw: " <> message)
-      Right completion -> do
+      Right (EffectInterrupted _reason) ->
+        -- Unreachable: interruptions are intercepted before buffering, and
+        -- buffered entries are dropped once a cancel is sent.
+        failWith state "interrupted effect reached the completion path"
+      Right (EffectResolved completion) -> do
         writeResult <-
           try @IOException $
             writeCommand
@@ -503,17 +775,33 @@ eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtim
               (HostEffectCompleted runId sequenceNumber nodeId completion)
         case writeResult of
           Left err -> failWith state ("sending effect completion: " <> exceptionText err)
-          Right () -> go state {loopAwaitingCheckpoint = True}
+          Right () -> do
+            armed <- armFreshDeadline responseTimeoutMicros state
+            go armed {loopAwaitingCheckpoint = True}
 
-    dispatchBuffered state =
-      case Map.minViewWithKey state.loopBufferedCompletions of
-        Nothing -> go state
-        Just ((sequenceNumber, (nodeId, completion)), remaining) ->
-          sendCompletion
-            state {loopBufferedCompletions = remaining}
-            sequenceNumber
-            nodeId
-            completion
+    dispatchBuffered state
+      -- Completions buffered before the cancel was sent must not reach an
+      -- engine that has already processed the cancel; the cancelled
+      -- checkpoint supersedes them.
+      | state.loopCancellationSent && not (Map.null state.loopBufferedCompletions) =
+          continueAfterCheckpoint state {loopBufferedCompletions = Map.empty}
+      | otherwise =
+          case Map.minViewWithKey state.loopBufferedCompletions of
+            Nothing -> continueAfterCheckpoint state
+            Just ((sequenceNumber, (nodeId, resolution)), remaining) ->
+              sendCompletion
+                state {loopBufferedCompletions = remaining}
+                sequenceNumber
+                nodeId
+                resolution
+
+    continueAfterCheckpoint state
+      | maybe False (\snapshot -> snapshot.esTerminal /= EngineActive) state.loopLastCommitted
+          || state.loopCancellationSent
+          || not (Set.null state.loopInterruptedNodes)
+          || Map.null state.loopWorkers =
+          armFreshDeadline responseTimeoutMicros state >>= go
+      | otherwise = go state
 
     handleTerminal state terminal =
       case state.loopLastCommitted of
@@ -523,21 +811,42 @@ eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtim
               failWith state "terminal event disagrees with the committed checkpoint"
           | state.loopAwaitingCheckpoint ->
               failWith state "engine emitted terminal before checkpoint acknowledgement"
+          | terminal == EngineCancelled && state.loopCancellationSent -> do
+              cancelledState <- cancelLiveWorkers state
+              writeShutdown cancelledState terminal
           | not (Map.null state.loopWorkers) ->
               failWith state "engine emitted terminal with effects still running"
+          | not (Set.null state.loopInterruptedNodes) ->
+              failWith state "engine emitted terminal with interrupted effects outstanding"
           | not (Map.null state.loopBufferedCompletions) ->
               failWith state "engine emitted terminal with buffered completions"
-          | otherwise -> do
-              writeResult <- try @IOException (writeCommand childInput (HostShutdown runId))
-              case writeResult of
-                Left err -> failWith state ("sending hosted shutdown: " <> exceptionText err)
-                Right () -> go state {loopTerminalSeen = Just terminal}
+          | otherwise -> writeShutdown state terminal
+
+    writeShutdown state terminal = do
+      writeResult <- try @IOException (writeCommand childInput (HostShutdown runId))
+      case writeResult of
+        Left err -> failWith state ("sending hosted shutdown: " <> exceptionText err)
+        Right () ->
+          armFreshDeadline responseTimeoutMicros (state {loopTerminalSeen = Just terminal}) >>= go
+
+    cancelLiveWorkers state = do
+      forM_ (Map.elems state.loopWorkers) (cancel . snd)
+      let workerKeys = Map.keys state.loopWorkers
+      atomically $
+        modifyTVar' workerRegistry (\registry -> foldr Map.delete registry workerKeys)
+      pure
+        state
+          { loopWorkers = Map.empty
+          , loopActiveNodes = Set.empty
+          , loopInterruptedNodes = Set.empty
+          , loopBufferedCompletions = Map.empty
+          }
 
     expectedCheckpoint state actual =
       case state.loopLastCheckpointSequence of
         Nothing
-          | actual == 0 -> Left "initial engine checkpoint sequence must be positive"
-          | otherwise -> Right ()
+          | actual == 1 -> Right ()
+          | otherwise -> Left "initial engine checkpoint sequence must be exactly one"
         Just previous
           | actual == previous + 1 -> Right ()
           | otherwise -> Left "engine checkpoint sequence is not monotonic"
@@ -548,37 +857,63 @@ eventLoop runId programIdentity nodeCount childInput queue workerRegistry runtim
         Just snapshot -> pure (Right snapshot, state)
 
     failWith state message =
-      pure (Left (HostedRunError message state.loopLastCommitted), state)
+      pure (Left (HostedRunError HostedRunFault message state.loopLastCommitted), state)
 
-cleanupProcess
-  :: Handle
-  -> Handle
-  -> Handle
-  -> ProcessHandle
-  -> Async ()
-  -> Async ()
-  -> Async ()
-  -> Maybe (Async ())
-  -> TVar (Map Word64 (Async ()))
-  -> IO ()
-cleanupProcess childInput childOutput childError processHandle reader diagnostics childWatcher cancellationWatcher workerRegistry = do
-  workers <- readTVarIO workerRegistry
-  forM_ workers cancel
-  forM_ cancellationWatcher cancel
-  cancel reader
+    abortWith state message =
+      pure (Left (HostedRunError HostedRunAborted message state.loopLastCommitted), state)
+
+{- | Terminate the child, escalating to SIGKILL if it ignores SIGTERM, then reap
+it. Polls instead of a fixed sleep so a prompt exit costs milliseconds.
+-}
+terminateWithEscalation :: ProcessHandle -> IO ()
+terminateWithEscalation processHandle = do
   running <- getProcessExitCode processHandle
   case running of
-    Nothing -> terminateProcess processHandle
     Just _exitCode -> pure ()
-  _ <- waitCatch childWatcher
-  _ <- waitCatch reader
-  _ <- waitCatch diagnostics
-  mapM_ closeQuietly [childInput, childOutput, childError]
+    Nothing -> do
+      _terminateResult <- try @IOException (terminateProcess processHandle)
+      exited <- pollExit terminationPollAttempts
+      unless exited $ do
+        maybePid <- getPid processHandle
+        forM_ maybePid $ \pid -> do
+          _killResult <- try @IOException (signalProcess sigKILL pid)
+          pure ()
+  _ <- try @IOException (waitForProcess processHandle)
+  pure ()
+  where
+    terminationPollAttempts = 20 :: Int
+    terminationPollIntervalMicros = 50000
+
+    pollExit 0 = pure False
+    pollExit attempts = do
+      exited <- getProcessExitCode processHandle
+      case exited of
+        Just _exitCode -> pure True
+        Nothing -> do
+          threadDelay terminationPollIntervalMicros
+          pollExit (attempts - 1)
 
 firstException :: Either SomeException value -> Either Text value
 firstException = \case
   Left err -> Left (exceptionText err)
   Right value -> Right value
+
+{- | Catch ordinary callback failures without converting ownership-loss or
+thread-cancellation signals into hosted run faults. Async exceptions must
+reach the lease supervisor that issued them.
+-}
+trySynchronous :: IO value -> IO (Either SomeException value)
+trySynchronous action = do
+  result <- try action
+  case result of
+    Left err
+      | isAsyncException err -> throwIO err
+    _other -> pure result
+
+isAsyncException :: SomeException -> Bool
+isAsyncException err =
+  isJust (fromException err :: Maybe SomeAsyncException)
+    || isJust (fromException err :: Maybe AsyncCancelled)
 
 exceptionText :: Exception exception => exception -> Text
 exceptionText = T.pack . displayException

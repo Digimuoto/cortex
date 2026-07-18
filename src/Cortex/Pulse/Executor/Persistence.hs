@@ -187,6 +187,7 @@ persistGraphState env persistedState = do
           , gswNodeProvenance = Just (Aeson.toJSON persistedState.pgsNodeProvenance)
           , gswTopologyHash = persistedState.pgsTopologyHash
           , gswHostedCheckpointSequence = persistedState.pgsHostedCheckpointSequence
+          , gswHostedTerminalState = persistedState.pgsHostedTerminalState
           , gswUpdatedAt = now
           , gswExpectedRevision = persistedState.pgsRevision
           }
@@ -460,6 +461,7 @@ graphStateWriteFor env persistedState now =
     , Q.gswNodeProvenance = Just (Aeson.toJSON persistedState.pgsNodeProvenance)
     , Q.gswTopologyHash = persistedState.pgsTopologyHash
     , Q.gswHostedCheckpointSequence = persistedState.pgsHostedCheckpointSequence
+    , Q.gswHostedTerminalState = persistedState.pgsHostedTerminalState
     , Q.gswUpdatedAt = now
     , Q.gswExpectedRevision = persistedState.pgsRevision
     }

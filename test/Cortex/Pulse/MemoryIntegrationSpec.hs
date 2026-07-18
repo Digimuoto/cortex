@@ -127,6 +127,7 @@ initialPersistedState =
     , pgsNodeProvenance = Map.empty
     , pgsTopologyHash = Nothing
     , pgsHostedCheckpointSequence = Nothing
+    , pgsHostedTerminalState = Nothing
     , pgsRevision = Nothing
     }
 

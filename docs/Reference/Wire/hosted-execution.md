@@ -87,8 +87,43 @@ is bounded to 64 KiB.
 
 Every message carries `protocol`; run-scoped messages carry `run_id`; effect and checkpoint messages
 carry their monotonic sequence where applicable. Wrong versions, identities, run IDs, sequences,
-message kinds, malformed JSON, oversized lines, duplicate/stale completions, and post-terminal
-commands fail closed.
+message kinds, malformed JSON, oversized lines, and duplicate/stale completions fail closed.
+Cancellation is the deliberate race-tolerant exception: `cancel` is an idempotent no-op after the
+engine has made a terminal decision, both before acknowledgement of its final checkpoint and after
+the terminal event, because host intent can cross terminal output already in flight.
+
+Cancellation is race-tolerant in both directions. Once the host has sent `cancel` it drops rather
+than forwards everything the engine produced before reading it: late effect requests, late worker
+completions, and completions buffered behind a pending checkpoint. The engine's cancelled checkpoint
+is the single durable authority for what was undone. If a cancel arrives at the engine while a
+checkpoint is unacknowledged, the engine defers it and applies it immediately after the
+acknowledgement — a cancel never invalidates an in-flight checkpoint sequence.
+
+An effect worker torn down because the run itself is being stopped (host shutdown, operator
+cancellation) reports an _interruption_, not a completion. The host never forwards interruptions:
+the engine keeps the node running until the imminent `cancel` resets it to pending, so durable state
+never records a stopping host as a node failure. Interruptions are only legal when a cancellation
+watcher is installed. That watcher must either issue the run-level cancel or report its own failure
+within the same bounded response window; an interrupted node cannot leave a run waiting forever.
+
+The host arms a 60-second response deadline whenever the protocol mandates engine output (the
+checkpoint after `start`/`restore`/`effect_completed`/`cancel`, and child exit after `shutdown`). A
+fresh deadline begins only when a new obligation is created and is cleared by the matching response
+before host-side persistence begins. Unrelated queued traffic cannot extend it, and effect execution
+is not timed as protocol work. A wedged engine or cancellation watcher fails the run instead of
+pinning it while its lease renews; a child that ignores `shutdown` after a committed terminal is
+killed without affecting the recorded outcome. Async lease cancellation propagates to the lease
+supervisor and is never converted into a hosted run fault.
+
+`defaultHostedResponseTimeout` is 60 seconds. Hosts that need a tighter bound construct a positive
+`HostedResponseTimeout` with `mkHostedResponseTimeout` and use
+`runHostedProgramWithResponseTimeout`; the deadline remains per protocol obligation rather than an
+effect-execution timeout.
+
+The host re-hashes the executable immediately before every spawn (fresh and resume) and fails closed
+on a digest mismatch. A hash-then-exec of a path still leaves a millisecond replacement window that
+the portable process API cannot close (that would need `O_PATH` + `fexecve`); the recheck bounds the
+exposure to that window instead of the artifact's lifetime.
 
 Checkpoint order is load-bearing:
 
@@ -132,8 +167,9 @@ exist for caller-owned and managed runs; compatibility entrypoints retain the de
 For hosted runs, Pulse freezes backend, program identity, artifact digest, and protocol version
 before the first effect. It persists actual JSON outputs in `pulse.graph_state.node_outputs` and
 reconstructs engine handles as dense ID plus one. `node_statuses` and `node_outputs` remain the sole
-authoritative recovery snapshot; `hosted_checkpoint_sequence` records only the acknowledged engine
-sequence. Resume verifies the exact artifact profile before lease claim and restores a fresh child.
+authoritative recovery snapshot; `hosted_checkpoint_sequence` and `hosted_terminal_state` record
+only the acknowledged engine sequence and terminal decision. Resume verifies the exact artifact
+profile before lease claim and restores a fresh child.
 
 ## Authority and non-goals
 
