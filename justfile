@@ -195,9 +195,9 @@ lean-check:
     @echo "🔍 Checking Cortex theory through Nix..."
     nix run .#_check-theory
 
-# Model-check the Pulse run-terminal signal protocol (TLC) through the flake surface
+# Model-check the Pulse and Wire hosted protocols (TLC) through the flake surface
 tla-check:
-    @echo "🔍 Model-checking the run-terminal signal protocol (TLC)..."
+    @echo "🔍 Model-checking the Pulse and Wire hosted protocols (TLC)..."
     nix run .#_check-tla
 
 # Run the test suite against an ephemeral Postgres with the Pulse schema fixture.

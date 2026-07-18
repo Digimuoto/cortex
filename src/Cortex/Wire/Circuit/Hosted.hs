@@ -69,7 +69,7 @@ import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, isJust, isNothing)
+import Data.Maybe (catMaybes, isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -116,6 +116,7 @@ import Cortex.Wire.Circuit.Engine
   , validateEngineState
   , validateRestorableEngineState
   )
+import Cortex.Wire.Circuit.HostProtocol qualified as HostProtocol
 
 maxProtocolLineBytes :: Int
 maxProtocolLineBytes = 2 * 1024 * 1024
@@ -252,6 +253,21 @@ initialLoopState maybeRestore =
     , loopCancellationDeadline = Nothing
     }
 
+{- | Forget IO payloads and project only the lifecycle facts consumed by the
+pure host-protocol transition policy.
+-}
+protocolView :: LoopState -> HostProtocol.ProtocolView
+protocolView state =
+  HostProtocol.ProtocolView
+    { protocolCommittedTerminal = (.esTerminal) <$> state.loopLastCommitted
+    , protocolAwaitingCheckpoint = state.loopAwaitingCheckpoint
+    , protocolWorkerCount = Map.size state.loopWorkers
+    , protocolInterruptedCount = Set.size state.loopInterruptedNodes
+    , protocolBufferedCompletionCount = Map.size state.loopBufferedCompletions
+    , protocolTerminalSeen = state.loopTerminalSeen
+    , protocolCancellationSent = state.loopCancellationSent
+    }
+
 -- | Start a fresh deadline for a newly-created response obligation.
 armFreshEngineDeadline :: Int -> LoopState -> IO LoopState
 armFreshEngineDeadline responseTimeoutMicros state = do
@@ -273,6 +289,30 @@ ensureCancellationDeadline responseTimeoutMicros state = case state.loopCancella
   Nothing -> do
     deadline <- registerDelay responseTimeoutMicros
     pure state {loopCancellationDeadline = Just deadline}
+
+applyEngineDeadlineUpdate
+  :: Int
+  -> HostProtocol.DeadlineUpdate
+  -> LoopState
+  -> IO LoopState
+applyEngineDeadlineUpdate responseTimeoutMicros = \case
+  HostProtocol.KeepDeadline -> pure
+  HostProtocol.ClearDeadline -> \state -> pure state {loopEngineDeadline = Nothing}
+  HostProtocol.ArmFreshDeadline -> armFreshEngineDeadline responseTimeoutMicros
+  HostProtocol.EnsureDeadline -> ensureEngineDeadline responseTimeoutMicros
+
+applyCancellationDeadlineUpdate
+  :: Int
+  -> HostProtocol.DeadlineUpdate
+  -> LoopState
+  -> IO LoopState
+applyCancellationDeadlineUpdate responseTimeoutMicros = \case
+  HostProtocol.KeepDeadline -> pure
+  HostProtocol.ClearDeadline -> \state -> pure state {loopCancellationDeadline = Nothing}
+  HostProtocol.ArmFreshDeadline -> \state -> do
+    deadline <- registerDelay responseTimeoutMicros
+    pure state {loopCancellationDeadline = Just deadline}
+  HostProtocol.EnsureDeadline -> ensureCancellationDeadline responseTimeoutMicros
 
 runHostedProgram
   :: HostedProgramArtifact
@@ -613,18 +653,15 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
           state.loopCancellationDeadline
       case loopInput of
         CancellationDeadlineExpired ->
-          failWith
-            state
-            "host cancellation did not follow an interrupted effect within the response deadline"
-        EngineDeadlineExpired
-          -- After the terminal handshake only child exit remains; a child
-          -- that never exits is torn down by process cleanup, and the run's
-          -- committed terminal snapshot stands.
-          | isJust state.loopTerminalSeen -> finish state
-          | otherwise ->
-              failWith
-                state
-                "hosted engine unresponsive: mandated protocol output did not arrive within the response deadline"
+          enactTerminalDecision state $
+            HostProtocol.transition
+              (protocolView state)
+              HostProtocol.CancellationDeadlineExpired
+        EngineDeadlineExpired ->
+          enactTerminalDecision state $
+            HostProtocol.transition
+              (protocolView state)
+              HostProtocol.EngineDeadlineExpired
         LoopInput input -> dispatch state input
 
     dispatch state = \case
@@ -632,32 +669,40 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
       HostEngineEvent (Right event) -> handleEvent state event
       HostEffectFinished sequenceNumber nodeId resolution ->
         handleCompletion state sequenceNumber nodeId resolution
-      HostCancellationRequested _reason
-        | isJust state.loopTerminalSeen -> go state
-      HostCancellationRequested _reason
-        | state.loopCancellationSent -> go state
       HostCancellationRequested reason -> do
-        commandResult <- try @IOException (writeCommand childInput (HostCancel runId reason))
-        case commandResult of
-          Left err -> failWith state ("sending cancellation: " <> exceptionText err)
-          Right () -> do
-            -- A cancelled checkpoint is now mandated. If another checkpoint
-            -- is already outstanding, cancellation is deferred behind it and
-            -- inherits its earlier deadline.
-            armed <-
-              ensureEngineDeadline
-                responseTimeoutMicros
-                state {loopCancellationDeadline = Nothing}
-            go armed {loopCancellationSent = True}
+        case HostProtocol.transition (protocolView state) HostProtocol.CancellationRequested of
+          HostProtocol.IgnoreInput -> go state
+          HostProtocol.SendCancellation engineUpdate cancellationUpdate -> do
+            commandResult <- try @IOException (writeCommand childInput (HostCancel runId reason))
+            case commandResult of
+              Left err -> failWith state ("sending cancellation: " <> exceptionText err)
+              Right () -> do
+                cancellationUpdated <-
+                  applyCancellationDeadlineUpdate
+                    responseTimeoutMicros
+                    cancellationUpdate
+                    state
+                armed <-
+                  applyEngineDeadlineUpdate
+                    responseTimeoutMicros
+                    engineUpdate
+                    cancellationUpdated
+                go armed {loopCancellationSent = True}
+          decision -> unexpectedDecision state "cancellation" decision
       HostRuntimeFailed message -> failWith state ("host runtime failed: " <> message)
-      HostChildExited ExitSuccess ->
-        case state.loopTerminalSeen of
-          Just _terminal -> finish state
-          Nothing -> failWith state "hosted engine exited before a terminal event"
-      HostChildExited _exitCode
-        | isJust state.loopTerminalSeen -> finish state
       HostChildExited exitCode ->
-        failWith state ("hosted engine exited unexpectedly: " <> T.pack (show exitCode))
+        case HostProtocol.transition
+          (protocolView state)
+          ( HostProtocol.ChildExited $
+              if exitCode == ExitSuccess
+                then HostProtocol.ChildExitSuccess
+                else HostProtocol.ChildExitAbnormal
+          ) of
+          HostProtocol.FinishCommittedTerminal -> finish state
+          HostProtocol.ProtocolFault message
+            | exitCode == ExitSuccess -> failWith state message
+            | otherwise -> failWith state (message <> ": " <> T.pack (show exitCode))
+          decision -> unexpectedDecision state "child exit" decision
 
     handleEvent state = \case
       EngineHello {} -> failWith state "hosted engine emitted duplicate hello"
@@ -679,88 +724,80 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
         Right () ->
           case expectedCheckpoint state snapshot.esCheckpointSequence of
             Left message -> failWith state message
-            Right () -> do
-              let checkpointReceived =
-                    state
-                      { loopEngineDeadline =
-                          if state.loopCancellationSent
-                            && snapshot.esTerminal == EngineActive
-                            then state.loopEngineDeadline
-                            else Nothing
-                      }
-              commitResult <- trySynchronous (runtimeHost.hostedCommitCheckpoint snapshot)
-              case commitResult of
-                Left err -> failWith checkpointReceived ("checkpoint host threw: " <> exceptionText err)
-                Right (CheckpointCommitRejected message) ->
-                  failWith checkpointReceived ("checkpoint commit failed: " <> message)
-                Right (CheckpointCommitAbortRun message) -> abortWith checkpointReceived message
-                Right CheckpointCommitAccepted -> do
-                  writeResult <-
-                    try @IOException $
-                      writeCommand
-                        childInput
-                        (HostCheckpointCommitted runId snapshot.esCheckpointSequence)
-                  case writeResult of
-                    Left err -> failWith checkpointReceived ("acknowledging checkpoint: " <> exceptionText err)
-                    Right () ->
-                      dispatchBuffered
-                        checkpointReceived
-                          { loopLastCommitted = Just snapshot
-                          , loopLastCheckpointSequence = Just snapshot.esCheckpointSequence
-                          , loopAwaitingCheckpoint = False
-                          }
+            Right () ->
+              case HostProtocol.transition
+                (protocolView state)
+                (HostProtocol.CheckpointReceived snapshot.esTerminal) of
+                HostProtocol.CommitCheckpoint deadlineUpdate -> do
+                  checkpointReceived <-
+                    applyEngineDeadlineUpdate responseTimeoutMicros deadlineUpdate state
+                  commitCheckpoint checkpointReceived snapshot
+                decision -> unexpectedDecision state "checkpoint" decision
+
+    commitCheckpoint checkpointReceived snapshot = do
+      commitResult <- trySynchronous (runtimeHost.hostedCommitCheckpoint snapshot)
+      case commitResult of
+        Left err -> failWith checkpointReceived ("checkpoint host threw: " <> exceptionText err)
+        Right (CheckpointCommitRejected message) ->
+          failWith checkpointReceived ("checkpoint commit failed: " <> message)
+        Right (CheckpointCommitAbortRun message) -> abortWith checkpointReceived message
+        Right CheckpointCommitAccepted -> do
+          writeResult <-
+            try @IOException $
+              writeCommand
+                childInput
+                (HostCheckpointCommitted runId snapshot.esCheckpointSequence)
+          case writeResult of
+            Left err -> failWith checkpointReceived ("acknowledging checkpoint: " <> exceptionText err)
+            Right () ->
+              dispatchBuffered
+                checkpointReceived
+                  { loopLastCommitted = Just snapshot
+                  , loopLastCheckpointSequence = Just snapshot.esCheckpointSequence
+                  , loopAwaitingCheckpoint = False
+                  }
 
     handleRequest state sequenceNumber nodeId
       | nodeId >= nodeCount = failWith state "engine requested an out-of-range node"
-      | isNothing state.loopLastCommitted =
-          failWith state "engine requested an effect before its initial checkpoint was committed"
       | sequenceNumber /= state.loopNextRequestSequence =
           failWith state "engine effect request sequence is not monotonic"
       | nodeId `Set.member` state.loopActiveNodes
           || nodeId `Set.member` state.loopInterruptedNodes =
           failWith state "engine requested a node already in flight"
-      | isJust state.loopTerminalSeen =
-          failWith state "engine requested an effect after terminal"
-      | state.loopCancellationSent =
-          -- The engine wrote this request before it read the cancel; the
-          -- cancelled checkpoint will reset the node. Track the sequence so
-          -- monotonicity still holds, but start no work. The engine deadline is
-          -- untouched: the cancelled checkpoint is still due.
-          go state {loopNextRequestSequence = sequenceNumber + 1}
-      | not (Set.null state.loopInterruptedNodes) =
-          -- A run-level cancel is required after an interruption. Requests
-          -- already emitted by the engine are left running in its state and
-          -- will be reset by that cancel; no new host work starts meanwhile.
-          go state {loopNextRequestSequence = sequenceNumber + 1}
-      | otherwise = do
-          -- Spawn-and-register is masked so an async exception cannot leave
-          -- a live worker outside the registry; the worker body itself runs
-          -- unmasked so it stays promptly cancellable.
-          worker <- mask_ $ do
-            spawned <- asyncWithUnmask $ \unmask -> do
-              resolution <-
-                trySynchronous (unmask (runtimeHost.hostedExecuteEffect nodeId))
-              atomically $
-                writeTQueue
-                  queue
-                  (HostEffectFinished sequenceNumber nodeId (firstException resolution))
-            atomically (modifyTVar' workerRegistry (Map.insert sequenceNumber spawned))
-            pure spawned
-          -- A valid effect request satisfies the engine-progress obligation
-          -- only when no completion checkpoint is already outstanding. A
-          -- request can cross an effect completion in the host queue; in
-          -- that case the completion's checkpoint remains mandatory and its
-          -- original deadline must survive while this worker runs.
-          go
+      | otherwise =
+          case HostProtocol.transition (protocolView state) HostProtocol.SuccessorRequested of
+            HostProtocol.ProtocolFault message -> failWith state message
+            HostProtocol.SuppressSuccessor ->
+              -- The request crossed cancellation or interruption. Track its
+              -- sequence, but do not start authority-bearing work.
+              go state {loopNextRequestSequence = sequenceNumber + 1}
+            HostProtocol.StartSuccessor deadlineUpdate -> do
+              startSuccessor state deadlineUpdate sequenceNumber nodeId
+            decision -> unexpectedDecision state "successor request" decision
+
+    startSuccessor state deadlineUpdate sequenceNumber nodeId = do
+      -- Spawn-and-register is masked so an async exception cannot leave
+      -- a live worker outside the registry; the worker body itself runs
+      -- unmasked so it stays promptly cancellable.
+      worker <- mask_ $ do
+        spawned <- asyncWithUnmask $ \unmask -> do
+          resolution <-
+            trySynchronous (unmask (runtimeHost.hostedExecuteEffect nodeId))
+          atomically $
+            writeTQueue
+              queue
+              (HostEffectFinished sequenceNumber nodeId (firstException resolution))
+        atomically (modifyTVar' workerRegistry (Map.insert sequenceNumber spawned))
+        pure spawned
+      let registered =
             state
               { loopNextRequestSequence = sequenceNumber + 1
               , loopWorkers = Map.insert sequenceNumber (nodeId, worker) state.loopWorkers
               , loopActiveNodes = Set.insert nodeId state.loopActiveNodes
-              , loopEngineDeadline =
-                  if state.loopAwaitingCheckpoint
-                    then state.loopEngineDeadline
-                    else Nothing
               }
+      deadlineUpdated <-
+        applyEngineDeadlineUpdate responseTimeoutMicros deadlineUpdate registered
+      go deadlineUpdated
 
     handleCompletion state sequenceNumber nodeId resolution =
       case Map.lookup sequenceNumber state.loopWorkers of
@@ -777,24 +814,8 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
                       , loopActiveNodes = Set.delete nodeId state.loopActiveNodes
                       }
               case resolution of
-                Right (EffectInterrupted _reason)
-                  | completedState.loopCancellationSent -> go completedState
-                  | isNothing runtimeHost.hostedAwaitCancellation ->
-                      failWith
-                        completedState
-                        "effect reported interruption but no cancellation watcher is installed"
-                  | otherwise ->
-                      -- The run-level cancel that interrupted the worker is
-                      -- in flight; the engine keeps the node running until
-                      -- that cancel resets it to pending.
-                      ensureCancellationDeadline
-                        responseTimeoutMicros
-                        ( completedState
-                            { loopInterruptedNodes =
-                                Set.insert nodeId completedState.loopInterruptedNodes
-                            }
-                        )
-                        >>= go
+                Right (EffectInterrupted _reason) ->
+                  handleInterruptedCompletion completedState nodeId
                 Left message ->
                   handleResolvedCompletion
                     completedState
@@ -808,10 +829,32 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
                     nodeId
                     (Right (EffectResolved completion))
 
-    handleResolvedCompletion state sequenceNumber nodeId resolution
-      | state.loopCancellationSent = go state
-      | not (Set.null state.loopInterruptedNodes) = go state
-      | state.loopAwaitingCheckpoint =
+    handleInterruptedCompletion state nodeId =
+      case HostProtocol.transition
+        (protocolView state)
+        ( HostProtocol.InterruptedCompletionArrived $
+            isJust runtimeHost.hostedAwaitCancellation
+        ) of
+        HostProtocol.DropCompletion -> go state
+        HostProtocol.ProtocolFault message -> failWith state message
+        HostProtocol.AwaitCancellation deadlineUpdate -> do
+          -- The run-level cancel that interrupted the worker is in flight;
+          -- the engine keeps the node running until cancellation resets it.
+          deadlineUpdated <-
+            applyCancellationDeadlineUpdate
+              responseTimeoutMicros
+              deadlineUpdate
+              state
+                { loopInterruptedNodes =
+                    Set.insert nodeId state.loopInterruptedNodes
+                }
+          go deadlineUpdated
+        decision -> unexpectedDecision state "interrupted completion" decision
+
+    handleResolvedCompletion state sequenceNumber nodeId resolution =
+      case HostProtocol.transition (protocolView state) HostProtocol.ResolvedCompletionArrived of
+        HostProtocol.DropCompletion -> go state
+        HostProtocol.BufferCompletion ->
           go
             state
               { loopBufferedCompletions =
@@ -820,9 +863,11 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
                     (nodeId, resolution)
                     state.loopBufferedCompletions
               }
-      | otherwise = sendCompletion state sequenceNumber nodeId resolution
+        HostProtocol.ForwardCompletion deadlineUpdate ->
+          sendCompletion state deadlineUpdate sequenceNumber nodeId resolution
+        decision -> unexpectedDecision state "resolved completion" decision
 
-    sendCompletion state sequenceNumber nodeId = \case
+    sendCompletion state deadlineUpdate sequenceNumber nodeId = \case
       Left message -> failWith state ("effect host threw: " <> message)
       Right (EffectInterrupted _reason) ->
         -- Unreachable: interruptions are intercepted before buffering, and
@@ -837,53 +882,50 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
         case writeResult of
           Left err -> failWith state ("sending effect completion: " <> exceptionText err)
           Right () -> do
-            armed <- armFreshEngineDeadline responseTimeoutMicros state
+            armed <-
+              applyEngineDeadlineUpdate responseTimeoutMicros deadlineUpdate state
             go armed {loopAwaitingCheckpoint = True}
 
-    dispatchBuffered state
-      -- Completions buffered before the cancel was sent must not reach an
-      -- engine that has already processed the cancel; the cancelled
-      -- checkpoint supersedes them.
-      | state.loopCancellationSent && not (Map.null state.loopBufferedCompletions) =
-          continueAfterCheckpoint state {loopBufferedCompletions = Map.empty}
-      | otherwise =
-          case Map.minViewWithKey state.loopBufferedCompletions of
-            Nothing -> continueAfterCheckpoint state
-            Just ((sequenceNumber, (nodeId, resolution)), remaining) ->
-              sendCompletion
-                state {loopBufferedCompletions = remaining}
-                sequenceNumber
-                nodeId
-                resolution
-
-    continueAfterCheckpoint state
-      | maybe False (\snapshot -> snapshot.esTerminal /= EngineActive) state.loopLastCommitted =
-          armFreshEngineDeadline responseTimeoutMicros state >>= go
-      | state.loopCancellationSent =
-          ensureEngineDeadline responseTimeoutMicros state >>= go
-      | Map.null state.loopWorkers
-          && Set.null state.loopInterruptedNodes =
-          armFreshEngineDeadline responseTimeoutMicros state >>= go
-      | otherwise = go state
+    dispatchBuffered state =
+      case state.loopLastCommitted of
+        Nothing -> failWith state "checkpoint acknowledgement lost committed authority"
+        Just snapshot ->
+          case HostProtocol.transition
+            (protocolView state)
+            (HostProtocol.CheckpointAcknowledged snapshot.esTerminal) of
+            HostProtocol.DropBufferedCompletions ->
+              -- Cancellation supersedes completions buffered before the
+              -- cancelled checkpoint was acknowledged.
+              dispatchBuffered state {loopBufferedCompletions = Map.empty}
+            HostProtocol.DispatchBufferedCompletion ->
+              case Map.minViewWithKey state.loopBufferedCompletions of
+                Nothing -> failWith state "protocol selected an absent buffered completion"
+                Just ((sequenceNumber, (nodeId, resolution)), remaining) ->
+                  sendCompletion
+                    state {loopBufferedCompletions = remaining}
+                    HostProtocol.ArmFreshDeadline
+                    sequenceNumber
+                    nodeId
+                    resolution
+            HostProtocol.AwaitTerminal deadlineUpdate ->
+              applyEngineDeadlineUpdate responseTimeoutMicros deadlineUpdate state >>= go
+            HostProtocol.AwaitCancellationCheckpoint deadlineUpdate ->
+              applyEngineDeadlineUpdate responseTimeoutMicros deadlineUpdate state >>= go
+            HostProtocol.AwaitEngineProgress deadlineUpdate ->
+              applyEngineDeadlineUpdate responseTimeoutMicros deadlineUpdate state >>= go
+            HostProtocol.AwaitWorkers -> go state
+            decision -> unexpectedDecision state "checkpoint acknowledgement" decision
 
     handleTerminal state terminal =
-      case state.loopLastCommitted of
-        Nothing -> failWith state "engine emitted terminal before a committed checkpoint"
-        Just snapshot
-          | snapshot.esTerminal /= terminal ->
-              failWith state "terminal event disagrees with the committed checkpoint"
-          | state.loopAwaitingCheckpoint ->
-              failWith state "engine emitted terminal before checkpoint acknowledgement"
-          | terminal == EngineCancelled && state.loopCancellationSent -> do
-              cancelledState <- cancelLiveWorkers state
-              writeShutdown cancelledState terminal
-          | not (Map.null state.loopWorkers) ->
-              failWith state "engine emitted terminal with effects still running"
-          | not (Set.null state.loopInterruptedNodes) ->
-              failWith state "engine emitted terminal with interrupted effects outstanding"
-          | not (Map.null state.loopBufferedCompletions) ->
-              failWith state "engine emitted terminal with buffered completions"
-          | otherwise -> writeShutdown state terminal
+      case HostProtocol.transition
+        (protocolView state)
+        (HostProtocol.TerminalReceived terminal) of
+        HostProtocol.ProtocolFault message -> failWith state message
+        HostProtocol.CancelWorkersAndSendShutdown -> do
+          cancelledState <- cancelLiveWorkers state
+          writeShutdown cancelledState terminal
+        HostProtocol.SendShutdown -> writeShutdown state terminal
+        decision -> unexpectedDecision state "terminal" decision
 
     writeShutdown state terminal = do
       writeResult <- try @IOException (writeCommand childInput (HostShutdown runId))
@@ -904,6 +946,20 @@ eventLoop responseTimeoutMicros runId programIdentity nodeCount childInput queue
           , loopInterruptedNodes = Set.empty
           , loopBufferedCompletions = Map.empty
           }
+
+    enactTerminalDecision state = \case
+      HostProtocol.FinishCommittedTerminal -> finish state
+      HostProtocol.ProtocolFault message -> failWith state message
+      decision -> unexpectedDecision state "terminal decision" decision
+
+    unexpectedDecision state crossing decision =
+      failWith
+        state
+        ( "host protocol policy returned an invalid "
+            <> crossing
+            <> " action: "
+            <> T.pack (show decision)
+        )
 
     expectedCheckpoint state actual =
       case state.loopLastCheckpointSequence of
