@@ -301,7 +301,7 @@
       _check-tla = {
         type = "app";
         program = "${check-tla}/bin/check-tla";
-        meta.description = "Model-check the Pulse run-terminal signal protocol with TLC";
+        meta.description = "Model-check the Pulse and Wire hosted protocols with TLC";
       };
 
       check-haskell-format = {

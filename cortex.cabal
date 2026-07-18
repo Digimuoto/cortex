@@ -215,6 +215,7 @@ library
         Cortex.Wire.Circuit.Compiled
         Cortex.Wire.Circuit.Compiler
         Cortex.Wire.Circuit.Engine
+        Cortex.Wire.Circuit.HostProtocol
         Cortex.Wire.Circuit.Hosted
         Cortex.Wire.Circuit.IR
         Cortex.Wire.Circuit.Lower
@@ -453,6 +454,7 @@ test-suite cortex-test
         Cortex.Pulse.TypesSpec
         Cortex.Wire.Circuit.CompilerSpec
         Cortex.Wire.Circuit.EngineSpec
+        Cortex.Wire.Circuit.HostProtocolSpec
         Cortex.Wire.Circuit.HostedSpec
         Cortex.Wire.Circuit.IRSpec
         Cortex.Wire.Cli.FrontierSpec

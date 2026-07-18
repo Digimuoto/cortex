@@ -134,6 +134,27 @@ Checkpoint order is load-bearing:
 Ready effects may execute concurrently. A host serializes completion delivery and checkpoint
 acknowledgements and may buffer workers that finish while another checkpoint is pending.
 
+### Host-protocol assurance boundary
+
+The Lean engine model proves snapshot validity, whole-drive classification, and the checkpoint gate;
+it intentionally carries no process handles, workers, queues, or clocks. The concurrent host
+lifecycle is a separate state machine:
+
+- `Cortex.Wire.Circuit.HostProtocol` is the pure executable policy used by the IO event loop;
+- `formal/HostedProtocol.tla` is its bounded concurrency model; and
+- `Cortex.Wire.Circuit.HostedSpec` refines the policy against real pipes, workers, cancellation, and
+  child processes through scripted engines.
+
+TLC checks atomic worker registration, acknowledgement before successor work, buffered-completion
+gating, terminal-checkpoint authority, cancellation liveness after interruption, independent
+non-extending deadlines, committed terminal precedence over abnormal exit, and the prohibition on
+forwarding completions after cancellation. Run both the Wire host model and the existing Pulse
+run-terminal signal model with:
+
+```sh
+just tla-check
+```
+
 The repository records transport overhead with an opt-in Criterion suite:
 
 ```sh
