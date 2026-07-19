@@ -20,6 +20,7 @@ Substrate-layer research synthesis: formalism, algebraic structure, and coordina
 | 2026-05-09 | [Stage-structured causal pipelines](2026-05-09-stage-structured-causal-pipelines.md)                                 |
 | 2026-07-15 | [Realization as typed graph staging](2026-07-15-realization-as-typed-graph-staging.md)                               |
 | 2026-07-19 | [Binding time splits executor configuration](2026-07-19-executor-static-binding-time.md)                             |
+| 2026-07-19 | [Circuit, realization, and bound execution](2026-07-19-circuit-realization-and-bound-execution.md)                   |
 
 ## Related
 
