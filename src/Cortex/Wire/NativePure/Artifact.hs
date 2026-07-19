@@ -8,14 +8,16 @@ Stability   : experimental
 
 This module turns the ephemeral, referent-bound admission candidates into a
 versioned normalized input, a witnessed quotient of the complete source
-topology, and a maximal-region plan.  It deliberately stops before selecting
-a shared semantic C IR; that is the next epic slice.
+topology, and a validated region plan. Maximal fusion is the production mode;
+an explicit one-source-per-region mode provides traceable differential and
+diagnostic artifacts without weakening boundary or provenance validation.
 -}
 module Cortex.Wire.NativePure.Artifact
   ( NativePureNormalizedInput (..)
   , RealizationArtifact (..)
   , RealizationRuntimeUnit (..)
   , RealizationRuntimeKind (..)
+  , NativePureFusionMode (..)
   , NativePurePlan (..)
   , NativePureFusedRegion (..)
   , NativePureRegionBoundary (..)
@@ -35,6 +37,7 @@ module Cortex.Wire.NativePure.Artifact
   , nativePurePlanSchema
   , normalizeNativePureInput
   , realizeNativePurePlan
+  , realizeNativePurePlanWithMode
   , validateRealizationArtifact
   , validateNativePurePlan
   , renderNativePureArtifactError
@@ -242,6 +245,16 @@ data RealizationRuntimeUnit = RealizationRuntimeUnit
   }
   deriving stock (Eq, Ord, Show, Generic)
 
+{- | Region-selection policy. Maximal fusion is the production profile;
+unfused realization is a diagnostic profile that preserves one eligible
+source node per region while retaining the same boundary and provenance
+validation.
+-}
+data NativePureFusionMode
+  = NativePureMaximalFusion
+  | NativePureUnfused
+  deriving stock (Eq, Ord, Show, Generic)
+
 data RealizationArtifact = RealizationArtifact
   { realizationArtifactReferentIdentity :: !Text
   , realizationArtifactInputDigest :: !Text
@@ -256,6 +269,7 @@ data NativePurePlan = NativePurePlan
   { nativePurePlanProgramId :: !Text
   , nativePurePlanProgramIdentity :: !Text
   , nativePurePlanInputDigest :: !Text
+  , nativePurePlanFusionMode :: !NativePureFusionMode
   , nativePurePlanRealization :: !RealizationArtifact
   , nativePurePlanRegions :: ![NativePureFusedRegion]
   , nativePurePlanDigest :: !Text
@@ -337,7 +351,13 @@ normalizeNativePureInput registry compiled = do
 realizeNativePurePlan
   :: NativePureNormalizedInput
   -> Either NativePureArtifactError NativePurePlan
-realizeNativePurePlan normalized = do
+realizeNativePurePlan = realizeNativePurePlanWithMode NativePureMaximalFusion
+
+realizeNativePurePlanWithMode
+  :: NativePureFusionMode
+  -> NativePureNormalizedInput
+  -> Either NativePureArtifactError NativePurePlan
+realizeNativePurePlanWithMode fusionMode normalized = do
   unless (canonicalDigest (normalizedInputValue normalized) == normalized.nativePureNormalizedDigest) $
     Left (NativePureArtifactDigestMismatch "normalized input")
   let candidateMap =
@@ -349,8 +369,7 @@ realizeNativePurePlan normalized = do
         toRelation $
           vertices normalized.nativePureNormalizedSourceNodes
             <> edges normalized.nativePureNormalizedSourceEdges
-      fusionRelation = nativePureFusionRelation candidateMap normalized.nativePureNormalizedConnections
-      components = maximalEligibleComponents fusionRelation (Map.keysSet candidateMap)
+      components = realizationComponents fusionMode normalized candidateMap
   regions <-
     traverse
       (uncurry (buildRegion sourceRelation candidateMap normalized.nativePureNormalizedConnections))
@@ -362,6 +381,7 @@ realizeNativePurePlan normalized = do
           { nativePurePlanProgramId = normalized.nativePureNormalizedProgramId
           , nativePurePlanProgramIdentity = normalized.nativePureNormalizedReferentIdentity
           , nativePurePlanInputDigest = normalized.nativePureNormalizedDigest
+          , nativePurePlanFusionMode = fusionMode
           , nativePurePlanRealization = artifact
           , nativePurePlanRegions = regions
           , nativePurePlanDigest = ""
@@ -429,8 +449,7 @@ validateNativePurePlan normalized plan = do
           [ (candidate.nativePureKernelCandidateRef, candidate)
           | candidate <- normalized.nativePureNormalizedCandidates
           ]
-      fusionRelation = nativePureFusionRelation candidateMap normalized.nativePureNormalizedConnections
-      expectedComponents = maximalEligibleComponents fusionRelation (Map.keysSet candidateMap)
+      expectedComponents = realizationComponents plan.nativePurePlanFusionMode normalized candidateMap
   expectedRegions <-
     traverse
       (uncurry (buildRegion sourceRelation candidateMap normalized.nativePureNormalizedConnections))
@@ -634,6 +653,23 @@ maximalEligibleComponents relation eligible = go Set.empty (Set.toAscList eligib
                 Set.toAscList $
                   Set.intersection eligible (predecessors relation node <> successors relation node)
            in flood (Set.insert node seen) (adjacent <> pending)
+
+realizationComponents
+  :: NativePureFusionMode
+  -> NativePureNormalizedInput
+  -> Map CircuitNodeRef NativePureKernelCandidate
+  -> [[CircuitNodeRef]]
+realizationComponents fusionMode normalized candidates =
+  case fusionMode of
+    NativePureMaximalFusion ->
+      maximalEligibleComponents
+        (nativePureFusionRelation candidates normalized.nativePureNormalizedConnections)
+        (Map.keysSet candidates)
+    NativePureUnfused ->
+      [ [source]
+      | source <- normalized.nativePureNormalizedSourceNodes
+      , Map.member source candidates
+      ]
 
 buildRegion
   :: Relation CircuitNodeRef
@@ -1361,6 +1397,7 @@ nativePurePlanValue plan =
     , "program_id" .= plan.nativePurePlanProgramId
     , "program_identity" .= plan.nativePurePlanProgramIdentity
     , "input_digest" .= plan.nativePurePlanInputDigest
+    , "fusion_mode" .= plan.nativePurePlanFusionMode
     , "realization" .= plan.nativePurePlanRealization
     , "regions" .= plan.nativePurePlanRegions
     ]
@@ -1499,6 +1536,12 @@ instance ToJSON RealizationRuntimeUnit where
       , "kind" .= unit.realizationRuntimeUnitKind
       , "sources" .= fmap (.unCircuitNodeRef) unit.realizationRuntimeUnitSources
       ]
+
+instance ToJSON NativePureFusionMode where
+  toJSON =
+    Aeson.String . \case
+      NativePureMaximalFusion -> "maximal"
+      NativePureUnfused -> "unfused"
 
 instance ToJSON RealizationArtifact where
   toJSON artifact =

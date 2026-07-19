@@ -51,9 +51,15 @@ symbols. The additive Haskell v2 scheduler policy now specializes witnessed quot
 every effect behind the preceding checkpoint acknowledgement, executes pure regions synchronously,
 persists `select(...)` tags and skipped latent branches, rejoins the chosen branch, and restores the
 tag/value state without creating host work for pure units. Pure and effect failures become durable
-failed checkpoints. This is not yet the generally available NativePure execution profile:
-normalized-plan decoding in Lean, generated-engine integration, the hermetic target matrix, and
-three-way differential closure remain later epic slices.
+failed checkpoints. The closure slice adds an explicit unfused diagnostic realization mode and a
+hermetic 18-case Haskell/Lean/generated-C corpus now cover checked overflow, products, records,
+projections, exclusive sums, and bit-preserving binary64 identity. Clang and GCC strict builds,
+ASan/UBSan/bounds sanitizers, bare AArch64 compilation, export/undefined-symbol checks, and
+TLS/constructor/writable-executable section gates run from one Nix check. The structural and
+checked-i64 Lean traces are computed by the executable typed evaluator rather than copied expected
+strings. This is not yet the generally available NativePure execution profile: production
+normalized-plan decoding into the Lean kernel and a generated v2 C engine that dispatches the
+emitted typed region functions remain open integration work.
 
 ## Context
 
@@ -82,7 +88,9 @@ runtime unit to all source members and the referent identity, and maps every rea
 back to exactly one runtime unit. NativePure v1 selects maximal connected components of eligible
 pure nodes subject to exact typed crossings, acyclicity, disjointness, complete provenance, and
 explicit checkpoint/select boundaries. Authored or nested realization boundaries and buffer-reuse
-optimization remain deferred.
+optimization remain deferred. A separately tagged `unfused` diagnostic mode emits one eligible
+source node per region from the same normalized input while retaining exact crossings and complete
+bidirectional provenance.
 
 ### Strict representation contracts
 
@@ -170,12 +178,14 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   (additive contract projection and manifest decoding), and
   `src/Cortex/Wire/NativePure/Admission.hs` (strict candidate admission, typed expression checks,
   storage regions, and resource bounds), and `src/Cortex/Wire/NativePure/Artifact.hs` (normalized
-  input, maximal fusion, typed ANF/SSA, witnessed quotient, validation, and stable digests), and
-  `src/Cortex/Wire/NativePure/Scheduler.hs` (additive v2 specialization, checkpoint acknowledgement,
-  synchronous pure execution, persisted selection/rejoin state, restore, cancellation, and bounded
-  hosted messages)
+  input, maximal and unfused diagnostic realization, typed ANF/SSA, witnessed quotient, validation,
+  and stable digests), and `src/Cortex/Wire/NativePure/Scheduler.hs` (additive v2 specialization,
+  checkpoint acknowledgement, synchronous pure execution, persisted selection/rejoin state, restore,
+  cancellation, and bounded hosted messages)
 - Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
-  `test/Cortex/Wire/NativePureAdmissionSpec.hs`, `test/Cortex/Wire/NativePureSchedulerSpec.hs`
+  `test/Cortex/Wire/NativePureAdmissionSpec.hs`, `test/Cortex/Wire/NativePureSchedulerSpec.hs`,
+  `test/Cortex/Wire/NativePureDifferentialSpec.hs`, and the `cortex-native-pure-differential` Nix
+  check
 - Theory/proof: `theory/Cortex/Wire/NativePure/Type.lean` owns the shared bounded value algebra;
   `theory/Cortex/Wire/SemanticC.lean` defines the shared typed expression/statement/function IR,
   storage model, bounded control flow, calls, failures, and executable semantics;
@@ -200,8 +210,8 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, the
   effect/pure/effect, n-way selection, checkpoint recovery, failure, and protocol-bound tests in
   `test/Cortex/Wire/NativePureSchedulerSpec.hs`, the Lean construction checks in
-  `Cortex.Wire.NativePure.C.Unit`, and strict host compilation of the emitted increment and
-  tagged-classifier fixtures
-- Planned public surface: normalized-plan decoding in Lean, hermetic host/bare-target and
-  differential gates, and generated-engine integration for the additive v2 runtime/target interfaces
+  `Cortex.Wire.NativePure.C.Unit`, executable Haskell and Lean reference traces, and the hermetic
+  generated-C strict/sanitizer/host/bare-AArch64/symbol/section matrix
+- Planned public surface: production normalized-plan decoding in Lean and generated-engine
+  integration for the additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR

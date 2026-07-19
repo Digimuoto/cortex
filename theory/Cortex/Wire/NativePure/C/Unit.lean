@@ -35,7 +35,6 @@ private def kernel : CertifiedKernel :=
   , regionsWellFormed := by simp [RegionsWellFormed]
   , inputsWellFormed := by simp [WellFormedTy]
   , outputWellFormed := by simp [WellFormedTy]
-  , refinementBasis := by simp [incrementBody, RefinementExpr, RefinementTy]
   , stepsSound := by native_decide
   , outputSound := by native_decide
   }
@@ -97,8 +96,6 @@ private def classifyKernel : CertifiedKernel :=
   , outputWellFormed := by
       simp [WellFormedTy, WellFormedFields, LabelsCanonical]
       native_decide
-  , refinementBasis := by
-      simp [classifyBody, Decision, RefinementExpr, RefinementTy, RefinementFields]
   , stepsSound := by native_decide
   , outputSound := by native_decide
   }
@@ -146,8 +143,6 @@ private def productKernel : CertifiedKernel :=
   , outputWellFormed := by
       simp [WellFormedTy, WellFormedFields, LabelsCanonical]
       native_decide
-  , refinementBasis := by
-      simp [productBody, Product, RefinementExpr, RefinementRecord, RefinementTy]
   , stepsSound := by native_decide
   , outputSound := by native_decide
   }
@@ -159,11 +154,170 @@ private def productRenderedResult := render "native-pure-product-unit" productRe
 
 example : productRenderedResult.toOption.isSome = true := by native_decide
 
-private def productRendered : Cortex.Wire.C11.RenderedArtifacts :=
+def productRendered : Cortex.Wire.C11.RenderedArtifacts :=
   productRenderedResult.toOption.get (by native_decide)
 
 example : productRendered.header.contains "padding_0[7u]" = true := by native_decide
 example : productRendered.source.contains "field_1 = input->field_0" = true := by native_decide
+
+private def scoreMember : Member "score" .i64 [("flag", .bool), ("score", .i64)] :=
+  .tail .head
+
+private def projectionBody : Expr [Product] .i64 :=
+  .project (.var .zero) scoreMember
+
+private def projectionKernel : CertifiedKernel :=
+  { sourceNode := "project_score"
+  , inputs := [Product]
+  , output := .i64
+  , body := projectionBody
+  , bounds :=
+      { stackBytes := 32
+      , staticBytes := 0
+      , outputBytes := 8
+      , checkpointBytes := 24
+      , maxSteps := 2
+      , checkpointWithinHostedCeiling := by decide
+      }
+  , regions :=
+      [ { name := "input.product", access := .read, capacity := 16, alignment := 8 }
+      , { name := "output.score", access := .write, capacity := 8, alignment := 8 }
+      ]
+  , regionsWellFormed := by simp [RegionsWellFormed]
+  , inputsWellFormed := by
+      simp [Product, WellFormedTy, WellFormedFields, LabelsCanonical]
+      native_decide
+  , outputWellFormed := by simp [WellFormedTy]
+  , stepsSound := by native_decide
+  , outputSound := by native_decide
+  }
+
+private def projectionRegion : Region :=
+  { name := "project_score", inputLabels := ["product"], kernel := projectionKernel }
+
+private def projectionRenderedResult :=
+  render "native-pure-projection-unit" projectionRegion
+
+example : projectionRenderedResult.toOption.isSome = true := by native_decide
+
+def projectionRendered : Cortex.Wire.C11.RenderedArtifacts :=
+  projectionRenderedResult.toOption.get (by native_decide)
+
+example : projectionRendered.source.contains "input->field_0.field_1" = true := by native_decide
+
+private def f64IdentityBody : Expr [.f64] .f64 := .var .zero
+
+private def f64IdentityKernel : CertifiedKernel :=
+  { sourceNode := "f64_identity"
+  , inputs := [.f64]
+  , output := .f64
+  , body := f64IdentityBody
+  , bounds :=
+      { stackBytes := 16
+      , staticBytes := 0
+      , outputBytes := 8
+      , checkpointBytes := 16
+      , maxSteps := 1
+      , checkpointWithinHostedCeiling := by decide
+      }
+  , regions :=
+      [ { name := "input.value", access := .read, capacity := 8, alignment := 8 }
+      , { name := "output.value", access := .write, capacity := 8, alignment := 8 }
+      ]
+  , regionsWellFormed := by simp [RegionsWellFormed]
+  , inputsWellFormed := by simp [WellFormedTy]
+  , outputWellFormed := by simp [WellFormedTy]
+  , stepsSound := by native_decide
+  , outputSound := by native_decide
+  }
+
+private def f64IdentityRegion : Region :=
+  { name := "f64_identity", inputLabels := ["value"], kernel := f64IdentityKernel }
+
+private def f64IdentityRenderedResult :=
+  render "native-pure-f64-identity-unit" f64IdentityRegion
+
+example : f64IdentityRenderedResult.toOption.isSome = true := by native_decide
+
+def f64IdentityRendered : Cortex.Wire.C11.RenderedArtifacts :=
+  f64IdentityRenderedResult.toOption.get (by native_decide)
+
+example : f64IdentityRendered.source.contains "output->value = input->field_0" = true := by
+  native_decide
+
+private def checkedI64 (value : Int) (valid : (I64.checked value).isSome = true) : I64 :=
+  (I64.checked value).get (by simpa [Option.isSome_iff_exists] using valid)
+
+private def differentialI64Inputs : List I64 :=
+  [ checkedI64 (-2) (by native_decide)
+  , checkedI64 (-1) (by native_decide)
+  , checkedI64 0 (by native_decide)
+  , checkedI64 1 (by native_decide)
+  , checkedI64 9223372036854775806 (by native_decide)
+  , checkedI64 9223372036854775807 (by native_decide)
+  ]
+
+private def boolDigit : Bool → String
+  | false => "0"
+  | true => "1"
+
+private def incrementTrace (input : I64) : String :=
+  match eval incrementBody [.i64 input] with
+  | some (.i64 result) => s!"increment:{input.value} status=0 value={result.value}"
+  | none => s!"increment:{input.value} status=2"
+  | some _ => s!"increment:{input.value} status=1"
+
+private def classifyTrace (input : I64) : String :=
+  match eval classifyBody [.i64 input] with
+  | some (.sum label (.i64 result)) =>
+      let tag := if label == "accepted" then "0" else "1"
+      s!"classify:{input.value} status=0 tag={tag} value={result.value}"
+  | none => s!"classify:{input.value} status=2"
+  | some _ => s!"classify:{input.value} status=1"
+
+private def productTrace (input : I64) : String :=
+  match eval productBody [.i64 input] with
+  | some (.record [("flag", .bool flag), ("score", .i64 score)]) =>
+      s!"product:{input.value} status=0 flag={boolDigit flag} score={score.value}"
+  | none => s!"product:{input.value} status=2"
+  | some _ => s!"product:{input.value} status=1"
+
+private def projectionTrace (flag : Bool) (score : I64) : String :=
+  let input := Value.record [("flag", .bool flag), ("score", .i64 score)]
+  match eval projectionBody [input] with
+  | some (.i64 result) =>
+      s!"projection:{boolDigit flag},{score.value} status=0 value={result.value}"
+  | none => s!"projection:{boolDigit flag},{score.value} status=2"
+  | some _ => s!"projection:{boolDigit flag},{score.value} status=1"
+
+/-- Canonical Lean reference traces for the hermetic NativePure differential.
+The checked-i64 and structural lines are computed by the executable typed
+semantics. Binary64 lines deliberately exercise only bit-preserving identity;
+f64 arithmetic remains outside the theorem boundary. -/
+def differentialTraces : String :=
+  let increments := differentialI64Inputs.map incrementTrace
+  let classifications :=
+    [ classifyTrace (checkedI64 (-2) (by native_decide))
+    , classifyTrace (checkedI64 0 (by native_decide))
+    , classifyTrace (checkedI64 9 (by native_decide))
+    ]
+  let products :=
+    [ productTrace (checkedI64 (-7) (by native_decide))
+    , productTrace (checkedI64 0 (by native_decide))
+    ]
+  let projections :=
+    [ projectionTrace false (checkedI64 (-9) (by native_decide))
+    , projectionTrace true (checkedI64 42 (by native_decide))
+    ]
+  let f64Identity :=
+    [ "f64:0000000000000000 status=0 bits=0000000000000000"
+    , "f64:8000000000000000 status=0 bits=8000000000000000"
+    , "f64:0000000000000001 status=0 bits=0000000000000001"
+    , "f64:3ff0000000000000 status=0 bits=3ff0000000000000"
+    , "f64:7fefffffffffffff status=0 bits=7fefffffffffffff"
+    ]
+  let traces := increments ++ classifications ++ products ++ projections ++ f64Identity
+  String.intercalate "\n" traces ++ "\n"
 
 private def sourceBody : Expr [] .i64 := .i64 one
 
@@ -185,7 +339,6 @@ private def sourceKernel : CertifiedKernel :=
   , regionsWellFormed := by simp [RegionsWellFormed]
   , inputsWellFormed := by simp
   , outputWellFormed := by simp [WellFormedTy]
-  , refinementBasis := by simp [sourceBody, RefinementExpr]
   , stepsSound := by native_decide
   , outputSound := by native_decide
   }

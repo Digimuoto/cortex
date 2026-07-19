@@ -142,6 +142,7 @@ import Cortex.Wire.LeanFixture
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
   )
+import Cortex.Wire.NativePure.Differential (emitNativePureDifferentialCorpus)
 import Cortex.Wire.Package
   ( NamespaceRegistry
   , renderPackageConflict
@@ -176,6 +177,7 @@ data Command
   | CommandParse !FilePath
   | CommandFrontier !FrontierCommand
   | CommandDifferential !FilePath
+  | CommandNativePureDifferential !FilePath
   | CommandHelp
   deriving stock (Eq, Show)
 
@@ -268,6 +270,7 @@ main = do
     Right (CommandParse path) -> parseWireOnly path
     Right (CommandFrontier frontierCommand) -> frontierWire packagePaths frontierCommand
     Right (CommandDifferential outDir) -> differentialWire outDir
+    Right (CommandNativePureDifferential outDir) -> nativePureDifferentialWire outDir
 
 {- | Pull repeatable @--wire-package PATH@ options out of the raw argv, returning the
 collected manifest paths and the remaining command arguments. These flags select which
@@ -292,6 +295,8 @@ parseCommand = \case
   ["run", path] -> Right (CommandRun path)
   ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
   ["differential", "emit", outDir] -> Right (CommandDifferential outDir)
+  ["native-pure", "differential", "emit", outDir] ->
+    Right (CommandNativePureDifferential outDir)
   ["parse", path] -> Right (CommandParse path)
   "frontier" : args -> CommandFrontier <$> parseFrontierCommand args
   [path] -> Right (CommandRun path)
@@ -299,6 +304,7 @@ parseCommand = \case
   "hosted-reference" : _ -> Left "usage: wire hosted-reference BUNDLE_DIR"
   "lean-fixtures" : _ -> Left "usage: wire lean-fixtures OUTDIR"
   "differential" : _ -> Left "usage: wire differential emit OUTDIR"
+  "native-pure" : _ -> Left "usage: wire native-pure differential emit OUTDIR"
   "parse" : _ -> Left "usage: wire parse FILE"
   _ -> Left usageText
 
@@ -379,6 +385,8 @@ usageText =
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire differential emit OUTDIR    (emit the static-C-backend differential corpus)"
+    , "  wire native-pure differential emit OUTDIR"
+    , "                                      (emit the NativePure differential corpus)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
     , "  wire frontier [--return NAME] [--closure | --open] [--node NODE] [--json] FILE"
     , "                              (inspect endpoint-use / closure accounting; no execution)"
@@ -703,6 +711,17 @@ differentialWire outDir = do
         <> " topologies, "
         <> T.pack (show scenarios)
         <> " scenarios)"
+    )
+
+nativePureDifferentialWire :: FilePath -> IO ()
+nativePureDifferentialWire outDir = do
+  cases <- emitNativePureDifferentialCorpus outDir
+  TIO.putStrLn
+    ( "emitted NativePure differential corpus to "
+        <> T.pack outDir
+        <> " ("
+        <> T.pack (show cases)
+        <> " cases)"
     )
 
 -- | Parse-only acceptance check used by the grammar differential harness.

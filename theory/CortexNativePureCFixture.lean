@@ -17,6 +17,10 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.createDirAll directory
       writeArtifacts directory "increment" rendered
       writeArtifacts directory "classify" classifyRendered
+      writeArtifacts directory "make_product" productRendered
+      writeArtifacts directory "project_score" projectionRendered
+      writeArtifacts directory "f64_identity" f64IdentityRendered
+      IO.FS.writeFile (directory ++ "/lean-traces.txt") differentialTraces
       pure 0
   | [] | _ :: _ :: _ =>
       IO.eprintln "usage: cortex-native-pure-c-fixture OUTPUT_DIRECTORY"

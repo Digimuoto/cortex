@@ -26,6 +26,7 @@ import Cortex.Wire
   , NativePureAnfOp (..)
   , NativePureArtifactError (..)
   , NativePureFusedRegion (..)
+  , NativePureFusionMode (..)
   , NativePureNormalizedInput (..)
   , NativePurePlan (..)
   , NativePureRegionBoundary (..)
@@ -58,6 +59,7 @@ import Cortex.Wire
   , pureWireExecutorProjection
   , realizationArtifactSchema
   , realizeNativePurePlan
+  , realizeNativePurePlanWithMode
   , strictWireCompileEnv
   , wireContractRegistryFromList
   , wireExecutorRegistryFromList
@@ -222,6 +224,19 @@ artifactSpec = describe "NativePure normalized realization" $ do
                      [CircuitNodeRef "first", CircuitNodeRef "second"]
                  ]
     artifact.realizationArtifactRuntimeEdges `shouldBe` Set.empty
+
+  it "offers an unfused diagnostic plan with identical typed source coverage" $ do
+    (normalized, maximalPlan) <- requirePlan fusionRegistry fusionEnv fusedProgram
+    unfusedPlan <- requireRight (realizeNativePurePlanWithMode NativePureUnfused normalized)
+    maximalPlan.nativePurePlanFusionMode `shouldBe` NativePureMaximalFusion
+    unfusedPlan.nativePurePlanFusionMode `shouldBe` NativePureUnfused
+    fmap (.nativePureFusedRegionSources) unfusedPlan.nativePurePlanRegions
+      `shouldBe` [[CircuitNodeRef "first"], [CircuitNodeRef "second"]]
+    Map.keysSet unfusedPlan.nativePurePlanRealization.realizationArtifactSourceToRuntime
+      `shouldBe` Map.keysSet maximalPlan.nativePurePlanRealization.realizationArtifactSourceToRuntime
+    unfusedPlan.nativePurePlanRealization.realizationArtifactRuntimeEdges
+      `shouldBe` Set.singleton ("native-pure/0000", "native-pure/0001")
+    unfusedPlan.nativePurePlanDigest `shouldNotBe` maximalPlan.nativePurePlanDigest
 
   it "preserves an exclusive sum exit as one tagged aggregate and fusion boundary" $ do
     (_, plan) <- requirePlan sumRegistry sumEnv sumProgram

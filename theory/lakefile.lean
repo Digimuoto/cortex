@@ -161,8 +161,7 @@ lean_exe «cortex-kernel-spike» where
 lean_exe «cortex-wire-c» where
   root := `CortexWireC
 
--- Test-only concrete NativePure C artifact writer. Production plan ingestion
--- remains owned by the versioned compiler boundary rather than this fixture.
+-- Concrete NativePure C artifact writer used by differential and target gates.
 lean_exe «cortex-native-pure-c-fixture» where
   root := `CortexNativePureCFixture
 
