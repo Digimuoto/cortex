@@ -111,6 +111,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0094](0094-hosted-x86-64-linux-executable-profile.md)             | Hosted x86_64 Linux Executable Profile                                     | accepted   |
 | [0095](0095-wire-single-record-executor-boundary.md)               | Wire Single-Record Executor Boundary                                       | proposed   |
 | [0096](0096-certified-native-pure-region-compilation.md)           | Certified NativePure Compilation                                           | proposed   |
+| [0097](0097-wire-static-intent-and-realization-inputs.md)          | Wire Static Intent and Realization Inputs                                  | proposed   |
 
 ## By category
 
@@ -161,10 +162,11 @@ is shown here.
   [0081](0081-wire-endpoint-closure-accounting.md),
   [0085](0085-wire-contract-schema-as-type-enforcement.md),
   [0087](0087-wire-edge-as-saturation-event.md)
-- **Wire language & grammar** (7): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
+- **Wire language & grammar** (8): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
   [0022](0022-wire-node-clause-grammar.md), [0026](0026-wire-failure-taxonomy.md),
   [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),
-  [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md)
+  [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md),
+  [0097](0097-wire-static-intent-and-realization-inputs.md)
 - **Wire executor & node interface** (6): [0017](0017-wire-executor-and-port-catalog-boundary.md),
   [0024](0024-typed-executor-node-interface.md), [0025](0025-configured-executor-values.md),
   [0030](0030-wire-node-implementation-forms.md),
