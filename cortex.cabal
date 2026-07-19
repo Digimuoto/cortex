@@ -199,6 +199,7 @@ library
         Cortex.Wire.Format
         Cortex.Wire.LeanFixture
         Cortex.Wire.NativePure.Admission
+        Cortex.Wire.NativePure.Artifact
         Cortex.Wire.NativePure.Shape
         Cortex.Wire.Parser
         Cortex.Wire.Pure
