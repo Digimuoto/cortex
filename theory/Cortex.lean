@@ -18,6 +18,7 @@ import Cortex.Pulse.RunSafety
 
 -- Track 3 — Wire rewrite soundness
 import Cortex.Wire.Pure
+import Cortex.Wire.NativePure
 import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
 import Cortex.Wire.Admission
