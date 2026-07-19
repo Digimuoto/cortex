@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/check-branch-name [<branch-name>]
+
+Checks a Cortex branch name against the naming policy.
+
+Default branch: current branch (git rev-parse --abbrev-ref HEAD)
+
+Policy:
+  - lowercase kebab-case segments: [a-z0-9]+(-[a-z0-9]+)*
+  - at most one namespace level: "segment" or "segment/segment"
+  - no segment may name an AI coding tool/vendor (branch names are public
+    and are not a copyright/authorship record; tool names do not belong there)
+  - "main" is always allowed
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+branch="${1:-}"
+if [[ -z "$branch" ]]; then
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+fi
+
+if [[ "$branch" == "main" || "$branch" == "HEAD" ]]; then
+  echo "Branch name OK: $branch"
+  exit 0
+fi
+
+segment_re='[a-z0-9]+(-[a-z0-9]+)*'
+shape_re="^${segment_re}(/${segment_re})?\$"
+
+# AI coding tool / vendor identifiers that must not appear as a branch
+# namespace or segment. Extend this list as new tools show up in the wild
+# rather than loosening the shape check above.
+blocked_tokens=(
+  codex
+  claude
+  anthropic
+  copilot
+  chatgpt
+  gpt
+  cursor
+  aider
+  devin
+  opencode
+  windsurf
+  cline
+  gemini
+  bard
+  cody
+  tabnine
+  amazonq
+  jules
+  replit
+  warp
+)
+
+failed=0
+
+fail() {
+  printf 'branch name violation: %s\n' "$1" >&2
+  failed=1
+}
+
+if [[ ! "$branch" =~ $shape_re ]]; then
+  fail "'$branch' does not match required shape (lowercase kebab-case, at most one 'namespace/slug' level)"
+fi
+
+IFS='/' read -ra segments <<<"$branch"
+for segment in "${segments[@]}"; do
+  for token in "${blocked_tokens[@]}"; do
+    if [[ "$segment" == "$token" || "$segment" == "$token"-* || "$segment" == *-"$token" || "$segment" == *-"$token"-* ]]; then
+      fail "'$branch' names AI tool/vendor '$token' in segment '$segment'"
+    fi
+  done
+done
+
+if [[ "$failed" -ne 0 ]]; then
+  exit 1
+fi
+
+echo "Branch name OK: $branch"

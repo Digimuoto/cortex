@@ -177,6 +177,20 @@ jobs:
 
           scripts/check-commit-provenance "$RANGE"
 
+      - name: Check branch name
+        if: github.event_name == 'pull_request'
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          # Unlike commit provenance, branch naming is a lint, not a trust
+          # boundary: run the PR head's own copy of the checker so a PR that
+          # introduces or edits scripts/check-branch-name validates itself.
+          git show refs/remotes/pr/head:scripts/check-branch-name >/tmp/check-branch-name
+          chmod +x /tmp/check-branch-name
+          /tmp/check-branch-name "$PR_HEAD_REF"
+
   repository-merge-policy:
     name: Repository Merge Policy
     runs-on: ubuntu-24.04
