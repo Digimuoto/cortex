@@ -255,6 +255,10 @@ check-branch-name BRANCH="":
 check-github-merge-policy:
     nix develop -c scripts/check-github-merge-policy
 
+# Build a deterministic review bundle for an inclusive commit range
+review-commits RANGE *ARGS:
+    scripts/review-commits "{{ RANGE }}" {{ ARGS }}
+
 # Fast-forward main to an already reviewed and signed branch or PR number
 integrate-pr TARGET:
     scripts/integrate-pr "{{ TARGET }}"
