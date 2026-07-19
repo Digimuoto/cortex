@@ -1289,11 +1289,73 @@
       ]
     },
     "pure_body": {
-      "type": "REPEAT1",
-      "content": {
-        "type": "SYMBOL",
-        "name": "pure_output_equation"
-      }
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "pure_sum_body"
+        },
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pure_output_equation"
+          }
+        }
+      ]
+    },
+    "pure_sum_body": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "->"
+        },
+        {
+          "type": "FIELD",
+          "name": "variant",
+          "content": {
+            "type": "SYMBOL",
+            "name": "output_variant"
+          }
+        },
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "|"
+              },
+              {
+                "type": "FIELD",
+                "name": "variant",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "output_variant"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "="
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pure_output_expr"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ";"
+        }
+      ]
     },
     "pure_output_equation": {
       "type": "SEQ",
@@ -3459,6 +3521,10 @@
     [
       "_core_pure_atom",
       "qualified_ident"
+    ],
+    [
+      "pure_sum_body",
+      "output_body"
     ]
   ],
   "precedences": [],

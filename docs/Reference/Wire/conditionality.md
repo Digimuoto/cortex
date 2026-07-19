@@ -153,6 +153,18 @@ That means the language already knows how to say:
 
 But that is still **not** a full conditional.
 
+Pure nodes can produce the same boundary without an executor:
+
+```wire
+node classify
+  <- score: Score;
+  -> accepted: Decision | rejected: RejectReason =
+    if score >= 0 then accepted decision else rejected reason;
+```
+
+Here `accepted` and `rejected` are scoped constructors, not general functions. Every branch returns
+one constructor and the hosted pure evaluator commits only the selected tagged payload.
+
 Sum groups define an **exclusive output boundary**. They do **not yet** define how continuation
 graphs should be attached to that boundary. That second step is what conditionality needs.
 
