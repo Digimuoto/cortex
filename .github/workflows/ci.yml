@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+      - codex/epic-native-pure-c
     types:
       - opened
       - edited
