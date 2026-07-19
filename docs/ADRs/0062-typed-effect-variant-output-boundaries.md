@@ -193,7 +193,7 @@ CorePure nodes may author the same exclusive output boundary as one constructor-
 node classify
   <- score: Score;
   -> accepted: Decision | rejected: RejectReason =
-    if score >= 0 then accepted decision else rejected reason;
+    if score >= 0 then accepted score else rejected score;
 ```
 
 The declared labels are the only constructors in scope. Every control-flow path must end in exactly

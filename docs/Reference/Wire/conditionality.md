@@ -159,7 +159,7 @@ Pure nodes can produce the same boundary without an executor:
 node classify
   <- score: Score;
   -> accepted: Decision | rejected: RejectReason =
-    if score >= 0 then accepted decision else rejected reason;
+    if score >= 0 then accepted score else rejected score;
 ```
 
 Here `accepted` and `rejected` are scoped constructors, not general functions. Every branch returns
