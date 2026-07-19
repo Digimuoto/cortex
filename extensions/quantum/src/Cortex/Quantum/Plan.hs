@@ -41,7 +41,6 @@ module Cortex.Quantum.Plan
   )
 where
 
-import Control.Applicative ((<|>))
 import Control.Monad (foldM, when)
 import Data.Aeson (Value (..))
 import Data.Aeson qualified as Aeson
@@ -49,6 +48,8 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable (toList)
 import Data.List (sort)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Scientific (toBoundedInteger)
@@ -122,6 +123,8 @@ data WalkError
   | WalkMissingExecutor !Text
   | WalkUnsupportedExecutor !Text !Text
   | WalkConfigError !Text !Text
+  | WalkConfigUnsupportedValue !Text !Text
+  | WalkArgumentUndecodable !Text
   | WalkInputArity !Text !Text !Int
   | WalkInputKind !Text !Text
   | WalkOutputArity !Text !Text
@@ -141,6 +144,10 @@ renderWalkError = \case
   WalkMissingExecutor n -> "node " <> n <> " is missing native executor metadata"
   WalkUnsupportedExecutor n t -> "node " <> n <> " uses unsupported quantum executor @" <> t
   WalkConfigError n msg -> "node " <> n <> ": " <> msg
+  WalkConfigUnsupportedValue n field ->
+    "node " <> n <> " config field " <> field <> " is not a literal, list, or record value"
+  WalkArgumentUndecodable n ->
+    "node " <> n <> " executor argument metadata is not a decodable value"
   WalkInputArity n p got ->
     "node " <> n <> " input " <> p <> " expected one predecessor output, got " <> T.pack (show got)
   WalkInputKind n p -> "node " <> n <> " input " <> p <> " has the wrong value kind"
@@ -211,45 +218,124 @@ decodeNodeInfo nodeRef taskNode = do
   -- Executor arguments are stored under the one-record ABI's `argument`
   -- metadata field. The compiler keeps the evaluated call value under
   -- `argument.value`; quantum options conventionally live beneath `cfg`.
-  let rawArgument = objLookup "argument" md
-      argumentValue = rawArgument >>= objLookup "value" >>= decodeCorePureValue
-      argument = argumentValue <|> rawArgument <|> objLookup "config" md
-      config =
-        case argument of
+  config <-
+    case objLookup "argument" md of
+      Just argument ->
+        case objLookup "value" argument of
+          Just encoded -> decodeArgumentConfig nodeRef (dataflowFieldNames ports) encoded
+          Nothing -> Left (WalkArgumentUndecodable nodeRef)
+      Nothing ->
+        -- Pre-`argument` circuits store the options object directly under
+        -- a `config` metadata field.
+        Right $ case objLookup "config" md of
           Just value -> maybe value id (objLookup "cfg" value)
           Nothing -> Object KeyMap.empty
   Right (NodeInfo target ports config)
 
-decodeCorePureValue :: Value -> Maybe Value
-decodeCorePureValue encoded =
+{- | Argument fields that carry dataflow rather than options: the one-record
+ABI's @payload@ slot and fields named after input ports (the desugared
+@inherit@ form). Their values reference wires, not plain data, so they are
+excluded from config decoding instead of being forced through it.
+-}
+dataflowFieldNames :: NodePorts -> Set Text
+dataflowFieldNames ports =
+  Set.insert "payload" (Set.fromList (map fst (npInputs ports)))
+
+{- | Decode the compiled executor-argument expression into the node's config
+object: the @cfg@ block when present, otherwise the remaining non-dataflow
+fields. Every kept field must decode to a plain value; anything else is a
+typed error naming the field instead of a silent drop.
+-}
+decodeArgumentConfig :: Text -> Set Text -> Value -> Either WalkError Value
+decodeArgumentConfig nodeRef dataflowNames encoded =
   case Aeson.fromJSON encoded of
-    Aeson.Success expression -> corePureJson expression
-    Aeson.Error _ -> Nothing
+    Aeson.Error _ -> Left (WalkArgumentUndecodable nodeRef)
+    Aeson.Success expression ->
+      case expression of
+        CorePureRecord fields -> recordConfig fields
+        CorePureLit {} -> topLevelValue expression
+        CorePureList {} -> topLevelValue expression
+        CorePureIdent {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureFieldAccess {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureIndex {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureLambda {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureCall {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureUnary {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureBinary {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureLet {} -> Left (WalkArgumentUndecodable nodeRef)
+        CorePureIf {} -> Left (WalkArgumentUndecodable nodeRef)
   where
-    corePureJson = \case
-      CorePureLit literal ->
-        Just $ case literal of
-          CorePureString value -> String value
-          CorePureNumber value -> Number value
-          CorePureBool value -> Bool value
-          CorePureNull -> Null
-      CorePureList values -> Aeson.toJSON <$> traverse corePureJson values
-      CorePureRecord fields ->
-        Just (Object (foldl addField KeyMap.empty fields))
-      _ -> Nothing
+    topLevelValue = corePureValue nodeRef "value"
+    recordConfig fields = do
+      let cfgFields = [field | field <- fields, NE.head field.corePureFieldPath == "cfg"]
+          configFields
+            | null cfgFields =
+                [ field
+                | field <- fields
+                , NE.head field.corePureFieldPath `Set.notMember` dataflowNames
+                ]
+            | otherwise = cfgFields
+      object <- foldM (addConfigField nodeRef T.empty) KeyMap.empty configFields
+      Right $ case KeyMap.lookup (Key.fromText "cfg") object of
+        Just value -> value
+        Nothing -> Object object
 
-    addField object field =
-      case corePureJson field.corePureFieldValue of
-        Nothing -> object
-        Just value -> mergeObject object (nestedObject (toList field.corePureFieldPath) value)
+{- | Decode an encoded core-pure expression into the JSON value the config
+accessors consume. @context@ is the dotted config-field path reported in the
+typed error when the expression is not a plain value.
+-}
+corePureValue :: Text -> Text -> CorePureExpr -> Either WalkError Value
+corePureValue nodeRef context = \case
+  CorePureLit literal ->
+    Right $ case literal of
+      CorePureString value -> String value
+      CorePureNumber value -> Number value
+      CorePureBool value -> Bool value
+      CorePureNull -> Null
+  CorePureList values ->
+    Aeson.toJSON <$> traverse (corePureValue nodeRef context) values
+  CorePureRecord fields ->
+    Object <$> foldM (addConfigField nodeRef context) KeyMap.empty fields
+  CorePureIdent {} -> unsupported
+  CorePureFieldAccess {} -> unsupported
+  CorePureIndex {} -> unsupported
+  CorePureLambda {} -> unsupported
+  CorePureCall {} -> unsupported
+  CorePureUnary {} -> unsupported
+  CorePureBinary {} -> unsupported
+  CorePureLet {} -> unsupported
+  CorePureIf {} -> unsupported
+  where
+    unsupported = Left (WalkConfigUnsupportedValue nodeRef context)
 
-    nestedObject [name] value = KeyMap.singleton (Key.fromText name) value
-    nestedObject (name : rest) value =
-      KeyMap.singleton (Key.fromText name) (Object (nestedObject rest value))
-    nestedObject [] value = KeyMap.singleton (Key.fromText "value") value
+addConfigField
+  :: Text
+  -> Text
+  -> KeyMap.KeyMap Value
+  -> CorePureField
+  -> Either WalkError (KeyMap.KeyMap Value)
+addConfigField nodeRef context object field = do
+  value <- corePureValue nodeRef fieldContext field.corePureFieldValue
+  Right (mergeConfigObject object (nestedConfigObject field.corePureFieldPath value))
+  where
+    fieldContext
+      | T.null context = fieldLabel field.corePureFieldPath
+      | otherwise = context <> "." <> fieldLabel field.corePureFieldPath
 
-    mergeObject left right = KeyMap.unionWith mergeValues left right
-    mergeValues (Object left) (Object right) = Object (mergeObject left right)
+fieldLabel :: NonEmpty Text -> Text
+fieldLabel = T.intercalate "." . NE.toList
+
+nestedConfigObject :: NonEmpty Text -> Value -> KeyMap.KeyMap Value
+nestedConfigObject (name :| rest) value =
+  case rest of
+    [] -> KeyMap.singleton (Key.fromText name) value
+    next : more ->
+      KeyMap.singleton (Key.fromText name) (Object (nestedConfigObject (next :| more) value))
+
+mergeConfigObject :: KeyMap.KeyMap Value -> KeyMap.KeyMap Value -> KeyMap.KeyMap Value
+mergeConfigObject = KeyMap.unionWith mergeValues
+  where
+    mergeValues (Object left) (Object right) = Object (mergeConfigObject left right)
     mergeValues _ right = right
 
 decodePorts :: Text -> Value -> Either WalkError NodePorts

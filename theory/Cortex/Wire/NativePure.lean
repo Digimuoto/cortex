@@ -4,13 +4,16 @@ import Mathlib.Data.List.Nodup
 /-!
 ## NativePure v1 certified kernel
 
-The broad CorePure surface elaborates into this small intrinsically typed
-kernel. One source PureWire node yields one `CertifiedKernel`; cross-node
-fusion is deliberately deferred. Values are immutable. The only storage
-classification introduced after lowering is `read` for inputs and `write` for
-fresh outputs.
+The broad CorePure surface is intended to elaborate into this small
+intrinsically typed kernel once the elaboration boundary lands; today the
+kernel is the certified target model and no elaborator exists yet. One source
+PureWire node yields one `CertifiedKernel`; cross-node fusion is deliberately
+deferred. Values are immutable. The only storage classification introduced
+after lowering is `read` for inputs and `write` for fresh outputs.
 
-The typed C subset is distinct from the source kernel. `lower` is total and
+The typed C IR is a separate inductive that currently mirrors the source
+kernel constructor-for-constructor; it diverges as C-specific semantics
+(statements, memory, trap propagation) land. `lower` is total and
 `lower_refines` proves executable semantic preservation for the structural and
 checked-i64 slice. Binary64 operations are intentionally not present in the
 theorem-bearing arithmetic slice.
@@ -335,22 +338,78 @@ theorem lower_refines (expr : Expr context ty) (env : Env) :
 
 /-! ### First-class bounds and minimal post-lowering regions -/
 
+/-- Round `value` up to the next multiple of `alignment`. -/
+def alignUp (value alignment : Nat) : Nat :=
+  if alignment ≤ 1 then value
+  else value + (alignment - value % alignment) % alignment
+
 mutual
-  def sizeOf : Ty → Nat
-    | .unit | .bool => 1
-    | .i64 | .u64 | .f64 => 8
-    | .text capacity => 4 + capacity
-    | .vector capacity element => 4 + capacity * sizeOf element
-    | .record fields => recordSize fields
-    | .sum variants => 4 + variantSize variants
+  /-- Fixed C layout `(size, alignment)` including record and tagged-sum
+  padding. Mirrors the Haskell `nativeShapeLayout`; record and sum entries are
+  expected in the canonical sorted-label order the Haskell `Map` emits. -/
+  def layout : Ty → Nat × Nat
+    | .unit => (1, 1)
+    | .bool => (1, 1)
+    | .i64 => (8, 8)
+    | .u64 => (8, 8)
+    | .f64 => (8, 8)
+    | .text capacity => (alignUp (4 + capacity) 4, 4)
+    | .vector capacity element =>
+        let (elementSize, elementAlign) := layout element
+        let alignment := max 4 elementAlign
+        (alignUp (4 + capacity * elementSize) alignment, alignment)
+    | .record fields =>
+        let (size, alignment) := recordLayout fields 0 1
+        (alignUp size alignment, alignment)
+    | .sum variants =>
+        let (payloadSize, payloadAlign) := sumLayout variants
+        let alignment := max 4 payloadAlign
+        (alignUp (alignUp 4 payloadAlign + payloadSize) alignment, alignment)
 
-  def recordSize : List (Name × Ty) → Nat
-    | [] => 0
-    | (_, field) :: rest => sizeOf field + recordSize rest
+  /-- Fold field layouts left-to-right: each field is placed at its aligned
+  offset and the aggregate alignment is the maximum field alignment. -/
+  def recordLayout : List (Name × Ty) → Nat → Nat → Nat × Nat
+    | [], offset, alignment => (offset, alignment)
+    | (_, field) :: rest, offset, alignment =>
+        let (fieldSize, fieldAlign) := layout field
+        recordLayout rest (alignUp offset fieldAlign + fieldSize) (max alignment fieldAlign)
 
-  def variantSize : List (Name × Ty) → Nat
-    | [] => 0
-    | (_, payload) :: rest => max (sizeOf payload) (variantSize rest)
+  /-- Payload `(size, alignment)` of a tagged sum: maxima over the variants. -/
+  def sumLayout : List (Name × Ty) → Nat × Nat
+    | [] => (0, 1)
+    | (_, payload) :: rest =>
+        let (payloadSize, payloadAlign) := layout payload
+        let (restSize, restAlign) := sumLayout rest
+        (max payloadSize restSize, max payloadAlign restAlign)
+end
+
+/-- Layout size in bytes, padding included. -/
+def sizeOf (ty : Ty) : Nat := (layout ty).1
+
+/-- Layout alignment in bytes. -/
+def alignOf (ty : Ty) : Nat := (layout ty).2
+
+mutual
+  /-- The Haskell `NativeShape` algebra rejects empty containers, blank
+  labels, and (by `Map` construction) duplicate labels. The Lean list
+  representation carries the same discipline as a predicate so a kernel type
+  cannot silently depend on a shape the projection would reject. -/
+  def WellFormedTy : Ty → Prop
+    | .unit => True
+    | .bool => True
+    | .i64 => True
+    | .u64 => True
+    | .f64 => True
+    | .text capacity => 0 < capacity
+    | .vector capacity element => 0 < capacity ∧ WellFormedTy element
+    | .record fields =>
+        fields ≠ [] ∧ (fields.map Prod.fst).Nodup ∧ WellFormedFields fields
+    | .sum variants =>
+        variants ≠ [] ∧ (variants.map Prod.fst).Nodup ∧ WellFormedFields variants
+
+  def WellFormedFields : List (Name × Ty) → Prop
+    | [] => True
+    | (_, field) :: rest => WellFormedTy field ∧ WellFormedFields rest
 end
 
 mutual
@@ -397,7 +456,9 @@ def RegionsWellFormed (regions : List Region) : Prop :=
   let reads := (regions.filter (fun region => region.access = .read)).map (·.name)
   writes.Nodup ∧ ∀ name ∈ writes, name ∉ reads
 
-/-- One source PureWire node and its typed/bounded realization evidence. -/
+/-- One source PureWire node and its typed/bounded realization evidence. The
+declared bounds are tied to the body: a kernel cannot claim fewer worst-case
+steps than its body costs or a smaller output than its output layout. -/
 structure CertifiedKernel where
   sourceNode : Name
   inputs : List Ty
@@ -406,6 +467,10 @@ structure CertifiedKernel where
   bounds : ResourceBounds
   regions : List Region
   regionsWellFormed : RegionsWellFormed regions
+  inputsWellFormed : ∀ ty ∈ inputs, WellFormedTy ty
+  outputWellFormed : WellFormedTy output
+  stepsSound : steps body ≤ bounds.maxSteps
+  outputSound : sizeOf output ≤ bounds.outputBytes
 
 def CertifiedKernel.target (kernel : CertifiedKernel) : C.Expr kernel.inputs kernel.output :=
   lower kernel.body

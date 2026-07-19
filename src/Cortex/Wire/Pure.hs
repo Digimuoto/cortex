@@ -21,6 +21,7 @@ module Cortex.Wire.Pure
   , PreparedPureTask
   , renderPureEvalError
   , validatePurePorts
+  , validateCorePureExpr
   , validatePureTaskConfig
   , validatePureVariantTaskConfig
   , preparePureTaskOutputs
@@ -30,6 +31,9 @@ module Cortex.Wire.Pure
   , evaluatePureTaskOutputs
   , evaluatePureTaskVariant
   , evaluatePreparedPureTaskOutputs
+  , WireExecutorArgumentSpec (..)
+  , wireExecutorArgumentSpecFromMetadata
+  , evaluateWireExecutorArgument
   , corePureBuiltinSignature
   , corePureBuiltinAuthorityReport
   , corePureBuiltinAuthorityFree
@@ -40,7 +44,7 @@ module Cortex.Wire.Pure
   )
 where
 
-import Control.Monad (foldM, (>=>))
+import Control.Monad (foldM, unless, (>=>))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -584,27 +588,113 @@ evaluatePureTaskVariant ports inputBundle bindings whereExpr labels bodyExpr = d
   inputEnv <- bindPreparedPureInputValues CorePureJson preparedInputs inputBundle
   outerEnv <- bindCorePureBindings (corePureEnvFromInputValues inputEnv) bindings
   env <- bindCorePureWhere outerEnv whereExpr
-  (label, payload) <- evaluateVariantResult env bodyExpr
+  (label, payload) <- evaluateVariantResult labels env bodyExpr
   pure (Map.singleton label payload)
 
 evaluateVariantResult
-  :: CorePureEnv
+  :: [Text]
+  -> CorePureEnv
   -> CorePureExpr
   -> Either PureEvalError (Text, Aeson.Value)
-evaluateVariantResult env = \case
+evaluateVariantResult labels env = \case
   CorePureIf condition thenExpr elseExpr -> do
     conditionValue <- evaluateCorePureExpr env condition >>= corePureValueToJson
     case conditionValue of
-      Aeson.Bool True -> evaluateVariantResult env thenExpr
-      Aeson.Bool False -> evaluateVariantResult env elseExpr
+      Aeson.Bool True -> evaluateVariantResult labels env thenExpr
+      Aeson.Bool False -> evaluateVariantResult labels env elseExpr
       other -> Left (PureTypeMismatch "boolean" (jsonValueKind other))
   CorePureLet bindings bodyExpr -> do
     localEnv <- bindCorePureBindings env (NE.toList bindings)
-    evaluateVariantResult localEnv bodyExpr
+    evaluateVariantResult labels localEnv bodyExpr
   CorePureCall (CorePureIdent label) [payloadExpr] -> do
     payload <- evaluateCorePureExpr env payloadExpr >>= corePureValueToJson
     pure (label, payload)
-  _ -> Left (PureVariantConstructorExpected [])
+  _ -> Left (PureVariantConstructorExpected labels)
+
+{- | Compiled executor-argument envelope: the normalized one-record argument
+expression together with the module-level CorePure bindings and node @where@
+record it may reference.
+-}
+data WireExecutorArgumentSpec = WireExecutorArgumentSpec
+  { wireExecutorArgumentExpr :: !CorePureExpr
+  , wireExecutorArgumentBindings :: ![CorePureBinding]
+  , wireExecutorArgumentWhere :: !(Maybe CorePureExpr)
+  }
+  deriving stock (Eq, Show)
+
+{- | Decode the @argument@ envelope from compiled executor task metadata.
+Unknown envelope fields are rejections: the envelope is a versioned compiler
+artifact, not a forward-compatible surface.
+-}
+wireExecutorArgumentSpecFromMetadata :: Aeson.Value -> Either Text WireExecutorArgumentSpec
+wireExecutorArgumentSpecFromMetadata metadataValue = do
+  metadataObject <-
+    case metadataValue of
+      Aeson.Object obj -> Right obj
+      _ -> Left "executor task metadata must be a JSON object"
+  argumentValue <-
+    case KeyMap.lookup "argument" metadataObject of
+      Just value -> Right value
+      Nothing -> Left "executor task metadata is missing the argument envelope"
+  argumentObject <-
+    case argumentValue of
+      Aeson.Object obj -> Right obj
+      _ -> Left "executor argument envelope must be a JSON object"
+  let unknownKeys =
+        [ keyText
+        | key <- KeyMap.keys argumentObject
+        , let keyText = Key.toText key
+        , keyText /= "value" && keyText /= "bindings" && keyText /= "where"
+        ]
+  unless (null unknownKeys) $
+    Left ("unsupported executor argument envelope fields: " <> T.intercalate ", " unknownKeys)
+  exprValue <-
+    case KeyMap.lookup "value" argumentObject of
+      Just value -> Right value
+      Nothing -> Left "executor argument envelope is missing the value field"
+  argumentExpr <- decodeEnvelopeField "executor argument value" exprValue
+  bindings <-
+    maybe
+      (Right [])
+      (decodeEnvelopeField "executor argument bindings")
+      (KeyMap.lookup "bindings" argumentObject)
+  whereExpr <-
+    traverse
+      (decodeEnvelopeField "executor argument where")
+      (KeyMap.lookup "where" argumentObject)
+  Right
+    WireExecutorArgumentSpec
+      { wireExecutorArgumentExpr = argumentExpr
+      , wireExecutorArgumentBindings = bindings
+      , wireExecutorArgumentWhere = whereExpr
+      }
+  where
+    decodeEnvelopeField :: Aeson.FromJSON a => Text -> Aeson.Value -> Either Text a
+    decodeEnvelopeField label value =
+      case Aeson.fromJSON value of
+        Aeson.Success decoded -> Right decoded
+        Aeson.Error err -> Left (label <> ": " <> T.pack err)
+
+{- | Evaluate a compiled executor argument at node ingress: bind the node's
+input ports, module-level CorePure bindings, and the node @where@ record, then
+evaluate the normalized one-record argument expression to the exact JSON value
+the host binding receives. This is the evaluation step ADR 0095 sequences
+before 'Cortex.Wire.Runtime.validateWireExecutorArgument' and host invocation.
+-}
+evaluateWireExecutorArgument
+  :: WirePorts
+  -> WireExecutorArgumentSpec
+  -> WireInputBundle
+  -> Either PureEvalError Aeson.Value
+evaluateWireExecutorArgument ports spec inputBundle = do
+  preparedInputs <- preparePureInputs ports
+  inputEnv <- bindPreparedPureInputValues CorePureJson preparedInputs inputBundle
+  outerEnv <-
+    bindCorePureBindings
+      (corePureEnvFromInputValues inputEnv)
+      spec.wireExecutorArgumentBindings
+  env <- bindCorePureWhere outerEnv spec.wireExecutorArgumentWhere
+  evaluateCorePureExpr env spec.wireExecutorArgumentExpr >>= corePureValueToJson
 
 evaluatePreparedPureTaskOutputs
   :: PreparedPureTask

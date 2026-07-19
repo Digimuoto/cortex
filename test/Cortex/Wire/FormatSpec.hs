@@ -105,6 +105,36 @@ spec = do
         `shouldBe` Right
           "node action\n  -> out: T\n  = @executor \"line one\\nline two\";\n"
 
+    it "renders compound-headed executor arguments in pipe form" $ do
+      formatWireSource
+        "test"
+        "node transform <- input: T -> out: U = @review.transform input|>shape cfg;"
+        `shouldBe` Right
+          "node transform <- input: T -> out: U = @review.transform input |> shape cfg;\n"
+
+    it "keeps chained executor pipe arguments flat" $ do
+      formatWireSource
+        "test"
+        "node transform <- input: T -> out: U = @exec input|>shape cfg|>tag label;"
+        `shouldBe` Right
+          "node transform <- input: T -> out: U = @exec input |> shape cfg |> tag label;\n"
+
+    it "normalises simple pipe applications to direct application" $ do
+      formatWireSource "test" "node n <- a: T -> out: T = @exec a |> f;"
+        `shouldBe` Right "node n <- a: T -> out: T = @exec f a;\n"
+
+    it "keeps plain application executor arguments unchanged" $ do
+      formatWireSource "test" "node n <- a: T -> out: T = @exec shape a;"
+        `shouldBe` Right "node n <- a: T -> out: T = @exec shape a;\n"
+
+    it "renders binary executor arguments without enclosing parens" $ do
+      formatWireSource "test" "node n <- a: T -> out: T = @exec a + 1;"
+        `shouldBe` Right "node n <- a: T -> out: T = @exec a + 1;\n"
+
+    it "keeps binary pipe operands unparenthesised before compound stages" $ do
+      formatWireSource "test" "node n <- a: T -> out: T = @exec a + 1 |> shape cfg;"
+        `shouldBe` Right "node n <- a: T -> out: T = @exec a + 1 |> shape cfg;\n"
+
     it "keeps pure sum bodies topology-first and preserves constructor branches" $ do
       formatWireSource
         "test"

@@ -27,7 +27,7 @@ front-to-back. If you are trying to do a task rather than look up a rule, start 
   - **[executor-authorities-and-execution-boundary.md](Wire/executor-authorities-and-execution-boundary.md)**
     — executor authority values, explicit node admission, evaluation-boundary check.
   - **[executors-and-alphabet.md](Wire/executors-and-alphabet.md)** — executor registration, `@`
-    authority, executor authority values, ambient identifiers in config values.
+    authority, bare authority values, the one-record argument ABI, strict registry projections.
 - **[rewrites.md](rewrites.md)** — bounded dynamic rewrite algebra, budget, admission,
   materialization, hydration, provenance.
 - **[proof-status.md](proof-status.md)** — human-readable matrix of Lean proof claims and Haskell

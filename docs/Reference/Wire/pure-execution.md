@@ -104,8 +104,8 @@ let scoreThreshold = 0.7;
 
 Module `let` is phase-neutral syntax. `acceptedItem` is a delayed CorePure helper function.
 `scoreThreshold` is an ordinary compile-time scalar, but because it is authority-free pure data, the
-compiler captures it into later delayed CorePure evaluation as a constant. Configured executor
-values and graph values are not capturable into CorePure.
+compiler captures it into later delayed CorePure evaluation as a constant. Executor authority values
+and graph values are not capturable into CorePure.
 
 ## Lowering
 

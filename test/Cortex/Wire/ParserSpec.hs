@@ -167,9 +167,17 @@ spec = describe "Cortex.Wire.Parser" $ do
       parseWireFile "test" "node n -> out: T = @review.x first, second;"
         `shouldSatisfy` isParseFailure
 
-    it "rejects semicolon-delimited port-only clauses" $
+    it "rejects semicolon-delimited input port clauses with a targeted diagnostic" $
       parseWireFile "test" "node n <- value: T; = @review.x value;"
-        `shouldSatisfy` isParseFailure
+        `shouldSatisfy` isParseFailureContaining "semicolon-delimited port declarations were removed"
+
+    it "rejects semicolon-delimited multiline input ports with a targeted diagnostic" $
+      parseWireFile "test" "node n\n  <- value: T;\n  -> out: U = @review.x value;"
+        `shouldSatisfy` isParseFailureContaining "semicolon-delimited port declarations were removed"
+
+    it "rejects semicolon-delimited output port clauses with a targeted diagnostic" $
+      parseWireFile "test" "node n\n  <- value: T\n  -> out: U;\n  = @review.x value;"
+        `shouldSatisfy` isParseFailureContaining "semicolon-delimited port declarations were removed"
 
     it "rejects the obsolete ConfiguredExecutor parameter class" $
       parseWireFile "test" "kind k(exec: ConfiguredExecutor) = -> out: T = @exec;"

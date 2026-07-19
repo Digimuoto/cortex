@@ -47,11 +47,16 @@ node log <- result: Result = @log result;
 node act <- result: Result = @action { payload = result; cfg = { mode = "safe"; }; };
 ```
 
-Before host invocation the compiler/runtime boundary normalizes the argument:
+Before host invocation the compiler/runtime boundary normalizes the argument. Normalization is
+decided from the authored argument expression, not from the evaluated value:
 
 - no argument becomes `{}`;
-- a non-record becomes `{ payload = value; }`;
-- an explicit record is passed unchanged.
+- a record literal is passed unchanged;
+- any other expression — including a reference whose value is a record — becomes
+  `{ payload = value; }`.
+
+Deciding on the authored expression keeps the host-visible record shape statically known at compile
+time rather than dependent on runtime values.
 
 `payload` is reserved for automatic wrapping. `cfg` is an executor-schema convention, not a
 language-wide field. Executor projections and package manifests expose `argument_shape`; the runtime
@@ -112,6 +117,7 @@ line when they fit within 100 columns and otherwise keeps topology-first multili
 
 ## Traceability
 
+- Feature keys: `wire.single_record_executor_boundary`
 - Production: `src/Cortex/Wire/{Syntax,Parser,Compile,Format,Executor,Runtime}.hs`
 - Package/capability: `src/Cortex/Wire/Package/Manifest.hs`, `src/Cortex/Capability/Executor.hs`
 - Editor grammar: `editors/tree-sitter-wire/`

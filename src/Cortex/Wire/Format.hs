@@ -404,12 +404,57 @@ formatExecutorCall = \case
   ExecutorCallBound name inputExpr ->
     name <> foldMap ((" " <>) . formatExecutorArgument) inputExpr
 
+{- | Render an executor argument for the bare-argument surface: the parser
+rejects a leading parenthesis after the executor authority, so the rendering
+must never open with @(@. A top-level binary drops its enclosing parens (the
+argument position accepts unparenthesised operator chains), and a
+single-argument call whose function would otherwise render parenthesised is
+emitted in pipe form (@x |> f@), which the parser left-folds back into the
+same 'CorePureCall'.
+-}
 formatExecutorArgument :: CorePureExpr -> Text
-formatExecutorArgument expression@CorePureBinary {} =
-  case formatCorePureExpr expression of
-    rendered | T.length rendered >= 2 -> T.drop 1 (T.dropEnd 1 rendered)
-    rendered -> rendered
-formatExecutorArgument expression = formatCorePureExpr expression
+formatExecutorArgument = \case
+  expression@CorePureBinary {} ->
+    stripEnclosingParens (formatCorePureExpr expression)
+  CorePureCall function [argument]
+    | executorArgumentHeadNeedsPipe function ->
+        formatExecutorArgument argument <> " |> " <> formatPipeStage function
+  expression -> formatCorePureExpr expression
+  where
+    stripEnclosingParens rendered
+      | T.length rendered >= 2 = T.drop 1 (T.dropEnd 1 rendered)
+      | otherwise = rendered
+
+{- | Call heads that 'formatCorePureAtom' would parenthesise: rendering the
+call as @f x@ would put the parenthesis at the front of the executor
+argument, so the call is rendered as @x |> f@ instead.
+-}
+executorArgumentHeadNeedsPipe :: CorePureExpr -> Bool
+executorArgumentHeadNeedsPipe = \case
+  CorePureLit {} -> False
+  CorePureIdent {} -> False
+  CorePureList {} -> False
+  CorePureRecord {} -> False
+  CorePureFieldAccess {} -> False
+  CorePureIndex {} -> False
+  CorePureCall {} -> True
+  CorePureUnary {} -> True
+  CorePureBinary {} -> True
+  CorePureLambda {} -> True
+  CorePureLet {} -> True
+  CorePureIf {} -> True
+
+{- | Render the right-hand side of an executor-argument @|>@ stage. The parser
+reads that position at the merge level, so most expressions render directly;
+lambda, @let@, and @if@ forms only parse at the top of a CorePure expression
+and must be parenthesised to survive in pipe position.
+-}
+formatPipeStage :: CorePureExpr -> Text
+formatPipeStage = \case
+  function@CorePureLambda {} -> "(" <> formatCorePureExpr function <> ")"
+  function@CorePureLet {} -> "(" <> formatCorePureExpr function <> ")"
+  function@CorePureIf {} -> "(" <> formatCorePureExpr function <> ")"
+  function -> formatCorePureExpr function
 
 formatGraphExpr :: Int -> Expr -> [Text]
 formatGraphExpr level = formatGraphWithPrefix level noLinePrefix

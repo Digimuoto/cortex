@@ -71,11 +71,12 @@ payload crosses a sum boundary.
 
 ### Lean is the compiler implementation
 
-The broad CorePure library elaborates into a deliberately small intrinsically typed Lean calculus.
-Its executable evaluator is the reference semantics. Lean constructively lowers this source calculus
-to a distinct structured, typed C subset and proves the executable source and target evaluators
-equal for the admitted structural and checked-i64 slice. The lowering function used by the theorem
-is the compiler implementation, not a parallel model.
+The broad CorePure library will elaborate into a deliberately small intrinsically typed Lean
+calculus once the elaboration boundary lands. Its executable evaluator is the reference semantics.
+Lean constructively lowers this source calculus to a separate typed C-expression IR (currently
+isomorphic to the source kernel; it diverges as C-specific semantics land) and proves the executable
+source and target evaluators equal for the admitted structural and checked-i64 slice. The lowering
+function used by the theorem is the compiler implementation, not a parallel model.
 
 Binary64 uses pinned IEEE-754 settings, finite-result checks, and bitwise differential tests; it is
 not claimed by the integer refinement theorem. The C printer and native C compiler remain outside
@@ -84,8 +85,9 @@ symbol/section allowlists, sanitizers, and supported-target builds.
 
 ### Bounds and storage
 
-Types carry static capacities. Lean computes stack, static, output, checkpoint, and step bounds and
-rejects overflow or a worst-case hosted checkpoint above 2 MiB. CorePure values stay immutable SSA
+Types carry static capacities. Lean defines the size and step models; until Lean elaboration lands,
+the Haskell plan computes and enforces the stack, static, output, checkpoint, and step bounds,
+rejecting overflow or a worst-case hosted checkpoint above 2 MiB. CorePure values stay immutable SSA
 values. After semantic lowering, the first profile needs only read-only crossing inputs and fresh,
 disjoint output regions; it does not introduce source-level ownership or borrowing.
 

@@ -1006,9 +1006,7 @@ inputPort :: Parser PortDecl
 inputPort = do
   _ <- symbol "<-"
   lbl <- requiredLabel
-  contractId <- contractRef
-  rejectLegacyPortSemicolon
-  pure (PortInputDecl lbl contractId)
+  PortInputDecl lbl <$> contractRef
 
 outputPort :: Parser PortDecl
 outputPort = do
@@ -1016,7 +1014,6 @@ outputPort = do
   firstVariant <- outputVariant
   -- Look ahead for a sum-group separator.
   moreVariants <- many (symbol "|" *> outputVariant)
-  rejectLegacyPortSemicolon
   case moreVariants of
     [] ->
       let SumVariant lbl c = firstVariant
@@ -1025,6 +1022,12 @@ outputPort = do
       let variants = firstVariant :| moreVariants
       pure (PortOutputSumDecl variants)
 
+{- | Port declarations are parsed inside backtracking 'many' loops, so a
+legacy trailing semicolon cannot fail inside the port parser itself — the
+'try' would swallow the diagnostic. Instead this committed guard runs after a
+port loop stops: no valid node surface continues with @;@ there, so a leftover
+semicolon is always the removed clause-delimiter form.
+-}
 rejectLegacyPortSemicolon :: Parser ()
 rejectLegacyPortSemicolon = do
   legacy <- optional (MP.lookAhead (symbol ";"))
@@ -1298,6 +1301,7 @@ ordinaryNodeDecl :: Text -> Parser ParsedNodeDecl
 ordinaryNodeDecl name = do
   metadata <- optional (keyword "with" *> recordExpr)
   inputs <- many (try inputPort)
+  rejectLegacyPortSemicolon
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
   pure (ParsedNodeBody name metadata (inputs <> outputs) (mkBody whereExpr))
@@ -1362,6 +1366,7 @@ singleOutputExecutorShorthand = do
 executorImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 executorImplementation = do
   outputs <- many (try outputPort)
+  rejectLegacyPortSemicolon
   _ <- symbol "="
   call <- executorCall
   _ <- symbol ";"

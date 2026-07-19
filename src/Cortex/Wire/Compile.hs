@@ -157,6 +157,7 @@ import Cortex.Wire.Pure
   , corePureStaticContextFromBindings
   , corePureWhereStaticFields
   , renderPureEvalError
+  , validateCorePureExpr
   , validatePureTaskConfig
   , validatePureVariantTaskConfig
   )
@@ -3092,6 +3093,10 @@ loweredNodeFromExecutorCall
 loweredNodeFromExecutorCall compileEnv st nodeRef ports metadata whereExpr executorCallValue = do
   (executorAuthority, inputExpr) <- resolveExecutorCall st executorCallValue
   validateCorePureNodeScopeWithLocals st nodeRef (inputPortLocalNames ports.lnpInputs) inputExpr
+  -- The normalized argument gets the same structural validation as pure
+  -- bodies, so duplicate record field paths cannot reach the host boundary.
+  mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
+    validateCorePureExpr inputExpr
   exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
   validateNodeMetadataFields nodeRef exactFields
   validateNodeMetadataValues nodeRef exactFields
@@ -3163,7 +3168,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports metadata whereExpr execu
           let instructionsText =
                 lookupMaybeTextField "instructions" exactFields
                   <|> lookupMaybeTextField "prompt" exactFields
-              argumentValue = executorArgumentValue whereExpr inputExpr
+              argumentValue = executorArgumentValue st.lsPureBindings whereExpr inputExpr
               normalForm =
                 executorNodeBoundaryNormalForm
                   nodeRef
@@ -3299,13 +3304,22 @@ validateNodeMetadataValues _nodeRef fields = do
       Left (WireCore.WireFieldTypeMismatch name expected (valueKind value))
 
 executorArgumentValue
-  :: Maybe CorePureExpr
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
   -> CorePureExpr
   -> Aeson.Value
-executorArgumentValue whereExpr inputExpr =
+executorArgumentValue topLevelBindings whereExpr inputExpr =
   Aeson.Object (insertMaybeJson "where" whereExpr baseObject)
   where
-    baseObject = KeyMap.singleton (Key.fromText "value") (Aeson.toJSON inputExpr)
+    -- Module-level CorePure bindings ride in the envelope like they do in pure
+    -- node config: the argument expression may reference them, and ingress
+    -- evaluation happens after compilation, from the metadata alone.
+    baseObject =
+      KeyMap.fromList $
+        (Key.fromText "value", Aeson.toJSON inputExpr)
+          : [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+            | not (null topLevelBindings)
+            ]
 
 insertMaybeJson
   :: Aeson.ToJSON a => Text -> Maybe a -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value

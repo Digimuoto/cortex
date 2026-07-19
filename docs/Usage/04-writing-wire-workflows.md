@@ -54,15 +54,16 @@ A node is a component with typed sockets. A **port** is one socket: a place wher
 enters or leaves the node. Read a port clause left to right:
 
 ```text
-<- topic: Topic│  │      │
+<- topic: Topic
+│  │      │
 │  │      └─ contract — what the value is (Wire's type)
 │  └─ label — what the value is for at this node (the port's name)
 └─ direction — input (<-) or output (->)
 ```
 
 A port's full identity is the whole triple `(direction, contract, label)`. All three parts are
-identity, not decoration: `<- draft: Draft;` and `-> draft: Draft;` are two different ports, and
-Wire never confuses them.
+identity, not decoration: `<- draft: Draft` and `-> draft: Draft` are two different ports, and Wire
+never confuses them.
 
 ### A contract is Wire's type
 

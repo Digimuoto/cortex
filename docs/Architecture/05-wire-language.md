@@ -45,7 +45,7 @@ Wire adds four things above the Graph and Circuit layers:
 
 - an authoring surface for naming nodes, declarations, and reusable values
 - endpoint-typed composition over registered contracts and ports
-- executor authority reuse and configuration values
+- executor authority values with a single record argument at the call boundary
 - a rewrite surface that lets topology changes be proposed in the same composition model used for
   initial authoring
 

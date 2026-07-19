@@ -58,8 +58,11 @@ flowchart LR
 
 ## Port Syntax
 
-````text
-<- label: Contract-> label: Contract-> ok: Value | error: ExecutorError```
+```text
+<- label: Contract
+-> label: Contract
+-> ok: Value | error: ExecutorError
+```
 
 Authored ports require labels. Labels are routing identity. A labeled port never matches an
 unlabeled port, and there is no wildcard label.
@@ -70,7 +73,7 @@ A port key is:
 
 ```text
 (direction, contract, label)
-````
+```
 
 `=>` matches the contract and label, with direction reversed: output to input. Each endpoint port
 may participate in at most one edge created by a connect expression.

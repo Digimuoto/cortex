@@ -41,6 +41,7 @@ import Data.Aeson (ToJSON (..), Value, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString qualified as BS
 import Data.Foldable (traverse_)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
@@ -50,6 +51,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
@@ -82,6 +84,7 @@ import Cortex.Wire.Syntax
   , CorePureBinding (..)
   , CorePureExpr (..)
   , CorePureField (..)
+  , CorePureLiteral (..)
   , WireInputCardinality (..)
   , WireInputPort (..)
   , WireOutputPort (..)
@@ -178,8 +181,11 @@ data NativePureError
   | NativePureInvalidShape !CircuitNodeRef !Text !NativeShapeError
   | NativePureInputNotExact !CircuitNodeRef !Text
   | NativePureMixedOutputBoundary !CircuitNodeRef
+  | NativePureSumRequiresVariant !CircuitNodeRef
+  | NativePureVariantRequiresSum !CircuitNodeRef
   | NativePureOutputEquationMismatch !CircuitNodeRef
   | NativePureUnsupportedExpression !CircuitNodeRef !Text
+  | NativePureInvalidOutputBoundary !CircuitNodeRef !NativeShapeError
   | NativePureResourceOverflow !CircuitNodeRef
   | NativePureCheckpointTooLarge !CircuitNodeRef !Word64
   deriving stock (Eq, Show)
@@ -201,9 +207,15 @@ renderNativePureError = \case
     at nodeRef ("input " <> portName <> " must accept exactly one contract with cardinality one")
   NativePureMixedOutputBoundary nodeRef ->
     at nodeRef "outputs must be either one product or one declared exclusive group"
+  NativePureSumRequiresVariant nodeRef ->
+    at nodeRef "an exclusive output group requires a pure sum variant body, not output equations"
+  NativePureVariantRequiresSum nodeRef ->
+    at nodeRef "a pure sum variant body requires one declared exclusive output group"
   NativePureOutputEquationMismatch nodeRef ->
     at nodeRef "pure output equations do not exactly match the declared output boundary"
   NativePureUnsupportedExpression nodeRef reason -> at nodeRef ("unsupported CorePure expression: " <> reason)
+  NativePureInvalidOutputBoundary nodeRef shapeError ->
+    at nodeRef ("output boundary has an invalid native layout: " <> renderNativeShapeError shapeError)
   NativePureResourceOverflow nodeRef -> at nodeRef "resource bound exceeds uint64_t"
   NativePureCheckpointTooLarge nodeRef bytes ->
     at nodeRef ("worst-case checkpoint " <> T.pack (show bytes) <> " bytes exceeds 2 MiB")
@@ -328,9 +340,12 @@ lowerCompiledCircuitToNativePurePlan registry compiled = do
     Left rejection -> Left (NativePureAdmissionRejected (T.pack (show rejection)))
     Right _bundle -> pure ()
   kernels <- catMaybes <$> traverse lowerNode (Map.toAscList compiled.compiledCircuitNodes)
+  -- The realization witness binds realized units only: effectful nodes stay
+  -- host-scheduled and must not appear as NativePure runtime members.
   let identity = compiled.compiledCircuitCompatibility.circuitCompatibilityDigest
-      sourceMembers = Map.fromAscList [(nodeRef, nodeRef) | nodeRef <- Map.keys compiled.compiledCircuitNodes]
-      runtimeMembers = Map.mapWithKey (\nodeRef _ -> [nodeRef]) compiled.compiledCircuitNodes
+      kernelRefs = fmap (.nativePureKernelRef) kernels
+      sourceMembers = Map.fromList [(nodeRef, nodeRef) | nodeRef <- kernelRefs]
+      runtimeMembers = Map.fromList [(nodeRef, [nodeRef]) | nodeRef <- kernelRefs]
   pure
     NativePurePlan
       { nativePurePlanProgramId = compiled.compiledCircuitId
@@ -368,12 +383,20 @@ lowerPureNode registry nodeRef taskNode = do
       (parseValue nodeRef "outputs")
       (KeyMap.lookup "outputs" config)
   variant <- parseVariant nodeRef config
+  let outputPortsExclusive =
+        any (isJust . (.wireOutputPortExclusiveGroup)) (Map.elems ports.wirePortsOutputs)
   case (KeyMap.member "outputs" config, variant) of
     (True, Nothing) -> do
+      -- An exclusive group is a sum boundary; product equations over it would
+      -- compute every variant of a boundary that must commit exactly one.
+      when outputPortsExclusive $
+        Left (NativePureSumRequiresVariant nodeRef)
       unless (Map.keysSet outputs == Map.keysSet ports.wirePortsOutputs) $
         Left (NativePureOutputEquationMismatch nodeRef)
       firstPureMetadata nodeRef (validatePureTaskConfig ports bindings whereExpr outputs)
     (False, Just variantConfig) -> do
+      unless outputPortsExclusive $
+        Left (NativePureVariantRequiresSum nodeRef)
       unless (Set.fromList variantConfig.nativePureVariantLabels == Map.keysSet ports.wirePortsOutputs) $
         Left (NativePureOutputEquationMismatch nodeRef)
       firstPureMetadata
@@ -389,7 +412,14 @@ lowerPureNode registry nodeRef taskNode = do
   traverse_ (validateNativeExpr nodeRef . (.corePureBindingExpr)) bindings
   traverse_ (validateNativeExpr nodeRef) whereExpr
   traverse_ (validateNativeExpr nodeRef) outputs
-  traverse_ (validateNativeExpr nodeRef . (.nativePureVariantExpression)) variant
+  traverse_
+    ( \variantConfig ->
+        validateNativeVariantExpr
+          nodeRef
+          (Set.fromList variantConfig.nativePureVariantLabels)
+          variantConfig.nativePureVariantExpression
+    )
+    variant
   inputs <- traverse (lowerInput registry nodeRef) (Map.toAscList ports.wirePortsInputs)
   outputFields <- traverse (lowerOutput registry nodeRef) (Map.toAscList ports.wirePortsOutputs)
   outputBoundary <- classifyOutputs nodeRef ports outputFields
@@ -494,15 +524,22 @@ calculateBounds nodeRef inputs outputBoundary bindings whereExpr outputExprs var
   checkpointBytes <- sumBounded nodeRef [inputBytes, outputBytes]
   when (checkpointBytes > 2 * 1024 * 1024) $
     Left (NativePureCheckpointTooLarge nodeRef checkpointBytes)
-  let expressionSteps =
-        sum (fmap (exprCost . (.corePureBindingExpr)) bindings)
-          + maybe 0 exprCost whereExpr
-          + sum (fmap exprCost (Map.elems outputExprs))
-          + maybe 0 (exprCost . (.nativePureVariantExpression)) variant
+  expressionSteps <-
+    sumBounded nodeRef $
+      fmap (exprCost . (.corePureBindingExpr)) bindings
+        <> foldMap (pure . exprCost) whereExpr
+        <> fmap exprCost (Map.elems outputExprs)
+        <> foldMap (pure . exprCost . (.nativePureVariantExpression)) variant
+  staticBytes <-
+    sumBounded nodeRef $
+      fmap (exprStaticBytes . (.corePureBindingExpr)) bindings
+        <> foldMap (pure . exprStaticBytes) whereExpr
+        <> fmap exprStaticBytes (Map.elems outputExprs)
+        <> foldMap (pure . exprStaticBytes . (.nativePureVariantExpression)) variant
   pure
     NativePureBounds
       { nativePureBoundStackBytes = stackBytes
-      , nativePureBoundStaticBytes = 0
+      , nativePureBoundStaticBytes = staticBytes
       , nativePureBoundOutputBytes = outputBytes
       , nativePureBoundCheckpointBytes = checkpointBytes
       , nativePureBoundSteps = expressionSteps
@@ -515,15 +552,21 @@ outputBoundaryLayout
   -> NativePureOutputBoundary
   -> Either NativePureError NativeLayout
 outputBoundaryLayout nodeRef = \case
-  NativePureProduct fields -> do
-    size <- sumBounded nodeRef (fmap (.nativePureBoundaryLayout.nativeLayoutSize) fields)
-    let alignment = maximum (1 : fmap (.nativePureBoundaryLayout.nativeLayoutAlignment) fields)
-    pure (NativeLayout size alignment)
+  -- Product outputs are stored as one aligned record so the byte accounting
+  -- includes inter-field padding rather than under-counting concatenated,
+  -- separately-aligned regions.
+  NativePureProduct fields ->
+    case fields of
+      [] -> pure (NativeLayout 0 1)
+      _ -> boundaryLayout (NativeRecord (Map.fromList (fmap variantShape fields)))
   NativePureSum _ variants ->
-    case nativeShapeLayout (NativeSum (Map.fromList (fmap variantShape variants))) of
-      Left _ -> Left (NativePureResourceOverflow nodeRef)
-      Right layout -> Right layout
+    boundaryLayout (NativeSum (Map.fromList (fmap variantShape variants)))
   where
+    boundaryLayout shape =
+      case nativeShapeLayout shape of
+        Left shapeError -> Left (NativePureInvalidOutputBoundary nodeRef shapeError)
+        Right layout -> Right layout
+
     variantShape boundary =
       (boundary.nativePureBoundaryLabel, boundary.nativePureBoundaryShape)
 
@@ -561,6 +604,13 @@ sumBounded nodeRef = foldM add 0
       | maxBound - total < value = Left (NativePureResourceOverflow nodeRef)
       | otherwise = Right (total + value)
 
+{- | Exact worst-case step count for the admitted basis: every admitted form
+costs one step plus its children, branches take the more expensive arm. Calls,
+lambdas, lists, and indexing carry only structural cost here because
+'validateNativeExpr' rejects them before bounds are computed; the sole admitted
+call form is the variant constructor injection, which is one step around its
+payload.
+-}
 exprCost :: CorePureExpr -> Word64
 exprCost = \case
   CorePureLit {} -> 1
@@ -571,7 +621,7 @@ exprCost = \case
   CorePureIndex value index -> 1 + exprCost value + exprCost index
   CorePureLambda _ body -> 1 + exprCost body
   CorePureCall function arguments ->
-    1 + exprCost function + sum (fmap exprCost arguments) + nativeIterationCap
+    1 + exprCost function + sum (fmap exprCost arguments)
   CorePureUnary _ value -> 1 + exprCost value
   CorePureBinary _ left right -> 1 + exprCost left + exprCost right
   CorePureLet bindings body ->
@@ -579,44 +629,106 @@ exprCost = \case
   CorePureIf condition thenExpr elseExpr ->
     1 + exprCost condition + max (exprCost thenExpr) (exprCost elseExpr)
 
-nativeIterationCap :: Word64
-nativeIterationCap = 4096
+{- | Bytes of static storage an expression pins into the generated object:
+UTF-8 text literals become read-only static data.
+-}
+exprStaticBytes :: CorePureExpr -> Word64
+exprStaticBytes = \case
+  CorePureLit literal ->
+    case literal of
+      CorePureString text -> fromIntegral (BS.length (TE.encodeUtf8 text))
+      CorePureNumber {} -> 0
+      CorePureBool {} -> 0
+      CorePureNull -> 0
+  CorePureIdent {} -> 0
+  CorePureList values -> sum (fmap exprStaticBytes values)
+  CorePureRecord fields -> sum (fmap (exprStaticBytes . (.corePureFieldValue)) fields)
+  CorePureFieldAccess value _ -> exprStaticBytes value
+  CorePureIndex value index -> exprStaticBytes value + exprStaticBytes index
+  CorePureLambda _ body -> exprStaticBytes body
+  CorePureCall function arguments ->
+    exprStaticBytes function + sum (fmap exprStaticBytes arguments)
+  CorePureUnary _ value -> exprStaticBytes value
+  CorePureBinary _ left right -> exprStaticBytes left + exprStaticBytes right
+  CorePureLet bindings body ->
+    sum (fmap (exprStaticBytes . (.corePureBindingExpr)) (NE.toList bindings)) + exprStaticBytes body
+  CorePureIf condition thenExpr elseExpr ->
+    exprStaticBytes condition + exprStaticBytes thenExpr + exprStaticBytes elseExpr
 
+{- | Admit only expression forms with a counterpart in the certified kernel
+basis: literals, identifiers, records, field projection, checked arithmetic,
+comparisons, boolean operators, let, and if. Everything else — builtin calls,
+lambdas, vector literals, indexing, division — is outside the proved slice and
+is a rejection, never a silent pass-through (ADR 0096: the profile over-rejects;
+it must not emit uncertifiable kernel bodies).
+-}
 validateNativeExpr :: CircuitNodeRef -> CorePureExpr -> Either NativePureError ()
 validateNativeExpr nodeRef = go
   where
     go = \case
       CorePureLit {} -> pure ()
       CorePureIdent {} -> pure ()
-      CorePureList values -> traverse_ go values
+      CorePureList _ ->
+        unsupported "vector literals are not in the certified kernel basis yet"
       CorePureRecord fields -> traverse_ (go . (.corePureFieldValue)) fields
       CorePureFieldAccess value _ -> go value
-      CorePureIndex value index -> go value *> go index
-      CorePureLambda _ body -> go body
-      CorePureCall (CorePureIdent builtin) arguments
-        | builtin `Set.member` deferredBuiltins ->
-            Left (NativePureUnsupportedExpression nodeRef ("builtin " <> builtin <> " is deferred"))
-        | otherwise ->
-            traverse_ go arguments
-      CorePureCall function arguments -> go function *> traverse_ go arguments
+      CorePureIndex _ _ ->
+        unsupported "vector indexing is not in the certified kernel basis yet"
+      CorePureLambda _ _ ->
+        unsupported "lambdas are not in the certified kernel basis yet"
+      CorePureCall _ _ ->
+        unsupported "builtin calls are not in the certified kernel basis yet"
       CorePureUnary _ value -> go value
-      CorePureBinary CorePureMerge left right
-        | staticallyRecord left && staticallyRecord right -> go left *> go right
-        | otherwise ->
-            Left (NativePureUnsupportedExpression nodeRef "record merge must be statically shallow")
-      CorePureBinary _ left right -> go left *> go right
+      CorePureBinary binOp left right -> goBinary binOp left right
       CorePureLet bindings body -> traverse_ (go . (.corePureBindingExpr)) bindings *> go body
       CorePureIf condition thenExpr elseExpr -> go condition *> go thenExpr *> go elseExpr
+
+    goBinary binOp left right =
+      case binOp of
+        CorePureAdd -> go left *> go right
+        CorePureSubtract -> go left *> go right
+        CorePureMultiply -> go left *> go right
+        CorePureDivide ->
+          unsupported "division is not in the certified kernel basis yet"
+        CorePureMerge
+          | staticallyRecord left && staticallyRecord right -> go left *> go right
+          | otherwise ->
+              unsupported "record merge must be statically shallow"
+        CorePureEqual -> go left *> go right
+        CorePureNotEqual -> go left *> go right
+        CorePureLessThan -> go left *> go right
+        CorePureLessThanOrEqual -> go left *> go right
+        CorePureGreaterThan -> go left *> go right
+        CorePureGreaterThanOrEqual -> go left *> go right
+        CorePureAnd -> go left *> go right
+        CorePureOr -> go left *> go right
+
+    unsupported = Left . NativePureUnsupportedExpression nodeRef
 
     staticallyRecord CorePureRecord {} = True
     staticallyRecord _ = False
 
-deferredBuiltins :: Set Text
-deferredBuiltins =
-  Set.fromList
-    [ "toJson", "fromJson", "sort", "sortBy", "split", "replace", "substring"
-    , "trim", "toLower", "toUpper", "lines", "unlines", "keys", "values", "entries"
-    ]
+{- | Variant bodies mirror 'Cortex.Wire.Pure.evaluateVariantResult': control
+flow may branch through if/let, and every path must end in a declared
+constructor injection whose payload lies in the certified basis.
+-}
+validateNativeVariantExpr
+  :: CircuitNodeRef -> Set Text -> CorePureExpr -> Either NativePureError ()
+validateNativeVariantExpr nodeRef labels = goVariant
+  where
+    goVariant = \case
+      CorePureIf condition thenExpr elseExpr ->
+        validateNativeExpr nodeRef condition *> goVariant thenExpr *> goVariant elseExpr
+      CorePureLet bindings body ->
+        traverse_ (validateNativeExpr nodeRef . (.corePureBindingExpr)) bindings *> goVariant body
+      CorePureCall (CorePureIdent label) [payload]
+        | label `Set.member` labels -> validateNativeExpr nodeRef payload
+      other ->
+        Left
+          ( NativePureUnsupportedExpression
+              nodeRef
+              ("pure sum path must end in a declared constructor, got " <> T.pack (show other))
+          )
 
 taskExecutor :: CircuitTaskNode -> Maybe Text
 taskExecutor taskNode = do

@@ -228,6 +228,55 @@ spec = do
             `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
         Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
 
+    it "rejects the obsolete config_shape key in table-header spelling" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \[executor.config_shape]\n\
+            \schema = \"legacy.schema\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "rejects the obsolete config_shape key in dotted-key spelling" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \config_shape.schema = \"legacy.schema\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "accepts config_shape text inside a multi-line string value" $ do
+      let source =
+            "[package]\n\
+            \id = \"docs\"\n\
+            \[[executor]]\n\
+            \id = \"docs.run\"\n\
+            \effect = \"pure\"\n\
+            \[[module]]\n\
+            \path = \"example/notes.wire\"\n\
+            \source = \"\"\"\n\
+            \-- migration note, not a key:\n\
+            \config_shape = \"unchecked\"\n\
+            \export let value = 1;\n\
+            \\"\"\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          Map.lookup "example/notes.wire" package.wpModuleSources
+            `shouldSatisfy` maybe False (T.isInfixOf "config_shape = \"unchecked\"")
+
   describe "NativePure contract manifests" $ do
     it "decodes scalar and bounded native_shape projections" $ do
       let source =

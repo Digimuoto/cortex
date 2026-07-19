@@ -12,6 +12,9 @@ zero-realize and multiple-realize rejection paths.
 -}
 module Cortex.Quantum.PlanSpec (spec) where
 
+import Data.Aeson (Value (..))
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -35,6 +38,12 @@ import Cortex.Quantum.Plan
   , renderRealizeError
   )
 import Cortex.Quantum.TestSupport (compileReturn, compileText, loadTestEnv)
+import Cortex.Wire
+  ( CircuitNodeRef (..)
+  , CircuitTaskNode (..)
+  , CompiledCircuit (..)
+  , CompiledCircuitNode (..)
+  )
 import Cortex.Wire.Executor (WireExecutorId (..))
 
 realizeId :: WireExecutorId
@@ -73,6 +82,13 @@ fractionalIndexCircuit =
   \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
   \node r <- b: Bit -> result: QuantumResult = @realize { inherit b; };\n\
   \p => m => r\n"
+
+unsupportedConfigCircuit :: Text
+unsupportedConfigCircuit =
+  "use quantum.core.{@prepare_zero, @measure_z, Qubit, Bit};\n\
+  \node p -> q: Qubit = @prepare_zero { cfg = { index = 1 + 1; }; };\n\
+  \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
+  \p => m\n"
 
 sideMeasurementCircuit :: Text
 sideMeasurementCircuit =
@@ -129,6 +145,20 @@ spec =
             Left err -> err `shouldSatisfy` T.isInfixOf "config field index must be an integer"
             Right _ -> expectationFailure "expected a fractional index validation error"
 
+    it "rejects a non-plain cfg field with a typed error naming the field" $ \env ->
+      case compileText env unsupportedConfigCircuit of
+        Left err -> expectationFailure (T.unpack err)
+        Right circuit ->
+          compiledCircuitToPlan circuit
+            `shouldBe` Left (WalkConfigUnsupportedValue "p" "cfg.index")
+
+    it "rejects an undecodable executor argument instead of accepting the raw envelope" $ \env ->
+      case compileText env noRealizeCircuit of
+        Left err -> expectationFailure (T.unpack err)
+        Right circuit ->
+          compiledCircuitToPlan (corruptArgumentValue "p" circuit)
+            `shouldBe` Left (WalkArgumentUndecodable "p")
+
     it "lowers only measurement bits collected by the realize node" $ \env ->
       case compileText env sideMeasurementCircuit of
         Left err -> expectationFailure (T.unpack err)
@@ -154,3 +184,36 @@ spec =
 renderWalk :: WalkError -> Text
 renderWalk WalkNoRealizeNode = "no realize node"
 renderWalk other = "walk error: " <> T.pack (show other)
+
+{- | Replace one task node's compiled @argument.value@ metadata with a value
+that is not an encoded core-pure expression, mimicking corrupted or
+foreign-compiler metadata.
+-}
+corruptArgumentValue :: Text -> CompiledCircuit -> CompiledCircuit
+corruptArgumentValue ref circuit =
+  circuit
+    { compiledCircuitNodes =
+        Map.adjust corruptNode (CircuitNodeRef ref) (compiledCircuitNodes circuit)
+    }
+  where
+    corruptNode node =
+      case node of
+        CompiledCircuitTask taskNode ->
+          CompiledCircuitTask
+            taskNode
+              { circuitTaskNodeMetadata = corruptMetadata (circuitTaskNodeMetadata taskNode)
+              }
+        CompiledCircuitSignal {} -> node
+        CompiledCircuitArtifact {} -> node
+        CompiledCircuitRewriteBoundary {} -> node
+        CompiledCircuitCondition {} -> node
+    corruptMetadata metadata =
+      case metadata of
+        Object keyMap ->
+          Object
+            ( KeyMap.insert
+                "argument"
+                (Object (KeyMap.singleton "value" (String "not-an-expression")))
+                keyMap
+            )
+        other -> other

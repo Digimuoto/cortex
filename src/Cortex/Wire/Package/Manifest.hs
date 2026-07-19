@@ -93,15 +93,14 @@ tryReadManifest path = try (TIO.readFile path)
 
 decodeWirePackageManifest
   :: FilePath -> Text -> Either WirePackageManifestError WirePackage
-decodeWirePackageManifest path source =
-  if any isObsoleteConfigShapeKey (T.lines source)
-    then
+decodeWirePackageManifest path source
+  | executorCarriesObsoleteConfigShape source =
       Left
         ( WirePackageManifestDecodeError
             path
             "config_shape was removed; use argument_shape"
         )
-    else case Toml.decode source of
+  | otherwise = case Toml.decode source of
       Toml.Failure errs ->
         Left (WirePackageManifestDecodeError path (renderTomlMessages errs))
       -- toml-parser reports unmatched keys as non-fatal warnings. A Wire package
@@ -112,10 +111,44 @@ decodeWirePackageManifest path source =
       -- Toml.Failure is an error.
       Toml.Success _warnings manifest ->
         Right (manifestToWirePackage manifest)
+
+{- | Structural check for the removed executor @config_shape@ key. A textual
+scan cannot tell a key from string content and misses the table-header
+(@[executor.config_shape]@) and dotted (@config_shape.schema = ...@)
+spellings, so we walk the parsed TOML table instead: every spelling puts a
+@config_shape@ entry at the top level of an executor table, and text inside
+string values never does. Unlike the deliberate ignore-unknown-keys stance
+above (ADR 0060), this key once carried the argument schema; ignoring it
+would silently drop argument validation, so it must fail loudly.
+-}
+executorCarriesObsoleteConfigShape :: Text -> Bool
+executorCarriesObsoleteConfigShape source =
+  case Toml.parse source of
+    -- Malformed TOML falls through to Toml.decode, which reports the syntax
+    -- error through the existing rendering path.
+    Left _syntaxError -> False
+    Right (Toml.MkTable entries) ->
+      case Map.lookup "executor" entries of
+        Nothing -> False
+        Just (_ann, executorValue) ->
+          any tableHasConfigShapeKey (tablesOf executorValue)
   where
-    isObsoleteConfigShapeKey line =
-      case T.breakOn "=" (T.strip line) of
-        (key, rest) -> T.strip key == "config_shape" && not (T.null rest)
+    tablesOf :: Toml.Value' Toml.Position -> [Toml.Table' Toml.Position]
+    tablesOf = \case
+      Toml.Table' _ table -> [table]
+      Toml.List' _ values -> concatMap tablesOf values
+      Toml.Integer' _ _ -> []
+      Toml.Double' _ _ -> []
+      Toml.Bool' _ _ -> []
+      Toml.Text' _ _ -> []
+      Toml.TimeOfDay' _ _ -> []
+      Toml.ZonedTime' _ _ -> []
+      Toml.LocalTime' _ _ -> []
+      Toml.Day' _ _ -> []
+
+    tableHasConfigShapeKey :: Toml.Table' Toml.Position -> Bool
+    tableHasConfigShapeKey (Toml.MkTable executorEntries) =
+      Map.member "config_shape" executorEntries
 
 renderTomlMessages :: [String] -> Text
 renderTomlMessages =

@@ -3250,14 +3250,75 @@ spec = describe "Cortex.Wire.Compile" $ do
             )
       other -> expectationFailure ("expected task node, got: " <> show other)
 
+  -- ADR 0095: normalization is decided from the authored argument expression,
+  -- so a let-bound record reference is payload-wrapped like any other
+  -- non-literal expression. This keeps the host-visible shape statically known.
+  it "payload-wraps a let-bound record reference in argument position" $ do
+    compiled <-
+      requireRight
+        ( compileWireText
+            "let args = { cfg = { mode = \"safe\"; }; };\nnode log <- value: Result = @review.log args;\nlog"
+        )
+    case Map.lookup (CircuitNodeRef "log") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        metadataArgumentValue taskNode.circuitTaskNodeMetadata
+          `shouldBe` Just
+            ( Syntax.CorePureRecord
+                [Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "args")]
+            )
+      other -> expectationFailure ("expected task node, got: " <> show other)
+
+  it "ships module-level CorePure bindings in the argument envelope" $ do
+    compiled <-
+      requireRight
+        ( compileWireText
+            "let base = { mode = \"safe\"; };\nnode log <- value: Result = @review.log { payload = value; cfg = base; };\nlog"
+        )
+    case Map.lookup (CircuitNodeRef "log") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        metadataArgumentBindings taskNode.circuitTaskNodeMetadata
+          `shouldBe` Just
+            [ Syntax.CorePureBinding
+                "base"
+                ( Syntax.CorePureRecord
+                    [ Syntax.CorePureField
+                        ("mode" :| [])
+                        (Syntax.CorePureLit (Syntax.CorePureString "safe"))
+                    ]
+                )
+            ]
+      other -> expectationFailure ("expected task node, got: " <> show other)
+
+  it "omits the bindings envelope field when the module declares no bindings" $ do
+    compiled <- requireRight (compileWireText "node fetch -> result: Result = @review.fetch;\nfetch")
+    case Map.lookup (CircuitNodeRef "fetch") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) ->
+        metadataArgumentBindings taskNode.circuitTaskNodeMetadata `shouldBe` Nothing
+      other -> expectationFailure ("expected task node, got: " <> show other)
+
   it "rejects unknown compiler-owned node metadata" $
     compileWireText "node fetch with { mystery = true; } -> result: Result = @review.fetch;"
       `shouldBe` Left
         (WireInvalidPorts (CircuitNodeRef "fetch") "unknown node metadata field mystery")
 
+  -- The source carries a file return so this cannot pass by failing the
+  -- unrelated file-return check; the assertion pins the metadata rejection.
   it "rejects dynamically evaluated compiler-owned node metadata" $
-    compileWireText "node fetch with { timeout = runtimeValue; } -> result: Result = @review.fetch;"
-      `shouldSatisfy` isLeft
+    compileWireText
+      "node fetch with { timeout = runtimeValue; } -> result: Result = @review.fetch;\nfetch"
+      `shouldBe` Left (WireFieldTypeMismatch "timeout" "int32" "qualified identifier")
+
+  it "rejects mistyped compiler-owned node metadata values" $
+    compileWireText
+      "node fetch with { timeout = \"thirty\"; } -> result: Result = @review.fetch;\nfetch"
+      `shouldBe` Left (WireFieldTypeMismatch "timeout" "int32" "string")
+
+  it "rejects duplicate field paths in executor argument records" $
+    compileWireText
+      "node log <- value: Result = @review.log { payload = value; payload = value; };\nlog"
+      `shouldSatisfy` \case
+        Left err -> "conflicting field paths" `T.isInfixOf` T.pack (show err)
+        Right _ -> False
 
   it "applies compiler-owned metadata to pure nodes" $ do
     compiled <-
@@ -5637,6 +5698,16 @@ metadataArgumentValue = \case
     encoded <- KeyMap.lookup "value" argumentObj
     case Aeson.fromJSON encoded of
       Aeson.Success expression -> Just expression
+      Aeson.Error _ -> Nothing
+  _ -> Nothing
+
+metadataArgumentBindings :: Aeson.Value -> Maybe [Syntax.CorePureBinding]
+metadataArgumentBindings = \case
+  Aeson.Object obj -> do
+    Aeson.Object argumentObj <- KeyMap.lookup "argument" obj
+    encoded <- KeyMap.lookup "bindings" argumentObj
+    case Aeson.fromJSON encoded of
+      Aeson.Success bindings -> Just bindings
       Aeson.Error _ -> Nothing
   _ -> Nothing
 

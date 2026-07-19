@@ -176,11 +176,11 @@ node implementation bodies with zero or one argument expression. They are not gr
 not appear in graph position.
 
 **Ordinary values** are records, lists, strings, numbers, booleans, `null`, and tagged config
-constructors. They may be used in config records. When an ordinary value is made only from
-authority-free pure data, it may also be captured by delayed CorePure evaluation.
+constructors. They may be used in executor argument records. When an ordinary value is made only
+from authority-free pure data, it may also be captured by delayed CorePure evaluation.
 
-`//` is right-biased shallow record merge. It applies to records only. It does not merge configured
-executors.
+`//` is right-biased shallow record merge. It applies to records only. It does not apply to executor
+authority values.
 
 ## 4. Contracts And Ports
 
@@ -451,7 +451,7 @@ input port environment into the single body argument. The declared output clause
 projection and runtime output validation form the egress adapter back to output ports. See
 [ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md).
 
-## 6. Executor Calls And Config
+## 6. Executor Calls And The Record Argument
 
 ```ebnf
 executor_call ::= "@" qname corepure_expr?

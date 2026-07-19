@@ -112,8 +112,9 @@ registered authority and carry reusable configuration, but it may not absorb a p
 surrounding arrows, infer "context" from graph position, or become runnable merely by appearing in a
 composition expression.
 
-This supersedes the earlier reference-doc model described in
-[`executor-authorities-and-execution-boundary.md`](../Reference/Wire/executor-authorities-and-execution-boundary.md),
+This supersedes the earlier reference-doc model (formerly
+`configured-executors-and-execution-boundary.md`, since replaced by
+[`executor-authorities-and-execution-boundary.md`](../Reference/Wire/executor-authorities-and-execution-boundary.md)),
 where partial executor values could later become graph nodes by receiving ports from surrounding
 syntax. Under this ADR, reusable configuration may still exist, but it is not a node and it is not
 admitted into graph position on its own.
@@ -346,4 +347,4 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 - [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
 - [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
 - [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
-- [Wire Configured Executors and Execution Boundary Reference](../Reference/Wire/executor-authorities-and-execution-boundary.md)
+- [Wire Executor Arguments and Execution Boundary Reference](../Reference/Wire/executor-authorities-and-execution-boundary.md)

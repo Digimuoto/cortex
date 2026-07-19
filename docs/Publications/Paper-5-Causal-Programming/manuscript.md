@@ -620,7 +620,7 @@ node receive_order
   -> order: Order = ...;
 
 node compute_score
-  <- order: Order  -> score: Score = pure (calculate_score(order));
+  <- order: Order  -> score: Score = calculate_score(order);
 
 node log_score
   <- score: Score  -> entry: LogEntry = @audit.log score;
@@ -653,7 +653,7 @@ node receive_order
   -> order: Order = ...;
 
 node compute_score
-  <- order: Order  -> score: Score = pure (calculate_score(order));
+  <- order: Order  -> score: Score = calculate_score(order);
 
 node fan_out
   <- score: Score  -> for_audit: Score = score;
@@ -663,7 +663,7 @@ node log_score
   <- for_audit: Score  -> entry: LogEntry = @audit.log for_audit;
 
 node decide_threshold
-  <- for_decision: Score  -> ok: Decision = pure (for_decision > 0.5);
+  <- for_decision: Score  -> ok: Decision = for_decision > 0.5;
 
 receive_order
   => compute_score
@@ -726,13 +726,13 @@ contract Response;
 contract Ack;
 
 node client_send_request
-  -> req: Request = pure (build_request(...));
+  -> req: Request = build_request(...);
 
 node server_handle
   <- req: Request  -> resp: Response = @service.handle req;
 
 node client_check_response
-  <- resp: Response  -> ack: Ack = pure (validate(resp));
+  <- resp: Response  -> ack: Ack = validate(resp);
 
 node server_recv_ack
   <- ack: Ack  = @service.complete ack;
@@ -1579,7 +1579,7 @@ node charge_card
   <- for_charge: Reservation -> success: Charge | failure: ChargeError = @payments.charge { payload = for_charge; cfg = { idempotency_key = ...; }; };
 
 node issue_receipt
-  <- success: Charge  <- for_recovery: Reservation  -> receipt: Receipt = pure (build_receipt success for_recovery);
+  <- success: Charge  <- for_recovery: Reservation  -> receipt: Receipt = build_receipt success for_recovery;
 
 node release_inventory_on_failure
   <- failure: ChargeError  <- for_recovery: Reservation  -> compensation: Compensation = @inventory.release for_recovery;

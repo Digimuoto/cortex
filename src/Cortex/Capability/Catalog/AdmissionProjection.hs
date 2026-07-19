@@ -25,6 +25,7 @@ module Cortex.Capability.Catalog.AdmissionProjection
   , ContentDigest (..)
   , ArgumentShapeRef (..)
   , RequirementSlot (..)
+  , currentProjectionVersion
   , admissionProjectionDigest
   , encodeWirePorts
   , decodeWirePorts
@@ -60,6 +61,15 @@ import Cortex.Wire.Executor
 newtype ProjectionVersion = ProjectionVersion {unProjectionVersion :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (ToJSON, FromJSON)
+
+{- | Version of the projection wire format this module encodes. Version @2@ is
+the ADR 0095 single-record boundary format (@argumentShapeRef@); version @1@
+carried the removed @configSchemaRef@ surface and is rejected on decode so an
+old persisted projection fails with a migration diagnostic instead of a
+generic field error.
+-}
+currentProjectionVersion :: ProjectionVersion
+currentProjectionVersion = ProjectionVersion "2"
 
 newtype ContentDigest = ContentDigest {unContentDigest :: Text}
   deriving stock (Eq, Ord, Show, Generic)
@@ -116,17 +126,27 @@ instance ToJSON AdmissionProjection where
       ]
 
 instance FromJSON AdmissionProjection where
-  parseJSON = withObject "AdmissionProjection" $ \o ->
-    AdmissionProjection . WireExecutorId
-      <$> o .: "executorId"
-      <*> o .: "projectionVersion"
-      <*> (o .: "ports" >>= decodeWirePorts)
-      <*> o .: "argumentShapeRef"
-      <*> o .:? "requirementSlots" .!= []
-      <*> o .: "replayClass"
-      <*> o .: "isolationExpectation"
-      <*> (o .: "effect" >>= parseEffect)
-      <*> o .: "awaitStrategy"
+  parseJSON = withObject "AdmissionProjection" $ \o -> do
+    version <- o .: "projectionVersion"
+    if version == currentProjectionVersion
+      then
+        AdmissionProjection . WireExecutorId
+          <$> o .: "executorId"
+          <*> pure version
+          <*> (o .: "ports" >>= decodeWirePorts)
+          <*> o .: "argumentShapeRef"
+          <*> o .:? "requirementSlots" .!= []
+          <*> o .: "replayClass"
+          <*> o .: "isolationExpectation"
+          <*> (o .: "effect" >>= parseEffect)
+          <*> o .: "awaitStrategy"
+      else
+        fail
+          ( "unsupported admission projection version "
+              <> T.unpack (unProjectionVersion version)
+              <> ": version 1 predates the ADR 0095 argument-shape format; current is "
+              <> T.unpack (unProjectionVersion currentProjectionVersion)
+          )
 
 {- | Deterministic content digest over the projection's defining fields. Taken over
 a canonical tuple (not the JSON object) so object key ordering cannot perturb it.

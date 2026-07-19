@@ -30,7 +30,7 @@ pages that factor out specific rule areas for quick consultation.
 - **[executor-authorities-and-execution-boundary.md](executor-authorities-and-execution-boundary.md)**
   — executor authority values, explicit node admission, and the execution boundary.
 - **[executors-and-alphabet.md](executors-and-alphabet.md)** — executor registration, `@` authority,
-  executor authority values, and ambient identifiers in config values.
+  bare authority values, the one-record argument ABI, and strict registry projections.
 - **[pure-execution.md](pure-execution.md)** — Wire-authored CorePure output equations, native pure
   evaluator lowering, input/output binding, builtins, and failure surface.
 - **[conditionality.md](conditionality.md)** — exclusive-output reduction with `select(...)`, latent

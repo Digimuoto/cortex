@@ -14,6 +14,7 @@ module Cortex.Wire.NativePureSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Test.Hspec
@@ -23,6 +24,7 @@ import Cortex.Wire
   , NativeLayout (..)
   , NativePureAccess (..)
   , NativePureBoundary (..)
+  , NativePureBounds (..)
   , NativePureError (..)
   , NativePureKernel (..)
   , NativePureOutputBoundary (..)
@@ -30,12 +32,19 @@ import Cortex.Wire
   , NativePureRegion (..)
   , NativePureVariant (..)
   , NativeShape (..)
+  , NativeShapeError (..)
   , NativeShapeProjection (..)
   , RealizationArtifact (..)
   , WireCompileEnv
   , WireContractRegistry
   , WireContractSpec (..)
+  , WireExecutorArgumentShape (..)
+  , WireExecutorEffect (..)
+  , WireExecutorId (..)
+  , WireExecutorPortPolicy (..)
+  , WireExecutorProjection (..)
   , WirePayloadKind (..)
+  , WirePorts (..)
   , compileWireTextWithEnv
   , lowerCompiledCircuitToNativePurePlan
   , nativePurePlanSchema
@@ -56,6 +65,16 @@ spec = do
         `shouldBe` Right (NativeLayout 16 8)
       nativeShapeLayout (NativeSum (Map.fromList [("none", NativeUnit), ("some", NativeI64)]))
         `shouldBe` Right (NativeLayout 16 8)
+
+    it "rejects layout overflow instead of wrapping alignment arithmetic" $ do
+      -- Nested vectors approach 2^64 through checked multiplications; the
+      -- final record padding step must reject rather than wrap to a tiny
+      -- bogus layout.
+      let hugeVector = NativeVector 4294967295 (NativeVector 536870911 NativeU64)
+          overflowRecord =
+            NativeRecord
+              (Map.fromList [("a", hugeVector), ("b", NativeText 4294967279), ("c", NativeU64)])
+      nativeShapeLayout overflowRecord `shouldBe` Left NativeShapeLayoutOverflow
 
   describe "native-pure-plan/v1" $ do
     it "keeps one source pure node per certified kernel and assigns read/write regions" $ do
@@ -132,12 +151,114 @@ spec = do
           Left err -> "shadowed by a local binding" `T.isInfixOf` T.pack (show err)
           Right _ -> False
 
+    it "binds only realized kernels into the witness for a mixed program" $ do
+      compiled <- requireRight (compileWireTextWithEnv mixedEnv mixedProgram)
+      plan <- requireRight (lowerCompiledCircuitToNativePurePlan nativeRegistry compiled)
+      fmap (.nativePureKernelRef) plan.nativePurePlanKernels
+        `shouldBe` [CircuitNodeRef "increment"]
+      Map.keys plan.nativePurePlanRealization.realizationSourceMembers
+        `shouldBe` [CircuitNodeRef "increment"]
+      Map.keys plan.nativePurePlanRealization.realizationRuntimeMembers
+        `shouldBe` [CircuitNodeRef "increment"]
+
+    it "rejects expressions outside the certified kernel basis" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv divisionProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) -> "division" `T.isInfixOf` reason
+          _ -> False
+
+    it "rejects builtin calls in kernel bodies" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv builtinCallProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) -> "builtin calls" `T.isInfixOf` reason
+          _ -> False
+
+    it "rejects kernels whose worst-case checkpoint exceeds 2 MiB" $ do
+      compiled <- requireRight (compileWireTextWithEnv bigTextEnv bigTextProgram)
+      lowerCompiledCircuitToNativePurePlan bigTextRegistry compiled
+        `shouldSatisfy` \case
+          Left NativePureCheckpointTooLarge {} -> True
+          _ -> False
+
+    it "computes exact step and static-byte bounds for the admitted basis" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+      plan <- requireRight (lowerCompiledCircuitToNativePurePlan nativeRegistry compiled)
+      case plan.nativePurePlanKernels of
+        [kernel] -> do
+          -- score + 1 is: binary(1) + ident(1) + literal(1).
+          kernel.nativePureKernelBounds.nativePureBoundSteps `shouldBe` 3
+          kernel.nativePureKernelBounds.nativePureBoundStaticBytes `shouldBe` 0
+        kernels -> expectationFailure ("expected one kernel, got " <> show (length kernels))
+
 pureProgram :: Text
 pureProgram =
   "contract Score;\n\
   \contract Result;\n\
   \node increment <- score: Score -> result: Result = score + 1;\n\
   \increment"
+
+divisionProgram :: Text
+divisionProgram =
+  "contract Score;\n\
+  \contract Result;\n\
+  \node halve <- score: Score -> result: Result = score / 2;\n\
+  \halve"
+
+builtinCallProgram :: Text
+builtinCallProgram =
+  "contract Score;\n\
+  \contract Result;\n\
+  \node total <- score: Score -> result: Result = sum([score]);\n\
+  \total"
+
+mixedProgram :: Text
+mixedProgram =
+  "contract Score;\n\
+  \contract Result;\n\
+  \node increment <- score: Score -> result: Result = score + 1;\n\
+  \node store <- result: Result = @report.store result;\n\
+  \increment\n\
+  \  => store"
+
+mixedEnv :: WireCompileEnv
+mixedEnv =
+  strictWireCompileEnv
+    (wireExecutorRegistryFromList [pureWireExecutorProjection, storeExecutorProjection])
+    nativeRegistry
+
+storeExecutorProjection :: WireExecutorProjection
+storeExecutorProjection =
+  WireExecutorProjection
+    { wireExecutorProjectionId = WireExecutorId "report.store"
+    , wireExecutorProjectionPorts = WirePorts {wirePortsInputs = Map.empty, wirePortsOutputs = Map.empty}
+    , wireExecutorProjectionVocabulary = Set.empty
+    , wireExecutorProjectionEffect = WireExecutorHostEffect
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
+    , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
+    }
+
+bigTextProgram :: Text
+bigTextProgram =
+  "contract Blob;\n\
+  \contract BlobCopy;\n\
+  \node copy <- blob: Blob -> result: BlobCopy = blob;\n\
+  \copy"
+
+bigTextEnv :: WireCompileEnv
+bigTextEnv =
+  strictWireCompileEnv (wireExecutorRegistryFromList [pureWireExecutorProjection]) bigTextRegistry
+
+{- | Two ~1.5 MiB bounded-text boundaries: each side fits, the combined
+worst-case checkpoint exceeds the 2 MiB ceiling.
+-}
+bigTextRegistry :: WireContractRegistry
+bigTextRegistry =
+  wireContractRegistryFromList
+    [ contract "Blob" (Just (NativeText 1572864))
+    , contract "BlobCopy" (Just (NativeText 1572864))
+    ]
 
 nativeEnv :: WireCompileEnv
 nativeEnv = strictWireCompileEnv (wireExecutorRegistryFromList [pureWireExecutorProjection]) nativeRegistry
