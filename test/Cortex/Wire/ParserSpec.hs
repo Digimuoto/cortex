@@ -521,6 +521,19 @@ spec = describe "Cortex.Wire.Parser" $ do
             other -> expectationFailure ("expected pure body, got: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
+    it "parses the pure exclusive-sum fixture shared with the grammar diff" $
+      parseWireFixture "test/fixtures/wire/pure-sum-body.wire"
+
+    it "rejects mixing sum and product equations in one pure body" $ do
+      parseWireFile
+        "test"
+        "node classify <- score: Score ; -> accepted: Decision | rejected: RejectReason = accepted score; -> extra: Extra = score;"
+        `shouldSatisfy` isParseFailure
+      parseWireFile
+        "test"
+        "node classify <- score: Score ; -> extra: Extra = score; -> accepted: Decision | rejected: RejectReason = accepted score;"
+        `shouldSatisfy` isParseFailure
+
     it "parses a pure exclusive-sum body with scoped constructors" $ do
       let WireFile forms _ =
             parseOrFail

@@ -36,6 +36,29 @@ import Cortex.Wire
 
 spec :: Spec
 spec = describe "Cortex.Wire runtime egress" $ do
+  describe "exclusive variant egress boundary" $ do
+    it "rejects committing zero variants" $
+      wrapWireStageOutputs (Just scoreRegistry) producer runId variantPorts Map.empty
+        `shouldBeLeftContaining` "must commit exactly one variant"
+
+    it "rejects committing more than one variant" $
+      wrapWireStageOutputs
+        (Just scoreRegistry)
+        producer
+        runId
+        variantPorts
+        (Map.fromList [("accepted", Aeson.Number 1), ("rejected", Aeson.Number 2)])
+        `shouldBeLeftContaining` "must commit exactly one variant"
+
+    it "rejects an undeclared variant label" $
+      wrapWireStageOutputs
+        (Just scoreRegistry)
+        producer
+        runId
+        variantPorts
+        (Map.singleton "unknown" (Aeson.Number 1))
+        `shouldBeLeftContaining` "is not a declared variant"
+
   describe "compatible one-record executor argument boundary" $ do
     let schema =
           WireExecutorArgumentSchema $
@@ -508,6 +531,17 @@ scorePorts =
   WirePorts
     { wirePortsInputs = Map.empty
     , wirePortsOutputs = Map.singleton "score" (WireOutputPort "Score" Nothing)
+    }
+
+variantPorts :: WirePorts
+variantPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs =
+        Map.fromList
+          [ ("accepted", WireOutputPort "Score" (Just 0))
+          , ("rejected", WireOutputPort "Score" (Just 0))
+          ]
     }
 
 dualScorePorts :: WirePorts

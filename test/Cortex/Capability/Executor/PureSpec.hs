@@ -139,6 +139,24 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
         wireValue.wireValueValue `shouldBe` Aeson.Number (scientific 8 (-1))
       other -> expectationFailure ("expected StageComplete, got " <> showStageResult other)
 
+  it "does not force the non-selected pure sum branch" $ do
+    compiled <-
+      requireRight
+        ( compileWireTextWithEnv
+            pureCompileEnv
+            ( pureSumProgram
+                "if evidence_score >= 0 then accepted evidence_score else rejected (trim evidence_score)"
+            )
+        )
+    taskNode <- requireCompiledTask "classify" compiled
+    stageDef <- requireRight (bindPureTaskNode (Just floatContractRegistry) taskNode)
+    result <- stageDef.sdAction pureSumStageContext
+    case result of
+      StageComplete value -> do
+        wireValue <- requireAesonSuccess (Aeson.fromJSON value :: Aeson.Result WireValue)
+        wireValue.wireValuePort `shouldBe` Just "accepted"
+      other -> expectationFailure ("expected StageComplete, got " <> showStageResult other)
+
   it "rejects pure sum paths that do not return a declared constructor" $
     compileWireTextWithEnv
       pureCompileEnv

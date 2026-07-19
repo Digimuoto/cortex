@@ -11,6 +11,9 @@ and maximal fusion are introduced by later NativePure epic slices.
 -}
 module Cortex.Wire.NativePureAdmissionSpec (spec) where
 
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -65,6 +68,9 @@ import Cortex.Wire
   , wireContractRegistryFromList
   , wireExecutorRegistryFromList
   )
+import Cortex.Wire.AdmissionArtifact (wireAdmissionMetadataKey)
+import Cortex.Wire.Circuit.Compiled (CompiledCircuit (..), CompiledCircuitNode (..))
+import Cortex.Wire.Circuit.IR (CircuitTaskNode (..))
 import Cortex.Wire.NativePure.Admission
   ( NativePureAccess (..)
   , NativePureAdmissionError (..)
@@ -179,6 +185,131 @@ admissionSpec = describe "NativePure candidate admission" $ do
     admitNativePureCandidates invalidShapeRegistry compiled
       `shouldSatisfy` \case
         Left NativePureInvalidShape {} -> True
+        _ -> False
+
+  it "rejects an input port that shadows a CorePure builtin" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv builtinInputProgram)
+    admitNativePureCandidates nativeRegistry compiled
+      `shouldSatisfy` \case
+        Left NativePureBuiltinShadowedInput {} -> True
+        _ -> False
+
+  it "rejects a fractional literal binding instead of deferring to render time" $
+    rejectedReason f64Registry f64Env f64BindingProgram
+      `shouldSatisfy` T.isInfixOf "binary64 literals"
+
+  it "rejects a compiled circuit without an admission artifact" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    admitNativePureCandidates nativeRegistry compiled {compiledCircuitMetadata = Aeson.Null}
+      `shouldBe` Left NativePureMissingAdmissionArtifact
+
+  it "carries the decoder cause for malformed admission metadata" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    let corrupted =
+          withCircuitMetadataKey wireAdmissionMetadataKey (Aeson.String "garbage") compiled
+    case admitNativePureCandidates nativeRegistry corrupted of
+      Left (NativePureMalformedAdmissionArtifact reason) ->
+        reason `shouldSatisfy` (not . T.null)
+      other ->
+        expectationFailure ("expected a malformed admission artifact, got " <> show other)
+
+  it "renders binding causes for circuits failing unified admission" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    let broken =
+          compiled
+            { compiledCircuitNodes =
+                Map.delete (CircuitNodeRef "increment") compiled.compiledCircuitNodes
+            }
+    case admitNativePureCandidates nativeRegistry broken of
+      Left (NativePureCircuitAdmissionRejected reason) -> do
+        reason `shouldSatisfy` T.isInfixOf "does not bind to the compiled circuit"
+        reason `shouldSatisfy` T.isInfixOf "increment"
+        reason `shouldSatisfy` (not . T.isInfixOf "fromList")
+      other ->
+        expectationFailure ("expected a rejected unified admission, got " <> show other)
+
+  it "rejects pure task metadata without a config object" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    let mutated = mapTaskMetadata (CircuitNodeRef "increment") (KeyMap.delete "config") compiled
+    admitNativePureCandidates nativeRegistry mutated
+      `shouldSatisfy` \case
+        Left NativePureMalformedMetadata {} -> True
+        _ -> False
+
+  it "rejects admission against a registry missing a crossing contract" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    admitNativePureCandidates missingScoreRegistry compiled
+      `shouldSatisfy` \case
+        Left NativePureMissingContract {} -> True
+        _ -> False
+
+  it "rejects an outputs config over an exclusive boundary" $ do
+    compiled <- requireRight (compileWireTextWithEnv paddedProductEnv paddedProductProgram)
+    let markExclusive = \case
+          Aeson.Array entries -> Aeson.Array (fmap markFlag entries)
+          other -> other
+        markFlag = \case
+          Aeson.Object port
+            | KeyMap.lookup "name" port == Just (Aeson.String "flag") ->
+                Aeson.Object (KeyMap.insert "exclusiveGroup" (Aeson.Number 0) port)
+          other -> other
+        mutated =
+          mapTaskMetadata
+            (CircuitNodeRef "split")
+            (adjustKey "ports" (adjustObjectPath ["outputs"] markExclusive))
+            compiled
+    admitNativePureCandidates paddedProductRegistry mutated
+      `shouldSatisfy` \case
+        Left NativePureSumRequiresVariant {} -> True
+        _ -> False
+
+  it "rejects a variant config over a product boundary" $ do
+    sumCompiled <- requireRight (compileWireTextWithEnv sumEnv sumProgram)
+    variantValue <-
+      maybe (fail "expected a compiled variant config") pure $
+        lookupTaskConfigKey (CircuitNodeRef "classify") "variant" sumCompiled
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    let mutated =
+          mapTaskMetadata
+            (CircuitNodeRef "increment")
+            (KeyMap.insert "config" (Aeson.object ["variant" Aeson..= variantValue]))
+            compiled
+    admitNativePureCandidates nativeRegistry mutated
+      `shouldSatisfy` \case
+        Left NativePureVariantRequiresSum {} -> True
+        _ -> False
+
+  it "rejects output equations that do not match the declared boundary" $ do
+    compiled <- requireRight (compileWireTextWithEnv nativeEnv pureProgram)
+    let renameResult = \case
+          Aeson.Object outputs ->
+            case KeyMap.lookup "result" outputs of
+              Just equation ->
+                Aeson.Object (KeyMap.insert "wrong" equation (KeyMap.delete "result" outputs))
+              Nothing -> Aeson.Object outputs
+          other -> other
+        mutated =
+          mapTaskMetadata
+            (CircuitNodeRef "increment")
+            (adjustKey "config" (adjustObjectPath ["outputs"] renameResult))
+            compiled
+    admitNativePureCandidates nativeRegistry mutated
+      `shouldSatisfy` \case
+        Left NativePureOutputEquationMismatch {} -> True
+        _ -> False
+
+  it "rejects input byte totals that overflow the resource bounds" $ do
+    compiled <- requireRight (compileWireTextWithEnv hugeEnv hugePairProgram)
+    admitNativePureCandidates hugeRegistry compiled
+      `shouldSatisfy` \case
+        Left NativePureResourceOverflow {} -> True
+        _ -> False
+
+  it "rejects a combined output boundary whose layout overflows" $ do
+    compiled <- requireRight (compileWireTextWithEnv hugeEnv hugeDupProgram)
+    admitNativePureCandidates hugeRegistry compiled
+      `shouldSatisfy` \case
+        Left NativePureInvalidOutputBoundary {} -> True
         _ -> False
 
 artifactSpec :: Spec
@@ -408,6 +539,48 @@ f64LiteralProgram =
     , "literal"
     ]
 
+f64BindingProgram :: Text
+f64BindingProgram =
+  T.unlines
+    [ "contract Measurement;"
+    , "node literal -> result: Measurement = let x = 0.5; in x;"
+    , "literal"
+    ]
+
+builtinInputProgram :: Text
+builtinInputProgram =
+  T.unlines
+    [ "contract Score;"
+    , "contract Result;"
+    , "node candidate"
+    , "  <- sum: Score;"
+    , "  -> result: Result = sum + 1;"
+    , "candidate"
+    ]
+
+hugePairProgram :: Text
+hugePairProgram =
+  T.unlines
+    [ "contract Huge;"
+    , "node pair"
+    , "  <- a: Huge;"
+    , "  <- b: Huge;"
+    , "  -> left: Huge = a;"
+    , "  -> right: Huge = b;"
+    , "pair"
+    ]
+
+hugeDupProgram :: Text
+hugeDupProgram =
+  T.unlines
+    [ "contract Huge;"
+    , "node dup"
+    , "  <- blob: Huge;"
+    , "  -> left: Huge = blob;"
+    , "  -> right: Huge = blob;"
+    , "dup"
+    ]
+
 replaceBody :: Text -> Text
 replaceBody body =
   T.unlines
@@ -592,6 +765,9 @@ paddedProductEnv = strictEnv paddedProductRegistry [pureWireExecutorProjection]
 invalidShapeEnv = strictEnv invalidShapeRegistry [pureWireExecutorProjection]
 f64Env = strictEnv f64Registry [pureWireExecutorProjection]
 
+hugeEnv :: WireCompileEnv
+hugeEnv = strictEnv hugeRegistry [pureWireExecutorProjection]
+
 mixedEnv :: WireCompileEnv
 mixedEnv = strictEnv nativeRegistry [pureWireExecutorProjection, storeExecutorProjection]
 
@@ -653,6 +829,16 @@ invalidShapeRegistry =
     [contract "BadText" (Just (NativeShapeProjection (NativeText 0)))]
 f64Registry = shapedRegistry [("Measurement", NativeF64)]
 
+missingScoreRegistry :: WireContractRegistry
+missingScoreRegistry = shapedRegistry [("Result", NativeI64)]
+
+{- | Each layout is individually valid (about 2^63 bytes), so overflow appears
+only when admission combines boundaries.
+-}
+hugeRegistry :: WireContractRegistry
+hugeRegistry =
+  shapedRegistry [("Huge", NativeVector 268435456 (NativeVector 4294967295 NativeU64))]
+
 shapedRegistry :: [(Text, NativeShape)] -> WireContractRegistry
 shapedRegistry entries =
   wireContractRegistryFromList
@@ -689,3 +875,59 @@ requireRight :: Show err => Either err value -> IO value
 requireRight = \case
   Right value -> pure value
   Left err -> fail ("expected Right, got " <> show err)
+
+withCircuitMetadataKey :: Text -> Aeson.Value -> CompiledCircuit -> CompiledCircuit
+withCircuitMetadataKey key value compiled =
+  case compiled.compiledCircuitMetadata of
+    Aeson.Object metadata ->
+      compiled
+        { compiledCircuitMetadata = Aeson.Object (KeyMap.insert (Key.fromText key) value metadata)
+        }
+    other -> compiled {compiledCircuitMetadata = other}
+
+mapTaskMetadata
+  :: CircuitNodeRef
+  -> (KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value)
+  -> CompiledCircuit
+  -> CompiledCircuit
+mapTaskMetadata nodeRef adjustMetadata compiled =
+  compiled {compiledCircuitNodes = Map.adjust adjustNode nodeRef compiled.compiledCircuitNodes}
+  where
+    adjustNode = \case
+      CompiledCircuitTask taskNode ->
+        CompiledCircuitTask
+          taskNode
+            { circuitTaskNodeMetadata =
+                case taskNode.circuitTaskNodeMetadata of
+                  Aeson.Object metadata -> Aeson.Object (adjustMetadata metadata)
+                  other -> other
+            }
+      other -> other
+
+adjustKey
+  :: Key.Key
+  -> (Aeson.Value -> Aeson.Value)
+  -> KeyMap.KeyMap Aeson.Value
+  -> KeyMap.KeyMap Aeson.Value
+adjustKey key adjustValue objectValue =
+  case KeyMap.lookup key objectValue of
+    Just value -> KeyMap.insert key (adjustValue value) objectValue
+    Nothing -> objectValue
+
+adjustObjectPath :: [Text] -> (Aeson.Value -> Aeson.Value) -> Aeson.Value -> Aeson.Value
+adjustObjectPath path adjustValue value =
+  case path of
+    [] -> adjustValue value
+    key : rest ->
+      case value of
+        Aeson.Object objectValue ->
+          Aeson.Object (adjustKey (Key.fromText key) (adjustObjectPath rest adjustValue) objectValue)
+        other -> other
+
+lookupTaskConfigKey :: CircuitNodeRef -> Text -> CompiledCircuit -> Maybe Aeson.Value
+lookupTaskConfigKey nodeRef key compiled = do
+  CompiledCircuitTask taskNode <- Map.lookup nodeRef compiled.compiledCircuitNodes
+  Aeson.Object metadata <- Just taskNode.circuitTaskNodeMetadata
+  configValue <- KeyMap.lookup "config" metadata
+  Aeson.Object config <- Just configValue
+  KeyMap.lookup (Key.fromText key) config
