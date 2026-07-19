@@ -12,6 +12,7 @@ determinism, and the runtime binding record.
 module Cortex.Capability.CatalogSpec (spec) where
 
 import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy (ByteString)
 import Test.Hspec
 
@@ -76,6 +77,19 @@ spec = do
       roundTrips SubmitParkResume
       roundTrips IdempotentWithKey
       roundTrips SubprocessSandbox
+    it "retains v1 config projections while emitting v2 argument projections" $ do
+      let v2Projection =
+            admissionProjectionWithArgumentShapeRef
+              (ArgumentShapeName "braket-argument")
+              sampleProjection
+      roundTrips v2Projection
+      apProjectionVersion v2Projection `shouldBe` currentProjectionVersion
+      apArgumentShapeRef v2Projection `shouldBe` ArgumentShapeName "braket-argument"
+      case Aeson.toJSON v2Projection of
+        Aeson.Object object -> do
+          KeyMap.member "argumentShapeRef" object `shouldBe` True
+          KeyMap.member "configSchemaRef" object `shouldBe` False
+        other -> expectationFailure ("expected projection object, got " <> show other)
 
   describe "admissionProjectionDigest" $ do
     it "is deterministic for the same projection" $

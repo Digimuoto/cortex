@@ -24,19 +24,26 @@ module Cortex.Capability.Catalog.AdmissionProjection
   , ProjectionVersion (..)
   , ContentDigest (..)
   , ConfigSchemaRef (..)
+  , ArgumentShapeRef (..)
   , RequirementSlot (..)
+  , currentProjectionVersion
+  , apArgumentShapeRef
+  , admissionProjectionWithArgumentShapeRef
+  , rsArgumentSelector
   , admissionProjectionDigest
   , encodeWirePorts
   , decodeWirePorts
   )
 where
 
+import Control.Monad (when)
 import Crypto.Hash (SHA256, hashlazy)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.!=), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types (Parser)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
@@ -75,6 +82,31 @@ data ConfigSchemaRef
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
+{- | Canonical name for the schema/decoder reference at the one-record ingress
+boundary. The config-named representation remains stored for v1 callers.
+-}
+data ArgumentShapeRef
+  = ArgumentShapeNone
+  | ArgumentShapeDigest ContentDigest
+  | ArgumentShapeName Text
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+currentProjectionVersion :: ProjectionVersion
+currentProjectionVersion = ProjectionVersion "2"
+
+argumentShapeRefFromConfig :: ConfigSchemaRef -> ArgumentShapeRef
+argumentShapeRefFromConfig = \case
+  ConfigSchemaNone -> ArgumentShapeNone
+  ConfigSchemaDigest digest -> ArgumentShapeDigest digest
+  ConfigSchemaName name -> ArgumentShapeName name
+
+configSchemaRefFromArgument :: ArgumentShapeRef -> ConfigSchemaRef
+configSchemaRefFromArgument = \case
+  ArgumentShapeNone -> ConfigSchemaNone
+  ArgumentShapeDigest digest -> ConfigSchemaDigest digest
+  ArgumentShapeName name -> ConfigSchemaName name
+
 {- | A declared requirement the binding layer must satisfy: a capability kind, the
 local binding name the host resolves, an optional config selector path, and the
 required permission class. Inert — declaring a requirement does not grant it.
@@ -87,6 +119,9 @@ data RequirementSlot = RequirementSlot
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
+
+rsArgumentSelector :: RequirementSlot -> Maybe Text
+rsArgumentSelector = rsConfigSelector
 
 data AdmissionProjection = AdmissionProjection
   { apExecutorId :: !WireExecutorId
@@ -101,27 +136,57 @@ data AdmissionProjection = AdmissionProjection
   }
   deriving stock (Eq, Show, Generic)
 
+apArgumentShapeRef :: AdmissionProjection -> ArgumentShapeRef
+apArgumentShapeRef = argumentShapeRefFromConfig . apConfigSchemaRef
+
+admissionProjectionWithArgumentShapeRef
+  :: ArgumentShapeRef -> AdmissionProjection -> AdmissionProjection
+admissionProjectionWithArgumentShapeRef shapeRef projection =
+  projection
+    { apProjectionVersion = currentProjectionVersion
+    , apConfigSchemaRef = configSchemaRefFromArgument shapeRef
+    }
+
 instance ToJSON AdmissionProjection where
   toJSON p =
     object
-      [ "executorId" .= unWireExecutorId (apExecutorId p)
-      , "projectionVersion" .= apProjectionVersion p
-      , "ports" .= encodeWirePorts (apPorts p)
-      , "configSchemaRef" .= apConfigSchemaRef p
-      , "requirementSlots" .= apRequirementSlots p
-      , "replayClass" .= apReplayClass p
-      , "isolationExpectation" .= apIsolationExpectation p
-      , "effect" .= effectText (apEffect p)
-      , "awaitStrategy" .= apAwaitStrategy p
-      ]
+      ( [ "executorId" .= unWireExecutorId (apExecutorId p)
+        , "projectionVersion" .= apProjectionVersion p
+        , "ports" .= encodeWirePorts (apPorts p)
+        , "requirementSlots" .= apRequirementSlots p
+        , "replayClass" .= apReplayClass p
+        , "isolationExpectation" .= apIsolationExpectation p
+        , "effect" .= effectText (apEffect p)
+        , "awaitStrategy" .= apAwaitStrategy p
+        ]
+          <> if apProjectionVersion p == currentProjectionVersion
+            then ["argumentShapeRef" .= apArgumentShapeRef p]
+            else ["configSchemaRef" .= apConfigSchemaRef p]
+      )
 
 instance FromJSON AdmissionProjection where
-  parseJSON = withObject "AdmissionProjection" $ \o ->
+  parseJSON = withObject "AdmissionProjection" $ \o -> do
+    version <- o .: "projectionVersion"
+    legacyRef <- o .:? "configSchemaRef"
+    argumentRef <- o .:? "argumentShapeRef"
+    when (isJust legacyRef && isJust argumentRef) $
+      fail "admission projection cannot define both configSchemaRef and argumentShapeRef"
+    storedRef <-
+      case version of
+        ProjectionVersion "2" ->
+          maybe
+            (fail "version 2 admission projection is missing argumentShapeRef")
+            (pure . configSchemaRefFromArgument)
+            argumentRef
+        ProjectionVersion "1" ->
+          maybe (fail "version 1 admission projection is missing configSchemaRef") pure legacyRef
+        ProjectionVersion unknown ->
+          fail ("unsupported admission projection version " <> T.unpack unknown)
     AdmissionProjection . WireExecutorId
       <$> o .: "executorId"
-      <*> o .: "projectionVersion"
+      <*> pure version
       <*> (o .: "ports" >>= decodeWirePorts)
-      <*> o .: "configSchemaRef"
+      <*> pure storedRef
       <*> o .:? "requirementSlots" .!= []
       <*> o .: "replayClass"
       <*> o .: "isolationExpectation"
@@ -138,7 +203,9 @@ admissionProjectionDigest p =
           ( unWireExecutorId (apExecutorId p)
           , unProjectionVersion (apProjectionVersion p)
           , canonicalPorts (apPorts p)
-          , toJSON (apConfigSchemaRef p)
+          , if apProjectionVersion p == currentProjectionVersion
+              then toJSON (apArgumentShapeRef p)
+              else toJSON (apConfigSchemaRef p)
           , toJSON (apRequirementSlots p)
           , toJSON (apReplayClass p)
           , toJSON (apIsolationExpectation p)

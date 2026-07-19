@@ -26,9 +26,11 @@ import Cortex.Wire
   , NativeShapeProjection (..)
   , WireContractRegistry
   , WireContractSpec (..)
+  , WireExecutorArgumentShape (..)
   , WireOutputPort (..)
   , WirePorts (..)
   , wireContractRegistryFromList
+  , wireExecutorProjectionArgumentShape
   , wrapWireStageOutput
   )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
@@ -212,6 +214,32 @@ spec = do
         Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
         Right package ->
           packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
+
+  describe "compatible executor shape manifests" $ do
+    let manifest shapeField =
+          "[package]\nid = \"shape-test\"\n[[executor]]\nid = \"review\"\neffect = \"model\"\n"
+            <> shapeField
+            <> "\n"
+        decodedShape shapeField = do
+          package <- decodeWirePackageManifest "cortex.toml" (manifest shapeField)
+          case package.wpExecutorProjections of
+            [projection] -> Right (wireExecutorProjectionArgumentShape projection)
+            _ -> Left (error "expected one executor projection")
+
+    it "dual-reads legacy config_shape and canonical argument_shape" $ do
+      decodedShape "config_shape = \"unchecked\""
+        `shouldBe` Right WireExecutorArgumentUnchecked
+      decodedShape "argument_shape = \"unchecked\""
+        `shouldBe` Right WireExecutorArgumentUnchecked
+
+    it "rejects conflicting legacy and canonical shape keys" $
+      case decodeWirePackageManifest
+        "cortex.toml"
+        (manifest "config_shape = \"unchecked\"\nargument_shape = \"unchecked\"") of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "both config_shape and argument_shape"
+        Right _ -> expectationFailure "conflicting executor shape keys unexpectedly decoded"
 
   describe "native contract shape manifests" $ do
     it "decodes scalar and bounded native_shape projections" $ do

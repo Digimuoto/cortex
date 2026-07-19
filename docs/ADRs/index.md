@@ -109,6 +109,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0092](0092-circuit-engine-runtime-host-boundary.md)               | Circuit Engine and Runtime-Host Boundary                                   | accepted   |
 | [0093](0093-versioned-circuit-state-event-control-protocol.md)     | Versioned Circuit State, Event, and Control Protocol                       | accepted   |
 | [0094](0094-hosted-x86-64-linux-executable-profile.md)             | Hosted x86_64 Linux Executable Profile                                     | accepted   |
+| [0095](0095-wire-single-record-executor-boundary.md)               | Wire Single-Record Executor Boundary                                       | proposed   |
 | [0096](0096-certified-native-pure-region-compilation.md)           | Certified NativePure Compilation                                           | proposed   |
 
 ## By category
@@ -141,6 +142,7 @@ is shown here.
   [0092](0092-circuit-engine-runtime-host-boundary.md),
   [0093](0093-versioned-circuit-state-event-control-protocol.md),
   [0094](0094-hosted-x86-64-linux-executable-profile.md),
+  [0095](0095-wire-single-record-executor-boundary.md),
   [0096](0096-certified-native-pure-region-compilation.md)
 - **Rewrite admission & budget** (8):
   [0005](0005-budgeted-rewrite-admission-and-materialization.md),

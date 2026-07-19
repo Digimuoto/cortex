@@ -21,6 +21,7 @@ module Cortex.Wire.Pure
   , PreparedPureTask
   , renderPureEvalError
   , validatePurePorts
+  , validateCorePureExpr
   , validatePureTaskConfig
   , validatePureVariantTaskConfig
   , preparePureTaskOutputs
@@ -30,17 +31,21 @@ module Cortex.Wire.Pure
   , evaluatePureTaskOutputs
   , evaluatePureTaskVariant
   , evaluatePreparedPureTaskOutputs
+  , WireExecutorArgumentSpec (..)
+  , wireExecutorArgumentSpecFromMetadata
+  , evaluateWireExecutorArgument
   , corePureBuiltinSignature
   , corePureBuiltinAuthorityReport
   , corePureBuiltinAuthorityFree
   , pureWireExecutorId
   , pureWireExecutorProjection
   , pureExecutorConfigSchema
+  , pureExecutorArgumentSchema
   , canonicalJson
   )
 where
 
-import Control.Monad (foldM, (>=>))
+import Control.Monad (foldM, unless, (>=>))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -555,13 +560,33 @@ bindPreparedPureInputValues
   -> [PreparedPureInput]
   -> WireInputBundle
   -> Either PureEvalError (Map Text value)
-bindPreparedPureInputValues wrapValue preparedInputs inputBundle =
+bindPreparedPureInputValues =
+  bindPreparedInputValuesWith wireValueJson
+
+{- | Executor ingress accepts every payload carrier already validated by the
+Wire boundary. The JSON-only restriction remains specific to pure nodes.
+-}
+bindPreparedExecutorInputValues
+  :: (Aeson.Value -> value)
+  -> [PreparedPureInput]
+  -> WireInputBundle
+  -> Either PureEvalError (Map Text value)
+bindPreparedExecutorInputValues =
+  bindPreparedInputValuesWith (\_portName wireValue -> Right wireValue.wireValueValue)
+
+bindPreparedInputValuesWith
+  :: (Text -> WireValue -> Either PureEvalError Aeson.Value)
+  -> (Aeson.Value -> value)
+  -> [PreparedPureInput]
+  -> WireInputBundle
+  -> Either PureEvalError (Map Text value)
+bindPreparedInputValuesWith extractValue wrapValue preparedInputs inputBundle =
   Map.fromList <$> traverse bindInputPort preparedInputs
   where
     bindInputPort preparedInput = do
       let portName = preparedInput.preparedPureInputPortName
       wireValue <- singleMatchedValue preparedInput
-      value <- wireValueJson portName wireValue
+      value <- extractValue portName wireValue
       Right (portName, wrapValue value)
 
     singleMatchedValue preparedInput =
@@ -643,6 +668,80 @@ evaluateVariantResult labels env = \case
         payload <- evaluateCorePureExpr env payloadExpr >>= corePureValueToJson
         pure (label, payload)
   _ -> Left (PureVariantConstructorExpected labels)
+
+{- | Runtime-evaluated executor argument plus every lexical scope required to
+evaluate it after compilation.
+-}
+data WireExecutorArgumentSpec = WireExecutorArgumentSpec
+  { wireExecutorArgumentExpr :: !CorePureExpr
+  , wireExecutorArgumentBindings :: ![CorePureBinding]
+  , wireExecutorArgumentWhere :: !(Maybe CorePureExpr)
+  }
+  deriving stock (Eq, Show)
+
+wireExecutorArgumentSpecFromMetadata :: Aeson.Value -> Either Text WireExecutorArgumentSpec
+wireExecutorArgumentSpecFromMetadata metadataValue = do
+  metadataObject <- expectObject "executor task metadata" metadataValue
+  argumentValue <-
+    maybe
+      (Left "executor task metadata is missing the argument envelope")
+      Right
+      (KeyMap.lookup "argument" metadataObject)
+  argumentObject <- expectObject "executor argument envelope" argumentValue
+  let unknownKeys =
+        [ keyText
+        | key <- KeyMap.keys argumentObject
+        , let keyText = Key.toText key
+        , keyText `notElem` ["value", "bindings", "where"]
+        ]
+  unless (null unknownKeys) $
+    Left ("unsupported executor argument envelope fields: " <> T.intercalate ", " unknownKeys)
+  exprValue <-
+    maybe
+      (Left "executor argument envelope is missing the value field")
+      Right
+      (KeyMap.lookup "value" argumentObject)
+  argumentExpr <- decodeEnvelopeField "executor argument value" exprValue
+  bindings <-
+    maybe
+      (Right [])
+      (decodeEnvelopeField "executor argument bindings")
+      (KeyMap.lookup "bindings" argumentObject)
+  whereExpr <-
+    traverse
+      (decodeEnvelopeField "executor argument where")
+      (KeyMap.lookup "where" argumentObject)
+  Right
+    WireExecutorArgumentSpec
+      { wireExecutorArgumentExpr = argumentExpr
+      , wireExecutorArgumentBindings = bindings
+      , wireExecutorArgumentWhere = whereExpr
+      }
+  where
+    expectObject label = \case
+      Aeson.Object object -> Right object
+      _ -> Left (label <> " must be a JSON object")
+    decodeEnvelopeField :: Aeson.FromJSON a => Text -> Aeson.Value -> Either Text a
+    decodeEnvelopeField label value =
+      case Aeson.fromJSON value of
+        Aeson.Success decoded -> Right decoded
+        Aeson.Error err -> Left (label <> ": " <> T.pack err)
+
+-- | Evaluate normalized argument data at node ingress, after port values exist.
+evaluateWireExecutorArgument
+  :: WirePorts
+  -> WireExecutorArgumentSpec
+  -> WireInputBundle
+  -> Either PureEvalError Aeson.Value
+evaluateWireExecutorArgument ports spec inputBundle = do
+  preparedInputs <- preparePureInputs ports
+  inputEnv <- bindPreparedExecutorInputValues CorePureJson preparedInputs inputBundle
+  outerEnv <-
+    bindCorePureBindings
+      (corePureEnvFromInputValues inputEnv)
+      spec.wireExecutorArgumentBindings
+  env <- bindCorePureWhere outerEnv spec.wireExecutorArgumentWhere
+  evaluateCorePureExpr env spec.wireExecutorArgumentExpr >>= corePureValueToJson
 
 evaluatePreparedPureTaskOutputs
   :: PreparedPureTask
@@ -2401,3 +2500,7 @@ pureExecutorConfigSchema =
                 ]
           ]
     ]
+
+-- | Canonical name for the retained pure executor schema.
+pureExecutorArgumentSchema :: Aeson.Value
+pureExecutorArgumentSchema = pureExecutorConfigSchema
