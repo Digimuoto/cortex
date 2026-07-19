@@ -34,7 +34,7 @@ Signed-off-by: ...
       adapter equivalence, and legacy ABI preservation. Command:
       `just review-commits e1269ae-f0d2e6d`
 
-- [ ] `54ec95f-9a8dace` — normalized realization artifacts, shared semantic C IR, and validated C11
+- [x] `54ec95f-9a8dace` — normalized realization artifacts, shared semantic C IR, and validated C11
       renderer. Historical PRs: [#390](https://github.com/Digimuoto/cortex/pull/390),
       [#391](https://github.com/Digimuoto/cortex/pull/391), and
       [#392](https://github.com/Digimuoto/cortex/pull/392). Focus: stable digests, bidirectional
