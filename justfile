@@ -247,6 +247,10 @@ ci-check:
 check-commit-provenance RANGE="origin/main..HEAD":
     scripts/check-commit-provenance "{{ RANGE }}"
 
+# Check a branch name against the naming policy (default: current branch)
+check-branch-name BRANCH="":
+    scripts/check-branch-name "{{ BRANCH }}"
+
 # Check that GitHub merge settings cannot manufacture squash/merge commits
 check-github-merge-policy:
     nix develop -c scripts/check-github-merge-policy

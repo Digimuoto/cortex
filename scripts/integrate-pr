@@ -46,6 +46,7 @@ git fetch "$remote" \
   "${base_branch}:${base_ref}" \
   "${target_branch}:${target_ref}"
 
+scripts/check-branch-name "$target_branch"
 scripts/check-commit-provenance "${base_ref}..${target_ref}"
 
 git switch "$base_branch"
