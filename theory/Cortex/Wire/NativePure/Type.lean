@@ -26,7 +26,7 @@ inductive Ty where
   | vector (capacity : Nat) (element : Ty)
   | record (fields : List (Name × Ty))
   | sum (variants : List (Name × Ty))
-  deriving Repr
+  deriving BEq, Repr
 
 /-- A label/type pair occurs in a fixed record or sum description. -/
 inductive Member : Name → Ty → List (Name × Ty) → Type where

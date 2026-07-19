@@ -25,6 +25,8 @@ import Cortex.Wire.StaticCEmitter
 import Cortex.Wire.StaticCEmitter.Layout
 import Cortex.Wire.StaticCEmitter.Unit
 import Cortex.Wire.NativePure
+import Cortex.Wire.NativePure.C
+import Cortex.Wire.NativePure.C.Unit
 import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
 import Cortex.Wire.Admission

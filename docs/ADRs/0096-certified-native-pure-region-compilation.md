@@ -41,8 +41,14 @@ module representation. A separate validated C11 translation-unit model now deriv
 source, header, export inventory, layout/resource manifest, and static assertions from one
 structured representation. The production StaticC v1 backend now constructs that representation
 directly; a whitespace-only compatibility layout preserves its published source and header bytes
-without admitting raw C tokens. This is not yet the NativePure execution profile: artifact decoding
-in Lean, concrete region/frame lowering, v2 scheduling, and target gates remain later epic slices.
+without admitting raw C tokens. The concrete NativePure slice now consumes that shared semantic IR,
+constructs fixed input/output/checkpoint frames, emits explicit aggregate padding and typed
+tagged-sum payload unions, propagates checked-i64 overflow through a status result, and derives C,
+headers, exports, layouts, resource manifests, and static assertions from the validated C11 unit.
+Executable construction checks cover scalar and exclusive-sum kernels, and strict local host
+compilation confirms the emitted functions have no unresolved host, heap, worker, or Lean-runtime
+symbols. This is not yet the NativePure execution profile: normalized-plan decoding in Lean, v2
+scheduling, the hermetic target matrix, and three-way differential closure remain later epic slices.
 
 ## Context
 
@@ -170,9 +176,12 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   modules construct the production StaticC v1 translation unit while preserving its artifact bytes;
   `theory/Cortex/Wire/NativePure.lean` defines the source kernel, total lowering into that IR,
   structural/checked-i64 refinement, canonical-label discipline, padding-aware layouts, resource
-  evidence, and read/write-region well-formedness; and `theory/Cortex/Wire/StaticC.lean` lowers
-  topology-specialized readiness functions into the same semantic module. Binary64 is explicitly
-  excluded from certified refinement evidence.
+  evidence, and read/write-region well-formedness; `theory/Cortex/Wire/NativePure/C.lean` lowers the
+  shared semantic IR into concrete authority-free frame functions and validated C11 artifacts, while
+  `theory/Cortex/Wire/NativePure/C/Unit.lean` checks scalar, overflow, layout, and tagged-sum
+  construction; and `theory/Cortex/Wire/StaticC.lean` lowers topology-specialized readiness
+  functions into the same semantic module. Binary64 is explicitly excluded from certified refinement
+  evidence.
 
 ## Tracking
 
@@ -180,8 +189,9 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   admission, normalized realization artifacts, maximal fusion, and the Haskell plan validator are
   implemented)
 - Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
-  cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, and the
-  906-job Lean build containing `Cortex.Wire.NativePure`
-- Planned public surface: normalized-plan decoding in Lean, semantic-IR-to-C11 lowering, concrete
-  NativePure frames/functions, and additive v2 runtime/target interfaces
+  cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, the
+  Lean construction checks in `Cortex.Wire.NativePure.C.Unit`, and strict host compilation of the
+  emitted increment and tagged-classifier fixtures
+- Planned public surface: normalized-plan decoding in Lean, hermetic host/bare-target and
+  differential gates, and additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR

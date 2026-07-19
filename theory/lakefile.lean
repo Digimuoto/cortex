@@ -49,6 +49,8 @@ lean_lib «Cortex» where
     `Cortex.Wire.StaticCEmitter.Layout,
     `Cortex.Wire.StaticCEmitter.Unit,
     `Cortex.Wire.NativePure,
+    `Cortex.Wire.NativePure.C,
+    `Cortex.Wire.NativePure.C.Unit,
     `Cortex.Wire.Registry,
     `Cortex.Wire.Rewrite,
     `Cortex.Wire.Admission,
@@ -158,6 +160,11 @@ lean_exe «cortex-kernel-spike» where
 -- Host-side static Wire validator and freestanding C emitter (ADR 0091).
 lean_exe «cortex-wire-c» where
   root := `CortexWireC
+
+-- Test-only concrete NativePure C artifact writer. Production plan ingestion
+-- remains owned by the versioned compiler boundary rather than this fixture.
+lean_exe «cortex-native-pure-c-fixture» where
+  root := `CortexNativePureCFixture
 
 -- Lean reference interpreter for the ADR 0091 three-way differential suite.
 -- Replays the shared scenario corpus through the restricted target semantics
