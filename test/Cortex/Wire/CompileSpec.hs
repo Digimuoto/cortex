@@ -16,6 +16,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable qualified as Foldable
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, mapMaybe)
 import Data.Scientific (Scientific, floatingOrInteger)
@@ -120,7 +121,11 @@ import Cortex.Wire.LeanFixture
   , renderEmittedUmbrellaModule
   , renderFixtureModuleText
   )
-import Cortex.Wire.Pure (pureWireExecutorProjection)
+import Cortex.Wire.Pure
+  ( WireExecutorArgumentSpec (..)
+  , pureWireExecutorProjection
+  , wireExecutorArgumentSpecFromMetadata
+  )
 import Cortex.Wire.Std
   ( stdIoReadFileShapeMessage
   , stdIoStdoutShapeMessage
@@ -3170,8 +3175,20 @@ spec = describe "Cortex.Wire.Compile" $ do
   it "compiles a configured executor value applied in a node body" $ do
     compiled <- requireRight (compileWireText configuredExecutorSourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
-      Just (CompiledCircuitTask taskNode) ->
+      Just (CompiledCircuitTask taskNode) -> do
         taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataConfigHasNumber "temperature" 0.2
+        case wireExecutorArgumentSpecFromMetadata taskNode.circuitTaskNodeMetadata of
+          Left err -> expectationFailure ("normalized argument did not decode: " <> T.unpack err)
+          Right argumentSpec -> do
+            argumentSpec.wireExecutorArgumentExpr
+              `shouldBe` Syntax.CorePureRecord
+                [ Syntax.CorePureField
+                    ("payload" :| [])
+                    (Syntax.CorePureIdent "plan")
+                , Syntax.CorePureField
+                    ("cfg" :| ["temperature"])
+                    (Syntax.CorePureLit (Syntax.CorePureNumber 0.2))
+                ]
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
@@ -3201,8 +3218,13 @@ spec = describe "Cortex.Wire.Compile" $ do
   it "evaluates top-level pure-data lets in executor config" $ do
     compiled <- requireRight (compileWireText topLevelLetConfigSourceText)
     case Map.lookup (CircuitNodeRef "analyst") compiled.compiledCircuitNodes of
-      Just (CompiledCircuitTask taskNode) ->
+      Just (CompiledCircuitTask taskNode) -> do
         taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasInstructions "Audit now"
+        case wireExecutorArgumentSpecFromMetadata taskNode.circuitTaskNodeMetadata of
+          Left err -> expectationFailure ("normalized argument did not decode: " <> T.unpack err)
+          Right argumentSpec ->
+            fmap Syntax.corePureBindingName argumentSpec.wireExecutorArgumentBindings
+              `shouldContain` ["analyst_instructions"]
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 

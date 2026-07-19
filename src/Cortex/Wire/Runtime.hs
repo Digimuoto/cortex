@@ -20,6 +20,8 @@ module Cortex.Wire.Runtime
   , wrapWireStageOutputs
   , wrapWireStageResult
   , wrapWireStageDefinition
+  , wrapWireStageDefinitionWithArgument
+  , validateWireExecutorArgument
   )
 where
 
@@ -34,11 +36,17 @@ import Data.UUID (UUID)
 
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Pulse.Plan
-  ( StageContext (..)
+  ( StageAction
+  , StageContext (..)
   , StageDefinition (..)
   , StageResult (..)
   )
 import Cortex.Wire.Contract (WireContractRegistry)
+import Cortex.Wire.ContractValidation
+  ( renderWireContractValidationError
+  , validateJsonValueAgainstSchema
+  )
+import Cortex.Wire.Executor (WireExecutorArgumentShape (..))
 import Cortex.Wire.NodeBoundary
   ( BoundaryEgressContext (..)
   , wrapNodeBoundaryOutput
@@ -147,6 +155,56 @@ wrapWireStageDefinition maybeRegistry ports stageDef =
           -- failure (ADR 0062), not an untyped stage exception.
           Left errText -> pure (StageFail "executor_output_validation_failure" errText)
     }
+
+{- | Additive one-record executor boundary. Unlike the legacy wrapper above,
+this evaluates argument data at ingress, validates it, and gives the exact
+validated record to the host binding before applying the common egress path.
+-}
+wrapWireStageDefinitionWithArgument
+  :: Maybe WireContractRegistry
+  -> WireExecutorArgumentShape
+  -> (WireInputBundle -> Either Text Aeson.Value)
+  -> WirePorts
+  -> (Aeson.Value -> StageAction NodeId)
+  -> StageDefinition NodeId
+  -> StageDefinition NodeId
+wrapWireStageDefinitionWithArgument maybeRegistry argumentShape evaluateArgument ports bindingAction stageDef =
+  stageDef
+    { sdAction = \ctx -> do
+        let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
+        case evaluateArgument inputBundle >>= validateWireExecutorArgument argumentShape of
+          Left errText ->
+            pure (StageFail "executor_argument_validation_failure" errText)
+          Right validatedArgument -> do
+            let unwrappedCtx =
+                  ctx
+                    { scInputs = inputBundle.wireInputBundleUnwrappedInputs
+                    }
+            stageResult <- bindingAction validatedArgument unwrappedCtx
+            case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId ports stageResult of
+              Right wrappedResult -> pure wrappedResult
+              Left errText -> pure (StageFail "executor_output_validation_failure" errText)
+    }
+
+{- | Validate and return the same normalized record that will be delivered to
+the binding. No post-evaluation wrapping or rebuilding occurs here.
+-}
+validateWireExecutorArgument
+  :: WireExecutorArgumentShape -> Aeson.Value -> Either Text Aeson.Value
+validateWireExecutorArgument shape argument = do
+  case argument of
+    Aeson.Object _ -> Right ()
+    _ -> Left "Wire executor argument must be a normalized JSON object"
+  case shape of
+    WireExecutorArgumentUnchecked -> Right argument
+    WireExecutorArgumentSchema schema ->
+      case validateJsonValueAgainstSchema "executor argument" schema argument of
+        Right () -> Right argument
+        Left validationError ->
+          Left
+            ( "Wire executor argument validation: "
+                <> renderWireContractValidationError validationError
+            )
 
 wrapWireStageResult
   :: Maybe WireContractRegistry

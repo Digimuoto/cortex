@@ -157,6 +157,7 @@ import Cortex.Wire.Pure
   , corePureStaticContextFromBindings
   , corePureWhereStaticFields
   , renderPureEvalError
+  , validateCorePureExpr
   , validatePureTaskConfig
   , validatePureVariantTaskConfig
   )
@@ -3072,6 +3073,8 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                 lookupMaybeTextField "instructions" exactFields
                   <|> lookupMaybeTextField "prompt" exactFields
               configValue = executorConfigValue genericFields whereExpr inputExpr
+              argumentExpr = normalizeLegacyExecutorArgument genericFields inputExpr
+              argumentValue = executorArgumentValue st.lsPureBindings whereExpr argumentExpr
               normalForm =
                 executorNodeBoundaryNormalForm
                   nodeRef
@@ -3082,6 +3085,8 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                   configValue
           mapLeft (WireCore.WireInvalidPorts nodeRef) $
             validateNodeBoundaryNormalForm normalForm
+          mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
+            validateCorePureExpr argumentExpr
           validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
           tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) exactFields)
           memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) exactFields)
@@ -3091,21 +3096,25 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                 { circuitTaskNodeRef = nodeRef
                 , circuitTaskNodeLabel = defaultNodeLabel nodeRef label
                 , circuitTaskNodeMetadata =
-                    actMetadata
-                      nodeRef
-                      executor
-                      label
-                      instructionsText
-                      configValue
-                      tools
-                      (normalFormPorts normalForm)
-                      (lookupMaybeInt32Field "timeout" exactFields)
-                      (lookupMaybeInt32Field "retry" exactFields)
-                      (lookupMaybeInt32Field "stepBudget" exactFields)
-                      (lookupMaybeInt32Field "toolLoopMinSteps" exactFields)
-                      (lookupMaybeInt32Field "maxOutputTokens" exactFields)
-                      (lookupMaybeBoolField "reasoningEnabled" exactFields)
-                      memoryStrategy
+                    insertMetadataValue
+                      "argument"
+                      argumentValue
+                      ( actMetadata
+                          nodeRef
+                          executor
+                          label
+                          instructionsText
+                          configValue
+                          tools
+                          (normalFormPorts normalForm)
+                          (lookupMaybeInt32Field "timeout" exactFields)
+                          (lookupMaybeInt32Field "retry" exactFields)
+                          (lookupMaybeInt32Field "stepBudget" exactFields)
+                          (lookupMaybeInt32Field "toolLoopMinSteps" exactFields)
+                          (lookupMaybeInt32Field "maxOutputTokens" exactFields)
+                          (lookupMaybeBoolField "reasoningEnabled" exactFields)
+                          memoryStrategy
+                      )
                 }
   Right
     LoweredNode
@@ -3171,6 +3180,59 @@ executorConfigValue fields whereExpr inputExpr =
             ]
         Nothing ->
           KeyMap.singleton (Key.fromText "input") inputValue
+
+{- | Compatibility normalization for the legacy split config/input call. This
+creates the same one-record runtime boundary that the new syntax will target
+later, while leaving the legacy compiled config envelope untouched.
+-}
+normalizeLegacyExecutorArgument
+  :: Map (NonEmpty Text) EvalValue -> CorePureExpr -> CorePureExpr
+normalizeLegacyExecutorArgument fields inputExpr =
+  CorePureRecord (payloadField <> configFields)
+  where
+    payloadField =
+      case inputExpr of
+        CorePureLit CorePureNull -> []
+        _ -> [CorePureField ("payload" :| []) inputExpr]
+    configFields =
+      [ CorePureField ("cfg" :| NE.toList path) (aesonValueToCorePureExpr (evalValueToAeson value))
+      | (path, value) <- Map.toAscList fields
+      ]
+
+aesonValueToCorePureExpr :: Aeson.Value -> CorePureExpr
+aesonValueToCorePureExpr = \case
+  Aeson.Null -> CorePureLit CorePureNull
+  Aeson.Bool value -> CorePureLit (CorePureBool value)
+  Aeson.Number value -> CorePureLit (CorePureNumber value)
+  Aeson.String value -> CorePureLit (CorePureString value)
+  Aeson.Array values -> CorePureList (fmap aesonValueToCorePureExpr (Vector.toList values))
+  Aeson.Object object ->
+    CorePureRecord
+      [ CorePureField (Key.toText key :| []) (aesonValueToCorePureExpr value)
+      | (key, value) <- KeyMap.toList object
+      ]
+
+executorArgumentValue
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> CorePureExpr
+  -> Aeson.Value
+executorArgumentValue topLevelBindings whereExpr argumentExpr =
+  Aeson.Object $
+    insertMaybeJson
+      "where"
+      whereExpr
+      ( KeyMap.fromList $
+          (Key.fromText "value", Aeson.toJSON argumentExpr)
+            : [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+              | not (null topLevelBindings)
+              ]
+      )
+
+insertMetadataValue :: Text -> Aeson.Value -> Aeson.Value -> Aeson.Value
+insertMetadataValue key value = \case
+  Aeson.Object object -> Aeson.Object (KeyMap.insert (Key.fromText key) value object)
+  other -> other
 
 insertMaybeJson
   :: Aeson.ToJSON a => Text -> Maybe a -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value

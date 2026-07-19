@@ -45,11 +45,13 @@ import Cortex.Wire.AST
   )
 import Cortex.Wire.Contract (WireContractSpec (..))
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
+  , WireExecutorConfigShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
+  , wireExecutorConfigShapeFromArgumentShape
   )
 import Cortex.Wire.NativePure.Shape (NativeShapeProjection)
 import Cortex.Wire.Package (NamespaceEntry (..), WirePackage (..))
@@ -208,12 +210,27 @@ instance Toml.FromValue WireExecutorProjection where
   fromValue = Toml.parseTableFromValue $ do
     rawId <- Toml.reqKey "id"
     rawVocabulary <- optionalList "vocabulary"
-    WireExecutorProjection (WireExecutorId rawId)
-      <$> optionalValue "ports" emptyPorts
-      <*> pure (Set.fromList rawVocabulary)
-      <*> Toml.reqKey "effect"
-      <*> optionalValue "config_shape" WireExecutorConfigUnchecked
-      <*> optionalValue "port_policy" WireExecutorFixedPorts
+    ports <- optionalValue "ports" emptyPorts
+    effect <- Toml.reqKey "effect"
+    legacyShape <- Toml.optKey "config_shape"
+    argumentShape <- Toml.optKey "argument_shape"
+    storedShape <-
+      case (legacyShape, argumentShape) of
+        (Just _legacy, Just _argument) ->
+          fail "executor manifest cannot define both config_shape and argument_shape"
+        (Just legacy, Nothing) -> pure legacy
+        (Nothing, Just argument) -> pure (wireExecutorConfigShapeFromArgumentShape argument)
+        (Nothing, Nothing) -> pure WireExecutorConfigUnchecked
+    portPolicy <- optionalValue "port_policy" WireExecutorFixedPorts
+    pure
+      WireExecutorProjection
+        { wireExecutorProjectionId = WireExecutorId rawId
+        , wireExecutorProjectionPorts = ports
+        , wireExecutorProjectionVocabulary = Set.fromList rawVocabulary
+        , wireExecutorProjectionEffect = effect
+        , wireExecutorProjectionConfigShape = storedShape
+        , wireExecutorProjectionPortPolicy = portPolicy
+        }
 
 newtype TomlNativeShape = TomlNativeShape
   { unTomlNativeShape :: NativeShapeProjection
@@ -268,6 +285,19 @@ instance Toml.FromValue WireExecutorConfigShape where
       parseSchema =
         Toml.parseTableFromValue $
           WireExecutorConfigSchema . unTomlJsonValue <$> Toml.reqKey "schema"
+
+instance Toml.FromValue WireExecutorArgumentShape where
+  fromValue rawValue = parseUnchecked rawValue <|> parseSchema rawValue
+    where
+      parseUnchecked value = do
+        raw <- Toml.fromValue value
+        case T.toCaseFold (T.strip raw) of
+          "unchecked" -> pure WireExecutorArgumentUnchecked
+          other -> fail ("unknown Wire executor argument shape: " <> T.unpack other)
+
+      parseSchema =
+        Toml.parseTableFromValue $
+          WireExecutorArgumentSchema . unTomlJsonValue <$> Toml.reqKey "schema"
 
 instance Toml.FromValue WirePorts where
   fromValue =

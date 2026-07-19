@@ -19,8 +19,13 @@ module Cortex.Wire.Executor
   , wireExecutorIdFromWireExecutor
   , WireExecutorEffect (..)
   , WireExecutorConfigShape (..)
+  , WireExecutorArgumentShape (..)
+  , wireExecutorArgumentShapeFromConfigShape
+  , wireExecutorConfigShapeFromArgumentShape
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
+  , wireExecutorProjectionArgumentShape
+  , wireExecutorProjectionWithArgumentShape
   , wireExecutorProjectionFromPorts
   , wireContractsFromPorts
   , WireExecutorRegistry (..)
@@ -69,6 +74,24 @@ data WireExecutorConfigShape
   | WireExecutorConfigSchema Aeson.Value
   deriving stock (Eq, Show, Generic)
 
+{- | Canonical one-record executor ingress shape. The config-named type remains
+as a compatibility view until the final Wire migration.
+-}
+data WireExecutorArgumentShape
+  = WireExecutorArgumentUnchecked
+  | WireExecutorArgumentSchema Aeson.Value
+  deriving stock (Eq, Show, Generic)
+
+wireExecutorArgumentShapeFromConfigShape :: WireExecutorConfigShape -> WireExecutorArgumentShape
+wireExecutorArgumentShapeFromConfigShape = \case
+  WireExecutorConfigUnchecked -> WireExecutorArgumentUnchecked
+  WireExecutorConfigSchema schema -> WireExecutorArgumentSchema schema
+
+wireExecutorConfigShapeFromArgumentShape :: WireExecutorArgumentShape -> WireExecutorConfigShape
+wireExecutorConfigShapeFromArgumentShape = \case
+  WireExecutorArgumentUnchecked -> WireExecutorConfigUnchecked
+  WireExecutorArgumentSchema schema -> WireExecutorConfigSchema schema
+
 data WireExecutorPortPolicy
   = WireExecutorFixedPorts
   | WireExecutorAuthorDeclaredPorts
@@ -83,6 +106,20 @@ data WireExecutorProjection = WireExecutorProjection
   , wireExecutorProjectionPortPolicy :: !WireExecutorPortPolicy
   }
   deriving stock (Eq, Show, Generic)
+
+{- | Canonical argument-facing view of a projection. It is computed from the
+retained config field so existing record construction remains source-compatible.
+-}
+wireExecutorProjectionArgumentShape :: WireExecutorProjection -> WireExecutorArgumentShape
+wireExecutorProjectionArgumentShape =
+  wireExecutorArgumentShapeFromConfigShape . wireExecutorProjectionConfigShape
+
+wireExecutorProjectionWithArgumentShape
+  :: WireExecutorArgumentShape -> WireExecutorProjection -> WireExecutorProjection
+wireExecutorProjectionWithArgumentShape shape projection =
+  projection
+    { wireExecutorProjectionConfigShape = wireExecutorConfigShapeFromArgumentShape shape
+    }
 
 wireExecutorProjectionFromPorts
   :: WireExecutorId
