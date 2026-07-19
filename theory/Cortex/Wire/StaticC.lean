@@ -203,8 +203,10 @@ def semanticReadyFunction
   , body := .ret (semanticReadyExpr program nodeCountWithinU64 node)
   }
 
-/-- StaticC now has an explicit semantic-module target. Concrete declarations
-and canonical C rendering remain the next two epic slices. -/
+/-- Semantic-module form of the readiness functions. No theorem yet relates
+this lowering to `Program.Ready`, and the shipped scheduler emitter lowers
+directly to the C11 AST without consuming it; the module is a stated target,
+checked only by a smoke example, until the correspondence lemma lands. -/
 def semanticModule
     (program : Program n)
     (nodeCountWithinU64 : n < 2 ^ 64) : SemanticC.Module :=

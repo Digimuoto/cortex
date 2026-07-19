@@ -3,15 +3,19 @@ import Cortex.Wire.NativePure.Type
 /-!
 ## Shared typed semantic C IR
 
-This is the proof-side, executable language shared by StaticC scheduler
-specialization and NativePure region lowering. It is intentionally not C
-syntax: identifiers, declarations, rendering, and translation-unit validation
-belong to the next lowering layer.
+This is the proof-side, executable language targeted by StaticC scheduler
+specialization and NativePure region lowering. Today the two paths share the
+expression fragment (through `evalClosed`, which disables storage and calls);
+the statement, storage, and call layer below is forward work for frame
+lowering and carries no theorems yet. It is intentionally not C syntax:
+identifiers, declarations, rendering, and translation-unit validation belong
+to the next lowering layer.
 
 The IR is intrinsically typed at expression and function boundaries. Runtime
-values remain erased because the indices are the typing authority. Its
-operational semantics is fuelled and deterministic, with explicit statement
-failure propagation and fuel exhaustion.
+values remain erased because the indices are the typing authority; boundary
+values supplied by resolvers and `runFunction` arguments are not yet checked
+against those indices. The operational semantics is fuelled and deterministic.
+Statement failure commits the store as evaluated up to the failure point.
 -/
 
 namespace Cortex.Wire.SemanticC
@@ -360,7 +364,10 @@ inductive Failure where
   deriving DecidableEq, Repr
 
 mutual
-  /-- Typed statements. All loops carry a static bound and may not recurse. -/
+  /-- Typed statements. All loops carry a static bound and may not recurse.
+  Inside a `boundedFor` body, `ret .unit` means the iteration is complete and
+  the loop continues; it is not a function return and must not lower to C
+  `return` in loop position. -/
   inductive Stmt : List Ty → Ty → Type where
     | ret : Expr context result → Stmt context result
     | fail : Failure → Stmt context result
@@ -476,7 +483,7 @@ mutual
             | some selected =>
                 if selected then exec resolve fuel thenStmt env afterCondition
                 else exec resolve fuel elseStmt env afterCondition
-            | none => .failed .typeMismatch store
+            | none => .failed .typeMismatch afterCondition
     | fuel + 1, .boundedFor bound _ body next, env, store =>
         match execLoop resolve fuel body env (List.range bound) store with
         | .returned .unit afterLoop => exec resolve fuel next env afterLoop
@@ -490,7 +497,7 @@ mutual
             match valueSum value with
             | some (label, payload) =>
                 execCases resolve fuel cases label payload env afterScrutinee
-            | none => .failed .typeMismatch store
+            | none => .failed .typeMismatch afterScrutinee
 
   def execCases
       (resolve : CallResolver) :
