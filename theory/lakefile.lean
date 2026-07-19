@@ -44,6 +44,7 @@ lean_lib «Cortex» where
     `Cortex.Wire.Pure,
     `Cortex.Wire.NativePure.Type,
     `Cortex.Wire.SemanticC,
+    `Cortex.Wire.C11,
     `Cortex.Wire.NativePure,
     `Cortex.Wire.Registry,
     `Cortex.Wire.Rewrite,
