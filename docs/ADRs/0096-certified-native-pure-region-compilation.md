@@ -47,8 +47,13 @@ tagged-sum payload unions, propagates checked-i64 overflow through a status resu
 headers, exports, layouts, resource manifests, and static assertions from the validated C11 unit.
 Executable construction checks cover scalar and exclusive-sum kernels, and strict local host
 compilation confirms the emitted functions have no unresolved host, heap, worker, or Lean-runtime
-symbols. This is not yet the NativePure execution profile: normalized-plan decoding in Lean, v2
-scheduling, the hermetic target matrix, and three-way differential closure remain later epic slices.
+symbols. The additive Haskell v2 scheduler policy now specializes witnessed quotient units, gates
+every effect behind the preceding checkpoint acknowledgement, executes pure regions synchronously,
+persists `select(...)` tags and skipped latent branches, rejoins the chosen branch, and restores the
+tag/value state without creating host work for pure units. Pure and effect failures become durable
+failed checkpoints. This is not yet the generally available NativePure execution profile:
+normalized-plan decoding in Lean, generated-engine integration, the hermetic target matrix, and
+three-way differential closure remain later epic slices.
 
 ## Context
 
@@ -165,9 +170,12 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   (additive contract projection and manifest decoding), and
   `src/Cortex/Wire/NativePure/Admission.hs` (strict candidate admission, typed expression checks,
   storage regions, and resource bounds), and `src/Cortex/Wire/NativePure/Artifact.hs` (normalized
-  input, maximal fusion, typed ANF/SSA, witnessed quotient, validation, and stable digests)
+  input, maximal fusion, typed ANF/SSA, witnessed quotient, validation, and stable digests), and
+  `src/Cortex/Wire/NativePure/Scheduler.hs` (additive v2 specialization, checkpoint acknowledgement,
+  synchronous pure execution, persisted selection/rejoin state, restore, cancellation, and bounded
+  hosted messages)
 - Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
-  `test/Cortex/Wire/NativePureAdmissionSpec.hs`
+  `test/Cortex/Wire/NativePureAdmissionSpec.hs`, `test/Cortex/Wire/NativePureSchedulerSpec.hs`
 - Theory/proof: `theory/Cortex/Wire/NativePure/Type.lean` owns the shared bounded value algebra;
   `theory/Cortex/Wire/SemanticC.lean` defines the shared typed expression/statement/function IR,
   storage model, bounded control flow, calls, failures, and executable semantics;
@@ -187,11 +195,13 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
 
 - Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts,
   admission, normalized realization artifacts, maximal fusion, and the Haskell plan validator are
-  implemented)
+  implemented, together with the additive executable v2 scheduler policy)
 - Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
   cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, the
-  Lean construction checks in `Cortex.Wire.NativePure.C.Unit`, and strict host compilation of the
-  emitted increment and tagged-classifier fixtures
+  effect/pure/effect, n-way selection, checkpoint recovery, failure, and protocol-bound tests in
+  `test/Cortex/Wire/NativePureSchedulerSpec.hs`, the Lean construction checks in
+  `Cortex.Wire.NativePure.C.Unit`, and strict host compilation of the emitted increment and
+  tagged-classifier fixtures
 - Planned public surface: normalized-plan decoding in Lean, hermetic host/bare-target and
-  differential gates, and additive v2 runtime/target interfaces
+  differential gates, and generated-engine integration for the additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR

@@ -19,6 +19,7 @@ module Cortex.Wire
   , module Cortex.Wire.Include
   , module Cortex.Wire.Format
   , module Cortex.Wire.NativePure.Artifact
+  , module Cortex.Wire.NativePure.Scheduler
   , module Cortex.Wire.NativePure.Shape
   , module Cortex.Wire.Pure
   , module Cortex.Wire.Std
@@ -119,6 +120,7 @@ import Cortex.Wire.Executor
 import Cortex.Wire.Format
 import Cortex.Wire.Include
 import Cortex.Wire.NativePure.Artifact
+import Cortex.Wire.NativePure.Scheduler
 import Cortex.Wire.NativePure.Shape
 import Cortex.Wire.Parser
   ( ParseError
