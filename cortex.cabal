@@ -198,6 +198,7 @@ library
         Cortex.Wire.Include
         Cortex.Wire.Format
         Cortex.Wire.LeanFixture
+        Cortex.Wire.NativePure.Shape
         Cortex.Wire.Parser
         Cortex.Wire.Pure
         Cortex.Wire.Pure.Bounds
@@ -463,6 +464,7 @@ test-suite cortex-test
         Cortex.Wire.EndpointUseSpec
         Cortex.Wire.FormatSpec
         Cortex.Wire.ImportSpec
+        Cortex.Wire.NativeShapeSpec
         Cortex.Wire.ParserSpec
         Cortex.Wire.PureSpec
         Cortex.Wire.RuntimeSpec

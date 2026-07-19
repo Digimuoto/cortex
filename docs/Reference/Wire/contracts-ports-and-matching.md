@@ -180,3 +180,20 @@ The dialect is versioned (`wireContractDialectVersion`, mirrored by the Lean con
 `Cortex.Wire.ContractValidation.dialectVersion`) and mechanized: the Lean checker is proven sound
 and complete against the dialect semantics (`theory/Cortex/Wire/ContractValidationCheck.lean`), and
 generated fixtures pin Haskell and Lean against drift (see [proof-status](../proof-status.md)).
+
+## Native Representation Shapes (ADR 0096)
+
+A registered contract may also declare a `native_shape` projection. This projection describes the
+fixed, bounded C representation required by NativePure compilation; it is independent of the
+value-level `schema` above and does not participate in ordinary contract identity or port matching.
+
+The projection is versioned as `cortex.wire.native-shape/v1`. It admits unit, bool, checked i64,
+u64, IEEE-754 binary64, bounded UTF-8 text, bounded vectors, fixed records, and tagged sums. Option
+is represented as a two-variant sum. Records and sums must be non-empty, labels must be non-empty,
+variable-sized values require positive capacities, and every computed size and alignment must fit in
+`uint64_t`. Record and tagged-sum layouts include their required inter-field and tail padding.
+
+The manifest parser validates projections strictly: unknown fields, missing or unsupported schema
+versions, zero capacities, invalid composites, and layout overflow are rejected at package load
+time. A contract without `native_shape` remains valid for existing hosted and v1 execution; strict
+NativePure admission will require the projection for every region-crossing contract.

@@ -22,7 +22,10 @@ import Test.Hspec
 
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
-  ( WireContractRegistry
+  ( NativeShape (..)
+  , NativeShapeProjection (..)
+  , WireContractRegistry
+  , WireContractSpec (..)
   , WireOutputPort (..)
   , WirePorts (..)
   , wireContractRegistryFromList
@@ -209,6 +212,69 @@ spec = do
         Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
         Right package ->
           packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
+
+  describe "native contract shape manifests" $ do
+    it "decodes scalar and bounded native_shape projections" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = \"i64\" }\n\
+            \[[contract]]\n\
+            \id = \"Name\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"text\", capacity = 64 } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          fmap wireContractSpecNativeShape package.wpContractSpecs
+            `shouldBe` [ Just (NativeShapeProjection NativeI64)
+                       , Just (NativeShapeProjection (NativeText 64))
+                       ]
+
+    it "rejects unknown native_shape fields" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Name\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"text\", capacity = 64, encoding = \"utf16\" } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "fields must be exactly: capacity, kind"
+        Right _ -> expectationFailure "unknown native_shape field unexpectedly decoded"
+
+    it "rejects invalid bounded layouts while decoding the projection" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Empty\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"record\", fields = {} } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "native record shape must contain at least one field"
+        Right _ -> expectationFailure "invalid native layout unexpectedly decoded"
+
+    it "rejects unversioned and unknown-version native_shape projections" $ do
+      let manifest shape =
+            "[package]\nid = \"native\"\n[[contract]]\nid = \"Score\"\npayload_kind = \"json\"\nnative_shape = "
+              <> shape
+              <> "\n"
+          rejected shape fragment =
+            case decodeWirePackageManifest "cortex.toml" (manifest shape) of
+              Left err -> renderWirePackageManifestError err `shouldSatisfy` T.isInfixOf fragment
+              Right _ -> expectationFailure "invalid native_shape unexpectedly decoded"
+      rejected "\"i64\"" "expected Object"
+      rejected
+        "{ schema = \"cortex.wire.native-shape/v2\", shape = \"i64\" }"
+        "unsupported native_shape schema"
 
   describe "ADR 0085 manifest schema end-to-end" $ do
     it "enforces a manifest-declared contract schema at runtime egress" $ do
