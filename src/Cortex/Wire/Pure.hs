@@ -518,18 +518,42 @@ bindPureInputValues ports inputBundle = do
   preparedInputs <- preparePureInputs ports
   bindPreparedPureInputValues id preparedInputs inputBundle
 
+-- | Pure-node binding: only JSON payloads may enter CorePure evaluation.
 bindPreparedPureInputValues
   :: (Aeson.Value -> value)
   -> [PreparedPureInput]
   -> WireInputBundle
   -> Either PureEvalError (Map Text value)
-bindPreparedPureInputValues wrapValue preparedInputs inputBundle =
+bindPreparedPureInputValues =
+  bindPreparedInputValuesWith wireValueJson
+
+{- | Executor-node ingress binding: every payload kind the egress boundary has
+already validated crosses unchanged — text, markdown, table, and artifact_ref
+values reach the argument expression as their carrier JSON value. The
+JSON-only restriction is a pure-node evaluation rule, not an executor ABI
+rule.
+-}
+bindPreparedExecutorInputValues
+  :: (Aeson.Value -> value)
+  -> [PreparedPureInput]
+  -> WireInputBundle
+  -> Either PureEvalError (Map Text value)
+bindPreparedExecutorInputValues =
+  bindPreparedInputValuesWith (\_portName wireValue -> Right wireValue.wireValueValue)
+
+bindPreparedInputValuesWith
+  :: (Text -> WireValue -> Either PureEvalError Aeson.Value)
+  -> (Aeson.Value -> value)
+  -> [PreparedPureInput]
+  -> WireInputBundle
+  -> Either PureEvalError (Map Text value)
+bindPreparedInputValuesWith extractValue wrapValue preparedInputs inputBundle =
   Map.fromList <$> traverse bindInputPort preparedInputs
   where
     bindInputPort preparedInput = do
       let portName = preparedInput.preparedPureInputPortName
       wireValue <- singleMatchedValue preparedInput
-      value <- wireValueJson portName wireValue
+      value <- extractValue portName wireValue
       Right (portName, wrapValue value)
 
     singleMatchedValue preparedInput =
@@ -688,7 +712,7 @@ evaluateWireExecutorArgument
   -> Either PureEvalError Aeson.Value
 evaluateWireExecutorArgument ports spec inputBundle = do
   preparedInputs <- preparePureInputs ports
-  inputEnv <- bindPreparedPureInputValues CorePureJson preparedInputs inputBundle
+  inputEnv <- bindPreparedExecutorInputValues CorePureJson preparedInputs inputBundle
   outerEnv <-
     bindCorePureBindings
       (corePureEnvFromInputValues inputEnv)

@@ -47,8 +47,10 @@ node log <- result: Result = @log result;
 node act <- result: Result = @action { payload = result; cfg = { mode = "safe"; }; };
 ```
 
-Before host invocation the compiler/runtime boundary normalizes the argument. Normalization is
-decided from the authored argument expression, not from the evaluated value:
+The boundary has three phases. During module elaboration the compiler normalizes the authored
+argument expression syntactically; at node ingress the runtime evaluates that already-normalized
+expression; the host binding then receives the validated result. Normalization is decided from the
+authored argument expression, not from the evaluated value:
 
 - no argument becomes `{}`;
 - a record literal is passed unchanged;
@@ -56,7 +58,7 @@ decided from the authored argument expression, not from the evaluated value:
   `{ payload = value; }`.
 
 Deciding on the authored expression keeps the host-visible record shape statically known at compile
-time rather than dependent on runtime values.
+time rather than dependent on runtime values. The runtime never normalizes again.
 
 `payload` is reserved for automatic wrapping. `cfg` is an executor-schema convention, not a
 language-wide field. Executor projections and package manifests expose `argument_shape`; the runtime
@@ -83,9 +85,12 @@ Here, static and dynamic describe evaluation phases, not two different record ty
 - These fields must be static because they can select the compiled node category and alter
   admission, scheduling, retry/timeout policy, budgets, memory strategy, artifact routing, or signal
   behavior. The runtime cannot discover or revise those facts after the graph has been admitted.
-- The executor argument is a CorePure expression evaluated at node ingress. It may reference the
-  node's consumed input ports and `where` bindings. Only after that evaluation does the runtime
-  normalize the value to one record, validate `argument_shape`, and invoke the host binding.
+- The executor argument expression is a runtime ingress adapter: the compiler normalizes it to one
+  record expression during module elaboration, and the runtime evaluates that normalized expression
+  at node ingress. It may reference the node's consumed input ports, module-level CorePure values,
+  and `where` bindings — a fully constant argument is still executor argument data, evaluated and
+  validated at ingress, never compiler metadata. After evaluation the runtime validates the
+  resulting record against `argument_shape` and invokes the host binding with that exact value.
 
 For example, `artifactKind` and `to` above are static compiler facts, while `report` is the dynamic
 value consumed when the node runs. Only the documented compiler-control fields are accepted in

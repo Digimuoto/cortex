@@ -175,6 +175,43 @@ spec = do
           Left (NativePureUnsupportedExpression _ reason) -> "builtin calls" `T.isInfixOf` reason
           _ -> False
 
+    it "rejects unary negate, which has no kernel representation" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv negateProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) -> "negate" `T.isInfixOf` reason
+          _ -> False
+
+    it "rejects fractional literals crossing an i64 native shape" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv fractionalProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) -> "fractional" `T.isInfixOf` reason
+          _ -> False
+
+    it "rejects arithmetic whose result crosses a non-i64 native shape" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv boolArithmeticProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) ->
+            "checked arithmetic produces i64" `T.isInfixOf` reason
+          _ -> False
+
+    it "rejects derived comparisons outside the eq/lt kernel basis" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv derivedComparisonProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) ->
+            "derived comparison" `T.isInfixOf` reason
+          _ -> False
+
+    it "rejects record merge, which has no kernel representation" $ do
+      compiled <- requireRight (compileWireTextWithEnv nativeEnv mergeProgram)
+      lowerCompiledCircuitToNativePurePlan nativeRegistry compiled
+        `shouldSatisfy` \case
+          Left (NativePureUnsupportedExpression _ reason) -> "merge" `T.isInfixOf` reason
+          _ -> False
+
     it "rejects kernels whose worst-case checkpoint exceeds 2 MiB" $ do
       compiled <- requireRight (compileWireTextWithEnv bigTextEnv bigTextProgram)
       lowerCompiledCircuitToNativePurePlan bigTextRegistry compiled
@@ -212,6 +249,41 @@ builtinCallProgram =
   \contract Result;\n\
   \node total <- score: Score -> result: Result = sum([score]);\n\
   \total"
+
+negateProgram :: Text
+negateProgram =
+  "contract Score;\n\
+  \contract Result;\n\
+  \node neg <- score: Score -> result: Result = -score;\n\
+  \neg"
+
+fractionalProgram :: Text
+fractionalProgram =
+  "contract Score;\n\
+  \contract Result;\n\
+  \node half <- score: Score -> result: Result = if score < 0 then 0.5 else 1;\n\
+  \half"
+
+boolArithmeticProgram :: Text
+boolArithmeticProgram =
+  "contract Score;\n\
+  \contract Flag;\n\
+  \node gate <- score: Score -> flag: Flag = score + 1;\n\
+  \gate"
+
+derivedComparisonProgram :: Text
+derivedComparisonProgram =
+  "contract Score;\n\
+  \contract Flag;\n\
+  \node cmp <- score: Score -> flag: Flag = score >= 0;\n\
+  \cmp"
+
+mergeProgram :: Text
+mergeProgram =
+  "contract Score;\n\
+  \contract Result;\n\
+  \node stamp <- score: Score -> result: Result = ({ a = score; } // { a = 1; }).a;\n\
+  \stamp"
 
 mixedProgram :: Text
 mixedProgram =
@@ -268,17 +340,23 @@ unshapedEnv = strictWireCompileEnv (wireExecutorRegistryFromList [pureWireExecut
 
 nativeRegistry :: WireContractRegistry
 nativeRegistry =
-  wireContractRegistryFromList [contract "Score" (Just NativeI64), contract "Result" (Just NativeI64)]
+  wireContractRegistryFromList
+    [ contract "Score" (Just NativeI64)
+    , contract "Result" (Just NativeI64)
+    , contract "Flag" (Just NativeBool)
+    ]
 
 unshapedRegistry :: WireContractRegistry
 unshapedRegistry = wireContractRegistryFromList [contract "Score" Nothing, contract "Result" (Just NativeI64)]
 
+-- Only == and < have certified kernel representations, so the branch
+-- condition is authored with < rather than a derived comparison.
 sumProgram :: Text
 sumProgram =
   "contract Score;\n\
   \contract Decision;\n\
   \contract RejectReason;\n\
-  \node classify <- score: Score -> accepted: Decision | rejected: RejectReason = if score >= 0 then accepted score else rejected score;\n\
+  \node classify <- score: Score -> accepted: Decision | rejected: RejectReason = if score < 0 then rejected score else accepted score;\n\
   \classify"
 
 invalidSumProgram :: Text

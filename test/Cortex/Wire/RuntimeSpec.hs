@@ -79,6 +79,31 @@ spec = describe "Cortex.Wire runtime egress" $ do
         Left evalError -> renderPureEvalError evalError `shouldSatisfy` T.isInfixOf "topic"
         Right value -> expectationFailure ("expected Left, got " <> show value)
 
+    -- Executor ingress is not the pure-node JSON-only boundary: every payload
+    -- kind the egress boundary validated crosses into the argument unchanged.
+    it "passes text payloads through ingress evaluation unchanged" $ do
+      let bundle = wireInputBundleFromStageInputs textStageInputs
+      evaluateWireExecutorArgument textNodePorts textArgumentSpec bundle
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= ("plain body" :: Text)])
+
+    it "passes artifact_ref payloads through ingress evaluation unchanged" $ do
+      let refValue =
+            Aeson.object
+              [ "artifact_id" Aeson..= ("art-1" :: Text)
+              , "digest" Aeson..= ("sha256:abc" :: Text)
+              ]
+          bundle =
+            wireInputBundleFromStageInputs $
+              Map.singleton
+                (NodeId "source")
+                ( Aeson.toJSON $
+                    (mkWireValue "Ref" WirePayloadArtifactRef (Just "source") refValue)
+                      { wireValuePort = Just "ref"
+                      }
+                )
+      evaluateWireExecutorArgument refNodePorts refArgumentSpec bundle
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= refValue])
+
     it "round-trips the compiled argument envelope through metadata decoding" $ do
       let metadata =
             Aeson.object
@@ -427,6 +452,62 @@ topicArgumentSpec =
     , wireExecutorArgumentWhere =
         Just
           (CorePureRecord [CorePureField ("run_tag" :| []) (CorePureLit (CorePureString "r-1"))])
+    }
+
+textNodePorts :: WirePorts
+textNodePorts =
+  WirePorts
+    { wirePortsInputs =
+        Map.singleton
+          "message"
+          WireInputPort
+            { wireInputPortAccepts = ["Message"]
+            , wireInputPortCardinality = WireInputCardinalityOne
+            , wireInputPortRequired = True
+            }
+    , wirePortsOutputs = Map.empty
+    }
+
+textArgumentSpec :: WireExecutorArgumentSpec
+textArgumentSpec =
+  WireExecutorArgumentSpec
+    { wireExecutorArgumentExpr =
+        CorePureRecord [CorePureField ("payload" :| []) (CorePureIdent "message")]
+    , wireExecutorArgumentBindings = []
+    , wireExecutorArgumentWhere = Nothing
+    }
+
+textStageInputs :: Map.Map NodeId Aeson.Value
+textStageInputs =
+  Map.singleton
+    (NodeId "source")
+    ( Aeson.toJSON $
+        (mkWireValue "Message" WirePayloadText (Just "source") (Aeson.String "plain body"))
+          { wireValuePort = Just "message"
+          }
+    )
+
+refNodePorts :: WirePorts
+refNodePorts =
+  WirePorts
+    { wirePortsInputs =
+        Map.singleton
+          "ref"
+          WireInputPort
+            { wireInputPortAccepts = ["Ref"]
+            , wireInputPortCardinality = WireInputCardinalityOne
+            , wireInputPortRequired = True
+            }
+    , wirePortsOutputs = Map.empty
+    }
+
+refArgumentSpec :: WireExecutorArgumentSpec
+refArgumentSpec =
+  WireExecutorArgumentSpec
+    { wireExecutorArgumentExpr =
+        CorePureRecord [CorePureField ("payload" :| []) (CorePureIdent "ref")]
+    , wireExecutorArgumentBindings = []
+    , wireExecutorArgumentWhere = Nothing
     }
 
 topicArgumentEvaluator :: WireInputBundle -> Either Text Aeson.Value

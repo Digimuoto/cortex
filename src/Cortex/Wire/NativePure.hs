@@ -43,11 +43,12 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString qualified as BS
 import Data.Foldable (traverse_)
+import Data.Functor (($>))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, isJust, mapMaybe)
-import Data.Set (Set)
+import Data.Scientific (floatingOrInteger)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -85,6 +86,7 @@ import Cortex.Wire.Syntax
   , CorePureExpr (..)
   , CorePureField (..)
   , CorePureLiteral (..)
+  , CorePureUnaryOp (..)
   , WireInputCardinality (..)
   , WireInputPort (..)
   , WireOutputPort (..)
@@ -409,20 +411,40 @@ lowerPureNode registry nodeRef taskNode = do
             variantConfig.nativePureVariantExpression
         )
     _ -> Left (NativePureMalformedMetadata nodeRef "config requires exactly one of outputs or variant")
-  traverse_ (validateNativeExpr nodeRef . (.corePureBindingExpr)) bindings
-  traverse_ (validateNativeExpr nodeRef) whereExpr
-  traverse_ (validateNativeExpr nodeRef) outputs
-  traverse_
-    ( \variantConfig ->
-        validateNativeVariantExpr
-          nodeRef
-          (Set.fromList variantConfig.nativePureVariantLabels)
-          variantConfig.nativePureVariantExpression
-    )
-    variant
   inputs <- traverse (lowerInput registry nodeRef) (Map.toAscList ports.wirePortsInputs)
   outputFields <- traverse (lowerOutput registry nodeRef) (Map.toAscList ports.wirePortsOutputs)
   outputBoundary <- classifyOutputs nodeRef ports outputFields
+  -- Type-directed admission: every body expression is checked against the
+  -- crossing native shapes, so the plan cannot carry a body the intrinsically
+  -- typed kernel has no representation for.
+  let inputScope =
+        Map.fromList
+          [ (boundary.nativePureBoundaryLabel, boundary.nativePureBoundaryShape)
+          | boundary <- inputs
+          ]
+  bindingScope <- foldM (synthNativeBinding nodeRef) inputScope bindings
+  bodyScope <- bindNativeWhere nodeRef bindingScope whereExpr
+  let outputShapes =
+        Map.fromList
+          [ (boundary.nativePureBoundaryLabel, boundary.nativePureBoundaryShape)
+          | boundary <- outputFields
+          ]
+  traverse_
+    ( \(label, outputExpr) ->
+        case Map.lookup label outputShapes of
+          Just shape -> checkNativeExpr nodeRef bodyScope outputExpr shape
+          Nothing -> Left (NativePureOutputEquationMismatch nodeRef)
+    )
+    (Map.toAscList outputs)
+  traverse_
+    ( \variantConfig ->
+        checkNativeVariantExpr
+          nodeRef
+          bodyScope
+          outputShapes
+          variantConfig.nativePureVariantExpression
+    )
+    variant
   bounds <- calculateBounds nodeRef inputs outputBoundary bindings whereExpr outputs variant
   let inputRegions = fmap (boundaryRegion NativePureRead "input.") inputs
   outputRegions <- outputBoundaryRegions nodeRef outputBoundary
@@ -655,80 +677,331 @@ exprStaticBytes = \case
   CorePureIf condition thenExpr elseExpr ->
     exprStaticBytes condition + exprStaticBytes thenExpr + exprStaticBytes elseExpr
 
-{- | Admit only expression forms with a counterpart in the certified kernel
-basis: literals, identifiers, records, field projection, checked arithmetic,
-comparisons, boolean operators, let, and if. Everything else — builtin calls,
-lambdas, vector literals, indexing, division — is outside the proved slice and
-is a rejection, never a silent pass-through (ADR 0096: the profile over-rejects;
-it must not emit uncertifiable kernel bodies).
--}
-validateNativeExpr :: CircuitNodeRef -> CorePureExpr -> Either NativePureError ()
-validateNativeExpr nodeRef = go
-  where
-    go = \case
-      CorePureLit {} -> pure ()
-      CorePureIdent {} -> pure ()
-      CorePureList _ ->
-        unsupported "vector literals are not in the certified kernel basis yet"
-      CorePureRecord fields -> traverse_ (go . (.corePureFieldValue)) fields
-      CorePureFieldAccess value _ -> go value
-      CorePureIndex _ _ ->
-        unsupported "vector indexing is not in the certified kernel basis yet"
-      CorePureLambda _ _ ->
-        unsupported "lambdas are not in the certified kernel basis yet"
-      CorePureCall _ _ ->
-        unsupported "builtin calls are not in the certified kernel basis yet"
-      CorePureUnary _ value -> go value
-      CorePureBinary binOp left right -> goBinary binOp left right
-      CorePureLet bindings body -> traverse_ (go . (.corePureBindingExpr)) bindings *> go body
-      CorePureIf condition thenExpr elseExpr -> go condition *> go thenExpr *> go elseExpr
+-- | Names in scope for kernel bodies, each with its crossing native shape.
+type NativeScope = Map Text NativeShape
 
-    goBinary binOp left right =
-      case binOp of
-        CorePureAdd -> go left *> go right
-        CorePureSubtract -> go left *> go right
-        CorePureMultiply -> go left *> go right
-        CorePureDivide ->
-          unsupported "division is not in the certified kernel basis yet"
-        CorePureMerge
-          | staticallyRecord left && staticallyRecord right -> go left *> go right
-          | otherwise ->
-              unsupported "record merge must be statically shallow"
-        CorePureEqual -> go left *> go right
-        CorePureNotEqual -> go left *> go right
-        CorePureLessThan -> go left *> go right
-        CorePureLessThanOrEqual -> go left *> go right
-        CorePureGreaterThan -> go left *> go right
-        CorePureGreaterThanOrEqual -> go left *> go right
-        CorePureAnd -> go left *> go right
-        CorePureOr -> go left *> go right
+{- | Type-directed admission for the certified kernel basis. An expression is
+checked against the native shape it must produce, so a fractional literal
+cannot cross an i64 boundary and an operation without a kernel representation
+— negate, merge, division, derived comparisons, builtin calls, lambdas,
+vectors — is a rejection, never a silent pass-through (ADR 0096: the profile
+over-rejects; it must not emit uncertifiable kernel bodies).
+-}
+checkNativeExpr
+  :: CircuitNodeRef -> NativeScope -> CorePureExpr -> NativeShape -> Either NativePureError ()
+checkNativeExpr nodeRef = check
+  where
+    check scope expr expected =
+      case expr of
+        CorePureLit literal -> checkNativeLiteral nodeRef literal expected
+        CorePureIdent name -> do
+          shape <- lookupNativeScope nodeRef scope name
+          requireShapeFits nodeRef shape expected
+        CorePureRecord fields ->
+          case expected of
+            NativeRecord expectedFields -> do
+              flatFields <- traverse (singleSegmentField nodeRef) fields
+              unless (Set.fromList (fmap fst flatFields) == Map.keysSet expectedFields) $
+                unsupported ("record literal fields do not match the expected native record shape")
+              traverse_
+                ( \(name, value) ->
+                    -- The key-set equality above makes this lookup total.
+                    traverse_ (check scope value) (Map.lookup name expectedFields)
+                )
+                flatFields
+            _ -> unsupported "record literal used where a non-record native shape is expected"
+        CorePureFieldAccess {} -> do
+          shape <- synthNativeShape nodeRef scope expr
+          requireShapeFits nodeRef shape expected
+        CorePureIf condition thenExpr elseExpr -> do
+          check scope condition NativeBool
+          check scope thenExpr expected
+          check scope elseExpr expected
+        CorePureLet bindings body -> do
+          innerScope <- foldM (synthNativeLetBinding nodeRef) scope (NE.toList bindings)
+          check innerScope body expected
+        CorePureUnary unaryOp value ->
+          case unaryOp of
+            CorePureNot -> do
+              requireExpected NativeBool "boolean not produces bool" expected
+              check scope value NativeBool
+            CorePureNegate ->
+              unsupported "negate has no certified kernel representation; write 0 - value"
+        CorePureBinary binOp left right ->
+          case binOp of
+            CorePureAdd -> checkedArithmetic scope left right expected
+            CorePureSubtract -> checkedArithmetic scope left right expected
+            CorePureMultiply -> checkedArithmetic scope left right expected
+            CorePureDivide ->
+              unsupported "division is not in the certified kernel basis yet"
+            CorePureMerge ->
+              unsupported "record merge has no certified kernel representation"
+            CorePureEqual -> i64Comparison scope left right expected
+            CorePureLessThan -> i64Comparison scope left right expected
+            CorePureNotEqual ->
+              unsupported "derived comparison != is outside the kernel basis; only == and < are represented"
+            CorePureLessThanOrEqual ->
+              unsupported "derived comparison <= is outside the kernel basis; only == and < are represented"
+            CorePureGreaterThan ->
+              unsupported "derived comparison > is outside the kernel basis; only == and < are represented"
+            CorePureGreaterThanOrEqual ->
+              unsupported "derived comparison >= is outside the kernel basis; only == and < are represented"
+            CorePureAnd -> boolConnective scope left right expected
+            CorePureOr -> boolConnective scope left right expected
+        CorePureList _ ->
+          unsupported "vector literals are not in the certified kernel basis yet"
+        CorePureIndex _ _ ->
+          unsupported "vector indexing is not in the certified kernel basis yet"
+        CorePureLambda _ _ ->
+          unsupported "lambdas are not in the certified kernel basis yet"
+        CorePureCall _ _ ->
+          unsupported "builtin calls are not in the certified kernel basis yet"
+
+    checkedArithmetic scope left right expected = do
+      requireExpected NativeI64 "checked arithmetic produces i64" expected
+      check scope left NativeI64
+      check scope right NativeI64
+
+    i64Comparison scope left right expected = do
+      requireExpected NativeBool "an i64 comparison produces bool" expected
+      check scope left NativeI64
+      check scope right NativeI64
+
+    boolConnective scope left right expected = do
+      requireExpected NativeBool "a boolean connective produces bool" expected
+      check scope left NativeBool
+      check scope right NativeBool
+
+    requireExpected shape reason expected =
+      unless (expected == shape) $
+        unsupported (reason <> ", but the crossing shape here is different")
 
     unsupported = Left . NativePureUnsupportedExpression nodeRef
 
-    staticallyRecord CorePureRecord {} = True
-    staticallyRecord _ = False
+{- | Synthesize the native shape of an expression in binding position. String
+literals synthesize their exact byte capacity; text capacities widen through
+'requireShapeFits' when checked against a larger declared capacity.
+-}
+synthNativeShape
+  :: CircuitNodeRef -> NativeScope -> CorePureExpr -> Either NativePureError NativeShape
+synthNativeShape nodeRef = synth
+  where
+    synth scope = \case
+      CorePureLit literal -> synthNativeLiteral nodeRef literal
+      CorePureIdent name -> lookupNativeScope nodeRef scope name
+      CorePureRecord fields -> do
+        flatFields <- traverse (singleSegmentField nodeRef) fields
+        when (null flatFields) $
+          unsupported "an empty record literal has no native shape"
+        NativeRecord . Map.fromList
+          <$> traverse (\(name, value) -> (,) name <$> synth scope value) flatFields
+      CorePureFieldAccess baseExpr fieldName -> do
+        baseShape <- synth scope baseExpr
+        case baseShape of
+          NativeRecord fields ->
+            case Map.lookup fieldName fields of
+              Just shape -> Right shape
+              Nothing ->
+                unsupported ("record projection names unknown native field " <> fieldName)
+          _ -> unsupported "record projection applied to a non-record native shape"
+      CorePureIf condition thenExpr elseExpr -> do
+        checkNativeExpr nodeRef scope condition NativeBool
+        thenShape <- synth scope thenExpr
+        checkNativeExpr nodeRef scope elseExpr thenShape
+        Right thenShape
+      CorePureLet bindings body -> do
+        innerScope <- foldM (synthNativeLetBinding nodeRef) scope (NE.toList bindings)
+        synth innerScope body
+      expr@(CorePureUnary unaryOp value) ->
+        case unaryOp of
+          CorePureNot -> do
+            checkNativeExpr nodeRef scope value NativeBool
+            Right NativeBool
+          CorePureNegate -> checkOnly scope expr NativeBool
+      expr@(CorePureBinary binOp _ _) ->
+        case binOp of
+          CorePureAdd -> checkOnly scope expr NativeI64
+          CorePureSubtract -> checkOnly scope expr NativeI64
+          CorePureMultiply -> checkOnly scope expr NativeI64
+          CorePureDivide -> checkOnly scope expr NativeI64
+          CorePureMerge -> checkOnly scope expr NativeBool
+          CorePureEqual -> checkOnly scope expr NativeBool
+          CorePureNotEqual -> checkOnly scope expr NativeBool
+          CorePureLessThan -> checkOnly scope expr NativeBool
+          CorePureLessThanOrEqual -> checkOnly scope expr NativeBool
+          CorePureGreaterThan -> checkOnly scope expr NativeBool
+          CorePureGreaterThanOrEqual -> checkOnly scope expr NativeBool
+          CorePureAnd -> checkOnly scope expr NativeBool
+          CorePureOr -> checkOnly scope expr NativeBool
+      expr@(CorePureList _) -> checkOnly scope expr NativeBool
+      expr@(CorePureIndex _ _) -> checkOnly scope expr NativeBool
+      expr@(CorePureCall _ _) -> checkOnly scope expr NativeBool
+      expr@(CorePureLambda _ _) -> checkOnly scope expr NativeBool
+
+    -- Operator and rejected forms have one possible (or no) result shape;
+    -- checking against it reuses the admission rules and their diagnostics.
+    checkOnly scope expr shape =
+      checkNativeExpr nodeRef scope expr shape $> shape
+
+    unsupported :: Text -> Either NativePureError a
+    unsupported = Left . NativePureUnsupportedExpression nodeRef
+
+synthNativeBinding
+  :: CircuitNodeRef -> NativeScope -> CorePureBinding -> Either NativePureError NativeScope
+synthNativeBinding nodeRef scope binding = do
+  shape <- synthNativeShape nodeRef scope binding.corePureBindingExpr
+  Right (Map.insert binding.corePureBindingName shape scope)
+
+synthNativeLetBinding
+  :: CircuitNodeRef -> NativeScope -> CorePureBinding -> Either NativePureError NativeScope
+synthNativeLetBinding = synthNativeBinding
+
+{- | Bind the node @where@ record into the body scope. The native profile
+requires the clause to synthesize a record shape; each field becomes a scoped
+name, mirroring 'Cortex.Wire.Pure.bindCorePureWhere'.
+-}
+bindNativeWhere
+  :: CircuitNodeRef -> NativeScope -> Maybe CorePureExpr -> Either NativePureError NativeScope
+bindNativeWhere nodeRef scope = \case
+  Nothing -> Right scope
+  Just whereExpr -> do
+    whereShape <- synthNativeShape nodeRef scope whereExpr
+    case whereShape of
+      NativeRecord fields -> Right (Map.union fields scope)
+      _ ->
+        Left
+          ( NativePureUnsupportedExpression
+              nodeRef
+              "a where clause must synthesize a native record shape"
+          )
 
 {- | Variant bodies mirror 'Cortex.Wire.Pure.evaluateVariantResult': control
 flow may branch through if/let, and every path must end in a declared
-constructor injection whose payload lies in the certified basis.
+constructor injection whose payload checks against that variant's shape.
 -}
-validateNativeVariantExpr
-  :: CircuitNodeRef -> Set Text -> CorePureExpr -> Either NativePureError ()
-validateNativeVariantExpr nodeRef labels = goVariant
+checkNativeVariantExpr
+  :: CircuitNodeRef -> NativeScope -> Map Text NativeShape -> CorePureExpr -> Either NativePureError ()
+checkNativeVariantExpr nodeRef outerScope variantShapes = goVariant outerScope
   where
-    goVariant = \case
-      CorePureIf condition thenExpr elseExpr ->
-        validateNativeExpr nodeRef condition *> goVariant thenExpr *> goVariant elseExpr
-      CorePureLet bindings body ->
-        traverse_ (validateNativeExpr nodeRef . (.corePureBindingExpr)) bindings *> goVariant body
+    goVariant scope = \case
+      CorePureIf condition thenExpr elseExpr -> do
+        checkNativeExpr nodeRef scope condition NativeBool
+        goVariant scope thenExpr
+        goVariant scope elseExpr
+      CorePureLet bindings body -> do
+        innerScope <- foldM (synthNativeLetBinding nodeRef) scope (NE.toList bindings)
+        goVariant innerScope body
       CorePureCall (CorePureIdent label) [payload]
-        | label `Set.member` labels -> validateNativeExpr nodeRef payload
+        | Just shape <- Map.lookup label variantShapes ->
+            checkNativeExpr nodeRef scope payload shape
       other ->
         Left
           ( NativePureUnsupportedExpression
               nodeRef
               ("pure sum path must end in a declared constructor, got " <> T.pack (show other))
           )
+
+checkNativeLiteral
+  :: CircuitNodeRef -> CorePureLiteral -> NativeShape -> Either NativePureError ()
+checkNativeLiteral nodeRef literal expected =
+  case (literal, expected) of
+    (CorePureBool _, NativeBool) -> Right ()
+    (CorePureNull, NativeUnit) -> Right ()
+    (CorePureString text, NativeText capacity)
+      | utf8Length text <= fromIntegral capacity -> Right ()
+      | otherwise ->
+          unsupported ("string literal exceeds the crossing text capacity " <> T.pack (show capacity))
+    (CorePureNumber number, NativeI64) ->
+      case floatingOrInteger number :: Either Double Integer of
+        Right integer
+          | integer >= -(2 ^ (63 :: Integer)) && integer < 2 ^ (63 :: Integer) -> Right ()
+          | otherwise -> unsupported "integer literal exceeds the checked i64 range"
+        Left _ -> unsupported "fractional literal cannot cross an i64 native shape"
+    (CorePureNumber number, NativeU64) ->
+      case floatingOrInteger number :: Either Double Integer of
+        Right integer
+          | integer >= 0 && integer < 2 ^ (64 :: Integer) -> Right ()
+          | otherwise -> unsupported "integer literal exceeds the u64 range"
+        Left _ -> unsupported "fractional literal cannot cross a u64 native shape"
+    (CorePureNumber _, NativeF64) -> Right ()
+    (_, _) ->
+      unsupported
+        ("literal " <> T.pack (show literal) <> " does not fit the crossing native shape")
+  where
+    unsupported = Left . NativePureUnsupportedExpression nodeRef
+
+synthNativeLiteral
+  :: CircuitNodeRef -> CorePureLiteral -> Either NativePureError NativeShape
+synthNativeLiteral nodeRef = \case
+  CorePureBool _ -> Right NativeBool
+  CorePureNull -> Right NativeUnit
+  CorePureString text -> Right (NativeText (max 1 (fromIntegral (utf8Length text))))
+  CorePureNumber number ->
+    case floatingOrInteger number :: Either Double Integer of
+      Right integer
+        | integer >= -(2 ^ (63 :: Integer)) && integer < 2 ^ (63 :: Integer) -> Right NativeI64
+        | otherwise ->
+            Left
+              ( NativePureUnsupportedExpression
+                  nodeRef
+                  "integer literal exceeds the checked i64 range"
+              )
+      Left _ -> Right NativeF64
+
+utf8Length :: Text -> Int
+utf8Length = BS.length . TE.encodeUtf8
+
+lookupNativeScope
+  :: CircuitNodeRef -> NativeScope -> Text -> Either NativePureError NativeShape
+lookupNativeScope nodeRef scope name =
+  case Map.lookup name scope of
+    Just shape -> Right shape
+    Nothing ->
+      Left
+        ( NativePureUnsupportedExpression
+            nodeRef
+            ("identifier " <> name <> " has no native shape in scope")
+        )
+
+singleSegmentField
+  :: CircuitNodeRef -> CorePureField -> Either NativePureError (Text, CorePureExpr)
+singleSegmentField nodeRef field =
+  case field.corePureFieldPath of
+    name NE.:| [] -> Right (name, field.corePureFieldValue)
+    path ->
+      Left
+        ( NativePureUnsupportedExpression
+            nodeRef
+            ("dotted record field path " <> T.intercalate "." (NE.toList path) <> " is not in the kernel basis")
+        )
+
+{- | A synthesized shape fits a declared crossing shape when they agree up to
+text-capacity widening: a literal-synthesized @text n@ fits any declared
+@text m@ with @n <= m@ because the value's bytes fit the larger buffer.
+-}
+requireShapeFits
+  :: CircuitNodeRef -> NativeShape -> NativeShape -> Either NativePureError ()
+requireShapeFits nodeRef actual expected =
+  if fits actual expected
+    then Right ()
+    else
+      Left
+        ( NativePureUnsupportedExpression
+            nodeRef
+            "expression shape does not fit the crossing native shape"
+        )
+  where
+    fits (NativeText actualCapacity) (NativeText expectedCapacity) =
+      actualCapacity <= expectedCapacity
+    fits (NativeRecord actualFields) (NativeRecord expectedFields) =
+      Map.keysSet actualFields == Map.keysSet expectedFields
+        && and (Map.intersectionWith fits actualFields expectedFields)
+    fits (NativeSum actualVariants) (NativeSum expectedVariants) =
+      Map.keysSet actualVariants == Map.keysSet expectedVariants
+        && and (Map.intersectionWith fits actualVariants expectedVariants)
+    fits (NativeVector actualCapacity actualElement) (NativeVector expectedCapacity expectedElement) =
+      actualCapacity == expectedCapacity && fits actualElement expectedElement
+    fits actual' expected' = actual' == expected'
 
 taskExecutor :: CircuitTaskNode -> Maybe Text
 taskExecutor taskNode = do

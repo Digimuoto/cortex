@@ -36,9 +36,11 @@ node tuned
   = @analyst { payload = evidence; cfg = { temperature = 0.2; }; };
 ```
 
-The boundary normalizes calls to one record: no argument becomes `{}`, a scalar becomes
-`{ payload = scalar; }`, and an explicit record is unchanged. `payload` is reserved for automatic
-wrapping. `cfg` is only a conventional place for executor-specific settings.
+The compiler normalizes calls to one record expression during module elaboration: no argument
+becomes `{}`, a record literal is unchanged, and any other expression becomes
+`{ payload = value; }`. The runtime never normalizes again — it evaluates the already-normalized
+expression at node ingress. `payload` is reserved for automatic wrapping. `cfg` is only a
+conventional place for executor-specific settings.
 
 ## Registry and runtime rules
 
@@ -46,8 +48,8 @@ wrapping. `cfg` is only a conventional place for executor-specific settings.
 - Strict registry projections prove the exact accepted input labels/contracts and returned output
   labels/contracts. Permissive compilation supplies no such proof.
 - Projections and package manifests declare `argument_shape`, not `config_shape`.
-- After ingress/CorePure evaluation, the runtime validates the normalized record against
-  `argument_shape` before invoking the host binding.
+- At node ingress the runtime evaluates the compiled argument expression and validates the resulting
+  record against `argument_shape` before invoking the host binding.
 - The validated `Aeson.Value` reaches the native binding unchanged.
 - Executor authorities cannot be used as graph nodes or captured by CorePure equations.
 

@@ -389,11 +389,19 @@ def sizeOf (ty : Ty) : Nat := (layout ty).1
 /-- Layout alignment in bytes. -/
 def alignOf (ty : Ty) : Nat := (layout ty).2
 
+/-- Labels are nonblank (Haskell rejects whitespace-only labels) and strictly
+ascending — the canonical `Map.toAscList` order the Haskell projection emits.
+Strict ascent also yields distinctness, and it pins the field order the
+padding-aware `layout` computes over: permuting fields changes offsets. -/
+def LabelsCanonical (labels : List Name) : Prop :=
+  (∀ label ∈ labels, label.trim ≠ "") ∧ labels.Pairwise (· < ·)
+
 mutual
-  /-- The Haskell `NativeShape` algebra rejects empty containers, blank
-  labels, and (by `Map` construction) duplicate labels. The Lean list
+  /-- The Haskell `NativeShape` algebra rejects empty containers and blank
+  labels, and its `Map` representation fixes sorted-label order. The Lean list
   representation carries the same discipline as a predicate so a kernel type
-  cannot silently depend on a shape the projection would reject. -/
+  cannot silently depend on a shape or field order the projection would never
+  produce. -/
   def WellFormedTy : Ty → Prop
     | .unit => True
     | .bool => True
@@ -403,9 +411,9 @@ mutual
     | .text capacity => 0 < capacity
     | .vector capacity element => 0 < capacity ∧ WellFormedTy element
     | .record fields =>
-        fields ≠ [] ∧ (fields.map Prod.fst).Nodup ∧ WellFormedFields fields
+        fields ≠ [] ∧ LabelsCanonical (fields.map Prod.fst) ∧ WellFormedFields fields
     | .sum variants =>
-        variants ≠ [] ∧ (variants.map Prod.fst).Nodup ∧ WellFormedFields variants
+        variants ≠ [] ∧ LabelsCanonical (variants.map Prod.fst) ∧ WellFormedFields variants
 
   def WellFormedFields : List (Name × Ty) → Prop
     | [] => True
