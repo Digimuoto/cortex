@@ -7,7 +7,7 @@ Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
 Wire only needs the structural projection of registered executor authority:
-identity, ports, vocabulary, config shape, and effect metadata. Runnable host
+identity, ports, vocabulary, argument shape, and effect metadata. Runnable host
 authority lives in 'Cortex.Capability.Executor'.
 
 Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
@@ -18,14 +18,9 @@ module Cortex.Wire.Executor
   , wireExecutorIdToText
   , wireExecutorIdFromWireExecutor
   , WireExecutorEffect (..)
-  , WireExecutorConfigShape (..)
   , WireExecutorArgumentShape (..)
-  , wireExecutorArgumentShapeFromConfigShape
-  , wireExecutorConfigShapeFromArgumentShape
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
-  , wireExecutorProjectionArgumentShape
-  , wireExecutorProjectionWithArgumentShape
   , wireExecutorProjectionFromPorts
   , wireContractsFromPorts
   , WireExecutorRegistry (..)
@@ -69,28 +64,10 @@ data WireExecutorEffect
   | WireExecutorImpure
   deriving stock (Eq, Show, Generic)
 
-data WireExecutorConfigShape
-  = WireExecutorConfigUnchecked
-  | WireExecutorConfigSchema Aeson.Value
-  deriving stock (Eq, Show, Generic)
-
-{- | Canonical one-record executor ingress shape. The config-named type remains
-as a compatibility view until the final Wire migration.
--}
 data WireExecutorArgumentShape
   = WireExecutorArgumentUnchecked
   | WireExecutorArgumentSchema Aeson.Value
   deriving stock (Eq, Show, Generic)
-
-wireExecutorArgumentShapeFromConfigShape :: WireExecutorConfigShape -> WireExecutorArgumentShape
-wireExecutorArgumentShapeFromConfigShape = \case
-  WireExecutorConfigUnchecked -> WireExecutorArgumentUnchecked
-  WireExecutorConfigSchema schema -> WireExecutorArgumentSchema schema
-
-wireExecutorConfigShapeFromArgumentShape :: WireExecutorArgumentShape -> WireExecutorConfigShape
-wireExecutorConfigShapeFromArgumentShape = \case
-  WireExecutorArgumentUnchecked -> WireExecutorConfigUnchecked
-  WireExecutorArgumentSchema schema -> WireExecutorConfigSchema schema
 
 data WireExecutorPortPolicy
   = WireExecutorFixedPorts
@@ -102,24 +79,10 @@ data WireExecutorProjection = WireExecutorProjection
   , wireExecutorProjectionPorts :: !WirePorts
   , wireExecutorProjectionVocabulary :: !(Set Text)
   , wireExecutorProjectionEffect :: !WireExecutorEffect
-  , wireExecutorProjectionConfigShape :: !WireExecutorConfigShape
+  , wireExecutorProjectionArgumentShape :: !WireExecutorArgumentShape
   , wireExecutorProjectionPortPolicy :: !WireExecutorPortPolicy
   }
   deriving stock (Eq, Show, Generic)
-
-{- | Canonical argument-facing view of a projection. It is computed from the
-retained config field so existing record construction remains source-compatible.
--}
-wireExecutorProjectionArgumentShape :: WireExecutorProjection -> WireExecutorArgumentShape
-wireExecutorProjectionArgumentShape =
-  wireExecutorArgumentShapeFromConfigShape . wireExecutorProjectionConfigShape
-
-wireExecutorProjectionWithArgumentShape
-  :: WireExecutorArgumentShape -> WireExecutorProjection -> WireExecutorProjection
-wireExecutorProjectionWithArgumentShape shape projection =
-  projection
-    { wireExecutorProjectionConfigShape = wireExecutorConfigShapeFromArgumentShape shape
-    }
 
 wireExecutorProjectionFromPorts
   :: WireExecutorId
@@ -132,7 +95,7 @@ wireExecutorProjectionFromPorts executorId ports effect =
     , wireExecutorProjectionPorts = ports
     , wireExecutorProjectionVocabulary = wireContractsFromPorts ports
     , wireExecutorProjectionEffect = effect
-    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
     , wireExecutorProjectionPortPolicy = WireExecutorFixedPorts
     }
 

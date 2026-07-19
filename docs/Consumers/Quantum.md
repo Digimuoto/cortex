@@ -29,15 +29,10 @@ contract Qubit;
 contract Bit;
 
 node hadamard_control
-  <- control: Qubit;
-  -> control: Qubit = @quantum.h {} (control);
+  <- control: Qubit  -> control: Qubit = @quantum.h control;
 
 node entangle
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cnot ({ inherit control; inherit target; });
+  <- control: Qubit  <- target: Qubit  -> control: Qubit  -> target: Qubit  = @quantum.cnot { inherit control; inherit target;  };
 ```
 
 `@quantum.h` and `@quantum.cnot` are not Wire keywords. A host registers them in the executor
@@ -277,7 +272,7 @@ That example starts with a config node:
 
 ```wire
 node ibm_runtime_config
-  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { cfg = { path = "quantum-ibm-runtime.local.json"; }; };
 ```
 
 The runner treats that node as the source of the provider config path. The config path is resolved
@@ -448,4 +443,4 @@ rewrite and `select(...)` surfaces rather than through hidden backend callbacks.
 - [../Architecture/02-ownership-and-boundaries.md](../Architecture/02-ownership-and-boundaries.md)
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md)
 - [../Reference/Wire/executors-and-alphabet.md](../Reference/Wire/executors-and-alphabet.md)
-- [../Reference/Wire/configured-executors-and-execution-boundary.md](../Reference/Wire/configured-executors-and-execution-boundary.md)
+- [../Reference/Wire/executor-authorities-and-execution-boundary.md](../Reference/Wire/executor-authorities-and-execution-boundary.md)

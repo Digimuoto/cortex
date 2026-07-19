@@ -26,8 +26,10 @@ Canonical source:
 - Treat semicolon as a terminator/separator, not an operator.
 - Use Nix-style `inherit name;` for same-name record fields instead of `name = name;`.
 - Prefer compact grouped `inherit a b c;` when related inherited fields fit cleanly on one line.
-- Put each `<-` input and `->` output declaration/equation on its own line.
-- Keep `<-` or `->` as the first non-whitespace token on that node-body line.
+- Format nodes with at most one input and one output on one line when they fit within 100 columns
+  and have no sum, `where`, metadata, or multiline expression.
+- For larger nodes, put each `<-` input and `->` output declaration/equation on its own line and
+  keep the arrow as the first non-whitespace token.
 - Put `=>` at the start of a causal-stage continuation line.
 - Keep small `<>` frontiers grouped horizontally; break large frontiers vertically with leading
   `<>`.
@@ -36,15 +38,16 @@ Canonical source:
 - Keep compact records on one line only when they stay readable.
 - Do not add a trailing semicolon to the file-return graph expression.
 - Keep graph composition readable with explicit parentheses around mixed `<>` and `=>`.
-- Keep executor authority visually obvious: `@qualified.executor { ... } (input)`.
-- Keep CorePure expressions inside `pure (...)`; never invent `@pure` examples.
+- Keep executor authority visually obvious: `@qualified.executor argument`.
+- Use direct CorePure expressions for pure output equations; never invent `@pure` examples.
 - `#` starts a line comment outside strings only. Inside `"..."`, write literal `#` normally.
 
 Preferred examples:
 
 ```wire
-node read_mode
-  -> answer: UserInput = @cortex.io.stdin { prompt = "Planning mode (high/safe): "; } (null);
+node read_mode -> answer: UserInput = @cortex.io.stdin {
+  cfg = { prompt = "Planning mode (high/safe): "; };
+};
 ```
 
 ```wire
@@ -80,7 +83,7 @@ When reviewing Wire source:
 2. Parse/highlight it with tree-sitter when the source is an example or docs snippet:
    `tree-sitter parse <file>` and `tree-sitter highlight --scope source.wire <file>`.
 3. Check semicolon spacing first; it is the most visible style drift.
-4. Check that node port arrows are one-per-line and not placed on the `node` header line.
+4. Check compact-node eligibility; otherwise require one port arrow per line.
 5. Check same-name record fields use `inherit`, grouping related fields when it stays readable.
 6. Check graph topology formatting: `=>` advances stages on new lines and `<>` groups frontiers.
 7. Check that comments, strings, and command arguments are not confused. In particular,

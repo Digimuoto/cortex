@@ -33,7 +33,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -47,7 +47,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -61,7 +61,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -75,7 +75,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -89,7 +89,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -103,7 +103,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -117,7 +117,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[executor]]
@@ -131,7 +131,7 @@ vocabulary = [
   "quantum.BackendConfig",
 ]
 effect = "host_effect"
-config_shape = "unchecked"
+argument_shape = "unchecked"
 port_policy = "author_declared"
 
 [[contract]]

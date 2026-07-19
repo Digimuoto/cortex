@@ -20,7 +20,6 @@ module Cortex.Wire.Runtime
   , wrapWireStageOutputs
   , wrapWireStageResult
   , wrapWireStageDefinition
-  , wrapWireStageDefinitionWithArgument
   , validateWireExecutorArgument
   )
 where
@@ -135,40 +134,27 @@ wireValuesFromStageValue value =
         Aeson.Success (WireValueSet wireValues) -> wireValues
         Aeson.Error _ -> []
 
-wrapWireStageDefinition
-  :: Maybe WireContractRegistry
-  -> WirePorts
-  -> StageDefinition NodeId
-  -> StageDefinition NodeId
-wrapWireStageDefinition maybeRegistry ports stageDef =
-  stageDef
-    { sdAction = \ctx -> do
-        let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
-            unwrappedCtx =
-              ctx
-                { scInputs = inputBundle.wireInputBundleUnwrappedInputs
-                }
-        stageResult <- stageDef.sdAction unwrappedCtx
-        case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId ports stageResult of
-          Right wrappedResult -> pure wrappedResult
-          -- An output that fails contract/variant validation is a typed terminal
-          -- failure (ADR 0062), not an untyped stage exception.
-          Left errText -> pure (StageFail "executor_output_validation_failure" errText)
-    }
-
-{- | Additive one-record executor boundary. Unlike the legacy wrapper above,
-this evaluates argument data at ingress, validates it, and gives the exact
-validated record to the host binding before applying the common egress path.
+{- | Wrap a host executor binding with the ADR 0095 argument boundary. On each
+run the wrapper builds the typed input bundle, evaluates the executor argument
+from it, validates the evaluated record against @argument_shape@, and only then
+invokes the binding action with that exact value. The base 'StageDefinition'
+supplies stage identity and policy fields; its own 'sdAction' is superseded by
+the boundary-wrapped binding action.
 -}
-wrapWireStageDefinitionWithArgument
+wrapWireStageDefinition
   :: Maybe WireContractRegistry
   -> WireExecutorArgumentShape
   -> (WireInputBundle -> Either Text Aeson.Value)
+  {- ^ Ingress argument evaluator, typically
+  'Cortex.Wire.Pure.evaluateWireExecutorArgument' applied to the compiled
+  argument envelope.
+  -}
   -> WirePorts
   -> (Aeson.Value -> StageAction NodeId)
+  -- ^ Binding action receiving the validated one-record argument unchanged.
   -> StageDefinition NodeId
   -> StageDefinition NodeId
-wrapWireStageDefinitionWithArgument maybeRegistry argumentShape evaluateArgument ports bindingAction stageDef =
+wrapWireStageDefinition maybeRegistry argumentShape evaluateArgument ports bindingAction stageDef =
   stageDef
     { sdAction = \ctx -> do
         let inputBundle = wireInputBundleFromStageInputs ctx.scInputs
@@ -183,11 +169,14 @@ wrapWireStageDefinitionWithArgument maybeRegistry argumentShape evaluateArgument
             stageResult <- bindingAction validatedArgument unwrappedCtx
             case wrapWireStageResult maybeRegistry ctx.scNodeId ctx.scRunId ports stageResult of
               Right wrappedResult -> pure wrappedResult
+              -- An output that fails contract/variant validation is a typed terminal
+              -- failure (ADR 0062), not an untyped stage exception.
               Left errText -> pure (StageFail "executor_output_validation_failure" errText)
     }
 
-{- | Validate and return the same normalized record that will be delivered to
-the binding. No post-evaluation wrapping or rebuilding occurs here.
+{- | Validate the normalized one-record executor argument and return that exact
+value for delivery to the host binding. Validation therefore happens before
+invocation without decoding or rebuilding the binding payload.
 -}
 validateWireExecutorArgument
   :: WireExecutorArgumentShape -> Aeson.Value -> Either Text Aeson.Value

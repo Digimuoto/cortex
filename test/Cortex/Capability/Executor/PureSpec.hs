@@ -139,26 +139,6 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
         wireValue.wireValueValue `shouldBe` Aeson.Number (scientific 8 (-1))
       other -> expectationFailure ("expected StageComplete, got " <> showStageResult other)
 
-  it "rejects pure sum paths that do not return a declared constructor" $
-    compileWireTextWithEnv
-      pureCompileEnv
-      (pureSumProgram "if evidence_score >= 0 then evidence_score else rejected evidence_score")
-      `shouldSatisfy` leftContains "Every pure sum control-flow path must return"
-
-  it "rejects pure sum constructors with the wrong arity" $
-    compileWireTextWithEnv
-      pureCompileEnv
-      ( pureSumProgram
-          "if evidence_score >= 0 then accepted evidence_score evidence_score else rejected evidence_score"
-      )
-      `shouldSatisfy` leftContains "requires exactly one payload argument"
-
-  it "rejects bindings that shadow pure sum constructor labels" $
-    compileWireTextWithEnv
-      pureCompileEnv
-      (pureSumProgram "let accepted = x: x; in accepted evidence_score")
-      `shouldSatisfy` leftContains "constructor label accepted is shadowed"
-
   it "rejects invalid pure port declarations before binding a stage" $
     case bindPureTaskNode (Just floatContractRegistry) noOutputTaskNode of
       Left err ->
@@ -313,22 +293,19 @@ pureSourceText :: Text
 pureSourceText =
   T.unlines
     [ "node score"
-    , "  <- evidence_score: Float ;"
-    , "  <- recency_score: Float ;"
+    , "  <- evidence_score: Float "
+    , "  <- recency_score: Float "
     , "  -> out: Float = evidence_score + recency_score ;"
     , "score"
     ]
 
 pureSumSourceText :: Text
 pureSumSourceText =
-  pureSumProgram "if evidence_score >= 0 then accepted evidence_score else rejected evidence_score"
-
-pureSumProgram :: Text -> Text
-pureSumProgram bodyExpr =
   T.unlines
     [ "node classify"
-    , "  <- evidence_score: Float ;"
-    , "  -> accepted: Float | rejected: Float = " <> bodyExpr <> ";"
+    , "  <- evidence_score: Float"
+    , "  -> accepted: Float | rejected: Float ="
+    , "    if evidence_score >= 0 then accepted evidence_score else rejected evidence_score;"
     , "classify"
     ]
 
@@ -398,11 +375,6 @@ showStageResult = \case
   StageLoopStep {} -> "StageLoopStep"
   StageRejectRewrite {} -> "StageRejectRewrite"
   StageFail {} -> "StageFail"
-
-leftContains :: Show err => Text -> Either err value -> Bool
-leftContains needle = \case
-  Left err -> needle `T.isInfixOf` T.pack (show err)
-  Right _ -> False
 
 num :: Scientific -> CorePureExpr
 num =

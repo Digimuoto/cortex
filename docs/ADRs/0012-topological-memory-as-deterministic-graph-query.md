@@ -11,7 +11,7 @@ date: 2026-04-23
 superseded_by: null
 related:
   - docs/Architecture/06-pulse-runtime.md
-  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
+  - docs/Reference/Wire/executor-authorities-and-execution-boundary.md
 ---
 
 # ADR 0012 — Topological Memory as Deterministic Graph Query
@@ -78,7 +78,7 @@ a node needs broader settled context.
 
 - Feature keys: `pulse.topological_memory`
 - Public surface: `Cortex.Pulse` (the per-node memory query surface and read-strategy selection),
-  `docs/Reference/Wire/configured-executors-and-execution-boundary.md`
+  `docs/Reference/Wire/executor-authorities-and-execution-boundary.md`
 - Implementation: `src/Cortex/Pulse/Memory.hs` (stage-entry snapshot binding, `queryMemory`),
   `src/Cortex/Pulse/Memory/Query.hs` (`pureQueryMemory` — the deterministic graph query),
   `src/Cortex/Pulse/Memory/Types.hs`, `src/Cortex/Pulse/Memory/Walk.hs`
@@ -88,7 +88,7 @@ a node needs broader settled context.
 ## Related
 
 - [../Architecture/06-pulse-runtime.md](../Architecture/06-pulse-runtime.md)
-- [../Reference/Wire/configured-executors-and-execution-boundary.md](../Reference/Wire/configured-executors-and-execution-boundary.md)
+- [../Reference/Wire/executor-authorities-and-execution-boundary.md](../Reference/Wire/executor-authorities-and-execution-boundary.md)
 
 ## Amendment — Composite Memory Scoring and the DAG Random-Walk Influence Primitive (2026-06-27)
 

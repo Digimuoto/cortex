@@ -15,6 +15,7 @@ related:
   - docs/ADRs/0028-wire-topology-composition-and-boundary-labels.md
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0085-wire-contract-schema-as-type-enforcement.md
+  - docs/ADRs/0096-certified-native-pure-region-compilation.md
 ---
 
 # Wire Reference — Contracts, Ports, and Matching
@@ -28,10 +29,9 @@ A `node` declaration supplies both graph identity and a typed boundary:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
-  -> accepted: AcceptedSet;
-  -> rejected: RejectedSet;
-  = @review.classify (evidence);
+  <- evidence: EvidenceSet
+  -> accepted: AcceptedSet
+  -> rejected: RejectedSet  = @review.classify evidence;
 ```
 
 The identifier `classify` names the node. The `<-` clauses declare input ports. The `->` clauses
@@ -59,9 +59,9 @@ flowchart LR
 ## Port Syntax
 
 ```text
-<- label: Contract;
--> label: Contract;
--> ok: Value | error: ExecutorError;
+<- label: Contract
+-> label: Contract
+-> ok: Value | error: ExecutorError
 ```
 
 Authored ports require labels. Labels are routing identity. A labeled port never matches an
@@ -99,7 +99,7 @@ record↔ports adapter node that consumes the source once and produces fresh out
 
 ```wire
 node fan_out_score
-  <- score: Score;
+  <- score: Score
   -> for_audit: Score = score;
   -> for_decision: Score = score;
 ```
@@ -109,13 +109,13 @@ explicit transformation node:
 
 ```wire
 node merge
-  <- mechanism: AnalysisFragment;
-  <- timing: AnalysisFragment;
-  <- beneficiaries: AnalysisFragment;
-  -> merged: AnalysisFragment;
-  = @review.report_merge ({
+  <- mechanism: AnalysisFragment
+  <- timing: AnalysisFragment
+  <- beneficiaries: AnalysisFragment
+  -> merged: AnalysisFragment
+  = @review.report_merge {
     fragments = [mechanism, timing, beneficiaries];
-  });
+  };
 ```
 
 ## Sum Groups
@@ -123,7 +123,7 @@ node merge
 Sum groups are output-only:
 
 ```text
--> value: AnalysisFragment | error: ExecutorError;
+-> value: AnalysisFragment | error: ExecutorError
 ```
 
 Exactly one variant fires per evaluation. Each variant has its own label and contract and matches
@@ -136,8 +136,8 @@ admits that shape:
 
 ```wire
 node log_event
-  <- event: Event;
-  = @artifact.log (event);
+  <- event: Event
+  = @artifact.log event;
 ```
 
 Wire does not assign special source/sink semantics in syntax. Empty boundary sides are ordinary
@@ -181,19 +181,26 @@ The dialect is versioned (`wireContractDialectVersion`, mirrored by the Lean con
 and complete against the dialect semantics (`theory/Cortex/Wire/ContractValidationCheck.lean`), and
 generated fixtures pin Haskell and Lean against drift (see [proof-status](../proof-status.md)).
 
-## Native Representation Shapes (ADR 0096)
+## Native Representation Projection
 
-A registered contract may also declare a `native_shape` projection. This projection describes the
-fixed, bounded C representation required by NativePure compilation; it is independent of the
-value-level `schema` above and does not participate in ordinary contract identity or port matching.
+The opt-in NativePure profile additionally requires every crossing contract to declare a versioned
+`native_shape`. This is a fixed-layout representation contract, not a substitute for the runtime
+value schema:
 
-The projection is versioned as `cortex.wire.native-shape/v1`. It admits unit, bool, checked i64,
-u64, IEEE-754 binary64, bounded UTF-8 text, bounded vectors, fixed records, and tagged sums. Option
-is represented as a two-variant sum. Records and sums must be non-empty, labels must be non-empty,
-variable-sized values require positive capacities, and every computed size and alignment must fit in
-`uint64_t`. Record and tagged-sum layouts include their required inter-field and tail padding.
+```toml
+[[contract]]
+id = "Score"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
 
-The manifest parser validates projections strictly: unknown fields, missing or unsupported schema
-versions, zero capacities, invalid composites, and layout overflow are rejected at package load
-time. A contract without `native_shape` remains valid for existing hosted and v1 execution; strict
-NativePure admission will require the projection for every region-crossing contract.
+[[contract]]
+id = "Name"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = { kind = "text", capacity = 64 } }
+```
+
+Version 1 admits unit, bool, i64, u64, f64, bounded UTF-8 text, bounded vectors, fixed records, and
+tagged sums. Option is encoded as a `none`/`some` sum. Unknown projection versions or fields,
+unbounded values, empty record or sum shapes, and layout overflow are hard admission failures.
+Hosted execution does not require this projection; NativePure never falls back to an inferred or
+permissive layout.

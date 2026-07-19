@@ -73,7 +73,7 @@ structure RegistryEntry (config contract authority : Type) [DecidableEq contract
   configValid : config → Prop
   /-- The registry can declare or derive the port boundary for this config. -/
   ports : config → PortBoundary contract
-  /-- The configured executor has enough port information to become a graph node. -/
+  /-- The executor authority has enough port information to become a graph node. -/
   portsDeclaredOrDerivable : config → Prop
   /-- The executor's purity/effect class is explicit registry metadata. -/
   effectClass : EffectClass

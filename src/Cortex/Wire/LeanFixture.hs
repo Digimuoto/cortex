@@ -630,10 +630,10 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "node planner"
-            , "  -> plan: PlannerOutput = @review.planner ({}) ;"
+            , "  -> plan: PlannerOutput = @review.planner ;"
             , "node analyst"
-            , "  <- plan: PlannerOutput ;"
-            , "  -> analysis: AnalysisFragment = @review.analyst (plan) ;"
+            , "  <- plan: PlannerOutput "
+            , "  -> analysis: AnalysisFragment = @review.analyst plan ;"
             , "planner => analyst"
             ]
       , emittedFixtureEnv = emptyWireCompileEnv
@@ -644,7 +644,7 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "kind sample(label: PortLabel) ="
-            , "  -> label: Sample = @review.sample ({}) ;"
+            , "  -> label: Sample = @review.sample ;"
             , "let workers = make(3, sample);"
             , "workers"
             ]
@@ -656,7 +656,7 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "kind sample(label: PortLabel) ="
-            , "  -> label: Sample = @review.sample ({}) ;"
+            , "  -> label: Sample = @review.sample ;"
             , "let worker_names = [\"alpha\", \"beta\"];"
             , "let workers = makeEach(worker_names, sample);"
             , "workers"
@@ -669,13 +669,13 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "node source"
-            , "  -> pair: Pair = @review.source ({}) ;"
+            , "  -> pair: Pair = @review.source ;"
             , "node a"
-            , "  <- a: A ;"
-            , "  -> done_a: Done = @review.a (a) ;"
+            , "  <- a: A "
+            , "  -> done_a: Done = @review.a a ;"
             , "node b"
-            , "  <- b: B ;"
-            , "  -> done_b: Done = @review.b (b) ;"
+            , "  <- b: B "
+            , "  -> done_b: Done = @review.b b ;"
             , "source * (a <> b)"
             ]
       , emittedFixtureEnv = recordScatterEnv
@@ -686,10 +686,10 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "kind sample(label: PortLabel) ="
-            , "  -> label: Sample = @review.sample ({}) ;"
+            , "  -> label: Sample = @review.sample ;"
             , "node sink"
-            , "  <- samples: [Sample; 3] ;"
-            , "  -> done: Done = @review.sink (samples) ;"
+            , "  <- samples: [Sample; 3]"
+            , "  -> done: Done = @review.sink samples ;"
             , "let workers[] = make(3, sample);"
             , "workers * sink"
             ]
@@ -701,10 +701,10 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "node source"
-            , "  -> samples: [Sample; 3] = @review.source ({}) ;"
+            , "  -> samples: [Sample; 3] = @review.source ;"
             , "kind consume(label: PortLabel) ="
-            , "  <- label: Sample ;"
-            , "  -> label: Done = @review.consume (label) ;"
+            , "  <- label: Sample "
+            , "  -> label: Done = @review.consume label ;"
             , "let workers[] = make(3, consume);"
             , "source * workers"
             ]
@@ -716,20 +716,20 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "node draft_plan"
-            , "  -> draft: DraftPlan = @review.plan ({}) ;"
+            , "  -> draft: DraftPlan = @review.plan ;"
             , "node validate_plan"
-            , "  <- draft: DraftPlan ;"
-            , "  -> ok: ResearchPlan | issue: PlanIssue ;"
-            , "  = @review.validate_plan (draft) ;"
+            , "  <- draft: DraftPlan "
+            , "  -> ok: ResearchPlan | issue: PlanIssue "
+            , "  = @review.validate_plan draft ;"
             , "node gather_missing_constraints"
-            , "  <- issue: PlanIssue ;"
-            , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+            , "  <- issue: PlanIssue "
+            , "  -> issue: PlanIssue = @review.gather_missing_constraints issue ;"
             , "node repair_plan"
-            , "  <- issue: PlanIssue ;"
-            , "  -> ok: ResearchPlan = @review.repair_plan (issue) ;"
+            , "  <- issue: PlanIssue "
+            , "  -> ok: ResearchPlan = @review.repair_plan issue ;"
             , "node publish_report"
-            , "  <- ok: ResearchPlan ;"
-            , "  -> report: ReportArtifactRef = @artifact.publish_report (ok) ;"
+            , "  <- ok: ResearchPlan "
+            , "  -> report: ReportArtifactRef = @artifact.publish_report ok ;"
             , "draft_plan => validate_plan select("
             , "  ok: (),"
             , "  issue: (gather_missing_constraints => repair_plan)"
@@ -743,20 +743,20 @@ emittedFixtures =
       , emittedFixtureSource =
           T.unlines
             [ "node draft_plan"
-            , "  -> draft: DraftPlan = @review.plan ({}) ;"
+            , "  -> draft: DraftPlan = @review.plan ;"
             , "node validate_plan"
-            , "  <- draft: DraftPlan ;"
-            , "  -> valid: ResearchPlan | issue: PlanIssue ;"
-            , "  = @review.validate_plan (draft) ;"
+            , "  <- draft: DraftPlan "
+            , "  -> valid: ResearchPlan | issue: PlanIssue "
+            , "  = @review.validate_plan draft ;"
             , "node gather_missing_constraints"
-            , "  <- issue: PlanIssue ;"
-            , "  -> issue: PlanIssue = @review.gather_missing_constraints (issue) ;"
+            , "  <- issue: PlanIssue "
+            , "  -> issue: PlanIssue = @review.gather_missing_constraints issue ;"
             , "node repair_plan"
-            , "  <- issue: PlanIssue ;"
-            , "  -> valid: ResearchPlan = @review.repair_plan (issue) ;"
+            , "  <- issue: PlanIssue "
+            , "  -> valid: ResearchPlan = @review.repair_plan issue ;"
             , "node publish_report"
-            , "  <- valid: ResearchPlan ;"
-            , "  -> report: ReportArtifactRef = @artifact.publish_report (valid) ;"
+            , "  <- valid: ResearchPlan "
+            , "  -> report: ReportArtifactRef = @artifact.publish_report valid ;"
             , "draft_plan => validate_plan select("
             , "  ResearchPlan: (),"
             , "  PlanIssue: (gather_missing_constraints => repair_plan)"

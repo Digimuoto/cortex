@@ -133,12 +133,6 @@ Future hardening slices may add manifest versioning, dependency declarations, co
 and direct TOML syntax for ADR 0053 requirement slots. Those fields remain inert package data when
 they are added.
 
-**2026-07-19 compatibility amendment.** ADR 0095 introduces `argument_shape` as the canonical
-one-record ingress schema key. During the epic migration the loader accepts either the existing
-`config_shape` key or `argument_shape`, maps both to the same projection, and rejects a manifest
-that supplies both. The example above intentionally remains a valid legacy manifest until the final
-breaking Wire migration.
-
 ### Capability registration model
 
 Capabilities enter the manifest system through executor catalog metadata, not through Wire syntax.

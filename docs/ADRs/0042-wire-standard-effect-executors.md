@@ -13,7 +13,7 @@ related:
   - docs/Architecture/01-overview.md
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/executors-and-alphabet.md
-  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
+  - docs/Reference/Wire/executor-authorities-and-execution-boundary.md
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0023-corepure-expression-surface.md
@@ -187,7 +187,7 @@ empty ingress or empty egress is still an explicit phase, not an exception to no
 - [Chapter 01 - Overview](../Architecture/01-overview.md)
 - [Chapter 05 - Wire language](../Architecture/05-wire-language.md)
 - [Wire executors and alphabet](../Reference/Wire/executors-and-alphabet.md)
-- [Configured executors and execution boundary](../Reference/Wire/configured-executors-and-execution-boundary.md)
+- [Configured executors and execution boundary](../Reference/Wire/executor-authorities-and-execution-boundary.md)
 - [Pure execution](../Reference/Wire/pure-execution.md)
 - [ADR 0010 - Wire Closed Authority and Three-Layer Stack](0010-wire-closed-authority-and-three-layer-stack.md)
 - [ADR 0023 - CorePure Expression Surface](0023-corepure-expression-surface.md)

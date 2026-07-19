@@ -6,7 +6,7 @@ contract Report;
 let scoreThreshold = 0.7;
 
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = accepted;
   -> rejected: RejectedSet = rejected;
   -> summary: Report = ''

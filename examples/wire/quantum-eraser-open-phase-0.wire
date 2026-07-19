@@ -5,43 +5,43 @@ contract Qubit;
 contract Bit;
 
 node ibm_runtime_config
-  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { cfg = { path = "quantum-ibm-runtime.local.json"; }; };
 
 node prepare_screen
-  <- config: IBMQuantumConfig;
-  -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+  <- config: IBMQuantumConfig
+  -> screen: Qubit = @quantum.prepare_zero { payload = { inherit config; }; cfg = { index = 0; }; };
 
 node split_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.rz { payload = screen; cfg = { angle = 1.5707963267948966; }; };
 
 node split_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.sx screen;
 
 node split_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.rz { payload = screen; cfg = { angle = 1.5707963267948966; }; };
 
 node phase_screen
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 0.0; } (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.rz { payload = screen; cfg = { angle = 0.0; }; };
 
 node recombine_rz_a
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.rz { payload = screen; cfg = { angle = 1.5707963267948966; }; };
 
 node recombine_sx
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.sx {} (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.sx screen;
 
 node recombine_rz_b
-  <- screen: Qubit;
-  -> screen: Qubit = @quantum.rz { angle = 1.5707963267948966; } (screen);
+  <- screen: Qubit
+  -> screen: Qubit = @quantum.rz { payload = screen; cfg = { angle = 1.5707963267948966; }; };
 
 node measure_screen
-  <- screen: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (screen);
+  <- screen: Qubit
+  -> screen: Bit = @quantum.measure_z screen;
 
 let split_path =
   split_rz_a

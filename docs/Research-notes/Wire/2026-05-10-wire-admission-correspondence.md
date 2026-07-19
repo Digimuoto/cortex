@@ -164,7 +164,7 @@ That is probably correct. But it needs vocabulary. Kind is broad; make-supportab
 constrained kind profile.
 
 **Why it matters:** Without this distinction, users will expect `make` to work with arbitrary
-configured executors, contracts, values, and labels. The compiler and proof side correctly reject
+executor authorities, contracts, values, and labels. The compiler and proof side correctly reject
 more than the syntax visually suggests.
 
 **Next step:** Add reference docs or an ADR note: `make` and `makeEach` operate on a generated-kind
