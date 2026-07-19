@@ -136,7 +136,8 @@ node report
     render.aggregateOpenGaps = true;
     render.allowExtraSectionHeadings = true;
     workspace.sourceKind = "deep-report";
-  } (bundle);
+    payload = bundle;
+  };
 
 # ---- the wire ----
 

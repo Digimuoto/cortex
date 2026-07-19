@@ -594,9 +594,10 @@ validateNativeExpr nodeRef = go
       CorePureIndex value index -> go value *> go index
       CorePureLambda _ body -> go body
       CorePureCall (CorePureIdent builtin) arguments
-        | builtin `Set.member` nativeBuiltins -> traverse_ go arguments
+        | builtin `Set.member` deferredBuiltins ->
+            Left (NativePureUnsupportedExpression nodeRef ("builtin " <> builtin <> " is deferred"))
         | otherwise ->
-            Left (NativePureUnsupportedExpression nodeRef ("builtin " <> builtin <> " is not admitted"))
+            traverse_ go arguments
       CorePureCall function arguments -> go function *> traverse_ go arguments
       CorePureUnary _ value -> go value
       CorePureBinary CorePureMerge left right
@@ -610,17 +611,11 @@ validateNativeExpr nodeRef = go
     staticallyRecord CorePureRecord {} = True
     staticallyRecord _ = False
 
-nativeBuiltins :: Set Text
-nativeBuiltins =
+deferredBuiltins :: Set Text
+deferredBuiltins =
   Set.fromList
-    [ "map"
-    , "filter"
-    , "fold"
-    , "zipWith"
-    , "range"
-    , "length"
-    , "slice"
-    , "concat"
+    [ "toJson", "fromJson", "sort", "sortBy", "split", "replace", "substring"
+    , "trim", "toLower", "toUpper", "lines", "unlines", "keys", "values", "entries"
     ]
 
 taskExecutor :: CircuitTaskNode -> Maybe Text
