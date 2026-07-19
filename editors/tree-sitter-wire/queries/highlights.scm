@@ -109,6 +109,7 @@
 
 ; @qualified.name { ... } and @qualified.name { ... } (input)
 (configured_executor_value name: (qualified_ident) @function.builtin)
+(executor_authority_value name: (qualified_ident) @function.builtin)
 (inline_executor_call name: (qualified_ident) @function.builtin)
 (configured_executor_call name: (identifier) @function.builtin)
 
@@ -119,6 +120,7 @@
 
 (field path: (field_path (identifier) @property))
 (core_pure_field path: (field_path (identifier) @property))
+(core_pure_inherit_field name: (identifier) @property)
 (core_pure_binding name: (identifier) @constant)
 
 ; ── Port labels ────────────────────────────────────────────────────────

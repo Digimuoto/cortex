@@ -60,7 +60,7 @@ Identifiers match `[A-Za-z_][A-Za-z0-9_]*`. Qualified identifiers join identifie
 Reserved words:
 
 ```text
-as contract else export false form from if import in kind let make node null pure select then true use where
+as contract else export false form from if import in kind let make node null pure select then true use where with
 ```
 
 Literal forms:
@@ -90,11 +90,11 @@ use_item         ::= "@" ident ("as" "@" ident)? | ident ("as" ident)?
 kind_decl        ::= "kind" ident "(" kind_param_list? ")" "=" kind_body
 kind_param_list ::= kind_param ("," kind_param)* ","?
 kind_param       ::= ident ":" kind_param_class
-kind_param_class ::= "PortLabel" | "Contract" | "Value" | "ConfiguredExecutor"
+kind_param_class ::= "PortLabel" | "Contract" | "Value" | "ConfiguredExecutor" | "Executor"
 form_decl        ::= "form" ident "(" form_param_list? ")" "=" "{" form_item* graph_expr ";" "}" ";"
 form_param_list ::= form_param ("," form_param)* ","?
 form_param       ::= ident ":" form_param_class
-form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "ConfiguredExecutor"
+form_param_class ::= "PortLabel" | "Contract" | "Value" | "Graph" | "ConfiguredExecutor" | "Executor"
 form_item        ::= node_decl | "let" let_target "=" let_rhs ";"
 let_binding      ::= ("export")? "let" let_target "=" let_rhs ";"
 let_target       ::= ident "[]"?
@@ -197,6 +197,42 @@ Port clauses:
 -> label: Contract;
 -> label_a: ContractA | label_b: ContractB;
 ```
+
+During the compatibility window, the semicolon after a port-only clause is optional: the next `<-`,
+`->`, or `=` structurally delimits it. Both spellings produce the same port signature. Pure output
+equations and executor bodies still end in `;`.
+
+## 4.1 Compatible executor boundary preview
+
+The future one-record executor surface is accepted additively:
+
+```wire
+node source
+  -> line: Line = @uart.read_line;
+node sink
+  <- line: Line
+  = @kernel.log line;
+node configured with { timeout = 30; }
+  <- line: Line
+  = @kernel.log { payload = line; cfg.level = "debug"; };
+```
+
+- `@executor` supplies `{}`;
+- `@executor value` supplies `{ payload = value; }` when `value` is not a record;
+- `@executor { ... }` supplies that record unchanged;
+- `with { ... }` is statically evaluated compiler metadata, not executor argument data.
+
+Legacy config-plus-parenthesized calls and configured-executor values remain accepted until the
+final migration. `Executor` kind/form parameters carry bare authority; `ConfiguredExecutor` remains
+available for old definitions.
+
+CorePure record projection inheritance is also accepted:
+
+```wire
+let projected = { inherit (x) payload cfg; };
+```
+
+It lowers exactly to `{ payload = x.payload; cfg = x.cfg; }`.
 
 Labels are required on authored ports. A port key is `(direction, contract, label)`. `=>` connects
 only matching keys. Labels are semantic routing identity, not documentation.

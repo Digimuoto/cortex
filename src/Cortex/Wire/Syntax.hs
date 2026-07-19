@@ -66,7 +66,8 @@ module Cortex.Wire.Syntax
 where
 
 import Control.Monad (guard)
-import Data.Aeson (FromJSON, ToJSON)
+import Data.Aeson (FromJSON, ToJSON (..), (.=))
+import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Scientific (Scientific)
@@ -226,6 +227,8 @@ data Expr
     ExprSelect !Expr !(NonEmpty SelectArm)
   | -- | @family[0]@ — source projection from an indexed @make@ family.
     ExprFamilyProjection !Text !Int
+  | -- | @\@qual.name@ — inert bare executor authority value.
+    ExprExecutor !QName
   | -- | @\@qual.name { config }@ — inert configured executor value.
     ExprConfiguredExecutor !QName !Record
   | {- | @qual.name { field = ... }@ — tagged-record config constructor;
@@ -310,6 +313,10 @@ data CorePureExpr
 data ExecutorCall
   = ExecutorCallInline !QName !Record !CorePureExpr
   | ExecutorCallConfigured !Text !CorePureExpr
+  | -- | New compatible surface: @\@executor@ with zero or one bare argument.
+    ExecutorCallBare !QName !(Maybe CorePureExpr)
+  | -- | A bare executor authority supplied through a kind/form parameter.
+    ExecutorCallBoundBare !Text !(Maybe CorePureExpr)
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
@@ -382,11 +389,20 @@ native pure evaluator.
 -}
 data NodeDecl = NodeDecl
   { nodeDeclName :: !Text
+  , nodeDeclMetadata :: !(Maybe Record)
   , nodeDeclPortSig :: ![PortDecl]
   , nodeDeclBody :: !NodeBody
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON)
+
+instance ToJSON NodeDecl where
+  toJSON node =
+    Aeson.object $
+      [ "nodeDeclName" .= node.nodeDeclName
+      , "nodeDeclPortSig" .= node.nodeDeclPortSig
+      , "nodeDeclBody" .= node.nodeDeclBody
+      ]
+        <> foldMap (\metadata -> ["nodeDeclMetadata" .= metadata]) node.nodeDeclMetadata
 
 -- | Contract declaration. A source contract may optionally carry a nominal record shape for `*`.
 data ContractDecl = ContractDecl

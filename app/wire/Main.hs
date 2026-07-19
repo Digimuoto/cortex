@@ -22,8 +22,8 @@ import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (nub)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List (find, nub)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -57,6 +57,7 @@ import Cortex.Wire
   , ContractId (..)
   , CorePureBinding (..)
   , CorePureExpr (..)
+  , CorePureField (..)
   , CorePureLiteral (..)
   , ExecutorCall (..)
   , Expr (..)
@@ -1067,26 +1068,67 @@ runExecutorNode
   -> IO (Map Text WireValue)
 runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
   ExecutorCallInline executorName record inputExpr ->
-    case builtinExecutorFromQName useScope executorName of
-      Right BuiltinExecutorStdin ->
-        runStdinNode outputLock ports record
-      Right BuiltinExecutorStdout ->
-        runStdoutNode outputLock nodeInputs record inputExpr
-      Right BuiltinExecutorCommand ->
-        runCommandNode outputLock nodeInputs ports record inputExpr
-      Right BuiltinExecutorReadFile ->
-        runReadFileNode outputLock nodeInputs ports record inputExpr
-      Right BuiltinExecutorWriteFile ->
-        runWriteFileNode outputLock nodeInputs record inputExpr
-      Left errText ->
-        dieTextLocked outputLock (errText <> " Node: " <> nodeName <> ".")
+    runInline executorName record inputExpr
+  ExecutorCallBare executorName argumentExpr -> do
+    (record, inputExpr) <-
+      either (dieTextLocked outputLock) pure (executorArgumentParts argumentExpr)
+    runInline executorName record inputExpr
+  ExecutorCallBoundBare authorityName _argumentExpr ->
+    unsupportedBoundExecutor authorityName
   ExecutorCallConfigured configuredName _inputExpr ->
-    dieTextLocked outputLock $
-      "wire run does not yet support configured executor "
-        <> configuredName
-        <> " in node "
-        <> nodeName
-        <> "."
+    unsupportedBoundExecutor configuredName
+  where
+    runInline executorName record inputExpr =
+      case builtinExecutorFromQName useScope executorName of
+        Right BuiltinExecutorStdin ->
+          runStdinNode outputLock ports record
+        Right BuiltinExecutorStdout ->
+          runStdoutNode outputLock nodeInputs record inputExpr
+        Right BuiltinExecutorCommand ->
+          runCommandNode outputLock nodeInputs ports record inputExpr
+        Right BuiltinExecutorReadFile ->
+          runReadFileNode outputLock nodeInputs ports record inputExpr
+        Right BuiltinExecutorWriteFile ->
+          runWriteFileNode outputLock nodeInputs record inputExpr
+        Left errText ->
+          dieTextLocked outputLock (errText <> " Node: " <> nodeName <> ".")
+    unsupportedBoundExecutor authorityName =
+      dieTextLocked outputLock $
+        "wire run does not yet support bound executor authority "
+          <> authorityName
+          <> " in node "
+          <> nodeName
+          <> "."
+
+executorArgumentParts :: Maybe CorePureExpr -> Either Text (Record, CorePureExpr)
+executorArgumentParts = \case
+  Nothing -> Right (Record [], CorePureLit CorePureNull)
+  Just (CorePureRecord fields) -> do
+    let payload = fromMaybe (CorePureLit CorePureNull) (lookupCorePureField "payload" fields)
+    record <- Record <$> traverse corePureFieldToWireField fields
+    Right (record, payload)
+  Just scalar -> Right (Record [], scalar)
+  where
+    lookupCorePureField fieldName =
+      fmap (.corePureFieldValue)
+        . find ((== fieldName :| []) . (.corePureFieldPath))
+    corePureFieldToWireField field =
+      Field field.corePureFieldPath <$> corePureToWireExpr field.corePureFieldValue
+
+corePureToWireExpr :: CorePureExpr -> Either Text Expr
+corePureToWireExpr = \case
+  CorePureLit (CorePureString value) -> Right (ExprLit (LitString value))
+  CorePureLit (CorePureNumber value) -> Right (ExprLit (LitNumber value))
+  CorePureLit (CorePureBool value) -> Right (ExprLit (LitBool value))
+  CorePureLit CorePureNull -> Left "executor cfg cannot contain null in wire run"
+  CorePureIdent name -> Right (ExprIdent (QName (name :| [])))
+  CorePureList values -> ExprList <$> traverse corePureToWireExpr values
+  CorePureRecord fields ->
+    ExprRecord . Record
+      <$> traverse
+        (\field -> Field field.corePureFieldPath <$> corePureToWireExpr field.corePureFieldValue)
+        fields
+  other -> Left ("wire run requires statically evaluable executor cfg, got " <> tshow other <> ".")
 
 builtinExecutorFromQName :: WireUseScope -> QName -> Either Text BuiltinExecutor
 builtinExecutorFromQName useScope executorName = do

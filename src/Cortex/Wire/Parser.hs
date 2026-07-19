@@ -26,7 +26,7 @@ module Cortex.Wire.Parser
   )
 where
 
-import Control.Monad (foldM, when)
+import Control.Monad (foldM, void, when)
 import Control.Monad.State.Strict (State)
 import Control.Monad.State.Strict qualified as State
 import Control.Monad.Trans.Class (lift)
@@ -186,6 +186,7 @@ reservedWords =
   , "true"
   , "use"
   , "where"
+  , "with"
   ]
 
 -- | Identifier-continuation predicate.
@@ -331,7 +332,7 @@ data LetTarget = LetTarget
   deriving stock (Eq, Show)
 
 data ParsedNodeDecl
-  = ParsedNodeBody !Text ![PortDecl] !NodeBody
+  = ParsedNodeBody !Text !(Maybe Record) ![PortDecl] !NodeBody
   | ParsedNodeKindApplication !Text !KindApplication
   deriving stock (Show)
 
@@ -354,6 +355,7 @@ data KindParamClass
   | KindParamContract
   | KindParamValue
   | KindParamConfiguredExecutor
+  | KindParamExecutor
   deriving stock (Eq, Show)
 
 data KindApplication = KindApplication
@@ -382,6 +384,7 @@ data FormParamClass
   | FormParamValue
   | FormParamGraph
   | FormParamConfiguredExecutor
+  | FormParamExecutor
   deriving stock (Eq, Show)
 
 data FormItem
@@ -524,7 +527,8 @@ identifier, or parenthesized group.
 exprAtom :: Parser Expr
 exprAtom =
   choice
-    [ ExprConfiguredExecutor <$> executorRef <*> recordExpr
+    [ try (ExprConfiguredExecutor <$> executorRef <*> recordExpr)
+    , ExprExecutor <$> executorRef
     , -- Immediate @name[index]@ is graph-family projection; spaced @name [index]@ is CorePure.
       familyProjectionExpr
     , try constructorExpr
@@ -973,8 +977,14 @@ corePureField = do
 corePureInheritFields :: Parser [CorePureField]
 corePureInheritFields = do
   keyword "inherit"
+  source <- optional (symbol "(" *> corePureExpr <* symbol ")")
   names <- some identifier
-  pure [CorePureField (name :| []) (CorePureIdent name) | name <- names]
+  pure
+    [ CorePureField
+        (name :| [])
+        (maybe (CorePureIdent name) (`CorePureFieldAccess` name) source)
+    | name <- names
+    ]
 
 chainLeft :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainLeft operand operator = do
@@ -1014,6 +1024,13 @@ outputPort = do
     _ -> do
       let variants = firstVariant :| moreVariants
       pure (PortOutputSumDecl variants)
+
+{- | PR 14 accepts both the legacy semicolon terminator and the structural
+arrow/equality delimiters. The formatter remains legacy-canonical until the
+final breaking migration.
+-}
+optionalPortDelimiter :: Parser ()
+optionalPortDelimiter = void (optional (symbol ";"))
 
 outputVariant :: Parser SumVariant
 outputVariant = do
@@ -1160,7 +1177,7 @@ kindDecl = do
   params <- kindParam `sepEndBy` symbol ","
   _ <- symbol ")"
   _ <- symbol "="
-  inputs <- many (try (inputPort <* symbol ";"))
+  inputs <- many (try (inputPort <* optionalPortDelimiter))
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
   pure (ParsedTopKind (KindDecl name params (inputs <> outputs) (mkBody whereExpr)))
@@ -1179,6 +1196,7 @@ parseKindParamClass = do
     "Contract" -> pure KindParamContract
     "Value" -> pure KindParamValue
     "ConfiguredExecutor" -> pure KindParamConfiguredExecutor
+    "Executor" -> pure KindParamExecutor
     other -> fail ("unknown kind parameter class: " <> T.unpack other)
 
 formDecl :: Parser ParsedTopForm
@@ -1212,6 +1230,7 @@ parseFormParamClass = do
     "Value" -> pure FormParamValue
     "Graph" -> pure FormParamGraph
     "ConfiguredExecutor" -> pure FormParamConfiguredExecutor
+    "Executor" -> pure FormParamExecutor
     other -> fail ("unknown form parameter class: " <> T.unpack other)
 
 formItem :: Parser FormItem
@@ -1278,10 +1297,11 @@ kindApplication = do
 
 ordinaryNodeDecl :: Text -> Parser ParsedNodeDecl
 ordinaryNodeDecl name = do
-  inputs <- many (try (inputPort <* symbol ";"))
+  metadata <- optional (keyword "with" *> recordExpr)
+  inputs <- many (try (inputPort <* optionalPortDelimiter))
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
-  pure (ParsedNodeBody name (inputs <> outputs) (mkBody whereExpr))
+  pure (ParsedNodeBody name metadata (inputs <> outputs) (mkBody whereExpr))
 
 nodeImplementationBody :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 nodeImplementationBody =
@@ -1342,7 +1362,7 @@ singleOutputExecutorShorthand = do
 
 executorImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 executorImplementation = do
-  outputs <- many (try (outputPort <* symbol ";"))
+  outputs <- many (try (outputPort <* optionalPortDelimiter))
   _ <- symbol "="
   call <- executorCall
   _ <- symbol ";"
@@ -1377,9 +1397,11 @@ pureOutputExpression =
 
 executorCall :: Parser ExecutorCall
 executorCall =
-  try inlineExecutorCall <|> configuredExecutorCall
+  try legacyInlineExecutorCall
+    <|> try configuredExecutorCall
+    <|> bareExecutorCall
   where
-    inlineExecutorCall = do
+    legacyInlineExecutorCall = do
       executor <- executorRef
       when (renderQName executor == "pure") $
         fail "CorePure output equations are written directly; @pure is not an executor"
@@ -1391,6 +1413,12 @@ executorCall =
       name <- identifier
       inputArg <- betweenCallParens corePureExpr
       pure (ExecutorCallConfigured name inputArg)
+
+    bareExecutorCall = do
+      executor <- executorRef
+      when (renderQName executor == "pure") $
+        fail "CorePure output equations are written directly; @pure is not an executor"
+      ExecutorCallBare executor <$> optional corePureExpr
 
 betweenCallParens :: Parser a -> Parser a
 betweenCallParens inner = do
@@ -1765,6 +1793,8 @@ resolveFamilyProjectionsWithStatus families = go
         combineSelect <$> go base <*> traverse resolveArm arms
       ExprFamilyProjection familyName indexValue ->
         resolveProjection familyName indexValue
+      ExprExecutor executor ->
+        Right (resolvedExpr (ExprExecutor executor))
       ExprConfiguredExecutor executor config ->
         mapResolvedRecord (ExprConfiguredExecutor executor) <$> resolveRecord config
       ExprConstructor name recordValue ->
@@ -2336,7 +2366,7 @@ recordFormStaticMakeData name rhs state =
 
 parsedNodeName :: ParsedNodeDecl -> Text
 parsedNodeName = \case
-  ParsedNodeBody name _ _ -> name
+  ParsedNodeBody name _ _ _ -> name
   ParsedNodeKindApplication name _ -> name
 
 ensureFreshFormLocal :: FormSubstitution -> FormExpansionState -> Text -> Either String ()
@@ -2406,6 +2436,19 @@ formSubstitutionForApplication formDeclValue application = do
                           subst.fsKindSubstitution.ksConfiguredExecutors
                     }
               }
+        FormParamExecutor -> do
+          actual <- expectSimpleFormExecutor formDeclValue param arg
+          Right
+            subst
+              { fsKindSubstitution =
+                  subst.fsKindSubstitution
+                    { ksConfiguredExecutors =
+                        Map.insert
+                          param.formParamName
+                          actual
+                          subst.fsKindSubstitution.ksConfiguredExecutors
+                    }
+              }
         FormParamValue -> do
           coreValue <- exprToCorePureExpr arg
           Right
@@ -2433,6 +2476,20 @@ expectSimpleFormIdentifier formDeclValue param expectedClass = \case
           <> " expects "
           <> expectedClass
           <> " argument, got "
+          <> show other
+      )
+
+expectSimpleFormExecutor :: FormDecl -> FormParam -> Expr -> Either String Text
+expectSimpleFormExecutor formDeclValue param = \case
+  ExprExecutor (QName (name :| [])) -> Right name
+  ExprIdent (QName (name :| [])) -> Right name
+  other ->
+    Left
+      ( "form "
+          <> T.unpack formDeclValue.formDeclName
+          <> " parameter "
+          <> T.unpack param.formParamName
+          <> " expects Executor argument, got "
           <> show other
       )
 
@@ -2508,11 +2565,18 @@ formApplicationToCorePureLetRhs application =
 substituteFormNodeDecl
   :: FormSubstitution -> Map Text Text -> NodeDecl -> Either String NodeDecl
 substituteFormNodeDecl subst localLetNames nodeDeclValue = do
+  metadata <- traverse (substituteRecord subst.fsKindSubstitution) nodeDeclValue.nodeDeclMetadata
   portSig <- traverse (substitutePortDecl subst.fsKindSubstitution) nodeDeclValue.nodeDeclPortSig
   body <-
     substituteNodeBody subst.fsKindSubstitution nodeDeclValue.nodeDeclBody
       >>= rewriteNodeBodyLocalLets localLetNames
-  Right (nodeDeclValue {nodeDeclPortSig = portSig, nodeDeclBody = body})
+  Right
+    ( nodeDeclValue
+        { nodeDeclMetadata = metadata
+        , nodeDeclPortSig = portSig
+        , nodeDeclBody = body
+        }
+    )
 
 substituteFormExpr
   :: FormSubstitution -> Map Text Text -> Map Text [Text] -> Expr -> Either String Expr
@@ -2562,6 +2626,8 @@ rewriteFormExpr graphParams localNames = go
         ExprSelect <$> go base <*> traverse rewriteArm arms
       ExprFamilyProjection familyName indexValue ->
         Right (ExprFamilyProjection familyName indexValue)
+      ExprExecutor executor ->
+        Right (ExprExecutor executor)
       ExprConfiguredExecutor executor config ->
         ExprConfiguredExecutor executor <$> rewriteRecord config
       ExprConstructor name recordValue ->
@@ -2622,6 +2688,12 @@ rewriteExecutorCallLocalLets localLetNames = \case
     ExecutorCallConfigured
       (Map.findWithDefault name name localLetNames)
       (rewriteCorePureLocalLets localLetNames inputArg)
+  ExecutorCallBare executor inputArg ->
+    ExecutorCallBare executor (fmap (rewriteCorePureLocalLets localLetNames) inputArg)
+  ExecutorCallBoundBare name inputArg ->
+    ExecutorCallBoundBare
+      (Map.findWithDefault name name localLetNames)
+      (fmap (rewriteCorePureLocalLets localLetNames) inputArg)
 
 rewriteCorePureLocalLets :: Map Text Text -> CorePureExpr -> CorePureExpr
 rewriteCorePureLocalLets localLetNames = go
@@ -2676,10 +2748,11 @@ duplicateText =
       | otherwise = go (Map.insert name () seen) rest
 
 expandParsedNode :: Map Text KindDecl -> ParsedNodeDecl -> Either String NodeDecl
-expandParsedNode _kindScope (ParsedNodeBody name portSig body) =
+expandParsedNode _kindScope (ParsedNodeBody name metadata portSig body) =
   Right
     NodeDecl
       { nodeDeclName = name
+      , nodeDeclMetadata = metadata
       , nodeDeclPortSig = portSig
       , nodeDeclBody = body
       }
@@ -2697,6 +2770,7 @@ expandParsedNode kindScope (ParsedNodeKindApplication nodeName application) = do
   Right
     NodeDecl
       { nodeDeclName = nodeName
+      , nodeDeclMetadata = Nothing
       , nodeDeclPortSig = portSig
       , nodeDeclBody = body
       }
@@ -2732,6 +2806,13 @@ kindSubstitutionForApplication kindDeclValue application = do
               { ksConfiguredExecutors =
                   Map.insert param.kindParamName actual subst.ksConfiguredExecutors
               }
+        KindParamExecutor -> do
+          actual <- expectSimpleExecutor kindDeclValue param arg
+          Right
+            subst
+              { ksConfiguredExecutors =
+                  Map.insert param.kindParamName actual subst.ksConfiguredExecutors
+              }
         KindParamValue -> do
           coreValue <- exprToCorePureExpr arg
           Right
@@ -2753,6 +2834,20 @@ expectSimpleIdentifier kindDeclValue param expectedClass = \case
           <> " expects "
           <> expectedClass
           <> " argument, got "
+          <> show other
+      )
+
+expectSimpleExecutor :: KindDecl -> KindParam -> Expr -> Either String Text
+expectSimpleExecutor kindDeclValue param = \case
+  ExprExecutor (QName (name :| [])) -> Right name
+  ExprIdent (QName (name :| [])) -> Right name
+  other ->
+    Left
+      ( "kind "
+          <> T.unpack kindDeclValue.kindDeclName
+          <> " parameter "
+          <> T.unpack param.kindParamName
+          <> " expects Executor argument, got "
           <> show other
       )
 
@@ -2826,6 +2921,17 @@ substituteExecutorCall subst = \case
     ExecutorCallConfigured
       (Map.findWithDefault name name subst.ksConfiguredExecutors)
       <$> substituteCorePureExpr subst inputArg
+  ExecutorCallBare executor@(QName (name :| [])) inputArg
+    | Just bound <- Map.lookup name subst.ksConfiguredExecutors ->
+        ExecutorCallBoundBare bound <$> traverse (substituteCorePureExpr subst) inputArg
+    | otherwise ->
+        ExecutorCallBare executor <$> traverse (substituteCorePureExpr subst) inputArg
+  ExecutorCallBare executor inputArg ->
+    ExecutorCallBare executor <$> traverse (substituteCorePureExpr subst) inputArg
+  ExecutorCallBoundBare name inputArg ->
+    ExecutorCallBoundBare
+      (Map.findWithDefault name name subst.ksConfiguredExecutors)
+      <$> traverse (substituteCorePureExpr subst) inputArg
 
 substituteRecord :: KindSubstitution -> Record -> Either String Record
 substituteRecord subst (Record fields) =
@@ -2851,6 +2957,11 @@ substituteExpr subst = \case
     ExprSelect <$> substituteExpr subst base <*> traverse (substituteSelectArm subst) arms
   ExprFamilyProjection familyName indexValue ->
     Right (ExprFamilyProjection familyName indexValue)
+  ExprExecutor (QName (name :| []))
+    | Just replacement <- Map.lookup name subst.ksConfiguredExecutors ->
+        Right (ExprExecutor (QName (replacement :| [])))
+  ExprExecutor executor ->
+    Right (ExprExecutor executor)
   ExprConfiguredExecutor executor config ->
     ExprConfiguredExecutor executor <$> substituteRecord subst config
   ExprConstructor name recordValue ->

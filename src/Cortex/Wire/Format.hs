@@ -281,7 +281,10 @@ formatCorePureLetRhs expr
 
 formatNodeDecl :: NodeDecl -> [Text]
 formatNodeDecl nodeDecl =
-  ["node " <> nodeDecl.nodeDeclName]
+  [ "node "
+      <> nodeDecl.nodeDeclName
+      <> foldMap (\metadata -> " with " <> formatRecordInline metadata) nodeDecl.nodeDeclMetadata
+  ]
     <> fmap (indentText 1 . formatPortDecl) inputPorts
     <> formatNodeBody outputPorts nodeDecl.nodeDeclBody
   where
@@ -374,6 +377,20 @@ formatExecutorCall = \case
       <> ")"
   ExecutorCallConfigured name inputExpr ->
     name <> " (" <> formatCorePureExpr inputExpr <> ")"
+  ExecutorCallBare executor inputExpr ->
+    "@" <> renderQName executor <> foldMap ((" " <>) . formatExecutorArgument) inputExpr
+  ExecutorCallBoundBare name inputExpr ->
+    name <> foldMap ((" " <>) . formatExecutorArgument) inputExpr
+
+{- | The compatible surface admits one unparenthesized CorePure argument. Keep
+top-level binary expressions free of the formatter's grouping parentheses;
+all other forms use the ordinary CorePure rendering.
+-}
+formatExecutorArgument :: CorePureExpr -> Text
+formatExecutorArgument expression@CorePureBinary {} =
+  let rendered = formatCorePureExpr expression
+   in if T.length rendered >= 2 then T.drop 1 (T.dropEnd 1 rendered) else rendered
+formatExecutorArgument expression = formatCorePureExpr expression
 
 formatExecutorConfig :: Record -> Text
 formatExecutorConfig (Record []) =
@@ -576,6 +593,7 @@ isInlineGraphAtom = \case
 -- through the parser unchanged.
 isExprAtom :: Expr -> Bool
 isExprAtom = \case
+  ExprExecutor {} -> True
   ExprConfiguredExecutor {} -> True
   ExprConstructor {} -> True
   ExprRecord {} -> True
@@ -614,6 +632,8 @@ formatExprInline expr =
       formatExprInline base <> formatSelectSuffix arms
     ExprFamilyProjection familyName indexValue ->
       familyName <> "[" <> T.pack (show indexValue) <> "]"
+    ExprExecutor name ->
+      "@" <> renderQName name
     ExprConfiguredExecutor name record ->
       "@" <> renderQName name <> " " <> formatRecordInline record
     ExprConstructor name record ->

@@ -693,6 +693,10 @@
         {
           "type": "STRING",
           "value": "ConfiguredExecutor"
+        },
+        {
+          "type": "STRING",
+          "value": "Executor"
         }
       ]
     },
@@ -919,6 +923,10 @@
         {
           "type": "STRING",
           "value": "ConfiguredExecutor"
+        },
+        {
+          "type": "STRING",
+          "value": "Executor"
         }
       ]
     },
@@ -964,6 +972,22 @@
             {
               "type": "SEQ",
               "members": [
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "FIELD",
+                      "name": "metadata",
+                      "content": {
+                        "type": "SYMBOL",
+                        "name": "node_metadata"
+                      }
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
+                },
                 {
                   "type": "FIELD",
                   "name": "inputs",
@@ -1023,6 +1047,23 @@
               }
             }
           ]
+        }
+      ]
+    },
+    "node_metadata": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "with"
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "record"
+          }
         }
       ]
     },
@@ -1283,8 +1324,16 @@
           }
         },
         {
-          "type": "STRING",
-          "value": ";"
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "STRING",
+              "value": ";"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         }
       ]
     },
@@ -1479,8 +1528,16 @@
           }
         },
         {
-          "type": "STRING",
-          "value": ";"
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "STRING",
+              "value": ";"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         }
       ]
     },
@@ -1561,51 +1618,97 @@
       ]
     },
     "inline_executor_call": {
-      "type": "SEQ",
+      "type": "CHOICE",
       "members": [
         {
-          "type": "STRING",
-          "value": "@"
-        },
-        {
-          "type": "FIELD",
-          "name": "name",
+          "type": "PREC_DYNAMIC",
+          "value": 2,
           "content": {
-            "type": "SYMBOL",
-            "name": "qualified_ident"
-          }
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "FIELD",
-              "name": "config",
-              "content": {
-                "type": "SYMBOL",
-                "name": "record"
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "@"
+              },
+              {
+                "type": "FIELD",
+                "name": "name",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "qualified_ident"
+                }
+              },
+              {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "FIELD",
+                    "name": "config",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "record"
+                    }
+                  },
+                  {
+                    "type": "BLANK"
+                  }
+                ]
+              },
+              {
+                "type": "STRING",
+                "value": "("
+              },
+              {
+                "type": "FIELD",
+                "name": "input",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "core_pure_expr"
+                }
+              },
+              {
+                "type": "STRING",
+                "value": ")"
               }
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        },
-        {
-          "type": "STRING",
-          "value": "("
-        },
-        {
-          "type": "FIELD",
-          "name": "input",
-          "content": {
-            "type": "SYMBOL",
-            "name": "core_pure_expr"
+            ]
           }
         },
         {
-          "type": "STRING",
-          "value": ")"
+          "type": "PREC_DYNAMIC",
+          "value": 1,
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "@"
+              },
+              {
+                "type": "FIELD",
+                "name": "name",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "qualified_ident"
+                }
+              },
+              {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "FIELD",
+                    "name": "argument",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "core_pure_expr"
+                    }
+                  },
+                  {
+                    "type": "BLANK"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -2063,6 +2166,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "executor_authority_value"
+        },
+        {
+          "type": "SYMBOL",
           "name": "constructor_expr"
         },
         {
@@ -2173,6 +2280,23 @@
           "content": {
             "type": "SYMBOL",
             "name": "record"
+          }
+        }
+      ]
+    },
+    "executor_authority_value": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "@"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "qualified_ident"
           }
         }
       ]
@@ -3117,7 +3241,7 @@
                   },
                   {
                     "type": "SYMBOL",
-                    "name": "inherit_field"
+                    "name": "core_pure_inherit_field"
                   }
                 ]
               },
@@ -3131,6 +3255,55 @@
         {
           "type": "STRING",
           "value": "}"
+        }
+      ]
+    },
+    "core_pure_inherit_field": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "inherit"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "("
+                },
+                {
+                  "type": "FIELD",
+                  "name": "source",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "core_pure_expr"
+                  }
+                },
+                {
+                  "type": "STRING",
+                  "value": ")"
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "FIELD",
+            "name": "name",
+            "content": {
+              "type": "SYMBOL",
+              "name": "identifier"
+            }
+          }
         }
       ]
     },
@@ -3525,6 +3698,19 @@
     [
       "pure_sum_body",
       "output_body"
+    ],
+    [
+      "pure_output_equation",
+      "executor_single_output_body",
+      "output_body"
+    ],
+    [
+      "inherit_field",
+      "core_pure_inherit_field"
+    ],
+    [
+      "inline_executor_call",
+      "_core_pure_atom"
     ]
   ],
   "precedences": [],

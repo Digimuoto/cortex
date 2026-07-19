@@ -1,0 +1,56 @@
+==================
+compatible structural node and executor surface
+==================
+
+node source -> result: Line = @uart.read_line;
+node sink with { label = "sink"; timeout = 5; }
+  <- result: Line
+  = @kernel.log { inherit (result) payload cfg; };
+
+---
+
+(source_file
+  (node_decl
+    name: (identifier)
+    body: (executor_single_output_body
+      output: (output_variant
+        label: (identifier)
+        contract: (contract_ref
+          (contract_name
+            (contract))))
+      call: (inline_executor_call
+        name: (qualified_ident
+          (identifier)
+          (identifier)))))
+  (node_decl
+    name: (identifier)
+    metadata: (node_metadata
+      body: (record
+        (field
+          path: (field_path
+            (identifier))
+          value: (expression
+            (string)))
+        (field
+          path: (field_path
+            (identifier))
+          value: (expression
+            (number)))))
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_ref
+        (contract_name
+          (contract))))
+    body: (executor_body
+      call: (executor_call
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier)
+            (identifier))
+          argument: (core_pure_expr
+            (core_pure_record
+              (core_pure_inherit_field
+                source: (core_pure_expr
+                  (core_pure_ident))
+                name: (identifier)
+                name: (identifier)))))))))
