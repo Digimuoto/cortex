@@ -37,19 +37,42 @@ exist until the node consumes its inputs.
 
 ## Decision
 
-The canonical executor ABI is one record. `payload` is the automatic scalar wrapper field and `cfg`
-is the conventional location for executor-specific configuration. This normalization is a
-compile-time structural decision, but the resulting CorePure expression is evaluated at node
-ingress.
+The canonical authored executor boundary is one record. `payload` is the automatic scalar wrapper
+field and `cfg` is the conventional location for executor-specific configuration. Normalization is a
+compile-time structural decision. Binding time is then declared by the executor projection and
+proved from expression dependencies; source position or literal syntax does not decide it.
 
 The phases are intentionally distinct:
 
 - compiler metadata is statically evaluable and affects graph admission, scheduling, retries,
   budgets, memory, routing, and other compiler-owned policy;
-- executor arguments are runtime ingress data and may reference consumed ports, module-level
-  CorePure bindings, and node `where` fields;
-- after ingress evaluation, the runtime requires an object, validates it against `argument_shape`,
-  and passes that exact value to the host binding.
+- executor argument fields marked admission-static by their consumer signature are port-closed,
+  evaluated and validated during admission, recorded as `staticArgument`, and specialized out;
+- every unmarked executor argument field is residual runtime ingress data and may reference consumed
+  ports, module-level CorePure bindings, and node `where` fields; and
+- after ingress evaluation, the runtime requires an object, validates it against the derived
+  residual `argument_shape`, and passes that exact residual value to the host binding.
+
+### Binding-time amendment
+
+One authoritative `argument_shape` owns both value shape and the total field partition. A top-level
+property may declare `x-cortex-binding-time = "admission"`; an absent annotation means `ingress`.
+The compiler derives the closed static schema and residual ingress schema, so a field cannot occur
+in two independently maintained shapes or fall between them.
+
+```toml
+argument_shape = { schema = { type = "object", required = ["profile", "maxTokens", "payload"], additionalProperties = false, properties = { profile = { type = "string", x-cortex-binding-time = "admission" }, maxTokens = { type = "number", x-cortex-binding-time = "admission" }, payload = { type = "string" } } } }
+```
+
+`let ... in`, module `let`, and node `where` do not carry stage qualifiers. They remain ordinary
+lexical bindings. A binding inherits the dependencies of its right-hand side, and the consumer
+obligation is checked at the field. Consequently, factoring an expression into a binding cannot
+change its phase. A violation reports the dependency chain, for example
+`static field profile <- binding selected <- runtime port prompt`.
+
+Admission-static means both port-closed and executable by the deterministic static CorePure
+evaluator. Effects, host observations, secrets, nondeterminism, unsupported operations, and
+deployment values are not made static merely because no port name occurs syntactically.
 
 The compatibility slice dual-reads `config_shape` and `argument_shape`, rejecting a manifest that
 defines both. Public config-named projection and capability records remain as storage-compatible
@@ -102,8 +125,9 @@ deferred to the final breaking migration.
 
 ## Consequences
 
-- Static evaluation and PureWire runtime evaluation remain separate concepts; a constant executor
-  argument is still ingress data, not node metadata.
+- Static evaluation and PureWire runtime evaluation remain separate concepts. An unannotated
+  constant field is still ingress data; an admission annotation is a consumer obligation, not node
+  metadata or a claim that the executor node itself runs at compile time.
 - Hosts can migrate bindings independently while existing integrations continue to run.
 - Conflicting old/new manifest keys fail rather than silently selecting one schema.
 - The final migration can remove aliases and legacy envelopes without redesigning the runtime ABI.

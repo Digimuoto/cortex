@@ -51,6 +51,8 @@ import Cortex.Wire.Executor
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
+  , wireExecutorArgumentBindingTimes
+  , wireExecutorArgumentShapeFromConfigShape
   , wireExecutorConfigShapeFromArgumentShape
   )
 import Cortex.Wire.NativePure.Shape (NativeShapeProjection)
@@ -221,6 +223,10 @@ instance Toml.FromValue WireExecutorProjection where
         (Just legacy, Nothing) -> pure legacy
         (Nothing, Just argument) -> pure (wireExecutorConfigShapeFromArgumentShape argument)
         (Nothing, Nothing) -> pure WireExecutorConfigUnchecked
+    let canonicalShape = wireExecutorArgumentShapeFromConfigShape storedShape
+    case wireExecutorArgumentBindingTimes canonicalShape of
+      Left err -> fail (T.unpack err)
+      Right _ -> pure ()
     portPolicy <- optionalValue "port_policy" WireExecutorFixedPorts
     pure
       WireExecutorProjection

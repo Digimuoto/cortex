@@ -222,6 +222,12 @@ node configured with { timeout = 30; }
 - `@executor { ... }` supplies that record unchanged;
 - `with { ... }` is statically evaluated compiler metadata, not executor argument data.
 
+The source grammar does not add a second static executor record. A strict executor projection may
+mark top-level `argument_shape` properties as admission-static. The compiler checks their dependency
+flow through `let` and `where`, specializes them into compiled `staticArgument` metadata, and leaves
+the remaining fields in the runtime ingress record. Binding time is consequently a consumer
+signature obligation rather than another call-site syntax.
+
 Legacy config-plus-parenthesized calls and configured-executor values remain accepted until the
 final migration. `Executor` kind/form parameters carry bare authority; `ConfiguredExecutor` remains
 available for old definitions.

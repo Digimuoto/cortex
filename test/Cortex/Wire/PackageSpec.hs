@@ -15,6 +15,7 @@ module Cortex.Wire.PackageSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID qualified as UUID
@@ -29,8 +30,13 @@ import Cortex.Wire
   , WireExecutorArgumentShape (..)
   , WireOutputPort (..)
   , WirePorts (..)
+  , validateWireExecutorArgument
   , wireContractRegistryFromList
+  , wireExecutorArgumentIngressShape
+  , wireExecutorArgumentStaticFields
+  , wireExecutorArgumentStaticShape
   , wireExecutorProjectionArgumentShape
+  , wireExecutorProjectionIngressShape
   , wrapWireStageOutput
   )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
@@ -253,6 +259,37 @@ spec = do
             `shouldSatisfy` T.isInfixOf "unknown Wire executor argument shape"
         Right _ -> expectationFailure "unknown argument shape unexpectedly decoded"
 
+    it "derives one total admission/ingress partition from argument_shape" $ do
+      let shapeField =
+            "argument_shape = { schema = { type = \"object\", required = [\"profile\", \"payload\"], additionalProperties = false, properties = { profile = { type = \"string\", x-cortex-binding-time = \"admission\" }, payload = { type = \"string\" } } } }"
+      shape <- requireRight (decodedShape shapeField)
+      wireExecutorArgumentStaticFields shape `shouldBe` Right (Set.singleton "profile")
+      staticShape <- requireRight (wireExecutorArgumentStaticShape shape)
+      ingressShape <- requireRight (wireExecutorArgumentIngressShape shape)
+      validateWireExecutorArgument
+        staticShape
+        (Aeson.object ["profile" Aeson..= ("reasoner" :: Text)])
+        `shouldBe` Right (Aeson.object ["profile" Aeson..= ("reasoner" :: Text)])
+      validateWireExecutorArgument
+        ingressShape
+        (Aeson.object ["payload" Aeson..= ("hello" :: Text)])
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= ("hello" :: Text)])
+      package <- requireRight (decodeWirePackageManifest "cortex.toml" (manifest shapeField))
+      case package.wpExecutorProjections of
+        [projection] -> wireExecutorProjectionIngressShape projection `shouldBe` Right ingressShape
+        _ -> expectationFailure "expected one executor projection"
+
+    it "rejects malformed field binding-time obligations" $
+      case decodeWirePackageManifest
+        "cortex.toml"
+        ( manifest
+            "argument_shape = { schema = { type = \"object\", properties = { profile = { type = \"string\", x-cortex-binding-time = \"sometimes\" } } } }"
+        ) of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "unknown x-cortex-binding-time sometimes"
+        Right _ -> expectationFailure "invalid executor binding-time unexpectedly decoded"
+
   describe "native contract shape manifests" $ do
     it "decodes scalar and bounded native_shape projections" $ do
       let source =
@@ -367,3 +404,8 @@ schemaManifestRegistry =
       \payload_kind = \"json\"\n\
       \description = \"Report payload\"\n\
       \schema = { type = \"object\", required = [\"title\"], properties = { title = { type = \"string\" } } }\n"
+
+requireRight :: Show e => Either e a -> IO a
+requireRight = \case
+  Left err -> expectationFailure (show err) >> fail "unreachable"
+  Right value -> pure value

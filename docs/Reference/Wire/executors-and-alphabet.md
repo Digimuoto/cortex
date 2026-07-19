@@ -109,6 +109,22 @@ executor-call argument is the node's ingress adapter: it translates typed input 
 CorePure helpers into the one value presented to the registered body. Output projection, validation,
 and wrapping are the egress obligation before edges consume output ports.
 
+## Consumer-declared binding time
+
+The authored boundary remains one record. In strict registry mode, a top-level property in the
+executor's `argument_shape` may declare `x-cortex-binding-time = "admission"`. The compiler proves
+that field independent of runtime ports, evaluates and validates it during admission, records it as
+compiled `staticArgument`, and removes it from the ingress expression. Unannotated properties
+default to ingress.
+
+`let ... in`, module `let`, and node `where` are ordinary lexical bindings, not phase declarations.
+Their dependency flow determines whether they can satisfy an admission field. Refactoring through a
+binding therefore does not change phase. Permissive registry mode has no signature proof and leaves
+the complete record at ingress.
+
+Executor admission fields configure or select that executor binding. They are distinct from
+Cortex-owned node `with` metadata and executor-independent static-intent attachments.
+
 ## Consumer-owned executor IDs in permissive compilation
 
 The permissive compile environment deliberately preserves a non-standard fully qualified executor ID

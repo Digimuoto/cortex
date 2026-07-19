@@ -60,30 +60,30 @@ The same category appears less visibly elsewhere:
 - ADR 0053 describes requirement selectors derived from admitted executor configuration, but an ADR
   0095 argument may depend on a consumed port and therefore may not exist when binding must finish.
 
-Calling every compile-time-looking value `config` concealed these differences. Conversely, calling
-every non-compiler value an executor argument makes pre-execution admission depend on data that can
-only be calculated during execution. Literal syntax is not a phase: a literal executor argument is
-still part of the ingress ABI, while a static intent expression must be closed over runtime ports by
-construction.
+Calling every compile-time-looking value `config` concealed these differences. Conversely, treating
+every field in the authored executor record as ingress data prevents an executor signature from
+requiring instance-specific binding inputs before execution. Literal syntax is not a phase: a
+literal field remains ingress unless its consumer declares an admission obligation, while static
+intent is independently closed over runtime ports by construction.
 
 ### The design tensions
 
-| Tension                                    | Cortex context                                                                                                                                             | Decision in this ADR                                                                                                                                            |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Constant syntax vs semantic phase          | A record literal passed to an executor is still ingress data; a binder cannot infer phase from syntax.                                                     | Phase is declared by the enclosing construct. `intent` is static; executor arguments are runtime, even when literal.                                            |
-| Static evaluation vs pure execution        | CorePure syntax is used for values in several phases, and NativePure compiles effect-free runtime regions; neither fact makes a value compile-time intent. | The enclosing construct fixes the phase. Static intent is evaluated during admission; pure nodes and NativePure regions still execute at runtime.               |
-| Generic substrate vs downstream meaning    | Cortex must serve wireOS, Logos, CortexQC, and future consumers without importing their vocabularies.                                                      | Cortex owns a generic attachment envelope and registry protocol; downstream packages own versioned intent schemas and validators.                               |
-| Closed authority vs extensibility          | Arbitrary annotations would let source invent planning meaning or smuggle authority past admission.                                                        | Intent schema identities must be registered through inert package projections. Unknown schemas, members, and versions fail closed.                              |
-| Ambient registry vs stable meaning         | Revalidating a Circuit against a later registry could change a contract shape or downstream validator without changing the Circuit address.                | Admission records a digest of exactly the canonical projections and validators consulted. Every downstream artifact cites that immutable registry witness.      |
-| Inline coherence vs external operations    | Small requirements are clearest next to a node; whole-system intent and environment overlays are often deployed as separate reviewed files.                | Inline Wire and sidecar documents lower to the same canonical `StaticIntentBundle`; neither is semantically privileged.                                         |
-| Circuit identity vs deployment variability | The same executable topology can be requested for different systems, but stale intent must never attach to another Circuit.                                | Preserve the Circuit address and derive a separate intent-bound admitted-program address from it. Grants and bindings cite that address.                        |
-| Requirement vs authority                   | Naming UART, filesystem, model, tool, or quantum needs must not grant access.                                                                              | Static intent only requests and constrains. A host grant and binding record alone authorize and select implementations.                                         |
-| Package invariant vs program instance      | An executor package can always require a capability kind, while one program may request a narrower scope or backend class.                                 | Package projections own invariant slots; static intent instantiates per-program requirements; host binding satisfies them.                                      |
-| Forward compatibility vs security          | `cortex.toml` currently tolerates unrelated keys, but admission and authority inputs cannot silently ignore misspellings.                                  | Intent and grant schemas are version-gated, closed decoders. Package-manifest discovery may remain forward-compatible at its outer layer.                       |
-| System scope vs node scope                 | wireOS declares components and mappings across the whole Circuit; Logos and executor needs often attach to one node.                                       | Attachments have explicit circuit or node scope. Node scope is represented by a resolved Circuit node reference, never an incidental graph edge.                |
-| Core admission vs downstream admission     | Lean's Wire artifact proves generic graph facts; wireOS and CortexQC enforce domain-specific joins.                                                        | Static intent is bound to, but not embedded as opaque semantics inside, `WireAdmissionArtifact`. Each registered intent validator owns its domain checks.       |
-| Required semantics vs ignorable metadata   | Debug notes may be safely dropped; deployment requirements may not.                                                                                        | Static intent is must-understand admission data, not an advisory annotation. A selected realizer must consume or explicitly reject every applicable attachment. |
-| Behavior vs test environment               | Failure timing, synthetic completions, and chosen grants are not properties of the authored workflow.                                                      | Scenario manifests remain separate realization/test inputs and never become Wire intent or executor calls.                                                      |
+| Tension                                    | Cortex context                                                                                                                                             | Decision in this ADR                                                                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Constant syntax vs semantic phase          | A record literal does not tell the binder which executor fields must be available before ingress.                                                          | The executor projection declares field obligations in one `argument_shape`; dependency analysis proves admission fields and leaves the rest as residual ingress. |
+| Static evaluation vs pure execution        | CorePure syntax is used for values in several phases, and NativePure compiles effect-free runtime regions; neither fact makes a value compile-time intent. | The enclosing construct fixes the phase. Static intent is evaluated during admission; pure nodes and NativePure regions still execute at runtime.                |
+| Generic substrate vs downstream meaning    | Cortex must serve wireOS, Logos, CortexQC, and future consumers without importing their vocabularies.                                                      | Cortex owns a generic attachment envelope and registry protocol; downstream packages own versioned intent schemas and validators.                                |
+| Closed authority vs extensibility          | Arbitrary annotations would let source invent planning meaning or smuggle authority past admission.                                                        | Intent schema identities must be registered through inert package projections. Unknown schemas, members, and versions fail closed.                               |
+| Ambient registry vs stable meaning         | Revalidating a Circuit against a later registry could change a contract shape or downstream validator without changing the Circuit address.                | Admission records a digest of exactly the canonical projections and validators consulted. Every downstream artifact cites that immutable registry witness.       |
+| Inline coherence vs external operations    | Small requirements are clearest next to a node; whole-system intent and environment overlays are often deployed as separate reviewed files.                | Inline Wire and sidecar documents lower to the same canonical `StaticIntentBundle`; neither is semantically privileged.                                          |
+| Circuit identity vs deployment variability | The same executable topology can be requested for different systems, but stale intent must never attach to another Circuit.                                | Preserve the Circuit address and derive a separate intent-bound admitted-program address from it. Grants and bindings cite that address.                         |
+| Requirement vs authority                   | Naming UART, filesystem, model, tool, or quantum needs must not grant access.                                                                              | Static intent only requests and constrains. A host grant and binding record alone authorize and select implementations.                                          |
+| Package invariant vs program instance      | An executor package can always require a capability kind, while one program may request a narrower scope or backend class.                                 | Package projections own invariant slots; static intent instantiates per-program requirements; host binding satisfies them.                                       |
+| Forward compatibility vs security          | `cortex.toml` currently tolerates unrelated keys, but admission and authority inputs cannot silently ignore misspellings.                                  | Intent and grant schemas are version-gated, closed decoders. Package-manifest discovery may remain forward-compatible at its outer layer.                        |
+| System scope vs node scope                 | wireOS declares components and mappings across the whole Circuit; Logos and executor needs often attach to one node.                                       | Attachments have explicit circuit or node scope. Node scope is represented by a resolved Circuit node reference, never an incidental graph edge.                 |
+| Core admission vs downstream admission     | Lean's Wire artifact proves generic graph facts; wireOS and CortexQC enforce domain-specific joins.                                                        | Static intent is bound to, but not embedded as opaque semantics inside, `WireAdmissionArtifact`. Each registered intent validator owns its domain checks.        |
+| Required semantics vs ignorable metadata   | Debug notes may be safely dropped; deployment requirements may not.                                                                                        | Static intent is must-understand admission data, not an advisory annotation. A selected realizer must consume or explicitly reject every applicable attachment.  |
+| Behavior vs test environment               | Failure timing, synthetic completions, and chosen grants are not properties of the authored workflow.                                                      | Scenario manifests remain separate realization/test inputs and never become Wire intent or executor calls.                                                       |
 
 ## Decision
 
@@ -95,7 +95,8 @@ staging model is:
 | Wire topology, contracts, and executor identities | Cortex plus registered packages | compile/admission   | no                           | no                                           |
 | `with { ... }` compiler metadata                  | Cortex                          | compile             | no                           | no                                           |
 | static intent attachments                         | registered downstream schema    | compile/admission   | no                           | no                                           |
-| executor argument record                          | executor contract               | node ingress        | yes                          | no by itself                                 |
+| executor argument admission fields                | executor projection             | compile/admission   | no                           | no by itself                                 |
+| residual executor argument record                 | executor contract               | node ingress        | yes                          | no by itself                                 |
 | host grant, platform facts, and binding manifest  | host/deployer                   | realization/binding | no                           | yes, within an explicit ceiling              |
 | runtime outputs, checkpoints, and telemetry       | executor/runtime                | execution           | yes                          | records use; does not retroactively grant it |
 
@@ -109,6 +110,18 @@ Two admitted programs may therefore share the same Circuit and compute the same 
 requesting different platforms or authority ceilings. Conversely, an effect-free Wire node is still
 runtime computation: CorePure is an expression language, not a synonym for static evaluation, and
 NativePure is a runtime realization profile rather than an admission-time evaluator.
+
+Executor-specific binding inputs do not require another authored block. ADR 0095 keeps one executor
+record and lets its registered `argument_shape` mark top-level properties with
+`x-cortex-binding-time = "admission"`. The compiler proves those expressions port-closed, evaluates
+and validates them during admission, and specializes them out of the residual ingress record.
+Unannotated fields default to ingress. The field obligation belongs to the consumer signature;
+`let ... in`, module `let`, and `where` remain stage-polymorphic lexical bindings.
+
+This executor-static subset is not a substitute for static intent. It configures or selects the
+binding of that executor invocation. Static intent describes executor-independent graph, system, or
+realization requirements and may have circuit scope, sidecar provenance, and downstream joins which
+no executor argument owns. `with` remains Cortex-owned node policy.
 
 ### Canonical static-intent model
 
@@ -303,21 +316,25 @@ versioned envelope rather than silently changing a v1 address or ABI.
 ADR 0053 requirement slots are refined as follows:
 
 - an executor projection declares invariant capability kinds, permissions, replay class, await
-  strategy, and isolation minima;
-- a static intent attachment supplies any per-program selector or narrowing constraint which must be
-  available before execution;
+  strategy, isolation minima, and binding-time obligations for its one argument record;
+- admission fields in that record supply executor-specific instance values required to bind or
+  specialize that invocation;
+- a static intent attachment supplies executor-independent graph or system requirements which must
+  be available before execution;
 - a host grant supplies the available authority ceiling;
 - a host binding record proves that every invariant and per-program requirement is satisfied and
   records the chosen implementation and authority fingerprints; and
-- the executor argument remains ordinary ingress data and is never consulted to mint pre-execution
-  authority.
+- the residual executor argument remains ordinary ingress data and is never consulted to mint
+  pre-execution authority.
 
-Requirement selectors must therefore not point into a runtime `argument` expression. Existing ADR
-0053 language about selectors derived from admitted `config` is legacy terminology to supersede when
-this ADR is accepted. A value such as a gate angle, output path, prompt text, shot count, or model
-message remains a runtime argument if it affects the executor's work and may legitimately be
-computed from upstream values. A backend class, tool permission scope, device class, or resource
-ceiling belongs in static intent if the binder must know it before admitting runnable work.
+Requirement selectors must therefore not point into the residual runtime expression. They may cite a
+projection-declared admission field which has already been evaluated, validated, and included in
+program identity. Existing ADR 0053 language about selectors derived from admitted `config` is
+legacy terminology to supersede when this ADR is accepted. A value such as a gate angle, output
+path, prompt text, shot count, or model message remains ingress when computed from upstream values.
+An executor-specific model profile or bounded option may be an admission field. A backend class,
+tool permission scope, device class, resource ceiling, or cross-node constraint belongs in static
+intent when its meaning is independent of one executor's argument schema.
 
 Intent requests never widen authority. Binding computes an effective authority no greater than both
 the request and the host grant. A useful abstract rule is:
@@ -463,7 +480,8 @@ later grant but can never manufacture the grant.
 - Logos and CortexQC receive the same generic request-versus-grant model without moving their domain
   semantics into Cortex core.
 - Inline and sidecar workflows share validation, normalization, identity, and binding rules.
-- Capability selection no longer depends on a runtime executor argument.
+- Capability selection no longer depends on a residual runtime executor argument; executor-specific
+  selectors use validated admission fields instead.
 - Scenario data can replace much fixture-specific C without polluting program semantics.
 
 ### Negative

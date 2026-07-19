@@ -34,6 +34,7 @@ module Cortex.Wire.Pure
   , WireExecutorArgumentSpec (..)
   , wireExecutorArgumentSpecFromMetadata
   , evaluateWireExecutorArgument
+  , evaluateCorePureStaticExpr
   , corePureBuiltinSignature
   , corePureBuiltinAuthorityReport
   , corePureBuiltinAuthorityFree
@@ -742,6 +743,27 @@ evaluateWireExecutorArgument ports spec inputBundle = do
       spec.wireExecutorArgumentBindings
   env <- bindCorePureWhere outerEnv spec.wireExecutorArgumentWhere
   evaluateCorePureExpr env spec.wireExecutorArgumentExpr >>= corePureValueToJson
+
+{- | Evaluate an admission-static expression in the same CorePure semantics as
+runtime ingress, but without any port values. The additional bindings are the
+dependency-checked subset of a node's @where@ record needed by the expression;
+they are all evaluated against the outer module environment, matching the
+simultaneous record evaluation used by 'bindCorePureWhere'.
+-}
+evaluateCorePureStaticExpr
+  :: [CorePureBinding]
+  -> Map Text CorePureExpr
+  -> CorePureExpr
+  -> Either PureEvalError Aeson.Value
+evaluateCorePureStaticExpr bindings staticWhere expr = do
+  outerEnv <- bindCorePureBindings (corePureEnvFromInputValues Map.empty) bindings
+  whereValues <- traverse (evaluateCorePureExpr outerEnv) staticWhere
+  let env =
+        Map.foldlWithKey'
+          (\acc name value -> corePureEnvInsert name value acc)
+          outerEnv
+          whereValues
+  evaluateCorePureExpr env expr >>= corePureValueToJson
 
 evaluatePreparedPureTaskOutputs
   :: PreparedPureTask

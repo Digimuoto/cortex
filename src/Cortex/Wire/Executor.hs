@@ -20,11 +20,17 @@ module Cortex.Wire.Executor
   , WireExecutorEffect (..)
   , WireExecutorConfigShape (..)
   , WireExecutorArgumentShape (..)
+  , WireExecutorArgumentBindingTime (..)
   , wireExecutorArgumentShapeFromConfigShape
   , wireExecutorConfigShapeFromArgumentShape
+  , wireExecutorArgumentBindingTimes
+  , wireExecutorArgumentStaticFields
+  , wireExecutorArgumentIngressShape
+  , wireExecutorArgumentStaticShape
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
   , wireExecutorProjectionArgumentShape
+  , wireExecutorProjectionIngressShape
   , wireExecutorProjectionWithArgumentShape
   , wireExecutorProjectionFromPorts
   , wireContractsFromPorts
@@ -37,11 +43,15 @@ module Cortex.Wire.Executor
 where
 
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Vector qualified as Vector
 import GHC.Generics (Generic)
 
 import Cortex.Wire.AST
@@ -82,6 +92,15 @@ data WireExecutorArgumentShape
   | WireExecutorArgumentSchema Aeson.Value
   deriving stock (Eq, Show, Generic)
 
+{- | Availability required by one top-level field of the executor's single
+argument record. Fields default to ingress; an executor projection may mark a
+declared property with @x-cortex-binding-time = "admission"@.
+-}
+data WireExecutorArgumentBindingTime
+  = WireExecutorArgumentAdmission
+  | WireExecutorArgumentIngress
+  deriving stock (Eq, Ord, Show, Generic)
+
 wireExecutorArgumentShapeFromConfigShape :: WireExecutorConfigShape -> WireExecutorArgumentShape
 wireExecutorArgumentShapeFromConfigShape = \case
   WireExecutorConfigUnchecked -> WireExecutorArgumentUnchecked
@@ -91,6 +110,121 @@ wireExecutorConfigShapeFromArgumentShape :: WireExecutorArgumentShape -> WireExe
 wireExecutorConfigShapeFromArgumentShape = \case
   WireExecutorArgumentUnchecked -> WireExecutorConfigUnchecked
   WireExecutorArgumentSchema schema -> WireExecutorConfigSchema schema
+
+{- | Read the total top-level binding-time partition from one authoritative
+argument schema. Unknown fields remain an ordinary schema concern; every
+declared property without an annotation is runtime ingress data.
+-}
+wireExecutorArgumentBindingTimes
+  :: WireExecutorArgumentShape -> Either Text (Map Text WireExecutorArgumentBindingTime)
+wireExecutorArgumentBindingTimes = \case
+  WireExecutorArgumentUnchecked -> Right Map.empty
+  WireExecutorArgumentSchema schema -> do
+    root <- expectObject "executor argument schema" schema
+    properties <- optionalObject "properties" root
+    Map.fromList <$> traverse propertyBindingTime (KeyMap.toList properties)
+  where
+    propertyBindingTime (propertyKey, propertySchema) = do
+      let propertyName = Key.toText propertyKey
+      bindingTime <- case propertySchema of
+        Aeson.Object object ->
+          case KeyMap.lookup bindingTimeKey object of
+            Nothing -> Right WireExecutorArgumentIngress
+            Just (Aeson.String raw) ->
+              case T.toCaseFold (T.strip raw) of
+                "admission" -> Right WireExecutorArgumentAdmission
+                "ingress" -> Right WireExecutorArgumentIngress
+                other ->
+                  Left
+                    ( "executor argument property "
+                        <> propertyName
+                        <> " has unknown x-cortex-binding-time "
+                        <> other
+                    )
+            Just _ ->
+              Left
+                ( "executor argument property "
+                    <> propertyName
+                    <> " must declare x-cortex-binding-time as a string"
+                )
+        _ -> Right WireExecutorArgumentIngress
+      Right (propertyName, bindingTime)
+
+    bindingTimeKey = Key.fromText "x-cortex-binding-time"
+
+wireExecutorArgumentStaticFields
+  :: WireExecutorArgumentShape -> Either Text (Set Text)
+wireExecutorArgumentStaticFields shape =
+  Map.keysSet . Map.filter (== WireExecutorArgumentAdmission)
+    <$> wireExecutorArgumentBindingTimes shape
+
+{- | Schema for the residual record delivered at runtime after admission
+fields have been specialized out.
+-}
+wireExecutorArgumentIngressShape
+  :: WireExecutorArgumentShape -> Either Text WireExecutorArgumentShape
+wireExecutorArgumentIngressShape =
+  partitionArgumentShape (== WireExecutorArgumentIngress) False
+
+{- | Schema for the record evaluated and validated during admission. It is
+closed even when the complete argument schema permits additional properties,
+because the compiler constructs this record solely from declared static fields.
+-}
+wireExecutorArgumentStaticShape
+  :: WireExecutorArgumentShape -> Either Text WireExecutorArgumentShape
+wireExecutorArgumentStaticShape =
+  partitionArgumentShape (== WireExecutorArgumentAdmission) True
+
+partitionArgumentShape
+  :: (WireExecutorArgumentBindingTime -> Bool)
+  -> Bool
+  -> WireExecutorArgumentShape
+  -> Either Text WireExecutorArgumentShape
+partitionArgumentShape _select _closeObject WireExecutorArgumentUnchecked =
+  Right WireExecutorArgumentUnchecked
+partitionArgumentShape select closeObject original@(WireExecutorArgumentSchema schema) = do
+  root <- expectObject "executor argument schema" schema
+  properties <- optionalObject "properties" root
+  bindingTimes <- wireExecutorArgumentBindingTimes original
+  required <- optionalRequired root
+  let selectedNames = Map.keysSet (Map.filter select bindingTimes)
+      selectedProperties =
+        KeyMap.filterWithKey (\key _ -> Key.toText key `Set.member` selectedNames) properties
+      selectedRequired = filter (`Set.member` selectedNames) required
+      withProperties = KeyMap.insert (Key.fromText "properties") (Aeson.Object selectedProperties) root
+      withRequired =
+        KeyMap.insert
+          (Key.fromText "required")
+          (Aeson.Array (Vector.fromList (fmap Aeson.String selectedRequired)))
+          withProperties
+      partitioned =
+        if closeObject
+          then KeyMap.insert (Key.fromText "additionalProperties") (Aeson.Bool False) withRequired
+          else withRequired
+  Right (WireExecutorArgumentSchema (Aeson.Object partitioned))
+
+expectObject :: Text -> Aeson.Value -> Either Text Aeson.Object
+expectObject label = \case
+  Aeson.Object object -> Right object
+  _ -> Left (label <> " must be an object")
+
+optionalObject :: Text -> Aeson.Object -> Either Text Aeson.Object
+optionalObject fieldName object =
+  case KeyMap.lookup (Key.fromText fieldName) object of
+    Nothing -> Right KeyMap.empty
+    Just (Aeson.Object value) -> Right value
+    Just _ -> Left ("executor argument schema " <> fieldName <> " must be an object")
+
+optionalRequired :: Aeson.Object -> Either Text [Text]
+optionalRequired object =
+  case KeyMap.lookup (Key.fromText "required") object of
+    Nothing -> Right []
+    Just (Aeson.Array values) -> traverse requiredName (Vector.toList values)
+    Just _ -> Left "executor argument schema required must be an array of strings"
+  where
+    requiredName = \case
+      Aeson.String name -> Right name
+      _ -> Left "executor argument schema required must contain only strings"
 
 data WireExecutorPortPolicy
   = WireExecutorFixedPorts
@@ -113,6 +247,11 @@ retained config field so existing record construction remains source-compatible.
 wireExecutorProjectionArgumentShape :: WireExecutorProjection -> WireExecutorArgumentShape
 wireExecutorProjectionArgumentShape =
   wireExecutorArgumentShapeFromConfigShape . wireExecutorProjectionConfigShape
+
+wireExecutorProjectionIngressShape
+  :: WireExecutorProjection -> Either Text WireExecutorArgumentShape
+wireExecutorProjectionIngressShape =
+  wireExecutorArgumentIngressShape . wireExecutorProjectionArgumentShape
 
 wireExecutorProjectionWithArgumentShape
   :: WireExecutorArgumentShape -> WireExecutorProjection -> WireExecutorProjection

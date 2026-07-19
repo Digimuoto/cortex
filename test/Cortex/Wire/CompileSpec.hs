@@ -3263,6 +3263,158 @@ spec = describe "Cortex.Wire.Compile" $ do
         taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasTimeout 5
       other -> expectationFailure ("expected scalar task node, got: " <> show other)
 
+  it "specializes projection-declared admission fields from one executor record" $ do
+    compiled <-
+      requireRight . compileWireTextWithEnv bindingTimeExecutorEnv $
+        T.unlines
+          [ "let baseTokens = 2048;"
+          , "contract Prompt;"
+          , "contract Answer;"
+          , "node source -> prompt: Prompt = @test.source;"
+          , "node infer"
+          , "  <- prompt: Prompt"
+          , "  -> answer: Answer"
+          , "  = @test.staged {"
+          , "      profile = let selected = \"reasoner\"; in selected;"
+          , "      maxTokens = baseTokens * 2;"
+          , "      payload = prompt;"
+          , "    };"
+          , "source => infer"
+          ]
+    staticArgumentValue "infer" compiled
+      `shouldBe` Just
+        ( Aeson.object
+            [ "profile" Aeson..= ("reasoner" :: T.Text)
+            , "maxTokens" Aeson..= (4096 :: Int)
+            ]
+        )
+    argumentExpr "infer" compiled
+      `shouldBe` Syntax.CorePureRecord
+        [Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "prompt")]
+    (compiledArgumentSpec "infer" compiled).wireExecutorArgumentBindings `shouldBe` []
+
+  it "evaluates a port-closed where value for an admission field" $ do
+    compiled <-
+      requireRight . compileWireTextWithEnv bindingTimeExecutorEnv $
+        T.unlines
+          [ "contract Prompt;"
+          , "contract Answer;"
+          , "node source -> prompt: Prompt = @test.source;"
+          , "node infer"
+          , "  <- prompt: Prompt"
+          , "  -> answer: Answer"
+          , "  = @test.staged { profile = selectedProfile; maxTokens = 4096; payload = prompt; };"
+          , "  where { selectedProfile = let name = \"reasoner\"; in name; };"
+          , "source => infer"
+          ]
+    staticArgumentValue "infer" compiled
+      `shouldBe` Just
+        ( Aeson.object
+            [ "profile" Aeson..= ("reasoner" :: T.Text)
+            , "maxTokens" Aeson..= (4096 :: Int)
+            ]
+        )
+    (compiledArgumentSpec "infer" compiled).wireExecutorArgumentWhere `shouldBe` Nothing
+
+  it "retains where bindings reachable from residual ingress fields" $ do
+    compiled <-
+      requireRight . compileWireTextWithEnv bindingTimeExecutorEnv $
+        T.unlines
+          [ "contract Prompt;"
+          , "contract Answer;"
+          , "node source -> prompt: Prompt = @test.source;"
+          , "node infer"
+          , "  <- prompt: Prompt"
+          , "  -> answer: Answer"
+          , "  = @test.staged { profile = \"reasoner\"; maxTokens = 4096; payload = runtimePayload; };"
+          , "  where { runtimePayload = prompt; staticOnly = \"unused\"; };"
+          , "source => infer"
+          ]
+    (compiledArgumentSpec "infer" compiled).wireExecutorArgumentWhere
+      `shouldBe` Just
+        ( Syntax.CorePureRecord
+            [ Syntax.CorePureField
+                ("runtimePayload" :| [])
+                (Syntax.CorePureIdent "prompt")
+            ]
+        )
+
+  it "reports the let dependency chain from an admission field to a runtime port" $ do
+    let source =
+          T.unlines
+            [ "contract Prompt;"
+            , "contract Answer;"
+            , "node source -> prompt: Prompt = @test.source;"
+            , "node infer"
+            , "  <- prompt: Prompt"
+            , "  -> answer: Answer"
+            , "  = @test.staged {"
+            , "      profile = let selected = prompt; in selected;"
+            , "      maxTokens = 4096;"
+            , "      payload = prompt;"
+            , "    };"
+            , "source => infer"
+            ]
+    compileWireTextWithEnv bindingTimeExecutorEnv source
+      `shouldSatisfy` isWireInvalidPortsContaining
+        "static field profile <- binding selected <- runtime port prompt"
+
+  it "reports a runtime dependency routed through where" $ do
+    let source =
+          T.unlines
+            [ "contract Prompt;"
+            , "contract Answer;"
+            , "node source -> prompt: Prompt = @test.source;"
+            , "node infer"
+            , "  <- prompt: Prompt"
+            , "  -> answer: Answer"
+            , "  = @test.staged { profile = selectedProfile; maxTokens = 4096; payload = prompt; };"
+            , "  where { selectedProfile = prompt; };"
+            , "source => infer"
+            ]
+    compileWireTextWithEnv bindingTimeExecutorEnv source
+      `shouldSatisfy` isWireInvalidPortsContaining
+        "static field profile <- where field selectedProfile <- runtime port prompt"
+
+  it "validates admission values against the derived static schema" $ do
+    let wrongType =
+          T.unlines
+            [ "contract Answer;"
+            , "node infer -> answer: Answer"
+            , "  = @test.staged { profile = 42; maxTokens = 4096; payload = \"hello\"; };"
+            , "infer"
+            ]
+        missingStatic =
+          T.unlines
+            [ "contract Answer;"
+            , "node infer -> answer: Answer"
+            , "  = @test.staged { profile = \"reasoner\"; payload = \"hello\"; };"
+            , "infer"
+            ]
+    compileWireTextWithEnv bindingTimeExecutorEnv wrongType
+      `shouldSatisfy` isWireInvalidPortsContaining "expected string at $.profile"
+    compileWireTextWithEnv bindingTimeExecutorEnv missingStatic
+      `shouldSatisfy` isWireInvalidPortsContaining "missing required property maxTokens"
+
+  it "does not trust binding-time annotations in permissive projection mode" $ do
+    let permissiveEnv =
+          bindingTimeExecutorEnv
+            { wireCompileEnvProjectionMode = WireProjectionPermissive
+            }
+        source =
+          T.unlines
+            [ "contract Answer;"
+            , "node infer -> answer: Answer"
+            , "  = @test.staged { profile = \"reasoner\"; maxTokens = 4096; payload = \"hello\"; };"
+            , "infer"
+            ]
+    compiled <- requireRight (compileWireTextWithEnv permissiveEnv source)
+    staticArgumentValue "infer" compiled `shouldBe` Nothing
+    argumentExpr "infer" compiled
+      `shouldSatisfy` \case
+        Syntax.CorePureRecord fields -> length fields == 3
+        _ -> False
+
   it "rejects unknown or runtime-dependent node metadata fields" $ do
     compileWireText
       "contract T; node bad with { cfg = 1; } -> value: T = @test.source; bad"
@@ -6582,12 +6734,25 @@ metadataHasTimeout expected = \case
 
 argumentExpr :: T.Text -> CompiledCircuit -> Syntax.CorePureExpr
 argumentExpr nodeName compiled =
+  (compiledArgumentSpec nodeName compiled).wireExecutorArgumentExpr
+
+compiledArgumentSpec :: T.Text -> CompiledCircuit -> WireExecutorArgumentSpec
+compiledArgumentSpec nodeName compiled =
   case Map.lookup (CircuitNodeRef nodeName) compiled.compiledCircuitNodes of
     Just (CompiledCircuitTask taskNode) ->
       case wireExecutorArgumentSpecFromMetadata taskNode.circuitTaskNodeMetadata of
-        Right specValue -> specValue.wireExecutorArgumentExpr
+        Right specValue -> specValue
         Left err -> error ("executor argument did not decode: " <> T.unpack err)
     other -> error ("expected task node " <> T.unpack nodeName <> ", got: " <> show other)
+
+staticArgumentValue :: T.Text -> CompiledCircuit -> Maybe Aeson.Value
+staticArgumentValue nodeName compiled =
+  case Map.lookup (CircuitNodeRef nodeName) compiled.compiledCircuitNodes of
+    Just (CompiledCircuitTask taskNode) ->
+      case taskNode.circuitTaskNodeMetadata of
+        Aeson.Object metadata -> KeyMap.lookup "staticArgument" metadata
+        _ -> Nothing
+    _ -> Nothing
 
 metadataHasExecutorTarget :: T.Text -> Aeson.Value -> Bool
 metadataHasExecutorTarget expected = \case
@@ -6715,6 +6880,50 @@ strictExecutorEnv =
           ]
     , wireCompileEnvProjectionMode = WireProjectionStrict
     }
+
+bindingTimeExecutorEnv :: WireCompileEnv
+bindingTimeExecutorEnv =
+  emptyWireCompileEnv
+    { wireCompileEnvExecutorRegistry =
+        wireExecutorRegistryFromList
+          [ bindingTimeProjection "test.source" WireExecutorConfigUnchecked
+          , bindingTimeProjection "test.staged" (WireExecutorConfigSchema bindingTimeArgumentSchema)
+          ]
+    , wireCompileEnvProjectionMode = WireProjectionStrict
+    }
+
+bindingTimeProjection :: T.Text -> WireExecutorConfigShape -> WireExecutorProjection
+bindingTimeProjection executorId argumentShape =
+  WireExecutorProjection
+    { wireExecutorProjectionId = WireExecutorId executorId
+    , wireExecutorProjectionPorts = WirePorts Map.empty Map.empty
+    , wireExecutorProjectionVocabulary = Set.fromList ["Prompt", "Answer"]
+    , wireExecutorProjectionEffect = WireExecutorModel
+    , wireExecutorProjectionConfigShape = argumentShape
+    , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
+    }
+
+bindingTimeArgumentSchema :: Aeson.Value
+bindingTimeArgumentSchema =
+  Aeson.object
+    [ "type" Aeson..= ("object" :: T.Text)
+    , "required" Aeson..= (["profile", "maxTokens", "payload"] :: [T.Text])
+    , "additionalProperties" Aeson..= False
+    , "properties"
+        Aeson..= Aeson.object
+          [ "profile"
+              Aeson..= Aeson.object
+                [ "type" Aeson..= ("string" :: T.Text)
+                , "x-cortex-binding-time" Aeson..= ("admission" :: T.Text)
+                ]
+          , "maxTokens"
+              Aeson..= Aeson.object
+                [ "type" Aeson..= ("number" :: T.Text)
+                , "x-cortex-binding-time" Aeson..= ("admission" :: T.Text)
+                ]
+          , "payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: T.Text)]
+          ]
+    ]
 
 quantumExecutorEnv :: WireCompileEnv
 quantumExecutorEnv =
