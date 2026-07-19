@@ -5,6 +5,9 @@ Copyright   : (c) 2026 Digimuoto Oy
 License     : Apache-2.0
 Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
+
+These specs pin the ephemeral admission model used before normalized artifacts
+and maximal fusion are introduced by later NativePure epic slices.
 -}
 module Cortex.Wire.NativePureAdmissionSpec (spec) where
 
