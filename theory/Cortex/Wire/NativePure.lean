@@ -12,8 +12,10 @@ PureWire node yields one `CertifiedKernel`; cross-node fusion is deliberately
 deferred. Values are immutable. The only storage classification introduced
 after lowering is `read` for inputs and `write` for fresh outputs.
 
-The kernel lowers into the shared semantic C IR. The printable C AST remains a
-separate later layer outside this theorem boundary. `lower` is total and
+The kernel lowers into the shared semantic C IR. Concrete frame lowering and
+the printable C AST are separate layers outside this theorem boundary; the
+former consumes `CertifiedKernel.target`, not this source expression again.
+`lower` is total and
 `lower_refines` proves executable semantic preservation
 only for expressions carrying structural/checked-i64 basis evidence. Binary64
 values remain representable, but expressions containing them are explicitly

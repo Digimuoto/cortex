@@ -90,6 +90,7 @@ inductive Expr where
   | parenthesized (value : Expr)
   | sizeof (ty : CType)
   | alignof (ty : CType)
+  | offsetof (ty : CType) (field : Name)
   deriving Repr
 
 structure Local where
@@ -146,6 +147,15 @@ structure StructDecl where
   emitTag : Bool := false
   deriving Repr
 
+/-- A fixed C union. NativePure tagged sums use this rather than a byte blob so
+the generated payload remains typed while retaining max-variant layout. -/
+structure UnionDecl where
+  name : Name
+  fields : List Field
+  visibility : Visibility := .internal
+  emitTag : Bool := false
+  deriving Repr
+
 structure EnumMember where
   name : Name
   value : Int
@@ -177,6 +187,7 @@ inductive TypeDecl where
   | functionAlias (declaration : FunctionTypedef)
   | enumeration (declaration : EnumDecl)
   | structure (declaration : StructDecl)
+  | union (declaration : UnionDecl)
   deriving Repr
 
 inductive Initializer where
@@ -250,6 +261,7 @@ structure TranslationUnit where
   functionTypedefs : List FunctionTypedef := []
   enums : List EnumDecl := []
   structs : List StructDecl := []
+  unions : List UnionDecl := []
   globals : List Global := []
   functions : List CFunction := []
   assertions : List StaticAssert := []
@@ -312,6 +324,7 @@ private def exprValidFuel : Nat → Expr → Bool
       | .postIncrement value => valid value
       | .parenthesized value => valid value
       | .sizeof ty | .alignof ty => typeValid ty
+      | .offsetof ty field => typeValid ty && validIdentifier field
 
 private def exprValid (expression : Expr) : Bool :=
   exprValidFuel (reprStr expression).length expression
@@ -384,9 +397,10 @@ private def declaredNames (unit : TranslationUnit) : List Name :=
     | .alias declaration => declaration.name
     | .functionAlias declaration => declaration.name
     | .enumeration declaration => declaration.name
-    | .structure declaration => declaration.name) ++
+    | .structure declaration => declaration.name
+    | .union declaration => declaration.name) ++
   unit.typedefs.map (·.name) ++ unit.functionTypedefs.map (·.name) ++
-    unit.enums.map (·.name) ++ unit.structs.map (·.name) ++
+    unit.enums.map (·.name) ++ unit.structs.map (·.name) ++ unit.unions.map (·.name) ++
       unit.globals.map (·.name) ++ unit.functions.map (·.name)
 
 private def safeInclude (header : String) : Bool :=
@@ -415,6 +429,10 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
   if !unit.structs.all (fieldNamesValid ·.fields) then throw "invalid or duplicate struct field"
   if !unit.structs.all (fun declaration => declaration.fields.all (typeValid ·.ty)) then
     throw "invalid struct field type"
+  if !unit.unions.all (fieldNamesValid ·.fields) then throw "invalid or duplicate union field"
+  if !unit.unions.all (fun declaration =>
+      !declaration.fields.isEmpty && declaration.fields.all (typeValid ·.ty)) then
+    throw "invalid union field type"
   if !unit.enums.all (fun declaration =>
       !declaration.members.isEmpty &&
         declaration.members.all (validIdentifier ·.name) &&
@@ -464,6 +482,10 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
     | .structure declaration =>
         if !fieldNamesValid declaration.fields || !declaration.fields.all (typeValid ·.ty) then
           throw "invalid ordered struct declaration"
+    | .union declaration =>
+        if declaration.fields.isEmpty || !fieldNamesValid declaration.fields ||
+            !declaration.fields.all (typeValid ·.ty) then
+          throw "invalid ordered union declaration"
   if !unique (exportedNames unit) then throw "duplicate exported symbol"
   if !unit.layouts.all layoutValid then
     throw "invalid layout metadata"
@@ -643,7 +665,7 @@ private def exprPrecedence : Expr → Nat
   | .unary _ _ | .cast _ _ => 14
   | .ident _ | .signed _ | .unsigned _ | .bool _ | .string _ | .character _ | .null |
     .call _ _ | .field _ _ | .pointerField _ _ | .index _ _ | .postIncrement _ |
-    .parenthesized _ | .sizeof _ | .alignof _ => 15
+    .parenthesized _ | .sizeof _ | .alignof _ | .offsetof _ _ => 15
 
 private def renderExprFuel : Nat → Nat → Expr → String
   | 0, _, _ => ""
@@ -680,6 +702,8 @@ private def renderExprFuel : Nat → Nat → Expr → String
         | .parenthesized value => "(" ++ renderAt 0 value ++ ")"
         | .sizeof ty => "sizeof(" ++ renderDeclaration ty "" ++ ")"
         | .alignof ty => "_Alignof(" ++ renderDeclaration ty "" ++ ")"
+        | .offsetof ty field =>
+            "offsetof(" ++ renderDeclaration ty "" ++ ", " ++ field ++ ")"
       if precedence < parent then "(" ++ rendered ++ ")" else rendered
 
 def renderExpr (expression : Expr) : String :=
@@ -762,6 +786,12 @@ private def renderStruct (decl : StructDecl) : String :=
       "  " ++ renderDeclaration field.ty field.name ++ ";\n") ++
     "} " ++ decl.name ++ ";\n\n"
 
+private def renderUnion (decl : UnionDecl) : String :=
+  "typedef union" ++ (if decl.emitTag then " " ++ decl.name else "") ++ " {\n" ++
+    String.join (decl.fields.map fun field =>
+      "  " ++ renderDeclaration field.ty field.name ++ ";\n") ++
+    "} " ++ decl.name ++ ";\n\n"
+
 private def renderEnum (decl : EnumDecl) : String :=
   "typedef enum" ++ (if decl.emitTag then " " ++ decl.name else "") ++ " {\n" ++
     String.intercalate ",\n" (decl.members.map fun member =>
@@ -780,6 +810,7 @@ private def typeDeclVisibility : TypeDecl → Visibility
   | .functionAlias declaration => declaration.visibility
   | .enumeration declaration => declaration.visibility
   | .structure declaration => declaration.visibility
+  | .union declaration => declaration.visibility
 
 private def renderTypeDecl : TypeDecl → String
   | .define name value => "#define " ++ name ++ " " ++ renderExpr value ++ "\n\n"
@@ -787,6 +818,7 @@ private def renderTypeDecl : TypeDecl → String
   | .functionAlias declaration => renderFunctionTypedef declaration
   | .enumeration declaration => renderEnum declaration
   | .structure declaration => renderStruct declaration
+  | .union declaration => renderUnion declaration
 
 private def renderPrototype (function : CFunction) : String :=
   String.join (function.headerComments.map fun comment => "/* " ++ comment ++ " */\n") ++
@@ -834,7 +866,9 @@ private def renderTypeDecls (unit : TranslationUnit) (publicOnly : Bool) : Strin
       String.join ((unit.enums.filter fun declaration =>
         visible declaration.visibility).map renderEnum) ++
       String.join ((unit.structs.filter fun declaration =>
-        visible declaration.visibility).map renderStruct)
+        visible declaration.visibility).map renderStruct) ++
+      String.join ((unit.unions.filter fun declaration =>
+        visible declaration.visibility).map renderUnion)
   else
     String.join ((unit.orderedTypes.filter fun declaration =>
       visible (typeDeclVisibility declaration)).map renderTypeDecl)
