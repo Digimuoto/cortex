@@ -15,6 +15,8 @@ abbrev Name := String
 inductive CType where
   | void
   | bool
+  | char
+  | int
   | u8
   | u32
   | u64
@@ -23,6 +25,8 @@ inductive CType where
   | named (name : Name)
   | pointer (pointee : CType) (constPointee : Bool := false)
   | array (capacity : Nat) (element : CType)
+  | namedArray (capacity : Name) (element : CType)
+  | unsizedArray (element : CType)
   deriving Repr
 
 inductive Visibility where
@@ -42,6 +46,7 @@ inductive UnaryOp where
   | bitNot
   | address
   | dereference
+  | preIncrement
   deriving Repr
 
 inductive BinaryOp where
@@ -71,6 +76,7 @@ inductive Expr where
   | unsigned (value : Nat)
   | bool (value : Bool)
   | string (value : String)
+  | character (value : Char)
   | null
   | unary (op : UnaryOp) (value : Expr)
   | binary (op : BinaryOp) (left right : Expr)
@@ -80,6 +86,8 @@ inductive Expr where
   | field (record : Expr) (name : Name)
   | pointerField (record : Expr) (name : Name)
   | index (array index : Expr)
+  | postIncrement (value : Expr)
+  | parenthesized (value : Expr)
   | sizeof (ty : CType)
   | alignof (ty : CType)
   deriving Repr
@@ -90,6 +98,11 @@ structure Local where
   initial : Option Expr := none
   deriving Repr
 
+inductive ForInit where
+  | assign (target value : Expr)
+  | local (declaration : Local)
+  deriving Repr
+
 mutual
   inductive Stmt where
     | block (statements : List Stmt)
@@ -98,7 +111,10 @@ mutual
     | assign (target value : Expr)
     | branch (condition : Expr) (thenBody elseBody : List Stmt)
     | boundedFor (index : Name) (bound : Expr) (body : List Stmt)
+    | forLoop (initial : ForInit) (condition step : Expr) (body : List Stmt)
+    | forever (body : List Stmt)
     | switch (scrutinee : Expr) (cases : List SwitchCase) (defaultBody : List Stmt)
+    | comment (lines : List String)
     | returnValue (value : Expr)
     | returnVoid
     | break
@@ -127,6 +143,7 @@ structure StructDecl where
   name : Name
   fields : List Field
   visibility : Visibility := .internal
+  emitTag : Bool := false
   deriving Repr
 
 structure EnumMember where
@@ -138,6 +155,7 @@ structure EnumDecl where
   name : Name
   members : List EnumMember
   visibility : Visibility := .internal
+  emitTag : Bool := false
   deriving Repr
 
 structure TypedefDecl where
@@ -153,12 +171,33 @@ structure FunctionTypedef where
   visibility : Visibility := .internal
   deriving Repr
 
+inductive TypeDecl where
+  | define (name : Name) (value : Expr)
+  | alias (declaration : TypedefDecl)
+  | functionAlias (declaration : FunctionTypedef)
+  | enumeration (declaration : EnumDecl)
+  | structure (declaration : StructDecl)
+  deriving Repr
+
+inductive Initializer where
+  | expression (value : Expr)
+  | list (values : List Expr)
+  deriving Repr
+
 structure Global where
   name : Name
   ty : CType
   storage : Storage := .static
-  initial : Option Expr := none
+  isConst : Bool := false
+  initial : Option Initializer := none
   visibility : Visibility := .internal
+  blankAfter : Bool := false
+  deriving Repr
+
+/-- Optional concrete whitespace for compatibility profiles. It cannot add,
+remove, or change any C token produced by the structured AST. -/
+structure ConcreteLayout where
+  gaps : List String
   deriving Repr
 
 structure CFunction where
@@ -168,6 +207,9 @@ structure CFunction where
   body : Option (List Stmt) := none
   visibility : Visibility := .internal
   comments : List String := []
+  headerComments : List String := []
+  headerParams : Option (List Param) := none
+  concreteLayout : Option ConcreteLayout := none
   deriving Repr
 
 structure StaticAssert where
@@ -198,8 +240,12 @@ structure TranslationUnit where
   schema : String
   identity : String
   headerGuard : Name
+  headerIncludes : List String := ["stdbool.h", "stddef.h", "stdint.h"]
+  localHeader : String := "program.h"
+  headerLayout : Option ConcreteLayout := none
   includes : List String := []
   defines : List (Name × Expr) := []
+  orderedTypes : List TypeDecl := []
   typedefs : List TypedefDecl := []
   functionTypedefs : List FunctionTypedef := []
   enums : List EnumDecl := []
@@ -240,10 +286,12 @@ def validIdentifier (name : Name) : Bool :=
           !cKeywords.contains name
 
 private def typeValid : CType → Bool
-  | .void | .bool | .u8 | .u32 | .u64 | .i64 | .f64 => true
+  | .void | .bool | .char | .int | .u8 | .u32 | .u64 | .i64 | .f64 => true
   | .named name => validIdentifier name
   | .pointer pointee _ => typeValid pointee
   | .array capacity element => 0 < capacity && typeValid element
+  | .namedArray capacity element => validIdentifier capacity && typeValid element
+  | .unsizedArray element => typeValid element
 
 private def exprValidFuel : Nat → Expr → Bool
   | 0, _ => false
@@ -251,7 +299,7 @@ private def exprValidFuel : Nat → Expr → Bool
       let valid := exprValidFuel fuel
       match expression with
       | .ident name => validIdentifier name
-      | .signed _ | .unsigned _ | .bool _ | .string _ | .null => true
+      | .signed _ | .unsigned _ | .bool _ | .string _ | .character _ | .null => true
       | .unary _ value => valid value
       | .binary _ left right => valid left && valid right
       | .conditional condition thenExpr elseExpr =>
@@ -261,10 +309,21 @@ private def exprValidFuel : Nat → Expr → Bool
       | .field record name | .pointerField record name =>
           valid record && validIdentifier name
       | .index arrayExpr indexExpr => valid arrayExpr && valid indexExpr
+      | .postIncrement value => valid value
+      | .parenthesized value => valid value
       | .sizeof ty | .alignof ty => typeValid ty
 
 private def exprValid (expression : Expr) : Bool :=
   exprValidFuel (reprStr expression).length expression
+
+private def safeComment (comment : String) : Bool :=
+  !comment.contains "*/" &&
+    comment.toList.all fun char => char != '\n' && char != '\r'
+
+private def concreteLayoutValid (layout : ConcreteLayout) : Bool :=
+  layout.gaps.all fun gap =>
+    gap.toList.all fun char =>
+      char == ' ' || char == '\t' || char == '\n' || char == '\r'
 
 private def stmtValidFuel : Nat → Stmt → Bool
   | 0, _ => false
@@ -282,21 +341,26 @@ private def stmtValidFuel : Nat → Stmt → Bool
           exprValid condition && statementsValid thenBody && statementsValid elseBody
       | .boundedFor index bound body =>
           validIdentifier index && exprValid bound && statementsValid body
+      | .forLoop initial condition step body =>
+          (match initial with
+           | .assign target value => exprValid target && exprValid value
+           | .local declaration =>
+               validIdentifier declaration.name && typeValid declaration.ty &&
+                 declaration.initial.all exprValid) &&
+            exprValid condition && exprValid step && statementsValid body
+      | .forever body => statementsValid body
       | .switch scrutinee cases defaultBody =>
           exprValid scrutinee &&
             cases.all (fun switchCase =>
               exprValid switchCase.value && statementsValid switchCase.body) &&
             statementsValid defaultBody
       | .returnValue value => exprValid value
+      | .comment lines => lines.all safeComment
       | .returnVoid | .break | .continue | .trap => true
 
 private def statementsValid (statements : List Stmt) : Bool :=
   let fuel := (reprStr statements).length
   statements.all (stmtValidFuel fuel)
-
-private def safeComment (comment : String) : Bool :=
-  !comment.contains "*/" &&
-    comment.toList.all fun char => char != '\n' && char != '\r'
 
 private def unique : List String → Bool
   | [] => true
@@ -315,6 +379,12 @@ private def exportedNames (unit : TranslationUnit) : List Name :=
     function.visibility == Visibility.exported).map CFunction.name
 
 private def declaredNames (unit : TranslationUnit) : List Name :=
+  unit.orderedTypes.map (fun
+    | .define name _ => name
+    | .alias declaration => declaration.name
+    | .functionAlias declaration => declaration.name
+    | .enumeration declaration => declaration.name
+    | .structure declaration => declaration.name) ++
   unit.typedefs.map (·.name) ++ unit.functionTypedefs.map (·.name) ++
     unit.enums.map (·.name) ++ unit.structs.map (·.name) ++
       unit.globals.map (·.name) ++ unit.functions.map (·.name)
@@ -334,6 +404,8 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
   if unit.identity.isEmpty then throw "translation-unit identity must not be empty"
   if !validIdentifier unit.headerGuard then throw "invalid header guard"
   if !unit.includes.all safeInclude then throw "invalid system include"
+  if !unit.headerIncludes.all safeInclude then throw "invalid header include"
+  if unit.localHeader.isEmpty || !safeInclude unit.localHeader then throw "invalid local header"
   if !unique (unit.defines.map Prod.fst ++ declaredNames unit) then
     throw "duplicate top-level C identifier"
   if !(declaredNames unit).all validIdentifier then throw "invalid top-level C identifier"
@@ -357,13 +429,41 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
       typeValid function.result && function.params.all (typeValid ·.ty)) then
     throw "invalid function-typedef type"
   if !unit.globals.all (fun global =>
-      typeValid global.ty && global.initial.all exprValid) then
+      typeValid global.ty && global.initial.all fun
+        | .expression value => exprValid value
+        | .list values => values.all exprValid) then
     throw "invalid global declaration"
   if !unit.functions.all (fun function : CFunction =>
       typeValid function.result && function.params.all (typeValid ·.ty) &&
         function.body.all statementsValid && function.comments.all safeComment) then
     throw "invalid function declaration"
+  if !unit.functions.all (fun function : CFunction =>
+      function.headerComments.all safeComment) then
+    throw "invalid function header comment"
+  if !unit.functions.all (fun function : CFunction =>
+      function.headerParams.all paramsValid &&
+        function.concreteLayout.all concreteLayoutValid) then
+    throw "invalid concrete function layout"
+  if !unit.headerLayout.all concreteLayoutValid then throw "invalid concrete header layout"
   if !unit.assertions.all (exprValid ·.condition) then throw "invalid static assertion"
+  for declaration in unit.orderedTypes do
+    match declaration with
+    | .define name value =>
+        if !validIdentifier name || !exprValid value then throw "invalid ordered header define"
+    | .alias alias =>
+        if !typeValid alias.target then throw "invalid ordered typedef target"
+    | .functionAlias function =>
+        if !paramsValid function.params || !typeValid function.result ||
+            !function.params.all (typeValid ·.ty) then
+          throw "invalid ordered function typedef"
+    | .enumeration enumeration =>
+        if enumeration.members.isEmpty ||
+            !enumeration.members.all (validIdentifier ·.name) ||
+            !unique (enumeration.members.map (·.name)) then
+          throw "invalid ordered enum declaration"
+    | .structure declaration =>
+        if !fieldNamesValid declaration.fields || !declaration.fields.all (typeValid ·.ty) then
+          throw "invalid ordered struct declaration"
   if !unique (exportedNames unit) then throw "duplicate exported symbol"
   if !unit.layouts.all layoutValid then
     throw "invalid layout metadata"
@@ -398,9 +498,83 @@ private def escapeJsonChar : Char → String
 def escapeJson (value : String) : String :=
   String.join (value.toList.map escapeJsonChar)
 
+private def tokenTail (char : Char) : Bool :=
+  char == '_' || asciiLetter char || asciiDigit char || char == '.'
+
+private def takeTokenTail : List Char → List Char × List Char
+  | [] => ([], [])
+  | char :: rest =>
+      if tokenTail char then
+        let (token, remaining) := takeTokenTail rest
+        (char :: token, remaining)
+      else ([], char :: rest)
+
+private def takeQuoted (quote : Char) : List Char → List Char → Bool → List Char × List Char
+  | [], reversed, _ => (reversed.reverse, [])
+  | char :: rest, reversed, escaped =>
+      if escaped then takeQuoted quote rest (char :: reversed) false
+      else if char == '\\' then takeQuoted quote rest (char :: reversed) true
+      else if char == quote then ((char :: reversed).reverse, rest)
+      else takeQuoted quote rest (char :: reversed) false
+
+private def takeBlockComment : List Char → List Char → List Char × List Char
+  | [], reversed => (reversed.reverse, [])
+  | '*' :: '/' :: rest, reversed => (('/' :: '*' :: reversed).reverse, rest)
+  | char :: rest, reversed => takeBlockComment rest (char :: reversed)
+
+private def twoCharacterToken (left right : Char) : Bool :=
+  [ "->", "++", "--", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>"
+  , "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="
+  ].contains (String.ofList [left, right])
+
+private def scanConcreteFuel :
+    Nat → List Char → List Char → List String → List String → Option (List String × List String)
+  | 0, [], reversedGap, reversedTokens, reversedGaps =>
+      some (reversedTokens.reverse, (String.ofList reversedGap.reverse :: reversedGaps).reverse)
+  | 0, _ :: _, _, _, _ => none
+  | _ + 1, [], reversedGap, reversedTokens, reversedGaps =>
+      some (reversedTokens.reverse, (String.ofList reversedGap.reverse :: reversedGaps).reverse)
+  | fuel + 1, char :: rest, reversedGap, reversedTokens, reversedGaps =>
+      if char == ' ' || char == '\t' || char == '\n' || char == '\r' then
+        scanConcreteFuel fuel rest (char :: reversedGap) reversedTokens reversedGaps
+      else
+        let gap := String.ofList reversedGap.reverse
+        let (tokenChars, remaining) :=
+          if asciiLetter char || char == '_' || asciiDigit char then
+            let (tail, after) := takeTokenTail rest
+            (char :: tail, after)
+          else if char == '"' || char == '\'' then
+            takeQuoted char rest [char] false
+          else
+            match char, rest with
+            | '/', '*' :: after => takeBlockComment after ['*', '/']
+            | left, right :: after =>
+                if twoCharacterToken left right then ([left, right], after)
+                else ([left], right :: after)
+            | single, [] => ([single], [])
+        scanConcreteFuel fuel remaining [] (String.ofList tokenChars :: reversedTokens)
+          (gap :: reversedGaps)
+
+private def scanConcrete (rendered : String) : Option (List String × List String) :=
+  scanConcreteFuel (rendered.length + 1) rendered.toList [] [] []
+
+private def interleaveConcrete : List String → List String → Option String
+  | [gap], [] => some gap
+  | gap :: gaps, token :: tokens =>
+      (interleaveConcrete gaps tokens).map fun rest => gap ++ token ++ rest
+  | _, _ => none
+
+private def applyConcreteLayout (layout : Option ConcreteLayout) (rendered : String) : String :=
+  match layout, scanConcrete rendered with
+  | some concrete, some (tokens, _) =>
+      (interleaveConcrete concrete.gaps tokens).getD rendered
+  | none, _ | _, none => rendered
+
 private def renderBaseType : CType → String
   | .void => "void"
   | .bool => "bool"
+  | .char => "char"
+  | .int => "int"
   | .u8 => "uint8_t"
   | .u32 => "uint32_t"
   | .u64 => "uint64_t"
@@ -410,9 +584,17 @@ private def renderBaseType : CType → String
   | .pointer pointee constPointee =>
       (if constPointee then "const " else "") ++ renderBaseType pointee ++ " *"
   | .array _ element => renderBaseType element
+  | .namedArray _ element => renderBaseType element
+  | .unsizedArray element => renderBaseType element
 
 def renderDeclaration : CType → Name → String
-  | .array capacity element, name => renderDeclaration element s!"{name}[{capacity}]"
+  | .array capacity element, name => renderDeclaration element s!"{name}[{capacity}u]"
+  | .namedArray capacity element, name => renderDeclaration element s!"{name}[{capacity}]"
+  | .unsizedArray element, name => renderDeclaration element s!"{name}[]"
+  | .pointer pointee constPointee, name =>
+      let rendered :=
+        (if constPointee then "const " else "") ++ renderBaseType pointee ++ " *"
+      rendered ++ name
   | ty, name => renderBaseType ty ++ (if name.isEmpty then "" else " " ++ name)
 
 private def unaryToken : UnaryOp → String
@@ -421,6 +603,7 @@ private def unaryToken : UnaryOp → String
   | .bitNot => "~"
   | .address => "&"
   | .dereference => "*"
+  | .preIncrement => "++"
 
 private def binaryToken : BinaryOp → String
   | .multiply => "*"
@@ -458,8 +641,9 @@ private def exprPrecedence : Expr → Nat
   | .conditional _ _ _ => 3
   | .binary op _ _ => binaryPrecedence op
   | .unary _ _ | .cast _ _ => 14
-  | .ident _ | .signed _ | .unsigned _ | .bool _ | .string _ | .null |
-    .call _ _ | .field _ _ | .pointerField _ _ | .index _ _ | .sizeof _ | .alignof _ => 15
+  | .ident _ | .signed _ | .unsigned _ | .bool _ | .string _ | .character _ | .null |
+    .call _ _ | .field _ _ | .pointerField _ _ | .index _ _ | .postIncrement _ |
+    .parenthesized _ | .sizeof _ | .alignof _ => 15
 
 private def renderExprFuel : Nat → Nat → Expr → String
   | 0, _, _ => ""
@@ -474,6 +658,7 @@ private def renderExprFuel : Nat → Nat → Expr → String
         | .bool true => "true"
         | .bool false => "false"
         | .string value => "\"" ++ escapeC value ++ "\""
+        | .character value => "'" ++ escapeCChar value ++ "'"
         | .null => "NULL"
         | .unary op value => unaryToken op ++ renderAt 14 value
         | .binary op left right =>
@@ -491,6 +676,8 @@ private def renderExprFuel : Nat → Nat → Expr → String
         | .pointerField record name => renderAt 15 record ++ "->" ++ name
         | .index arrayExpr indexExpr =>
             renderAt 15 arrayExpr ++ "[" ++ renderAt 0 indexExpr ++ "]"
+        | .postIncrement value => renderAt 15 value ++ "++"
+        | .parenthesized value => "(" ++ renderAt 0 value ++ ")"
         | .sizeof ty => "sizeof(" ++ renderDeclaration ty "" ++ ")"
         | .alignof ty => "_Alignof(" ++ renderDeclaration ty "" ++ ")"
       if precedence < parent then "(" ++ rendered ++ ")" else rendered
@@ -524,6 +711,16 @@ private def renderStmtFuel : Nat → Nat → Stmt → String
       | .boundedFor index bound body =>
           indentation depth ++ "for (uint64_t " ++ index ++ " = 0u; " ++ index ++ " < " ++
             renderExpr bound ++ "; ++" ++ index ++ ") " ++ renderBlock depth body ++ "\n"
+      | .forLoop initial condition step body =>
+          let renderedInitial :=
+            match initial with
+            | .assign target value => renderExpr target ++ " = " ++ renderExpr value
+            | .local declaration =>
+                renderDeclaration declaration.ty declaration.name ++
+                  (declaration.initial.map (" = " ++ renderExpr ·)).getD ""
+          indentation depth ++ "for (" ++ renderedInitial ++ "; " ++ renderExpr condition ++
+            "; " ++ renderExpr step ++ ") " ++ renderBlock depth body ++ "\n"
+      | .forever body => indentation depth ++ "for (;;) " ++ renderBlock depth body ++ "\n"
       | .switch scrutinee cases defaultBody =>
           let renderCase (switchCase : SwitchCase) :=
             indentation (depth + 1) ++ "case " ++ renderExpr switchCase.value ++ ":\n" ++
@@ -535,6 +732,14 @@ private def renderStmtFuel : Nat → Nat → Stmt → String
                renderList (depth + 2) defaultBody) ++
             indentation depth ++ "}\n"
       | .returnValue value => indentation depth ++ "return " ++ renderExpr value ++ ";\n"
+      | .comment lines =>
+          match lines with
+          | [] => ""
+          | first :: rest =>
+              indentation depth ++ "/* " ++ first ++
+                (if rest.isEmpty then " */\n"
+                 else "\n" ++ String.intercalate "\n" (rest.map fun line =>
+                   indentation depth ++ " * " ++ line) ++ " */\n")
       | .returnVoid => indentation depth ++ "return;\n"
       | .break => indentation depth ++ "break;\n"
       | .continue => indentation depth ++ "continue;\n"
@@ -552,13 +757,13 @@ private def renderParams (params : List Param) : String :=
   else String.intercalate ", " (params.map fun param => renderDeclaration param.ty param.name)
 
 private def renderStruct (decl : StructDecl) : String :=
-  "typedef struct " ++ decl.name ++ " {\n" ++
+  "typedef struct" ++ (if decl.emitTag then " " ++ decl.name else "") ++ " {\n" ++
     String.join (decl.fields.map fun field =>
       "  " ++ renderDeclaration field.ty field.name ++ ";\n") ++
     "} " ++ decl.name ++ ";\n\n"
 
 private def renderEnum (decl : EnumDecl) : String :=
-  "typedef enum " ++ decl.name ++ " {\n" ++
+  "typedef enum" ++ (if decl.emitTag then " " ++ decl.name else "") ++ " {\n" ++
     String.intercalate ",\n" (decl.members.map fun member =>
       "  " ++ member.name ++ " = " ++ toString member.value) ++ "\n} " ++ decl.name ++ ";\n\n"
 
@@ -569,24 +774,46 @@ private def renderFunctionTypedef (decl : FunctionTypedef) : String :=
   "typedef " ++ renderDeclaration decl.result "" ++ " (*" ++ decl.name ++ ")(" ++
     renderParams decl.params ++ ");\n"
 
-private def renderPrototype (function : CFunction) : String :=
-  String.join (function.comments.map fun comment => "/* " ++ comment ++ " */\n") ++
-    renderDeclaration function.result function.name ++ "(" ++ renderParams function.params ++ ");\n"
+private def typeDeclVisibility : TypeDecl → Visibility
+  | .define _ _ => .exported
+  | .alias declaration => declaration.visibility
+  | .functionAlias declaration => declaration.visibility
+  | .enumeration declaration => declaration.visibility
+  | .structure declaration => declaration.visibility
 
-private def renderFunction (function : CFunction) : String :=
+private def renderTypeDecl : TypeDecl → String
+  | .define name value => "#define " ++ name ++ " " ++ renderExpr value ++ "\n\n"
+  | .alias declaration => renderTypedef declaration
+  | .functionAlias declaration => renderFunctionTypedef declaration
+  | .enumeration declaration => renderEnum declaration
+  | .structure declaration => renderStruct declaration
+
+private def renderPrototype (function : CFunction) : String :=
+  String.join (function.headerComments.map fun comment => "/* " ++ comment ++ " */\n") ++
+    renderDeclaration function.result "" ++ " " ++ function.name ++ "(" ++
+    renderParams (function.headerParams.getD function.params) ++ ");\n"
+
+private def renderFunctionCanonical (function : CFunction) : String :=
   match function.body with
   | none => renderPrototype function
   | some body =>
       String.join (function.comments.map fun comment => "/* " ++ comment ++ " */\n") ++
         (if function.visibility == .internal then "static " else "") ++
-        renderDeclaration function.result function.name ++ "(" ++
+        renderDeclaration function.result "" ++ " " ++ function.name ++ "(" ++
         renderParams function.params ++ ") " ++
         renderBlock 0 body ++ "\n\n"
 
+private def renderFunction (function : CFunction) : String :=
+  applyConcreteLayout function.concreteLayout (renderFunctionCanonical function)
+
 private def renderGlobal (global : Global) : String :=
   (match global.storage with | .automatic => "" | .static => "static " | .extern => "extern ") ++
+    (if global.isConst then "const " else "") ++
     renderDeclaration global.ty global.name ++
-    (global.initial.map (" = " ++ renderExpr ·)).getD "" ++ ";\n"
+    (global.initial.map fun
+      | .expression value => " = " ++ renderExpr value
+      | .list values => " = {" ++ String.intercalate ", " (values.map renderExpr) ++ "}").getD "" ++
+    ";\n" ++ (if global.blankAfter then "\n" else "")
 
 private def renderGlobalExtern (global : Global) : String :=
   "extern " ++ renderDeclaration global.ty global.name ++ ";\n"
@@ -598,20 +825,24 @@ private def renderAssertion (assertion : StaticAssert) : String :=
 private def renderTypeDecls (unit : TranslationUnit) (publicOnly : Bool) : String :=
   let visible (visibility : Visibility) :=
     if publicOnly then visibility == .exported else visibility == .internal
-  String.join ((unit.typedefs.filter fun declaration =>
-    visible declaration.visibility).map renderTypedef) ++
-    String.join ((unit.functionTypedefs.filter fun declaration =>
-      visible declaration.visibility).map renderFunctionTypedef) ++
-    (if unit.typedefs.isEmpty && unit.functionTypedefs.isEmpty then "" else "\n") ++
-    String.join ((unit.enums.filter fun declaration =>
-      visible declaration.visibility).map renderEnum) ++
-    String.join ((unit.structs.filter fun declaration =>
-      visible declaration.visibility).map renderStruct)
+  if unit.orderedTypes.isEmpty then
+    String.join ((unit.typedefs.filter fun declaration =>
+      visible declaration.visibility).map renderTypedef) ++
+      String.join ((unit.functionTypedefs.filter fun declaration =>
+        visible declaration.visibility).map renderFunctionTypedef) ++
+      (if unit.typedefs.isEmpty && unit.functionTypedefs.isEmpty then "" else "\n") ++
+      String.join ((unit.enums.filter fun declaration =>
+        visible declaration.visibility).map renderEnum) ++
+      String.join ((unit.structs.filter fun declaration =>
+        visible declaration.visibility).map renderStruct)
+  else
+    String.join ((unit.orderedTypes.filter fun declaration =>
+      visible (typeDeclVisibility declaration)).map renderTypeDecl)
 
-def renderHeader (validated : ValidatedTranslationUnit) : String :=
+private def renderHeaderCanonical (validated : ValidatedTranslationUnit) : String :=
   let unit := validated.unit
   "#ifndef " ++ unit.headerGuard ++ "\n#define " ++ unit.headerGuard ++ "\n\n" ++
-    "#include <stdbool.h>\n#include <stddef.h>\n#include <stdint.h>\n\n" ++
+    String.join (unit.headerIncludes.map fun header => "#include <" ++ header ++ ">\n") ++ "\n" ++
     "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n" ++
     renderTypeDecls unit true ++
     String.join ((unit.globals.filter fun global : Global =>
@@ -620,9 +851,12 @@ def renderHeader (validated : ValidatedTranslationUnit) : String :=
       function.visibility == Visibility.exported).map renderPrototype) ++
     "\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n"
 
+def renderHeader (validated : ValidatedTranslationUnit) : String :=
+  applyConcreteLayout validated.unit.headerLayout (renderHeaderCanonical validated)
+
 def renderSource (validated : ValidatedTranslationUnit) : String :=
   let unit := validated.unit
-  "#include \"program.h\"\n" ++
+  "#include \"" ++ unit.localHeader ++ "\"\n" ++
     String.join (unit.includes.map fun header => "#include <" ++ header ++ ">\n") ++ "\n" ++
     String.join (unit.defines.map fun define =>
       "#define " ++ define.1 ++ " " ++ renderExpr define.2 ++ "\n") ++
@@ -701,7 +935,7 @@ private def smokeUnit : TranslationUnit :=
       [ { name := "cortex_smoke_version"
         , ty := .u32
         , storage := .automatic
-        , initial := some (.unsigned 1)
+        , initial := some (.expression (.unsigned 1))
         , visibility := .exported
         }
       ]
@@ -737,6 +971,12 @@ example : smokeArtifacts.map (·.header.contains "cortex_smoke_result") = some t
   native_decide
 
 example : smokeArtifacts.map (·.source.contains "cortex_smoke_result") = some false := by
+  native_decide
+
+example :
+    (match validate { smokeUnit with headerLayout := some { gaps := ["/* token */"] } } with
+     | .error _ => true
+     | .ok _ => false) = true := by
   native_decide
 
 example : smokeArtifacts.map (·.source.contains "cortex_smoke_state") = some true := by

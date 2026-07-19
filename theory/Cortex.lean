@@ -21,6 +21,9 @@ import Cortex.Wire.Pure
 import Cortex.Wire.NativePure.Type
 import Cortex.Wire.SemanticC
 import Cortex.Wire.C11
+import Cortex.Wire.StaticCEmitter
+import Cortex.Wire.StaticCEmitter.Layout
+import Cortex.Wire.StaticCEmitter.Unit
 import Cortex.Wire.NativePure
 import Cortex.Wire.Registry
 import Cortex.Wire.Rewrite
