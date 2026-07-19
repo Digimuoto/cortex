@@ -56,8 +56,9 @@ import Data.List qualified as List
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Scientific (floatingOrInteger)
+import Data.Scientific qualified as Scientific
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -71,7 +72,6 @@ import Cortex.Algebra.Graph
   ( Relation (..)
   , edges
   , inducedSubgraph
-  , predecessors
   , successors
   , toRelation
   , topSort
@@ -286,7 +286,6 @@ data NativePureArtifactError
   | NativePureArtifactMissingRuntimeUnit !Text
   | NativePureArtifactRuntimeInverseMismatch !Text
   | NativePureArtifactRuntimeCycle
-  | NativePureArtifactCrossRegionPureEdge !Connection
   | NativePureArtifactRegionMismatch !Text
   | NativePureArtifactRealizationMismatch
   | NativePureArtifactMissingPort !EndpointRef
@@ -310,7 +309,6 @@ renderNativePureArtifactError = \case
   NativePureArtifactMissingRuntimeUnit runtimeRef -> "source provenance refers to missing runtime unit " <> runtimeRef
   NativePureArtifactRuntimeInverseMismatch runtimeRef -> "runtime unit " <> runtimeRef <> " disagrees with source-to-runtime provenance"
   NativePureArtifactRuntimeCycle -> "realized quotient topology is cyclic"
-  NativePureArtifactCrossRegionPureEdge connection -> "eligible pure edge crosses maximal regions: " <> T.pack (show connection)
   NativePureArtifactRegionMismatch regionRef -> "NativePure region " <> regionRef <> " does not match the normalized maximal component"
   NativePureArtifactRealizationMismatch -> "realization artifact does not match the normalized witnessed quotient"
   NativePureArtifactMissingPort endpoint -> "normalized connection has no exact port at " <> T.pack (show endpoint)
@@ -369,7 +367,7 @@ realizeNativePurePlanWithMode fusionMode normalized = do
         toRelation $
           vertices normalized.nativePureNormalizedSourceNodes
             <> edges normalized.nativePureNormalizedSourceEdges
-      components = realizationComponents fusionMode normalized candidateMap
+      components = realizationComponents sourceRelation fusionMode normalized candidateMap
   regions <-
     traverse
       (uncurry (buildRegion sourceRelation candidateMap normalized.nativePureNormalizedConnections))
@@ -406,13 +404,28 @@ validateRealizationArtifact normalized artifact = do
   traverse_ (ensureMember mappedSet NativePureArtifactMissingSourceProvenance) sourceSet
   traverse_ (ensureMember sourceSet NativePureArtifactUnknownSourceProvenance) mappedSet
   traverse_
-    ( \runtimeRef ->
-        unless
-          (Map.member runtimeRef artifact.realizationArtifactRuntimeUnits)
-          (Left (NativePureArtifactMissingRuntimeUnit runtimeRef))
+    ( \(source, runtimeRef) ->
+        case Map.lookup runtimeRef artifact.realizationArtifactRuntimeUnits of
+          Nothing -> Left (NativePureArtifactMissingRuntimeUnit runtimeRef)
+          Just unit ->
+            unless
+              (source `elem` unit.realizationRuntimeUnitSources)
+              (Left (NativePureArtifactRuntimeInverseMismatch runtimeRef))
     )
-    artifact.realizationArtifactSourceToRuntime
-  foldM_ checkUnit Set.empty (Map.toAscList artifact.realizationArtifactRuntimeUnits)
+    (Map.toAscList artifact.realizationArtifactSourceToRuntime)
+  coveredSources <- foldM checkUnit Set.empty (Map.toAscList artifact.realizationArtifactRuntimeUnits)
+  unless (coveredSources == sourceSet) $
+    Left NativePureArtifactRealizationMismatch
+  let expectedRuntimeEdges =
+        Set.fromList
+          [ (fromUnit, toUnit)
+          | (fromSource, toSource) <- normalized.nativePureNormalizedSourceEdges
+          , Just fromUnit <- [Map.lookup fromSource artifact.realizationArtifactSourceToRuntime]
+          , Just toUnit <- [Map.lookup toSource artifact.realizationArtifactSourceToRuntime]
+          , fromUnit /= toUnit
+          ]
+  unless (artifact.realizationArtifactRuntimeEdges == expectedRuntimeEdges) $
+    Left NativePureArtifactRealizationMismatch
   let runtimeRelation =
         toRelation $
           vertices (Map.keys artifact.realizationArtifactRuntimeUnits)
@@ -422,6 +435,9 @@ validateRealizationArtifact normalized artifact = do
     ensureMember setValue mkError value = unless (Set.member value setValue) (Left (mkError value))
     checkUnit seen (runtimeRef, unit) = do
       when (null unit.realizationRuntimeUnitSources) (Left (NativePureArtifactEmptyRegion runtimeRef))
+      unless
+        (unit.realizationRuntimeUnitRef == runtimeRef)
+        (Left (NativePureArtifactRuntimeInverseMismatch runtimeRef))
       unless
         ( all
             (\source -> Map.lookup source artifact.realizationArtifactSourceToRuntime == Just runtimeRef)
@@ -449,7 +465,7 @@ validateNativePurePlan normalized plan = do
           [ (candidate.nativePureKernelCandidateRef, candidate)
           | candidate <- normalized.nativePureNormalizedCandidates
           ]
-      expectedComponents = realizationComponents plan.nativePurePlanFusionMode normalized candidateMap
+      expectedComponents = realizationComponents sourceRelation plan.nativePurePlanFusionMode normalized candidateMap
   expectedRegions <-
     traverse
       (uncurry (buildRegion sourceRelation candidateMap normalized.nativePureNormalizedConnections))
@@ -499,21 +515,52 @@ validateSsa region = do
             )
           | boundary <- region.nativePureFusedRegionInputs
           ]
-  _ <- foldM validateStep boundaryDefinitions region.nativePureFusedRegionSsa
+  _ <-
+    foldM
+      validateStep
+      (boundaryDefinitions, Map.keysSet boundaryDefinitions)
+      region.nativePureFusedRegionSsa
   pure ()
   where
-    validateStep defined step = do
+    validateStep (defined, claimed) step = do
       traverse_
         ( \input ->
             requireDefinedShape defined input.nativePureSsaInputValue input.nativePureSsaInputShape
         )
         step.nativePureSsaStepInputs
       preludeDefinitions <- validateAnfBindings defined step.nativePureSsaStepPrelude
-      foldM validateEquation preludeDefinitions step.nativePureSsaStepEquations
-    validateEquation defined equation = do
+      preludeClaimed <- foldM claimName claimed (Map.keys (Map.difference preludeDefinitions defined))
+      foldM validateEquation (preludeDefinitions, preludeClaimed) step.nativePureSsaStepEquations
+    -- Equation ANF bindings stay block-local for use resolution, but every
+    -- name they introduce (including branch-block bindings) is claimed so
+    -- cross-equation and cross-step reuse is rejected.
+    validateEquation (defined, claimed) equation = do
       resultShape <- validateAnfBlock defined equation.nativePureSsaEquationAnf
       requireAnfShape resultShape equation.nativePureSsaEquationShape
-      addDefinition defined equation.nativePureSsaEquationValue equation.nativePureSsaEquationShape
+      blockClaimed <- foldM claimName claimed (anfBlockNames equation.nativePureSsaEquationAnf)
+      resultClaimed <- claimName blockClaimed equation.nativePureSsaEquationValue
+      definedNext <-
+        addDefinition defined equation.nativePureSsaEquationValue equation.nativePureSsaEquationShape
+      pure (definedNext, resultClaimed)
+    claimName claimed valueRef
+      | Set.member valueRef claimed = Left (NativePureArtifactSsaDuplicateDefinition valueRef)
+      | otherwise = pure (Set.insert valueRef claimed)
+
+anfBlockNames :: NativePureAnfBlock -> [NativePureSsaValueRef]
+anfBlockNames block = concatMap bindingNames block.nativePureAnfBlockBindings
+  where
+    bindingNames binding =
+      binding.nativePureAnfBindingValue : opNames binding.nativePureAnfBindingOp
+    opNames = \case
+      NativePureAnfLiteral _ -> []
+      NativePureAnfAlias _ -> []
+      NativePureAnfRecord _ -> []
+      NativePureAnfProject _ _ -> []
+      NativePureAnfNot _ -> []
+      NativePureAnfBinary {} -> []
+      NativePureAnfIf _ thenBlock elseBlock ->
+        anfBlockNames thenBlock <> anfBlockNames elseBlock
+      NativePureAnfInject _ _ -> []
 
 validateAnfBlock
   :: Map NativePureSsaValueRef NativeShape
@@ -616,55 +663,91 @@ addDefinition defined valueRef shape
       Left (NativePureArtifactSsaDuplicateDefinition valueRef)
   | otherwise = pure (Map.insert valueRef shape defined)
 
-nativePureFusionRelation
-  :: Map CircuitNodeRef NativePureKernelCandidate
+{- | Maximal convex fusion. Components grow by merging across fusion-eligible
+connections in ascending order. A merge is refused when a source path would
+leave the merged set and re-enter it (the realized quotient would cycle), or
+when it would place an exclusive-sum producer in one region with a consumer of
+its variant edges (variants must cross a region boundary together).
+-}
+maximalEligibleComponents
+  :: Relation CircuitNodeRef
+  -> Map CircuitNodeRef NativePureKernelCandidate
   -> [Connection]
-  -> Relation CircuitNodeRef
-nativePureFusionRelation candidates connections =
-  toRelation $
-    vertices (Map.keys candidates)
-      <> edges
-        [ (fromSource, toSource)
+  -> [[CircuitNodeRef]]
+maximalEligibleComponents sourceRelation candidates connections =
+  [ ordered componentSet
+  | componentSet <- Set.toAscList (Set.fromList (Map.elems merged))
+  ]
+  where
+    eligible = Map.keysSet candidates
+    fusionEdges =
+      Set.toAscList $
+        Set.fromList
+          [ (fromSource, toSource)
+          | connection <- connections
+          , let fromSource = connection.connectionFrom.endpointNodeRef
+          , let toSource = connection.connectionTo.endpointNodeRef
+          , Set.member toSource eligible
+          , Just fromCandidate <- [Map.lookup fromSource candidates]
+          , isNothing fromCandidate.nativePureKernelCandidateVariant
+          ]
+    variantEdges =
+      Set.fromList
+        [ (fromSource, connection.connectionTo.endpointNodeRef)
         | connection <- connections
         , let fromSource = connection.connectionFrom.endpointNodeRef
-        , let toSource = connection.connectionTo.endpointNodeRef
-        , Map.member toSource candidates
         , Just fromCandidate <- [Map.lookup fromSource candidates]
-        , isNothing fromCandidate.nativePureKernelCandidateVariant
+        , isJust fromCandidate.nativePureKernelCandidateVariant
         ]
-
-maximalEligibleComponents :: Relation CircuitNodeRef -> Set CircuitNodeRef -> [[CircuitNodeRef]]
-maximalEligibleComponents relation eligible = go Set.empty (Set.toAscList eligible)
-  where
-    go _ [] = []
-    go visited (source : rest)
-      | Set.member source visited = go visited rest
-      | otherwise =
-          let componentSet = flood Set.empty [source]
-              ordered =
-                filter (`Set.member` componentSet) $
-                  fromMaybe (Set.toAscList componentSet) (topSort (inducedSubgraph componentSet relation))
-           in ordered : go (visited <> componentSet) rest
-    flood seen [] = seen
-    flood seen (node : pending)
-      | Set.member node seen = flood seen pending
-      | otherwise =
-          let adjacent =
-                Set.toAscList $
-                  Set.intersection eligible (predecessors relation node <> successors relation node)
-           in flood (Set.insert node seen) (adjacent <> pending)
+    initial = Map.fromSet Set.singleton eligible
+    merged = foldl' mergeEdge initial fusionEdges
+    mergeEdge componentOf (fromSource, toSource) =
+      let fromComponent = Map.findWithDefault (Set.singleton fromSource) fromSource componentOf
+          toComponent = Map.findWithDefault (Set.singleton toSource) toSource componentOf
+          candidate = fromComponent <> toComponent
+       in if fromComponent == toComponent
+            || externalPathReenters candidate
+            || variantCrossesInside candidate
+            then componentOf
+            else foldl' (\acc member -> Map.insert member candidate acc) componentOf (Set.toAscList candidate)
+    externalPathReenters candidate = walk Set.empty (outsideSuccessors candidate)
+      where
+        outsideSuccessors members =
+          [ next
+          | member <- Set.toAscList members
+          , next <- Set.toAscList (successors sourceRelation member)
+          , not (Set.member next members)
+          ]
+        walk _ [] = False
+        walk seen (node : pending)
+          | Set.member node seen = walk seen pending
+          | otherwise =
+              let nexts = Set.toAscList (successors sourceRelation node)
+               in any (`Set.member` candidate) nexts
+                    || walk (Set.insert node seen) (filter (\next -> not (Set.member next candidate)) nexts <> pending)
+    variantCrossesInside candidate =
+      any
+        (\(fromSource, toSource) -> Set.member fromSource candidate && Set.member toSource candidate)
+        variantEdges
+    ordered componentSet =
+      filter (`Set.member` componentSet) $
+        fromMaybe
+          (Set.toAscList componentSet)
+          (topSort (inducedSubgraph componentSet sourceRelation))
 
 realizationComponents
-  :: NativePureFusionMode
+  :: Relation CircuitNodeRef
+  -> NativePureFusionMode
   -> NativePureNormalizedInput
   -> Map CircuitNodeRef NativePureKernelCandidate
   -> [[CircuitNodeRef]]
-realizationComponents fusionMode normalized candidates =
+realizationComponents sourceRelation fusionMode normalized candidates =
   case fusionMode of
     NativePureMaximalFusion ->
       maximalEligibleComponents
-        (nativePureFusionRelation candidates normalized.nativePureNormalizedConnections)
-        (Map.keysSet candidates)
+        sourceRelation
+        candidates
+        normalized.nativePureNormalizedConnections
     NativePureUnfused ->
       [ [source]
       | source <- normalized.nativePureNormalizedSourceNodes
@@ -1487,7 +1570,24 @@ firstAdmission
 firstAdmission = either (Left . NativePureArtifactAdmission) Right
 
 canonicalDigest :: Value -> Text
-canonicalDigest value = T.pack (show (hashlazy @SHA256 (Aeson.encode value) :: Digest SHA256))
+canonicalDigest value =
+  T.pack (show (hashlazy @SHA256 (Aeson.encode (canonicalNumbers value)) :: Digest SHA256))
+
+{- | Digests must be invariant under numeric representation, not just 'Eq':
+integral values re-encode at exponent zero (matching internally constructed
+values byte for byte) and fractional values normalize, so JSON-authored
+spellings such as @1e1@ cannot fork the digest of an equal input.
+-}
+canonicalNumbers :: Value -> Value
+canonicalNumbers = \case
+  Aeson.Object objectValue -> Aeson.Object (fmap canonicalNumbers objectValue)
+  Aeson.Array values -> Aeson.Array (fmap canonicalNumbers values)
+  Aeson.Number number ->
+    Aeson.Number $
+      case Scientific.floatingOrInteger number :: Either Double Integer of
+        Right integral -> fromInteger integral
+        Left _ -> Scientific.normalize number
+  other -> other
 
 normalizedInputValue :: NativePureNormalizedInput -> Value
 normalizedInputValue normalized =

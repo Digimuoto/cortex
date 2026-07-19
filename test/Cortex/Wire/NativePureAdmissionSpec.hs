@@ -65,6 +65,8 @@ import Cortex.Wire
   , realizeNativePurePlanWithMode
   , renderNativePurePlanModule
   , strictWireCompileEnv
+  , validateNativePurePlan
+  , validateRealizationArtifact
   , wireContractRegistryFromList
   , wireExecutorRegistryFromList
   )
@@ -462,6 +464,73 @@ artifactSpec = describe "NativePure normalized realization" $ do
         Left (NativePureArtifactDigestMismatch "normalized input") -> True
         _ -> False
 
+  it "splits effectful diamonds into convex regions instead of cyclic quotients" $ do
+    (_, plan) <- requirePlan fusionRegistry fusionMixedEnv effectDiamondProgram
+    fmap (.nativePureFusedRegionSources) plan.nativePurePlanRegions
+      `shouldBe` [ [CircuitNodeRef "carry", CircuitNodeRef "second"]
+                 , [CircuitNodeRef "first"]
+                 ]
+    plan.nativePurePlanRealization.realizationArtifactRuntimeEdges
+      `shouldBe` Set.fromList
+        [ ("native-pure/0001", "native-pure/0000")
+        , ("native-pure/0001", "source/review")
+        , ("source/review", "native-pure/0000")
+        ]
+
+  it "keeps unfused source coverage identical on effectful diamonds" $ do
+    compiled <- requireRight (compileWireTextWithEnv fusionMixedEnv effectDiamondProgram)
+    normalized <- requireRight (normalizeNativePureInput fusionRegistry compiled)
+    fusedPlan <- requireRight (realizeNativePurePlan normalized)
+    unfusedPlan <- requireRight (realizeNativePurePlanWithMode NativePureUnfused normalized)
+    Map.keysSet unfusedPlan.nativePurePlanRealization.realizationArtifactSourceToRuntime
+      `shouldBe` Map.keysSet fusedPlan.nativePurePlanRealization.realizationArtifactSourceToRuntime
+
+  it "cuts exclusive-sum consumers out of the producer's region" $ do
+    (_, plan) <- requirePlan sumDiamondRegistry sumDiamondEnv sumDiamondProgram
+    fmap (.nativePureFusedRegionSources) plan.nativePurePlanRegions
+      `shouldBe` [ [CircuitNodeRef "carry", CircuitNodeRef "consume"]
+                 , [CircuitNodeRef "seed", CircuitNodeRef "classify"]
+                 ]
+
+  it "rejects realization forgeries and tampered digests with named gates" $ do
+    (normalized, plan) <- requirePlan fusionRegistry fusionEnv fusedProgram
+    let artifact = plan.nativePurePlanRealization
+    validateRealizationArtifact
+      normalized
+      artifact {realizationArtifactReferentIdentity = "tampered"}
+      `shouldBe` Left (NativePureArtifactDigestMismatch "realization referent")
+    validateRealizationArtifact
+      normalized
+      artifact {realizationArtifactInputDigest = "tampered"}
+      `shouldBe` Left (NativePureArtifactDigestMismatch "realization input")
+    (diamondNormalized, diamondPlan) <-
+      requirePlan fusionRegistry fusionMixedEnv effectDiamondProgram
+    let diamondArtifact = diamondPlan.nativePurePlanRealization
+    validateRealizationArtifact
+      diamondNormalized
+      diamondArtifact {realizationArtifactRuntimeEdges = Set.empty}
+      `shouldSatisfy` \case
+        Left (NativePureArtifactDigestMismatch "realization artifact") -> True
+        Left NativePureArtifactRealizationMismatch -> True
+        _ -> False
+    let remapKey units =
+          case Map.toAscList units of
+            (runtimeRef, unit) : _ ->
+              Map.insert "forged/9999" unit (Map.delete runtimeRef units)
+            [] -> units
+        remapped =
+          artifact
+            { realizationArtifactRuntimeUnits =
+                remapKey artifact.realizationArtifactRuntimeUnits
+            }
+    validateRealizationArtifact normalized remapped
+      `shouldSatisfy` \case
+        Left (NativePureArtifactMissingRuntimeUnit _) -> True
+        Left (NativePureArtifactRuntimeInverseMismatch _) -> True
+        _ -> False
+    validateNativePurePlan normalized plan {nativePurePlanDigest = "tampered"}
+      `shouldBe` Left (NativePureArtifactDigestMismatch "NativePure plan")
+
 requirePlan
   :: WireContractRegistry
   -> WireCompileEnv
@@ -703,6 +772,59 @@ anfProgram =
     , "construct => project"
     ]
 
+effectDiamondProgram :: Text
+effectDiamondProgram =
+  T.unlines
+    [ "contract Score;"
+    , "contract Mid;"
+    , "contract MidCopy;"
+    , "contract Reviewed;"
+    , "contract Result;"
+    , "node first"
+    , "  <- score: Score;"
+    , "  -> mid: Mid = score + 1;"
+    , "  -> spare: MidCopy = score + 1;"
+    , "node review"
+    , "  <- mid: Mid;"
+    , "  -> reviewed: Reviewed;"
+    , "  = @report.review {} (mid);"
+    , "node carry"
+    , "  <- spare: MidCopy;"
+    , "  -> carried: MidCopy = spare;"
+    , "node second"
+    , "  <- carried: MidCopy;"
+    , "  <- reviewed: Reviewed;"
+    , "  -> result: Result = carried + reviewed;"
+    , "first => (review <> carry) => second"
+    ]
+
+sumDiamondProgram :: Text
+sumDiamondProgram =
+  T.unlines
+    [ "contract Score;"
+    , "contract Mid;"
+    , "contract MidCopy;"
+    , "contract Decision;"
+    , "contract RejectReason;"
+    , "contract Result;"
+    , "node seed"
+    , "  <- score: Score;"
+    , "  -> mid: Mid = score + 1;"
+    , "  -> spare: MidCopy = score + 1;"
+    , "node classify"
+    , "  <- mid: Mid;"
+    , "  -> accepted: Decision | rejected: RejectReason ="
+    , "    if mid < 0 then rejected mid else accepted mid;"
+    , "node carry"
+    , "  <- spare: MidCopy;"
+    , "  -> carried: MidCopy = spare;"
+    , "node consume"
+    , "  <- carried: MidCopy;"
+    , "  <- accepted: Decision;"
+    , "  -> result: Result = carried + accepted;"
+    , "seed => (classify <> carry) => consume"
+    ]
+
 bigTextProgram :: Text
 bigTextProgram =
   T.unlines
@@ -778,6 +900,9 @@ fusionMixedEnv = strictEnv fusionRegistry [pureWireExecutorProjection, reviewExe
 anfEnv :: WireCompileEnv
 anfEnv = strictEnv anfRegistry [pureWireExecutorProjection]
 
+sumDiamondEnv :: WireCompileEnv
+sumDiamondEnv = strictEnv sumDiamondRegistry [pureWireExecutorProjection]
+
 strictEnv :: WireContractRegistry -> [WireExecutorProjection] -> WireCompileEnv
 strictEnv contractRegistry projections =
   strictWireCompileEnv (wireExecutorRegistryFromList projections) contractRegistry
@@ -800,6 +925,7 @@ fusionRegistry =
   shapedRegistry
     [ ("Score", NativeI64)
     , ("Mid", NativeI64)
+    , ("MidCopy", NativeI64)
     , ("Reviewed", NativeI64)
     , ("Result", NativeI64)
     ]
@@ -835,6 +961,17 @@ missingScoreRegistry = shapedRegistry [("Result", NativeI64)]
 {- | Each layout is individually valid (about 2^63 bytes), so overflow appears
 only when admission combines boundaries.
 -}
+sumDiamondRegistry :: WireContractRegistry
+sumDiamondRegistry =
+  shapedRegistry
+    [ ("Score", NativeI64)
+    , ("Mid", NativeI64)
+    , ("MidCopy", NativeI64)
+    , ("Decision", NativeI64)
+    , ("RejectReason", NativeI64)
+    , ("Result", NativeI64)
+    ]
+
 hugeRegistry :: WireContractRegistry
 hugeRegistry =
   shapedRegistry [("Huge", NativeVector 268435456 (NativeVector 4294967295 NativeU64))]
