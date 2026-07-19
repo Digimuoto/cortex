@@ -15,10 +15,11 @@ The kernel lowers into the shared semantic C IR. Concrete frame lowering and
 the printable C AST are separate layers outside this theorem boundary; the
 former consumes `CertifiedKernel.target`, not this source expression again.
 `lower` is total and
-`lower_refines` proves executable semantic preservation
-only for expressions carrying structural/checked-i64 basis evidence. Binary64
-values remain representable, but expressions containing them are explicitly
-outside that refinement theorem.
+`lower_refines` proves executable semantic preservation for every kernel
+expression, including binary64. `RefinementExpr` documents the
+structural/checked-i64 admission basis that the Haskell gate enforces; it is
+not a hypothesis of the refinement theorems, so binary64 exclusion is an
+admission property, not a semantic one.
 -/
 
 namespace Cortex.Wire.NativePure
@@ -59,8 +60,9 @@ mutual
 end
 
 mutual
-  /-- Representation types admitted by the structural/checked-i64 refinement
-  theorem. Binary64 remains a layout type, but is validated separately. -/
+  /-- Representation types in the structural/checked-i64 admission basis.
+  Binary64 remains a layout type outside this basis; the refinement theorems
+  below do not depend on it. -/
   def RefinementTy : Ty → Prop
     | .unit | .bool | .u8 | .u32 | .i64 | .u64 => True
     | .f64 => False
@@ -74,9 +76,10 @@ mutual
 end
 
 mutual
-  /-- Evidence that an expression lies in the theorem-bearing structural and
-  checked-i64 basis. In particular, a binary64 literal, variable, record field,
-  or sum payload cannot obtain this evidence. -/
+  /-- Evidence that an expression lies in the structural/checked-i64 admission
+  basis. A binary64 literal, variable, record field, or sum payload cannot
+  obtain this evidence. This predicate mirrors what the Haskell admission gate
+  enforces; the refinement theorems below hold without it. -/
   def RefinementExpr {context ty} : Expr context ty → Prop
     | .var _ => RefinementTy ty
     | .unit | .bool _ | .i64 _ | .u64 _ | .text _ _ => True
@@ -191,11 +194,11 @@ mutual
     | .cons name field rest => .cons name (lower field) (lowerRecord rest)
 end
 
-/-- Structural and checked-i64 operations refine the executable source semantics. -/
+/-- Lowering into the shared semantic C IR preserves the executable source
+semantics for every kernel expression. -/
 theorem lower_refines
-    (expr : Expr context ty) (_basis : RefinementExpr expr) (env : Env) :
+    (expr : Expr context ty) (env : Env) :
     SemanticC.evalClosed (lower expr) env = eval expr env := by
-  clear _basis
   revert env
   apply Expr.rec
     (motive_1 := fun _ _ expr => ∀ env,
@@ -382,8 +385,8 @@ def CertifiedKernel.target (kernel : CertifiedKernel) :
   lower kernel.body
 
 theorem CertifiedKernel.target_refines
-    (kernel : CertifiedKernel) (basis : RefinementExpr kernel.body) (env : Env) :
+    (kernel : CertifiedKernel) (env : Env) :
     SemanticC.evalClosed kernel.target env = eval kernel.body env :=
-  lower_refines kernel.body basis env
+  lower_refines kernel.body env
 
 end Cortex.Wire.NativePure

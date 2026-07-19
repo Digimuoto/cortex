@@ -122,9 +122,10 @@ implementation, not a parallel model. The structural and checked-i64 slice requi
 unsupported operations must be rejected before emission.
 
 Binary64 uses pinned IEEE-754 settings, finite-result checks, and bitwise differential tests; it is
-not claimed by the integer refinement theorem. The C printer and native C compiler remain outside
-the proof boundary and are controlled by static assertions, golden output, differential execution,
-symbol/section allowlists, sanitizers, and supported-target builds.
+excluded from the certified admission basis rather than the lowering-equality theorem. The C printer
+and native C compiler remain outside the proof boundary and are controlled by static assertions,
+golden output, differential execution, symbol/section allowlists, sanitizers, and supported-target
+builds.
 
 ### Bounds and storage
 
