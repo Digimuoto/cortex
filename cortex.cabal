@@ -201,6 +201,7 @@ library
         Cortex.Wire.NativePure.Admission
         Cortex.Wire.NativePure.Artifact
         Cortex.Wire.NativePure.Differential
+        Cortex.Wire.NativePure.Lean
         Cortex.Wire.NativePure.Scheduler
         Cortex.Wire.NativePure.Shape
         Cortex.Wire.Parser

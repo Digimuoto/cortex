@@ -1,0 +1,17 @@
+[package]
+id = "native-pure-generated-fixture"
+
+[[contract]]
+id = "Score"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
+
+[[contract]]
+id = "Mid"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
+
+[[contract]]
+id = "Result"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }

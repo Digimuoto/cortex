@@ -92,9 +92,14 @@ import Cortex.Wire
   , hostedProcessProtocol
   , hostedProgramManifestSchema
   , loadHostedProgramArtifact
+  , normalizeNativePureInput
   , parseWireFile
+  , realizeNativePurePlan
   , renderHostedProgramError
   , renderHostedRunError
+  , renderNativePureArtifactError
+  , renderNativePureLeanError
+  , renderNativePurePlanModule
   , renderParseError
   , renderPureEvalError
   , renderWireError
@@ -185,6 +190,7 @@ data BuildTarget
   = BuildCompiledCircuit
   | BuildStaticProgramV1
   | BuildX86_64LinuxV1
+  | BuildNativePureLeanV1
   deriving stock (Eq, Show)
 
 data BuildOptions = BuildOptions
@@ -315,10 +321,17 @@ parseBuildCommand = go BuildCompiledCircuit Nothing Nothing []
       [] ->
         case reverse files of
           [path]
-            | target == BuildX86_64LinuxV1 && isNothing output ->
-                Left "wire build --target x86_64-linux-v1 requires --output DIR."
-            | target /= BuildX86_64LinuxV1 && isJust output ->
-                Left "wire build --output is supported only by x86_64-linux-v1."
+            | target `elem` [BuildX86_64LinuxV1, BuildNativePureLeanV1]
+                && isNothing output ->
+                Left
+                  ( "wire build --target "
+                      <> renderBuildTarget target
+                      <> " requires --output DIR."
+                  )
+            | target `notElem` [BuildX86_64LinuxV1, BuildNativePureLeanV1]
+                && isJust output ->
+                Left
+                  "wire build --output is supported only by x86_64-linux-v1 and native-pure-lean-v1."
             | otherwise ->
                 Right
                   BuildOptions
@@ -344,11 +357,19 @@ parseBuildTarget = \case
   "compiled-circuit" -> Right BuildCompiledCircuit
   "static-program-v1" -> Right BuildStaticProgramV1
   "x86_64-linux-v1" -> Right BuildX86_64LinuxV1
+  "native-pure-lean-v1" -> Right BuildNativePureLeanV1
   target -> Left ("unsupported Wire build target: " <> T.pack target)
+
+renderBuildTarget :: BuildTarget -> Text
+renderBuildTarget = \case
+  BuildCompiledCircuit -> "compiled-circuit"
+  BuildStaticProgramV1 -> "static-program-v1"
+  BuildX86_64LinuxV1 -> "x86_64-linux-v1"
+  BuildNativePureLeanV1 -> "native-pure-lean-v1"
 
 buildUsageText :: Text
 buildUsageText =
-  "usage: wire build [--target compiled-circuit|static-program-v1|x86_64-linux-v1] "
+  "usage: wire build [--target compiled-circuit|static-program-v1|x86_64-linux-v1|native-pure-lean-v1] "
     <> "[--output DIR] [--return NAME] FILE"
 
 parseFmtCommand :: [String] -> Either Text Command
@@ -381,6 +402,7 @@ usageText =
     , "  wire run FILE"
     , "  wire build [--target compiled-circuit|static-program-v1] [--return NAME] FILE"
     , "  wire build --target x86_64-linux-v1 --output DIR [--return NAME] FILE"
+    , "  wire build --target native-pure-lean-v1 --output DIR [--return NAME] FILE"
     , "  wire hosted-reference BUNDLE_DIR"
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
@@ -431,6 +453,46 @@ buildWire packagePaths options = do
       case options.buildOutputDirectory of
         Nothing -> dieText "x86_64-linux-v1 requires an output directory"
         Just directory -> buildHostedLinux directory staticProgram
+    BuildNativePureLeanV1 ->
+      case options.buildOutputDirectory of
+        Nothing -> dieText "native-pure-lean-v1 requires an output directory"
+        Just directory -> buildNativePureLean directory compileEnv compiled
+
+buildNativePureLean :: FilePath -> WireCompileEnv -> CompiledCircuit -> IO ()
+buildNativePureLean outputDirectory compileEnv compiled = do
+  contractRegistry <-
+    maybe
+      (dieText "native-pure-lean-v1 requires a strict contract registry with native_shape projections")
+      pure
+      compileEnv.wireCompileEnvContractRegistry
+  normalized <-
+    either
+      (dieText . renderNativePureArtifactError)
+      pure
+      (normalizeNativePureInput contractRegistry compiled)
+  plan <-
+    either
+      (dieText . renderNativePureArtifactError)
+      pure
+      (realizeNativePurePlan normalized)
+  leanModule <-
+    either
+      (dieText . renderNativePureLeanError)
+      pure
+      ( renderNativePurePlanModule
+          "Cortex.Wire.NativePure.Generated.Program"
+          normalized
+          plan
+      )
+  createDirectoryIfMissing True outputDirectory
+  let normalizedPath = outputDirectory </> "native-pure-input.json"
+      planPath = outputDirectory </> "native-pure-plan.json"
+      leanPath = outputDirectory </> "Program.lean"
+  BS.writeFile normalizedPath (prettyJsonBytes normalized)
+  BS.writeFile planPath (prettyJsonBytes plan)
+  TIO.writeFile leanPath leanModule
+  forM_ [normalizedPath, planPath, leanPath] $ \path ->
+    TIO.putStrLn ("wrote " <> T.pack path)
 
 lowerStaticProgram :: CompiledCircuit -> IO StaticProgram
 lowerStaticProgram compiled =

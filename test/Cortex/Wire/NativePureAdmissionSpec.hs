@@ -60,6 +60,7 @@ import Cortex.Wire
   , realizationArtifactSchema
   , realizeNativePurePlan
   , realizeNativePurePlanWithMode
+  , renderNativePurePlanModule
   , strictWireCompileEnv
   , wireContractRegistryFromList
   , wireExecutorRegistryFromList
@@ -136,6 +137,10 @@ admissionSpec = describe "NativePure candidate admission" $ do
 
   it "rejects a fractional literal crossing an i64 shape" $
     rejectedReason nativeRegistry nativeEnv fractionalProgram `shouldSatisfy` T.isInfixOf "fractional"
+
+  it "rejects f64 literals until concrete C literal emission joins the certified basis" $
+    rejectedReason f64Registry f64Env f64LiteralProgram
+      `shouldSatisfy` T.isInfixOf "binary64 literals"
 
   it "rejects checked arithmetic crossing a non-i64 shape" $
     rejectedReason boolRegistry boolEnv boolArithmeticProgram
@@ -288,6 +293,20 @@ artifactSpec = describe "NativePure normalized realization" $ do
       `shouldBe` planB.nativePurePlanRealization.realizationArtifactDigest
     planA.nativePurePlanDigest `shouldBe` planB.nativePurePlanDigest
 
+  it "hands a fused typed plan to Lean without a second semantic decoder" $ do
+    (normalized, plan) <- requirePlan fusionRegistry fusionEnv fusedProgram
+    rendered <-
+      requireRight
+        (renderNativePurePlanModule "Cortex.Wire.NativePure.Generated.Fused" normalized plan)
+    rendered `shouldSatisfy` T.isInfixOf "import Cortex.Wire.NativePure.C.Engine"
+    rendered `shouldSatisfy` T.isInfixOf ".add"
+    rendered `shouldSatisfy` T.isInfixOf "C.renderDispatchable"
+    rendered `shouldSatisfy` T.isInfixOf "Engine.render engineProgram"
+    rendered `shouldSatisfy` T.isInfixOf plan.nativePurePlanDigest
+    region <- requireSingleRegion plan
+    region.nativePureFusedRegionBounds `shouldBe` NativePureBounds 48 0 16 32 17
+    rendered `shouldSatisfy` T.isInfixOf "maxSteps := 17"
+
   it "elaborates lets, records, projections, conditionals, and boolean operations to typed ANF" $ do
     (_, plan) <- requirePlan anfRegistry anfEnv anfProgram
     region <- requireSingleRegion plan
@@ -380,6 +399,14 @@ negateProgram = replaceBody "-score"
 
 fractionalProgram :: Text
 fractionalProgram = replaceBody "if score < 0 then 0.5 else 1"
+
+f64LiteralProgram :: Text
+f64LiteralProgram =
+  T.unlines
+    [ "contract Measurement;"
+    , "node literal -> result: Measurement = 0.5;"
+    , "literal"
+    ]
 
 replaceBody :: Text -> Text
 replaceBody body =
@@ -552,6 +579,7 @@ nativeEnv
   , textEnv
   , paddedProductEnv
   , invalidShapeEnv
+  , f64Env
     :: WireCompileEnv
 nativeEnv = strictEnv nativeRegistry [pureWireExecutorProjection]
 unshapedEnv = strictEnv unshapedRegistry [pureWireExecutorProjection]
@@ -562,6 +590,7 @@ bigTextEnv = strictEnv bigTextRegistry [pureWireExecutorProjection]
 textEnv = strictEnv textRegistry [pureWireExecutorProjection]
 paddedProductEnv = strictEnv paddedProductRegistry [pureWireExecutorProjection]
 invalidShapeEnv = strictEnv invalidShapeRegistry [pureWireExecutorProjection]
+f64Env = strictEnv f64Registry [pureWireExecutorProjection]
 
 mixedEnv :: WireCompileEnv
 mixedEnv = strictEnv nativeRegistry [pureWireExecutorProjection, storeExecutorProjection]
@@ -588,6 +617,7 @@ nativeRegistry
   , textRegistry
   , paddedProductRegistry
   , invalidShapeRegistry
+  , f64Registry
     :: WireContractRegistry
 nativeRegistry = shapedRegistry [("Score", NativeI64), ("Result", NativeI64)]
 fusionRegistry =
@@ -621,6 +651,7 @@ paddedProductRegistry =
 invalidShapeRegistry =
   wireContractRegistryFromList
     [contract "BadText" (Just (NativeShapeProjection (NativeText 0)))]
+f64Registry = shapedRegistry [("Measurement", NativeF64)]
 
 shapedRegistry :: [(Text, NativeShape)] -> WireContractRegistry
 shapedRegistry entries =

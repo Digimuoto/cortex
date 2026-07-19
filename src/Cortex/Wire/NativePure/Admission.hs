@@ -746,7 +746,9 @@ checkNativeLiteral nodeRef literal expected =
           | integer >= 0 && integer < 2 ^ (64 :: Integer) -> Right ()
           | otherwise -> unsupported "integer literal exceeds the u64 range"
         Left _ -> unsupported "fractional literal cannot cross a u64 native shape"
-    (CorePureNumber _, NativeF64) -> Right ()
+    (CorePureNumber _, NativeF64) ->
+      unsupported
+        "binary64 literals are not in the concrete NativePure C basis yet; f64 pass-through remains supported"
     _ -> unsupported ("literal " <> T.pack (show literal) <> " does not fit the crossing native shape")
   where
     unsupported = Left . NativePureUnsupportedExpression nodeRef

@@ -541,7 +541,28 @@ private def regionFunction
     , comments :=
         ["Synchronous, heap-free and authority-free NativePure region."] }
 
-def translationUnit (identity : String) (region : Region) : Except String TranslationUnit := do
+private def dispatchFunction
+    (region : Region) (input output : ConcreteAggregate) : CFunction :=
+  { name := region.name ++ "_dispatch"
+  , result := .u32
+  , params :=
+      [ { name := "input", ty := .pointer .void true }
+      , { name := "output", ty := .pointer .void false }
+      ]
+  , body := some
+      [ .returnValue
+          (.call (.ident (region.name ++ "_run"))
+            [ .cast (.pointer (.named input.name) true) (.ident "input")
+            , .cast (.pointer (.named output.name) false) (.ident "output")
+            ])
+      ]
+  , visibility := .exported
+  , comments :=
+      ["Type-erased scheduler adapter; the region still receives no host authority."] }
+
+private def translationUnitWithDispatch
+    (dispatchable : Bool) (identity : String) (region : Region) :
+    Except String TranslationUnit := do
   if identity.isEmpty then throw "NativePure program identity must not be empty"
   let types := regionTypes region
   let nativeAggregates := aggregateDeclarations types
@@ -572,7 +593,8 @@ def translationUnit (identity : String) (region : Region) : Except String Transl
                 , { name := "CORTEX_NP_INVALID_TAG", value := Status.invalidTag.code }
                 ] }
         ] ++ aggregates.map (·.declaration)
-    , functions := [function]
+    , functions := [function] ++
+        (if dispatchable then [dispatchFunction region input output] else [])
     , assertions := aggregates.flatMap aggregateAssertions ++
         [ { condition := .binary .lessEqual (.sizeof (.named output.name))
               (.unsigned region.kernel.bounds.outputBytes)
@@ -590,11 +612,26 @@ def translationUnit (identity : String) (region : Region) : Except String Transl
         , { name := "max_steps", value := region.kernel.bounds.maxSteps }
         ] }
 
+def translationUnit (identity : String) (region : Region) : Except String TranslationUnit :=
+  translationUnitWithDispatch false identity region
+
+def translationUnitDispatchable
+    (identity : String) (region : Region) : Except String TranslationUnit :=
+  translationUnitWithDispatch true identity region
+
 def compile (identity : String) (region : Region) : Except String ValidatedTranslationUnit := do
   let unit ← translationUnit identity region
   C11.validate unit
 
 def render (identity : String) (region : Region) : Except String RenderedArtifacts := do
   renderArtifacts <$> compile identity region
+
+def compileDispatchable
+    (identity : String) (region : Region) : Except String ValidatedTranslationUnit := do
+  let unit ← translationUnitDispatchable identity region
+  C11.validate unit
+
+def renderDispatchable (identity : String) (region : Region) : Except String RenderedArtifacts := do
+  renderArtifacts <$> compileDispatchable identity region
 
 end Cortex.Wire.NativePure.C
