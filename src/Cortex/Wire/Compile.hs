@@ -33,7 +33,7 @@ module Cortex.Wire.Compile
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (guard, unless, when, zipWithM)
+import Control.Monad (guard, unless, void, when, zipWithM)
 import Crypto.Hash (Digest, SHA256, hashlazy)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -3094,6 +3094,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports metadata whereExpr execu
   validateCorePureNodeScopeWithLocals st nodeRef (inputPortLocalNames ports.lnpInputs) inputExpr
   exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
   validateNodeMetadataFields nodeRef exactFields
+  validateNodeMetadataValues nodeRef exactFields
   let
     label = lookupMaybeTextField "label" exactFields
     runtimePorts = taskWirePortsFromLowered ports
@@ -3265,6 +3266,38 @@ validateNodeMetadataFields nodeRef fields =
       , "to"
       ]
 
+validateNodeMetadataValues
+  :: CircuitNodeRef
+  -> Map (NonEmpty Text) EvalValue
+  -> Either WireCore.WireError ()
+validateNodeMetadataValues _nodeRef fields = do
+  traverse_ validateEntry (Map.toList fields)
+  where
+    validateEntry (path, value) =
+      case NE.head path of
+        name
+          | name `elem` ["label", "instructions", "prompt", "on", "artifactKind"] ->
+              requireKind name "string" value
+          | name == "tools" -> void (evalTools value)
+          | name == "memory" -> void (evalMemoryStrategy value)
+          | name `elem` ["timeout", "retry", "stepBudget", "toolLoopMinSteps", "maxOutputTokens"] ->
+              case value of
+                EvalNumber number ->
+                  case floatingOrInteger number :: Either Double Integer of
+                    Right integer
+                      | integer >= fromIntegral (minBound :: Int32)
+                          && integer <= fromIntegral (maxBound :: Int32) ->
+                          Right ()
+                    _ -> mismatch name "int32" value
+                _ -> mismatch name "int32" value
+          | name == "reasoningEnabled" -> requireKind name "boolean" value
+          | name == "to" -> requireKind name "qualified identifier" value
+          | otherwise -> Right ()
+    requireKind name expected value =
+      if valueKind value == expected then Right () else mismatch name expected value
+    mismatch name expected value =
+      Left (WireCore.WireFieldTypeMismatch name expected (valueKind value))
+
 executorArgumentValue
   :: Maybe CorePureExpr
   -> CorePureExpr
@@ -3293,6 +3326,7 @@ loweredPureNodeFromBody
 loweredPureNodeFromBody compileEnv st nodeRef ports metadata topLevelBindings pureBody = do
   exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
   validateNodeMetadataFields nodeRef exactFields
+  validateNodeMetadataValues nodeRef exactFields
   case pureBody of
     NodePureBody whereExpr (NodePureProduct outputEquations) -> do
       outputConfig <-

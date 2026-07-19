@@ -188,30 +188,34 @@ nativeShapeLayout = \case
     when (capacity == 0) (Left (NativeShapeZeroCapacity "text"))
     -- uint32_t length followed by capacity bytes.
     size <- checkedAdd 4 (fromIntegral capacity)
-    pure (NativeLayout (alignUp size 4) 4)
+    aligned <- alignUp size 4
+    pure (NativeLayout aligned 4)
   NativeVector capacity elementShape -> do
     when (capacity == 0) (Left (NativeShapeZeroCapacity "vector"))
     elementLayout <- nativeShapeLayout elementShape
     payload <- checkedMultiply (fromIntegral capacity) elementLayout.nativeLayoutSize
     size <- checkedAdd 4 payload
+    aligned <- alignUp size (max 4 elementLayout.nativeLayoutAlignment)
     pure
       ( NativeLayout
-          (alignUp size (max 4 elementLayout.nativeLayoutAlignment))
+          aligned
           (max 4 elementLayout.nativeLayoutAlignment)
       )
   NativeRecord fields -> do
     validateFields NativeShapeEmptyRecord fields
     (size, alignment) <- foldM appendField (0, 1) (Map.elems fields)
-    pure (NativeLayout (alignUp size alignment) alignment)
+    aligned <- alignUp size alignment
+    pure (NativeLayout aligned alignment)
   NativeSum variants -> do
     validateFields NativeShapeEmptySum variants
     layouts <- traverse nativeShapeLayout (Map.elems variants)
     let payloadAlignment = maximum (1 : fmap (.nativeLayoutAlignment) layouts)
         payloadSize = maximum (0 : fmap (.nativeLayoutSize) layouts)
         alignment = max 4 payloadAlignment
-        payloadOffset = alignUp 4 payloadAlignment
+    payloadOffset <- alignUp 4 payloadAlignment
     total <- checkedAdd payloadOffset payloadSize
-    pure (NativeLayout (alignUp total alignment) alignment)
+    aligned <- alignUp total alignment
+    pure (NativeLayout aligned alignment)
   where
     validateFields emptyError fields = do
       when (Map.null fields) (Left emptyError)
@@ -219,7 +223,7 @@ nativeShapeLayout = \case
 
     appendField (offset, aggregateAlignment) fieldShape = do
       fieldLayout <- nativeShapeLayout fieldShape
-      let fieldOffset = alignUp offset fieldLayout.nativeLayoutAlignment
+      fieldOffset <- alignUp offset fieldLayout.nativeLayoutAlignment
       nextOffset <- checkedAdd fieldOffset fieldLayout.nativeLayoutSize
       pure (nextOffset, max aggregateAlignment fieldLayout.nativeLayoutAlignment)
 
@@ -233,7 +237,7 @@ checkedMultiply left right
   | left /= 0 && maxBound `div` left < right = Left NativeShapeLayoutOverflow
   | otherwise = Right (left * right)
 
-alignUp :: Word64 -> Word64 -> Word64
+alignUp :: Word64 -> Word64 -> Either NativeShapeError Word64
 alignUp value alignment
-  | alignment <= 1 = value
-  | otherwise = value + ((alignment - (value `mod` alignment)) `mod` alignment)
+  | alignment <= 1 = Right value
+  | otherwise = checkedAdd value ((alignment - (value `mod` alignment)) `mod` alignment)

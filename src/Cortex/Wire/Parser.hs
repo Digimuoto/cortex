@@ -1403,6 +1403,10 @@ executorCall = inlineExecutorCall
         fail "CorePure output equations are written directly; @pure is not an executor"
       rejectLegacyCallParens
       inputArg <- optional corePureExpr
+      case inputArg of
+        Just (CorePureCall (CorePureRecord _) (_ : _)) ->
+          fail "legacy executor config/input calls were removed; pass one explicit record argument"
+        _ -> pure ()
       legacyTrailing <- optional (try (MP.lookAhead (symbol "(")))
       when (isJust legacyTrailing) $
         fail "legacy executor config/input calls were removed; pass one explicit record argument"
