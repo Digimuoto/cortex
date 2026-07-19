@@ -56,6 +56,7 @@ module Cortex.Wire.Syntax
   , UseSpec (..)
   , ContractDecl (..)
   , PureOutputEquation (..)
+  , NodePureResult (..)
   , NodePureBody (..)
   , NodeBody (..)
   , NodeDecl (..)
@@ -356,9 +357,15 @@ data PureOutputEquation = PureOutputEquation
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
+data NodePureResult
+  = NodePureProduct !(NonEmpty PureOutputEquation)
+  | NodePureSum !(NonEmpty SumVariant) !CorePureExpr
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
 data NodePureBody = NodePureBody
   { nodePureBodyWhere :: !(Maybe CorePureExpr)
-  , nodePureBodyOutputs :: !(NonEmpty PureOutputEquation)
+  , nodePureBodyResult :: !NodePureResult
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)

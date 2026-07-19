@@ -54,6 +54,7 @@ module.exports = grammar({
     [$.core_pure_list, $.list],
     [$._core_pure_atom, $._expr_atom],
     [$._core_pure_atom, $.qualified_ident],
+    [$.pure_sum_body, $.output_body],
   ],
 
   rules: {
@@ -310,7 +311,19 @@ module.exports = grammar({
       ';',
     ),
 
-    pure_body: $ => repeat1($.pure_output_equation),
+    pure_body: $ => choice(
+      $.pure_sum_body,
+      repeat1($.pure_output_equation),
+    ),
+
+    pure_sum_body: $ => seq(
+      '->',
+      field('variant', $.output_variant),
+      repeat1(seq('|', field('variant', $.output_variant))),
+      '=',
+      field('body', $.pure_output_expr),
+      ';',
+    ),
 
     pure_output_equation: $ => seq(
       '->',

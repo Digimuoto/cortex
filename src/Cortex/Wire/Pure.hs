@@ -22,11 +22,13 @@ module Cortex.Wire.Pure
   , renderPureEvalError
   , validatePurePorts
   , validatePureTaskConfig
+  , validatePureVariantTaskConfig
   , preparePureTaskOutputs
   , corePureStaticContextFromBindings
   , corePureWhereStaticFields
   , bindPureInputValues
   , evaluatePureTaskOutputs
+  , evaluatePureTaskVariant
   , evaluatePreparedPureTaskOutputs
   , corePureBuiltinSignature
   , corePureBuiltinAuthorityReport
@@ -87,6 +89,7 @@ import Cortex.Wire.Syntax
   , CorePureUnaryOp (..)
   , WireInputCardinality (..)
   , WireInputPort (..)
+  , WireOutputPort (..)
   , WirePorts (..)
   , defaultInputPortName
   )
@@ -117,6 +120,10 @@ data PureEvalError
   | PureStaticFieldSetUndeterminable
   | PureStaticBindingCycle !Text
   | PureStaticLetShadowsStatic !Text
+  | PureVariantBoundaryInvalid !Text
+  | PureVariantConstructorExpected ![Text]
+  | PureVariantConstructorArity !Text !Int
+  | PureVariantLabelShadowed !Text
   deriving stock (Eq, Show, Generic)
 
 data PureNonFiniteFloatDivisionOperands = PureNonFiniteFloatDivisionOperands
@@ -241,6 +248,20 @@ renderPureEvalError = \case
     "Pure where-clause field discovery found a cyclic top-level binding at " <> bindingName <> "."
   PureStaticLetShadowsStatic bindingName ->
     "Pure where-clause local let binding shadows statically known binding " <> bindingName <> "."
+  PureVariantBoundaryInvalid reason ->
+    "Pure variant boundary is invalid: " <> reason <> "."
+  PureVariantConstructorExpected labels ->
+    "Every pure sum control-flow path must return one declared constructor ("
+      <> T.intercalate ", " labels
+      <> ")."
+  PureVariantConstructorArity label actual ->
+    "Pure sum constructor "
+      <> label
+      <> " requires exactly one payload argument, received "
+      <> T.pack (show actual)
+      <> "."
+  PureVariantLabelShadowed label ->
+    "Pure sum constructor label " <> label <> " is shadowed by a local binding."
   where
     renderList values =
       "[" <> T.intercalate ", " values <> "]"
@@ -261,6 +282,110 @@ validatePureTaskConfig
 validatePureTaskConfig ports bindings whereExpr outputExprs =
   validatePurePorts ports outputExprs
     *> validateCorePureTaskExpressions bindings whereExpr outputExprs
+
+validatePureVariantTaskConfig
+  :: WirePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> Either PureEvalError ()
+validatePureVariantTaskConfig ports bindings whereExpr labels bodyExpr = do
+  _ <- preparePureInputs ports
+  validateVariantBoundary ports labels
+  validateCorePureBindingNames bindings
+  traverse_ (validateCorePureExpr . (.corePureBindingExpr)) bindings
+  traverse_ validateCorePureExpr whereExpr
+  validateCorePureExpr bodyExpr
+  traverse_ (validateVariantOrdinary labels . (.corePureBindingExpr)) bindings
+  traverse_ (validateVariantOrdinary labels) whereExpr
+  traverse_ (rejectShadowed . (.corePureBindingName)) bindings
+  traverse_ rejectShadowed (Map.keys ports.wirePortsInputs)
+  staticContext <- corePureStaticContextFromBindings bindings
+  whereFields <- maybe (Right Set.empty) (corePureWhereStaticFields staticContext) whereExpr
+  traverse_ rejectShadowed (Set.toList whereFields)
+  validateVariantResult labels bodyExpr
+  where
+    rejectShadowed name
+      | name `elem` labels = Left (PureVariantLabelShadowed name)
+      | otherwise = Right ()
+
+validateVariantBoundary :: WirePorts -> [Text] -> Either PureEvalError ()
+validateVariantBoundary ports labels
+  | length labels < 2 = invalid "an exclusive sum requires at least two labels"
+  | any (T.null . T.strip) labels = invalid "declared labels must not be blank"
+  | Set.size (Set.fromList labels) /= length labels = invalid "declared labels must be unique"
+  | otherwise =
+      case Set.toList groups of
+        [group]
+          | expected == Set.fromList labels
+          , all ((== Just group) . (.wireOutputPortExclusiveGroup)) outputPorts ->
+              Right ()
+        _ -> invalid "declared labels must exactly match one exclusive output group"
+  where
+    invalid = Left . PureVariantBoundaryInvalid
+    expected = Map.keysSet ports.wirePortsOutputs
+    outputPorts = Map.elems ports.wirePortsOutputs
+    groups =
+      Set.fromList
+        [ group
+        | port <- outputPorts
+        , Just group <- [port.wireOutputPortExclusiveGroup]
+        ]
+
+validateVariantResult :: [Text] -> CorePureExpr -> Either PureEvalError ()
+validateVariantResult labels = terminal
+  where
+    labelSet = Set.fromList labels
+    ordinary = validateVariantOrdinary labels
+
+    terminal = \case
+      CorePureIf condition thenExpr elseExpr ->
+        ordinary condition *> terminal thenExpr *> terminal elseExpr
+      CorePureLet bindings bodyExpr -> do
+        traverse_ validateBinding (NE.toList bindings)
+        terminal bodyExpr
+      CorePureCall (CorePureIdent label) arguments
+        | label `Set.member` labelSet ->
+            case arguments of
+              [payload] -> ordinary payload
+              _ -> Left (PureVariantConstructorArity label (length arguments))
+      _ -> Left (PureVariantConstructorExpected labels)
+
+    validateBinding binding
+      | binding.corePureBindingName `Set.member` labelSet =
+          Left (PureVariantLabelShadowed binding.corePureBindingName)
+      | otherwise = ordinary binding.corePureBindingExpr
+
+validateVariantOrdinary :: [Text] -> CorePureExpr -> Either PureEvalError ()
+validateVariantOrdinary labels = ordinary
+  where
+    labelSet = Set.fromList labels
+
+    ordinary = \case
+      CorePureLit {} -> Right ()
+      CorePureIdent name
+        | name `Set.member` labelSet -> Left (PureVariantConstructorExpected labels)
+        | otherwise -> Right ()
+      CorePureList items -> traverse_ ordinary items
+      CorePureRecord fields -> traverse_ (ordinary . (.corePureFieldValue)) fields
+      CorePureFieldAccess baseExpr _ -> ordinary baseExpr
+      CorePureIndex baseExpr indexExpr -> ordinary baseExpr *> ordinary indexExpr
+      CorePureLambda params bodyExpr -> do
+        case filter (`Set.member` labelSet) (NE.toList params) of
+          shadowed : _ -> Left (PureVariantLabelShadowed shadowed)
+          [] -> ordinary bodyExpr
+      CorePureCall functionExpr arguments -> ordinary functionExpr *> traverse_ ordinary arguments
+      CorePureUnary _ operandExpr -> ordinary operandExpr
+      CorePureBinary _ lhsExpr rhsExpr -> ordinary lhsExpr *> ordinary rhsExpr
+      CorePureLet bindings bodyExpr -> traverse_ validateBinding (NE.toList bindings) *> ordinary bodyExpr
+      CorePureIf condition thenExpr elseExpr ->
+        ordinary condition *> ordinary thenExpr *> ordinary elseExpr
+
+    validateBinding binding
+      | binding.corePureBindingName `Set.member` labelSet =
+          Left (PureVariantLabelShadowed binding.corePureBindingName)
+      | otherwise = ordinary binding.corePureBindingExpr
 
 preparePureTaskOutputs
   :: WirePorts
@@ -480,6 +605,44 @@ evaluatePureTaskOutputs
 evaluatePureTaskOutputs ports inputBundle bindings whereExpr outputExprs = do
   preparedTask <- preparePureTaskOutputs ports bindings whereExpr outputExprs
   evaluatePreparedPureTaskOutputs preparedTask inputBundle
+
+evaluatePureTaskVariant
+  :: WirePorts
+  -> WireInputBundle
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> Either PureEvalError (Map Text Aeson.Value)
+evaluatePureTaskVariant ports inputBundle bindings whereExpr labels bodyExpr = do
+  validatePureVariantTaskConfig ports bindings whereExpr labels bodyExpr
+  preparedInputs <- preparePureInputs ports
+  inputEnv <- bindPreparedPureInputValues CorePureJson preparedInputs inputBundle
+  outerEnv <- bindCorePureBindings (corePureEnvFromInputValues inputEnv) bindings
+  env <- bindCorePureWhere outerEnv whereExpr
+  (label, payload) <- evaluateVariantResult labels env bodyExpr
+  pure (Map.singleton label payload)
+
+evaluateVariantResult
+  :: [Text]
+  -> CorePureEnv
+  -> CorePureExpr
+  -> Either PureEvalError (Text, Aeson.Value)
+evaluateVariantResult labels env = \case
+  CorePureIf condition thenExpr elseExpr -> do
+    conditionValue <- evaluateCorePureExpr env condition >>= corePureValueToJson
+    case conditionValue of
+      Aeson.Bool True -> evaluateVariantResult labels env thenExpr
+      Aeson.Bool False -> evaluateVariantResult labels env elseExpr
+      other -> Left (PureTypeMismatch "boolean" (jsonValueKind other))
+  CorePureLet bindings bodyExpr -> do
+    localEnv <- bindCorePureBindings env (NE.toList bindings)
+    evaluateVariantResult labels localEnv bodyExpr
+  CorePureCall (CorePureIdent label) [payloadExpr]
+    | label `elem` labels -> do
+        payload <- evaluateCorePureExpr env payloadExpr >>= corePureValueToJson
+        pure (label, payload)
+  _ -> Left (PureVariantConstructorExpected labels)
 
 evaluatePreparedPureTaskOutputs
   :: PreparedPureTask
@@ -2208,7 +2371,10 @@ pureExecutorConfigSchema =
   Aeson.object
     [ "$schema" Aeson..= ("https://json-schema.org/draft/2020-12/schema" :: Text)
     , "type" Aeson..= ("object" :: Text)
-    , "required" Aeson..= ["outputs" :: Text]
+    , "oneOf"
+        Aeson..= [ Aeson.object ["required" Aeson..= ["outputs" :: Text]]
+                 , Aeson.object ["required" Aeson..= ["variant" :: Text]]
+                 ]
     , "additionalProperties" Aeson..= False
     , "properties"
         Aeson..= Aeson.object
@@ -2226,6 +2392,12 @@ pureExecutorConfigSchema =
               Aeson..= Aeson.object
                 [ "type" Aeson..= ("object" :: Text)
                 , "description" Aeson..= ("Map from output port name to CorePure expression AST." :: Text)
+                ]
+          , "variant"
+              Aeson..= Aeson.object
+                [ "type" Aeson..= ("object" :: Text)
+                , "description"
+                    Aeson..= ("Declared exclusive labels and one constructor-returning CorePure expression." :: Text)
                 ]
           ]
     ]

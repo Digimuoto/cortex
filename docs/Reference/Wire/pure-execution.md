@@ -18,6 +18,7 @@ related:
   - docs/ADRs/0039-wire-node-boundary-transform-normal-form.md
   - docs/ADRs/0023-corepure-expression-surface.md
   - docs/ADRs/0061-corepure-bounded-iteration-primitives.md
+  - docs/ADRs/0062-typed-effect-variant-output-boundaries.md
 ---
 
 # Wire Reference — Pure Execution
@@ -64,7 +65,8 @@ A pure node uses the clause form from the Wire grammar:
 ```text
 node <name>
   (<- <input-name> : <Contract>;)*
-  (-> <output-name> : <Contract> = <corepure-expr>;)+
+  ((-> <output-name> : <Contract> = <corepure-expr>;)+
+   | (-> <label> : <Contract> (| <label> : <Contract>)+ = <variant-expr>;))
   (where <corepure-record-expr>;)?
 ```
 
@@ -86,7 +88,9 @@ Rules:
   references to let-bound records, and `//` merges of those shapes are admitted. Dynamic record
   shapes are rejected at admission.
 - Each pure output equation declares exactly one output port.
-- Sum-grouped outputs are not pure equation syntax.
+- A pure sum body declares one exclusive output group and one expression. Its declared labels are
+  constructor names, and every control-flow path must return exactly one constructor applied to one
+  payload. Constructor labels cannot be shadowed or used as ordinary values.
 - A pure node must declare at least one output equation.
 - The equation set must match the declared output ports exactly.
 - Dynamic loops, host scripts, JIT languages, model calls, tools, and IO belong behind `@`
@@ -123,6 +127,22 @@ The internal task config has this shape:
 }
 ```
 
+An exclusive sum uses a disjoint internal form instead:
+
+```json
+{
+  "bindings": ["<top-level binding AST>"],
+  "where": "<optional record expression AST>",
+  "variant": {
+    "labels": ["accepted", "rejected"],
+    "expression": "<one constructor-returning CorePure AST>"
+  }
+}
+```
+
+Exactly one of `outputs` or `variant` is present. This distinction prevents a sum boundary from
+being evaluated or checkpointed as if all alternatives were simultaneous product fields.
+
 Top-level `bindings` and the node-local `where` record are distinct scopes:
 
 - top-level delayed helpers and captured pure-data constants are evaluated after builtins and input
@@ -137,8 +157,9 @@ Top-level `bindings` and the node-local `where` record are distinct scopes:
 The internal task metadata records the native pure evaluator, but Wire source never names it with
 `@`.
 
-The implemented config schema admits only `bindings`, `where`, and `outputs`. There is no
-source-authored CorePure budget field. `where` is omitted when the source node has no where-clause.
+The implemented config schema admits only `bindings`, `where`, and exactly one of `outputs` or
+`variant`. There is no source-authored CorePure budget field. `where` is omitted when the source
+node has no where-clause.
 
 ## Input Binding
 

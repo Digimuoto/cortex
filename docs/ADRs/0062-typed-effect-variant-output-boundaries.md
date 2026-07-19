@@ -185,6 +185,24 @@ Durability reuses what exists: the selected branch persists as the `graph_rewrit
 The binder reads only persisted inputs and never re-invokes the backend, so the rare crash-window
 predicate re-run is deterministic and the effect runs once.
 
+### Amendment 2026-07-19: pure constructor bodies
+
+CorePure nodes may author the same exclusive output boundary as one constructor-returning body:
+
+```wire
+node classify
+  <- score: Score;
+  -> accepted: Decision | rejected: RejectReason =
+    if score >= 0 then accepted decision else rejected reason;
+```
+
+The declared labels are the only constructors in scope. Every control-flow path must end in exactly
+one declared constructor application with one payload; input, module, `where`, lambda, and local
+bindings may not shadow constructor labels. The compiler stores one variant expression rather than
+pretending the sum is a product of independent equations. Hosted evaluation chooses one label and
+passes its payload through the same contract-validating egress boundary used for effect variants.
+This amendment adds no implicit fan-out and does not change product output equations.
+
 ### Scope
 
 Scoped in three implementation steps under this ADR: the emission + validation + persistence
@@ -274,16 +292,18 @@ ADR remains a proposed-ADR cleanup question.
 
 ## Traceability
 
-- Feature keys: `wire.typed_effect_variant_outputs`
+- Feature keys: `wire.typed_effect_variant_outputs`, `corepure.exclusive_sum_bodies`
 - Public surface: `Cortex.Wire`, `Cortex.Pulse.Circuit`, `docs/Reference/Wire/conditionality.md`
 - Implementation: `src/Cortex/Wire/NodeBoundary.hs` (exclusive output-group validation),
   `src/Cortex/Wire/Runtime.hs` (`wrapNodeBoundaryOutput`, `executor_output_validation_failure`),
   `src/Cortex/Wire/Circuit/Lowering.hs` (`committedVariantConditionBinding`,
   `bindCircuitConditionNode`), `src/Cortex/Pulse/Circuit.hs` (`runCompiledCircuit`,
   `resumeCompiledCircuit`, managed fresh/resume entrypoints), `src/Cortex/Wire/Compile.hs`
-  (`resolveExclusiveBoundary`)
+  (`resolveExclusiveBoundary`, pure sum lowering), `src/Cortex/Wire/Pure.hs` (constructor-path
+  validation and tagged evaluation)
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Wire/Circuit/CompilerSpec.hs`,
-  `test/Cortex/Wire/RuntimeSpec.hs`
+  `test/Cortex/Wire/RuntimeSpec.hs`, `test/Cortex/Capability/Executor/PureSpec.hs`,
+  `test/Cortex/Wire/ParserSpec.hs`, `test/Cortex/Wire/FormatSpec.hs`
 - Theory/proof:
   [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
 

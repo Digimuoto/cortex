@@ -93,6 +93,13 @@ spec = do
             \  };\n"
       formatWireSource "test" source `shouldBe` Right expected
 
+    it "formats pure sum bodies as one exclusive output boundary" $ do
+      formatWireSource
+        "test"
+        "node classify <- score: Score; -> accepted: Decision|rejected: RejectReason=if score>=0 then accepted score else rejected score;"
+        `shouldBe` Right
+          "node classify\n  <- score: Score;\n  -> accepted: Decision | rejected: RejectReason = if (score >= 0) then accepted score else rejected score;\n"
+
     it "is idempotent" $ do
       let source = "a\n  => b <> c <> d\n  => e\n"
       formatted <- requireRight (formatWireSource "test" source)

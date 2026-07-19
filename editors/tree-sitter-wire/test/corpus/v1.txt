@@ -645,3 +645,52 @@ source => build => placeholder
         (identifier))
       right: (ident_ref
         (identifier)))))
+
+==================
+pure exclusive sum body
+==================
+
+node classify
+  <- score: Score;
+  -> accepted: Decision | rejected: RejectReason =
+    if score >= 0 then accepted score else rejected score;
+
+classify
+
+---
+
+(source_file
+  (node_decl
+    name: (identifier)
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_ref
+        (contract_name
+          (contract))))
+    body: (pure_body
+      (pure_sum_body
+        variant: (output_variant
+          label: (identifier)
+          contract: (contract_ref
+            (contract_name
+              (contract))))
+        variant: (output_variant
+          label: (identifier)
+          contract: (contract_ref
+            (contract_name
+              (contract))))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            (core_pure_if
+              condition: (core_pure_expr
+                left: (core_pure_ident)
+                right: (number))
+              then: (core_pure_expr
+                function: (core_pure_ident)
+                argument: (core_pure_ident))
+              else: (core_pure_expr
+                function: (core_pure_ident)
+                argument: (core_pure_ident))))))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))

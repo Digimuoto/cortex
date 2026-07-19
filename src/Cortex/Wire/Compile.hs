@@ -139,6 +139,7 @@ import Cortex.Wire.NodeBoundary
   , executorNodeBoundaryNormalForm
   , normalFormPorts
   , pureNodeBoundaryNormalForm
+  , pureSumNodeBoundaryNormalForm
   , signalNodeBoundaryNormalForm
   , validateNodeBoundaryNormalForm
   )
@@ -157,6 +158,7 @@ import Cortex.Wire.Pure
   , corePureWhereStaticFields
   , renderPureEvalError
   , validatePureTaskConfig
+  , validatePureVariantTaskConfig
   )
 import Cortex.Wire.Std
   ( stdIoCommandExecutorId
@@ -3185,17 +3187,28 @@ loweredPureNodeFromBody
   -> [CorePureBinding]
   -> NodePureBody
   -> Either WireCore.WireError LoweredNode
-loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = do
-  outputConfig <-
-    pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs pureBody.nodePureBodyOutputs
-  loweredPureNodeFromOutputConfig
-    compileEnv
-    st
-    nodeRef
-    ports
-    topLevelBindings
-    pureBody.nodePureBodyWhere
-    outputConfig
+loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings = \case
+  NodePureBody whereExpr (NodePureProduct outputEquations) -> do
+    outputConfig <-
+      pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs outputEquations
+    loweredPureNodeFromOutputConfig
+      compileEnv
+      st
+      nodeRef
+      ports
+      topLevelBindings
+      whereExpr
+      outputConfig
+  NodePureBody whereExpr (NodePureSum variants bodyExpr) -> do
+    labels <- pureSumLabels st nodeRef ports.lnpInputs ports.lnpOutputs variants bodyExpr
+    loweredPureNodeFromVariantConfig
+      compileEnv
+      nodeRef
+      ports
+      topLevelBindings
+      whereExpr
+      labels
+      bodyExpr
 
 loweredPureNodeFromOutputConfig
   :: WireCompileEnv
@@ -3272,6 +3285,90 @@ nativePureTaskConfigValue topLevelBindings whereExpr outputConfig =
           ]
       )
 
+loweredPureNodeFromVariantConfig
+  :: WireCompileEnv
+  -> CircuitNodeRef
+  -> LoweredNodePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> Either WireCore.WireError LoweredNode
+loweredPureNodeFromVariantConfig compileEnv nodeRef ports topLevelBindings whereExpr labels bodyExpr = do
+  let runtimePorts = taskWirePortsFromLowered ports
+      normalForm =
+        pureSumNodeBoundaryNormalForm
+          nodeRef
+          runtimePorts
+          topLevelBindings
+          whereExpr
+          labels
+          bodyExpr
+      executor = WireCore.WireExecutorNative "pure"
+  mapLeft (WireCore.WireInvalidPorts nodeRef) $
+    validateNodeBoundaryNormalForm normalForm
+  mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
+    validatePureVariantTaskConfig
+      (normalFormPorts normalForm)
+      topLevelBindings
+      whereExpr
+      labels
+      bodyExpr
+  validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
+  pure
+    LoweredNode
+      { lnRef = nodeRef
+      , lnCompiledNode =
+          CompiledCircuitTask
+            CircuitTaskNode
+              { circuitTaskNodeRef = nodeRef
+              , circuitTaskNodeLabel = defaultNodeLabel nodeRef Nothing
+              , circuitTaskNodeMetadata =
+                  actMetadata
+                    nodeRef
+                    executor
+                    Nothing
+                    Nothing
+                    (Just (nativePureVariantTaskConfigValue topLevelBindings whereExpr labels bodyExpr))
+                    []
+                    (normalFormPorts normalForm)
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+                    Nothing
+              }
+      , lnPorts = runtimePorts
+      , lnInputs = ports.lnpInputs
+      , lnOutputs = ports.lnpOutputs
+      , lnGeneratedOrigin = Nothing
+      }
+
+nativePureVariantTaskConfigValue
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> Aeson.Value
+nativePureVariantTaskConfigValue topLevelBindings whereExpr labels bodyExpr =
+  Aeson.Object $
+    insertMaybeJson
+      "where"
+      whereExpr
+      ( KeyMap.fromList
+          [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+          ,
+            ( Key.fromText "variant"
+            , Aeson.object
+                [ "labels" Aeson..= labels
+                , "expression" Aeson..= bodyExpr
+                ]
+            )
+          ]
+      )
+
 validateWhereClause
   :: LoweringState
   -> CircuitNodeRef
@@ -3312,6 +3409,34 @@ renderStaticWhereError = \case
     "where-clause local let binding shadows static binding " <> bindingName
   err ->
     renderPureEvalError err
+
+pureSumLabels
+  :: LoweringState
+  -> CircuitNodeRef
+  -> [LoweredPort]
+  -> [LoweredPort]
+  -> NonEmpty SumVariant
+  -> CorePureExpr
+  -> Either WireCore.WireError [Text]
+pureSumLabels st nodeRef inputPorts outputPorts variants bodyExpr = do
+  let variantList = NE.toList variants
+  when (length outputPorts /= length variantList) $
+    Left (WireCore.WireInvalidPorts nodeRef "pure sum variants do not match lowered output ports")
+  labels <- zipWithM matchVariant outputPorts variantList
+  let constructorNames = Set.fromList labels
+      localNames = inputPortLocalNames inputPorts <> constructorNames
+  validateCorePureNodeScopeWithLocals st nodeRef localNames bodyExpr
+  pure labels
+  where
+    matchVariant port variant = do
+      label <- case variant.svLabel of
+        Label value -> Right value
+        NoLabel -> Left (WireCore.WireInvalidPorts nodeRef "pure sum variants require labels")
+      let ContractId rawContractName = variant.svContract
+          contractName = resolveContractId st rawContractName
+      when (port.lpLabel /= variant.svLabel || port.lpContract /= contractName) $
+        Left (WireCore.WireInvalidPorts nodeRef "pure sum variant does not match its lowered output port")
+      pure label
 
 pureOutputConfigMap
   :: LoweringState

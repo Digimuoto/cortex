@@ -389,7 +389,10 @@ Rules:
 - pure output equations write the CorePure expression directly after `=`;
 - `pure (...)`, `@pure`, `pure { ... }`, and string-valued `expr = ...` configs are rejected;
 - every pure equation declares exactly one output port;
-- pure equations do not declare sum groups;
+- a pure exclusive sum is authored as one `-> a: A | b: B = expression;` body, not as multiple
+  equations;
+- the sum labels are scoped constructors; every control-flow path must return exactly one declared
+  constructor applied to one payload, and label shadowing is rejected;
 - an optional trailing `where <record-expr>;` clause opens statically known record fields into all
   equations in the node;
 - node-local `let ... in` blocks before the body are rejected;
