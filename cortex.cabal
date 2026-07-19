@@ -200,6 +200,7 @@ library
         Cortex.Wire.LeanFixture
         Cortex.Wire.NativePure.Admission
         Cortex.Wire.NativePure.Artifact
+        Cortex.Wire.NativePure.Scheduler
         Cortex.Wire.NativePure.Shape
         Cortex.Wire.Parser
         Cortex.Wire.Pure
@@ -468,6 +469,7 @@ test-suite cortex-test
         Cortex.Wire.ImportSpec
         Cortex.Wire.NativeShapeSpec
         Cortex.Wire.NativePureAdmissionSpec
+        Cortex.Wire.NativePureSchedulerSpec
         Cortex.Wire.ParserSpec
         Cortex.Wire.PureSpec
         Cortex.Wire.RuntimeSpec

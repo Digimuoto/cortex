@@ -37,6 +37,14 @@ whitespace-only compatibility layout preserves the published v1 artifact bytes e
 inject, remove, or replace C tokens. The existing schemas, symbols, lifecycle behavior, target
 outputs, and four pinned artifact hashes remain unchanged.
 
+**2026-07-19 NativePure amendment.** NativePure adds a separately versioned executable scheduler
+policy under `static-program/v2`, `engine/v2`, `engine-state/v2`, `host-process/v2`, and
+`x86_64-linux-v2`. It specializes a witnessed realization quotient and executes pure units inside
+the engine without host authority. This addition does not replace, alias, or reinterpret any v1
+schema, symbol, state transition, artifact byte, or target. The v2 policy reuses the established
+`Cortex.Wire.Circuit.HostProtocol` worker/cancellation/terminal-authority rules; those rules and the
+TLA+ model are unchanged because this slice adds no new host-worker behavior.
+
 ## Context
 
 The earlier extraction direction treated the computable Track 2 Pulse kernel as an object library to
