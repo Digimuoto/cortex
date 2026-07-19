@@ -68,6 +68,15 @@ Signed-off-by: ...
       linear provenance, and branch-policy enforcement. Command:
       `just review-commits 10c2a0b-26cc507`
 
+- [ ] `801c837-801c837` — final breaking Wire grammar and executor-ABI migration. Historical PR:
+      [#404](https://github.com/Digimuoto/cortex/pull/404). Focus: removal diagnostics, canonical
+      compact clauses, zero/one bare executor arguments, configured-executor removal, manifest and
+      binding migration, downstream corpus completeness, and preservation of the admission/ingress
+      partition established by [#401](https://github.com/Digimuoto/cortex/pull/401). The Circuit
+      realization and downstream-ownership vocabulary used to judge the final boundary is recorded
+      by [#403](https://github.com/Digimuoto/cortex/pull/403). Command:
+      `just review-commits 801c837-801c837`
+
 ## Review closure
 
 For every checked batch, add a PR comment containing the bundle SHA-256, reviewer identity/model,
