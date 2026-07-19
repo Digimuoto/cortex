@@ -74,6 +74,7 @@ construction.
 | Static evaluation vs pure execution        | CorePure syntax is used for values in several phases, and NativePure compiles effect-free runtime regions; neither fact makes a value compile-time intent. | The enclosing construct fixes the phase. Static intent is evaluated during admission; pure nodes and NativePure regions still execute at runtime.               |
 | Generic substrate vs downstream meaning    | Cortex must serve wireOS, Logos, CortexQC, and future consumers without importing their vocabularies.                                                      | Cortex owns a generic attachment envelope and registry protocol; downstream packages own versioned intent schemas and validators.                               |
 | Closed authority vs extensibility          | Arbitrary annotations would let source invent planning meaning or smuggle authority past admission.                                                        | Intent schema identities must be registered through inert package projections. Unknown schemas, members, and versions fail closed.                              |
+| Ambient registry vs stable meaning         | Revalidating a Circuit against a later registry could change a contract shape or downstream validator without changing the Circuit address.                | Admission records a digest of exactly the canonical projections and validators consulted. Every downstream artifact cites that immutable registry witness.      |
 | Inline coherence vs external operations    | Small requirements are clearest next to a node; whole-system intent and environment overlays are often deployed as separate reviewed files.                | Inline Wire and sidecar documents lower to the same canonical `StaticIntentBundle`; neither is semantically privileged.                                         |
 | Circuit identity vs deployment variability | The same executable topology can be requested for different systems, but stale intent must never attach to another Circuit.                                | Preserve the Circuit address and derive a separate intent-bound admitted-program address from it. Grants and bindings cite that address.                        |
 | Requirement vs authority                   | Naming UART, filesystem, model, tool, or quantum needs must not grant access.                                                                              | Static intent only requests and constrains. A host grant and binding record alone authorize and select implementations.                                         |
@@ -246,12 +247,14 @@ same-authority-frontier constraints; Logos owns model/tool/memory declaration se
 The generic `WireAdmissionArtifact` remains the graph/proof witness governed by ADR 0079. Opaque
 downstream records are not added to its Lean kernel merely to preserve them. Instead, a sibling
 `StaticIntentBundle` is independently validated and both artifacts are joined by the same Circuit
-address in an intent-bound admitted-program envelope.
+address and registry witness in an intent-bound admitted-program envelope.
 
 The admission pipeline is ordered:
 
-1. parse and elaborate Wire topology plus runtime argument expressions into a `CompiledCircuit`;
-2. calculate the Circuit's canonical semantic address, excluding proof and intent companions;
+1. parse and elaborate Wire topology plus runtime argument expressions into a `CompiledCircuit`,
+   recording each canonical executor, contract, projection, and validator consulted;
+2. calculate the Circuit's canonical semantic address and the consulted registry-witness address,
+   excluding proof and intent companions from the Circuit address;
 3. statically evaluate inline intent and decode sidecars which cite that address;
 4. resolve typed references, canonicalize attachments, and run generic plus downstream validation;
 5. bind the resulting `StaticIntentBundle` and `WireAdmissionArtifact` to the Circuit as one
@@ -267,10 +270,13 @@ The identities form a staged chain rather than one overloaded hash:
 CompiledCircuit
   -> circuit_address
 
-StaticIntentBundle(circuit_address, normalized attachments)
+RegistryWitness(canonical consulted projections and validator identities)
+  -> registry_witness_address
+
+StaticIntentBundle(circuit_address, registry_witness_address, normalized attachments)
   -> intent_bundle_address
 
-AdmittedProgram(circuit_address, admission witness, intent_bundle_address)
+AdmittedProgram(circuit_address, registry_witness_address, admission witness, intent_bundle_address)
   -> admitted_program_address
 
 RealizationInput(admitted_program_address, platform facts, grants, bindings, artifacts)
@@ -281,7 +287,10 @@ The Circuit address continues to identify executable topology and runtime argume
 deployments may therefore share a Circuit address while having different admitted-program or
 realization addresses. A sidecar cannot be applied to a changed Circuit because its Circuit address
 will not match. A host grant or binding cannot be replayed against changed intent because it cites
-the admitted-program address.
+the admitted-program address. A later compiler, realizer, or binder cannot substitute ambient
+registry meaning because the admitted program cites the canonical digest of exactly the projections
+and validator identities used to interpret it. Adding an unrelated registry entry does not perturb
+that digest; changing a consulted entry does.
 
 Source paths, comments, and authoring order are provenance but do not perturb semantic identity once
 they normalize to the same attachment set. Schema identities, scopes, resolved references, canonical
@@ -471,6 +480,10 @@ later grant but can never manufacture the grant.
 ### Obligations
 
 - Implement a closed `StaticIntentProjection` registry and versioned `StaticIntentBundle` encoding.
+- Make registered projection values opaque and valid by construction through validating smart
+  constructors, while retaining trust-boundary revalidation.
+- Implement the consulted registry witness and require admission, intent, grants, bindings, and
+  realization artifacts to cite it or prove identity with it.
 - Specify the static expression subset and typed Circuit-reference encoding without admitting
   runtime values or host observations.
 - Add the intent-bound admitted-program artifact and require grants, bindings, and realization
@@ -509,12 +522,16 @@ later grant but can never manufacture the grant.
 - [ADR 0079 - Wire Admission Witness Schema](0079-wire-admission-witness-schema.md)
 - [ADR 0095 - Wire Single-Record Executor Boundary](0095-wire-single-record-executor-boundary.md)
 - [ADR 0096 - Certified NativePure Compilation](0096-certified-native-pure-region-compilation.md)
+- [Issue 402 - Bind NativePure admission to an immutable registry snapshot](https://github.com/Digimuoto/cortex/issues/402)
 - [wireOS SystemGraph plan](https://github.com/Digimuoto/wireOS/blob/main/docs/Roadmap/Plans/wire-c-generation-unification.md)
 - [Logos ADR 0014 - LLM profiles and tool authority bindings](https://github.com/Digimuoto/logos/blob/main/docs/ADRs/0014-llm-profiles-and-tool-authority-bindings.md)
 - [CortexQC quantum binding](https://github.com/Digimuoto/cortex-qc/blob/main/docs/Consumers/Quantum.md)
 
 ## Tracking
 
+- [ ] Close [issue #402](https://github.com/Digimuoto/cortex/issues/402): bind admission to the
+      consulted registry witness and seal raw projection constructors before the
+      realization-artifact review batch closes.
 - [ ] Agree on the `StaticIntentAttachment` carrier, scopes, identity chain, and must-understand
       rule.
 - [ ] Validate the proposed `intent` syntax against the Wire grammar and formatter before reserving

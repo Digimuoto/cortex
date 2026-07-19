@@ -17,6 +17,7 @@ related:
   - docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md
   - docs/ADRs/0092-circuit-engine-runtime-host-boundary.md
   - docs/ADRs/0093-versioned-circuit-state-event-control-protocol.md
+  - docs/ADRs/0097-wire-static-intent-and-realization-inputs.md
 ---
 
 # ADR 0096 - Certified NativePure Compilation
@@ -108,6 +109,21 @@ strictly; unknown fields, zero capacities, invalid labels, missing projections, 
 are rejections. The projection carries the schema identifier `cortex.wire.native-shape/v1`; value
 schema validation remains separate from this representation contract.
 
+Strictness includes the identity of the registry meaning, not only successful lookup. Compilation
+and admission must produce a content-addressed registry witness for every canonical executor,
+contract, and projection actually consulted while resolving the circuit. NativePure candidate
+evidence, normalized realization input, and the resulting realization artifact must cite the same
+witness identity. Validators recompute the consulted projection digest and reject missing, stale,
+conflicting, or substituted evidence before calculating regions, layouts, bounds, or generated code.
+Unrelated registry entries do not perturb the identity, while any change to a consulted
+`native_shape` does. Later stages may receive the witnessed registry view or an explicit equality
+witness; they may not reinterpret an admitted circuit against a free ambient registry.
+
+Projection values are valid by construction inside the process. `NativeShapeProjection` therefore
+has an opaque representation, a validating constructor, and read-only accessors. Decoders and
+artifact validators still revalidate at trust boundaries as defense in depth. Exporting a raw
+constructor and relying only on downstream revalidation is not part of the accepted public surface.
+
 Exclusive Wire output groups define boundary sums independently of literal enums inside a payload
 schema. Ordinary outputs remain products. Exactly one declared variant and its correctly typed
 payload crosses a sum boundary.
@@ -156,6 +172,8 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   explicit validation boundary, and differential corpus.
 - NativePure cannot silently fall back to permissive contracts, dynamic allocation, host calls, or
   legacy untyped CorePure arithmetic.
+- An admitted candidate or realization cannot outlive or silently substitute the registered
+  projection meaning from which its types and bounds were derived.
 - The first implementation may reject valid hosted CorePure programs when their shape, operation, or
   global bound is outside this profile.
 - Authored fusion boundaries and ownership-driven no-copy optimization require a later ADR because
@@ -227,4 +245,7 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   `cortex-native-pure-generated` production-bridge and engine-protocol gate
 - Remaining public surface: final hosted-v2 product integration and broader accepted CorePure basis;
   binary64 literals remain rejected until concrete canonical C literal emission lands
-- Implementation tracker: GitHub issue #382 and the NativePure epic PR
+- Registry witness and projection-construction closure:
+  [GitHub issue #402](https://github.com/Digimuoto/cortex/issues/402); this blocks closure of
+  realization-artifact review range `54ec95f-9a8dace`
+- Implementation tracker: GitHub issues #382 and #402 and the NativePure epic PR
