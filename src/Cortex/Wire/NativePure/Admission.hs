@@ -48,7 +48,7 @@ import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
 
 import Cortex.Wire.AdmissionArtifact
-  ( WireAdmissionArtifact
+  ( WireAdmissionArtifact (..)
   , wireAdmissionMetadataKey
   )
 import Cortex.Wire.AdmissionBundle (admitWireAdmissionBundle)
@@ -78,7 +78,8 @@ import Cortex.Wire.Pure
   , validatePureVariantTaskConfig
   )
 import Cortex.Wire.Syntax
-  ( CorePureBinOp (..)
+  ( Connection
+  , CorePureBinOp (..)
   , CorePureBinding (..)
   , CorePureExpr (..)
   , CorePureField (..)
@@ -95,6 +96,7 @@ data NativePureCandidates = NativePureCandidates
   { nativePureCandidatesProgramId :: !Text
   , nativePureCandidatesReferentIdentity :: !Text
   , nativePureCandidatesKernels :: ![NativePureKernelCandidate]
+  , nativePureCandidatesConnections :: ![Connection]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -221,6 +223,7 @@ admitNativePureCandidates registry compiled = do
       , nativePureCandidatesReferentIdentity =
           compiled.compiledCircuitCompatibility.circuitCompatibilityDigest
       , nativePureCandidatesKernels = kernels
+      , nativePureCandidatesConnections = admission.wireAdmissionConnections
       }
   where
     lowerNode (nodeRef, CompiledCircuitTask taskNode)

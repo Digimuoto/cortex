@@ -28,12 +28,14 @@ NativePure epic. No NativePure execution profile is generally available yet. Eac
 slice must retain partial status until its executable checks, differential tests, and target gates
 land.
 
-**2026-07-19 implementation note.** The Haskell admission core now derives an ephemeral,
-referent-bound candidate set for individually eligible pure nodes. It enforces strict native
-crossing shapes, the current certified expression allowlist, exact product/sum layouts, resource
-bounds, and the 2 MiB checkpoint ceiling. This candidate set is deliberately not serializable and
-does not publish an interim `NativePurePlan` or realization-artifact schema; normalized artifacts,
-maximal fusion, provenance witnesses, and stable digests remain the later realization slice.
+**2026-07-19 implementation note.** The Haskell admission core derives a referent-bound candidate
+set for individually eligible pure nodes. The realization slice now serializes that evidence as a
+versioned normalized input, selects maximal connected eligible components, elaborates each region to
+typed ANF/SSA steps, and emits a versioned `RealizationArtifact` and `NativePurePlan` with stable
+content digests. Executable validators recompute exact crossings, the maximal partition, resource
+bounds, complete bidirectional source/runtime provenance, and the acyclic quotient. This is not yet
+the NativePure execution profile: shared typed C IR, C emission, v2 scheduling, and Lean consumption
+of the realization schemas remain later epic slices.
 
 ## Context
 
@@ -143,13 +145,14 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
 ## Traceability
 
 - Feature keys: `wire.native_pure_compilation`
-- Public surface: `Cortex.Wire.NativePure.Shape`, the experimental internal-candidate API
-  `Cortex.Wire.NativePure.Admission`, `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Public surface: `Cortex.Wire.NativePure.Shape`, `Cortex.Wire.NativePure.Admission`,
+  `Cortex.Wire.NativePure.Artifact`, `docs/Reference/Wire/contracts-ports-and-matching.md`
 - Implementation: `src/Cortex/Wire/NativePure/Shape.hs` (versioned bounded shape algebra and fixed
   layout calculation), `src/Cortex/Wire/Contracts.hs` and `src/Cortex/Wire/Package/Manifest.hs`
   (additive contract projection and manifest decoding), and
-  `src/Cortex/Wire/NativePure/Admission.hs` (non-serialized strict candidate admission, typed
-  expression checks, storage regions, and resource bounds)
+  `src/Cortex/Wire/NativePure/Admission.hs` (strict candidate admission, typed expression checks,
+  storage regions, and resource bounds), and `src/Cortex/Wire/NativePure/Artifact.hs` (normalized
+  input, maximal fusion, typed ANF/SSA, witnessed quotient, validation, and stable digests)
 - Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
   `test/Cortex/Wire/NativePureAdmissionSpec.hs`
 - Theory/proof: `theory/Cortex/Wire/NativePure.lean` defines the executable intrinsically typed
@@ -159,11 +162,12 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
 
 ## Tracking
 
-- Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts, and
-  the non-serialized Haskell admission candidate stage are implemented)
+- Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts,
+  admission, normalized realization artifacts, maximal fusion, and the Haskell plan validator are
+  implemented)
 - Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
   cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, and the
   906-job Lean build containing `Cortex.Wire.NativePure`
-- Planned public surface: versioned `native_shape` projections, realization and NativePure plan
-  artifacts, shared typed C IR, pure sum bodies, and additive v2 runtime/target interfaces
+- Planned public surface: shared typed semantic C IR, structured C artifacts, NativePure lowering,
+  and additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR
