@@ -33,9 +33,12 @@ set for individually eligible pure nodes. The realization slice now serializes t
 versioned normalized input, selects maximal connected eligible components, elaborates each region to
 typed ANF/SSA steps, and emits a versioned `RealizationArtifact` and `NativePurePlan` with stable
 content digests. Executable validators recompute exact crossings, the maximal partition, resource
-bounds, complete bidirectional source/runtime provenance, and the acyclic quotient. This is not yet
-the NativePure execution profile: shared typed C IR, C emission, v2 scheduling, and Lean consumption
-of the realization schemas remain later epic slices.
+bounds, complete bidirectional source/runtime provenance, and the acyclic quotient. The shared Lean
+semantic C IR now supplies intrinsically typed expressions, statements, functions, storage, records,
+sums, bounded loops, calls, explicit failure, and fuelled operational semantics. NativePure lowering
+targets that shared IR, and StaticC exposes topology-specialized readiness functions in the same
+module representation. This is not yet the NativePure execution profile: artifact decoding in Lean,
+printable C artifacts, canonical emission, v2 scheduling, and target gates remain later epic slices.
 
 ## Context
 
@@ -155,10 +158,14 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   input, maximal fusion, typed ANF/SSA, witnessed quotient, validation, and stable digests)
 - Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
   `test/Cortex/Wire/NativePureAdmissionSpec.hs`
-- Theory/proof: `theory/Cortex/Wire/NativePure.lean` defines the executable intrinsically typed
-  kernel and proof-local target semantics, total lowering, structural/checked-i64 refinement,
-  canonical-label discipline, padding-aware layouts, resource evidence, and read/write-region
-  well-formedness. Binary64 is explicitly excluded from certified refinement evidence.
+- Theory/proof: `theory/Cortex/Wire/NativePure/Type.lean` owns the shared bounded value algebra;
+  `theory/Cortex/Wire/SemanticC.lean` defines the shared typed expression/statement/function IR,
+  storage model, bounded control flow, calls, failures, and executable semantics;
+  `theory/Cortex/Wire/NativePure.lean` defines the source kernel, total lowering into that IR,
+  structural/checked-i64 refinement, canonical-label discipline, padding-aware layouts, resource
+  evidence, and read/write-region well-formedness; and `theory/Cortex/Wire/StaticC.lean` lowers
+  topology-specialized readiness functions into the same semantic module. Binary64 is explicitly
+  excluded from certified refinement evidence.
 
 ## Tracking
 
@@ -168,6 +175,6 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
 - Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
   cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, and the
   906-job Lean build containing `Cortex.Wire.NativePure`
-- Planned public surface: shared typed semantic C IR, structured C artifacts, NativePure lowering,
-  and additive v2 runtime/target interfaces
+- Planned public surface: normalized-plan decoding in Lean, structured printable C artifacts,
+  concrete NativePure frames/functions, and additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR
