@@ -28,6 +28,13 @@ NativePure epic. No NativePure execution profile is generally available yet. Eac
 slice must retain partial status until its executable checks, differential tests, and target gates
 land.
 
+**2026-07-19 implementation note.** The Haskell admission core now derives an ephemeral,
+referent-bound candidate set for individually eligible pure nodes. It enforces strict native
+crossing shapes, the current certified expression allowlist, exact product/sum layouts, resource
+bounds, and the 2 MiB checkpoint ceiling. This candidate set is deliberately not serializable and
+does not publish an interim `NativePurePlan` or realization-artifact schema; normalized artifacts,
+maximal fusion, provenance witnesses, and stable digests remain the later realization slice.
+
 ## Context
 
 CorePure is an ergonomic source language and the existing `pure` executor is a hosted reference
@@ -136,21 +143,24 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
 ## Traceability
 
 - Feature keys: `wire.native_pure_compilation`
-- Public surface: `Cortex.Wire.NativePure.Shape`,
-  `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Public surface: `Cortex.Wire.NativePure.Shape`, the experimental internal-candidate API
+  `Cortex.Wire.NativePure.Admission`, `docs/Reference/Wire/contracts-ports-and-matching.md`
 - Implementation: `src/Cortex/Wire/NativePure/Shape.hs` (versioned bounded shape algebra and fixed
   layout calculation), `src/Cortex/Wire/Contracts.hs` and `src/Cortex/Wire/Package/Manifest.hs`
-  (additive contract projection and manifest decoding)
-- Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`
+  (additive contract projection and manifest decoding), and
+  `src/Cortex/Wire/NativePure/Admission.hs` (non-serialized strict candidate admission, typed
+  expression checks, storage regions, and resource bounds)
+- Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
+  `test/Cortex/Wire/NativePureAdmissionSpec.hs`
 - Theory/proof: open; the executable Lean type and layout correspondence arrives in the dedicated
   kernel slice of this epic
 
 ## Tracking
 
-- Feature key: `wire.native_pure_compilation` (partial; the versioned contract-shape and bounded
-  layout slice is implemented in `Cortex.Wire.NativePure.Shape`)
-- Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs` and the `native_shape` manifest
-  cases in `test/Cortex/Wire/PackageSpec.hs`
+- Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts, and
+  the non-serialized Haskell admission candidate stage are implemented)
+- Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
+  cases in `test/Cortex/Wire/PackageSpec.hs`, and `test/Cortex/Wire/NativePureAdmissionSpec.hs`
 - Planned public surface: versioned `native_shape` projections, realization and NativePure plan
   artifacts, shared typed C IR, pure sum bodies, and additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR
