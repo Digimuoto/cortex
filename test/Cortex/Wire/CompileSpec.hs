@@ -3186,11 +3186,51 @@ spec = describe "Cortex.Wire.Compile" $ do
                     ("payload" :| [])
                     (Syntax.CorePureIdent "plan")
                 , Syntax.CorePureField
-                    ("cfg" :| ["temperature"])
-                    (Syntax.CorePureLit (Syntax.CorePureNumber 0.2))
+                    ("cfg" :| [])
+                    ( Syntax.CorePureRecord
+                        [ Syntax.CorePureField
+                            ("temperature" :| [])
+                            (Syntax.CorePureLit (Syntax.CorePureNumber 0.2))
+                        ]
+                    )
                 ]
       other ->
         expectationFailure ("expected task node, got: " <> show other)
+
+  it "deep-merges overlapping legacy executor config paths into one cfg record" $ do
+    compiled <-
+      requireRight . compileWireText $
+        T.unlines
+          [ "let analyst_base ="
+          , "  @review.analyst { sampling = { temp = 0.2 ; } ; sampling.top_p = 0.9 ; } ;"
+          , "node planner"
+          , "  -> plan: PlannerOutput = @review.planner ({}) ;"
+          , "node analyst"
+          , "  <- plan: PlannerOutput ;"
+          , "  -> analysis: AnalysisFragment ;"
+          , "  = analyst_base (plan) ;"
+          , "planner => analyst"
+          ]
+    argumentExpr "analyst" compiled
+      `shouldBe` Syntax.CorePureRecord
+        [ Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "plan")
+        , Syntax.CorePureField
+            ("cfg" :| [])
+            ( Syntax.CorePureRecord
+                [ Syntax.CorePureField
+                    ("sampling" :| [])
+                    ( Syntax.CorePureRecord
+                        [ Syntax.CorePureField
+                            ("temp" :| [])
+                            (Syntax.CorePureLit (Syntax.CorePureNumber 0.2))
+                        , Syntax.CorePureField
+                            ("top_p" :| [])
+                            (Syntax.CorePureLit (Syntax.CorePureNumber 0.9))
+                        ]
+                    )
+                ]
+            )
+        ]
 
   it "normalizes the compatible bare executor surface without mixing node metadata" $ do
     compiled <-

@@ -3378,10 +3378,13 @@ normalizeLegacyExecutorArgument fields inputExpr =
       case inputExpr of
         CorePureLit CorePureNull -> []
         _ -> [CorePureField ("payload" :| []) inputExpr]
+    -- Legacy config envelopes deep-merge overlapping dotted paths
+    -- (configValueFromFields); emit the merged record so path-conflict
+    -- validation sees the same value the legacy ABI produced.
     configFields =
-      [ CorePureField ("cfg" :| NE.toList path) (aesonValueToCorePureExpr (evalValueToAeson value))
-      | (path, value) <- Map.toAscList fields
-      ]
+      case configValueFromFields fields of
+        Nothing -> []
+        Just configValue -> [CorePureField ("cfg" :| []) (aesonValueToCorePureExpr configValue)]
 
 aesonValueToCorePureExpr :: Aeson.Value -> CorePureExpr
 aesonValueToCorePureExpr = \case
@@ -3393,7 +3396,7 @@ aesonValueToCorePureExpr = \case
   Aeson.Object object ->
     CorePureRecord
       [ CorePureField (Key.toText key :| []) (aesonValueToCorePureExpr value)
-      | (key, value) <- KeyMap.toList object
+      | (key, value) <- KeyMap.toAscList object
       ]
 
 executorArgumentValue
