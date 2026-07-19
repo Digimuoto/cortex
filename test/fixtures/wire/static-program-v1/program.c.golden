@@ -1,0 +1,436 @@
+#include "program.h"
+
+#define CORTEX_WIRE_STORAGE_COUNT 2u
+
+static const uint32_t cortex_wire_node_count = 2u;
+
+static const uint32_t predecessor_offsets[3u] = {0u, 0u, 1u};
+static const uint32_t predecessor_nodes[1u] = {0u};
+static const uint32_t topological_order[2u] = {0u, 1u};
+static uint8_t node_status[CORTEX_WIRE_STORAGE_COUNT];
+static uint64_t output_handle[CORTEX_WIRE_STORAGE_COUNT];
+static uint8_t frontier_snapshot[CORTEX_WIRE_STORAGE_COUNT];
+static cortex_wire_program_v1_effect_api effect_api;
+static uint8_t initialized;
+static uint8_t driving;
+static uint8_t terminal_failed;
+static uint64_t engine_checkpoint_sequence;
+static uint8_t engine_checkpoint_pending;
+static uint8_t engine_cancel_requested;
+static cortex_wire_engine_v1_terminal_state engine_terminal;
+static cortex_wire_engine_v1_host_api engine_host_api;
+static const char engine_program_identity[] = "fixture-freestanding-two-node-v1";
+
+static uint8_t status_unblocks(uint8_t status) {
+  return (uint8_t)(status == CORTEX_WIRE_STATUS_COMPLETED ||
+                   status == CORTEX_WIRE_STATUS_SKIPPED);
+}
+
+static uint8_t node_ready(uint32_t node_id) {
+  uint32_t cursor;
+  if (node_status[node_id] != CORTEX_WIRE_STATUS_PENDING) { return 0u; }
+  for (cursor = predecessor_offsets[node_id];
+       cursor < predecessor_offsets[node_id + 1u]; ++cursor) {
+    if (!status_unblocks(node_status[predecessor_nodes[cursor]])) { return 0u; }
+  }
+  return 1u;
+}
+
+static uint8_t has_failed_predecessor(uint32_t node_id) {
+  uint32_t cursor;
+  for (cursor = predecessor_offsets[node_id];
+       cursor < predecessor_offsets[node_id + 1u]; ++cursor) {
+    if (node_status[predecessor_nodes[cursor]] == CORTEX_WIRE_STATUS_FAILED) { return 1u; }
+  }
+  return 0u;
+}
+
+static void propagate_failures(void) {
+  uint32_t order_index;
+  for (order_index = 0u; order_index < cortex_wire_node_count; ++order_index) {
+    uint32_t node_id = topological_order[order_index];
+    if (node_status[node_id] == CORTEX_WIRE_STATUS_PENDING &&
+        has_failed_predecessor(node_id)) {
+      node_status[node_id] = CORTEX_WIRE_STATUS_FAILED;
+    }
+  }
+}
+
+static uint8_t any_status(uint8_t expected) {
+  uint32_t node_id;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    if (node_status[node_id] == expected) { return 1u; }
+  }
+  return 0u;
+}
+
+static uint8_t all_settled(void) {
+  uint32_t node_id;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    uint8_t status = node_status[node_id];
+    if (status != CORTEX_WIRE_STATUS_COMPLETED &&
+        status != CORTEX_WIRE_STATUS_FAILED &&
+        status != CORTEX_WIRE_STATUS_SKIPPED) { return 0u; }
+  }
+  return 1u;
+}
+
+static void latch_terminal_failure(void) {
+  uint32_t node_id;
+  if (terminal_failed != 0u) { return; }
+  terminal_failed = 1u;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {
+      if (effect_api.effect_cancel != 0) {
+        effect_api.effect_cancel(node_id, effect_api.context);
+      }
+      node_status[node_id] = CORTEX_WIRE_STATUS_FAILED;
+    }
+  }
+}
+
+int cortex_wire_program_v1_init(const cortex_wire_program_v1_effect_api *api) {
+  uint32_t node_id;
+  if (api == 0 || api->effect_begin == 0 || initialized != 0u || driving != 0u) {
+    return -1;
+  }
+  effect_api = *api;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    node_status[node_id] = CORTEX_WIRE_STATUS_PENDING;
+    output_handle[node_id] = 0u;
+    frontier_snapshot[node_id] = 0u;
+  }
+  terminal_failed = 0u;
+  initialized = 1u;
+  return 0;
+}
+
+cortex_wire_program_v1_drive_result cortex_wire_program_v1_drive(void) {
+  uint32_t node_id;
+  if (initialized == 0u || driving != 0u) { return CORTEX_WIRE_DRIVE_ABI_ERROR; }
+  if (terminal_failed != 0u) { return CORTEX_WIRE_DRIVE_FAILED; }
+  driving = 1u;
+  for (;;) {
+    uint32_t frontier_count = 0u;
+    propagate_failures();
+    if (any_status(CORTEX_WIRE_STATUS_FAILED)) {
+      latch_terminal_failure(); driving = 0u; return CORTEX_WIRE_DRIVE_FAILED;
+    }
+    for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+      frontier_snapshot[node_id] = node_ready(node_id);
+      if (frontier_snapshot[node_id] != 0u) { ++frontier_count; }
+    }
+    if (frontier_count == 0u) {
+      driving = 0u;
+      if (any_status(CORTEX_WIRE_STATUS_RUNNING)) {
+        return CORTEX_WIRE_DRIVE_AWAITING_COMPLETIONS;
+      }
+      if (all_settled()) { return CORTEX_WIRE_DRIVE_COMPLETED; }
+      return CORTEX_WIRE_DRIVE_STUCK;
+    }
+    for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+      cortex_wire_program_v1_effect_result effect;
+      if (frontier_snapshot[node_id] == 0u) { continue; }
+      node_status[node_id] = CORTEX_WIRE_STATUS_RUNNING;
+      effect = effect_api.effect_begin(node_id, effect_api.context);
+      switch (effect.kind) {
+        case CORTEX_WIRE_EFFECT_ACCEPTED_ASYNC: break;
+        case CORTEX_WIRE_EFFECT_SUCCESS:
+          node_status[node_id] = CORTEX_WIRE_STATUS_COMPLETED;
+          output_handle[node_id] = effect.payload_handle; break;
+        case CORTEX_WIRE_EFFECT_SKIPPED:
+          node_status[node_id] = CORTEX_WIRE_STATUS_SKIPPED; break;
+        case CORTEX_WIRE_EFFECT_FAILURE:
+          node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;
+        default:
+          node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;
+      }
+      if (node_status[node_id] == CORTEX_WIRE_STATUS_FAILED) { break; }
+    }
+  }
+}
+
+cortex_wire_program_v1_completion_result cortex_wire_program_v1_complete(
+    uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload) {
+  if (initialized == 0u || driving != 0u || node_id >= cortex_wire_node_count) {
+    return CORTEX_WIRE_COMPLETION_INVALID;
+  }
+  if (terminal_failed != 0u) { return CORTEX_WIRE_COMPLETION_STALE; }
+  if (node_status[node_id] != CORTEX_WIRE_STATUS_RUNNING) {
+    return CORTEX_WIRE_COMPLETION_STALE;
+  }
+  switch (outcome) {
+    case CORTEX_WIRE_EFFECT_SUCCESS:
+      node_status[node_id] = CORTEX_WIRE_STATUS_COMPLETED;
+      output_handle[node_id] = payload; break;
+    case CORTEX_WIRE_EFFECT_SKIPPED:
+      node_status[node_id] = CORTEX_WIRE_STATUS_SKIPPED; break;
+    case CORTEX_WIRE_EFFECT_FAILURE:
+      node_status[node_id] = CORTEX_WIRE_STATUS_FAILED; break;
+    default: return CORTEX_WIRE_COMPLETION_INVALID;
+  }
+  return CORTEX_WIRE_COMPLETION_APPLIED;
+}
+
+cortex_wire_program_v1_terminal_state cortex_wire_program_v1_terminal(void) {
+  if (initialized == 0u) { return CORTEX_WIRE_TERMINAL_ACTIVE; }
+  if (terminal_failed != 0u || any_status(CORTEX_WIRE_STATUS_FAILED)) {
+    return CORTEX_WIRE_TERMINAL_FAILED;
+  }
+  if (all_settled()) { return CORTEX_WIRE_TERMINAL_COMPLETED; }
+  return CORTEX_WIRE_TERMINAL_ACTIVE;
+}
+
+uint32_t cortex_wire_program_v1_node_count(void) { return cortex_wire_node_count; }
+
+cortex_wire_program_v1_status cortex_wire_program_v1_node_status(uint32_t node_id) {
+  if (node_id >= cortex_wire_node_count) { return CORTEX_WIRE_STATUS_INVALID; }
+  return (cortex_wire_program_v1_status)node_status[node_id];
+}
+
+uint64_t cortex_wire_program_v1_output_handle(uint32_t node_id) {
+  if (node_id >= cortex_wire_node_count) { return 0u; }
+  return output_handle[node_id];
+}
+
+static uint8_t engine_identity_matches(const char *candidate) {
+  uint32_t cursor = 0u;
+  if (candidate == 0) { return 0u; }
+  for (;;) {
+    if (candidate[cursor] != engine_program_identity[cursor]) { return 0u; }
+    if (engine_program_identity[cursor] == '\0') { return 1u; }
+    ++cursor;
+  }
+}
+
+static uint8_t engine_status_valid(uint8_t status) {
+  return (uint8_t)(status == CORTEX_WIRE_STATUS_PENDING ||
+                   status == CORTEX_WIRE_STATUS_COMPLETED ||
+                   status == CORTEX_WIRE_STATUS_FAILED ||
+                   status == CORTEX_WIRE_STATUS_SKIPPED);
+}
+
+static cortex_wire_engine_v1_state_result engine_validate_state(
+    const char *program_identity,
+    const cortex_wire_engine_v1_state_header *header,
+    const uint8_t *statuses, const uint64_t *handles, uint32_t capacity) {
+  uint32_t node_id;
+  uint8_t any_failed = 0u;
+  uint8_t settled = 1u;
+  if (!engine_identity_matches(program_identity)) {
+    return CORTEX_WIRE_ENGINE_STATE_IDENTITY_MISMATCH;
+  }
+  if (header == 0 || statuses == 0 || handles == 0 ||
+      header->schema_version != CORTEX_WIRE_ENGINE_STATE_SCHEMA_VERSION ||
+      header->node_count != cortex_wire_node_count ||
+      header->checkpoint_sequence == 0u || capacity < cortex_wire_node_count ||
+      header->terminal > CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED) {
+    return CORTEX_WIRE_ENGINE_STATE_INVALID;
+  }
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    uint32_t cursor;
+    uint8_t status = statuses[node_id];
+    if (!engine_status_valid(status)) { return CORTEX_WIRE_ENGINE_STATE_INVALID; }
+    if ((status == CORTEX_WIRE_STATUS_COMPLETED && handles[node_id] == 0u) ||
+        (status != CORTEX_WIRE_STATUS_COMPLETED && handles[node_id] != 0u)) {
+      return CORTEX_WIRE_ENGINE_STATE_INVALID;
+    }
+    if (status == CORTEX_WIRE_STATUS_FAILED) { any_failed = 1u; }
+    if (status == CORTEX_WIRE_STATUS_PENDING) { settled = 0u; }
+    if (status == CORTEX_WIRE_STATUS_COMPLETED || status == CORTEX_WIRE_STATUS_SKIPPED) {
+      for (cursor = predecessor_offsets[node_id];
+           cursor < predecessor_offsets[node_id + 1u]; ++cursor) {
+        if (!status_unblocks(statuses[predecessor_nodes[cursor]])) {
+          return CORTEX_WIRE_ENGINE_STATE_INVALID;
+        }
+      }
+    }
+  }
+  if (header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_COMPLETED &&
+      (!settled || any_failed)) { return CORTEX_WIRE_ENGINE_STATE_INVALID; }
+  if (header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_FAILED && !any_failed) {
+    return CORTEX_WIRE_ENGINE_STATE_INVALID;
+  }
+  return CORTEX_WIRE_ENGINE_STATE_OK;
+}
+
+const char *cortex_wire_engine_v1_program_identity(void) {
+  return engine_program_identity;
+}
+
+static cortex_wire_program_v1_effect_result engine_request_effect(
+    uint32_t node_id, void *context) {
+  cortex_wire_program_v1_effect_result result;
+  (void)context;
+  engine_host_api.effect_request(node_id, engine_host_api.context);
+  result.kind = CORTEX_WIRE_EFFECT_ACCEPTED_ASYNC;
+  result.payload_handle = 0u;
+  return result;
+}
+
+static void engine_cancel_effect(uint32_t node_id, void *context) {
+  (void)context;
+  if (engine_host_api.effect_cancel != 0) {
+    engine_host_api.effect_cancel(node_id, engine_host_api.context);
+  }
+}
+
+static void apply_engine_cancel(void) {
+  uint32_t node_id;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    if (node_status[node_id] == CORTEX_WIRE_STATUS_RUNNING) {
+      if (effect_api.effect_cancel != 0) {
+        effect_api.effect_cancel(node_id, effect_api.context);
+      }
+      node_status[node_id] = CORTEX_WIRE_STATUS_PENDING;
+      output_handle[node_id] = 0u;
+    }
+  }
+  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED;
+  ++engine_checkpoint_sequence;
+  engine_checkpoint_pending = 1u;
+}
+
+int cortex_wire_engine_v1_init(const cortex_wire_engine_v1_host_api *api) {
+  cortex_wire_program_v1_effect_api program_api;
+  int result;
+  if (api == 0 || api->effect_request == 0) { return -1; }
+  engine_host_api = *api;
+  program_api.effect_begin = engine_request_effect;
+  program_api.effect_cancel = engine_cancel_effect;
+  program_api.context = 0;
+  result = cortex_wire_program_v1_init(&program_api);
+  if (result != 0) { return result; }
+  engine_checkpoint_sequence = 1u;
+  engine_checkpoint_pending = 1u;
+  engine_cancel_requested = 0u;
+  engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE;
+  return 0;
+}
+
+cortex_wire_engine_v1_drive_result cortex_wire_engine_v1_drive(void) {
+  cortex_wire_program_v1_drive_result result;
+  if (initialized == 0u || driving != 0u) { return CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR; }
+  if (engine_checkpoint_pending != 0u) {
+    return CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED;
+  }
+  if (engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {
+    return CORTEX_WIRE_ENGINE_DRIVE_TERMINAL;
+  }
+  result = cortex_wire_program_v1_drive();
+  switch (result) {
+    case CORTEX_WIRE_DRIVE_AWAITING_COMPLETIONS:
+      return CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS;
+    case CORTEX_WIRE_DRIVE_COMPLETED:
+      engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_COMPLETED; break;
+    case CORTEX_WIRE_DRIVE_FAILED:
+      engine_terminal = CORTEX_WIRE_ENGINE_TERMINAL_FAILED; break;
+    case CORTEX_WIRE_DRIVE_STUCK: return CORTEX_WIRE_ENGINE_DRIVE_STUCK;
+    case CORTEX_WIRE_DRIVE_ABI_ERROR: return CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR;
+    default: return CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR;
+  }
+  ++engine_checkpoint_sequence;
+  engine_checkpoint_pending = 1u;
+  return CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED;
+}
+
+cortex_wire_program_v1_completion_result cortex_wire_engine_v1_complete(
+    uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload) {
+  cortex_wire_program_v1_completion_result result;
+  if (engine_checkpoint_pending != 0u ||
+      engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {
+    return CORTEX_WIRE_COMPLETION_STALE;
+  }
+  if ((outcome == CORTEX_WIRE_EFFECT_SUCCESS && payload == 0u) ||
+      (outcome != CORTEX_WIRE_EFFECT_SUCCESS && payload != 0u)) {
+    return CORTEX_WIRE_COMPLETION_INVALID;
+  }
+  result = cortex_wire_program_v1_complete(node_id, outcome, payload);
+  if (result == CORTEX_WIRE_COMPLETION_APPLIED) {
+    ++engine_checkpoint_sequence;
+    engine_checkpoint_pending = 1u;
+  }
+  return result;
+}
+
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_checkpoint_committed(
+    uint64_t checkpoint_sequence) {
+  if (initialized == 0u || engine_checkpoint_pending == 0u ||
+      checkpoint_sequence != engine_checkpoint_sequence) {
+    return CORTEX_WIRE_ENGINE_STATE_INVALID;
+  }
+  engine_checkpoint_pending = 0u;
+  if (engine_cancel_requested != 0u) {
+    engine_cancel_requested = 0u;
+    apply_engine_cancel();
+  }
+  return CORTEX_WIRE_ENGINE_STATE_OK;
+}
+
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_export_state(
+    cortex_wire_engine_v1_state_header *header, uint8_t *statuses,
+    uint64_t *handles, uint32_t capacity) {
+  uint32_t node_id;
+  if (initialized == 0u || header == 0 || statuses == 0 || handles == 0 ||
+      capacity < cortex_wire_node_count) { return CORTEX_WIRE_ENGINE_STATE_INVALID; }
+  header->schema_version = CORTEX_WIRE_ENGINE_STATE_SCHEMA_VERSION;
+  header->node_count = cortex_wire_node_count;
+  header->checkpoint_sequence = engine_checkpoint_sequence;
+  header->terminal = engine_terminal;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    statuses[node_id] = node_status[node_id];
+    handles[node_id] = output_handle[node_id];
+  }
+  return CORTEX_WIRE_ENGINE_STATE_OK;
+}
+
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_import_state(
+    const cortex_wire_engine_v1_host_api *api, const char *program_identity,
+    const cortex_wire_engine_v1_state_header *header, const uint8_t *statuses,
+    const uint64_t *handles, uint32_t capacity) {
+  uint32_t node_id;
+  cortex_wire_engine_v1_state_result validation;
+  if (api == 0 || api->effect_request == 0 || initialized != 0u || driving != 0u) {
+    return CORTEX_WIRE_ENGINE_STATE_INVALID;
+  }
+  validation = engine_validate_state(
+      program_identity, header, statuses, handles, capacity);
+  if (validation != CORTEX_WIRE_ENGINE_STATE_OK) { return validation; }
+  engine_host_api = *api;
+  effect_api.effect_begin = engine_request_effect;
+  effect_api.effect_cancel = engine_cancel_effect;
+  effect_api.context = 0;
+  for (node_id = 0u; node_id < cortex_wire_node_count; ++node_id) {
+    node_status[node_id] = statuses[node_id];
+    output_handle[node_id] = handles[node_id];
+    frontier_snapshot[node_id] = 0u;
+  }
+  terminal_failed = (uint8_t)(header->terminal == CORTEX_WIRE_ENGINE_TERMINAL_FAILED);
+  engine_checkpoint_sequence = header->checkpoint_sequence;
+  engine_checkpoint_pending = 1u;
+  /* The cancel latch is session state, not exported state: a deferred
+   * cancel does not survive export/import. The host re-issues the cancel
+   * after a restore because the cancellation request itself is durable
+   * on the host side. */
+  engine_cancel_requested = 0u;
+  engine_terminal = header->terminal;
+  initialized = 1u;
+  return CORTEX_WIRE_ENGINE_STATE_OK;
+}
+
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_cancel(void) {
+  if (initialized == 0u || driving != 0u ||
+      engine_terminal != CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE) {
+    return CORTEX_WIRE_ENGINE_STATE_INVALID;
+  }
+  if (engine_checkpoint_pending != 0u) {
+    engine_cancel_requested = 1u;
+    return CORTEX_WIRE_ENGINE_STATE_CANCEL_DEFERRED;
+  }
+  apply_engine_cancel();
+  return CORTEX_WIRE_ENGINE_STATE_OK;
+}
+
+cortex_wire_engine_v1_terminal_state cortex_wire_engine_v1_terminal(void) {
+  return engine_terminal;
+}

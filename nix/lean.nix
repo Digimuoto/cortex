@@ -78,6 +78,14 @@
         generated="$TMPDIR/generated"
         cortex-wire-c ${../test/fixtures/wire/static-program-v1/two-node.json} "$generated"
         jq -e . "$generated/program.manifest.json" >/dev/null
+        cmp "$generated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/program.c.golden}
+        cmp "$generated/program.h" \
+          ${../test/fixtures/wire/static-program-v1/program.h.golden}
+        cmp "$generated/program.exports.txt" \
+          ${../test/fixtures/wire/static-program-v1/program.exports.txt.golden}
+        cmp "$generated/program.manifest.json" \
+          ${../test/fixtures/wire/static-program-v1/program.manifest.json.golden}
 
         emptyArtifact="$TMPDIR/empty.json"
         jq '.program_identity = "empty" | .nodes = [] | .edges = []' \
