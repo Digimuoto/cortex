@@ -34,20 +34,20 @@ realizeCircuit =
   \contract Qubit;\n\
   \contract Bit;\n\
   \\n\
-  \node prep_c -> control: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node prep_t -> target: Qubit = @prepare_zero { index = 1; } (null);\n\
+  \node prep_c -> control: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node prep_t -> target: Qubit = @prepare_zero { cfg = { index = 1; }; };\n\
   \node entangle\n\
-  \  <- control: Qubit;\n\
-  \  <- target: Qubit;\n\
-  \  -> control: Qubit;\n\
-  \  -> target: Qubit;\n\
-  \  = @cnot ({ inherit control; inherit target; });\n\
+  \  <- control: Qubit\n\
+  \  <- target: Qubit\n\
+  \  -> control: Qubit\n\
+  \  -> target: Qubit\n\
+  \  = @cnot { inherit control target; };\n\
   \node collect\n\
-  \  <- control: Qubit;\n\
-  \  <- target: Qubit;\n\
-  \  -> s0: Bit;\n\
-  \  -> s1: Bit;\n\
-  \  = @realize ({ inherit control; inherit target; });\n\
+  \  <- control: Qubit\n\
+  \  <- target: Qubit\n\
+  \  -> s0: Bit\n\
+  \  -> s1: Bit\n\
+  \  = @realize { inherit control target; };\n\
   \\n\
   \(prep_c <> prep_t) => entangle => collect\n"
 

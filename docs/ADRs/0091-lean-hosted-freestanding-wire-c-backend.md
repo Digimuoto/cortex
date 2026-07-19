@@ -16,6 +16,7 @@ related:
   - docs/ADRs/0078-lean-wire-elaboration-kernel.md
   - docs/ADRs/0079-wire-admission-witness-schema.md
   - docs/ADRs/0090-computable-pulse-kernel-and-extraction-boundary.md
+  - docs/ADRs/0096-certified-native-pure-region-compilation.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md
 ---
@@ -289,3 +290,14 @@ label the text emitter or C compiler as proved.
 - [ADR 0093 — Versioned Circuit State, Event, and Control Protocol](0093-versioned-circuit-state-event-control-protocol.md)
 - [Wire Reference — Executors and the Alphabet](../Reference/Wire/executors-and-alphabet.md)
 - [Runtime extraction research memo](../Research-notes/Runtime/computable-pulse-kernel-and-c-extraction.md)
+
+## Amendment — Separate NativePure v2 profile (2026-07-19)
+
+_Append-only extension of the accepted decision above; the original decision text is unchanged._
+
+ADR 0096 specifies NativePure through a separate `static-program/v2` family and v2 runtime
+interfaces. It does not widen this ADR's first static profile or mutate any
+`cortex_wire_program_v1_*`, `engine/v1`, `engine-state/v1`, or `host-process/v1` contract. The
+planned v2 host compiler will reuse this ADR's staged Haskell-artifact-to-Lean architecture, but
+additionally reconstruct intrinsically typed pure kernels, compute resource bounds, and
+constructively lower them to typed C IR.

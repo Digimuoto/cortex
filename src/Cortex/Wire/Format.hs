@@ -27,7 +27,7 @@ import Data.Char (isAlphaNum)
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Scientific (FPFormat (Fixed), Scientific, formatScientific)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -281,10 +281,21 @@ formatCorePureLetRhs expr
 
 formatNodeDecl :: NodeDecl -> [Text]
 formatNodeDecl nodeDecl =
-  ["node " <> nodeDecl.nodeDeclName]
-    <> fmap (indentText 1 . formatPortDecl) inputPorts
-    <> formatNodeBody outputPorts nodeDecl.nodeDeclBody
+  case compactNode of
+    Just rendered
+      | T.length rendered <= 100
+      , not (T.any (== '\n') rendered)
+      , not (T.isInfixOf "\\n" rendered) ->
+          [rendered]
+    _ ->
+      [nodeHeader]
+        <> fmap (indentText 1 . formatPortDecl) inputPorts
+        <> formatNodeBody outputPorts nodeDecl.nodeDeclBody
   where
+    nodeHeader =
+      "node "
+        <> nodeDecl.nodeDeclName
+        <> foldMap (\metadata -> " with " <> formatRecordInline metadata) nodeDecl.nodeDeclMetadata
     inputPorts =
       [ port
       | port@PortInputDecl {} <- nodeDecl.nodeDeclPortSig
@@ -294,12 +305,46 @@ formatNodeDecl nodeDecl =
       | port <- nodeDecl.nodeDeclPortSig
       , not (isInputPort port)
       ]
+    compactNode
+      | isJust nodeDecl.nodeDeclMetadata = Nothing
+      | length inputPorts > 1 || length outputPorts > 1 = Nothing
+      | otherwise =
+          case nodeDecl.nodeDeclBody of
+            NodeBodyExecutor Nothing call ->
+              Just
+                ( T.unwords $
+                    [nodeHeader]
+                      <> fmap formatPortDecl inputPorts
+                      <> fmap formatPortDecl outputPorts
+                      <> ["=", formatExecutorCall call <> ";"]
+                )
+            NodeBodyPure pureBody
+              | NodePureBody Nothing (NodePureProduct outputEquations) <- pureBody
+              , [equation] <- toList outputEquations ->
+                  Just
+                    ( T.unwords $
+                        [nodeHeader]
+                          <> fmap formatPortDecl inputPorts
+                          <> [formatPureOutputEquation equation]
+                    )
+            _ -> Nothing
 
 formatNodeBody :: [PortDecl] -> NodeBody -> [Text]
 formatNodeBody outputPorts = \case
-  NodeBodyPure pureBody ->
-    fmap (indentText 1 . formatPureOutputEquation) (toList pureBody.nodePureBodyOutputs)
-      <> formatWhereClause pureBody.nodePureBodyWhere
+  NodeBodyPure (NodePureBody whereExpr (NodePureProduct outputEquations)) ->
+    fmap (indentText 1 . formatPureOutputEquation) (toList outputEquations)
+      <> formatWhereClause whereExpr
+  NodeBodyPure (NodePureBody whereExpr (NodePureSum variants bodyExpr)) ->
+    [ indentText
+        1
+        ( "-> "
+            <> T.intercalate " | " (fmap formatSumVariant (toList variants))
+            <> " = "
+            <> formatCorePureExpr bodyExpr
+            <> ";"
+        )
+    ]
+      <> formatWhereClause whereExpr
   NodeBodyExecutor whereExpr call ->
     fmap (indentText 1 . formatPortDecl) outputPorts
       <> [indentText 1 ("= " <> formatExecutorCall call <> ";")]
@@ -337,11 +382,11 @@ formatPureOutputEquation outputEquation =
 formatPortDecl :: PortDecl -> Text
 formatPortDecl = \case
   PortInputDecl label contract ->
-    "<- " <> formatPortLabel label <> ": " <> renderContractId contract <> ";"
+    "<- " <> formatPortLabel label <> ": " <> renderContractId contract
   PortOutputDecl label contract ->
-    "-> " <> formatPortLabel label <> ": " <> renderContractId contract <> ";"
+    "-> " <> formatPortLabel label <> ": " <> renderContractId contract
   PortOutputSumDecl variants ->
-    "-> " <> T.intercalate " | " (fmap formatSumVariant (toList variants)) <> ";"
+    "-> " <> T.intercalate " | " (fmap formatSumVariant (toList variants))
 
 formatSumVariant :: SumVariant -> Text
 formatSumVariant variant =
@@ -354,21 +399,62 @@ formatPortLabel = \case
 
 formatExecutorCall :: ExecutorCall -> Text
 formatExecutorCall = \case
-  ExecutorCallInline executor config inputExpr ->
-    "@"
-      <> renderQName executor
-      <> formatExecutorConfig config
-      <> " ("
-      <> formatCorePureExpr inputExpr
-      <> ")"
-  ExecutorCallConfigured name inputExpr ->
-    name <> " (" <> formatCorePureExpr inputExpr <> ")"
+  ExecutorCallInline executor inputExpr ->
+    "@" <> renderQName executor <> foldMap ((" " <>) . formatExecutorArgument) inputExpr
+  ExecutorCallBound name inputExpr ->
+    name <> foldMap ((" " <>) . formatExecutorArgument) inputExpr
 
-formatExecutorConfig :: Record -> Text
-formatExecutorConfig (Record []) =
-  ""
-formatExecutorConfig record =
-  " " <> formatRecordInline record
+{- | Render an executor argument for the bare-argument surface: the parser
+rejects a leading parenthesis after the executor authority, so the rendering
+must never open with @(@. A top-level binary drops its enclosing parens (the
+argument position accepts unparenthesised operator chains), and a
+single-argument call whose function would otherwise render parenthesised is
+emitted in pipe form (@x |> f@), which the parser left-folds back into the
+same 'CorePureCall'.
+-}
+formatExecutorArgument :: CorePureExpr -> Text
+formatExecutorArgument = \case
+  expression@CorePureBinary {} ->
+    stripEnclosingParens (formatCorePureExpr expression)
+  CorePureCall function [argument]
+    | executorArgumentHeadNeedsPipe function ->
+        formatExecutorArgument argument <> " |> " <> formatPipeStage function
+  expression -> formatCorePureExpr expression
+  where
+    stripEnclosingParens rendered
+      | T.length rendered >= 2 = T.drop 1 (T.dropEnd 1 rendered)
+      | otherwise = rendered
+
+{- | Call heads that 'formatCorePureAtom' would parenthesise: rendering the
+call as @f x@ would put the parenthesis at the front of the executor
+argument, so the call is rendered as @x |> f@ instead.
+-}
+executorArgumentHeadNeedsPipe :: CorePureExpr -> Bool
+executorArgumentHeadNeedsPipe = \case
+  CorePureLit {} -> False
+  CorePureIdent {} -> False
+  CorePureList {} -> False
+  CorePureRecord {} -> False
+  CorePureFieldAccess {} -> False
+  CorePureIndex {} -> False
+  CorePureCall {} -> True
+  CorePureUnary {} -> True
+  CorePureBinary {} -> True
+  CorePureLambda {} -> True
+  CorePureLet {} -> True
+  CorePureIf {} -> True
+
+{- | Render the right-hand side of an executor-argument @|>@ stage. The parser
+reads that position at the merge level, so most expressions render directly;
+lambda, @let@, and @if@ forms only parse at the top of a CorePure expression
+and must be parenthesised to survive in pipe position.
+-}
+formatPipeStage :: CorePureExpr -> Text
+formatPipeStage = \case
+  function@CorePureLambda {} -> "(" <> formatCorePureExpr function <> ")"
+  function@CorePureLet {} -> "(" <> formatCorePureExpr function <> ")"
+  function@CorePureIf {} -> "(" <> formatCorePureExpr function <> ")"
+  function -> formatCorePureExpr function
 
 formatGraphExpr :: Int -> Expr -> [Text]
 formatGraphExpr level = formatGraphWithPrefix level noLinePrefix
@@ -565,7 +651,7 @@ isInlineGraphAtom = \case
 -- through the parser unchanged.
 isExprAtom :: Expr -> Bool
 isExprAtom = \case
-  ExprConfiguredExecutor {} -> True
+  ExprExecutor {} -> True
   ExprConstructor {} -> True
   ExprRecord {} -> True
   ExprList {} -> True
@@ -603,8 +689,8 @@ formatExprInline expr =
       formatExprInline base <> formatSelectSuffix arms
     ExprFamilyProjection familyName indexValue ->
       familyName <> "[" <> T.pack (show indexValue) <> "]"
-    ExprConfiguredExecutor name record ->
-      "@" <> renderQName name <> " " <> formatRecordInline record
+    ExprExecutor name ->
+      "@" <> renderQName name
     ExprConstructor name record ->
       renderQName name <> " " <> formatRecordInline record
     ExprRecord record ->
@@ -736,9 +822,35 @@ isSourceIncludeName =
 
 formatCorePureFields :: [CorePureField] -> [Text]
 formatCorePureFields =
-  formatFields formatCorePureExpr sameNameCorePure . fmap fieldToPair
+  go . fmap fieldToPair
   where
     fieldToPair field = (field.corePureFieldPath, field.corePureFieldValue)
+    go [] = []
+    go (field : rest)
+      | Just source <- sourceInheritance field =
+          let (inherited, remaining) = span ((== Just source) . sourceInheritance) (field : rest)
+           in ( "inherit ("
+                  <> formatCorePureExpr source
+                  <> ") "
+                  <> T.unwords (fmap (NE.head . fst) inherited)
+                  <> ";"
+              )
+                : go remaining
+      | isSelf field =
+          let (inherited, remaining) = span isSelf (field : rest)
+           in ("inherit " <> T.unwords (fmap (NE.head . fst) inherited) <> ";")
+                : go remaining
+      | otherwise =
+          (formatFieldPath (fst field) <> " = " <> formatCorePureExpr (snd field) <> ";") : go rest
+    sourceInheritance (path, value) =
+      case (path, value) of
+        (fieldName :| [], CorePureFieldAccess source projected)
+          | fieldName == projected -> Just source
+        _ -> Nothing
+    isSelf (path, value) =
+      case (path, sameNameCorePure value) of
+        (fieldName :| [], Just valueName) -> fieldName == valueName
+        _ -> False
 
 formatFields
   :: (value -> Text)

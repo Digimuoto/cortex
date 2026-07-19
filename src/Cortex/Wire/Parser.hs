@@ -36,7 +36,7 @@ import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust, listToMaybe, mapMaybe)
+import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -186,6 +186,7 @@ reservedWords =
   , "true"
   , "use"
   , "where"
+  , "with"
   ]
 
 -- | Identifier-continuation predicate.
@@ -331,7 +332,7 @@ data LetTarget = LetTarget
   deriving stock (Eq, Show)
 
 data ParsedNodeDecl
-  = ParsedNodeBody !Text ![PortDecl] !NodeBody
+  = ParsedNodeBody !Text !(Maybe Record) ![PortDecl] !NodeBody
   | ParsedNodeKindApplication !Text !KindApplication
   deriving stock (Show)
 
@@ -353,7 +354,7 @@ data KindParamClass
   = KindParamPortLabel
   | KindParamContract
   | KindParamValue
-  | KindParamConfiguredExecutor
+  | KindParamExecutor
   deriving stock (Eq, Show)
 
 data KindApplication = KindApplication
@@ -381,7 +382,7 @@ data FormParamClass
   | FormParamContract
   | FormParamValue
   | FormParamGraph
-  | FormParamConfiguredExecutor
+  | FormParamExecutor
   deriving stock (Eq, Show)
 
 data FormItem
@@ -434,7 +435,7 @@ data KindSubstitution = KindSubstitution
   , ksContracts :: !(Map Text Text)
   , ksValues :: !(Map Text Expr)
   , ksCoreValues :: !(Map Text CorePureExpr)
-  , ksConfiguredExecutors :: !(Map Text Text)
+  , ksExecutors :: !(Map Text Text)
   }
   deriving stock (Show)
 
@@ -445,7 +446,7 @@ emptyKindSubstitution =
     , ksContracts = Map.empty
     , ksValues = Map.empty
     , ksCoreValues = Map.empty
-    , ksConfiguredExecutors = Map.empty
+    , ksExecutors = Map.empty
     }
 
 -- | Top-level expression. Overlay binds tighter than connect/star.
@@ -524,7 +525,7 @@ identifier, or parenthesized group.
 exprAtom :: Parser Expr
 exprAtom =
   choice
-    [ ExprConfiguredExecutor <$> executorRef <*> recordExpr
+    [ ExprExecutor <$> executorRef
     , -- Immediate @name[index]@ is graph-family projection; spaced @name [index]@ is CorePure.
       familyProjectionExpr
     , try constructorExpr
@@ -973,8 +974,14 @@ corePureField = do
 corePureInheritFields :: Parser [CorePureField]
 corePureInheritFields = do
   keyword "inherit"
+  source <- optional (symbol "(" *> corePureExpr <* symbol ")")
   names <- some identifier
-  pure [CorePureField (name :| []) (CorePureIdent name) | name <- names]
+  pure
+    [ CorePureField
+        (name :| [])
+        (maybe (CorePureIdent name) (`CorePureFieldAccess` name) source)
+    | name <- names
+    ]
 
 chainLeft :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainLeft operand operator = do
@@ -1014,6 +1021,18 @@ outputPort = do
     _ -> do
       let variants = firstVariant :| moreVariants
       pure (PortOutputSumDecl variants)
+
+{- | Port declarations are parsed inside backtracking 'many' loops, so a
+legacy trailing semicolon cannot fail inside the port parser itself — the
+'try' would swallow the diagnostic. Instead this committed guard runs after a
+port loop stops: no valid node surface continues with @;@ there, so a leftover
+semicolon is always the removed clause-delimiter form.
+-}
+rejectLegacyPortSemicolon :: Parser ()
+rejectLegacyPortSemicolon = do
+  legacy <- optional (MP.lookAhead (symbol ";"))
+  when (isJust legacy) $
+    fail "semicolon-delimited port declarations were removed; arrows and = delimit node clauses"
 
 outputVariant :: Parser SumVariant
 outputVariant = do
@@ -1160,7 +1179,7 @@ kindDecl = do
   params <- kindParam `sepEndBy` symbol ","
   _ <- symbol ")"
   _ <- symbol "="
-  inputs <- many (try (inputPort <* symbol ";"))
+  inputs <- many (try inputPort)
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
   pure (ParsedTopKind (KindDecl name params (inputs <> outputs) (mkBody whereExpr)))
@@ -1178,7 +1197,8 @@ parseKindParamClass = do
     "PortLabel" -> pure KindParamPortLabel
     "Contract" -> pure KindParamContract
     "Value" -> pure KindParamValue
-    "ConfiguredExecutor" -> pure KindParamConfiguredExecutor
+    "Executor" -> pure KindParamExecutor
+    "ConfiguredExecutor" -> fail "ConfiguredExecutor was removed; use Executor"
     other -> fail ("unknown kind parameter class: " <> T.unpack other)
 
 formDecl :: Parser ParsedTopForm
@@ -1211,7 +1231,8 @@ parseFormParamClass = do
     "Contract" -> pure FormParamContract
     "Value" -> pure FormParamValue
     "Graph" -> pure FormParamGraph
-    "ConfiguredExecutor" -> pure FormParamConfiguredExecutor
+    "Executor" -> pure FormParamExecutor
+    "ConfiguredExecutor" -> fail "ConfiguredExecutor was removed; use Executor"
     other -> fail ("unknown form parameter class: " <> T.unpack other)
 
 formItem :: Parser FormItem
@@ -1278,10 +1299,12 @@ kindApplication = do
 
 ordinaryNodeDecl :: Text -> Parser ParsedNodeDecl
 ordinaryNodeDecl name = do
-  inputs <- many (try (inputPort <* symbol ";"))
+  metadata <- optional (keyword "with" *> recordExpr)
+  inputs <- many (try inputPort)
+  rejectLegacyPortSemicolon
   (outputs, mkBody) <- nodeImplementationBody
   whereExpr <- optional (try whereClause)
-  pure (ParsedNodeBody name (inputs <> outputs) (mkBody whereExpr))
+  pure (ParsedNodeBody name metadata (inputs <> outputs) (mkBody whereExpr))
 
 nodeImplementationBody :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 nodeImplementationBody =
@@ -1292,7 +1315,10 @@ nodeImplementationBody =
     ]
 
 pureImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
-pureImplementation = do
+pureImplementation = try pureSumImplementation <|> pureProductImplementation
+
+pureProductImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+pureProductImplementation = do
   outputEquations <-
     requireNonEmpty "pure node requires at least one output equation" =<< some (try pureOutputEquation)
   let outputs = fmap pureOutputEquationPortDecl (NE.toList outputEquations)
@@ -1302,7 +1328,26 @@ pureImplementation = do
         NodeBodyPure
           NodePureBody
             { nodePureBodyWhere = whereExpr
-            , nodePureBodyOutputs = outputEquations
+            , nodePureBodyResult = NodePureProduct outputEquations
+            }
+    )
+
+pureSumImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
+pureSumImplementation = do
+  _ <- symbol "->"
+  firstVariant <- outputVariant
+  remainingVariants <- some (symbol "|" *> outputVariant)
+  _ <- symbol "="
+  bodyExpr <- pureOutputExpression
+  _ <- symbol ";"
+  let variants = firstVariant :| remainingVariants
+  pure
+    ( [PortOutputSumDecl variants]
+    , \whereExpr ->
+        NodeBodyPure
+          NodePureBody
+            { nodePureBodyWhere = whereExpr
+            , nodePureBodyResult = NodePureSum variants bodyExpr
             }
     )
 
@@ -1320,7 +1365,8 @@ singleOutputExecutorShorthand = do
 
 executorImplementation :: Parser ([PortDecl], Maybe CorePureExpr -> NodeBody)
 executorImplementation = do
-  outputs <- many (try (outputPort <* symbol ";"))
+  outputs <- many (try outputPort)
+  rejectLegacyPortSemicolon
   _ <- symbol "="
   call <- executorCall
   _ <- symbol ";"
@@ -1354,28 +1400,27 @@ pureOutputExpression =
       fail "pure (...) output wrappers were removed; write the CorePure expression directly"
 
 executorCall :: Parser ExecutorCall
-executorCall =
-  try inlineExecutorCall <|> configuredExecutorCall
+executorCall = inlineExecutorCall
   where
     inlineExecutorCall = do
       executor <- executorRef
       when (renderQName executor == "pure") $
         fail "CorePure output equations are written directly; @pure is not an executor"
-      config <- fromMaybe (Record []) <$> optional (try recordExpr)
-      inputArg <- betweenCallParens corePureExpr
-      pure (ExecutorCallInline executor config inputArg)
+      rejectLegacyCallParens
+      inputArg <- optional corePureExpr
+      case inputArg of
+        Just (CorePureCall (CorePureRecord _) (_ : _)) ->
+          fail "legacy executor config/input calls were removed; pass one explicit record argument"
+        _ -> pure ()
+      legacyTrailing <- optional (try (MP.lookAhead (symbol "(")))
+      when (isJust legacyTrailing) $
+        fail "legacy executor config/input calls were removed; pass one explicit record argument"
+      pure (ExecutorCallInline executor inputArg)
 
-    configuredExecutorCall = do
-      name <- identifier
-      inputArg <- betweenCallParens corePureExpr
-      pure (ExecutorCallConfigured name inputArg)
-
-betweenCallParens :: Parser a -> Parser a
-betweenCallParens inner = do
-  _ <- symbol "("
-  value <- inner
-  _ <- symbol ")"
-  pure value
+    rejectLegacyCallParens = do
+      legacy <- optional (MP.lookAhead (symbol "("))
+      when (isJust legacy) $
+        fail "parenthesized executor calls were removed; pass zero or one bare argument"
 
 pureOutputEquationPortDecl :: PureOutputEquation -> PortDecl
 pureOutputEquationPortDecl outputEquation =
@@ -1743,8 +1788,8 @@ resolveFamilyProjectionsWithStatus families = go
         combineSelect <$> go base <*> traverse resolveArm arms
       ExprFamilyProjection familyName indexValue ->
         resolveProjection familyName indexValue
-      ExprConfiguredExecutor executor config ->
-        mapResolvedRecord (ExprConfiguredExecutor executor) <$> resolveRecord config
+      ExprExecutor executor ->
+        Right (resolvedExpr (ExprExecutor executor))
       ExprConstructor name recordValue ->
         mapResolvedRecord (ExprConstructor name) <$> resolveRecord recordValue
       ExprRecord recordValue ->
@@ -2314,7 +2359,7 @@ recordFormStaticMakeData name rhs state =
 
 parsedNodeName :: ParsedNodeDecl -> Text
 parsedNodeName = \case
-  ParsedNodeBody name _ _ -> name
+  ParsedNodeBody name _ _ _ -> name
   ParsedNodeKindApplication name _ -> name
 
 ensureFreshFormLocal :: FormSubstitution -> FormExpansionState -> Text -> Either String ()
@@ -2324,7 +2369,7 @@ ensureFreshFormLocal subst state localName =
         || Map.member localName subst.fsKindSubstitution.ksPortLabels
         || Map.member localName subst.fsKindSubstitution.ksContracts
         || Map.member localName subst.fsKindSubstitution.ksValues
-        || Map.member localName subst.fsKindSubstitution.ksConfiguredExecutors
+        || Map.member localName subst.fsKindSubstitution.ksExecutors
         || Map.member localName subst.fsGraphs
     )
     (Left ("form local name " <> T.unpack localName <> " is already bound"))
@@ -2371,17 +2416,17 @@ formSubstitutionForApplication formDeclValue application = do
                         Map.insert param.formParamName actual subst.fsKindSubstitution.ksContracts
                     }
               }
-        FormParamConfiguredExecutor -> do
-          actual <- expectSimpleFormIdentifier formDeclValue param "ConfiguredExecutor" arg
+        FormParamExecutor -> do
+          actual <- expectSimpleFormIdentifier formDeclValue param "Executor" arg
           Right
             subst
               { fsKindSubstitution =
                   subst.fsKindSubstitution
-                    { ksConfiguredExecutors =
+                    { ksExecutors =
                         Map.insert
                           param.formParamName
                           actual
-                          subst.fsKindSubstitution.ksConfiguredExecutors
+                          subst.fsKindSubstitution.ksExecutors
                     }
               }
         FormParamValue -> do
@@ -2486,11 +2531,18 @@ formApplicationToCorePureLetRhs application =
 substituteFormNodeDecl
   :: FormSubstitution -> Map Text Text -> NodeDecl -> Either String NodeDecl
 substituteFormNodeDecl subst localLetNames nodeDeclValue = do
+  metadata <- traverse (substituteRecord subst.fsKindSubstitution) nodeDeclValue.nodeDeclMetadata
   portSig <- traverse (substitutePortDecl subst.fsKindSubstitution) nodeDeclValue.nodeDeclPortSig
   body <-
     substituteNodeBody subst.fsKindSubstitution nodeDeclValue.nodeDeclBody
       >>= rewriteNodeBodyLocalLets localLetNames
-  Right (nodeDeclValue {nodeDeclPortSig = portSig, nodeDeclBody = body})
+  Right
+    ( nodeDeclValue
+        { nodeDeclMetadata = metadata
+        , nodeDeclPortSig = portSig
+        , nodeDeclBody = body
+        }
+    )
 
 substituteFormExpr
   :: FormSubstitution -> Map Text Text -> Map Text [Text] -> Expr -> Either String Expr
@@ -2540,8 +2592,8 @@ rewriteFormExpr graphParams localNames = go
         ExprSelect <$> go base <*> traverse rewriteArm arms
       ExprFamilyProjection familyName indexValue ->
         Right (ExprFamilyProjection familyName indexValue)
-      ExprConfiguredExecutor executor config ->
-        ExprConfiguredExecutor executor <$> rewriteRecord config
+      ExprExecutor executor ->
+        Right (ExprExecutor executor)
       ExprConstructor name recordValue ->
         ExprConstructor name <$> rewriteRecord recordValue
       ExprRecord recordValue ->
@@ -2575,12 +2627,15 @@ rewriteNodeBodyLocalLets localLetNames = \case
         (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
         (rewriteExecutorCallLocalLets localLetNames executorCallValue)
   NodeBodyPure pureBody ->
-    Right . NodeBodyPure $
-      pureBody
-        { nodePureBodyWhere = fmap (rewriteCorePureLocalLets localLetNames) pureBody.nodePureBodyWhere
-        , nodePureBodyOutputs =
-            fmap (rewritePureOutputEquationLocalLets localLetNames) pureBody.nodePureBodyOutputs
-        }
+    Right . NodeBodyPure $ case pureBody of
+      NodePureBody whereExpr (NodePureProduct outputs) ->
+        NodePureBody
+          (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
+          (NodePureProduct (fmap (rewritePureOutputEquationLocalLets localLetNames) outputs))
+      NodePureBody whereExpr (NodePureSum variants bodyExpr) ->
+        NodePureBody
+          (fmap (rewriteCorePureLocalLets localLetNames) whereExpr)
+          (NodePureSum variants (rewriteCorePureLocalLets localLetNames bodyExpr))
 
 rewritePureOutputEquationLocalLets :: Map Text Text -> PureOutputEquation -> PureOutputEquation
 rewritePureOutputEquationLocalLets localLetNames outputEquation =
@@ -2591,12 +2646,12 @@ rewritePureOutputEquationLocalLets localLetNames outputEquation =
 
 rewriteExecutorCallLocalLets :: Map Text Text -> ExecutorCall -> ExecutorCall
 rewriteExecutorCallLocalLets localLetNames = \case
-  ExecutorCallInline executor config inputArg ->
-    ExecutorCallInline executor config (rewriteCorePureLocalLets localLetNames inputArg)
-  ExecutorCallConfigured name inputArg ->
-    ExecutorCallConfigured
+  ExecutorCallInline executor inputArg ->
+    ExecutorCallInline executor (fmap (rewriteCorePureLocalLets localLetNames) inputArg)
+  ExecutorCallBound name inputArg ->
+    ExecutorCallBound
       (Map.findWithDefault name name localLetNames)
-      (rewriteCorePureLocalLets localLetNames inputArg)
+      (fmap (rewriteCorePureLocalLets localLetNames) inputArg)
 
 rewriteCorePureLocalLets :: Map Text Text -> CorePureExpr -> CorePureExpr
 rewriteCorePureLocalLets localLetNames = go
@@ -2651,10 +2706,11 @@ duplicateText =
       | otherwise = go (Map.insert name () seen) rest
 
 expandParsedNode :: Map Text KindDecl -> ParsedNodeDecl -> Either String NodeDecl
-expandParsedNode _kindScope (ParsedNodeBody name portSig body) =
+expandParsedNode _kindScope (ParsedNodeBody name metadata portSig body) =
   Right
     NodeDecl
       { nodeDeclName = name
+      , nodeDeclMetadata = metadata
       , nodeDeclPortSig = portSig
       , nodeDeclBody = body
       }
@@ -2672,6 +2728,7 @@ expandParsedNode kindScope (ParsedNodeKindApplication nodeName application) = do
   Right
     NodeDecl
       { nodeDeclName = nodeName
+      , nodeDeclMetadata = Nothing
       , nodeDeclPortSig = portSig
       , nodeDeclBody = body
       }
@@ -2700,12 +2757,12 @@ kindSubstitutionForApplication kindDeclValue application = do
         KindParamContract -> do
           actual <- expectSimpleIdentifier kindDeclValue param "Contract" arg
           Right subst {ksContracts = Map.insert param.kindParamName actual subst.ksContracts}
-        KindParamConfiguredExecutor -> do
-          actual <- expectSimpleIdentifier kindDeclValue param "ConfiguredExecutor" arg
+        KindParamExecutor -> do
+          actual <- expectSimpleIdentifier kindDeclValue param "Executor" arg
           Right
             subst
-              { ksConfiguredExecutors =
-                  Map.insert param.kindParamName actual subst.ksConfiguredExecutors
+              { ksExecutors =
+                  Map.insert param.kindParamName actual subst.ksExecutors
               }
         KindParamValue -> do
           coreValue <- exprToCorePureExpr arg
@@ -2770,10 +2827,18 @@ substituteNodeBody subst = \case
     NodeBodyPure <$> substitutePureBody subst pureBody
 
 substitutePureBody :: KindSubstitution -> NodePureBody -> Either String NodePureBody
-substitutePureBody subst pureBody =
-  NodePureBody
-    <$> traverse (substituteCorePureExpr subst) pureBody.nodePureBodyWhere
-    <*> traverse (substitutePureOutputEquation subst) pureBody.nodePureBodyOutputs
+substitutePureBody subst = \case
+  NodePureBody whereExpr (NodePureProduct outputs) ->
+    NodePureBody
+      <$> traverse (substituteCorePureExpr subst) whereExpr
+      <*> (NodePureProduct <$> traverse (substitutePureOutputEquation subst) outputs)
+  NodePureBody whereExpr (NodePureSum variants bodyExpr) ->
+    NodePureBody
+      <$> traverse (substituteCorePureExpr subst) whereExpr
+      <*> ( NodePureSum
+              <$> traverse (substituteSumVariant subst) variants
+              <*> substituteCorePureExpr subst bodyExpr
+          )
 
 substitutePureOutputEquation
   :: KindSubstitution -> PureOutputEquation -> Either String PureOutputEquation
@@ -2785,14 +2850,17 @@ substitutePureOutputEquation subst outputEquation =
 
 substituteExecutorCall :: KindSubstitution -> ExecutorCall -> Either String ExecutorCall
 substituteExecutorCall subst = \case
-  ExecutorCallInline executor config inputArg ->
-    ExecutorCallInline executor
-      <$> substituteRecord subst config
-      <*> substituteCorePureExpr subst inputArg
-  ExecutorCallConfigured name inputArg ->
-    ExecutorCallConfigured
-      (Map.findWithDefault name name subst.ksConfiguredExecutors)
-      <$> substituteCorePureExpr subst inputArg
+  ExecutorCallInline executor@(QName (name :| [])) inputArg
+    | Just bound <- Map.lookup name subst.ksExecutors ->
+        ExecutorCallBound bound <$> traverse (substituteCorePureExpr subst) inputArg
+    | otherwise ->
+        ExecutorCallInline executor <$> traverse (substituteCorePureExpr subst) inputArg
+  ExecutorCallInline executor inputArg ->
+    ExecutorCallInline executor <$> traverse (substituteCorePureExpr subst) inputArg
+  ExecutorCallBound name inputArg ->
+    ExecutorCallBound
+      (Map.findWithDefault name name subst.ksExecutors)
+      <$> traverse (substituteCorePureExpr subst) inputArg
 
 substituteRecord :: KindSubstitution -> Record -> Either String Record
 substituteRecord subst (Record fields) =
@@ -2818,8 +2886,8 @@ substituteExpr subst = \case
     ExprSelect <$> substituteExpr subst base <*> traverse (substituteSelectArm subst) arms
   ExprFamilyProjection familyName indexValue ->
     Right (ExprFamilyProjection familyName indexValue)
-  ExprConfiguredExecutor executor config ->
-    ExprConfiguredExecutor executor <$> substituteRecord subst config
+  ExprExecutor executor ->
+    Right (ExprExecutor executor)
   ExprConstructor name recordValue ->
     ExprConstructor name <$> substituteRecord subst recordValue
   ExprRecord recordValue ->

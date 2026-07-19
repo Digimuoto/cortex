@@ -37,9 +37,9 @@ contract PageState;
 contract PageTerminal;
 
 node page_kernel
-  <- state: PageState;
-  -> state: PageState | terminal: PageTerminal;
-  = @ingest.fetch_page ({
+  <- state: PageState
+  -> state: PageState | terminal: PageTerminal
+  = @ingest.fetch_page {
     # The executor receives the prior continuation state. A typical state value
     # would contain `next_cursor`, an accumulation summary, and any idempotency
     # key seed the host needs for external page fetches.
@@ -51,7 +51,7 @@ node page_kernel
     page_size = 100;
     cursor_field = "next_cursor";
     emitted_field = "items";
-  });
+  };
 
 # The file return is the open kernel fragment. Because it has an input port, it
 # is not a closed standalone workflow. `wire build` can still compile it so a

@@ -6,9 +6,9 @@ description:
 sidebar:
   label: "0030. Node implementation forms"
   order: 30
-status: proposed
+status: superseded
 date: 2026-04-29
-superseded_by: null
+superseded_by: docs/ADRs/0095-wire-single-record-executor-boundary.md
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar.md

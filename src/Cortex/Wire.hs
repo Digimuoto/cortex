@@ -18,6 +18,7 @@ module Cortex.Wire
   , module Cortex.Wire.Executor
   , module Cortex.Wire.Include
   , module Cortex.Wire.Format
+  , module Cortex.Wire.NativePure
   , module Cortex.Wire.Pure
   , module Cortex.Wire.Std
   , module Cortex.Wire.Use
@@ -45,6 +46,7 @@ module Cortex.Wire
   , wrapWireStageOutputs
   , wrapWireStageResult
   , wrapWireStageDefinition
+  , validateWireExecutorArgument
   , emptyWireCompileEnv
   , wireCompileEnvWithContractRegistry
   , wireCompileEnvWithExecutorRegistry
@@ -114,6 +116,7 @@ import Cortex.Wire.Contract
 import Cortex.Wire.Executor
 import Cortex.Wire.Format
 import Cortex.Wire.Include
+import Cortex.Wire.NativePure
 import Cortex.Wire.Parser
   ( ParseError
   , parseWireExpr
@@ -138,6 +141,7 @@ import Cortex.Wire.Runtime
   ( WireInputBundle (..)
   , unwrapWireStageInputs
   , unwrapWireStageValue
+  , validateWireExecutorArgument
   , wireInputBundleFromStageInputs
   , wireInputBundlePromptSummary
   , wrapWireStageDefinition

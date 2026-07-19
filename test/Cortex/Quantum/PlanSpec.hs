@@ -12,6 +12,9 @@ zero-realize and multiple-realize rejection paths.
 -}
 module Cortex.Quantum.PlanSpec (spec) where
 
+import Data.Aeson (Value (..))
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -35,6 +38,12 @@ import Cortex.Quantum.Plan
   , renderRealizeError
   )
 import Cortex.Quantum.TestSupport (compileReturn, compileText, loadTestEnv)
+import Cortex.Wire
+  ( CircuitNodeRef (..)
+  , CircuitTaskNode (..)
+  , CompiledCircuit (..)
+  , CompiledCircuitNode (..)
+  )
 import Cortex.Wire.Executor (WireExecutorId (..))
 
 realizeId :: WireExecutorId
@@ -43,52 +52,59 @@ realizeId = WireExecutorId "quantum.realize"
 noRealizeCircuit :: Text
 noRealizeCircuit =
   "use quantum.core.{@prepare_zero, @measure_z, Qubit, Bit};\n\
-  \node p -> q: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node m <- q: Qubit; -> b: Bit = @measure_z {} (q);\n\
+  \node p -> q: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
   \p => m\n"
 
 twoRealizeCircuit :: Text
 twoRealizeCircuit =
   "use quantum.core.{@prepare_zero, @cnot, @measure_z, Qubit, Bit, QuantumResult};\n\
   \use quantum.braket.{@realize};\n\
-  \node pc -> control: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node pt -> target: Qubit = @prepare_zero { index = 1; } (null);\n\
+  \node pc -> control: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node pt -> target: Qubit = @prepare_zero { cfg = { index = 1; }; };\n\
   \node cx\n\
-  \  <- control: Qubit;\n\
-  \  <- target: Qubit;\n\
-  \  -> control: Qubit;\n\
-  \  -> target: Qubit;\n\
-  \  = @cnot ({ inherit control; inherit target; });\n\
-  \node mc <- control: Qubit; -> bc: Bit = @measure_z {} (control);\n\
-  \node mt <- target: Qubit; -> bt: Bit = @measure_z {} (target);\n\
-  \node r0 <- bc: Bit; -> res0: QuantumResult = @realize ({ inherit bc; });\n\
-  \node r1 <- bt: Bit; -> res1: QuantumResult = @realize ({ inherit bt; });\n\
+  \  <- control: Qubit\n\
+  \  <- target: Qubit\n\
+  \  -> control: Qubit\n\
+  \  -> target: Qubit\n\
+  \  = @cnot { inherit control target; };\n\
+  \node mc <- control: Qubit -> bc: Bit = @measure_z control;\n\
+  \node mt <- target: Qubit -> bt: Bit = @measure_z target;\n\
+  \node r0 <- bc: Bit -> res0: QuantumResult = @realize { inherit bc; };\n\
+  \node r1 <- bt: Bit -> res1: QuantumResult = @realize { inherit bt; };\n\
   \(pc <> pt) => cx => (mc <> mt) => (r0 <> r1)\n"
 
 fractionalIndexCircuit :: Text
 fractionalIndexCircuit =
   "use quantum.core.{@prepare_zero, @measure_z, Qubit, Bit, QuantumResult};\n\
   \use quantum.braket.{@realize};\n\
-  \node p -> q: Qubit = @prepare_zero { index = 0.6; } (null);\n\
-  \node m <- q: Qubit; -> b: Bit = @measure_z {} (q);\n\
-  \node r <- b: Bit; -> result: QuantumResult = @realize ({ inherit b; });\n\
+  \node p -> q: Qubit = @prepare_zero { cfg = { index = 0.6; }; };\n\
+  \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
+  \node r <- b: Bit -> result: QuantumResult = @realize { inherit b; };\n\
   \p => m => r\n"
+
+unsupportedConfigCircuit :: Text
+unsupportedConfigCircuit =
+  "use quantum.core.{@prepare_zero, @measure_z, Qubit, Bit};\n\
+  \node p -> q: Qubit = @prepare_zero { cfg = { index = 1 + 1; }; };\n\
+  \node m <- q: Qubit -> b: Bit = @measure_z q;\n\
+  \p => m\n"
 
 sideMeasurementCircuit :: Text
 sideMeasurementCircuit =
   "use quantum.core.{@prepare_zero, @cnot, @measure_z, Qubit, Bit, QuantumResult};\n\
   \use quantum.braket.{@realize};\n\
-  \node pc -> control: Qubit = @prepare_zero { index = 0; } (null);\n\
-  \node pt -> target: Qubit = @prepare_zero { index = 1; } (null);\n\
+  \node pc -> control: Qubit = @prepare_zero { cfg = { index = 0; }; };\n\
+  \node pt -> target: Qubit = @prepare_zero { cfg = { index = 1; }; };\n\
   \node entangle\n\
-  \  <- control: Qubit;\n\
-  \  <- target: Qubit;\n\
-  \  -> control: Qubit;\n\
-  \  -> target: Qubit;\n\
-  \  = @cnot ({ inherit control; inherit target; });\n\
-  \node mc <- control: Qubit; -> bc: Bit = @measure_z {} (control);\n\
-  \node mt <- target: Qubit; -> bt: Bit = @measure_z {} (target);\n\
-  \node r <- bc: Bit; -> result: QuantumResult = @realize ({ inherit bc; });\n\
+  \  <- control: Qubit\n\
+  \  <- target: Qubit\n\
+  \  -> control: Qubit\n\
+  \  -> target: Qubit\n\
+  \  = @cnot { inherit control target; };\n\
+  \node mc <- control: Qubit -> bc: Bit = @measure_z control;\n\
+  \node mt <- target: Qubit -> bt: Bit = @measure_z target;\n\
+  \node r <- bc: Bit -> result: QuantumResult = @realize { inherit bc; };\n\
   \(pc <> pt) => entangle => (mc <> mt) => r\n"
 
 spec :: Spec
@@ -129,6 +145,20 @@ spec =
             Left err -> err `shouldSatisfy` T.isInfixOf "config field index must be an integer"
             Right _ -> expectationFailure "expected a fractional index validation error"
 
+    it "rejects a non-plain cfg field with a typed error naming the field" $ \env ->
+      case compileText env unsupportedConfigCircuit of
+        Left err -> expectationFailure (T.unpack err)
+        Right circuit ->
+          compiledCircuitToPlan circuit
+            `shouldBe` Left (WalkConfigUnsupportedValue "p" "cfg.index")
+
+    it "rejects an undecodable executor argument instead of accepting the raw envelope" $ \env ->
+      case compileText env noRealizeCircuit of
+        Left err -> expectationFailure (T.unpack err)
+        Right circuit ->
+          compiledCircuitToPlan (corruptArgumentValue "p" circuit)
+            `shouldBe` Left (WalkArgumentUndecodable "p")
+
     it "lowers only measurement bits collected by the realize node" $ \env ->
       case compileText env sideMeasurementCircuit of
         Left err -> expectationFailure (T.unpack err)
@@ -154,3 +184,36 @@ spec =
 renderWalk :: WalkError -> Text
 renderWalk WalkNoRealizeNode = "no realize node"
 renderWalk other = "walk error: " <> T.pack (show other)
+
+{- | Replace one task node's compiled @argument.value@ metadata with a value
+that is not an encoded core-pure expression, mimicking corrupted or
+foreign-compiler metadata.
+-}
+corruptArgumentValue :: Text -> CompiledCircuit -> CompiledCircuit
+corruptArgumentValue ref circuit =
+  circuit
+    { compiledCircuitNodes =
+        Map.adjust corruptNode (CircuitNodeRef ref) (compiledCircuitNodes circuit)
+    }
+  where
+    corruptNode node =
+      case node of
+        CompiledCircuitTask taskNode ->
+          CompiledCircuitTask
+            taskNode
+              { circuitTaskNodeMetadata = corruptMetadata (circuitTaskNodeMetadata taskNode)
+              }
+        CompiledCircuitSignal {} -> node
+        CompiledCircuitArtifact {} -> node
+        CompiledCircuitRewriteBoundary {} -> node
+        CompiledCircuitCondition {} -> node
+    corruptMetadata metadata =
+      case metadata of
+        Object keyMap ->
+          Object
+            ( KeyMap.insert
+                "argument"
+                (Object (KeyMap.singleton "value" (String "not-an-expression")))
+                keyMap
+            )
+        other -> other

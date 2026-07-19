@@ -281,27 +281,27 @@ let summarize = runs: label: {
 # to Wire's checker.
 
 kind run_command(spec: PortLabel, result: PortLabel) =
-  <- spec: CommandSpec;
-  -> result: CommandResult = @command {} (spec);
+  <- spec: CommandSpec
+  -> result: CommandResult = @command spec;
 
 kind planned_command(label: PortLabel, item: Value) =
-  <- label: CommandSpec;
-  -> label: CommandResult = @command {} (label);
+  <- label: CommandSpec
+  -> label: CommandResult = @command label;
 
 # A gate records the dependency as a Wire edge while preserving the previous
 # CommandResult for later reporting. Make/CMake can order commands; here the
 # edge and the carried result are first-class graph structure.
 kind command_gate(previous: PortLabel, ready: PortLabel, spec: Value) =
-  <- previous: CommandResult;
+  <- previous: CommandResult
   -> previous: CommandResult = previous;
   -> ready: CommandSpec = spec;
 
 kind command_prereq_gate(previous: PortLabel, ready: PortLabel, spec: Value) =
-  <- previous: CommandResult;
+  <- previous: CommandResult
   -> ready: CommandSpec = spec;
 
 kind command_result_fanout(source: PortLabel, first: PortLabel, second: PortLabel, third: PortLabel, fourth: PortLabel) =
-  <- source: CommandResult;
+  <- source: CommandResult
   -> source: CommandResult = source;
   -> first: CommandResult = source;
   -> second: CommandResult = source;
@@ -376,19 +376,19 @@ let quality_checks = makeEach(quality_units, planned_command);
 # ============================================================================
 
 node summarize_lib_objects
-  <- libObjects: LibObjectResults;
+  <- libObjects: LibObjectResults
   -> libCompileReport: BuildSummary = summarize ([libObjects.lib_objects_metrics, libObjects.lib_objects_parse, libObjects.lib_objects_render]) "library objects";
 
 node summarize_app_objects
-  <- app_objects_main: CommandResult;
+  <- app_objects_main: CommandResult
   -> appCompileReport: BuildSummary = summarize ([app_objects_main]) "app objects";
 
 node summarize_test_objects
-  <- testObjects: TestObjectResults;
+  <- testObjects: TestObjectResults
   -> testCompileReport: BuildSummary = summarize ([testObjects.test_objects_test_metrics, testObjects.test_objects_test_parse]) "test objects";
 
 node analyze_quality
-  <- quality: QualityResults;
+  <- quality: QualityResults
   -> qualityReport: BuildSummary = summarize ([quality.quality_checks_syntax, quality.quality_checks_todo, quality.quality_checks_headers]) "quality checks";
 
 # ============================================================================
@@ -403,10 +403,10 @@ node analyze_quality
 # refactor forgets one piece, the promotion gate cannot be wired.
 
 node archive_gate
-  <- libCompileReport: BuildSummary;
-  <- appCompileReport: BuildSummary;
-  <- testCompileReport: BuildSummary;
-  <- qualityReport: BuildSummary;
+  <- libCompileReport: BuildSummary
+  <- appCompileReport: BuildSummary
+  <- testCompileReport: BuildSummary
+  <- qualityReport: BuildSummary
   -> libCompileReport: BuildSummary = libCompileReport;
   -> appCompileReport: BuildSummary = appCompileReport;
   -> testCompileReport: BuildSummary = testCompileReport;
@@ -426,18 +426,18 @@ let package_dist = gated_command(packageSpec, smokeRun, package);
 let package_audit = audit_package(package, binaryAudit, manifestAudit, sizeAudit, checksumAudit);
 
 node split_package_audit
-  <- package: CommandResult;
-  <- binaryAudit: CommandResult;
-  <- manifestAudit: CommandResult;
-  <- sizeAudit: CommandResult;
-  <- checksumAudit: CommandResult;
+  <- package: CommandResult
+  <- binaryAudit: CommandResult
+  <- manifestAudit: CommandResult
+  <- sizeAudit: CommandResult
+  <- checksumAudit: CommandResult
   -> package: CommandResult = package;
   -> audits: PackageAuditResults = {
     inherit binaryAudit manifestAudit sizeAudit checksumAudit;
   };
 
 node summarize_package_audit
-  <- audits: PackageAuditResults;
+  <- audits: PackageAuditResults
   -> packageAuditReport: BuildSummary = summarize ([audits.binaryAudit, audits.manifestAudit, audits.sizeAudit, audits.checksumAudit]) "package audit";
   -> binaryAudit: CommandResult = audits.binaryAudit;
   -> manifestAudit: CommandResult = audits.manifestAudit;
@@ -445,7 +445,7 @@ node summarize_package_audit
   -> checksumAudit: CommandResult = audits.checksumAudit;
 
 node collect_release_evidence
-  <- pre: PreReleaseResults;
+  <- pre: PreReleaseResults
   -> pre: PreReleaseResults = pre;
   -> releaseEvidence: ReleaseEvidence = {
     libCompileReport = pre.libCompileReport;
@@ -468,14 +468,14 @@ node collect_release_evidence
   };
 
 node release_gate
-  <- releaseEvidence: ReleaseEvidence;
+  <- releaseEvidence: ReleaseEvidence
   -> promoteReady: CommandSpec = promotionSpecFor releaseEvidence;
 
 node promote_release = run_command(promoteReady, promotedRelease);
 
 node assemble_final_results
-  <- pre: PreReleaseResults;
-  <- promotedRelease: CommandResult;
+  <- pre: PreReleaseResults
+  <- promotedRelease: CommandResult
   -> final: FinalResults = {
     libCompileReport = pre.libCompileReport;
     appCompileReport = pre.appCompileReport;
@@ -506,7 +506,7 @@ node assemble_final_results
 # deterministic summary built from typed CommandResult and BuildSummary values.
 
 node render_build_report
-  <- final: FinalResults;
+  <- final: FinalResults
   -> report: BuildReport = report;
   where let
     commands = [
@@ -562,8 +562,8 @@ node render_build_report
   { inherit report; };
 
 node print_report
-  <- report: BuildReport;
-  = @stdout { newline = true; } (report);
+  <- report: BuildReport
+  = @stdout { payload = report; cfg = { newline = true; }; };
 
 # ============================================================================
 # 9. Final Graph

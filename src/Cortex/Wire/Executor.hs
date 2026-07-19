@@ -7,7 +7,7 @@ Maintainer  : julius.koskela@digimuoto.com
 Stability   : experimental
 
 Wire only needs the structural projection of registered executor authority:
-identity, ports, vocabulary, config shape, and effect metadata. Runnable host
+identity, ports, vocabulary, argument shape, and effect metadata. Runnable host
 authority lives in 'Cortex.Capability.Executor'.
 
 Wire modules own authoring and compilation mechanics while host authority stays in typed registries.
@@ -18,7 +18,7 @@ module Cortex.Wire.Executor
   , wireExecutorIdToText
   , wireExecutorIdFromWireExecutor
   , WireExecutorEffect (..)
-  , WireExecutorConfigShape (..)
+  , WireExecutorArgumentShape (..)
   , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
   , wireExecutorProjectionFromPorts
@@ -64,9 +64,9 @@ data WireExecutorEffect
   | WireExecutorImpure
   deriving stock (Eq, Show, Generic)
 
-data WireExecutorConfigShape
-  = WireExecutorConfigUnchecked
-  | WireExecutorConfigSchema Aeson.Value
+data WireExecutorArgumentShape
+  = WireExecutorArgumentUnchecked
+  | WireExecutorArgumentSchema Aeson.Value
   deriving stock (Eq, Show, Generic)
 
 data WireExecutorPortPolicy
@@ -79,7 +79,7 @@ data WireExecutorProjection = WireExecutorProjection
   , wireExecutorProjectionPorts :: !WirePorts
   , wireExecutorProjectionVocabulary :: !(Set Text)
   , wireExecutorProjectionEffect :: !WireExecutorEffect
-  , wireExecutorProjectionConfigShape :: !WireExecutorConfigShape
+  , wireExecutorProjectionArgumentShape :: !WireExecutorArgumentShape
   , wireExecutorProjectionPortPolicy :: !WireExecutorPortPolicy
   }
   deriving stock (Eq, Show, Generic)
@@ -95,7 +95,7 @@ wireExecutorProjectionFromPorts executorId ports effect =
     , wireExecutorProjectionPorts = ports
     , wireExecutorProjectionVocabulary = wireContractsFromPorts ports
     , wireExecutorProjectionEffect = effect
-    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
     , wireExecutorProjectionPortPolicy = WireExecutorFixedPorts
     }
 

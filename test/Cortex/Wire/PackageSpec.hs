@@ -22,7 +22,10 @@ import Test.Hspec
 
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
-  ( WireContractRegistry
+  ( NativeShape (..)
+  , NativeShapeProjection (..)
+  , WireContractRegistry
+  , WireContractSpec (..)
   , WireOutputPort (..)
   , WirePorts (..)
   , wireContractRegistryFromList
@@ -209,6 +212,133 @@ spec = do
         Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
         Right package ->
           packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
+
+  describe "executor argument manifests" $ do
+    it "rejects the obsolete config_shape key" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \config_shape = \"unchecked\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "rejects the obsolete config_shape key in table-header spelling" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \[executor.config_shape]\n\
+            \schema = \"legacy.schema\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "rejects the obsolete config_shape key in dotted-key spelling" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \config_shape.schema = \"legacy.schema\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "accepts config_shape text inside a multi-line string value" $ do
+      let source =
+            "[package]\n\
+            \id = \"docs\"\n\
+            \[[executor]]\n\
+            \id = \"docs.run\"\n\
+            \effect = \"pure\"\n\
+            \[[module]]\n\
+            \path = \"example/notes.wire\"\n\
+            \source = \"\"\"\n\
+            \-- migration note, not a key:\n\
+            \config_shape = \"unchecked\"\n\
+            \export let value = 1;\n\
+            \\"\"\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          Map.lookup "example/notes.wire" package.wpModuleSources
+            `shouldSatisfy` maybe False (T.isInfixOf "config_shape = \"unchecked\"")
+
+  describe "NativePure contract manifests" $ do
+    it "decodes scalar and bounded native_shape projections" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = \"i64\" }\n\
+            \[[contract]]\n\
+            \id = \"Name\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"text\", capacity = 64 } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          fmap wireContractSpecNativeShape package.wpContractSpecs
+            `shouldBe` [ Just (NativeShapeProjection NativeI64)
+                       , Just (NativeShapeProjection (NativeText 64))
+                       ]
+
+    it "rejects unknown native_shape fields instead of silently weakening the representation" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Name\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"text\", capacity = 64, encoding = \"utf16\" } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "fields must be exactly: capacity, kind"
+        Right _ -> expectationFailure "unknown native_shape field unexpectedly decoded"
+
+    it "rejects unversioned native_shape projections" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = \"i64\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "expected Object"
+        Right _ -> expectationFailure "unversioned native_shape unexpectedly decoded"
+
+    it "rejects an unknown native_shape projection version" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v2\", shape = \"i64\" }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "unsupported native_shape schema"
+        Right _ -> expectationFailure "unknown native_shape schema unexpectedly decoded"
 
   describe "ADR 0085 manifest schema end-to-end" $ do
     it "enforces a manifest-declared contract schema at runtime egress" $ do

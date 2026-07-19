@@ -101,13 +101,13 @@ contract B;
 contract C;
 
 node source
-  -> left: A;
-  -> right: B;
-  = @demo.source ({});
+  -> left: A
+  -> right: B
+  = @demo.source;
 
 node use_left
-  <- left: A;
-  -> out: C = @demo.use_left (left);
+  <- left: A
+  -> out: C = @demo.use_left left;
 
 source => use_left
 ```
@@ -166,15 +166,13 @@ contract Dashboard;
 
 # Executable events and their typed input/output frontiers.
 node receive_request
-  -> uid: UserId = @http.receive_dashboard_request ({});
+  -> uid: UserId = @http.receive_dashboard_request;
 
 node fetch_user
-  <- uid: UserId;
-  -> user: UserProfile = @http.fetch_user (uid);
+  <- uid: UserId  -> user: UserProfile = @http.fetch_user uid;
 
 node prepare_dashboard
-  <- user: UserProfile;
-  -> profile: ProfileSummary = {
+  <- user: UserProfile  -> profile: ProfileSummary = {
     id = user.id;
     name = user.name;
   };
@@ -188,24 +186,21 @@ node prepare_dashboard
   };
 
 node fetch_posts
-  <- posts_req: PostsRequest;
-  -> posts: PostsFeed = @http.fetch_posts (posts_req);
+  <- posts_req: PostsRequest  -> posts: PostsFeed = @http.fetch_posts posts_req;
 
 node fetch_friends
-  <- friends_req: FriendsRequest;
-  -> friends: FriendGraph = @http.fetch_friends (friends_req);
+  <- friends_req: FriendsRequest  -> friends: FriendGraph = @http.fetch_friends friends_req;
 
 node assemble
-  <- profile: ProfileSummary;
-  <- posts: PostsFeed;
-  <- friends: FriendGraph;
-  -> dashboard: Dashboard = @dashboard.assemble ({
+  <- profile: ProfileSummary
+  <- posts: PostsFeed
+  <- friends: FriendGraph
+  -> dashboard: Dashboard = @dashboard.assemble {
     inherit profile posts friends;
-  });
+  };
 
 node respond
-  <- dashboard: Dashboard;
-  = @http.respond_dashboard (dashboard);
+  <- dashboard: Dashboard  = @http.respond_dashboard dashboard;
 
 # The file's graph expression: the returned executable topology.
 receive_request

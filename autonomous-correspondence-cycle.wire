@@ -83,7 +83,7 @@ node intake
   { inherit request; };
 
 node charter
-  <- request: RunRequest;
+  <- request: RunRequest
   -> charter: RunCharter = charter;
   where let
     coreDone = [
@@ -117,8 +117,8 @@ node charter
   { inherit charter; };
 
 node repo_snapshot
-  <- charter: RunCharter;
-  -> snapshot: RepoSnapshot;
+  <- charter: RunCharter
+  -> snapshot: RepoSnapshot
 = @repo.snapshot {
   includeStatus = true;
   includeBranch = true;
@@ -127,8 +127,8 @@ node repo_snapshot
 } (charter);
 
 node diff_scope
-  <- snapshot: RepoSnapshot;
-  -> scope: DiffScope;
+  <- snapshot: RepoSnapshot
+  -> scope: DiffScope
 = @repo.diff_scope {
   base = "origin/main";
   include = [
@@ -143,8 +143,8 @@ node diff_scope
 } (snapshot);
 
 node journal_memory
-  <- charter: RunCharter;
-  -> memory: JournalMemory;
+  <- charter: RunCharter
+  -> memory: JournalMemory
 = @repo.read_journal {
   primary = ".agent-journal/wire-admission-witness-artifacts.md";
   fallback = ".codex-journal/wire-compiler-finish-line.md";
@@ -153,8 +153,8 @@ node journal_memory
 } (charter);
 
 node issue_stack
-  <- charter: RunCharter;
-  -> issues: IssueStack;
+  <- charter: RunCharter
+  -> issues: IssueStack
 = @repo.issue_index {
   pr = 189;
   labels = ["wire", "lean", "compiler", "proof"];
@@ -163,9 +163,9 @@ node issue_stack
 } (charter);
 
 node correspondence_map
-  <- scope: DiffScope;
-  <- memory: JournalMemory;
-  <- issues: IssueStack;
+  <- scope: DiffScope
+  <- memory: JournalMemory
+  <- issues: IssueStack
   -> map: CorrespondenceMap = map;
   where let
     surfaces = [
@@ -210,8 +210,8 @@ node correspondence_map
   { inherit map; };
 
 node theorem_attack
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
 = @lean.theorem_attack {
   mode = "sequential";
   lenses = ["logos", "episteme", "kritikos", "themis", "techne", "poiesis", "sophia"];
@@ -221,8 +221,8 @@ node theorem_attack
 } (map);
 
 node lean_style
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
 = @lean.style_review {
   checkTrustedBase = true;
   checkDocstrings = true;
@@ -231,8 +231,8 @@ node lean_style
 } (map);
 
 node haskell_style
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
 = @haskell.style_review {
   checkArtifactTruth = true;
   checkOwnedAdtWildcards = true;
@@ -241,8 +241,8 @@ node haskell_style
 } (map);
 
 node docs_review
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
 = @docs.scope_review {
   checkProofClaims = true;
   checkAdrLedger = true;
@@ -250,10 +250,10 @@ node docs_review
 } (map);
 
 node synthesize_findings
-  <- theorem: ReviewBundle;
-  <- lean: ReviewBundle;
-  <- haskell: ReviewBundle;
-  <- docs: ReviewBundle;
+  <- theorem: ReviewBundle
+  <- lean: ReviewBundle
+  <- haskell: ReviewBundle
+  <- docs: ReviewBundle
   -> findings: FindingSet = findings;
   where let
     allFindings = theorem.findings ++ lean.findings ++ haskell.findings ++ docs.findings;
@@ -269,9 +269,9 @@ node synthesize_findings
   { inherit findings; };
 
 node triage
-  <- charter: RunCharter;
-  <- map: CorrespondenceMap;
-  <- findings: FindingSet;
+  <- charter: RunCharter
+  <- map: CorrespondenceMap
+  <- findings: FindingSet
   -> implement: Triage | stop: Triage | rewrite: Triage = decision;
   where let
     mustFix = findings.blockers;
@@ -293,7 +293,7 @@ node triage
   decision;
 
 node plan_slice
-  <- implement: Triage;
+  <- implement: Triage
   -> plan: SlicePlan = plan;
   where let
     selected = implement.selected;
@@ -321,8 +321,8 @@ node plan_slice
   { inherit plan; };
 
 node apply_slice
-  <- plan: SlicePlan;
-  -> patch: PatchSet;
+  <- plan: SlicePlan
+  -> patch: PatchSet
 = @implementation.apply_slice {
   useApplyPatch = true;
   preserveUserChanges = true;
@@ -331,8 +331,8 @@ node apply_slice
 } (plan);
 
 node validation_plan
-  <- plan: SlicePlan;
-  <- patch: PatchSet;
+  <- plan: SlicePlan
+  <- patch: PatchSet
   -> validation: ValidationPlan = validation;
   where let
     files = patch.files;
@@ -352,8 +352,8 @@ node validation_plan
   { inherit validation; };
 
 node validate
-  <- validation: ValidationPlan;
-  -> passed: ValidationReport | failed: ValidationReport;
+  <- validation: ValidationPlan
+  -> passed: ValidationReport | failed: ValidationReport
 = @validation.run_matrix {
   stopOnFirstFailure = true;
   captureLogs = true;
@@ -361,8 +361,8 @@ node validate
 } (validation);
 
 node repair_validation
-  <- failed: ValidationReport;
-  -> patch: PatchSet;
+  <- failed: ValidationReport
+  -> patch: PatchSet
 = @implementation.apply_slice {
   mode = "validation-repair";
   preserveOriginalScope = true;
@@ -370,8 +370,8 @@ node repair_validation
 } (failed);
 
 node publish
-  <- passed: ValidationReport;
-  -> published: PublishRecord;
+  <- passed: ValidationReport
+  -> published: PublishRecord
 = @git.commit_signed {
   sign = true;
   signoff = true;
@@ -381,16 +381,16 @@ node publish
 } (passed);
 
 node push
-  <- published: PublishRecord;
-  -> published: PublishRecord;
+  <- published: PublishRecord
+  -> published: PublishRecord
 = @git.push_branch {
   branch = "174-wire-admission-witness-artifacts";
   forceWithLeaseOnlyIfRewritten = true;
 } (published);
 
 node ci_snapshot
-  <- published: PublishRecord;
-  -> ci: CiSnapshot;
+  <- published: PublishRecord
+  -> ci: CiSnapshot
 = @github.pr_checks {
   pr = 189;
   unsetTokens = true;
@@ -398,7 +398,7 @@ node ci_snapshot
 } (published);
 
 node ci_gate
-  <- ci: CiSnapshot;
+  <- ci: CiSnapshot
   -> ok: CiSnapshot | repair: CiSnapshot | pending: CiSnapshot = decision;
   where let
     failing = ci.checks |> filter (check: check.conclusion == "failure");
@@ -411,20 +411,20 @@ node ci_gate
   decision;
 
 node repair_ci
-  <- repair: CiSnapshot;
-  -> patch: PatchSet;
+  <- repair: CiSnapshot
+  -> patch: PatchSet
 = @ci.repair {
   preserveScope = true;
   reproduceLocallyFirst = true;
 } (repair);
 
 node journal_slice
-  <- charter: RunCharter;
-  <- map: CorrespondenceMap;
-  <- findings: FindingSet;
-  <- published: PublishRecord;
-  <- ci: CiSnapshot;
-  -> entry: JournalEntry;
+  <- charter: RunCharter
+  <- map: CorrespondenceMap
+  <- findings: FindingSet
+  <- published: PublishRecord
+  <- ci: CiSnapshot
+  -> entry: JournalEntry
 = @repo.write_journal {
   path = ".agent-journal/wire-admission-witness-artifacts.md";
   include = [
@@ -441,10 +441,10 @@ node journal_slice
 } (charter, map, findings, published, ci);
 
 node propose_next_cycle
-  <- charter: RunCharter;
-  <- findings: FindingSet;
-  <- ci: CiSnapshot;
-  <- entry: JournalEntry;
+  <- charter: RunCharter
+  <- findings: FindingSet
+  <- ci: CiSnapshot
+  <- entry: JournalEntry
   -> done: FinalReport | rewrite: RewriteProposal = decision;
   where let
     blockingFindings = findings.blockers;
@@ -475,8 +475,8 @@ node propose_next_cycle
   decision;
 
 node apply_cycle_rewrite
-  <- rewrite: RewriteProposal;
-  -> request: RunRequest;
+  <- rewrite: RewriteProposal
+  -> request: RunRequest
 = @wire.apply_rewrite {
   requireBudget = true;
   requireFrontierPreservation = true;
@@ -485,7 +485,7 @@ node apply_cycle_rewrite
 } (rewrite);
 
 node final_report
-  <- stop: Triage;
+  <- stop: Triage
   -> done: FinalReport = done;
   where let
     done = {
@@ -497,8 +497,8 @@ node final_report
   { inherit done; };
 
 node workflow_metadata
-  <- done: FinalReport;
-  -> done: FinalReport;
+  <- done: FinalReport
+  -> done: FinalReport
 = @cortex.workflow {
   workflowId = "wire_correspondence_autonomous_cycle";
   displayLabel = "Wire Correspondence Autonomous Cycle";

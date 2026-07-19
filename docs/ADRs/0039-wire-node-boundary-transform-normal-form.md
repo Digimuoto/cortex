@@ -14,7 +14,7 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/contracts-ports-and-matching.md
-  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
+  - docs/Reference/Wire/executor-authorities-and-execution-boundary.md
   - docs/Reference/Wire/executors-and-alphabet.md
   - docs/Reference/Wire/pure-execution.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
@@ -305,7 +305,7 @@ future changes must preserve.
 - [../Architecture/05-wire-language.md](../Architecture/05-wire-language.md)
 - [../Reference/Wire/grammar.md](../Reference/Wire/grammar.md)
 - [../Reference/Wire/contracts-ports-and-matching.md](../Reference/Wire/contracts-ports-and-matching.md)
-- [../Reference/Wire/configured-executors-and-execution-boundary.md](../Reference/Wire/configured-executors-and-execution-boundary.md)
+- [../Reference/Wire/executor-authorities-and-execution-boundary.md](../Reference/Wire/executor-authorities-and-execution-boundary.md)
 - [../Reference/Wire/executors-and-alphabet.md](../Reference/Wire/executors-and-alphabet.md)
 - [../Reference/Wire/pure-execution.md](../Reference/Wire/pure-execution.md)
 - [0010-wire-closed-authority-and-three-layer-stack.md](0010-wire-closed-authority-and-three-layer-stack.md)

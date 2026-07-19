@@ -15,19 +15,19 @@ contract ShardFinding;
 contract AuditReport;
 
 node slice_corpus
-  -> corpus: CorpusSlice = @review.slice_corpus ({});
+  -> corpus: CorpusSlice = @review.slice_corpus;
 
 node plan_shards
-  <- corpus: CorpusSlice;
-  -> plans: [ShardPlan; 4] = @review.plan_shards (corpus);
+  <- corpus: CorpusSlice
+  -> plans: [ShardPlan; 4] = @review.plan_shards corpus;
 
 kind analyze_shard(label: PortLabel) =
-  <- label: ShardPlan;
-  -> label: ShardFinding = @review.analyze_shard (label);
+  <- label: ShardPlan
+  -> label: ShardFinding = @review.analyze_shard label;
 
 node reduce_findings
-  <- findings: [ShardFinding; 4];
-  -> report: AuditReport = @review.reduce_findings (findings);
+  <- findings: [ShardFinding; 4]
+  -> report: AuditReport = @review.reduce_findings findings;
 
 let workers[] = make(4, analyze_shard);
 

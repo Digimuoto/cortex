@@ -10,35 +10,35 @@
 use quantum.core.{@prepare_zero, @x, @cnot, @rz, @measure_z, Qubit, Bit, QuantumResult};
 use quantum.braket.{@realize};
 
-let quantum_x = @x {};
-let quantum_cnot = @cnot {};
+let quantum_x = @x;
+let quantum_cnot = @cnot;
 
 kind prepare_qubit(label: PortLabel, index: Value) =
-  -> label: Qubit = @prepare_zero { inherit index; } (null);
+  -> label: Qubit = @prepare_zero { cfg = { inherit index; }; };
 
-kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
-  <- label: Qubit;
-  -> label: Qubit;
-  = gate (label);
+kind qubit_gate(label: PortLabel, gate: Executor) =
+  <- label: Qubit
+  -> label: Qubit
+  = @gate label;
 
 kind carry_qubit(label: PortLabel) =
-  <- label: Qubit;
-  -> label: Qubit = @rz { angle = 0.0; } (label);
+  <- label: Qubit
+  -> label: Qubit = @rz { payload = label; cfg = { angle = 0.0; }; };
 
 kind relabel_qubit(input: PortLabel, output: PortLabel) =
-  <- input: Qubit;
-  -> output: Qubit = @rz { angle = 0.0; } (input);
+  <- input: Qubit
+  -> output: Qubit = @rz { payload = input; cfg = { angle = 0.0; }; };
 
-kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecutor) =
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = gate ({ inherit control target; });
+kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: Executor) =
+  <- control: Qubit
+  <- target: Qubit
+  -> control: Qubit
+  -> target: Qubit
+  = @gate { inherit control target; };
 
 kind measure_qubit(input: PortLabel, bit: PortLabel) =
-  <- input: Qubit;
-  -> bit: Bit = @measure_z {} (input);
+  <- input: Qubit
+  -> bit: Bit = @measure_z input;
 
 form prepare_all() = {
   node prepare_d0 = prepare_qubit(d0, 0);
@@ -122,16 +122,16 @@ form collect_repetition_result() = {
   node measure_a12 = measure_qubit(a12, s12);
 
   node realize
-    <- final_d0: Bit;
-    <- final_d1: Bit;
-    <- final_d2: Bit;
-    <- s01: Bit;
-    <- s12: Bit;
+    <- final_d0: Bit
+    <- final_d1: Bit
+    <- final_d2: Bit
+    <- s01: Bit
+    <- s12: Bit
     -> result: QuantumResult
-    = @realize ({
+    = @realize {
       inherit final_d0 final_d1 final_d2 s01 s12;
       shots = 100;
-    });
+    };
 
   measure_d0
     <> measure_d1

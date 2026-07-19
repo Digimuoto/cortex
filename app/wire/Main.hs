@@ -22,8 +22,8 @@ import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (nub)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List (find, nub)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -43,7 +43,11 @@ import System.Info (arch, os)
 import System.Process (CreateProcess (cwd), proc, readCreateProcessWithExitCode)
 
 import Cortex.Algebra.Graph (Relation, predecessors, relVertices)
-import Cortex.Capability.Executor.Pure (PureTaskConfig (..), pureTaskConfigFromMetadata)
+import Cortex.Capability.Executor.Pure
+  ( PureTaskConfig (..)
+  , PureVariantConfig (..)
+  , pureTaskConfigFromMetadata
+  )
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
   ( CircuitNodeRef (..)
@@ -53,6 +57,7 @@ import Cortex.Wire
   , ContractId (..)
   , CorePureBinding (..)
   , CorePureExpr (..)
+  , CorePureField (..)
   , CorePureLiteral (..)
   , ExecutorCall (..)
   , Expr (..)
@@ -62,6 +67,7 @@ import Cortex.Wire
   , NodeBody (..)
   , NodeDecl (..)
   , NodePureBody (..)
+  , NodePureResult (..)
   , PortDecl (..)
   , PortLabel (..)
   , PureOutputEquation (..)
@@ -81,6 +87,7 @@ import Cortex.Wire
   , engineAbi
   , engineStateSchema
   , evaluatePureTaskOutputs
+  , evaluatePureTaskVariant
   , formatWireSourceWithExpanded
   , hostedLinuxTarget
   , hostedProcessProtocol
@@ -911,23 +918,36 @@ runPureNode
   -> NodePureBody
   -> IO (Map Text WireValue)
 runPureNode outputLock useScope pureBindings nodeInputs ports loweredPorts pureBody = do
-  outputExprs <-
-    either
-      (dieTextLocked outputLock)
-      pure
-      (pureOutputConfigMap useScope loweredPorts.loweredOutputs pureBody.nodePureBodyOutputs)
   outputValues <-
-    either
-      (dieTextLocked outputLock . renderPureEvalError)
-      pure
-      ( evaluatePureTaskOutputs
-          ports
-          (wireInputBundleFromNodeInputs nodeInputs)
-          pureBindings
-          pureBody.nodePureBodyWhere
-          outputExprs
-      )
+    case pureBody.nodePureBodyResult of
+      NodePureProduct outputEquations -> do
+        outputExprs <-
+          either
+            (dieTextLocked outputLock)
+            pure
+            (pureOutputConfigMap useScope loweredPorts.loweredOutputs outputEquations)
+        evaluate
+          ( evaluatePureTaskOutputs
+              ports
+              inputBundle
+              pureBindings
+              pureBody.nodePureBodyWhere
+              outputExprs
+          )
+      NodePureSum _variants bodyExpr ->
+        evaluate
+          ( evaluatePureTaskVariant
+              ports
+              inputBundle
+              pureBindings
+              pureBody.nodePureBodyWhere
+              (Map.keys ports.wirePortsOutputs)
+              bodyExpr
+          )
   pure (wrapOutputs Nothing ports outputValues)
+  where
+    inputBundle = wireInputBundleFromNodeInputs nodeInputs
+    evaluate = either (dieTextLocked outputLock . renderPureEvalError) pure
 
 runCompiledPureNode
   :: MVar () -> NodeInputs -> PureTaskConfig -> IO (Map Text WireValue)
@@ -936,14 +956,26 @@ runCompiledPureNode outputLock nodeInputs config = do
     either
       (dieTextLocked outputLock . renderPureEvalError)
       pure
-      ( evaluatePureTaskOutputs
-          config.pureTaskConfigPorts
-          (wireInputBundleFromNodeInputs nodeInputs)
-          config.pureTaskConfigBindings
-          config.pureTaskConfigWhere
-          config.pureTaskConfigOutputs
+      ( case config.pureTaskConfigVariant of
+          Nothing ->
+            evaluatePureTaskOutputs
+              config.pureTaskConfigPorts
+              inputBundle
+              config.pureTaskConfigBindings
+              config.pureTaskConfigWhere
+              config.pureTaskConfigOutputs
+          Just variant ->
+            evaluatePureTaskVariant
+              config.pureTaskConfigPorts
+              inputBundle
+              config.pureTaskConfigBindings
+              config.pureTaskConfigWhere
+              variant.pureVariantConfigLabels
+              variant.pureVariantConfigExpression
       )
   pure (wrapOutputs Nothing config.pureTaskConfigPorts outputValues)
+  where
+    inputBundle = wireInputBundleFromNodeInputs nodeInputs
 
 runExecutorNode
   :: MVar ()
@@ -954,7 +986,9 @@ runExecutorNode
   -> ExecutorCall
   -> IO (Map Text WireValue)
 runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
-  ExecutorCallInline executorName record inputExpr ->
+  ExecutorCallInline executorName argumentExpr -> do
+    (record, inputExpr) <-
+      either (dieTextLocked outputLock) pure (executorArgumentParts argumentExpr)
     case builtinExecutorFromQName useScope executorName of
       Right BuiltinExecutorStdin ->
         runStdinNode outputLock ports record
@@ -968,13 +1002,43 @@ runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
         runWriteFileNode outputLock nodeInputs record inputExpr
       Left errText ->
         dieTextLocked outputLock (errText <> " Node: " <> nodeName <> ".")
-  ExecutorCallConfigured configuredName _inputExpr ->
+  ExecutorCallBound authorityName _argumentExpr ->
     dieTextLocked outputLock $
-      "wire run does not yet support configured executor "
-        <> configuredName
+      "wire run does not yet support bound executor authority "
+        <> authorityName
         <> " in node "
         <> nodeName
         <> "."
+
+executorArgumentParts :: Maybe CorePureExpr -> Either Text (Record, CorePureExpr)
+executorArgumentParts = \case
+  Nothing -> Right (Record [], CorePureLit CorePureNull)
+  Just (CorePureRecord fields) -> do
+    let payload = fromMaybe (CorePureLit CorePureNull) (lookupCorePureField "payload" fields)
+    record <- Record <$> traverse corePureFieldToWireField fields
+    Right (record, payload)
+  Just scalar -> Right (Record [], scalar)
+  where
+    lookupCorePureField fieldName =
+      fmap (.corePureFieldValue)
+        . find ((== fieldName :| []) . (.corePureFieldPath))
+    corePureFieldToWireField field =
+      Field field.corePureFieldPath <$> corePureToWireExpr field.corePureFieldValue
+
+corePureToWireExpr :: CorePureExpr -> Either Text Expr
+corePureToWireExpr = \case
+  CorePureLit (CorePureString value) -> Right (ExprLit (LitString value))
+  CorePureLit (CorePureNumber value) -> Right (ExprLit (LitNumber value))
+  CorePureLit (CorePureBool value) -> Right (ExprLit (LitBool value))
+  CorePureLit CorePureNull -> Left "executor cfg cannot contain null in wire run"
+  CorePureIdent name -> Right (ExprIdent (QName (name :| [])))
+  CorePureList values -> ExprList <$> traverse corePureToWireExpr values
+  CorePureRecord fields ->
+    ExprRecord . Record
+      <$> traverse
+        (\field -> Field field.corePureFieldPath <$> corePureToWireExpr field.corePureFieldValue)
+        fields
+  other -> Left ("wire run requires statically evaluable executor cfg, got " <> tshow other <> ".")
 
 builtinExecutorFromQName :: WireUseScope -> QName -> Either Text BuiltinExecutor
 builtinExecutorFromQName useScope executorName = do

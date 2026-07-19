@@ -390,9 +390,9 @@ wireProposalGrammarReference =
   T.unlines
     [ "proposal ::= (node_decl | let_decl)* final_graph_expr"
     , "node_decl ::= node IDENT input_clause* output_clause* = executor_call;"
-    , "input_clause ::= <- LABEL: CONTRACT ;"
-    , "output_clause ::= -> LABEL: CONTRACT ;"
-    , "executor_call ::= @executor { config_fields } (input_expr) | configured_executor (input_expr)"
+    , "input_clause ::= <- LABEL: CONTRACT "
+    , "output_clause ::= -> LABEL: CONTRACT "
+    , "executor_call ::= @executor | @executor corepure_expr"
     , "let_decl ::= let IDENT = expr;"
     , "final_graph_expr ::= graph_expr   # file-return syntax: no trailing ';' on the final expression"
     , "graph_expr ::= node | (graph_expr) | () | graph_expr => graph_expr | graph_expr <> graph_expr"
@@ -402,53 +402,43 @@ wireProposalGrammarReference =
 wireProposalSingleNodeExample :: Text
 wireProposalSingleNodeExample =
   T.unlines
-    [ "node audit_pass"
-    , "  <- in: AnalysisFragment ;"
-    , "  -> out: AnalysisFragment ;"
-    , "= @auditor {"
-    , "  instructions = \"Audit the current draft for stale dates and unsupported current-claims.\";"
-    , "} (in) ;"
+    [ "node audit_pass with { instructions = \"Audit the current draft for stale dates and unsupported current-claims.\"; }"
+    , "  <- input: AnalysisFragment "
+    , "  -> out: AnalysisFragment "
+    , "= @auditor input;"
     , "audit_pass"
     ]
 
 wireProposalSingleNodeShorthandExample :: Text
 wireProposalSingleNodeShorthandExample =
-  "node audit_pass\n  <- in: AnalysisFragment ;\n  -> out: AnalysisFragment = @auditor { instructions = \"Audit the current draft for stale dates and unsupported current-claims.\"; } (in) ;\naudit_pass"
+  "node audit_pass with { instructions = \"Audit the current draft for stale dates and unsupported current-claims.\"; } <- input: AnalysisFragment -> out: AnalysisFragment = @auditor input;\naudit_pass"
 
 wireProposalInvalidMissingGraphExample :: Text
 wireProposalInvalidMissingGraphExample =
   T.unlines
-    [ "node probe_a"
-    , "  <- in: PlannerOutput ;"
-    , "  -> out: EvidenceBundle ;"
-    , "= @gatherer {"
-    , "  instructions = \"Fetch the freshest company evidence needed to resolve the key open claim.\";"
-    , "} (in) ;"
+    [ "node probe_a with { instructions = \"Fetch the freshest company evidence needed to resolve the key open claim.\"; }"
+    , "  <- input: PlannerOutput "
+    , "  -> out: EvidenceBundle "
+    , "= @gatherer input;"
     , ""
-    , "node audit_pass"
-    , "  <- in: EvidenceBundle ;"
-    , "  -> out: AnalysisFragment ;"
-    , "= @auditor {"
-    , "  instructions = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
-    , "} (in) ;"
+    , "node audit_pass with { instructions = \"Audit the resulting draft for stale dates and unsupported current-claims.\"; }"
+    , "  <- input: EvidenceBundle "
+    , "  -> out: AnalysisFragment "
+    , "= @auditor input;"
     ]
 
 wireProposalInvalidOuterReferenceExample :: Text
 wireProposalInvalidOuterReferenceExample =
   T.unlines
-    [ "node probe_a"
-    , "  <- in: PlannerOutput ;"
-    , "  -> out: EvidenceBundle ;"
-    , "= @gatherer {"
-    , "  instructions = \"Fetch the freshest dated evidence needed to resolve the key open claim.\";"
-    , "} (in) ;"
+    [ "node probe_a with { instructions = \"Fetch the freshest dated evidence needed to resolve the key open claim.\"; }"
+    , "  <- input: PlannerOutput "
+    , "  -> out: EvidenceBundle "
+    , "= @gatherer input;"
     , ""
-    , "node audit_pass"
-    , "  <- in: EvidenceBundle ;"
-    , "  -> out: AnalysisFragment ;"
-    , "= @auditor {"
-    , "  instructions = \"Audit the resulting draft for stale dates and unsupported current-claims.\";"
-    , "} (in) ;"
+    , "node audit_pass with { instructions = \"Audit the resulting draft for stale dates and unsupported current-claims.\"; }"
+    , "  <- input: EvidenceBundle "
+    , "  -> out: AnalysisFragment "
+    , "= @auditor input;"
     , "current_evidence => audit_pass"
     ]
 

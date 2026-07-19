@@ -676,13 +676,13 @@ inductive KindParamClass where
   | portLabel
   | contract
   | value
-  | configuredExecutor
+  | executor
   deriving DecidableEq, Repr
 
 /-- One formal parameter on a reusable kind template.
 
 The class mirrors the Wire grammar's `PortLabel`, `Contract`, `Value`, and
-`ConfiguredExecutor` parameter categories. -/
+`Executor` parameter categories. -/
 structure KindParamDecl where
   /-- Parameter binding name inside the kind template. -/
   name : BindingName
@@ -1471,7 +1471,7 @@ instance frontierUsesLabelParamDecidable
 
 `make` supplies one generated `PortLabel` per child, so the kind must expose
 exactly one parameter and that parameter must be `KindParamClass.portLabel`.
-Kinds that take additional `Contract`, `Value`, or `ConfiguredExecutor`
+Kinds that take additional `Contract`, `Value`, or `Executor`
 parameters are out of scope for `make` until a general parameter-binding design
 exists (ADR 0048 Alternatives). The template frontier must also use that
 parameter as every input/output label; otherwise generated child labels would
@@ -1498,7 +1498,7 @@ instance kindSupportsMakeDecidable (decl : AcceptedKindDecl) :
 bind a static `Value` per item when the kind exposes one. The accepted shapes
 are therefore: a sole `portLabel` parameter, or a `portLabel` parameter
 followed by a single `value` parameter in source order. Other parameter
-classes (`contract`, `configuredExecutor`) and longer parameter lists are
+classes (`contract`, `executor`) and longer parameter lists are
 rejected at admission. As with `make`, the template frontier must use the
 `PortLabel` formal at every input/output label position. -/
 def KindSupportsMakeEach (decl : AcceptedKindDecl) : Prop :=
