@@ -150,6 +150,7 @@ stdIoContractSpecs =
       , wireContractSpecDescription = "Standard argv-based local command request."
       , wireContractSpecRecordFields = Nothing
       , wireContractSpecSchema = Nothing
+      , wireContractSpecNativeShape = Nothing
       , wireContractSpecExamples = []
       }
   , WireContractSpec
@@ -158,6 +159,7 @@ stdIoContractSpecs =
       , wireContractSpecDescription = "Standard argv-based local command result."
       , wireContractSpecRecordFields = Nothing
       , wireContractSpecSchema = Nothing
+      , wireContractSpecNativeShape = Nothing
       , wireContractSpecExamples = []
       }
   ]

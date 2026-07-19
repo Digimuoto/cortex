@@ -310,6 +310,7 @@ scoreRegistry =
         , wireContractSpecDescription = "Score payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     , WireContractSpec
@@ -318,6 +319,7 @@ scoreRegistry =
         , wireContractSpecDescription = "Other payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]
@@ -331,6 +333,7 @@ textRegistry =
         , wireContractSpecDescription = "Text payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]
@@ -367,6 +370,7 @@ schemaRegistry =
                         ["title" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]]
                   ]
               )
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     , WireContractSpec
@@ -381,6 +385,7 @@ schemaRegistry =
                   , "required" Aeson..= ["artifact_id" :: Text]
                   ]
               )
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]

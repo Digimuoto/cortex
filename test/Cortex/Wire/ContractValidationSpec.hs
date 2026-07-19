@@ -373,6 +373,7 @@ artifactRefRegistry =
                         ]
                   ]
               )
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]
@@ -390,6 +391,7 @@ permissiveRefRegistry =
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema =
             Just (Aeson.object ["enum" .= [Aeson.String "artifact-1"]])
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = [Aeson.String "artifact-1"]
         }
     ]
@@ -402,6 +404,7 @@ sampleContract =
     , wireContractSpecDescription = "Search request payload."
     , wireContractSpecRecordFields = Nothing
     , wireContractSpecSchema = Just searchSchema
+    , wireContractSpecNativeShape = Nothing
     , wireContractSpecExamples = [validPayload]
     }
 

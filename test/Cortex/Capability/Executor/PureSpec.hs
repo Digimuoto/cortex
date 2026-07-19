@@ -302,6 +302,7 @@ contractSpec payloadKind =
     , wireContractSpecDescription = "Float"
     , wireContractSpecRecordFields = Nothing
     , wireContractSpecSchema = Nothing
+    , wireContractSpecNativeShape = Nothing
     , wireContractSpecExamples = []
     }
 

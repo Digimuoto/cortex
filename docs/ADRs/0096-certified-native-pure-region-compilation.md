@@ -115,8 +115,8 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   legacy untyped CorePure arithmetic.
 - The first implementation may reject valid hosted CorePure programs when their shape, operation, or
   global bound is outside this profile.
-- Cross-node fusion and ownership-driven no-copy optimization require a later ADR because they alter
-  provenance, liveness, and checkpoint granularity.
+- Authored fusion boundaries and ownership-driven no-copy optimization require a later ADR because
+  they alter provenance, liveness, and checkpoint granularity beyond automatic maximal fusion.
 
 ## Alternatives considered
 
@@ -133,10 +133,24 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   semantics.
 - **Modify the v1 ABI.** Rejected. NativePure is additive and independently versioned.
 
+## Traceability
+
+- Feature keys: `wire.native_pure_compilation`
+- Public surface: `Cortex.Wire.NativePure.Shape`,
+  `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Implementation: `src/Cortex/Wire/NativePure/Shape.hs` (versioned bounded shape algebra and fixed
+  layout calculation), `src/Cortex/Wire/Contracts.hs` and `src/Cortex/Wire/Package/Manifest.hs`
+  (additive contract projection and manifest decoding)
+- Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`
+- Theory/proof: open; the executable Lean type and layout correspondence arrives in the dedicated
+  kernel slice of this epic
+
 ## Tracking
 
-- Feature key: `wire.native_pure_compilation` (reserved; add to the feature matrix with the first
-  implementation slice)
+- Feature key: `wire.native_pure_compilation` (partial; the versioned contract-shape and bounded
+  layout slice is implemented in `Cortex.Wire.NativePure.Shape`)
+- Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs` and the `native_shape` manifest
+  cases in `test/Cortex/Wire/PackageSpec.hs`
 - Planned public surface: versioned `native_shape` projections, realization and NativePure plan
   artifacts, shared typed C IR, pure sum bodies, and additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR
