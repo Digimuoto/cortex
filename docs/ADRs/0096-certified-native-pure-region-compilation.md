@@ -152,15 +152,18 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   expression checks, storage regions, and resource bounds)
 - Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
   `test/Cortex/Wire/NativePureAdmissionSpec.hs`
-- Theory/proof: open; the executable Lean type and layout correspondence arrives in the dedicated
-  kernel slice of this epic
+- Theory/proof: `theory/Cortex/Wire/NativePure.lean` defines the executable intrinsically typed
+  kernel and proof-local target semantics, total lowering, structural/checked-i64 refinement,
+  canonical-label discipline, padding-aware layouts, resource evidence, and read/write-region
+  well-formedness. Binary64 is explicitly excluded from certified refinement evidence.
 
 ## Tracking
 
 - Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts, and
   the non-serialized Haskell admission candidate stage are implemented)
 - Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
-  cases in `test/Cortex/Wire/PackageSpec.hs`, and `test/Cortex/Wire/NativePureAdmissionSpec.hs`
+  cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, and the
+  906-job Lean build containing `Cortex.Wire.NativePure`
 - Planned public surface: versioned `native_shape` projections, realization and NativePure plan
   artifacts, shared typed C IR, pure sum bodies, and additive v2 runtime/target interfaces
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR
