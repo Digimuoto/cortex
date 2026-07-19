@@ -241,6 +241,18 @@ spec = do
             `shouldSatisfy` T.isInfixOf "both config_shape and argument_shape"
         Right _ -> expectationFailure "conflicting executor shape keys unexpectedly decoded"
 
+    it "decodes the argument_shape schema table form" $
+      case decodedShape "argument_shape = { schema = { type = \"object\" } }" of
+        Right (WireExecutorArgumentSchema _schema) -> pure ()
+        other -> expectationFailure ("expected a schema argument shape, got " <> show other)
+
+    it "rejects unknown argument_shape strings" $
+      case decodeWirePackageManifest "cortex.toml" (manifest "argument_shape = \"bogus\"") of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "unknown Wire executor argument shape"
+        Right _ -> expectationFailure "unknown argument shape unexpectedly decoded"
+
   describe "native contract shape manifests" $ do
     it "decodes scalar and bounded native_shape projections" $ do
       let source =

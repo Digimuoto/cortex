@@ -14,6 +14,7 @@ module Cortex.Capability.CatalogSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy (ByteString)
+import Data.List qualified as List
 import Test.Hspec
 
 import Cortex.Capability.Catalog.AdmissionProjection
@@ -90,6 +91,28 @@ spec = do
           KeyMap.member "argumentShapeRef" object `shouldBe` True
           KeyMap.member "configSchemaRef" object `shouldBe` False
         other -> expectationFailure ("expected projection object, got " <> show other)
+    it "rejects malformed projection JSON with named causes" $ do
+      baseObject <-
+        case Aeson.toJSON sampleProjection of
+          Aeson.Object object -> pure object
+          other -> fail ("expected projection object, got " <> show other)
+      let decodeWith adjust =
+            Aeson.fromJSON (Aeson.Object (adjust baseObject))
+              :: Aeson.Result AdmissionProjection
+          failsWith needle result =
+            case result of
+              Aeson.Error err -> needle `List.isInfixOf` err
+              Aeson.Success _ -> False
+      let argumentRef =
+            Aeson.object
+              ["tag" Aeson..= ("ArgumentShapeName" :: String), "contents" Aeson..= ("x" :: String)]
+      decodeWith (KeyMap.insert "argumentShapeRef" argumentRef)
+        `shouldSatisfy` failsWith "cannot define both configSchemaRef and argumentShapeRef"
+      decodeWith
+        (KeyMap.insert "projectionVersion" (Aeson.String "2") . KeyMap.delete "configSchemaRef")
+        `shouldSatisfy` failsWith "missing argumentShapeRef"
+      decodeWith (KeyMap.insert "projectionVersion" (Aeson.String "3"))
+        `shouldSatisfy` failsWith "unsupported admission projection version"
 
   describe "admissionProjectionDigest" $ do
     it "is deterministic for the same projection" $

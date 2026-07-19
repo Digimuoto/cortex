@@ -157,6 +157,43 @@ spec = describe "Cortex.Wire runtime egress" $ do
         other -> expectationFailure ("expected StageFail, got " <> showStageResult other)
       readIORef invoked `shouldReturn` 0
 
+    it "fails the stage without invoking the host when argument evaluation fails" $ do
+      invoked <- newIORef (0 :: Int)
+      let stageDef =
+            wrapWireStageDefinitionWithArgument
+              (Just topicRegistry)
+              schema
+              (const (Left "input port topic produced no value"))
+              topicNodePorts
+              ( \_argument _ctx -> do
+                  modifyIORef' invoked (+ 1)
+                  pure (StageComplete (Aeson.object ["score" Aeson..= (1 :: Int)]))
+              )
+              baseTopicStageDefinition
+      result <- stageDef.sdAction topicStageContext
+      case result of
+        StageFail errType message -> do
+          errType `shouldBe` "executor_argument_validation_failure"
+          message `shouldSatisfy` T.isInfixOf "produced no value"
+        other -> expectationFailure ("expected StageFail, got " <> showStageResult other)
+      readIORef invoked `shouldReturn` 0
+
+    it "rejects malformed argument envelopes with named causes" $ do
+      wireExecutorArgumentSpecFromMetadata (Aeson.object [])
+        `shouldBeLeftContaining` "missing the argument envelope"
+      wireExecutorArgumentSpecFromMetadata (Aeson.object ["argument" Aeson..= ("raw" :: Text)])
+        `shouldBeLeftContaining` "must be a JSON object"
+      wireExecutorArgumentSpecFromMetadata
+        ( Aeson.object
+            [ "argument"
+                Aeson..= Aeson.object ["value" Aeson..= True, "extra" Aeson..= True]
+            ]
+        )
+        `shouldBeLeftContaining` "unsupported executor argument envelope fields: extra"
+      wireExecutorArgumentSpecFromMetadata
+        (Aeson.object ["argument" Aeson..= Aeson.object []])
+        `shouldBeLeftContaining` "missing the value field"
+
   it "wraps raw single-output JSON through the declared output port" $ do
     result <-
       requireRight $
