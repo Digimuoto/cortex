@@ -56,13 +56,15 @@ node plan
   <- topic: Topic
   -> outline: Outline = @workflow.plan {
     mode = "concise";
-  } (topic);
+    payload = topic;
+  };
 
 node run
   <- outline: Outline
   -> result: Result = @workflow.execute {
     retry = { max_attempts = 2; };
-  } (outline);
+    payload = outline;
+  };
 
 node publish
   <- result: Result

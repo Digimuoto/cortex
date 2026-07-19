@@ -689,5 +689,5 @@ The implementation rejects the previous authoring surface:
 - parenthesized executor calls and split inline config/call syntax;
 - `pure (...)`, `@pure`, `@pure { expr = ... }`, and `pure { ... }`;
 - node-local `let ... in` blocks before node bodies;
-- executor-authority values and the `ConfiguredExecutor` parameter class;
+- configured-executor values and the `ConfiguredExecutor` parameter class;
 - comma overlay shorthand in file-return expressions.

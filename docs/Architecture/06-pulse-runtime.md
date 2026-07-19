@@ -349,7 +349,8 @@ node reviewer
       routingKey = "analyst";
       limit = 16;
     };
-  } (draft);
+    payload = draft;
+  };
 ```
 
 Short form `memory = classic;` is equivalent to omitting the field. Changing strategy does not
