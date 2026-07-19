@@ -51,7 +51,7 @@ import Cortex.Wire.AdmissionArtifact
   ( WireAdmissionArtifact (..)
   , wireAdmissionMetadataKey
   )
-import Cortex.Wire.AdmissionBundle (admitWireAdmissionBundle)
+import Cortex.Wire.AdmissionBundle (admitWireAdmissionBundle, renderAdmissionBundleError)
 import Cortex.Wire.Circuit.Compiled
   ( CircuitCompatibilityWitness (..)
   , CompiledCircuit (..)
@@ -73,6 +73,7 @@ import Cortex.Wire.NativePure.Shape
   )
 import Cortex.Wire.Pure
   ( PureEvalError
+  , corePureBuiltinSignature
   , renderPureEvalError
   , validatePureTaskConfig
   , validatePureVariantTaskConfig
@@ -154,13 +155,14 @@ data NativePureRegion = NativePureRegion
 
 data NativePureAdmissionError
   = NativePureMissingAdmissionArtifact
-  | NativePureMalformedAdmissionArtifact
+  | NativePureMalformedAdmissionArtifact !Text
   | NativePureCircuitAdmissionRejected !Text
   | NativePureMalformedMetadata !CircuitNodeRef !Text
   | NativePureMissingContract !CircuitNodeRef !Text
   | NativePureMissingShape !CircuitNodeRef !Text
   | NativePureInvalidShape !CircuitNodeRef !Text !NativeShapeError
   | NativePureInputNotExact !CircuitNodeRef !Text
+  | NativePureBuiltinShadowedInput !CircuitNodeRef !Text
   | NativePureMixedOutputBoundary !CircuitNodeRef
   | NativePureSumRequiresVariant !CircuitNodeRef
   | NativePureVariantRequiresSum !CircuitNodeRef
@@ -174,7 +176,8 @@ data NativePureAdmissionError
 renderNativePureAdmissionError :: NativePureAdmissionError -> Text
 renderNativePureAdmissionError = \case
   NativePureMissingAdmissionArtifact -> "compiled circuit has no Wire admission artifact"
-  NativePureMalformedAdmissionArtifact -> "compiled circuit carries malformed Wire admission metadata"
+  NativePureMalformedAdmissionArtifact reason ->
+    "compiled circuit carries malformed Wire admission metadata: " <> reason
   NativePureCircuitAdmissionRejected rejection -> "compiled circuit failed unified Wire admission: " <> rejection
   NativePureMalformedMetadata nodeRef reason -> at nodeRef ("malformed pure metadata: " <> reason)
   NativePureMissingContract nodeRef contractId -> at nodeRef ("unknown contract " <> contractId)
@@ -186,6 +189,13 @@ renderNativePureAdmissionError = \case
       ("contract " <> contractId <> " has invalid native_shape: " <> renderNativeShapeError shapeError)
   NativePureInputNotExact nodeRef portName ->
     at nodeRef ("input " <> portName <> " must accept exactly one contract with cardinality one")
+  NativePureBuiltinShadowedInput nodeRef portName ->
+    at
+      nodeRef
+      ( "input "
+          <> portName
+          <> " shadows the CorePure builtin of the same name; hosted evaluation resolves the builtin first"
+      )
   NativePureMixedOutputBoundary nodeRef ->
     at nodeRef "outputs must be either one product or one declared exclusive group"
   NativePureSumRequiresVariant nodeRef ->
@@ -214,7 +224,7 @@ admitNativePureCandidates
 admitNativePureCandidates registry compiled = do
   admission <- extractAdmission compiled
   case admitWireAdmissionBundle admission compiled of
-    Left rejection -> Left (NativePureCircuitAdmissionRejected (T.pack (show rejection)))
+    Left rejection -> Left (NativePureCircuitAdmissionRejected (renderAdmissionBundleError rejection))
     Right _bundle -> pure ()
   kernels <- catMaybes <$> traverse lowerNode (Map.toAscList compiled.compiledCircuitNodes)
   pure
@@ -229,7 +239,10 @@ admitNativePureCandidates registry compiled = do
     lowerNode (nodeRef, CompiledCircuitTask taskNode)
       | taskExecutor taskNode == Just "pure" = Just <$> lowerPureNode registry nodeRef taskNode
       | otherwise = pure Nothing
-    lowerNode _ = pure Nothing
+    lowerNode (_, CompiledCircuitSignal _) = pure Nothing
+    lowerNode (_, CompiledCircuitArtifact _) = pure Nothing
+    lowerNode (_, CompiledCircuitRewriteBoundary _) = pure Nothing
+    lowerNode (_, CompiledCircuitCondition _) = pure Nothing
 
 lowerPureNode
   :: WireContractRegistry
@@ -274,6 +287,12 @@ lowerPureNode registry nodeRef taskNode = do
         )
     _ -> Left (NativePureMalformedMetadata nodeRef "config requires exactly one of outputs or variant")
   inputs <- traverse (lowerInput registry nodeRef) (Map.toAscList ports.wirePortsInputs)
+  traverse_
+    ( \boundary ->
+        when (Set.member boundary.nativePureBoundaryLabel corePureBuiltinNames) $
+          Left (NativePureBuiltinShadowedInput nodeRef boundary.nativePureBoundaryLabel)
+    )
+    inputs
   outputFields <- traverse (lowerOutput registry nodeRef) (Map.toAscList ports.wirePortsOutputs)
   outputBoundary <- classifyOutputs nodeRef ports outputFields
   let inputScope =
@@ -319,6 +338,12 @@ lowerPureNode registry nodeRef taskNode = do
       , nativePureKernelCandidateBounds = bounds
       , nativePureKernelCandidateRegions = inputRegions <> outputRegions
       }
+
+{- | Hosted evaluation resolves builtins before input ports, while the native
+scope resolves the port; admission rejects the collision instead of diverging.
+-}
+corePureBuiltinNames :: Set.Set Text
+corePureBuiltinNames = Set.fromList (fmap fst corePureBuiltinSignature)
 
 lowerInput
   :: WireContractRegistry
@@ -767,7 +792,12 @@ synthNativeLiteral nodeRef = \case
         | integer >= -(2 ^ (63 :: Integer)) && integer < 2 ^ (63 :: Integer) -> Right NativeI64
         | otherwise ->
             Left (NativePureUnsupportedExpression nodeRef "integer literal exceeds the checked i64 range")
-      Left _ -> Right NativeF64
+      Left _ ->
+        Left
+          ( NativePureUnsupportedExpression
+              nodeRef
+              "binary64 literals are not in the concrete NativePure C basis yet; f64 pass-through remains supported"
+          )
 
 utf8Length :: Text -> Int
 utf8Length = BS.length . TE.encodeUtf8
@@ -846,7 +876,7 @@ extractAdmission compiled = do
       Right
       (KeyMap.lookup (Key.fromText wireAdmissionMetadataKey) metadata)
   case Aeson.fromJSON encoded of
-    Aeson.Error _ -> Left NativePureMalformedAdmissionArtifact
+    Aeson.Error parseError -> Left (NativePureMalformedAdmissionArtifact (T.pack parseError))
     Aeson.Success admission -> Right admission
 
 requireObject

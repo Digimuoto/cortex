@@ -52,6 +52,7 @@ module Cortex.Wire.AdmissionBinding
   ( AdmissionBindingError (..)
   , admissionArtifactBindsCompiledCircuit
   , admissionArtifactProjectedTopology
+  , renderAdmissionBindingError
   )
 where
 
@@ -63,9 +64,11 @@ import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Text (Text)
+import Data.Text qualified as T
 import Numeric.Natural (Natural)
 
-import Cortex.Algebra.Graph (Relation, edges, sinks, sources, toRelation, vertices)
+import Cortex.Algebra.Graph (Relation (..), edges, sinks, sources, toRelation, vertices)
 import Cortex.Wire.AST (Connection (..), EndpointRef (..))
 import Cortex.Wire.AdmissionArtifact
   ( SelectAdmissionArtifact (..)
@@ -82,7 +85,7 @@ import Cortex.Wire.Circuit.Compiled
   , CompiledCircuitFragment (..)
   , CompiledCircuitNode (..)
   )
-import Cortex.Wire.Circuit.IR (CircuitNodeRef)
+import Cortex.Wire.Circuit.IR (CircuitNodeRef (..))
 
 {- | Why an artifact does not bind to a compiled circuit. Constructors carry
 the disagreeing values so failures are diagnosable without re-deriving them.
@@ -125,6 +128,73 @@ data AdmissionBindingError
     -}
     BindingSelectNestedFragmentShapeMismatch !CircuitNodeRef
   deriving stock (Eq, Show)
+
+-- | Actionable prose for every binding failure, without derived 'Show' dumps.
+renderAdmissionBindingError :: AdmissionBindingError -> Text
+renderAdmissionBindingError = \case
+  BindingSchemaVersionMismatch artifactVersion expectedVersion ->
+    "artifact schema version "
+      <> showText artifactVersion
+      <> " does not match the current version "
+      <> showText expectedVersion
+  BindingNodeSetMismatch artifactOnly circuitOnly ->
+    "artifact and circuit node sets disagree; artifact-only: ["
+      <> refSet artifactOnly
+      <> "], circuit-only: ["
+      <> refSet circuitOnly
+      <> "]"
+  BindingTopologyMismatch projected actual ->
+    "artifact connections do not rebuild the circuit topology; artifact-only edges: ["
+      <> edgeSet (Set.difference projected.relEdges actual.relEdges)
+      <> "], circuit-only edges: ["
+      <> edgeSet (Set.difference actual.relEdges projected.relEdges)
+      <> "]"
+  BindingEntryNodesNotTopologySources entryNodes topologySources ->
+    "circuit entry nodes ["
+      <> refList entryNodes
+      <> "] do not equal the topology sources ["
+      <> refList topologySources
+      <> "]"
+  BindingExitNodesNotTopologySinks exitNodes topologySinks ->
+    "circuit exit nodes ["
+      <> refList exitNodes
+      <> "] do not equal the topology sinks ["
+      <> refList topologySinks
+      <> "]"
+  BindingMetadataNotObject ->
+    "circuit metadata is not a JSON object, so it cannot embed an admission artifact"
+  BindingMetadataMissingAdmissionKey ->
+    "circuit metadata has no admission artifact entry"
+  BindingMetadataArtifactMismatch ->
+    "circuit metadata embeds a different admission artifact value"
+  BindingSelectConditionNodeMissing nodeRef ->
+    atSelect nodeRef "is absent from the circuit node map"
+  BindingSelectConditionNodeNotCondition nodeRef ->
+    atSelect nodeRef "resolves to a non-condition circuit node"
+  BindingSelectArmGroupTooSmall nodeRef ->
+    atSelect nodeRef "groups fewer than two arms"
+  BindingSelectBranchBodyMismatch nodeRef claimed actual ->
+    atSelect nodeRef $
+      "claims arm body nodes ["
+        <> refSet claimed
+        <> "] but the nested fragment holds ["
+        <> refSet actual
+        <> "]"
+  BindingSelectBranchShapeMismatch nodeRef ->
+    atSelect nodeRef "has a pruned branch with a fragment or a concrete branch without one"
+  BindingSelectNestedFragmentShapeMismatch nodeRef ->
+    atSelect nodeRef "has a branch that must hold exactly one nested condition node"
+  where
+    showText :: Show a => a -> Text
+    showText = T.pack . show
+    refSet = refList . Set.toAscList
+    refList = T.intercalate ", " . fmap (.unCircuitNodeRef)
+    edgeSet =
+      T.intercalate ", "
+        . fmap (\(from, to) -> from.unCircuitNodeRef <> "->" <> to.unCircuitNodeRef)
+        . Set.toAscList
+    atSelect nodeRef message =
+      "select condition node " <> nodeRef.unCircuitNodeRef <> " " <> message
 
 {- | Decide whether @artifact@ describes @circuit@. 'Right' means every binding
 clause holds; 'Left' names the first clause that fails. Clauses are ordered

@@ -100,8 +100,8 @@ import Cortex.Wire.AdmissionArtifact
   , wireAdmissionMetadataValue
   )
 import Cortex.Wire.AdmissionBundle
-  ( AdmissionBundleError (..)
-  , admitWireAdmissionBundle
+  ( admitWireAdmissionBundle
+  , renderAdmissionBundleError
   )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitCompatibilityWitness (..)
@@ -788,13 +788,6 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
                 <> renderAdmissionBundleError bundleError
             )
         )
-
-renderAdmissionBundleError :: AdmissionBundleError -> Text
-renderAdmissionBundleError = \case
-  AdmissionBundleArtifactNotValidatorReady ->
-    "artifact failed validator-ready checks"
-  AdmissionBundleCircuitBindingFailed bindingError ->
-    "artifact does not bind to the compiled circuit: " <> T.pack (show bindingError)
 
 attachAdmissionMetadata :: Maybe Aeson.Value -> WireAdmissionArtifact -> Aeson.Value
 attachAdmissionMetadata maybeMetadata admission =
