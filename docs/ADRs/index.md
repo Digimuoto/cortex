@@ -109,6 +109,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0092](0092-circuit-engine-runtime-host-boundary.md)               | Circuit Engine and Runtime-Host Boundary                                   | accepted   |
 | [0093](0093-versioned-circuit-state-event-control-protocol.md)     | Versioned Circuit State, Event, and Control Protocol                       | accepted   |
 | [0094](0094-hosted-x86-64-linux-executable-profile.md)             | Hosted x86_64 Linux Executable Profile                                     | accepted   |
+| [0096](0096-certified-native-pure-region-compilation.md)           | Certified NativePure Compilation                                           | proposed   |
 
 ## By category
 
@@ -134,12 +135,13 @@ is shown here.
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
   [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
   [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
-- **Circuit engine & hosted targets** (5):
+- **Circuit engine & hosted targets** (6):
   [0090](0090-computable-pulse-kernel-and-extraction-boundary.md),
   [0091](0091-lean-hosted-freestanding-wire-c-backend.md),
   [0092](0092-circuit-engine-runtime-host-boundary.md),
   [0093](0093-versioned-circuit-state-event-control-protocol.md),
-  [0094](0094-hosted-x86-64-linux-executable-profile.md)
+  [0094](0094-hosted-x86-64-linux-executable-profile.md),
+  [0096](0096-certified-native-pure-region-compilation.md)
 - **Rewrite admission & budget** (8):
   [0005](0005-budgeted-rewrite-admission-and-materialization.md),
   [0009](0009-rewrite-provenance-and-topology-integrity.md),
