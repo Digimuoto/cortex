@@ -19,7 +19,7 @@ Signed-off-by: ...
 
 ## Review batches
 
-- [ ] `0542a4d-2da32a7` — realization foundations through NativePure admission. Historical PRs:
+- [x] `0542a4d-2da32a7` — realization foundations through NativePure admission. Historical PRs:
       [#384](https://github.com/Digimuoto/cortex/pull/384),
       [#385](https://github.com/Digimuoto/cortex/pull/385),
       [#386](https://github.com/Digimuoto/cortex/pull/386), and
