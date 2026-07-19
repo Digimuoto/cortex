@@ -1,0 +1,124 @@
+#ifndef CORTEX_WIRE_PROGRAM_V1_H
+#define CORTEX_WIRE_PROGRAM_V1_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum {
+  CORTEX_WIRE_STATUS_PENDING = 0,
+  CORTEX_WIRE_STATUS_RUNNING = 1,
+  CORTEX_WIRE_STATUS_COMPLETED = 2,
+  CORTEX_WIRE_STATUS_FAILED = 3,
+  CORTEX_WIRE_STATUS_SKIPPED = 4,
+  CORTEX_WIRE_STATUS_INVALID = 255
+} cortex_wire_program_v1_status;
+
+typedef enum {
+  CORTEX_WIRE_EFFECT_ACCEPTED_ASYNC = 0,
+  CORTEX_WIRE_EFFECT_SUCCESS = 1,
+  CORTEX_WIRE_EFFECT_SKIPPED = 2,
+  CORTEX_WIRE_EFFECT_FAILURE = 3
+} cortex_wire_program_v1_effect_kind;
+
+typedef struct {
+  cortex_wire_program_v1_effect_kind kind;
+  uint64_t payload_handle;
+} cortex_wire_program_v1_effect_result;
+
+typedef cortex_wire_program_v1_effect_result (*cortex_wire_program_v1_effect_begin_fn)(
+    uint32_t node_id, void *context);
+typedef void (*cortex_wire_program_v1_effect_cancel_fn)(uint32_t node_id, void *context);
+
+typedef struct {
+  cortex_wire_program_v1_effect_begin_fn effect_begin;
+  cortex_wire_program_v1_effect_cancel_fn effect_cancel;
+  void *context;
+} cortex_wire_program_v1_effect_api;
+
+typedef enum {
+  CORTEX_WIRE_DRIVE_AWAITING_COMPLETIONS = 0,
+  CORTEX_WIRE_DRIVE_COMPLETED = 1,
+  CORTEX_WIRE_DRIVE_FAILED = 2,
+  CORTEX_WIRE_DRIVE_STUCK = 3,
+  CORTEX_WIRE_DRIVE_ABI_ERROR = 4
+} cortex_wire_program_v1_drive_result;
+
+typedef enum {
+  CORTEX_WIRE_COMPLETION_APPLIED = 0,
+  CORTEX_WIRE_COMPLETION_STALE = 1,
+  CORTEX_WIRE_COMPLETION_INVALID = 2
+} cortex_wire_program_v1_completion_result;
+
+typedef enum {
+  CORTEX_WIRE_TERMINAL_ACTIVE = 0,
+  CORTEX_WIRE_TERMINAL_COMPLETED = 1,
+  CORTEX_WIRE_TERMINAL_FAILED = 2
+} cortex_wire_program_v1_terminal_state;
+
+#define CORTEX_WIRE_ENGINE_STATE_SCHEMA_VERSION 1u
+
+typedef void (*cortex_wire_engine_v1_effect_request_fn)(uint32_t node_id, void *context);
+typedef void (*cortex_wire_engine_v1_effect_cancel_fn)(uint32_t node_id, void *context);
+
+typedef struct {
+  cortex_wire_engine_v1_effect_request_fn effect_request;
+  cortex_wire_engine_v1_effect_cancel_fn effect_cancel;
+  void *context;
+} cortex_wire_engine_v1_host_api;
+
+typedef enum {
+  CORTEX_WIRE_ENGINE_TERMINAL_ACTIVE = 0,
+  CORTEX_WIRE_ENGINE_TERMINAL_COMPLETED = 1,
+  CORTEX_WIRE_ENGINE_TERMINAL_FAILED = 2,
+  CORTEX_WIRE_ENGINE_TERMINAL_CANCELLED = 3
+} cortex_wire_engine_v1_terminal_state;
+
+typedef struct {
+  uint32_t schema_version;
+  uint32_t node_count;
+  uint64_t checkpoint_sequence;
+  cortex_wire_engine_v1_terminal_state terminal;
+} cortex_wire_engine_v1_state_header;
+
+typedef enum {
+  CORTEX_WIRE_ENGINE_STATE_OK = 0,
+  CORTEX_WIRE_ENGINE_STATE_INVALID = 1,
+  CORTEX_WIRE_ENGINE_STATE_IDENTITY_MISMATCH = 2,
+  CORTEX_WIRE_ENGINE_STATE_CANCEL_DEFERRED = 3
+} cortex_wire_engine_v1_state_result;
+
+typedef enum {
+  CORTEX_WIRE_ENGINE_DRIVE_CHECKPOINT_REQUIRED = 0,
+  CORTEX_WIRE_ENGINE_DRIVE_AWAITING_COMPLETIONS = 1,
+  CORTEX_WIRE_ENGINE_DRIVE_TERMINAL = 2,
+  CORTEX_WIRE_ENGINE_DRIVE_STUCK = 3,
+  CORTEX_WIRE_ENGINE_DRIVE_ABI_ERROR = 4
+} cortex_wire_engine_v1_drive_result;
+
+int cortex_wire_program_v1_init(const cortex_wire_program_v1_effect_api *api);
+cortex_wire_program_v1_drive_result cortex_wire_program_v1_drive(void);
+cortex_wire_program_v1_completion_result cortex_wire_program_v1_complete(uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload_handle);
+cortex_wire_program_v1_terminal_state cortex_wire_program_v1_terminal(void);
+uint32_t cortex_wire_program_v1_node_count(void);
+/* After terminal failure, an undispatched node may remain PENDING until the next init. */
+/* Use cortex_wire_program_v1_terminal() for the overall run result. */
+cortex_wire_program_v1_status cortex_wire_program_v1_node_status(uint32_t node_id);
+uint64_t cortex_wire_program_v1_output_handle(uint32_t node_id);
+const char * cortex_wire_engine_v1_program_identity(void);
+int cortex_wire_engine_v1_init(const cortex_wire_engine_v1_host_api *api);
+cortex_wire_engine_v1_drive_result cortex_wire_engine_v1_drive(void);
+cortex_wire_program_v1_completion_result cortex_wire_engine_v1_complete(uint32_t node_id, cortex_wire_program_v1_effect_kind outcome, uint64_t payload_handle);
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_checkpoint_committed(uint64_t checkpoint_sequence);
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_export_state(cortex_wire_engine_v1_state_header *header, uint8_t *statuses, uint64_t *output_handles, uint32_t capacity);
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_import_state(const cortex_wire_engine_v1_host_api *api, const char *program_identity, const cortex_wire_engine_v1_state_header *header, const uint8_t *statuses, const uint64_t *output_handles, uint32_t capacity);
+cortex_wire_engine_v1_state_result cortex_wire_engine_v1_cancel(void);
+cortex_wire_engine_v1_terminal_state cortex_wire_engine_v1_terminal(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
