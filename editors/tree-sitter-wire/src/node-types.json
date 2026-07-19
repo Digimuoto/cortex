@@ -31,58 +31,6 @@
     }
   },
   {
-    "type": "configured_executor_call",
-    "named": true,
-    "fields": {
-      "input": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "core_pure_expr",
-            "named": true
-          }
-        ]
-      },
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "configured_executor_value",
-    "named": true,
-    "fields": {
-      "config": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "record",
-            "named": true
-          }
-        ]
-      },
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "qualified_ident",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
     "type": "constructor_expr",
     "named": true,
     "fields": {
@@ -1728,22 +1676,6 @@
     }
   },
   {
-    "type": "executor_authority_value",
-    "named": true,
-    "fields": {
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "qualified_ident",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
     "type": "executor_body",
     "named": true,
     "fields": {
@@ -1778,10 +1710,6 @@
       "required": true,
       "types": [
         {
-          "type": "configured_executor_call",
-          "named": true
-        },
-        {
           "type": "inline_executor_call",
           "named": true
         }
@@ -1805,25 +1733,15 @@
     }
   },
   {
-    "type": "executor_single_output_body",
+    "type": "executor_value",
     "named": true,
     "fields": {
-      "call": {
+      "name": {
         "multiple": false,
         "required": true,
         "types": [
           {
-            "type": "inline_executor_call",
-            "named": true
-          }
-        ]
-      },
-      "output": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "output_variant",
+            "type": "qualified_ident",
             "named": true
           }
         ]
@@ -1843,10 +1761,6 @@
           "named": true
         },
         {
-          "type": "configured_executor_value",
-          "named": true
-        },
-        {
           "type": "constructor_expr",
           "named": true
         },
@@ -1855,7 +1769,7 @@
           "named": true
         },
         {
-          "type": "executor_authority_value",
+          "type": "executor_value",
           "named": true
         },
         {
@@ -2240,26 +2154,6 @@
           }
         ]
       },
-      "config": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "record",
-            "named": true
-          }
-        ]
-      },
-      "input": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "core_pure_expr",
-            "named": true
-          }
-        ]
-      },
       "name": {
         "multiple": false,
         "required": true,
@@ -2338,10 +2232,6 @@
         "types": [
           {
             "type": "executor_body",
-            "named": true
-          },
-          {
-            "type": "executor_single_output_body",
             "named": true
           },
           {
@@ -2549,10 +2439,6 @@
             "named": true
           },
           {
-            "type": "configured_executor_value",
-            "named": true
-          },
-          {
             "type": "constructor_expr",
             "named": true
           },
@@ -2561,7 +2447,7 @@
             "named": true
           },
           {
-            "type": "executor_authority_value",
+            "type": "executor_value",
             "named": true
           },
           {
@@ -2629,10 +2515,6 @@
             "named": true
           },
           {
-            "type": "configured_executor_value",
-            "named": true
-          },
-          {
             "type": "constructor_expr",
             "named": true
           },
@@ -2641,7 +2523,7 @@
             "named": true
           },
           {
-            "type": "executor_authority_value",
+            "type": "executor_value",
             "named": true
           },
           {
@@ -2697,10 +2579,6 @@
             "named": true
           },
           {
-            "type": "executor_single_output_body",
-            "named": true
-          },
-          {
             "type": "pure_body",
             "named": true
           }
@@ -2731,7 +2609,7 @@
         "required": false,
         "types": [
           {
-            "type": "node_metadata",
+            "type": "record",
             "named": true
           }
         ]
@@ -2762,22 +2640,6 @@
         "types": [
           {
             "type": "where_clause",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "node_metadata",
-    "named": true,
-    "fields": {
-      "body": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "record",
             "named": true
           }
         ]
@@ -3026,10 +2888,6 @@
             "named": true
           },
           {
-            "type": "configured_executor_value",
-            "named": true
-          },
-          {
             "type": "constructor_expr",
             "named": true
           },
@@ -3038,7 +2896,7 @@
             "named": true
           },
           {
-            "type": "executor_authority_value",
+            "type": "executor_value",
             "named": true
           },
           {
@@ -3209,10 +3067,6 @@
             "named": true
           },
           {
-            "type": "configured_executor_value",
-            "named": true
-          },
-          {
             "type": "constructor_expr",
             "named": true
           },
@@ -3221,7 +3075,7 @@
             "named": true
           },
           {
-            "type": "executor_authority_value",
+            "type": "executor_value",
             "named": true
           },
           {
@@ -3301,10 +3155,6 @@
             "named": true
           },
           {
-            "type": "configured_executor_value",
-            "named": true
-          },
-          {
             "type": "constructor_expr",
             "named": true
           },
@@ -3313,7 +3163,7 @@
             "named": true
           },
           {
-            "type": "executor_authority_value",
+            "type": "executor_value",
             "named": true
           },
           {
@@ -3596,10 +3446,6 @@
   },
   {
     "type": "@",
-    "named": false
-  },
-  {
-    "type": "ConfiguredExecutor",
     "named": false
   },
   {

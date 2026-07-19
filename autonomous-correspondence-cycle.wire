@@ -10,31 +10,31 @@
 # this file is not expected to compile with the current std library.
 
 use logos.repo.{
-  @repo.snapshot,
-  @repo.diff_scope,
-  @repo.read_journal,
-  @repo.write_journal,
-  @repo.issue_index
+  @snapshot,
+  @diff_scope,
+  @read_journal,
+  @write_journal,
+  @issue_index
 };
 
 use logos.review.{
-  @lean.theorem_attack,
-  @lean.style_review,
-  @haskell.style_review,
-  @docs.scope_review,
-  @architecture.archetype_passes
+  @theorem_attack,
+  @lean_style_review,
+  @haskell_style_review,
+  @docs_scope_review,
+  @archetype_passes
 };
 
 use logos.work.{
-  @implementation.apply_slice,
-  @validation.run_matrix,
-  @git.commit_signed,
-  @git.push_branch,
-  @github.pr_checks,
-  @ci.repair
+  @apply_slice,
+  @run_matrix,
+  @commit_signed,
+  @push_branch,
+  @pr_checks,
+  @repair
 };
 
-use logos.wire.{@wire.propose_rewrite, @wire.apply_rewrite};
+use logos.wire.{@propose_rewrite, @apply_rewrite};
 
 contract RunRequest;
 contract RunCharter;
@@ -83,7 +83,7 @@ node intake
   { inherit request; };
 
 node charter
-  <- request: RunRequest;
+  <- request: RunRequest
   -> charter: RunCharter = charter;
   where let
     coreDone = [
@@ -117,55 +117,67 @@ node charter
   { inherit charter; };
 
 node repo_snapshot
-  <- charter: RunCharter;
-  -> snapshot: RepoSnapshot;
-= @repo.snapshot {
-  includeStatus = true;
-  includeBranch = true;
-  includeHead = true;
-  preserveDirtyFiles = true;
-} (charter);
+  <- charter: RunCharter
+  -> snapshot: RepoSnapshot
+= @snapshot {
+  payload = charter;
+  cfg = {
+    includeStatus = true;
+    includeBranch = true;
+    includeHead = true;
+    preserveDirtyFiles = true;
+  };
+};
 
 node diff_scope
-  <- snapshot: RepoSnapshot;
-  -> scope: DiffScope;
-= @repo.diff_scope {
-  base = "origin/main";
-  include = [
-    "src/Cortex/Wire/**/*.hs",
-    "test/Cortex/Wire/**/*.hs",
-    "theory/Cortex/Wire/**/*.lean",
-    "theory/README.md",
-    "docs/ADRs/**/*.md",
-    "docs/Reference/**/*.md",
-    "examples/wire/**/*.wire"
-  ];
-} (snapshot);
+  <- snapshot: RepoSnapshot
+  -> scope: DiffScope
+= @diff_scope {
+  payload = snapshot;
+  cfg = {
+    base = "origin/main";
+    include = [
+      "src/Cortex/Wire/**/*.hs",
+      "test/Cortex/Wire/**/*.hs",
+      "theory/Cortex/Wire/**/*.lean",
+      "theory/README.md",
+      "docs/ADRs/**/*.md",
+      "docs/Reference/**/*.md",
+      "examples/wire/**/*.wire"
+    ];
+  };
+};
 
 node journal_memory
-  <- charter: RunCharter;
-  -> memory: JournalMemory;
-= @repo.read_journal {
-  primary = ".agent-journal/wire-admission-witness-artifacts.md";
-  fallback = ".codex-journal/wire-compiler-finish-line.md";
-  summarize = true;
-  preserveTimestamps = true;
-} (charter);
+  <- charter: RunCharter
+  -> memory: JournalMemory
+= @read_journal {
+  payload = charter;
+  cfg = {
+    primary = ".agent-journal/wire-admission-witness-artifacts.md";
+    fallback = ".codex-journal/wire-compiler-finish-line.md";
+    summarize = true;
+    preserveTimestamps = true;
+  };
+};
 
 node issue_stack
-  <- charter: RunCharter;
-  -> issues: IssueStack;
-= @repo.issue_index {
-  pr = 189;
-  labels = ["wire", "lean", "compiler", "proof"];
-  includeOpenReviewThreads = true;
-  includeCiState = true;
-} (charter);
+  <- charter: RunCharter
+  -> issues: IssueStack
+= @issue_index {
+  payload = charter;
+  cfg = {
+    pr = 189;
+    labels = ["wire", "lean", "compiler", "proof"];
+    includeOpenReviewThreads = true;
+    includeCiState = true;
+  };
+};
 
 node correspondence_map
-  <- scope: DiffScope;
-  <- memory: JournalMemory;
-  <- issues: IssueStack;
+  <- scope: DiffScope
+  <- memory: JournalMemory
+  <- issues: IssueStack
   -> map: CorrespondenceMap = map;
   where let
     surfaces = [
@@ -210,57 +222,69 @@ node correspondence_map
   { inherit map; };
 
 node theorem_attack
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
-= @lean.theorem_attack {
-  mode = "sequential";
-  lenses = ["logos", "episteme", "kritikos", "themis", "techne", "poiesis", "sophia"];
-  rejectVacuousComposition = true;
-  requireRuntimeCounterpart = true;
-  priorityFocus = ["P1", "P2"];
-} (map);
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
+= @theorem_attack {
+  payload = map;
+  cfg = {
+    mode = "sequential";
+    lenses = ["logos", "episteme", "kritikos", "themis", "techne", "poiesis", "sophia"];
+    rejectVacuousComposition = true;
+    requireRuntimeCounterpart = true;
+    priorityFocus = ["P1", "P2"];
+  };
+};
 
 node lean_style
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
-= @lean.style_review {
-  checkTrustedBase = true;
-  checkDocstrings = true;
-  checkAccessorChurn = true;
-  commands = ["just lean-lint"];
-} (map);
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
+= @lean_style_review {
+  payload = map;
+  cfg = {
+    checkTrustedBase = true;
+    checkDocstrings = true;
+    checkAccessorChurn = true;
+    commands = ["just lean-lint"];
+  };
+};
 
 node haskell_style
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
-= @haskell.style_review {
-  checkArtifactTruth = true;
-  checkOwnedAdtWildcards = true;
-  checkPublicJsonBoundaryTests = true;
-  checkStringlyFields = true;
-} (map);
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
+= @haskell_style_review {
+  payload = map;
+  cfg = {
+    checkArtifactTruth = true;
+    checkOwnedAdtWildcards = true;
+    checkPublicJsonBoundaryTests = true;
+    checkStringlyFields = true;
+  };
+};
 
 node docs_review
-  <- map: CorrespondenceMap;
-  -> review: ReviewBundle;
-= @docs.scope_review {
-  checkProofClaims = true;
-  checkAdrLedger = true;
-  checkOutOfScopeBoundary = true;
-} (map);
+  <- map: CorrespondenceMap
+  -> review: ReviewBundle
+= @docs_scope_review {
+  payload = map;
+  cfg = {
+    checkProofClaims = true;
+    checkAdrLedger = true;
+    checkOutOfScopeBoundary = true;
+  };
+};
 
 node synthesize_findings
-  <- theorem: ReviewBundle;
-  <- lean: ReviewBundle;
-  <- haskell: ReviewBundle;
-  <- docs: ReviewBundle;
+  <- theorem: ReviewBundle
+  <- lean: ReviewBundle
+  <- haskell: ReviewBundle
+  <- docs: ReviewBundle
   -> findings: FindingSet = findings;
   where let
-    allFindings = theorem.findings ++ lean.findings ++ haskell.findings ++ docs.findings;
+    allFindings = concat [theorem.findings, lean.findings, haskell.findings, docs.findings];
     blockers = allFindings |> filter (finding: finding.priority == "P1" || finding.priority == "P2");
-    executableDrift = allFindings |> filter (finding: finding.kind == "haskell-lean-drift");
-    proofShapeRisk = allFindings |> filter (finding: finding.kind == "vacuous-theorem" || finding.kind == "accessor-churn");
-    docsOverclaim = allFindings |> filter (finding: finding.kind == "docs-overclaim");
+    executableDrift = allFindings |> filter (finding: finding.findingKind == "haskell-lean-drift");
+    proofShapeRisk = allFindings |> filter (finding: finding.findingKind == "vacuous-theorem" || finding.findingKind == "accessor-churn");
+    docsOverclaim = allFindings |> filter (finding: finding.findingKind == "docs-overclaim");
     findings = {
       inherit allFindings blockers executableDrift proofShapeRisk docsOverclaim;
       hasBlockers = length blockers > 0;
@@ -269,9 +293,9 @@ node synthesize_findings
   { inherit findings; };
 
 node triage
-  <- charter: RunCharter;
-  <- map: CorrespondenceMap;
-  <- findings: FindingSet;
+  <- charter: RunCharter
+  <- map: CorrespondenceMap
+  <- findings: FindingSet
   -> implement: Triage | stop: Triage | rewrite: Triage = decision;
   where let
     mustFix = findings.blockers;
@@ -286,25 +310,26 @@ node triage
       else if length proofRequired > 0 then proofRequired
       else docOnly;
     decision =
-      if shouldStop then { stop = { reason = "core correspondence boundary met"; selected = []; } }
-      else if length selected > 0 then { implement = { inherit selected; maxFiles = 6; maxCommits = 2; } }
-      else { rewrite = { reason = "no bounded slice found; request a narrower graph"; } };
+      if shouldStop then { stop = { reason = "core correspondence boundary met"; selected = []; }; }
+      else if length selected > 0 then { implement = { inherit selected; maxFiles = 6; maxCommits = 2; }; }
+      else { rewrite = { reason = "no bounded slice found; request a narrower graph"; }; };
   in
   decision;
 
 node plan_slice
-  <- implement: Triage;
+  <- implement: Triage
   -> plan: SlicePlan = plan;
   where let
     selected = implement.selected;
-    hasHaskell = selected |> any (finding: finding.surface == "haskell" || finding.kind == "haskell-lean-drift");
-    hasLean = selected |> any (finding: finding.surface == "lean" || finding.kind == "vacuous-theorem");
-    hasDocs = selected |> any (finding: finding.kind == "docs-overclaim");
-    commands =
-      (if hasHaskell then ["just test", "just lint"] else []) ++
-      (if hasLean then ["just lean-lint", "just lean-check"] else []) ++
-      (if hasDocs then ["just docs-lint"] else []) ++
-      ["just fmt-check", "git diff --check"];
+    hasHaskell = selected |> any (finding: finding.surface == "haskell" || finding.findingKind == "haskell-lean-drift");
+    hasLean = selected |> any (finding: finding.surface == "lean" || finding.findingKind == "vacuous-theorem");
+    hasDocs = selected |> any (finding: finding.findingKind == "docs-overclaim");
+    commands = concat [
+      if hasHaskell then ["just test", "just lint"] else [],
+      if hasLean then ["just lean-lint", "just lean-check"] else [],
+      if hasDocs then ["just docs-lint"] else [],
+      ["just fmt-check", "git diff --check"]
+    ];
     plan = {
       title = selected |> map (finding: finding.title) |> joinWith "; ";
       edits = selected |> map (finding: finding.repair);
@@ -321,29 +346,33 @@ node plan_slice
   { inherit plan; };
 
 node apply_slice
-  <- plan: SlicePlan;
-  -> patch: PatchSet;
-= @implementation.apply_slice {
-  useApplyPatch = true;
-  preserveUserChanges = true;
-  avoidUnrelatedRefactors = true;
-  updateDocsWithScopeChange = true;
-} (plan);
+  <- plan: SlicePlan
+  -> patch: PatchSet
+= @apply_slice {
+  payload = plan;
+  cfg = {
+    useApplyPatch = true;
+    preserveUserChanges = true;
+    avoidUnrelatedRefactors = true;
+    updateDocsWithScopeChange = true;
+  };
+};
 
 node validation_plan
-  <- plan: SlicePlan;
-  <- patch: PatchSet;
+  <- plan: SlicePlan
+  <- patch: PatchSet
   -> validation: ValidationPlan = validation;
   where let
     files = patch.files;
     leanFiles = files |> filter (file: endsWith file ".lean");
     haskellFiles = files |> filter (file: endsWith file ".hs");
     docsFiles = files |> filter (file: endsWith file ".md");
-    commands =
-      (if length leanFiles > 0 then ["just lean-lint", "just lean-check"] else []) ++
-      (if length haskellFiles > 0 then ["just test", "just lint"] else []) ++
-      (if length docsFiles > 0 then ["just docs-lint"] else []) ++
-      ["just fmt-check", "git diff --check"];
+    commands = concat [
+      if length leanFiles > 0 then ["just lean-lint", "just lean-check"] else [],
+      if length haskellFiles > 0 then ["just test", "just lint"] else [],
+      if length docsFiles > 0 then ["just docs-lint"] else [],
+      ["just fmt-check", "git diff --check"]
+    ];
     validation = {
       inherit files leanFiles haskellFiles docsFiles commands;
       fullEnough = length commands > 2;
@@ -352,99 +381,120 @@ node validation_plan
   { inherit validation; };
 
 node validate
-  <- validation: ValidationPlan;
-  -> passed: ValidationReport | failed: ValidationReport;
-= @validation.run_matrix {
-  stopOnFirstFailure = true;
-  captureLogs = true;
-  classifyFailure = true;
-} (validation);
+  <- validation: ValidationPlan
+  -> passed: ValidationReport | failed: ValidationReport
+= @run_matrix {
+  payload = validation;
+  cfg = {
+    stopOnFirstFailure = true;
+    captureLogs = true;
+    classifyFailure = true;
+  };
+};
 
 node repair_validation
-  <- failed: ValidationReport;
-  -> patch: PatchSet;
-= @implementation.apply_slice {
-  mode = "validation-repair";
-  preserveOriginalScope = true;
-  rejectScopeExpansion = true;
-} (failed);
+  <- failed: ValidationReport
+  -> patch: PatchSet
+= @apply_slice {
+  payload = failed;
+  cfg = {
+    mode = "validation-repair";
+    preserveOriginalScope = true;
+    rejectScopeExpansion = true;
+  };
+};
 
 node publish
-  <- passed: ValidationReport;
-  -> published: PublishRecord;
-= @git.commit_signed {
-  sign = true;
-  signoff = true;
-  verifyCommit = true;
-  provenance = "origin/main..HEAD";
-  subjectFromPlan = true;
-} (passed);
+  <- passed: ValidationReport
+  -> published: PublishRecord
+= @commit_signed {
+  payload = passed;
+  cfg = {
+    sign = true;
+    signoff = true;
+    verifyCommit = true;
+    provenance = "origin/main..HEAD";
+    subjectFromPlan = true;
+  };
+};
 
 node push
-  <- published: PublishRecord;
-  -> published: PublishRecord;
-= @git.push_branch {
-  branch = "174-wire-admission-witness-artifacts";
-  forceWithLeaseOnlyIfRewritten = true;
-} (published);
+  <- published: PublishRecord
+  -> published: PublishRecord
+= @push_branch {
+  payload = published;
+  cfg = {
+    branch = "174-wire-admission-witness-artifacts";
+    forceWithLeaseOnlyIfRewritten = true;
+  };
+};
 
 node ci_snapshot
-  <- published: PublishRecord;
-  -> ci: CiSnapshot;
-= @github.pr_checks {
-  pr = 189;
-  unsetTokens = true;
-  wait = "short";
-} (published);
+  <- published: PublishRecord
+  -> ci: CiSnapshot
+= @pr_checks {
+  payload = published;
+  cfg = {
+    pr = 189;
+    unsetTokens = true;
+    wait = "short";
+  };
+};
 
 node ci_gate
-  <- ci: CiSnapshot;
+  <- ci: CiSnapshot
   -> ok: CiSnapshot | repair: CiSnapshot | pending: CiSnapshot = decision;
   where let
     failing = ci.checks |> filter (check: check.conclusion == "failure");
     pending = ci.checks |> filter (check: check.status == "pending" || check.status == "queued");
     decision =
-      if length failing > 0 then { repair = ci }
-      else if length pending > 0 then { pending = ci }
-      else { ok = ci };
+      if length failing > 0 then { repair = ci; }
+      else if length pending > 0 then { pending = ci; }
+      else { ok = ci; };
   in
   decision;
 
 node repair_ci
-  <- repair: CiSnapshot;
-  -> patch: PatchSet;
-= @ci.repair {
-  preserveScope = true;
-  reproduceLocallyFirst = true;
-} (repair);
+  <- repair: CiSnapshot
+  -> patch: PatchSet
+= @repair {
+  payload = repair;
+  cfg = {
+    preserveScope = true;
+    reproduceLocallyFirst = true;
+  };
+};
 
 node journal_slice
-  <- charter: RunCharter;
-  <- map: CorrespondenceMap;
-  <- findings: FindingSet;
-  <- published: PublishRecord;
-  <- ci: CiSnapshot;
-  -> entry: JournalEntry;
-= @repo.write_journal {
-  path = ".agent-journal/wire-admission-witness-artifacts.md";
-  include = [
-    "timestamp",
-    "input signal",
-    "files changed",
-    "theorem/test/doc names",
-    "validation commands",
-    "commit hash",
-    "ci state",
-    "next target",
-    "stop rationale if optional-only"
-  ];
-} (charter, map, findings, published, ci);
+  <- charter: RunCharter
+  <- map: CorrespondenceMap
+  <- findings: FindingSet
+  <- published: PublishRecord
+  <- ci: CiSnapshot
+  -> entry: JournalEntry
+= @write_journal {
+  payload = { inherit charter; inherit map; inherit findings; inherit published; inherit ci; };
+  cfg = {
+    path = ".agent-journal/wire-admission-witness-artifacts.md";
+    include = [
+      "timestamp",
+      "input signal",
+      "files changed",
+      "theorem/test/doc names",
+      "validation commands",
+      "commit hash",
+      "ci state",
+      "next target",
+      "stop rationale if optional-only"
+    ];
+  };
+};
 
 node propose_next_cycle
-  <- charter: RunCharter;
-  <- findings: FindingSet;
-  <- ci: CiSnapshot;
-  <- entry: JournalEntry;
+  <- charter: RunCharter
+  <- findings: FindingSet
+  <- ci: CiSnapshot
+  <- entry: JournalEntry
   -> done: FinalReport | rewrite: RewriteProposal = decision;
   where let
     blockingFindings = findings.blockers;
@@ -475,17 +525,20 @@ node propose_next_cycle
   decision;
 
 node apply_cycle_rewrite
-  <- rewrite: RewriteProposal;
-  -> request: RunRequest;
-= @wire.apply_rewrite {
-  requireBudget = true;
-  requireFrontierPreservation = true;
-  preserveJournalInput = true;
-  preserveStopConditions = true;
-} (rewrite);
+  <- rewrite: RewriteProposal
+  -> request: RunRequest
+= @apply_rewrite {
+  payload = rewrite;
+  cfg = {
+    requireBudget = true;
+    requireFrontierPreservation = true;
+    preserveJournalInput = true;
+    preserveStopConditions = true;
+  };
+};
 
 node final_report
-  <- stop: Triage;
+  <- stop: Triage
   -> done: FinalReport = done;
   where let
     done = {
@@ -497,54 +550,57 @@ node final_report
   { inherit done; };
 
 node workflow_metadata
-  <- done: FinalReport;
-  -> done: FinalReport;
+  <- done: FinalReport
+  -> done: FinalReport
 = @cortex.workflow {
-  workflowId = "wire_correspondence_autonomous_cycle";
-  displayLabel = "Wire Correspondence Autonomous Cycle";
-  displayDescription = "A bounded autonomous loop for advancing Haskell-to-Lean Wire admission correspondence while preventing optional proof-surface churn.";
-  selectable = false;
-  stageGraph = [
-    "intake",
-    "context",
-    "review_lenses",
-    "triage",
-    "implementation",
-    "validation",
-    "publish",
-    "journal",
-    "rewrite_or_stop"
-  ];
-  stageModelPolicy = {
-    theorem_attack = "frontier-reasoning";
-    implementation = "coding";
-    publish = "deterministic";
-  };
-  features = {
-    adaptationPoints = {
-      propose_next_cycle = {
-        maxBranches = 1;
-        propagateRewriteAuthority = true;
-        promptSchema = {
-          type = "string";
-          description = "Return either an empty string to stop or a bounded Wire append proposal that targets one required Haskell/Lean correspondence gap.";
-        };
-        budgetSlice = {
-          nodes = 18;
-          edges = 48;
-          depth = 8;
-          frontier = 16;
-          ops = 6;
+  payload = done;
+  cfg = {
+    workflowId = "wire_correspondence_autonomous_cycle";
+    displayLabel = "Wire Correspondence Autonomous Cycle";
+    displayDescription = "A bounded autonomous loop for advancing Haskell-to-Lean Wire admission correspondence while preventing optional proof-surface churn.";
+    selectable = false;
+    stageGraph = [
+      "intake",
+      "context",
+      "review_lenses",
+      "triage",
+      "implementation",
+      "validation",
+      "publish",
+      "journal",
+      "rewrite_or_stop"
+    ];
+    stageModelPolicy = {
+      theorem_attack = "frontier-reasoning";
+      implementation = "coding";
+      publish = "deterministic";
+    };
+    features = {
+      adaptationPoints = {
+        propose_next_cycle = {
+          maxBranches = 1;
+          propagateRewriteAuthority = true;
+          promptSchema = {
+            type = "string";
+            description = "Return either an empty string to stop or a bounded Wire append proposal that targets one required Haskell/Lean correspondence gap.";
+          };
+          budgetSlice = {
+            nodes = 18;
+            edges = 48;
+            depth = 8;
+            frontier = 16;
+            ops = 6;
+          };
         };
       };
-    };
-    stopPolicy = {
-      hardStopAfterOptionalAccessorOnlySlices = 2;
-      requireHumanReviewBeforeSquash = true;
-      requireNoP1P2BeforeShip = true;
+      stopPolicy = {
+        hardStopAfterOptionalAccessorOnlySlices = 2;
+        requireHumanReviewBeforeSquash = true;
+        requireNoP1P2BeforeShip = true;
+      };
     };
   };
-} (done);
+};
 
 export let context =
   intake

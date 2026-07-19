@@ -1067,16 +1067,12 @@ runExecutorNode
   -> ExecutorCall
   -> IO (Map Text WireValue)
 runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
-  ExecutorCallInline executorName record inputExpr ->
-    runInline executorName record inputExpr
-  ExecutorCallBare executorName argumentExpr -> do
+  ExecutorCallInline executorName argumentExpr -> do
     (record, inputExpr) <-
       either (dieTextLocked outputLock) pure (executorArgumentParts argumentExpr)
     runInline executorName record inputExpr
-  ExecutorCallBoundBare authorityName _argumentExpr ->
+  ExecutorCallBound authorityName _argumentExpr ->
     unsupportedBoundExecutor authorityName
-  ExecutorCallConfigured configuredName _inputExpr ->
-    unsupportedBoundExecutor configuredName
   where
     runInline executorName record inputExpr =
       case builtinExecutorFromQName useScope executorName of

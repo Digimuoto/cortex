@@ -48,7 +48,7 @@ import Cortex.Wire
   , WireCompileEnv
   , WireContractRegistry
   , WireContractSpec (..)
-  , WireExecutorConfigShape (..)
+  , WireExecutorArgumentShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
@@ -583,7 +583,7 @@ pureProgram =
     [ "contract Score;"
     , "contract Result;"
     , "node increment"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> result: Result = score + 1;"
     , "increment"
     ]
@@ -622,7 +622,7 @@ builtinInputProgram =
     [ "contract Score;"
     , "contract Result;"
     , "node candidate"
-    , "  <- sum: Score;"
+    , "  <- sum: Score"
     , "  -> result: Result = sum + 1;"
     , "candidate"
     ]
@@ -632,8 +632,8 @@ hugePairProgram =
   T.unlines
     [ "contract Huge;"
     , "node pair"
-    , "  <- a: Huge;"
-    , "  <- b: Huge;"
+    , "  <- a: Huge"
+    , "  <- b: Huge"
     , "  -> left: Huge = a;"
     , "  -> right: Huge = b;"
     , "pair"
@@ -644,7 +644,7 @@ hugeDupProgram =
   T.unlines
     [ "contract Huge;"
     , "node dup"
-    , "  <- blob: Huge;"
+    , "  <- blob: Huge"
     , "  -> left: Huge = blob;"
     , "  -> right: Huge = blob;"
     , "dup"
@@ -656,7 +656,7 @@ replaceBody body =
     [ "contract Score;"
     , "contract Result;"
     , "node candidate"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> result: Result = " <> body <> ";"
     , "candidate"
     ]
@@ -667,7 +667,7 @@ boolArithmeticProgram =
     [ "contract Score;"
     , "contract Flag;"
     , "node gate"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> flag: Flag = score + 1;"
     , "gate"
     ]
@@ -678,7 +678,7 @@ derivedComparisonProgram =
     [ "contract Score;"
     , "contract Flag;"
     , "node compare"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> flag: Flag = score >= 0;"
     , "compare"
     ]
@@ -689,7 +689,7 @@ mergeProgram =
     [ "contract Score;"
     , "contract ResultRecord;"
     , "node merge_record"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> result: ResultRecord = { value = score; } // { value = 1; };"
     , "merge_record"
     ]
@@ -701,7 +701,7 @@ sumProgram =
     , "contract Decision;"
     , "contract RejectReason;"
     , "node classify"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> accepted: Decision | rejected: RejectReason ="
     , "    if score < 0 then rejected score else accepted score;"
     , "classify"
@@ -713,11 +713,11 @@ mixedProgram =
     [ "contract Score;"
     , "contract Result;"
     , "node increment"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> result: Result = score + 1;"
     , "node store"
-    , "  <- result: Result;"
-    , "  = @report.store {} (result);"
+    , "  <- result: Result"
+    , "  = @report.store result;"
     , "increment => store"
     ]
 
@@ -728,10 +728,10 @@ fusedProgram =
     , "contract Mid;"
     , "contract Result;"
     , "node first"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> mid: Mid = score + 1;"
     , "node second"
-    , "  <- mid: Mid;"
+    , "  <- mid: Mid"
     , "  -> result: Result = mid + 1;"
     , "first => second"
     ]
@@ -744,14 +744,14 @@ splitByEffectProgram =
     , "contract Reviewed;"
     , "contract Result;"
     , "node first"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> mid: Mid = score + 1;"
     , "node review"
-    , "  <- mid: Mid;"
-    , "  -> reviewed: Reviewed;"
-    , "  = @report.review {} (mid);"
+    , "  <- mid: Mid"
+    , "  -> reviewed: Reviewed"
+    , "  = @report.review mid;"
     , "node second"
-    , "  <- reviewed: Reviewed;"
+    , "  <- reviewed: Reviewed"
     , "  -> result: Result = reviewed + 1;"
     , "first => review => second"
     ]
@@ -763,11 +763,11 @@ anfProgram =
     , "contract Pair;"
     , "contract Result;"
     , "node construct"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> pair: Pair = let adjusted = score + 1; in"
     , "    { flag = !(score < 0); value = adjusted; };"
     , "node project"
-    , "  <- pair: Pair;"
+    , "  <- pair: Pair"
     , "  -> result: Result = if pair.flag then pair.value else 0;"
     , "construct => project"
     ]
@@ -831,7 +831,7 @@ bigTextProgram =
     [ "contract Blob;"
     , "contract BlobCopy;"
     , "node copy"
-    , "  <- blob: Blob;"
+    , "  <- blob: Blob"
     , "  -> result: BlobCopy = blob;"
     , "copy"
     ]
@@ -851,7 +851,7 @@ paddedProductProgram =
     , "contract Flag;"
     , "contract Total;"
     , "node split"
-    , "  <- score: Score;"
+    , "  <- score: Score"
     , "  -> flag: Flag = score < 0;"
     , "  -> total: Total = score;"
     , "split"
@@ -1000,7 +1000,7 @@ storeExecutorProjection =
     , wireExecutorProjectionPorts = WirePorts Map.empty Map.empty
     , wireExecutorProjectionVocabulary = Set.empty
     , wireExecutorProjectionEffect = WireExecutorHostEffect
-    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
     , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 

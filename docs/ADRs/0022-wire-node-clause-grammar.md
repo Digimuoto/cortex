@@ -7,9 +7,9 @@ description:
 sidebar:
   label: "0022. Node clause grammar"
   order: 22
-status: proposed
+status: superseded
 date: 2026-04-29
-superseded_by: null
+superseded_by: docs/ADRs/0095-wire-single-record-executor-boundary.md
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/grammar.md
@@ -30,9 +30,9 @@ related:
 
 ## Status
 
-Proposed - this ADR replaces the historical colon-led node body and string-config pure examples with
-the clause grammar for the next Wire implementation phase. ADR 0020's decision on pure output
-equations remains in force.
+Superseded by ADR 0095. This ADR replaced the historical colon-led node body and string-config pure
+examples with the clause grammar for the next Wire implementation phase. ADR 0020's decision on pure
+output equations remains in force.
 
 Forward note: ADR 0050 supersedes this ADR's explicit `pure (...)` output wrapper. CorePure output
 expressions are now written directly after `=`.

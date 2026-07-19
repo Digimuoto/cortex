@@ -6,13 +6,13 @@
  *
  * Top-level forms: contract, use, kind, form, node, let/export let, import,
  * and optional file-return expression.
- * Executor values: @qualified.name | @qualified.name { config }
- * Executor calls:  legacy configured calls or zero/one bare arguments
+ * Executor values: @qualified.name
+ * Executor calls:  @qualified.name | @qualified.name <argument>
  * Pure outputs:    -> label: Contract = <CorePure expr> ;
  * Graph operators: <> (overlay), => (connect), * (record↔ports adapter).
  *                  Overlay binds tighter than connect and star.
  * Value operators: // (record merge), ++ (string/list concat)
- * Port clauses:    arrows/equality delimit clauses; legacy semicolons remain accepted
+ * Port clauses:    <- label: Contract | -> label: Contract
  * Paper examples:  ... placeholders are accepted for highlighting only.
  * Literals:        "..." single-line, ''...'' indented multi-line,
  *                  decimal numbers, true/false/null, ()
@@ -54,10 +54,9 @@ module.exports = grammar({
     [$.core_pure_list, $.list],
     [$._core_pure_atom, $._expr_atom],
     [$._core_pure_atom, $.qualified_ident],
-    [$.pure_sum_body, $.output_body],
-    [$.pure_output_equation, $.executor_single_output_body, $.output_body],
     [$.inherit_field, $.core_pure_inherit_field],
-    [$.inline_executor_call, $._core_pure_atom],
+    [$.pure_output_equation, $.output_body],
+    [$.pure_sum_body, $.output_body],
   ],
 
   rules: {
@@ -182,7 +181,6 @@ module.exports = grammar({
       field('inputs', repeat($.input_clause)),
       field('body', choice(
         $.pure_body,
-        $.executor_single_output_body,
         $.executor_body,
       )),
       optional(field('where', $.where_clause)),
@@ -198,7 +196,6 @@ module.exports = grammar({
       'PortLabel',
       'Contract',
       'Value',
-      'ConfiguredExecutor',
       'Executor',
     ),
 
@@ -245,7 +242,6 @@ module.exports = grammar({
       'Contract',
       'Value',
       'Graph',
-      'ConfiguredExecutor',
       'Executor',
     ),
 
@@ -259,22 +255,16 @@ module.exports = grammar({
           ';',
         ),
         seq(
-          optional(field('metadata', $.node_metadata)),
+          optional(seq('with', field('metadata', $.record))),
           field('inputs', repeat($.input_clause)),
           field('body', choice(
             $.pure_body,
-            $.executor_single_output_body,
             $.executor_body,
           )),
           optional(field('where', $.where_clause)),
         ),
         field('signature', $.node_signature),
       ),
-    ),
-
-    node_metadata: $ => seq(
-      'with',
-      field('body', $.record),
     ),
 
     node_signature: $ => seq(
@@ -319,12 +309,11 @@ module.exports = grammar({
       field('label', $.identifier),
       ':',
       field('contract', $.contract_ref),
-      optional(';'),
     ),
 
     pure_body: $ => choice(
-      $.pure_sum_body,
       repeat1($.pure_output_equation),
+      $.pure_sum_body,
     ),
 
     pure_sum_body: $ => seq(
@@ -346,14 +335,6 @@ module.exports = grammar({
 
     pure_output_expr: $ => field('expr', $.core_pure_expr),
 
-    executor_single_output_body: $ => seq(
-      '->',
-      field('output', $.output_variant),
-      '=',
-      field('call', $.inline_executor_call),
-      ';',
-    ),
-
     executor_body: $ => seq(
       field('outputs', repeat($.executor_output_clause)),
       '=',
@@ -364,7 +345,6 @@ module.exports = grammar({
     executor_output_clause: $ => seq(
       '->',
       field('output', $.output_body),
-      optional(';'),
     ),
 
     output_body: $ => choice(
@@ -381,32 +361,12 @@ module.exports = grammar({
       field('contract', $.contract_ref),
     ),
 
-    executor_call: $ => choice(
-      $.inline_executor_call,
-      $.configured_executor_call,
-    ),
+    executor_call: $ => $.inline_executor_call,
 
-    inline_executor_call: $ => choice(
-      prec.dynamic(2, seq(
-        '@',
-        field('name', $.qualified_ident),
-        optional(field('config', $.record)),
-        '(',
-        field('input', $.core_pure_expr),
-        ')',
-      )),
-      prec.dynamic(1, seq(
-        '@',
-        field('name', $.qualified_ident),
-        optional(field('argument', $.core_pure_expr)),
-      )),
-    ),
-
-    configured_executor_call: $ => seq(
-      field('name', $.identifier),
-      '(',
-      field('input', $.core_pure_expr),
-      ')',
+    inline_executor_call: $ => seq(
+      '@',
+      field('name', $.qualified_ident),
+      optional(field('argument', $.core_pure_expr)),
     ),
 
     where_clause: $ => seq(
@@ -481,8 +441,7 @@ module.exports = grammar({
     )),
 
     _expr_atom: $ => choice(
-      $.configured_executor_value,
-      $.executor_authority_value,
+      $.executor_value,
       $.constructor_expr,
       $.record,
       $.list,
@@ -504,13 +463,7 @@ module.exports = grammar({
       ']',
     )),
 
-    configured_executor_value: $ => seq(
-      '@',
-      field('name', $.qualified_ident),
-      field('config', $.record),
-    ),
-
-    executor_authority_value: $ => seq(
+    executor_value: $ => seq(
       '@',
       field('name', $.qualified_ident),
     ),
@@ -706,16 +659,16 @@ module.exports = grammar({
       '}',
     ),
 
-    core_pure_inherit_field: $ => seq(
-      'inherit',
-      optional(seq('(', field('source', $.core_pure_expr), ')')),
-      repeat1(field('name', $.identifier)),
-    ),
-
     core_pure_field: $ => seq(
       field('path', $.field_path),
       '=',
       field('value', $.core_pure_expr),
+    ),
+
+    core_pure_inherit_field: $ => seq(
+      'inherit',
+      optional(seq('(', field('source', $.core_pure_expr), ')')),
+      repeat1(field('name', $.identifier)),
     ),
 
     core_pure_list: $ => seq(

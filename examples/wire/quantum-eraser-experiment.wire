@@ -31,38 +31,38 @@ contract Bit;
 let phase_zero = 0.0;
 let phase_quarter = 1.5707963267948966;
 let phase_half = 3.141592653589793;
-let quantum_sx = @quantum.sx {};
-let quantum_cz = @quantum.cz {};
-let quantum_measure_z = @quantum.measure_z {};
+let quantum_sx = @quantum.sx;
+let quantum_cz = @quantum.cz;
+let quantum_measure_z = @quantum.measure_z;
 
-kind qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
-  <- label: Qubit;
-  -> label: Qubit;
-  = gate (label);
+kind qubit_gate(label: PortLabel, gate: Executor) =
+  <- label: Qubit
+  -> label: Qubit
+  = @gate label;
 
 kind rz_gate(label: PortLabel, angle: Value) =
-  <- label: Qubit;
-  -> label: Qubit = @quantum.rz { inherit angle; } (label);
+  <- label: Qubit
+  -> label: Qubit = @quantum.rz { payload = label; cfg = { inherit angle; }; };
 
 kind qubit_measure(input: PortLabel, output: PortLabel) =
-  <- input: Qubit;
-  -> output: Bit;
-  = quantum_measure_z (input);
+  <- input: Qubit
+  -> output: Bit
+  = @quantum_measure_z input;
 
-kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: ConfiguredExecutor) =
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = gate ({ inherit control; inherit target; });
+kind two_qubit_gate(control: PortLabel, target: PortLabel, gate: Executor) =
+  <- control: Qubit
+  <- target: Qubit
+  -> control: Qubit
+  -> target: Qubit
+  = @gate { inherit control; inherit target; };
 
 kind run_command(spec: PortLabel, result: PortLabel) =
-  <- spec: CommandSpec;
-  -> result: CommandResult = @command {} (spec);
+  <- spec: CommandSpec
+  -> result: CommandResult = @command spec;
 
 kind command_gate(spec: PortLabel, previous: PortLabel, ready: PortLabel) =
-  <- spec: CommandSpec;
-  <- previous: CommandResult;
+  <- spec: CommandSpec
+  <- previous: CommandResult
   -> previous: CommandResult = previous;
   -> ready: CommandSpec = spec;
 
@@ -380,10 +380,10 @@ form quarter_turn(label: PortLabel) = {
 
 form open_circuit(phase_angle: Value) = {
   node ibm_runtime_config
-    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { cfg = { path = "quantum-ibm-runtime.local.json"; }; };
   node prepare_screen
-    <- config: IBMQuantumConfig;
-    -> screen: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+    <- config: IBMQuantumConfig
+    -> screen: Qubit = @quantum.prepare_zero { payload = { inherit config; }; cfg = { index = 0; }; };
   node phase_screen = rz_gate(screen, phase_angle);
   node measure_screen = qubit_measure(screen, screen);
 
@@ -402,12 +402,12 @@ form open_circuit(phase_angle: Value) = {
 
 form marked_circuit(phase_angle: Value, marker_readout: Graph) = {
   node ibm_runtime_config
-    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+    -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { cfg = { path = "quantum-ibm-runtime.local.json"; }; };
   node prepare_screen
-    <- config: IBMQuantumConfig;
-    -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+    <- config: IBMQuantumConfig
+    -> control: Qubit = @quantum.prepare_zero { payload = { inherit config; }; cfg = { index = 0; }; };
   node prepare_marker
-    -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+    -> target: Qubit = @quantum.prepare_zero { cfg = { index = 1; }; };
   node phase_screen = rz_gate(control, phase_angle);
   node mark_cz = two_qubit_gate(control, target, quantum_cz);
   node measure_screen = qubit_measure(control, screen);
@@ -481,7 +481,7 @@ node start_experiment
   -> start: ExperimentStart = "start";
 
 node plan_experiment
-  <- start: ExperimentStart;
+  <- start: ExperimentStart
   -> open0Spec: CommandSpec = hardwareSpec "open phase 0" "open_phase_0";
   -> open14Spec: CommandSpec = hardwareSpec "open phase 1/4" "open_phase_1_4";
   -> open12Spec: CommandSpec = hardwareSpec "open phase 1/2" "open_phase_1_2";
@@ -503,11 +503,11 @@ let run_eraser_14 = gated_command(eraser14Spec, eraser0, eraser14Ready, eraser14
 let run_eraser_12 = gated_command(eraser12Spec, eraser14, eraser12Ready, eraser12);
 
 node analyze_experiment
-  <- results: ExperimentResults;
+  <- results: ExperimentResults
   -> analysis: ExperimentAnalysis = analyzeExperiment results;
 
 node render_experiment_report
-  <- analysis: ExperimentAnalysis;
+  <- analysis: ExperimentAnalysis
   -> print_summary: ExperimentReport = summary;
   -> write_summary: ExperimentReport = summary;
   where let
@@ -516,12 +516,12 @@ node render_experiment_report
   { inherit summary; };
 
 node print_report
-  <- print_summary: ExperimentReport;
-  = @stdout { newline = true; } (print_summary);
+  <- print_summary: ExperimentReport
+  = @stdout { payload = print_summary; cfg = { newline = true; }; };
 
 node write_report
-  <- write_summary: ExperimentReport;
-  = @writeFile { path = "./wire-quantum-eraser-report.txt"; } (write_summary);
+  <- write_summary: ExperimentReport
+  = @writeFile { payload = write_summary; cfg = { path = "./wire-quantum-eraser-report.txt"; }; };
 
 let command_sequence =
   run_open_0

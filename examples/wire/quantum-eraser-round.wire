@@ -8,93 +8,93 @@ contract Qubit;
 contract Bit;
 
 node ibm_runtime_config
-  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { path = "quantum-ibm-runtime.local.json"; } (null);
+  -> config: IBMQuantumConfig = @quantum.ibm_runtime_config { cfg = { path = "quantum-ibm-runtime.local.json"; }; };
 
 node prepare_screen
-  <- config: IBMQuantumConfig;
-  -> control: Qubit = @quantum.prepare_zero { index = 0; } ({ inherit config; });
+  <- config: IBMQuantumConfig
+  -> control: Qubit = @quantum.prepare_zero { payload = { inherit config; }; cfg = { index = 0; }; };
 
 node prepare_marker
-  -> target: Qubit = @quantum.prepare_zero { index = 1; } (null);
+  -> target: Qubit = @quantum.prepare_zero { cfg = { index = 1; }; };
 
 node split_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz { payload = control; cfg = { angle = 1.5707963267948966; }; };
 
 node split_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.sx control;
 
 node split_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz { payload = control; cfg = { angle = 1.5707963267948966; }; };
 
 node phase_screen
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 0.0; } (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz { payload = control; cfg = { angle = 0.0; }; };
 
 node mark_pre_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz { payload = target; cfg = { angle = 1.5707963267948966; }; };
 
 node mark_pre_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.sx target;
 
 node mark_pre_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz { payload = target; cfg = { angle = 1.5707963267948966; }; };
 
 node mark_cz
-  <- control: Qubit;
-  <- target: Qubit;
-  -> control: Qubit;
-  -> target: Qubit;
-  = @quantum.cz {} ({ inherit control; inherit target; });
+  <- control: Qubit
+  <- target: Qubit
+  -> control: Qubit
+  -> target: Qubit
+  = @quantum.cz { inherit control; inherit target; };
 
 node z_mark_post_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz { payload = target; cfg = { angle = 1.5707963267948966; }; };
 
 node z_mark_post_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.sx target;
 
 node z_mark_post_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz { payload = target; cfg = { angle = 1.5707963267948966; }; };
 
 node recombine_rz_a
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz { payload = control; cfg = { angle = 1.5707963267948966; }; };
 
 node recombine_sx
-  <- control: Qubit;
-  -> control: Qubit = @quantum.sx {} (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.sx control;
 
 node recombine_rz_b
-  <- control: Qubit;
-  -> control: Qubit = @quantum.rz { angle = 1.5707963267948966; } (control);
+  <- control: Qubit
+  -> control: Qubit = @quantum.rz { payload = control; cfg = { angle = 1.5707963267948966; }; };
 
 node measure_screen
-  <- control: Qubit;
-  -> screen: Bit = @quantum.measure_z {} (control);
+  <- control: Qubit
+  -> screen: Bit = @quantum.measure_z control;
 
 node z_marker_eraser_rz_a
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz { payload = target; cfg = { angle = 1.5707963267948966; }; };
 
 node z_marker_eraser_sx
-  <- target: Qubit;
-  -> target: Qubit = @quantum.sx {} (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.sx target;
 
 node z_marker_eraser_rz_b
-  <- target: Qubit;
-  -> target: Qubit = @quantum.rz { angle = 1.5707963267948966; } (target);
+  <- target: Qubit
+  -> target: Qubit = @quantum.rz { payload = target; cfg = { angle = 1.5707963267948966; }; };
 
 node z_measure_marker
-  <- target: Qubit;
-  -> marker: Bit = @quantum.measure_z {} (target);
+  <- target: Qubit
+  -> marker: Bit = @quantum.measure_z target;
 
 let split_path =
   split_rz_a

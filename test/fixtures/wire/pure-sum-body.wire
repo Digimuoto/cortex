@@ -3,7 +3,7 @@ contract Decision;
 contract RejectReason;
 
 node classify
-  <- score: Score;
+  <- score: Score
   -> accepted: Decision | rejected: RejectReason =
     if score < 0 then rejected score else accepted score;
 

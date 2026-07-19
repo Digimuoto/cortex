@@ -29,12 +29,12 @@ import Cortex.Wire.Executor (WireExecutorId (..))
 sampleProjectionJSON :: ByteString
 sampleProjectionJSON =
   "{\"executorId\":\"quantum.realize\"\
-  \,\"projectionVersion\":\"1\"\
+  \,\"projectionVersion\":\"2\"\
   \,\"ports\":{\"inputs\":{\"shots\":{\"accepts\":[\"ShotCount\"],\"cardinality\":\"one\",\"required\":true}}\
   \,\"outputs\":{\"s01\":{\"contract\":\"MeasurementResult\"},\"s12\":{\"contract\":\"MeasurementResult\"}}}\
-  \,\"configSchemaRef\":{\"tag\":\"ConfigSchemaName\",\"contents\":\"braket-config\"}\
+  \,\"argumentShapeRef\":{\"tag\":\"ArgumentShapeName\",\"contents\":\"braket-config\"}\
   \,\"requirementSlots\":[{\"rsCapabilityKind\":\"provider\",\"rsBindingName\":\"braket\"\
-  \,\"rsConfigSelector\":\"config.device\",\"rsPermissionClass\":\"aws.braket\"}]\
+  \,\"rsArgumentSelector\":\"config.device\",\"rsPermissionClass\":\"aws.braket\"}]\
   \,\"replayClass\":\"idempotent_with_key\"\
   \,\"isolationExpectation\":\"subprocess_sandbox\"\
   \,\"effect\":\"host_effect\"\
@@ -53,7 +53,7 @@ sampleBinding =
     { rbrBindingId = "braket-pack/quantum.realize"
     , rbrBindingVersion = "1"
     , rbrExecutorId = WireExecutorId "quantum.realize"
-    , rbrProjectionVersion = ProjectionVersion "1"
+    , rbrProjectionVersion = currentProjectionVersion
     , rbrStageActionRef = RuntimeStageActionRef "quantum.realize.braket"
     , rbrManifestContentAddress = ContentAddress "sha256:manifest"
     , rbrArtifactDigest = ContentDigest "d"
@@ -73,24 +73,18 @@ spec = do
   describe "AdmissionProjection JSON" $ do
     it "round-trips through JSON, including ports" $
       roundTrips sampleProjection
+    it "rejects the pre-ADR-0095 version 1 projection format with a migration diagnostic" $ do
+      let legacyJSON =
+            Aeson.encode
+              (sampleProjection {apProjectionVersion = ProjectionVersion "1"})
+      case Aeson.eitherDecode legacyJSON :: Either String AdmissionProjection of
+        Left err -> err `shouldContain` "predates the ADR 0095 argument-shape format"
+        Right _ -> expectationFailure "expected version 1 rejection"
     it "round-trips the await strategy / replay / isolation enums" $ do
       roundTrips Synchronous
       roundTrips SubmitParkResume
       roundTrips IdempotentWithKey
       roundTrips SubprocessSandbox
-    it "retains v1 config projections while emitting v2 argument projections" $ do
-      let v2Projection =
-            admissionProjectionWithArgumentShapeRef
-              (ArgumentShapeName "braket-argument")
-              sampleProjection
-      roundTrips v2Projection
-      apProjectionVersion v2Projection `shouldBe` currentProjectionVersion
-      apArgumentShapeRef v2Projection `shouldBe` ArgumentShapeName "braket-argument"
-      case Aeson.toJSON v2Projection of
-        Aeson.Object object -> do
-          KeyMap.member "argumentShapeRef" object `shouldBe` True
-          KeyMap.member "configSchemaRef" object `shouldBe` False
-        other -> expectationFailure ("expected projection object, got " <> show other)
     it "rejects malformed projection JSON with named causes" $ do
       baseObject <-
         case Aeson.toJSON sampleProjection of
@@ -106,10 +100,10 @@ spec = do
       let argumentRef =
             Aeson.object
               ["tag" Aeson..= ("ArgumentShapeName" :: String), "contents" Aeson..= ("x" :: String)]
-      decodeWith (KeyMap.insert "argumentShapeRef" argumentRef)
-        `shouldSatisfy` failsWith "cannot define both configSchemaRef and argumentShapeRef"
+      decodeWith (KeyMap.insert "configSchemaRef" argumentRef)
+        `shouldSatisfy` failsWith "configSchemaRef was removed; use argumentShapeRef"
       decodeWith
-        (KeyMap.insert "projectionVersion" (Aeson.String "2") . KeyMap.delete "configSchemaRef")
+        (KeyMap.insert "projectionVersion" (Aeson.String "2") . KeyMap.delete "argumentShapeRef")
         `shouldSatisfy` failsWith "missing argumentShapeRef"
       decodeWith (KeyMap.insert "projectionVersion" (Aeson.String "3"))
         `shouldSatisfy` failsWith "unsupported admission projection version"

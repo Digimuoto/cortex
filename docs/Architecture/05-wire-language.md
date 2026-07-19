@@ -28,8 +28,8 @@ The normative rules live in the reference:
   semantics
 - [Contracts, ports, and matching](../Reference/Wire/contracts-ports-and-matching.md) — contract
   namespace, port declarations, `=>` matching
-- [Configured executors and execution boundary](../Reference/Wire/configured-executors-and-execution-boundary.md)
-  — configured executor values, typed node boundaries, runnable-wire boundary
+- [Executor authorities and execution boundary](../Reference/Wire/executor-authorities-and-execution-boundary.md)
+  — executor authority values, typed node boundaries, runnable-wire boundary
 - [Conditionality](../Reference/Wire/conditionality.md) — `select(...)`, guarded-affine collapse,
   latent continuations, and selected-branch actualization
 - [Rewrites](../Reference/rewrites.md) — bounded dynamic rewrite algebra, budget, admission,
@@ -45,7 +45,7 @@ Wire adds four things above the Graph and Circuit layers:
 
 - an authoring surface for naming nodes, declarations, and reusable values
 - endpoint-typed composition over registered contracts and ports
-- configured executor reuse and configuration values
+- executor authority values with a single record argument at the call boundary
 - a rewrite surface that lets topology changes be proposed in the same composition model used for
   initial authoring
 
@@ -128,14 +128,12 @@ In source, the same shape is explicit:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  = @review.analyze (evidence);
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord  = @review.analyze evidence;
 
 node summarize
-  <- analysis: AnalysisRecord;
-  -> summary: Summary;
-  = @review.summarize (analysis);
+  <- analysis: AnalysisRecord
+  -> summary: Summary  = @review.summarize analysis;
 
 analyze
   => summarize
@@ -249,11 +247,11 @@ after ADR 0078/0079 is not decided. Node-local egress projection and binding pha
 also not decided; the current node-boundary normal form names the egress slot but does not close the
 projection rule.
 
-## Configured executor values and reuse
+## Executor authority values and reuse
 
-Wire's reuse surface is the configured executor value: inert source data that names registered
-executor authority and static config. It is not a graph vertex by itself. A configured executor
-enters topology only when an explicit `node` declaration gives it a typed input/output boundary.
+Wire's reuse surface is a bare executor authority value: inert source data that names registered
+authority. It is not a graph vertex by itself and enters topology only when an explicit `node`
+declaration gives it a typed input/output boundary and argument.
 
 The canonical authored unit is:
 
@@ -261,33 +259,30 @@ The canonical authored unit is:
 node = typed ports + executor body
 ```
 
-Ports stay first-class because the graph type-checker reasons about them. Executor config carries
-static metadata such as timeouts, budgets, memory strategy, and executor-specific policy fields.
-Cortex owns only the substrate interpretation of those fields: model choice, tool policy, reasoning
-behavior, and product-specific memory presets remain downstream executor or host-binding policy.
+Ports stay first-class because the graph type-checker reasons about them. Compiler controls such as
+timeouts, budgets, and memory strategy live in `node ... with`; executor-specific data lives in the
+one argument record, conventionally under `cfg`. Cortex owns only the substrate interpretation of
+those fields: model choice, tool policy, reasoning behavior, and product-specific memory presets
+remain downstream executor or host-binding policy.
 
 ```wire
-let sectionWriter = @native.report_section_writer {
-  memory = topological { preset = "causal"; };
-  model = "gpt-5.4";
-};
+let sectionWriter = @native.report_section_writer;
 
-node valuation_writer
-  <- brief: SectionBrief;
-  -> fragment: ReportFragment;
-  = sectionWriter (brief);
+node valuation_writer with { memory = topological { preset = "causal"; }; }
+  <- brief: SectionBrief
+  -> fragment: ReportFragment
+  = @sectionWriter { payload = brief; cfg = { model = "gpt-5.4"; }; };
 ```
 
-Per-node variation should appear as typed input data or as a separately named configured executor
-value. Wire does not use configured executor values as hidden partial vertices whose port boundary
-is discovered later.
+Per-node variation should appear as typed input or argument data. Wire does not use executor
+authority values as hidden partial vertices whose port boundary is discovered later.
 
 Architecturally, this matters for two reasons:
 
 - it keeps reusable executor policy visible in source review
 - it keeps graph vertices tied to declared typed ports rather than to implicit context
 
-The precise typing rules for configured executor values belong in the reference. The architectural
+The precise typing rules for executor authority values belong in the reference. The architectural
 point is that reuse is compositional rather than template-like.
 
 Workflow-level config may also provide defaults for executor config, for example default models or
@@ -305,7 +300,7 @@ Pure node bodies bind output labels directly:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= 0.7);
   -> rejected: RejectedSet = evidence.items |> filter (x: x.score < 0.7);
 ```
@@ -326,11 +321,11 @@ That split keeps `let ... in` expression-shaped. Node-local sharing is attached 
 record of local names, not as a structural decoration between ports and body.
 
 Module-level `let` is phase-neutral syntax. Graph-valued lets are elaborated at compile time, for
-example `let pipeline = planner => analyst;`. Configured executor values and ordinary scalar,
-record, list, or string values are also compile-time module values. Delayed CorePure evaluation may
-capture module lets only when their values are authority-free pure data, or when the binding is a
-CorePure helper function such as `let pred = item: item.score >= 0.7;`. It may not capture graph
-values or configured executor authority.
+example `let pipeline = planner => analyst;`. Executor authority values and ordinary scalar, record,
+list, or string values are also compile-time module values. Delayed CorePure evaluation may capture
+module lets only when their values are authority-free pure data, or when the binding is a CorePure
+helper function such as `let pred = item: item.score >= 0.7;`. It may not capture graph values or
+executor authority.
 
 ## Rewrites and runtime handoff
 

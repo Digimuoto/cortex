@@ -59,7 +59,7 @@ spec = describe "Cortex.Wire runtime egress" $ do
         (Map.singleton "unknown" (Aeson.Number 1))
         `shouldBeLeftContaining` "is not a declared variant"
 
-  describe "compatible one-record executor argument boundary" $ do
+  describe "one-record executor argument boundary" $ do
     let schema =
           WireExecutorArgumentSchema $
             Aeson.object
@@ -68,18 +68,24 @@ spec = describe "Cortex.Wire runtime egress" $ do
               , "additionalProperties" Aeson..= False
               , "properties"
                   Aeson..= Aeson.object
-                    ["payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]]
+                    [ "payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]
+                    ]
               ]
 
     it "returns the evaluated record unchanged after schema validation" $ do
       let argument = Aeson.object ["payload" Aeson..= ("hello" :: Text)]
       validateWireExecutorArgument schema argument `shouldBe` Right argument
 
-    it "rejects non-record values even for unchecked projections" $
+    it "rejects invalid arguments before a host binding can be invoked" $
+      validateWireExecutorArgument schema (Aeson.object ["payload" Aeson..= (7 :: Int)])
+        `shouldBeLeftContaining` "expected string at $.payload"
+
+    it "rejects non-record values even for unchecked executor projections" $
       validateWireExecutorArgument WireExecutorArgumentUnchecked (Aeson.String "raw")
         `shouldBeLeftContaining` "must be a normalized JSON object"
 
-    it "evaluates port, module-binding, and where values only at ingress" $ do
+  describe "ADR 0095 ingress argument evaluation" $ do
+    it "evaluates a port-referencing argument from the typed input bundle" $ do
       let bundle = wireInputBundleFromStageInputs topicStageInputs
       evaluateWireExecutorArgument topicPorts topicArgumentSpec bundle
         `shouldBe` Right
@@ -90,12 +96,38 @@ spec = describe "Cortex.Wire runtime egress" $ do
               ]
           )
 
-    it "passes non-JSON payload carriers through executor ingress unchanged" $ do
+    it "reports a typed error when a referenced input port value is missing" $ do
+      let bundle = wireInputBundleFromStageInputs Map.empty
+      case evaluateWireExecutorArgument topicPorts topicArgumentSpec bundle of
+        Left evalError -> renderPureEvalError evalError `shouldSatisfy` T.isInfixOf "topic"
+        Right value -> expectationFailure ("expected Left, got " <> show value)
+
+    -- Executor ingress is not the pure-node JSON-only boundary: every payload
+    -- kind the egress boundary validated crosses into the argument unchanged.
+    it "passes text payloads through ingress evaluation unchanged" $ do
       let bundle = wireInputBundleFromStageInputs textStageInputs
       evaluateWireExecutorArgument textNodePorts textArgumentSpec bundle
         `shouldBe` Right (Aeson.object ["payload" Aeson..= ("plain body" :: Text)])
 
-    it "round-trips the compiled argument envelope" $ do
+    it "passes artifact_ref payloads through ingress evaluation unchanged" $ do
+      let refValue =
+            Aeson.object
+              [ "artifact_id" Aeson..= ("art-1" :: Text)
+              , "digest" Aeson..= ("sha256:abc" :: Text)
+              ]
+          bundle =
+            wireInputBundleFromStageInputs $
+              Map.singleton
+                (NodeId "source")
+                ( Aeson.toJSON $
+                    (mkWireValue "Ref" WirePayloadArtifactRef (Just "source") refValue)
+                      { wireValuePort = Just "ref"
+                      }
+                )
+      evaluateWireExecutorArgument refNodePorts refArgumentSpec bundle
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= refValue])
+
+    it "round-trips the compiled argument envelope through metadata decoding" $ do
       let metadata =
             Aeson.object
               [ "argument"
@@ -107,27 +139,47 @@ spec = describe "Cortex.Wire runtime egress" $ do
               ]
       wireExecutorArgumentSpecFromMetadata metadata `shouldBe` Right topicArgumentSpec
 
-    it "delivers the validated record to the binding unchanged" $ do
+    it "rejects unknown executor argument envelope fields" $ do
+      let metadata =
+            Aeson.object
+              [ "argument"
+                  Aeson..= Aeson.object
+                    [ "value" Aeson..= topicArgumentSpec.wireExecutorArgumentExpr
+                    , "config" Aeson..= Aeson.object []
+                    ]
+              ]
+      wireExecutorArgumentSpecFromMetadata metadata
+        `shouldBeLeftContaining` "unsupported executor argument envelope fields: config"
+
+    it "delivers the validated ingress argument to the binding unchanged" $ do
       received <- newIORef ([] :: [Aeson.Value])
       let stageDef =
-            wrapWireStageDefinitionWithArgument
+            wrapWireStageDefinition
               (Just topicRegistry)
-              schema
-              (const (Right expectedArgument))
+              topicArgumentSchema
+              topicArgumentEvaluator
               topicNodePorts
               ( \argument _ctx -> do
                   modifyIORef' received (argument :)
                   pure (StageComplete (Aeson.object ["score" Aeson..= (1 :: Int)]))
               )
               baseTopicStageDefinition
-          expectedArgument = Aeson.object ["payload" Aeson..= ("hello" :: Text)]
       result <- stageDef.sdAction topicStageContext
       case result of
-        StageComplete _value -> pure ()
+        StageComplete value -> do
+          wireValue <- requireAesonSuccess (Aeson.fromJSON value :: Aeson.Result WireValue)
+          wireValue.wireValueContract `shouldBe` "Score"
         other -> expectationFailure ("expected StageComplete, got " <> showStageResult other)
-      readIORef received `shouldReturn` [expectedArgument]
+      seen <- readIORef received
+      seen
+        `shouldBe` [ Aeson.object
+                       [ "payload" Aeson..= ("hello" :: Text)
+                       , "cfg" Aeson..= Aeson.object ["mode" Aeson..= ("safe" :: Text)]
+                       , "tag" Aeson..= ("r-1" :: Text)
+                       ]
+                   ]
 
-    it "blocks host invocation when ingress validation fails" $ do
+    it "fails the stage before host invocation when the evaluated argument violates the schema" $ do
       invoked <- newIORef (0 :: Int)
       let rejectingSchema =
             WireExecutorArgumentSchema $
@@ -139,7 +191,7 @@ spec = describe "Cortex.Wire runtime egress" $ do
                       ["payload" Aeson..= Aeson.object ["type" Aeson..= ("integer" :: Text)]]
                 ]
           stageDef =
-            wrapWireStageDefinitionWithArgument
+            wrapWireStageDefinition
               (Just topicRegistry)
               rejectingSchema
               topicArgumentEvaluator
@@ -155,14 +207,15 @@ spec = describe "Cortex.Wire runtime egress" $ do
           errType `shouldBe` "executor_argument_validation_failure"
           message `shouldSatisfy` T.isInfixOf "expected integer at $.payload"
         other -> expectationFailure ("expected StageFail, got " <> showStageResult other)
-      readIORef invoked `shouldReturn` 0
+      invocations <- readIORef invoked
+      invocations `shouldBe` 0
 
     it "fails the stage without invoking the host when argument evaluation fails" $ do
       invoked <- newIORef (0 :: Int)
       let stageDef =
-            wrapWireStageDefinitionWithArgument
+            wrapWireStageDefinition
               (Just topicRegistry)
-              schema
+              topicArgumentSchema
               (const (Left "input port topic produced no value"))
               topicNodePorts
               ( \_argument _ctx -> do
@@ -407,6 +460,15 @@ spec = describe "Cortex.Wire runtime egress" $ do
       wrapWireStageOutput (Just scoreRegistry) producer runId mixedVariantPorts emitted
         `shouldBeLeftContaining` "must not mix an exclusive output group with ordinary outputs"
 
+producer :: NodeId
+producer = NodeId "classifier"
+
+runId :: UUID.UUID
+runId = UUID.fromWords 0 0 0 0
+
+{- | One consumed input port plus one output port, mirroring
+@node score <- topic: Topic -> score: Score = \@review.score { ... };@.
+-}
 topicNodePorts :: WirePorts
 topicNodePorts =
   WirePorts
@@ -414,8 +476,13 @@ topicNodePorts =
     , wirePortsOutputs = Map.singleton "score" (WireOutputPort "Score" Nothing)
     }
 
+-- | Input-only ports for direct evaluator tests.
 topicPorts :: WirePorts
-topicPorts = topicNodePorts {wirePortsOutputs = Map.empty}
+topicPorts =
+  WirePorts
+    { wirePortsInputs = Map.singleton "topic" topicInputPort
+    , wirePortsOutputs = Map.empty
+    }
 
 topicInputPort :: WireInputPort
 topicInputPort =
@@ -425,6 +492,9 @@ topicInputPort =
     , wireInputPortRequired = True
     }
 
+{- | Argument envelope exercising all three scopes at ingress: the @topic@
+input port, a module-level binding (@base@), and a node @where@ field (@tag@).
+-}
 topicArgumentSpec :: WireExecutorArgumentSpec
 topicArgumentSpec =
   WireExecutorArgumentSpec
@@ -443,22 +513,6 @@ topicArgumentSpec =
         Just
           (CorePureRecord [CorePureField ("run_tag" :| []) (CorePureLit (CorePureString "r-1"))])
     }
-
-topicArgumentEvaluator :: WireInputBundle -> Either Text Aeson.Value
-topicArgumentEvaluator bundle =
-  case evaluateWireExecutorArgument topicNodePorts topicArgumentSpec bundle of
-    Left evalError -> Left (renderPureEvalError evalError)
-    Right value -> Right value
-
-topicStageInputs :: Map.Map NodeId Aeson.Value
-topicStageInputs =
-  Map.singleton
-    (NodeId "source")
-    ( Aeson.toJSON $
-        (mkWireValue "Topic" WirePayloadJson (Just "source") (Aeson.String "hello"))
-          { wireValuePort = Just "topic"
-          }
-    )
 
 textNodePorts :: WirePorts
 textNodePorts =
@@ -493,6 +547,56 @@ textStageInputs =
           }
     )
 
+refNodePorts :: WirePorts
+refNodePorts =
+  WirePorts
+    { wirePortsInputs =
+        Map.singleton
+          "ref"
+          WireInputPort
+            { wireInputPortAccepts = ["Ref"]
+            , wireInputPortCardinality = WireInputCardinalityOne
+            , wireInputPortRequired = True
+            }
+    , wirePortsOutputs = Map.empty
+    }
+
+refArgumentSpec :: WireExecutorArgumentSpec
+refArgumentSpec =
+  WireExecutorArgumentSpec
+    { wireExecutorArgumentExpr =
+        CorePureRecord [CorePureField ("payload" :| []) (CorePureIdent "ref")]
+    , wireExecutorArgumentBindings = []
+    , wireExecutorArgumentWhere = Nothing
+    }
+
+topicArgumentEvaluator :: WireInputBundle -> Either Text Aeson.Value
+topicArgumentEvaluator bundle =
+  case evaluateWireExecutorArgument topicNodePorts topicArgumentSpec bundle of
+    Left evalError -> Left (renderPureEvalError evalError)
+    Right value -> Right value
+
+topicArgumentSchema :: WireExecutorArgumentShape
+topicArgumentSchema =
+  WireExecutorArgumentSchema $
+    Aeson.object
+      [ "type" Aeson..= ("object" :: Text)
+      , "required" Aeson..= ["payload" :: Text]
+      , "properties"
+          Aeson..= Aeson.object
+            ["payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]]
+      ]
+
+topicStageInputs :: Map.Map NodeId Aeson.Value
+topicStageInputs =
+  Map.singleton
+    (NodeId "source")
+    ( Aeson.toJSON $
+        (mkWireValue "Topic" WirePayloadJson (Just "source") (Aeson.String "hello"))
+          { wireValuePort = Just "topic"
+          }
+    )
+
 topicStageContext :: StageContext
 topicStageContext =
   StageContext
@@ -521,7 +625,7 @@ baseTopicStageDefinition =
     , sdReplayPolicyOverride = Nothing
     , sdTimeoutSeconds = Nothing
     , sdRetryPolicy = Nothing
-    , sdAction = \_ctx -> pure (StageFail "unbound" "base action must be superseded")
+    , sdAction = \_ctx -> pure (StageFail "unbound" "base action must be superseded by the wrapper")
     , sdMemoryStrategy = defaultMemoryStrategy
     }
 
@@ -556,12 +660,6 @@ showStageResult = \case
   StageLoopStep {} -> "StageLoopStep"
   StageRejectRewrite {} -> "StageRejectRewrite"
   StageFail {} -> "StageFail"
-
-producer :: NodeId
-producer = NodeId "classifier"
-
-runId :: UUID.UUID
-runId = UUID.fromWords 0 0 0 0
 
 scorePorts :: WirePorts
 scorePorts =
