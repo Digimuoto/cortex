@@ -9,9 +9,9 @@ kernel and above the shared printable C11 layer.  It fixes every aggregate
 layout, inserts named padding, represents exclusive sums as a tag plus a typed
 payload union, and emits one total status-returning frame function.
 
-The scheduler is deliberately absent.  A generated function can read only its
+The scheduler is a separate additive v2 layer. A generated function can read only its
 input frame and write only its output frame; checked operations return a typed
-failure status.  PR 12 may schedule these functions, but cannot give them a
+failure status. The scheduler may dispatch these functions, but cannot give them a
 host context or worker authority because neither exists in this ABI.
 -/
 

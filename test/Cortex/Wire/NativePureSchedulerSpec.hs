@@ -25,6 +25,7 @@ import Cortex.Wire
   ( CircuitNodeRef (..)
   , EngineTerminalState (..)
   , NativePureEngineStateV2 (..)
+  , NativePureFusionMode (..)
   , NativePurePlan (..)
   , NativePureProgramV2 (..)
   , NativePureProgramV2Edge (..)
@@ -330,6 +331,7 @@ quotientPlan =
     { nativePurePlanProgramId = "select-program"
     , nativePurePlanProgramIdentity = "identity"
     , nativePurePlanInputDigest = "input-digest"
+    , nativePurePlanFusionMode = NativePureMaximalFusion
     , nativePurePlanRealization =
         RealizationArtifact
           { realizationArtifactReferentIdentity = "identity"

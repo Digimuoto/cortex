@@ -1,16 +1,15 @@
-import Mathlib.Data.List.Nodup
 import Cortex.Wire.NativePure.Type
 import Cortex.Wire.SemanticC
 
 /-!
 ## NativePure v1 certified kernel
 
-The broad CorePure surface is intended to elaborate into this small
-intrinsically typed kernel once the elaboration boundary lands; today the
-kernel is the certified target model and no elaborator exists yet. One source
-PureWire node yields one `CertifiedKernel`; cross-node fusion is deliberately
-deferred. Values are immutable. The only storage classification introduced
-after lowering is `read` for inputs and `write` for fresh outputs.
+The broad CorePure surface is intended to elaborate from the normalized
+Haskell NativePure ANF/SSA plan into this small intrinsically typed Lean
+kernel. `CertifiedKernel` is the theorem-bearing target of that boundary;
+the production decoder remains separate from this model. Values are immutable.
+The only storage classification introduced after lowering is `read` for
+inputs and `write` for fresh outputs.
 
 The kernel lowers into the shared semantic C IR. Concrete frame lowering and
 the printable C AST are separate layers outside this theorem boundary; the
@@ -375,7 +374,6 @@ structure CertifiedKernel where
   regionsWellFormed : RegionsWellFormed regions
   inputsWellFormed : ∀ ty ∈ inputs, WellFormedTy ty
   outputWellFormed : WellFormedTy output
-  refinementBasis : RefinementExpr body
   stepsSound : steps body ≤ bounds.maxSteps
   outputSound : sizeOf output ≤ bounds.outputBytes
 
@@ -384,8 +382,8 @@ def CertifiedKernel.target (kernel : CertifiedKernel) :
   lower kernel.body
 
 theorem CertifiedKernel.target_refines
-    (kernel : CertifiedKernel) (env : Env) :
+    (kernel : CertifiedKernel) (basis : RefinementExpr kernel.body) (env : Env) :
     SemanticC.evalClosed kernel.target env = eval kernel.body env :=
-  lower_refines kernel.body kernel.refinementBasis env
+  lower_refines kernel.body basis env
 
 end Cortex.Wire.NativePure

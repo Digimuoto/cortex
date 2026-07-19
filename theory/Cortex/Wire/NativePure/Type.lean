@@ -1,5 +1,3 @@
-import Mathlib.Data.Int.Basic
-
 /-!
 ## NativePure representation types
 
