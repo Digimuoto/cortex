@@ -112,9 +112,10 @@ deferred to the final breaking migration.
 
 ## Traceability
 
-- Feature key: `wire.single_record_executor_boundary`
+- Feature keys: `wire.single_record_executor_boundary`
 - Production: `src/Cortex/Wire/{Compile,Executor,Pure,Runtime}.hs`
+- Authored surface: `src/Cortex/Wire/{Parser,Format,Syntax}.hs`
 - Package and capability: `src/Cortex/Wire/Package/Manifest.hs`,
   `src/Cortex/Capability/{Executor,Catalog/AdmissionProjection}.hs`
 - Tests: `test/Cortex/Wire/{Compile,Package,Runtime}Spec.hs`,
-  `test/Cortex/Capability/CatalogSpec.hs`
+  `test/Cortex/Wire/{Parser,Format}Spec.hs`, `test/Cortex/Capability/CatalogSpec.hs`

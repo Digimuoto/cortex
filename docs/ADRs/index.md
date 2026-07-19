@@ -136,7 +136,7 @@ is shown here.
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
   [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
   [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
-- **Circuit engine & hosted targets** (6):
+- **Circuit engine & hosted targets** (7):
   [0090](0090-computable-pulse-kernel-and-extraction-boundary.md),
   [0091](0091-lean-hosted-freestanding-wire-c-backend.md),
   [0092](0092-circuit-engine-runtime-host-boundary.md),
