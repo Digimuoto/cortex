@@ -1,5 +1,6 @@
-import Mathlib.Data.Int.Basic
 import Mathlib.Data.List.Nodup
+import Cortex.Wire.NativePure.Type
+import Cortex.Wire.SemanticC
 
 /-!
 ## NativePure v1 certified kernel
@@ -11,78 +12,15 @@ PureWire node yields one `CertifiedKernel`; cross-node fusion is deliberately
 deferred. Values are immutable. The only storage classification introduced
 after lowering is `read` for inputs and `write` for fresh outputs.
 
-The proof-local typed target calculus is a separate inductive that currently
-mirrors the source kernel constructor-for-constructor. It is not the shared
-semantic C IR or a printable C AST; those arrive in later epic slices.
-`lower` is total and `lower_refines` proves executable semantic preservation
+The kernel lowers into the shared semantic C IR. The printable C AST remains a
+separate later layer outside this theorem boundary. `lower` is total and
+`lower_refines` proves executable semantic preservation
 only for expressions carrying structural/checked-i64 basis evidence. Binary64
 values remain representable, but expressions containing them are explicitly
 outside that refinement theorem.
 -/
 
 namespace Cortex.Wire.NativePure
-
-abbrev Name := String
-
-/-- Closed, bounded crossing representation algebra. -/
-inductive Ty where
-  | unit
-  | bool
-  | i64
-  | u64
-  | f64
-  | text (capacity : Nat)
-  | vector (capacity : Nat) (element : Ty)
-  | record (fields : List (Name × Ty))
-  | sum (variants : List (Name × Ty))
-
-/-- A label/type pair occurs in a fixed record or sum description. -/
-inductive Member : Name → Ty → List (Name × Ty) → Type where
-  | head : Member name ty ((name, ty) :: rest)
-  | tail : Member name ty rest → Member name ty (other :: rest)
-
-/-- Signed integer whose constructor carries the checked-i64 invariant. -/
-structure I64 where
-  value : Int
-  lower : -(2 ^ 63 : Int) ≤ value
-  upper : value < (2 ^ 63 : Int)
-
-namespace I64
-
-def checked (value : Int) : Option I64 :=
-  if lower : -(2 ^ 63 : Int) ≤ value then
-    if upper : value < (2 ^ 63 : Int) then
-      some { value, lower, upper }
-    else none
-  else none
-
-def add (left right : I64) : Option I64 := checked (left.value + right.value)
-def sub (left right : I64) : Option I64 := checked (left.value - right.value)
-def mul (left right : I64) : Option I64 := checked (left.value * right.value)
-
-end I64
-
-/-- Unsigned integer whose constructor carries the uint64 invariant. -/
-structure U64 where
-  value : Nat
-  upper : value < 2 ^ 64
-
-/-- Erased runtime carrier. Expression indices are the typing authority. -/
-inductive Value where
-  | unit
-  | bool (value : Bool)
-  | i64 (value : I64)
-  | u64 (value : U64)
-  | f64 (value : Float)
-  | text (value : String)
-  | vector (values : List Value)
-  | record (fields : List (Name × Value))
-  | sum (label : Name) (payload : Value)
-
-/-- De Bruijn lookup proving that a variable has the requested type. -/
-inductive Var : List Ty → Ty → Type where
-  | zero : Var (ty :: context) ty
-  | succ : Var context ty → Var (other :: context) ty
 
 mutual
   /-- Tiny intrinsically typed PureWire kernel. -/
@@ -123,7 +61,7 @@ mutual
   /-- Representation types admitted by the structural/checked-i64 refinement
   theorem. Binary64 remains a layout type, but is validated separately. -/
   def RefinementTy : Ty → Prop
-    | .unit | .bool | .i64 | .u64 => True
+    | .unit | .bool | .u8 | .u32 | .i64 | .u64 => True
     | .f64 => False
     | .text _ => True
     | .vector _ element => RefinementTy element
@@ -157,22 +95,6 @@ mutual
     | .nil => True
     | .cons _ field rest => RefinementExpr field ∧ RefinementRecord rest
 end
-
-abbrev Env := List Value
-
-def lookup : Var context ty → Env → Option Value
-  | .zero, value :: _ => some value
-  | .succ slot, _ :: rest => lookup slot rest
-  | _, [] => none
-
-def memberName : Member name ty fields → Name
-  | .head => name
-  | .tail member => memberName member
-
-def recordGet : Member name ty fields → List (Name × Value) → Option Value
-  | .head, (_, value) :: _ => some value
-  | .tail member, _ :: rest => recordGet member rest
-  | _, [] => none
 
 mutual
   /-- Executable, deterministic, authority-free kernel semantics. -/
@@ -236,109 +158,11 @@ mutual
 
 end
 
-/-! ### Typed C subset -/
-
-namespace C
-
-mutual
-  inductive Expr : List Ty → Ty → Type where
-    | load : Var context ty → Expr context ty
-    | unit : Expr context .unit
-    | bool : Bool → Expr context .bool
-    | i64 : I64 → Expr context .i64
-    | u64 : U64 → Expr context .u64
-    | f64 : Float → Expr context .f64
-    | text
-        (value : String)
-        (bounded : value.toUTF8.size ≤ capacity) : Expr context (.text capacity)
-    | bind : Expr context bound → Expr (bound :: context) result → Expr context result
-    | branch : Expr context .bool → Expr context ty → Expr context ty → Expr context ty
-    | not : Expr context .bool → Expr context .bool
-    | and : Expr context .bool → Expr context .bool → Expr context .bool
-    | or : Expr context .bool → Expr context .bool → Expr context .bool
-    | checkedAdd : Expr context .i64 → Expr context .i64 → Expr context .i64
-    | checkedSub : Expr context .i64 → Expr context .i64 → Expr context .i64
-    | checkedMul : Expr context .i64 → Expr context .i64 → Expr context .i64
-    | eqI64 : Expr context .i64 → Expr context .i64 → Expr context .bool
-    | ltI64 : Expr context .i64 → Expr context .i64 → Expr context .bool
-    | struct : RecordExpr context fields → Expr context (.record fields)
-    | field : Expr context (.record fields) → Member name ty fields → Expr context ty
-    | tagged : Member label payload variants → Expr context payload → Expr context (.sum variants)
-
-  inductive RecordExpr : List Ty → List (Name × Ty) → Type where
-    | nil : RecordExpr context []
-    | cons
-        (name : Name)
-        (field : Expr context ty)
-        (rest : RecordExpr context fields) : RecordExpr context ((name, ty) :: fields)
-end
-
-mutual
-  def eval : C.Expr context ty → Env → Option Value
-    | .load slot, env => lookup slot env
-    | .unit, _ => some .unit
-    | .bool value, _ => some (.bool value)
-    | .i64 value, _ => some (.i64 value)
-    | .u64 value, _ => some (.u64 value)
-    | .f64 value, _ => some (.f64 value)
-    | .text value _, _ => some (.text value)
-    | .bind bound body, env => do
-        let value ← eval bound env
-        eval body (value :: env)
-    | .branch condition thenExpr elseExpr, env => do
-        let .bool selected ← eval condition env | none
-        if selected then eval thenExpr env else eval elseExpr env
-    | .not value, env => do
-        let .bool result ← eval value env | none
-        some (.bool (!result))
-    | .and left right, env => do
-        let .bool leftValue ← eval left env | none
-        let .bool rightValue ← eval right env | none
-        some (.bool (leftValue && rightValue))
-    | .or left right, env => do
-        let .bool leftValue ← eval left env | none
-        let .bool rightValue ← eval right env | none
-        some (.bool (leftValue || rightValue))
-    | .checkedAdd left right, env => do
-        let .i64 leftValue ← eval left env | none
-        let .i64 rightValue ← eval right env | none
-        .i64 <$> I64.add leftValue rightValue
-    | .checkedSub left right, env => do
-        let .i64 leftValue ← eval left env | none
-        let .i64 rightValue ← eval right env | none
-        .i64 <$> I64.sub leftValue rightValue
-    | .checkedMul left right, env => do
-        let .i64 leftValue ← eval left env | none
-        let .i64 rightValue ← eval right env | none
-        .i64 <$> I64.mul leftValue rightValue
-    | .eqI64 left right, env => do
-        let .i64 leftValue ← eval left env | none
-        let .i64 rightValue ← eval right env | none
-        some (.bool (leftValue.value == rightValue.value))
-    | .ltI64 left right, env => do
-        let .i64 leftValue ← eval left env | none
-        let .i64 rightValue ← eval right env | none
-        some (.bool (leftValue.value < rightValue.value))
-    | .struct fields, env => .record <$> evalRecord fields env
-    | .field record member, env => do
-        let .record fields ← eval record env | none
-        recordGet member fields
-    | .tagged member payload, env => .sum (memberName member) <$> eval payload env
-
-  def evalRecord : C.RecordExpr context fields → Env → Option (List (Name × Value))
-    | .nil, _ => some []
-    | .cons name field rest, env => do
-        let value ← eval field env
-        let values ← evalRecord rest env
-        some ((name, value) :: values)
-
-end
-
-end C
+/-! ### Shared typed semantic C IR lowering -/
 
 mutual
   /-- Total constructive source-to-C-IR lowering. -/
-  def lower : Expr context ty → C.Expr context ty
+  def lower : Expr context ty → SemanticC.Expr context ty
     | .var slot => .load slot
     | .unit => .unit
     | .bool value => .bool value
@@ -361,7 +185,7 @@ mutual
     | .project record member => .field (lower record) member
     | .inject member payload => .tagged member (lower payload)
 
-  def lowerRecord : RecordExpr context fields → C.RecordExpr context fields
+  def lowerRecord : RecordExpr context fields → SemanticC.RecordExpr context fields
     | .nil => .nil
     | .cons name field rest => .cons name (lower field) (lowerRecord rest)
 end
@@ -369,14 +193,23 @@ end
 /-- Structural and checked-i64 operations refine the executable source semantics. -/
 theorem lower_refines
     (expr : Expr context ty) (_basis : RefinementExpr expr) (env : Env) :
-    C.eval (lower expr) env = eval expr env := by
+    SemanticC.evalClosed (lower expr) env = eval expr env := by
   clear _basis
   revert env
   apply Expr.rec
-    (motive_1 := fun _ _ expr => ∀ env, C.eval (lower expr) env = eval expr env)
+    (motive_1 := fun _ _ expr => ∀ env,
+      SemanticC.evalClosed (lower expr) env = eval expr env)
     (motive_2 := fun _ _ fields => ∀ env,
-      C.evalRecord (lowerRecord fields) env = evalRecord fields env) <;>
-    simp_all [lower, lowerRecord, C.eval, C.evalRecord, eval, evalRecord]
+      SemanticC.evalClosedRecord (lowerRecord fields) env = evalRecord fields env) <;>
+    simp_all
+      [ lower
+      , lowerRecord
+      , SemanticC.evalClosed
+      , SemanticC.evalClosedRecord
+      , eval
+      , evalRecord
+      ]
+  all_goals intros; rfl
 
 /-! ### First-class bounds and minimal post-lowering regions -/
 
@@ -392,6 +225,8 @@ mutual
   def layout : Ty → Nat × Nat
     | .unit => (1, 1)
     | .bool => (1, 1)
+    | .u8 => (1, 1)
+    | .u32 => (4, 4)
     | .i64 => (8, 8)
     | .u64 => (8, 8)
     | .f64 => (8, 8)
@@ -455,6 +290,8 @@ mutual
   def WellFormedTy : Ty → Prop
     | .unit => True
     | .bool => True
+    | .u8 => True
+    | .u32 => True
     | .i64 => True
     | .u64 => True
     | .f64 => True
@@ -540,12 +377,13 @@ structure CertifiedKernel where
   stepsSound : steps body ≤ bounds.maxSteps
   outputSound : sizeOf output ≤ bounds.outputBytes
 
-def CertifiedKernel.target (kernel : CertifiedKernel) : C.Expr kernel.inputs kernel.output :=
+def CertifiedKernel.target (kernel : CertifiedKernel) :
+    SemanticC.Expr kernel.inputs kernel.output :=
   lower kernel.body
 
 theorem CertifiedKernel.target_refines
     (kernel : CertifiedKernel) (env : Env) :
-    C.eval kernel.target env = eval kernel.body env :=
+    SemanticC.evalClosed kernel.target env = eval kernel.body env :=
   lower_refines kernel.body kernel.refinementBasis env
 
 end Cortex.Wire.NativePure
