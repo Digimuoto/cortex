@@ -283,6 +283,15 @@ private def cKeywords : List String :=
   , "_Static_assert", "_Thread_local"
   ]
 
+/-- Names the rendered prelude itself introduces (`stdbool.h`, `stddef.h`,
+`stdint.h` macros and typedefs); authored identifiers must not collide. -/
+private def preludeNames : List String :=
+  [ "true", "false", "bool", "NULL", "offsetof", "size_t", "ptrdiff_t"
+  , "int8_t", "int16_t", "int32_t", "int64_t"
+  , "uint8_t", "uint16_t", "uint32_t", "uint64_t"
+  , "intptr_t", "uintptr_t"
+  ]
+
 private def asciiLetter (char : Char) : Bool :=
   ('a' ≤ char && char ≤ 'z') || ('A' ≤ char && char ≤ 'Z')
 
@@ -297,10 +306,32 @@ def validIdentifier (name : Name) : Bool :=
         rest.all (fun char => char == '_' || asciiLetter char || asciiDigit char) &&
           !cKeywords.contains name
 
+/-- Identifier rule for declaration positions. Expressions may reference
+reserved names (calling `__builtin_add_overflow` is deliberate), but declaring
+one would shadow the implementation or prelude namespace: identifiers starting
+with an underscore and an uppercase letter or with a double underscore are
+reserved (C11 7.1.3), and the prelude macro/typedef names would be redefined.
+-/
+def declarableIdentifier (name : Name) : Bool :=
+  validIdentifier name && !preludeNames.contains name &&
+    (match name.toList with
+     | '_' :: next :: _ => !(next == '_' || ('A' ≤ next && next ≤ 'Z'))
+     | [] => true
+     | [_] => true
+     | _ :: _ :: _ => true)
+
+private def isArrayType : CType → Bool
+  | .array _ _ | .namedArray _ _ | .unsizedArray _ => true
+  | .void | .bool | .char | .int | .u8 | .u32 | .u64 | .i64 | .f64 => false
+  | .named _ | .pointer _ _ => false
+
 private def typeValid : CType → Bool
   | .void | .bool | .char | .int | .u8 | .u32 | .u64 | .i64 | .f64 => true
   | .named name => validIdentifier name
-  | .pointer pointee _ => typeValid pointee
+  -- Pointer-to-array needs an inside-out declarator the renderer does not
+  -- produce; flattening it to pointer-to-element would silently change the
+  -- type, so it is rejected instead.
+  | .pointer pointee _ => !isArrayType pointee && typeValid pointee
   | .array capacity element => 0 < capacity && typeValid element
   | .namedArray capacity element => validIdentifier capacity && typeValid element
   | .unsizedArray element => typeValid element
@@ -311,12 +342,14 @@ private def exprValidFuel : Nat → Expr → Bool
       let valid := exprValidFuel fuel
       match expression with
       | .ident name => validIdentifier name
-      | .signed _ | .unsigned _ | .bool _ | .string _ | .character _ | .null => true
+      | .signed value => -(2 ^ 63) ≤ value && value < 2 ^ 63
+      | .unsigned value => value < 2 ^ 64
+      | .bool _ | .string _ | .character _ | .null => true
       | .unary _ value => valid value
       | .binary _ left right => valid left && valid right
       | .conditional condition thenExpr elseExpr =>
           valid condition && valid thenExpr && valid elseExpr
-      | .cast ty value => typeValid ty && valid value
+      | .cast ty value => typeValid ty && !isArrayType ty && valid value
       | .call function arguments => valid function && arguments.all valid
       | .field record name | .pointerField record name =>
           valid record && validIdentifier name
@@ -363,10 +396,24 @@ private def stmtValidFuel : Nat → Stmt → Bool
             exprValid condition && exprValid step && statementsValid body
       | .forever body => statementsValid body
       | .switch scrutinee cases defaultBody =>
+          -- C11 labels must precede statements: a declaration directly after a
+          -- `case`/`default` label (authors wrap one in a `.block`) and a
+          -- trailing empty case with no default are rejected rather than
+          -- rendered invalid.
+          let headNotDeclaration (body : List Stmt) : Bool :=
+            match body.head? with
+            | some (.local _) => false
+            | some _ => true
+            | none => true
           exprValid scrutinee &&
             cases.all (fun switchCase =>
-              exprValid switchCase.value && statementsValid switchCase.body) &&
-            statementsValid defaultBody
+              exprValid switchCase.value && statementsValid switchCase.body &&
+                headNotDeclaration switchCase.body) &&
+            statementsValid defaultBody && headNotDeclaration defaultBody &&
+            (!defaultBody.isEmpty ||
+              (match cases.getLast? with
+               | some lastCase => !lastCase.body.isEmpty
+               | none => true))
       | .returnValue value => exprValid value
       | .comment lines => lines.all safeComment
       | .returnVoid | .break | .continue | .trap => true
@@ -380,10 +427,10 @@ private def unique : List String → Bool
   | name :: rest => !rest.contains name && unique rest
 
 private def fieldNamesValid (fields : List Field) : Bool :=
-  fields.all (validIdentifier ·.name) && unique (fields.map (·.name))
+  fields.all (declarableIdentifier ·.name) && unique (fields.map (·.name))
 
 private def paramsValid (params : List Param) : Bool :=
-  params.all (validIdentifier ·.name) && unique (params.map (·.name))
+  params.all (declarableIdentifier ·.name) && unique (params.map (·.name))
 
 private def exportedNames (unit : TranslationUnit) : List Name :=
   (unit.globals.filter fun global : Global =>
@@ -399,6 +446,16 @@ private def declaredNames (unit : TranslationUnit) : List Name :=
     | .enumeration declaration => declaration.name
     | .structure declaration => declaration.name
     | .union declaration => declaration.name) ++
+  -- Enum members share the ordinary identifier namespace with functions and
+  -- globals, so they participate in top-level uniqueness.
+  (unit.orderedTypes.flatMap fun
+    | .enumeration declaration => declaration.members.map (·.name)
+    | .define _ _ => []
+    | .alias _ => []
+    | .functionAlias _ => []
+    | .structure _ => []
+    | .union _ => []) ++
+  unit.enums.flatMap (fun declaration => declaration.members.map (·.name)) ++
   unit.typedefs.map (·.name) ++ unit.functionTypedefs.map (·.name) ++
     unit.enums.map (·.name) ++ unit.structs.map (·.name) ++ unit.unions.map (·.name) ++
       unit.globals.map (·.name) ++ unit.functions.map (·.name)
@@ -422,8 +479,8 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
   if unit.localHeader.isEmpty || !safeInclude unit.localHeader then throw "invalid local header"
   if !unique (unit.defines.map Prod.fst ++ declaredNames unit) then
     throw "duplicate top-level C identifier"
-  if !(declaredNames unit).all validIdentifier then throw "invalid top-level C identifier"
-  if !unit.defines.all (validIdentifier ·.1) then throw "invalid preprocessor identifier"
+  if !(declaredNames unit).all declarableIdentifier then throw "invalid top-level C identifier"
+  if !unit.defines.all (declarableIdentifier ·.1) then throw "invalid preprocessor identifier"
   if !unique (unit.defines.map (·.1)) then throw "duplicate preprocessor identifier"
   if !unit.defines.all (exprValid ·.2) then throw "invalid preprocessor expression"
   if !unit.structs.all (fieldNamesValid ·.fields) then throw "invalid or duplicate struct field"
@@ -451,6 +508,12 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
         | .expression value => exprValid value
         | .list values => values.all exprValid) then
     throw "invalid global declaration"
+  -- An exported global with internal linkage (or an internal extern
+  -- declaration with no definition) has no coherent linkage in C11 6.2.2.
+  if !unit.globals.all (fun global =>
+      (global.visibility != Visibility.exported || global.storage != Storage.static) &&
+        (global.visibility != Visibility.internal || global.storage != Storage.extern)) then
+    throw "global storage contradicts its visibility"
   if !unit.functions.all (fun function : CFunction =>
       typeValid function.result && function.params.all (typeValid ·.ty) &&
         function.body.all statementsValid && function.comments.all safeComment) then
@@ -493,19 +556,43 @@ def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit :
     throw "invalid resource metadata"
   pure (.mk unit)
 
+private def octalDigit (value : Nat) : Char :=
+  Char.ofNat ('0'.toNat + value % 8)
+
+/-- Fixed-width three-digit octal escape: a following literal digit can never
+be absorbed into the escape, unlike `\0` or variable-width forms. -/
+private def octalEscape (value : Nat) : String :=
+  String.ofList ['\\', octalDigit (value / 64), octalDigit (value / 8), octalDigit value]
+
 private def escapeCChar : Char → String
   | '"' => "\\\""
   | '\\' => "\\\\"
   | '\n' => "\\n"
   | '\r' => "\\r"
   | '\t' => "\\t"
-  | '\x00' => "\\0"
   | '\x08' => "\\b"
   | '\x0c' => "\\f"
-  | char => String.singleton char
+  | char =>
+      if char.toNat < 0x20 || char.toNat == 0x7f then octalEscape char.toNat
+      else String.singleton char
 
+/-- Escape one char for a C character literal; a bare `'` must not close it.
+A char literal ends at the closing quote, so `\0` cannot absorb a following
+digit the way it can inside a string literal. -/
+private def escapeCCharLiteral (char : Char) : String :=
+  if char == '\'' then "\\'"
+  else if char == '\x00' then "\\0"
+  else escapeCChar char
+
+/-- String-literal escaping. The second `?` of every `??` pair is escaped so a
+conforming trigraph-processing translator cannot rewrite the literal. The
+tail-recursive fold keeps compiled evaluation stack-safe on long literals. -/
 def escapeC (value : String) : String :=
-  String.join (value.toList.map escapeCChar)
+  let step (state : String × Bool) (char : Char) : String × Bool :=
+    let (escaped, previousQuestion) := state
+    if char == '?' && previousQuestion then (escaped ++ "\\?", false)
+    else (escaped ++ escapeCChar char, char == '?')
+  (value.toList.foldl step ("", false)).1
 
 private def escapeJsonChar : Char → String
   | '"' => "\\\""
@@ -515,7 +602,13 @@ private def escapeJsonChar : Char → String
   | '\t' => "\\t"
   | '\x08' => "\\b"
   | '\x0c' => "\\f"
-  | char => String.singleton char
+  | char =>
+      if char.toNat < 0x20 then
+        let hexDigit (value : Nat) : Char :=
+          if value % 16 < 10 then Char.ofNat ('0'.toNat + value % 16)
+          else Char.ofNat ('a'.toNat + value % 16 - 10)
+        String.ofList ['\\', 'u', '0', '0', hexDigit (char.toNat / 16), hexDigit char.toNat]
+      else String.singleton char
 
 def escapeJson (value : String) : String :=
   String.join (value.toList.map escapeJsonChar)
@@ -675,14 +768,29 @@ private def renderExprFuel : Nat → Nat → Expr → String
       let rendered :=
         match expression with
         | .ident name => name
-        | .signed value => toString value
+        | .signed value =>
+            -- The magnitude of INT64_MIN is not a valid C11 constant; render
+            -- the standard subtraction form instead.
+            if value == -(2 ^ 63) then "(-9223372036854775807 - 1)"
+            else toString value
         | .unsigned value => s!"{value}u"
         | .bool true => "true"
         | .bool false => "false"
         | .string value => "\"" ++ escapeC value ++ "\""
-        | .character value => "'" ++ escapeCChar value ++ "'"
+        | .character value => "'" ++ escapeCCharLiteral value ++ "'"
         | .null => "NULL"
-        | .unary op value => unaryToken op ++ renderAt 14 value
+        | .unary op value =>
+            let token := unaryToken op
+            let operand := renderAt 14 value
+            -- A separating space keeps adjacent tokens from fusing into a
+            -- different operator: `- -x` must never render as `--x`.
+            let fuses :=
+              match token.toList.getLast?, operand.toList.head? with
+              | some tail, some head =>
+                  (tail == '-' && head == '-') || (tail == '+' && head == '+') ||
+                    (tail == '&' && head == '&')
+              | _, _ => false
+            token ++ (if fuses then " " else "") ++ operand
         | .binary op left right =>
             let precedence := binaryPrecedence op
             renderAt precedence left ++ " " ++ binaryToken op ++ " " ++
@@ -812,8 +920,14 @@ private def typeDeclVisibility : TypeDecl → Visibility
   | .structure declaration => declaration.visibility
   | .union declaration => declaration.visibility
 
+/-- Macro bodies below primary precedence are parenthesized so use-site
+context cannot re-associate the expansion. -/
+private def renderDefineBody (value : Expr) : String :=
+  if exprPrecedence value == 15 then renderExpr value
+  else "(" ++ renderExpr value ++ ")"
+
 private def renderTypeDecl : TypeDecl → String
-  | .define name value => "#define " ++ name ++ " " ++ renderExpr value ++ "\n\n"
+  | .define name value => "#define " ++ name ++ " " ++ renderDefineBody value ++ "\n\n"
   | .alias declaration => renderTypedef declaration
   | .functionAlias declaration => renderFunctionTypedef declaration
   | .enumeration declaration => renderEnum declaration
@@ -893,7 +1007,7 @@ def renderSource (validated : ValidatedTranslationUnit) : String :=
   "#include \"" ++ unit.localHeader ++ "\"\n" ++
     String.join (unit.includes.map fun header => "#include <" ++ header ++ ">\n") ++ "\n" ++
     String.join (unit.defines.map fun define =>
-      "#define " ++ define.1 ++ " " ++ renderExpr define.2 ++ "\n") ++
+      "#define " ++ define.1 ++ " " ++ renderDefineBody define.2 ++ "\n") ++
     (if unit.defines.isEmpty then "" else "\n") ++
     renderTypeDecls unit false ++
     String.join (unit.globals.map renderGlobal) ++
@@ -1040,6 +1154,89 @@ private def injectedIncludeRejected : Bool :=
   | .error _ => true
 
 example : injectedIncludeRejected = true := by
+  native_decide
+
+/-! ### Token-level and validation regression checks (epic review batch 3) -/
+
+example : renderExpr (.unary .negate (.unary .negate (.ident "x"))) = "- -x" := by
+  native_decide
+
+example : renderExpr (.unary .preIncrement (.unary .preIncrement (.ident "x"))) = "++ ++x" := by
+  native_decide
+
+example : renderExpr (.unary .address (.unary .address (.ident "x"))) = "& &x" := by
+  native_decide
+
+example : renderExpr (.unary .negate (.ident "x")) = "-x" := by
+  native_decide
+
+example : renderExpr (.signed (-9223372036854775808)) = "(-9223372036854775807 - 1)" := by
+  native_decide
+
+example : escapeC (String.ofList ['\x00', '7']) = "\\0007" := by
+  native_decide
+
+example : escapeC "??=" = "?\\?=" := by
+  native_decide
+
+example : renderExpr (.character '\'') = "'\\''" := by
+  native_decide
+
+example : declarableIdentifier "true" = false := by
+  native_decide
+
+example : declarableIdentifier "uint64_t" = false := by
+  native_decide
+
+example : declarableIdentifier "_Reserved" = false := by
+  native_decide
+
+example : declarableIdentifier "__reserved" = false := by
+  native_decide
+
+example : validIdentifier "__builtin_add_overflow" = true := by
+  native_decide
+
+private def exportedStaticGlobalRejected : Bool :=
+  match
+    validate
+      { smokeUnit with
+        globals :=
+          [ { name := "cortex_smoke_exported"
+            , ty := .u64
+            , storage := .static
+            , visibility := .exported } ] }
+  with
+  | .ok _ => false
+  | .error message => message == "global storage contradicts its visibility"
+
+example : exportedStaticGlobalRejected = true := by
+  native_decide
+
+private def hugeSignedLiteralRejected : Bool :=
+  match
+    validate { smokeUnit with defines := [("CORTEX_SMOKE_HUGE", .signed (2 ^ 100))] }
+  with
+  | .ok _ => false
+  | .error _ => true
+
+example : hugeSignedLiteralRejected = true := by
+  native_decide
+
+private def pointerToArrayRejected : Bool :=
+  match
+    validate
+      { smokeUnit with
+        globals :=
+          [ { name := "cortex_smoke_rows"
+            , ty := .pointer (.array 4 .u32) false
+            , storage := .extern
+            , visibility := .exported } ] }
+  with
+  | .ok _ => false
+  | .error _ => true
+
+example : pointerToArrayRejected = true := by
   native_decide
 
 end Cortex.Wire.C11
