@@ -30,6 +30,13 @@ differential suite are implemented. `StaticC.driveEngine_*` supplies the whole-d
 the differential corpus covers all DAGs through three nodes plus named and deterministic
 representatives through 32 nodes with adversarial lifecycle cases.
 
+**2026-07-19 implementation amendment.** The production `cortex-wire-c` compiler now builds the v1
+scheduler, ABI declarations, globals, and functions as a validated structured C11 translation unit.
+Source, header, and export inventory are rendered from that one representation. A validated
+whitespace-only compatibility layout preserves the published v1 artifact bytes exactly; it cannot
+inject, remove, or replace C tokens. The existing schemas, symbols, lifecycle behavior, target
+outputs, and four pinned artifact hashes remain unchanged.
+
 ## Context
 
 The earlier extraction direction treated the computable Track 2 Pulse kernel as an object library to
@@ -266,9 +273,12 @@ label the text emitter or C compiler as proved.
   `cortex_wire_program_v1_*` declarations
 - Implementation: `src/Cortex/Wire/StaticProgram.hs`, `src/Cortex/Wire/StaticDifferential.hs`,
   `app/wire/Main.hs`, `theory/Cortex/Wire/StaticC.lean`, `theory/CortexWireC.lean`,
+  `theory/Cortex/Wire/C11.lean`, `theory/Cortex/Wire/StaticCEmitter.lean`,
+  `theory/Cortex/Wire/StaticCEmitter/Unit.lean`, `theory/Cortex/Wire/StaticCEmitter/Layout.lean`,
   `theory/CortexWireDiff.lean`, `theory/lakefile.lean`, and `nix/lean.nix`
 - Tests: `test/Cortex/Wire/StaticProgramSpec.hs`, `test/Cortex/Wire/StaticDifferentialSpec.hs`,
   `test/fixtures/wire/static-program-v1/differential-harness.c`,
+  `test/fixtures/wire/static-program-v1/program.c.golden` and sibling v1 artifact goldens,
   `examples/wire/freestanding-two-node.wire`, the `cortex-wire-differential` three-way check, Lean
   build/lint gates, generated-C compile and symbol audits, and the consumer-owned wireOS two-node
   Microkit success/failure boot fixture
