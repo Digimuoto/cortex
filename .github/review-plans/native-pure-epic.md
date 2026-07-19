@@ -27,7 +27,7 @@ Signed-off-by: ...
       native-shape bounds/layout, exclusive-sum typing, strict registry admission, crossing
       evidence, and rejection diagnostics. Command: `just review-commits 0542a4d-2da32a7`
 
-- [ ] `e1269ae-f0d2e6d` — executable Lean kernel and compatible one-record executor substrate.
+- [x] `e1269ae-f0d2e6d` — executable Lean kernel and compatible one-record executor substrate.
       Historical PRs: [#388](https://github.com/Digimuoto/cortex/pull/388) and
       [#389](https://github.com/Digimuoto/cortex/pull/389). Focus: theorem boundary, checked-i64
       claims, static metadata versus runtime argument evaluation, `argument_shape` validation order,
