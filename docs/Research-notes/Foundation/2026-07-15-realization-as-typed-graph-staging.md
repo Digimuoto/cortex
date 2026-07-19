@@ -29,13 +29,13 @@ nested realization, and the final proof architecture.
 
 ---
 
-## Proposed implementation outcome
+## Implementation outcome
 
-ADR 0096 proposes the memo's admitted-Circuit referent, strict typed boundary, normalized domain
-plan, realization witness, and constructive compiler-spine recommendations for NativePure. Issue
-#382 tracks the implementation: maximal eligible pure regions become witnessed quotient units, while
-the broader cross-domain staging-role model, authored or nested boundaries, build/bind protocol, and
-general quotient-realizer API remain research directions.
+ADR 0096 adopts the memo's admitted-Circuit referent, strict typed boundary, normalized domain plan,
+realization witness, and constructive compiler-spine recommendations for the first NativePure
+profile. That profile deliberately realizes one authored pure node per certified kernel. The broader
+cross-domain staging-role model, maximal region fusion, build/bind protocol, and general quotient
+realizer API remain research directions rather than implemented NativePure behavior.
 
 ## Context
 

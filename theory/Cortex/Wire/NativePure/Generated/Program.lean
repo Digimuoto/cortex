@@ -4,7 +4,7 @@ import Cortex.Wire.NativePure.C.Engine
 Generated from `cortex.wire.native-pure-plan/v1` by
 `Cortex.Wire.NativePure.Lean`. The Haskell compiler owns the normalized
 plan; Lean checks these intrinsically typed terms before C rendering.
-Plan digest: `4a71ca86acd3fd737e65e6078129b8fdad3752d369340f909cbb9543985615b7`.
+Plan digest: `dd728d0ed625b900d5f32f96bcd7b70e33283477784652d0a1a35e68b52e6a78`.
 GENERATED FILE - do not edit by hand.
 -/
 
@@ -72,8 +72,8 @@ def native_pure_region_0000Rendered : Cortex.Wire.C11.RenderedArtifacts :=
   native_pure_region_0000RenderedResult.toOption.get (by native_decide)
 
 def engineProgram : Engine.Program :=
-  { identity := "5616d40b3beb40dd42d211738f1512bd24e3415b1fa5ca37026458491287e742"
-  , planDigest := "4a71ca86acd3fd737e65e6078129b8fdad3752d369340f909cbb9543985615b7"
+  { identity := "a1e9c6eb1a9a64aa7847eb78a6c027e3d21433cdad0392efe20e9f741fa12d55"
+  , planDigest := "dd728d0ed625b900d5f32f96bcd7b70e33283477784652d0a1a35e68b52e6a78"
   , regions :=
       [
         { unitId := 0, dispatchName := "native_pure_region_0000_dispatch" }
@@ -99,7 +99,7 @@ private def writeArtifacts
 def writeAllArtifacts (directory : String) : IO Unit := do
   IO.FS.createDirAll directory
   writeArtifacts directory "native_pure_region_0000" native_pure_region_0000Rendered
-  writeArtifacts directory "cortex_np_engine_4a71ca86acd3fd73" engineRendered
+  writeArtifacts directory "cortex_np_engine_dd728d0ed625b900" engineRendered
 
 end Cortex_Wire_NativePure_Generated_Program
 end Cortex.Wire.NativePure.Generated

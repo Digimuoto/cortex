@@ -14,14 +14,14 @@ contract FriendGraph;
 contract Dashboard;
 
 node receive_request
-  -> uid: UserId = @http.receive_dashboard_request ({});
+  -> uid: UserId = @http.receive_dashboard_request;
 
 node fetch_user
-  <- uid: UserId;
-  -> user: UserProfile = @http.fetch_user (uid);
+  <- uid: UserId
+  -> user: UserProfile = @http.fetch_user uid;
 
 node prepare_dashboard
-  <- user: UserProfile;
+  <- user: UserProfile
   -> profile: ProfileSummary = {
     id = user.id;
     name = user.name;
@@ -36,24 +36,24 @@ node prepare_dashboard
   };
 
 node fetch_posts
-  <- posts_req: PostsRequest;
-  -> posts: PostsFeed = @http.fetch_posts (posts_req);
+  <- posts_req: PostsRequest
+  -> posts: PostsFeed = @http.fetch_posts posts_req;
 
 node fetch_friends
-  <- friends_req: FriendsRequest;
-  -> friends: FriendGraph = @http.fetch_friends (friends_req);
+  <- friends_req: FriendsRequest
+  -> friends: FriendGraph = @http.fetch_friends friends_req;
 
 node assemble
-  <- profile: ProfileSummary;
-  <- posts: PostsFeed;
-  <- friends: FriendGraph;
-  -> dashboard: Dashboard = @dashboard.assemble ({
+  <- profile: ProfileSummary
+  <- posts: PostsFeed
+  <- friends: FriendGraph
+  -> dashboard: Dashboard = @dashboard.assemble {
     inherit profile posts friends;
-  });
+  };
 
 node respond
-  <- dashboard: Dashboard;
-  = @http.respond_dashboard (dashboard);
+  <- dashboard: Dashboard
+  = @http.respond_dashboard dashboard;
 
 receive_request
   => fetch_user

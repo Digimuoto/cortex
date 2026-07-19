@@ -3,11 +3,11 @@
 use std.io.{@command, @stdout, CommandResult};
 
 node first
-  -> result: CommandResult = @command {} (null);
+  -> result: CommandResult = @command;
 
 node second
-  <- result: CommandResult;
-  = @stdout {} (result);
+  <- result: CommandResult
+  = @stdout result;
 
 first
   => second

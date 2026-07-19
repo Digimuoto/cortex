@@ -37,18 +37,19 @@ are runtime/contract concepts, not a current public Haskell root.
 
 A single Wire value often wears multiple hats. The roles are:
 
-| Role                          | What it is                                                                                 | Examples                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| **Executor**                  | Registered recipe. Turns config + typed inputs into typed outputs. Referenced via `@name`. | `@review.analyst`, `@artifact.log`, `@cortex.report_run`                          |
-| **Configured executor value** | Executor plus inert config, reusable in node bodies. Not a graph vertex.                   | `@review.gatherer { memory = topological { preset = "causal"; }; }`               |
-| **Node**                      | Explicit graph vertex with typed input/output ports and an implementation body.            | `node analyst <- evidence: EvidenceBundle; -> analysis: AnalysisFragment; = ...;` |
-| **Composed wire**             | Result of applying a graph operator. Has a derived boundary.                               | `planner => gatherer => analyst`                                                  |
-| **Runtime wrapper**           | A node whose role is to host a whole wire and provide runtime services.                    | `@cortex.report_run { title = ...; }`                                             |
+| Role                         | What it is                                                                               | Examples                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Executor**                 | Registered recipe. Turns one record argument into typed outputs. Referenced via `@name`. | `@review.analyst`, `@artifact.log`, `@cortex.report_run`                        |
+| **Executor authority value** | Bare `@executor` authority. Not a graph vertex; runs only through an explicit node body. | `@review.gatherer`                                                              |
+| **Node**                     | Explicit graph vertex with typed input/output ports and an implementation body.          | `node analyst <- evidence: EvidenceBundle -> analysis: AnalysisFragment = ...;` |
+| **Composed wire**            | Result of applying a graph operator. Has a derived boundary.                             | `planner => gatherer => analyst`                                                |
+| **Runtime wrapper**          | A node whose role is to host a whole wire and provide runtime services.                  | `@cortex.report_run { title = ...; }`                                           |
 
-The leading `@` marks the executor-authority boundary. It stages a registered executor with pure
-config data; it does not run the executor. Wire-authored CorePure output equations are written
-directly without `@`; they lower to the native pure evaluator inside the admitted Wire semantics.
-See [Reference/Wire/executors-and-alphabet.md](Reference/Wire/executors-and-alphabet.md).
+The leading `@` marks the executor-authority boundary. An executor authority is a bare value; it
+receives its single record argument at the call inside a node body, and compiler controls live in
+the node's `with` record. Wire-authored CorePure output equations are written directly without `@`;
+they lower to the native pure evaluator inside the admitted Wire semantics. See
+[Reference/Wire/executors-and-alphabet.md](Reference/Wire/executors-and-alphabet.md).
 
 ## Artifacts a contract can carry
 

@@ -138,12 +138,14 @@ set, so that reordering ports (exchange) is definitional rather than an imposed 
 Four registered nodes; bodies elided, boundaries shown:
 
 ```wire
-node source  -> src: Sources;
-node config  -> cfg: BuildConfig;
-node build   <- src: Sources;  <- cfg: BuildConfig;
-             -> bin: Binary;   -> log: BuildLog;
-node package <- bin: Binary;   -> pkg: Package;
-
+node source -> src: Sources
+node config -> cfg: BuildConfig
+node build
+  <- src: Sources
+  <- cfg: BuildConfig
+  -> bin: Binary
+  -> log: BuildLog
+node package <- bin: Binary -> pkg: Package
 source <> config => build => package
 ```
 

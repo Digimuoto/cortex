@@ -21,11 +21,6 @@ This page defines the canonical style for authored Wire source. The grammar refe
 parses; this page defines what Cortex examples, docs snippets, fixtures, and future formatters
 should produce.
 
-The parser currently accepts the forthcoming compact clause and one-record executor surface in
-addition to this legacy canonical style. The formatter does not recanonicalize the repository to
-that surface until the final breaking migration; this keeps the compatibility PR byte-stable for
-existing examples and packages.
-
 ## Semicolons
 
 Semicolons are terminators or separators. They are not operator tokens.
@@ -161,7 +156,7 @@ Use two spaces inside node declarations, `where let` blocks, records, and lists:
 
 ```wire
 node summarize
-  <- input: BuildReport;
+  <- input: BuildReport
   -> summary: Text = summary;
   where let
     ok = input.ok;
@@ -186,7 +181,7 @@ non-whitespace token on that line:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = accepted;
 ```
 
@@ -198,14 +193,14 @@ Keep executor authority visible at the implementation boundary:
 use std.io.{@stdin};
 
 node read_mode
-  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
+  -> answer: UserInput = @stdin { cfg = { prompt = "Planning mode (high/safe): "; }; };
 ```
 
 Write CorePure output expressions directly:
 
 ```wire
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter (item: item.score >= 0.7);
 ```
 

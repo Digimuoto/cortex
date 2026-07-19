@@ -44,8 +44,8 @@ inspected, resumed, coordinated across workers, or operated after the process th
 ## Boundaries
 
 Local `wire run` recognizes the standard IO executors listed in
-[Executors and alphabet](../Reference/Wire/executors-and-alphabet.md). It rejects configured
-executors and generated durable-only nodes instead of pretending to run them.
+[Executors and alphabet](../Reference/Wire/executors-and-alphabet.md). It rejects
+consumer-configured executors and generated durable-only nodes instead of pretending to run them.
 
 The stock `cortex-pulse` binary is useful for checking runtime wiring, health behavior, and CLI
 configuration, but it has an empty task registry. A useful durable deployment normally links Cortex

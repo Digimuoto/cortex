@@ -28,7 +28,7 @@ contract EvidenceSet;
 export let acceptedItem = item: item.score >= 0.7;
 
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter acceptedItem;
 
 classify
@@ -95,7 +95,7 @@ directly importable; expose a node by binding it:
 
 ```wire
 node planner
-  -> plan: PlannerOutput = @review.planner ({});
+  -> plan: PlannerOutput = @review.planner;
 
 export let exported_planner = planner;
 ```

@@ -1053,7 +1053,7 @@
 
         cortex-native-pure-generated-fixture "$artifacts"
         region="native_pure_region_0000"
-        engine="cortex_np_engine_4a71ca86acd3fd73"
+        engine="cortex_np_engine_dd728d0ed625b900"
         jq -e '.schema == "cortex.wire.native-pure-c/v1"' \
           "$artifacts/$region.manifest.json" >/dev/null
         jq -e '.schema == "cortex.wire.native-pure-engine/v2"

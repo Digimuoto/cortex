@@ -162,7 +162,20 @@ def add_line_errors(
     arrow_matches = list(re.finditer(r"<-|->", code_line))
     if arrow_matches:
         stripped = code_line.lstrip(" \t")
-        if not (stripped.startswith("<-") or stripped.startswith("->")):
+        compact_node = (
+            stripped.startswith("node ")
+            and len(raw_line) <= 100
+            and stripped.count("<-") <= 1
+            and stripped.count("->") <= 1
+            and "=" in stripped
+            and stripped.rstrip().endswith(";")
+            and "|" not in stripped
+            and " where " not in stripped
+            and " with " not in stripped
+        )
+        if compact_node:
+            pass
+        elif not (stripped.startswith("<-") or stripped.startswith("->")):
             column = arrow_matches[0].start() + 1
             errors.append(
                 f"{rel(path)}:{line_number}:{column}: port arrow must start its own node-body line"

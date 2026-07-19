@@ -60,10 +60,10 @@ twoNodeSource :: Text
 twoNodeSource =
   "use std.io.{@command, @stdout, CommandResult};\n\
   \node first\n\
-  \  -> result: CommandResult = @command {} (null);\n\
+  \  -> result: CommandResult = @command;\n\
   \node second\n\
-  \  <- result: CommandResult;\n\
-  \  = @stdout {} (result);\n\
+  \  <- result: CommandResult\n\
+  \  = @stdout result;\n\
   \first => second\n"
 
 pureSource :: Text

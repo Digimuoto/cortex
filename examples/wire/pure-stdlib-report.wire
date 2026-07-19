@@ -49,7 +49,7 @@ node make_seed
   -> seed: Seed = "demo";
 
 node render_report
-  <- seed: Seed;
+  <- seed: Seed
   -> print_summary: Report = summary;
   -> write_summary: Report = summary;
   where let
@@ -57,12 +57,12 @@ node render_report
   in { inherit summary; };
 
 node print_report
-  <- print_summary: Report;
-  = @stdout { newline = true; } (print_summary);
+  <- print_summary: Report
+  = @stdout { payload = print_summary; cfg = { newline = true; }; };
 
 node write_report
-  <- write_summary: Report;
-  = @writeFile { path = "./wire-stdlib-report.md"; } (write_summary);
+  <- write_summary: Report
+  = @writeFile { payload = write_summary; cfg = { path = "./wire-stdlib-report.md"; }; };
 
 make_seed
   => render_report

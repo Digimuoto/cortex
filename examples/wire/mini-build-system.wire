@@ -13,10 +13,10 @@ contract BuildTarget;
 contract BuildReport;
 
 node read_target
-  -> target: BuildTarget = @stdin { prompt = "Build target (release/docs/dev): "; } (null);
+  -> target: BuildTarget = @stdin { cfg = { prompt = "Build target (release/docs/dev): "; }; };
 
 node plan_build
-  <- target: BuildTarget;
+  <- target: BuildTarget
   -> compileSpec: CommandSpec = compileSpec;
   -> testSpec: CommandSpec = testSpec;
   -> docsSpec: CommandSpec = docsSpec;
@@ -64,26 +64,26 @@ node plan_build
   { inherit compileSpec testSpec docsSpec lintSpec; };
 
 node compile_check
-  <- compileSpec: CommandSpec;
-  -> compile: CommandResult = @command {} (compileSpec);
+  <- compileSpec: CommandSpec
+  -> compile: CommandResult = @command compileSpec;
 
 node test_check
-  <- testSpec: CommandSpec;
-  -> test: CommandResult = @command {} (testSpec);
+  <- testSpec: CommandSpec
+  -> test: CommandResult = @command testSpec;
 
 node docs_check
-  <- docsSpec: CommandSpec;
-  -> docs: CommandResult = @command {} (docsSpec);
+  <- docsSpec: CommandSpec
+  -> docs: CommandResult = @command docsSpec;
 
 node lint_check
-  <- lintSpec: CommandSpec;
-  -> lint: CommandResult = @command {} (lintSpec);
+  <- lintSpec: CommandSpec
+  -> lint: CommandResult = @command lintSpec;
 
 node summarize_build
-  <- compile: CommandResult;
-  <- test: CommandResult;
-  <- docs: CommandResult;
-  <- lint: CommandResult;
+  <- compile: CommandResult
+  <- test: CommandResult
+  <- docs: CommandResult
+  <- lint: CommandResult
   -> summary: BuildReport = summary;
   where let
     checks = [compile, test, docs, lint];
@@ -104,8 +104,8 @@ node summarize_build
   { inherit summary; };
 
 node print_report
-  <- summary: BuildReport;
-  = @stdout { newline = true; } (summary);
+  <- summary: BuildReport
+  = @stdout { payload = summary; cfg = { newline = true; }; };
 
 read_target
   => plan_build

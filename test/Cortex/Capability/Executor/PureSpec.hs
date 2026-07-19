@@ -176,7 +176,6 @@ spec = describe "Cortex.Capability.Executor.Pure" $ do
       pureCompileEnv
       (pureSumProgram "let accepted = x: x; in accepted evidence_score")
       `shouldSatisfy` leftContains "constructor label accepted is shadowed"
-
   it "rejects invalid pure port declarations before binding a stage" $
     case bindPureTaskNode (Just floatContractRegistry) noOutputTaskNode of
       Left err ->
@@ -331,8 +330,8 @@ pureSourceText :: Text
 pureSourceText =
   T.unlines
     [ "node score"
-    , "  <- evidence_score: Float ;"
-    , "  <- recency_score: Float ;"
+    , "  <- evidence_score: Float "
+    , "  <- recency_score: Float "
     , "  -> out: Float = evidence_score + recency_score ;"
     , "score"
     ]
@@ -345,7 +344,7 @@ pureSumProgram :: Text -> Text
 pureSumProgram bodyExpr =
   T.unlines
     [ "node classify"
-    , "  <- evidence_score: Float ;"
+    , "  <- evidence_score: Float"
     , "  -> accepted: Float | rejected: Float = " <> bodyExpr <> ";"
     , "classify"
     ]
