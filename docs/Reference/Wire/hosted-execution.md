@@ -47,6 +47,25 @@ The manifest schema is `cortex.wire.hosted-program-manifest/v1`; the target is
 `cortex.wire.target/x86_64-linux-v1`, the target triple is `x86_64-unknown-linux-gnu`, the engine
 ABI is `cortex.wire.engine/v1`, and the process protocol is `cortex.wire.host-process/v1`.
 
+## NativePure compiler bridge (epic preview)
+
+The additive NativePure work has a compiler-owned proof hand-off:
+
+```text
+wire --wire-package PACKAGE.toml build \
+  --target native-pure-lean-v1 --output DIR [--return NAME] FILE
+```
+
+It requires strict contract projections with `native_shape`. The output is `native-pure-input.json`,
+`native-pure-plan.json`, and `Program.lean`. Haskell owns source elaboration, admission, maximal
+fusion, typed ANF, bounds, and realization witnesses; the generated Lean module reifies that
+validated plan as intrinsically typed kernel terms. Lean then derives each authority-free region
+translation unit and a separate `cortex.wire.native-pure-engine/v2` checkpoint-gated dispatch unit
+through the shared structured C renderer.
+
+This target is an epic validation surface, not a generally available hosted-v2 executable. It does
+not alter the v1 command, schemas, engine ABI, or host-process protocol described by this page.
+
 `loadHostedProgramArtifact` is the only constructor for `HostedProgramArtifact`. It validates the
 manifest and target, requires a safe relative executable name, checks a regular executable file, and
 recomputes the SHA-256 digest. A caller must load the artifact again when resuming; Pulse does not

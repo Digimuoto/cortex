@@ -724,6 +724,23 @@ buildRegion sourceRelation candidateMap connections index members = do
         (candidateRegionOutputs candidateMap (Set.fromList outputEndpoints))
         candidates
   ssa <- traverse (buildSsaStep regionRef candidateMap internalConnections inputEndpoints) members
+  targetSteps <- nativePureRegionTargetSteps regionRef ssa regionOutputs
+  (realizedOutputBytes, realizedCheckpointBytes) <-
+    nativePureRegionFrameBounds regionRef inputBoundaries regionOutputs
+  let realizedBounds =
+        bounds
+          { nativePureBoundOutputBytes =
+              max bounds.nativePureBoundOutputBytes realizedOutputBytes
+          , nativePureBoundCheckpointBytes =
+              max bounds.nativePureBoundCheckpointBytes realizedCheckpointBytes
+          , nativePureBoundSteps = max bounds.nativePureBoundSteps targetSteps
+          }
+  when (realizedBounds.nativePureBoundCheckpointBytes > hostedCheckpointCeiling) $
+    Left
+      ( NativePureArtifactCheckpointTooLarge
+          regionRef
+          realizedBounds.nativePureBoundCheckpointBytes
+      )
   let region =
         NativePureFusedRegion
           { nativePureFusedRegionRef = regionRef
@@ -735,7 +752,7 @@ buildRegion sourceRelation candidateMap connections index members = do
               | connection <- List.sort internalConnections
               ]
           , nativePureFusedRegionSsa = ssa
-          , nativePureFusedRegionBounds = bounds
+          , nativePureFusedRegionBounds = realizedBounds
           }
   validateSsa region
   let induced = inducedSubgraph memberSet sourceRelation
@@ -748,6 +765,120 @@ buildRegion sourceRelation candidateMap connections index members = do
         (Left (NativePureArtifactMissingSourceProvenance source))
         Right
         (Map.lookup source candidateMap)
+
+{- | Exact worst-case cost of the intrinsically typed target term constructed
+from a fused region's ANF. Fusion introduces explicit lets and output-record
+construction that do not exist in the authored CorePure expression, so the
+realization artifact owns this post-elaboration bound rather than allowing
+the downstream Lean renderer to silently raise it.
+-}
+nativePureRegionTargetSteps
+  :: Text
+  -> [NativePureSsaStep]
+  -> [NativePureRegionOutput]
+  -> Either NativePureArtifactError Word64
+nativePureRegionTargetSteps regionRef ssa outputs = do
+  perBinding <- traverse bindingTargetSteps (concatMap stepBindings ssa)
+  bindingSteps <- sumChecked perBinding
+  addChecked bindingSteps outputSteps
+  where
+    outputSteps
+      | length outputs <= 1 = 1
+      | otherwise = 1 + fromIntegral (length outputs)
+
+    stepBindings step =
+      step.nativePureSsaStepPrelude
+        <> concatMap equationBindings step.nativePureSsaStepEquations
+
+    equationBindings equation =
+      equation.nativePureSsaEquationAnf.nativePureAnfBlockBindings
+        <> [ NativePureAnfBinding
+               equation.nativePureSsaEquationValue
+               equation.nativePureSsaEquationShape
+               (NativePureAnfAlias equation.nativePureSsaEquationAnf.nativePureAnfBlockResult)
+           | equation.nativePureSsaEquationAnf.nativePureAnfBlockResult
+               /= equation.nativePureSsaEquationValue
+           ]
+
+    bindingTargetSteps binding = do
+      operation <- operationTargetSteps binding.nativePureAnfBindingOp
+      addChecked 1 operation
+
+    operationTargetSteps = \case
+      NativePureAnfLiteral {} -> pure 1
+      NativePureAnfAlias {} -> pure 1
+      NativePureAnfRecord fields -> addChecked 1 (fromIntegral (Map.size fields))
+      NativePureAnfProject {} -> pure 2
+      NativePureAnfNot {} -> pure 2
+      NativePureAnfBinary {} -> pure 3
+      NativePureAnfIf _ thenBlock elseBlock -> do
+        thenSteps <- blockTargetSteps thenBlock
+        elseSteps <- blockTargetSteps elseBlock
+        addChecked 2 (max thenSteps elseSteps)
+      NativePureAnfInject {} -> pure 2
+
+    blockTargetSteps block = do
+      perBinding <- traverse bindingTargetSteps block.nativePureAnfBlockBindings
+      bindings <- sumChecked perBinding
+      addChecked bindings 1
+
+    sumChecked = foldM addChecked 0
+    addChecked left right =
+      maybe
+        (Left (NativePureArtifactBoundsOverflow regionRef))
+        Right
+        (checkedAdd left right)
+
+nativePureRegionFrameBounds
+  :: Text
+  -> [NativePureRegionBoundary]
+  -> [NativePureRegionOutput]
+  -> Either NativePureArtifactError (Word64, Word64)
+nativePureRegionFrameBounds regionRef inputs outputs = do
+  outputLayout <- layoutFor (outputShape outputs)
+  if null inputs
+    then pure (outputLayout.nativeLayoutSize, outputLayout.nativeLayoutSize)
+    else do
+      inputLayout <-
+        layoutFor (NativeRecord (indexedShapes (fmap (.nativePureRegionBoundaryShape) inputs)))
+      outputOffset <- alignChecked inputLayout.nativeLayoutSize outputLayout.nativeLayoutAlignment
+      unaligned <-
+        maybe
+          (Left (NativePureArtifactBoundsOverflow regionRef))
+          Right
+          (checkedAdd outputOffset outputLayout.nativeLayoutSize)
+      checkpoint <-
+        alignChecked unaligned (max inputLayout.nativeLayoutAlignment outputLayout.nativeLayoutAlignment)
+      pure (outputLayout.nativeLayoutSize, checkpoint)
+  where
+    layoutFor shape =
+      either
+        (Left . NativePureArtifactInvalidBoundary . renderNativeShapeError)
+        Right
+        (nativeShapeLayout shape)
+
+    outputShape = \case
+      [] -> NativeUnit
+      [output] -> outputRegionShape output
+      regionOutputs -> NativeRecord (indexedShapes (fmap outputRegionShape regionOutputs))
+
+    outputRegionShape = \case
+      NativePureRegionProductField boundary -> boundary.nativePureRegionBoundaryShape
+      NativePureRegionExclusiveSum boundary -> boundary.nativePureRegionSumShape
+
+    indexedShapes shapes =
+      Map.fromList
+        [ ("field_" <> T.justifyRight 4 '0' (T.pack (show fieldIndex)), shape)
+        | (fieldIndex, shape) <- zip [0 :: Int ..] shapes
+        ]
+
+    alignChecked value alignment = do
+      let remainder = value `mod` alignment
+          padding = if remainder == 0 then 0 else alignment - remainder
+      maybe
+        (Left (NativePureArtifactBoundsOverflow regionRef))
+        Right
+        (checkedAdd value padding)
 
 candidateRegionOutputs
   :: Map CircuitNodeRef NativePureKernelCandidate

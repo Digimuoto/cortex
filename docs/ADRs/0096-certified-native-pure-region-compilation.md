@@ -57,9 +57,16 @@ projections, exclusive sums, and bit-preserving binary64 identity. Clang and GCC
 ASan/UBSan/bounds sanitizers, bare AArch64 compilation, export/undefined-symbol checks, and
 TLS/constructor/writable-executable section gates run from one Nix check. The structural and
 checked-i64 Lean traces are computed by the executable typed evaluator rather than copied expected
-strings. This is not yet the generally available NativePure execution profile: production
-normalized-plan decoding into the Lean kernel and a generated v2 C engine that dispatches the
-emitted typed region functions remain open integration work.
+strings. The production compiler bridge now validates the normalized plan, renders its typed ANF as
+intrinsically typed Lean kernel terms, and lets Lean derive both dispatchable region artifacts and a
+checkpoint-gated v2 engine translation unit. The generated engine has no host or worker authority;
+its state machine requires predecessor-checkpoint acknowledgement before pure dispatch and
+pure-result acknowledgement before a downstream effect. A hermetic fixture proves that the Wire CLI
+output is byte-identical to the checked Lean module, compiles the resulting region and engine C with
+strict host compilers, executes the checkpoint protocol under sanitizers, and audits the combined
+bare-AArch64 object. This is still not a generally available NativePure runtime profile:
+artifact-to-kernel correspondence beyond the executable construction gate and final hosted-v2
+product integration remain open.
 
 ## Context
 
@@ -172,20 +179,22 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
 
 - Feature keys: `wire.native_pure_compilation`
 - Public surface: `Cortex.Wire.NativePure.Shape`, `Cortex.Wire.NativePure.Admission`,
-  `Cortex.Wire.NativePure.Artifact`, `docs/Reference/Wire/contracts-ports-and-matching.md`
+  `Cortex.Wire.NativePure.Artifact`, `Cortex.Wire.NativePure.Lean`,
+  `docs/Reference/Wire/contracts-ports-and-matching.md`
 - Implementation: `src/Cortex/Wire/NativePure/Shape.hs` (versioned bounded shape algebra and fixed
   layout calculation), `src/Cortex/Wire/Contracts.hs` and `src/Cortex/Wire/Package/Manifest.hs`
   (additive contract projection and manifest decoding), and
   `src/Cortex/Wire/NativePure/Admission.hs` (strict candidate admission, typed expression checks,
   storage regions, and resource bounds), and `src/Cortex/Wire/NativePure/Artifact.hs` (normalized
   input, maximal and unfused diagnostic realization, typed ANF/SSA, witnessed quotient, validation,
-  and stable digests), and `src/Cortex/Wire/NativePure/Scheduler.hs` (additive v2 specialization,
+  and stable digests), `src/Cortex/Wire/NativePure/Lean.hs` (validated plan to intrinsically typed
+  Lean module bridge), and `src/Cortex/Wire/NativePure/Scheduler.hs` (additive v2 specialization,
   checkpoint acknowledgement, synchronous pure execution, persisted selection/rejoin state, restore,
   cancellation, and bounded hosted messages)
 - Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
   `test/Cortex/Wire/NativePureAdmissionSpec.hs`, `test/Cortex/Wire/NativePureSchedulerSpec.hs`,
-  `test/Cortex/Wire/NativePureDifferentialSpec.hs`, and the `cortex-native-pure-differential` Nix
-  check
+  `test/Cortex/Wire/NativePureDifferentialSpec.hs`, and the `cortex-native-pure-differential` and
+  `cortex-native-pure-generated` Nix checks
 - Theory/proof: `theory/Cortex/Wire/NativePure/Type.lean` owns the shared bounded value algebra;
   `theory/Cortex/Wire/SemanticC.lean` defines the shared typed expression/statement/function IR,
   storage model, bounded control flow, calls, failures, and executable semantics;
@@ -196,22 +205,25 @@ worker registration, cancellation, deadline, and terminal-authority invariants r
   structural/checked-i64 refinement, canonical-label discipline, padding-aware layouts, resource
   evidence, and read/write-region well-formedness; `theory/Cortex/Wire/NativePure/C.lean` lowers the
   shared semantic IR into concrete authority-free frame functions and validated C11 artifacts, while
-  `theory/Cortex/Wire/NativePure/C/Unit.lean` checks scalar, overflow, layout, and tagged-sum
-  construction; and `theory/Cortex/Wire/StaticC.lean` lowers topology-specialized readiness
-  functions into the same semantic module. Binary64 is explicitly excluded from certified refinement
-  evidence.
+  `theory/Cortex/Wire/NativePure/C/Engine.lean` constructs the additive checkpoint-gated v2 dispatch
+  engine without any host-authority parameter; `theory/Cortex/Wire/NativePure/C/Unit.lean` checks
+  scalar, overflow, layout, and tagged-sum construction; and `theory/Cortex/Wire/StaticC.lean`
+  lowers topology-specialized readiness functions into the same semantic module. Binary64 is
+  explicitly excluded from certified refinement evidence.
 
 ## Tracking
 
 - Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts,
-  admission, normalized realization artifacts, maximal fusion, and the Haskell plan validator are
-  implemented, together with the additive executable v2 scheduler policy)
+  admission, normalized realization artifacts, maximal fusion, the plan-to-checked-Lean compiler
+  bridge, generated authority-free region/engine C, and the additive executable v2 scheduler policy
+  are implemented)
 - Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
   cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, the
   effect/pure/effect, n-way selection, checkpoint recovery, failure, and protocol-bound tests in
   `test/Cortex/Wire/NativePureSchedulerSpec.hs`, the Lean construction checks in
   `Cortex.Wire.NativePure.C.Unit`, executable Haskell and Lean reference traces, and the hermetic
-  generated-C strict/sanitizer/host/bare-AArch64/symbol/section matrix
-- Planned public surface: production normalized-plan decoding in Lean and generated-engine
-  integration for the additive v2 runtime/target interfaces
+  generated-C strict/sanitizer/host/bare-AArch64/symbol/section matrix, plus the
+  `cortex-native-pure-generated` production-bridge and engine-protocol gate
+- Remaining public surface: final hosted-v2 product integration and broader accepted CorePure basis;
+  binary64 literals remain rejected until concrete canonical C literal emission lands
 - Implementation tracker: GitHub issue #382 and the NativePure epic PR
