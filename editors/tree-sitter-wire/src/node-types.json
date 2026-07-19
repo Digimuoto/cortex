@@ -984,6 +984,32 @@
     }
   },
   {
+    "type": "core_pure_inherit_field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "source": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "core_pure_expr",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "core_pure_lambda",
     "named": true,
     "fields": {
@@ -1695,10 +1721,26 @@
           "named": true
         },
         {
-          "type": "inherit_field",
+          "type": "core_pure_inherit_field",
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "executor_authority_value",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "qualified_ident",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -1810,6 +1852,10 @@
         },
         {
           "type": "ellipsis",
+          "named": true
+        },
+        {
+          "type": "executor_authority_value",
           "named": true
         },
         {
@@ -2184,6 +2230,16 @@
     "type": "inline_executor_call",
     "named": true,
     "fields": {
+      "argument": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "core_pure_expr",
+            "named": true
+          }
+        ]
+      },
       "config": {
         "multiple": false,
         "required": false,
@@ -2196,7 +2252,7 @@
       },
       "input": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "core_pure_expr",
@@ -2505,6 +2561,10 @@
             "named": true
           },
           {
+            "type": "executor_authority_value",
+            "named": true
+          },
+          {
             "type": "family_projection",
             "named": true
           },
@@ -2578,6 +2638,10 @@
           },
           {
             "type": "ellipsis",
+            "named": true
+          },
+          {
+            "type": "executor_authority_value",
             "named": true
           },
           {
@@ -2662,6 +2726,16 @@
           }
         ]
       },
+      "metadata": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "node_metadata",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -2688,6 +2762,22 @@
         "types": [
           {
             "type": "where_clause",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "node_metadata",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "record",
             "named": true
           }
         ]
@@ -2948,6 +3038,10 @@
             "named": true
           },
           {
+            "type": "executor_authority_value",
+            "named": true
+          },
+          {
             "type": "family_projection",
             "named": true
           },
@@ -3127,6 +3221,10 @@
             "named": true
           },
           {
+            "type": "executor_authority_value",
+            "named": true
+          },
+          {
             "type": "family_projection",
             "named": true
           },
@@ -3212,6 +3310,10 @@
           },
           {
             "type": "ellipsis",
+            "named": true
+          },
+          {
+            "type": "executor_authority_value",
             "named": true
           },
           {
@@ -3505,6 +3607,10 @@
     "named": false
   },
   {
+    "type": "Executor",
+    "named": false
+  },
+  {
     "type": "Graph",
     "named": false
   },
@@ -3652,6 +3758,10 @@
   },
   {
     "type": "where",
+    "named": false
+  },
+  {
+    "type": "with",
     "named": false
   },
   {

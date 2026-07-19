@@ -3192,6 +3192,45 @@ spec = describe "Cortex.Wire.Compile" $ do
       other ->
         expectationFailure ("expected task node, got: " <> show other)
 
+  it "normalizes the compatible bare executor surface without mixing node metadata" $ do
+    compiled <-
+      requireRight . compileWireText $
+        T.unlines
+          [ "contract T;"
+          , "node source -> value: T = @test.source;"
+          , "node scalar with { label = \"scalar node\"; timeout = 5; }"
+          , "  <- value: T"
+          , "  -> value: T = @test.scalar value;"
+          , "node explicit"
+          , "  <- value: T"
+          , "  -> done: T = @test.explicit { payload = value; cfg.mode = \"strict\"; };"
+          , "source => scalar => explicit"
+          ]
+    argumentExpr "source" compiled `shouldBe` Syntax.CorePureRecord []
+    argumentExpr "scalar" compiled
+      `shouldBe` Syntax.CorePureRecord
+        [Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "value")]
+    argumentExpr "explicit" compiled
+      `shouldBe` Syntax.CorePureRecord
+        [ Syntax.CorePureField ("payload" :| []) (Syntax.CorePureIdent "value")
+        , Syntax.CorePureField
+            ("cfg" :| ["mode"])
+            (Syntax.CorePureLit (Syntax.CorePureString "strict"))
+        ]
+    case Map.lookup (CircuitNodeRef "scalar") compiled.compiledCircuitNodes of
+      Just (CompiledCircuitTask taskNode) -> do
+        taskNode.circuitTaskNodeLabel `shouldBe` "scalar node"
+        taskNode.circuitTaskNodeMetadata `shouldSatisfy` metadataHasTimeout 5
+      other -> expectationFailure ("expected scalar task node, got: " <> show other)
+
+  it "rejects unknown or runtime-dependent node metadata fields" $ do
+    compileWireText
+      "contract T; node bad with { cfg = 1; } -> value: T = @test.source; bad"
+      `shouldSatisfy` isWireInvalidPortsContaining "unknown node metadata field cfg"
+    compileWireText
+      "contract T; node bad with { label = value; } <- value: T = @test.sink value; bad"
+      `shouldSatisfy` isWireInvalidPortsContaining "cannot depend on runtime port value"
+
   it "compiles node-body kind applications into ordinary nodes" $ do
     compiled <- requireRight (compileWireText kindApplicationSourceText)
     Map.keysSet compiled.compiledCircuitNodes `shouldBe` Set.singleton (CircuitNodeRef "screen_h")
@@ -6496,6 +6535,20 @@ metadataHasInstructions expected = \case
     KeyMap.lookup "instructions" obj == Just (Aeson.String expected)
   _ -> False
 
+metadataHasTimeout :: Scientific -> Aeson.Value -> Bool
+metadataHasTimeout expected = \case
+  Aeson.Object obj -> KeyMap.lookup "timeoutSeconds" obj == Just (Aeson.Number expected)
+  _ -> False
+
+argumentExpr :: T.Text -> CompiledCircuit -> Syntax.CorePureExpr
+argumentExpr nodeName compiled =
+  case Map.lookup (CircuitNodeRef nodeName) compiled.compiledCircuitNodes of
+    Just (CompiledCircuitTask taskNode) ->
+      case wireExecutorArgumentSpecFromMetadata taskNode.circuitTaskNodeMetadata of
+        Right specValue -> specValue.wireExecutorArgumentExpr
+        Left err -> error ("executor argument did not decode: " <> T.unpack err)
+    other -> error ("expected task node " <> T.unpack nodeName <> ", got: " <> show other)
+
 metadataHasExecutorTarget :: T.Text -> Aeson.Value -> Bool
 metadataHasExecutorTarget expected = \case
   Aeson.Object obj ->
@@ -6559,6 +6612,11 @@ isParseFailure = \case
 isWireParseFailureContaining :: T.Text -> Either WireError ok -> Bool
 isWireParseFailureContaining expected = \case
   Left (WireParseError message) -> expected `T.isInfixOf` message
+  _ -> False
+
+isWireInvalidPortsContaining :: T.Text -> Either WireError ok -> Bool
+isWireInvalidPortsContaining expected = \case
+  Left (WireInvalidPorts _ message) -> expected `T.isInfixOf` message
   _ -> False
 
 isWireUnusedNodeRef :: CircuitNodeRef -> Either WireError ok -> Bool

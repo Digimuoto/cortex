@@ -100,6 +100,19 @@ spec = do
         `shouldBe` Right
           "node classify\n  <- score: Score;\n  -> accepted: Decision | rejected: RejectReason = if (score >= 0) then accepted score else rejected score;\n"
 
+    it "round-trips the compatible authoring surface without recanonicalizing legacy nodes" $ do
+      let source =
+            "node sink with { label = \"sink\"; timeout = 5; }\n\
+            \  <- value: T\n\
+            \  = @kernel.log { inherit (value) payload cfg; };\n"
+          expected =
+            "node sink with { label = \"sink\"; timeout = 5; }\n\
+            \  <- value: T;\n\
+            \  = @kernel.log { payload = value.payload; cfg = value.cfg; };\n"
+      formatted <- requireRight (formatWireSource "test" source)
+      formatted `shouldBe` expected
+      formatWireSource "test" formatted `shouldBe` Right formatted
+
     it "is idempotent" $ do
       let source = "a\n  => b <> c <> d\n  => e\n"
       formatted <- requireRight (formatWireSource "test" source)

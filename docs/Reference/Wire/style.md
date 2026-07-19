@@ -21,6 +21,11 @@ This page defines the canonical style for authored Wire source. The grammar refe
 parses; this page defines what Cortex examples, docs snippets, fixtures, and future formatters
 should produce.
 
+The parser currently accepts the forthcoming compact clause and one-record executor surface in
+addition to this legacy canonical style. The formatter does not recanonicalize the repository to
+that surface until the final breaking migration; this keeps the compatibility PR byte-stable for
+existing examples and packages.
+
 ## Semicolons
 
 Semicolons are terminators or separators. They are not operator tokens.

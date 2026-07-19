@@ -6,13 +6,13 @@
  *
  * Top-level forms: contract, use, kind, form, node, let/export let, import,
  * and optional file-return expression.
- * Executor values: @qualified.name { config }
- * Executor calls:  @qualified.name { config } (input) | configured (input)
+ * Executor values: @qualified.name | @qualified.name { config }
+ * Executor calls:  legacy configured calls or zero/one bare arguments
  * Pure outputs:    -> label: Contract = <CorePure expr> ;
  * Graph operators: <> (overlay), => (connect), * (record↔ports adapter).
  *                  Overlay binds tighter than connect and star.
  * Value operators: // (record merge), ++ (string/list concat)
- * Port clauses:    <- label: Contract ; | -> label: Contract ;
+ * Port clauses:    arrows/equality delimit clauses; legacy semicolons remain accepted
  * Paper examples:  ... placeholders are accepted for highlighting only.
  * Literals:        "..." single-line, ''...'' indented multi-line,
  *                  decimal numbers, true/false/null, ()
@@ -55,6 +55,9 @@ module.exports = grammar({
     [$._core_pure_atom, $._expr_atom],
     [$._core_pure_atom, $.qualified_ident],
     [$.pure_sum_body, $.output_body],
+    [$.pure_output_equation, $.executor_single_output_body, $.output_body],
+    [$.inherit_field, $.core_pure_inherit_field],
+    [$.inline_executor_call, $._core_pure_atom],
   ],
 
   rules: {
@@ -196,6 +199,7 @@ module.exports = grammar({
       'Contract',
       'Value',
       'ConfiguredExecutor',
+      'Executor',
     ),
 
     form_decl: $ => seq(
@@ -242,6 +246,7 @@ module.exports = grammar({
       'Value',
       'Graph',
       'ConfiguredExecutor',
+      'Executor',
     ),
 
     node_decl: $ => seq(
@@ -254,6 +259,7 @@ module.exports = grammar({
           ';',
         ),
         seq(
+          optional(field('metadata', $.node_metadata)),
           field('inputs', repeat($.input_clause)),
           field('body', choice(
             $.pure_body,
@@ -264,6 +270,11 @@ module.exports = grammar({
         ),
         field('signature', $.node_signature),
       ),
+    ),
+
+    node_metadata: $ => seq(
+      'with',
+      field('body', $.record),
     ),
 
     node_signature: $ => seq(
@@ -308,7 +319,7 @@ module.exports = grammar({
       field('label', $.identifier),
       ':',
       field('contract', $.contract_ref),
-      ';',
+      optional(';'),
     ),
 
     pure_body: $ => choice(
@@ -353,7 +364,7 @@ module.exports = grammar({
     executor_output_clause: $ => seq(
       '->',
       field('output', $.output_body),
-      ';',
+      optional(';'),
     ),
 
     output_body: $ => choice(
@@ -375,13 +386,20 @@ module.exports = grammar({
       $.configured_executor_call,
     ),
 
-    inline_executor_call: $ => seq(
-      '@',
-      field('name', $.qualified_ident),
-      optional(field('config', $.record)),
-      '(',
-      field('input', $.core_pure_expr),
-      ')',
+    inline_executor_call: $ => choice(
+      prec.dynamic(2, seq(
+        '@',
+        field('name', $.qualified_ident),
+        optional(field('config', $.record)),
+        '(',
+        field('input', $.core_pure_expr),
+        ')',
+      )),
+      prec.dynamic(1, seq(
+        '@',
+        field('name', $.qualified_ident),
+        optional(field('argument', $.core_pure_expr)),
+      )),
     ),
 
     configured_executor_call: $ => seq(
@@ -464,6 +482,7 @@ module.exports = grammar({
 
     _expr_atom: $ => choice(
       $.configured_executor_value,
+      $.executor_authority_value,
       $.constructor_expr,
       $.record,
       $.list,
@@ -489,6 +508,11 @@ module.exports = grammar({
       '@',
       field('name', $.qualified_ident),
       field('config', $.record),
+    ),
+
+    executor_authority_value: $ => seq(
+      '@',
+      field('name', $.qualified_ident),
     ),
 
     constructor_expr: $ => prec(1, seq(
@@ -678,8 +702,14 @@ module.exports = grammar({
 
     core_pure_record: $ => seq(
       '{',
-      repeat(seq(choice($.core_pure_field, $.inherit_field), ';')),
+      repeat(seq(choice($.core_pure_field, $.core_pure_inherit_field), ';')),
       '}',
+    ),
+
+    core_pure_inherit_field: $ => seq(
+      'inherit',
+      optional(seq('(', field('source', $.core_pure_expr), ')')),
+      repeat1(field('name', $.identifier)),
     ),
 
     core_pure_field: $ => seq(

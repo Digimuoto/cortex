@@ -21,10 +21,11 @@ related:
 
 ## Status
 
-Proposed and partially implemented. The runtime, registry, manifest, capability, and compiled
-metadata substrate exists additively. Existing authored calls, `config_shape`, config-facing APIs,
-host wrappers, and compiled `config` metadata remain supported. The compatible source surface and
-the final breaking removal are separate later slices.
+Proposed and partially implemented. The runtime, registry, manifest, capability, compiled metadata,
+and compatible authored source substrate exist additively. Existing authored calls,
+`ConfiguredExecutor`, `config_shape`, config-facing APIs, host wrappers, and compiled `config`
+metadata remain supported. Canonical formatting and the final breaking removal are a separate last
+slice.
 
 ## Context
 
@@ -65,8 +66,39 @@ Legacy split calls normalize as follows:
 - both contributions share the same record.
 
 The old `wrapWireStageDefinition` remains available. The additive
-`wrapWireStageDefinitionWithArgument` supplies evaluate, validate, exact-delivery semantics. No
-authored grammar changes are part of this slice.
+`wrapWireStageDefinitionWithArgument` supplies evaluate, validate, exact-delivery semantics. That
+runtime substrate did not require authored grammar changes; the compatibility amendment below adds
+the future source spelling without removing the old one.
+
+## Compatibility amendment: authored surface
+
+The parser also accepts the future authoring surface without removing the accepted v1 spellings:
+
+```wire
+node read -> line: Line = @uart.read_line;
+
+node log with { label = "log line"; timeout = 30; }
+  <- line: Line
+  = @kernel.log line;
+```
+
+Arrows and `=` may delimit port clauses, while legacy port semicolons remain accepted. An executor
+authority accepts zero or one bare CorePure argument. Zero arguments normalize to `{}`, an explicit
+record remains unchanged, and a non-record value normalizes to `{ payload = value; }`. The record is
+still evaluated only when the node consumes its ingress values.
+
+`with { ... }` is a separate statically evaluated record. Its top-level keys are restricted to the
+compiler-owned metadata vocabulary (`label`, instruction/prompt, tools, memory, timeout/retry and
+budget controls, reasoning control, signal `on`, `artifactKind`, and `to`). Unknown, dynamically
+dependent, or incorrectly typed fields fail compilation.
+
+Bare executor authority values and `Executor` kind/form parameters are accepted alongside the legacy
+configured-executor value and `ConfiguredExecutor` parameter forms. CorePure records also accept
+`inherit (source) field ...;`, which lowers to explicit projections.
+
+The formatter preserves legacy ASTs in their existing canonical spelling during this compatibility
+window. It can round-trip the new surface, but the repository-wide canonical switch is deliberately
+deferred to the final breaking migration.
 
 ## Consequences
 
@@ -75,6 +107,8 @@ authored grammar changes are part of this slice.
 - Hosts can migrate bindings independently while existing integrations continue to run.
 - Conflicting old/new manifest keys fail rather than silently selecting one schema.
 - The final migration can remove aliases and legacy envelopes without redesigning the runtime ABI.
+- Old and new source forms can coexist in one module and compile to the same normalized ingress
+  boundary, allowing packages and editor integrations to migrate independently.
 
 ## Traceability
 

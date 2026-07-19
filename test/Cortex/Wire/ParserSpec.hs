@@ -621,6 +621,55 @@ spec = describe "Cortex.Wire.Parser" $ do
             other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
+    it "accepts compact structural clauses and zero/one bare executor arguments" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "node source -> result: Line = @uart.read_line;"
+                , "node scalar <- result: Line = @kernel.log result;"
+                , "node explicit with { label = \"explicit\"; }"
+                , "  <- result: Line"
+                , "  = @kernel.log { payload = result; cfg.level = \"debug\"; };"
+                ]
+      case forms of
+        [TopNode source, TopNode scalar, TopNode explicit] -> do
+          nodeDeclBody source
+            `shouldBe` NodeBodyExecutor Nothing (ExecutorCallBare (QName ("uart" :| ["read_line"])) Nothing)
+          nodeDeclBody scalar
+            `shouldBe` NodeBodyExecutor
+              Nothing
+              (ExecutorCallBare (QName ("kernel" :| ["log"])) (Just (CorePureIdent "result")))
+          nodeDeclMetadata explicit `shouldSatisfy` isJust
+          nodeDeclBody explicit `shouldSatisfy` \case
+            NodeBodyExecutor Nothing (ExecutorCallBare _ (Just CorePureRecord {})) -> True
+            _ -> False
+        other -> expectationFailure ("unexpected compatible syntax parse: " <> show other)
+
+    it "retains semicolon-delimited ports and parenthesized executor calls" $ do
+      let WireFile forms _ =
+            parseOrFail "node old <- value: T ; -> result: T ; = @legacy.run { mode = \"old\"; } (value) ;"
+      case forms of
+        [TopNode node] ->
+          nodeDeclBody node `shouldSatisfy` \case
+            NodeBodyExecutor Nothing (ExecutorCallInline _ _ (CorePureIdent "value")) -> True
+            _ -> False
+        other -> expectationFailure ("unexpected legacy syntax parse: " <> show other)
+
+    it "accepts bare Executor authority parameters without removing ConfiguredExecutor" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "kind run(executor: Executor) = <- value: T = @executor value;"
+                , "node applied = run(@execute);"
+                ]
+      case forms of
+        [TopNode node] ->
+          nodeDeclBody node
+            `shouldBe` NodeBodyExecutor
+              Nothing
+              (ExecutorCallBoundBare "execute" (Just (CorePureIdent "value")))
+        other -> expectationFailure ("unexpected Executor parameter expansion: " <> show other)
+
   describe "CorePure expressions" $ do
     it "desugars pipes into function application" $
       parseCorePureNodeOutput "xs |> filter pred |> map f"
@@ -643,6 +692,13 @@ spec = describe "Cortex.Wire.Parser" $ do
         `shouldBe` CorePureRecord
           [ CorePureField ("accepted" :| []) (CorePureIdent "accepted")
           , CorePureField ("rejected" :| []) (CorePureIdent "rejected")
+          ]
+
+    it "desugars CorePure source projection inheritance" $
+      parseCorePureNodeOutput "{ inherit (x) payload cfg; }"
+        `shouldBe` CorePureRecord
+          [ CorePureField ("payload" :| []) (CorePureFieldAccess (CorePureIdent "x") "payload")
+          , CorePureField ("cfg" :| []) (CorePureFieldAccess (CorePureIdent "x") "cfg")
           ]
 
     it "parses if-then-else" $
