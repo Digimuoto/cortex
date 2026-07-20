@@ -8,7 +8,7 @@ Stability   : experimental
 
 The admission projection is the compile-time, authority-free description of an
 executor that Wire and Capability check against (ADR 0053): identity, a projection
-version, a content digest, typed ports, a config schema reference, declared
+version, a content digest, typed ports, a argument-shape reference, declared
 requirement slots, and the replay / isolation / effect / await-strategy metadata
 the runtime binding later honours. It carries no runnable action and no credentials.
 
@@ -23,18 +23,21 @@ module Cortex.Capability.Catalog.AdmissionProjection
   ( AdmissionProjection (..)
   , ProjectionVersion (..)
   , ContentDigest (..)
-  , ConfigSchemaRef (..)
+  , ArgumentShapeRef (..)
   , RequirementSlot (..)
+  , currentProjectionVersion
   , admissionProjectionDigest
   , encodeWirePorts
   , decodeWirePorts
   )
 where
 
+import Control.Monad (when)
 import Crypto.Hash (SHA256, hashlazy)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.!=), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Types (Parser)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -61,28 +64,37 @@ newtype ProjectionVersion = ProjectionVersion {unProjectionVersion :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (ToJSON, FromJSON)
 
+{- | Version of the projection wire format this module encodes. Version @2@ is
+the ADR 0095 single-record boundary format (@argumentShapeRef@); version @1@
+carried the removed @configSchemaRef@ surface and is rejected on decode so an
+old persisted projection fails with a migration diagnostic instead of a
+generic field error.
+-}
+currentProjectionVersion :: ProjectionVersion
+currentProjectionVersion = ProjectionVersion "2"
+
 newtype ContentDigest = ContentDigest {unContentDigest :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (ToJSON, FromJSON)
 
-{- | A reference to the executor's config schema (digest or named decoder), never
-the config itself (ADR 0053 keeps config data pure and out of the projection).
+{- | A reference to the executor's argument shape (digest or named decoder), never
+the argument itself (ADR 0095 keeps invocation data out of the projection).
 -}
-data ConfigSchemaRef
-  = ConfigSchemaNone
-  | ConfigSchemaDigest ContentDigest
-  | ConfigSchemaName Text
+data ArgumentShapeRef
+  = ArgumentShapeNone
+  | ArgumentShapeDigest ContentDigest
+  | ArgumentShapeName Text
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
 {- | A declared requirement the binding layer must satisfy: a capability kind, the
-local binding name the host resolves, an optional config selector path, and the
+local binding name the host resolves, an optional argument selector path, and the
 required permission class. Inert — declaring a requirement does not grant it.
 -}
 data RequirementSlot = RequirementSlot
   { rsCapabilityKind :: !Text
   , rsBindingName :: !Text
-  , rsConfigSelector :: !(Maybe Text)
+  , rsArgumentSelector :: !(Maybe Text)
   , rsPermissionClass :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
@@ -92,7 +104,7 @@ data AdmissionProjection = AdmissionProjection
   { apExecutorId :: !WireExecutorId
   , apProjectionVersion :: !ProjectionVersion
   , apPorts :: !WirePorts
-  , apConfigSchemaRef :: !ConfigSchemaRef
+  , apArgumentShapeRef :: !ArgumentShapeRef
   , apRequirementSlots :: ![RequirementSlot]
   , apReplayClass :: !ReplayClass
   , apIsolationExpectation :: !IsolationExpectation
@@ -107,7 +119,7 @@ instance ToJSON AdmissionProjection where
       [ "executorId" .= unWireExecutorId (apExecutorId p)
       , "projectionVersion" .= apProjectionVersion p
       , "ports" .= encodeWirePorts (apPorts p)
-      , "configSchemaRef" .= apConfigSchemaRef p
+      , "argumentShapeRef" .= apArgumentShapeRef p
       , "requirementSlots" .= apRequirementSlots p
       , "replayClass" .= apReplayClass p
       , "isolationExpectation" .= apIsolationExpectation p
@@ -116,17 +128,32 @@ instance ToJSON AdmissionProjection where
       ]
 
 instance FromJSON AdmissionProjection where
-  parseJSON = withObject "AdmissionProjection" $ \o ->
-    AdmissionProjection . WireExecutorId
-      <$> o .: "executorId"
-      <*> o .: "projectionVersion"
-      <*> (o .: "ports" >>= decodeWirePorts)
-      <*> o .: "configSchemaRef"
-      <*> o .:? "requirementSlots" .!= []
-      <*> o .: "replayClass"
-      <*> o .: "isolationExpectation"
-      <*> (o .: "effect" >>= parseEffect)
-      <*> o .: "awaitStrategy"
+  parseJSON = withObject "AdmissionProjection" $ \o -> do
+    when (KeyMap.member "configSchemaRef" o) $
+      fail "configSchemaRef was removed; use argumentShapeRef"
+    version <- o .: "projectionVersion"
+    if version == currentProjectionVersion
+      then do
+        argumentShape <-
+          o .:? "argumentShapeRef"
+            >>= maybe (fail "missing argumentShapeRef") pure
+        AdmissionProjection . WireExecutorId
+          <$> o .: "executorId"
+          <*> pure version
+          <*> (o .: "ports" >>= decodeWirePorts)
+          <*> pure argumentShape
+          <*> o .:? "requirementSlots" .!= []
+          <*> o .: "replayClass"
+          <*> o .: "isolationExpectation"
+          <*> (o .: "effect" >>= parseEffect)
+          <*> o .: "awaitStrategy"
+      else
+        fail
+          ( "unsupported admission projection version "
+              <> T.unpack (unProjectionVersion version)
+              <> ": version 1 predates the ADR 0095 argument-shape format; current is "
+              <> T.unpack (unProjectionVersion currentProjectionVersion)
+          )
 
 {- | Deterministic content digest over the projection's defining fields. Taken over
 a canonical tuple (not the JSON object) so object key ordering cannot perturb it.
@@ -138,7 +165,7 @@ admissionProjectionDigest p =
           ( unWireExecutorId (apExecutorId p)
           , unProjectionVersion (apProjectionVersion p)
           , canonicalPorts (apPorts p)
-          , toJSON (apConfigSchemaRef p)
+          , toJSON (apArgumentShapeRef p)
           , toJSON (apRequirementSlots p)
           , toJSON (apReplayClass p)
           , toJSON (apIsolationExpectation p)

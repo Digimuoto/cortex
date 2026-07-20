@@ -56,6 +56,7 @@ module Cortex.Wire.Syntax
   , UseSpec (..)
   , ContractDecl (..)
   , PureOutputEquation (..)
+  , NodePureResult (..)
   , NodePureBody (..)
   , NodeBody (..)
   , NodeDecl (..)
@@ -225,8 +226,8 @@ data Expr
     ExprSelect !Expr !(NonEmpty SelectArm)
   | -- | @family[0]@ — source projection from an indexed @make@ family.
     ExprFamilyProjection !Text !Int
-  | -- | @\@qual.name { config }@ — inert configured executor value.
-    ExprConfiguredExecutor !QName !Record
+  | -- | @\@qual.name@ — inert executor authority value.
+    ExprExecutor !QName
   | {- | @qual.name { field = ... }@ — tagged-record config constructor;
     no leading @\@@. Value-position only.
     -}
@@ -307,8 +308,8 @@ data CorePureExpr
   deriving anyclass (ToJSON, FromJSON)
 
 data ExecutorCall
-  = ExecutorCallInline !QName !Record !CorePureExpr
-  | ExecutorCallConfigured !Text !CorePureExpr
+  = ExecutorCallInline !QName !(Maybe CorePureExpr)
+  | ExecutorCallBound !Text !(Maybe CorePureExpr)
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
@@ -356,9 +357,15 @@ data PureOutputEquation = PureOutputEquation
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
 
+data NodePureResult
+  = NodePureProduct !(NonEmpty PureOutputEquation)
+  | NodePureSum !(NonEmpty SumVariant) !CorePureExpr
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON)
+
 data NodePureBody = NodePureBody
   { nodePureBodyWhere :: !(Maybe CorePureExpr)
-  , nodePureBodyOutputs :: !(NonEmpty PureOutputEquation)
+  , nodePureBodyResult :: !NodePureResult
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON)
@@ -375,6 +382,7 @@ native pure evaluator.
 -}
 data NodeDecl = NodeDecl
   { nodeDeclName :: !Text
+  , nodeDeclMetadata :: !(Maybe Record)
   , nodeDeclPortSig :: ![PortDecl]
   , nodeDeclBody :: !NodeBody
   }

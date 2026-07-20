@@ -157,7 +157,6 @@ data WireExecutor
 data WireNodeRuntimeOptions = WireNodeRuntimeOptions
   { wireNodeRuntimeTimeoutSeconds :: !(Maybe Int32)
   , wireNodeRuntimeRetryCount :: !(Maybe Int32)
-  , wireNodeRuntimeStepBudget :: !(Maybe Int32)
   , wireNodeRuntimeToolLoopMinSteps :: !(Maybe Int32)
   , wireNodeRuntimeMaxOutputTokens :: !(Maybe Int32)
   , wireNodeRuntimeReasoningEnabled :: !(Maybe Bool)
@@ -171,7 +170,6 @@ instance FromJSON WireNodeRuntimeOptions where
     WireNodeRuntimeOptions
       <$> obj Aeson..:? "timeoutSeconds"
       <*> obj Aeson..:? "retryCount"
-      <*> obj Aeson..:? "stepBudget"
       <*> obj Aeson..:? "toolLoopMinSteps"
       <*> obj Aeson..:? "maxOutputTokens"
       <*> obj Aeson..:? "reasoningEnabled"
@@ -182,7 +180,6 @@ emptyWireNodeRuntimeOptions =
   WireNodeRuntimeOptions
     { wireNodeRuntimeTimeoutSeconds = Nothing
     , wireNodeRuntimeRetryCount = Nothing
-    , wireNodeRuntimeStepBudget = Nothing
     , wireNodeRuntimeToolLoopMinSteps = Nothing
     , wireNodeRuntimeMaxOutputTokens = Nothing
     , wireNodeRuntimeReasoningEnabled = Nothing

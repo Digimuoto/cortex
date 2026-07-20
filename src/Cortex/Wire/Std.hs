@@ -53,7 +53,7 @@ import Cortex.Wire.Contract
   , wireContractRegistryFromList
   )
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
   , WireExecutorEffect (..)
   , WireExecutorId (..)
   , WireExecutorPortPolicy (..)
@@ -150,6 +150,7 @@ stdIoContractSpecs =
       , wireContractSpecDescription = "Standard argv-based local command request."
       , wireContractSpecRecordFields = Nothing
       , wireContractSpecSchema = Nothing
+      , wireContractSpecNativeShape = Nothing
       , wireContractSpecExamples = []
       }
   , WireContractSpec
@@ -158,6 +159,7 @@ stdIoContractSpecs =
       , wireContractSpecDescription = "Standard argv-based local command result."
       , wireContractSpecRecordFields = Nothing
       , wireContractSpecSchema = Nothing
+      , wireContractSpecNativeShape = Nothing
       , wireContractSpecExamples = []
       }
   ]
@@ -198,7 +200,7 @@ stdIoProjection executorId =
           , stdIoCommandResultContractId
           ]
     , wireExecutorProjectionEffect = WireExecutorHostEffect
-    , wireExecutorProjectionConfigShape = WireExecutorConfigUnchecked
+    , wireExecutorProjectionArgumentShape = WireExecutorArgumentUnchecked
     , wireExecutorProjectionPortPolicy = WireExecutorAuthorDeclaredPorts
     }
 

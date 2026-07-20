@@ -161,37 +161,29 @@ use quantum.core.{@prepare_zero, @x, @cnot, @measure_z};
 use quantum.braket.{@realize};
 
 node prepare_d0
-  -> d0: Qubit = @prepare_zero {} (null);
+  -> d0: Qubit = @prepare_zero;
 
 node prepare_d1
-  -> d1: Qubit = @prepare_zero {} (null);
+  -> d1: Qubit = @prepare_zero;
 
 node prepare_s01
-  -> s01_qubit: Qubit = @prepare_zero {} (null);
+  -> s01_qubit: Qubit = @prepare_zero;
 
 node force_x
-  <- d1: Qubit;
-  -> d1: Qubit = @x {} (d1);
+  <- d1: Qubit  -> d1: Qubit = @x d1;
 
 node check_01
-  <- d0: Qubit;
-  <- s01_qubit: Qubit;
-  -> d0: Qubit;
-  -> s01_qubit: Qubit = @cnot ({ inherit d0; inherit s01_qubit; });
+  <- d0: Qubit  <- s01_qubit: Qubit  -> d0: Qubit  -> s01_qubit: Qubit = @cnot { inherit d0; inherit s01_qubit;  };
 
 node measure_d0
-  <- d0: Qubit;
-  -> final_d0: Bit = @measure_z {} (d0);
+  <- d0: Qubit  -> final_d0: Bit = @measure_z d0;
 
 node measure_s01
-  <- s01_qubit: Qubit;
-  -> s01: Bit = @measure_z {} (s01_qubit);
+  <- s01_qubit: Qubit  -> s01: Bit = @measure_z s01_qubit;
 
 node run_hardware
-  <- final_d0: Bit;
-  <- s01: Bit;
-  -> result: QuantumResult
-  = @realize { shots = 100 } ({ inherit final_d0; inherit s01; });
+  <- final_d0: Bit  <- s01: Bit  -> result: QuantumResult
+  = @realize { payload = { inherit final_d0 s01; }; cfg = { shots = 100; }; };
 ```
 
 The realization output should be one correlated `QuantumResult`, not one independent output per

@@ -14,7 +14,7 @@ Cortex substrate modules stay consumer-neutral and keep downstream product polic
 -}
 module Cortex.Capability.Executor
   ( ExecutorSpec (..)
-  , ExecutorConfigDecoder (..)
+  , ExecutorArgumentDecoder (..)
   , ExecutorRequirement (..)
   , ExecutorCodecBoundary (..)
   , ExecutorBindingAuthority (..)
@@ -29,7 +29,7 @@ import Data.Text (Text)
 import GHC.Generics (Generic)
 
 import Cortex.Wire.Executor
-  ( WireExecutorConfigShape (..)
+  ( WireExecutorArgumentShape (..)
   , WireExecutorEffect
   , WireExecutorId
   , WireExecutorProjection (..)
@@ -37,10 +37,10 @@ import Cortex.Wire.Executor
   , wireExecutorRegistryFromList
   )
 
-data ExecutorConfigDecoder
-  = ExecutorConfigUnchecked
-  | ExecutorConfigJsonSchema Aeson.Value
-  | ExecutorConfigDecoderName Text
+data ExecutorArgumentDecoder
+  = ExecutorArgumentUnchecked
+  | ExecutorArgumentJsonSchema Aeson.Value
+  | ExecutorArgumentDecoderName Text
   deriving stock (Eq, Show, Generic)
 
 data ExecutorRequirement
@@ -65,7 +65,7 @@ data ExecutorSpec = ExecutorSpec
   { executorSpecId :: !WireExecutorId
   , executorSpecPorts :: !WireExecutorProjection
   , executorSpecEffect :: !WireExecutorEffect
-  , executorSpecConfigDecoder :: !ExecutorConfigDecoder
+  , executorSpecArgumentDecoder :: !ExecutorArgumentDecoder
   , executorSpecRequirements :: !(Set ExecutorRequirement)
   , executorSpecCodecBoundary :: !ExecutorCodecBoundary
   , executorSpecBindingAuthority :: !ExecutorBindingAuthority
@@ -77,13 +77,13 @@ executorProjection spec =
   (executorSpecPorts spec)
     { wireExecutorProjectionId = executorSpecId spec
     , wireExecutorProjectionEffect = executorSpecEffect spec
-    , wireExecutorProjectionConfigShape = configShape (executorSpecConfigDecoder spec)
+    , wireExecutorProjectionArgumentShape = argumentShape (executorSpecArgumentDecoder spec)
     }
   where
-    configShape = \case
-      ExecutorConfigUnchecked -> WireExecutorConfigUnchecked
-      ExecutorConfigJsonSchema schema -> WireExecutorConfigSchema schema
-      ExecutorConfigDecoderName _ -> WireExecutorConfigUnchecked
+    argumentShape = \case
+      ExecutorArgumentUnchecked -> WireExecutorArgumentUnchecked
+      ExecutorArgumentJsonSchema schema -> WireExecutorArgumentSchema schema
+      ExecutorArgumentDecoderName _ -> WireExecutorArgumentUnchecked
 
 executorProjectionRegistry :: [ExecutorSpec] -> WireExecutorRegistry
 executorProjectionRegistry specs =

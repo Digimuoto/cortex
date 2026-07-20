@@ -33,7 +33,7 @@ module Cortex.Wire.Compile
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (guard, unless, when, zipWithM)
+import Control.Monad (guard, unless, void, when, zipWithM)
 import Crypto.Hash (Digest, SHA256, hashlazy)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -100,8 +100,8 @@ import Cortex.Wire.AdmissionArtifact
   , wireAdmissionMetadataValue
   )
 import Cortex.Wire.AdmissionBundle
-  ( AdmissionBundleError (..)
-  , admitWireAdmissionBundle
+  ( admitWireAdmissionBundle
+  , renderAdmissionBundleError
   )
 import Cortex.Wire.Circuit.Artifact
   ( CircuitCompatibilityWitness (..)
@@ -127,11 +127,15 @@ import Cortex.Wire.Contract
   , portsMetadataValue
   )
 import Cortex.Wire.Executor
-  ( WireExecutorPortPolicy (..)
+  ( WireExecutorArgumentShape
+  , WireExecutorPortPolicy (..)
   , WireExecutorProjection (..)
   , lookupWireExecutorProjection
+  , wireExecutorArgumentStaticFields
+  , wireExecutorArgumentStaticShape
   , wireExecutorIdFromWireExecutor
   , wireExecutorIdToText
+  , wireExecutorProjectionArgumentShape
   , wireExecutorRegistryVocabulary
   )
 import Cortex.Wire.NodeBoundary
@@ -139,6 +143,7 @@ import Cortex.Wire.NodeBoundary
   , executorNodeBoundaryNormalForm
   , normalFormPorts
   , pureNodeBoundaryNormalForm
+  , pureSumNodeBoundaryNormalForm
   , signalNodeBoundaryNormalForm
   , validateNodeBoundaryNormalForm
   )
@@ -153,11 +158,16 @@ import Cortex.Wire.Parser
   )
 import Cortex.Wire.Pure
   ( PureEvalError (..)
+  , corePureBuiltinSignature
   , corePureStaticContextFromBindings
   , corePureWhereStaticFields
+  , evaluateCorePureStaticExpr
   , renderPureEvalError
+  , validateCorePureExpr
   , validatePureTaskConfig
+  , validatePureVariantTaskConfig
   )
+import Cortex.Wire.Runtime (validateWireExecutorArgument)
 import Cortex.Wire.Std
   ( stdIoCommandExecutorId
   , stdIoCommandShapeMessage
@@ -786,13 +796,6 @@ compileLoweredWireFile compileEnv requireConnected wireFile lowered = do
             )
         )
 
-renderAdmissionBundleError :: AdmissionBundleError -> Text
-renderAdmissionBundleError = \case
-  AdmissionBundleArtifactNotValidatorReady ->
-    "artifact failed validator-ready checks"
-  AdmissionBundleCircuitBindingFailed bindingError ->
-    "artifact does not bind to the compiled circuit: " <> T.pack (show bindingError)
-
 attachAdmissionMetadata :: Maybe Aeson.Value -> WireAdmissionArtifact -> Aeson.Value
 attachAdmissionMetadata maybeMetadata admission =
   let admissionKey = Key.fromText wireAdmissionMetadataKey
@@ -910,12 +913,11 @@ data EvalValue
   | EvalQName !QName
   | EvalRecord !(Map (NonEmpty Text) EvalValue)
   | EvalConstructor !QName !(Map (NonEmpty Text) EvalValue)
-  | EvalConfiguredExecutor !ConfiguredExecutor
+  | EvalExecutor !ExecutorAuthority
   deriving stock (Eq, Show)
 
-data ConfiguredExecutor = ConfiguredExecutor
-  { ceExecutorId :: !Text
-  , ceFields :: !(Map (NonEmpty Text) EvalValue)
+newtype ExecutorAuthority = ExecutorAuthority
+  { ceExecutorId :: Text
   }
   deriving stock (Eq, Show)
 
@@ -1472,7 +1474,7 @@ isGraphLetExpr st = \case
   ExprFamilyProjection {} -> True
   ExprMerge {} -> False
   ExprConcat {} -> False
-  ExprConfiguredExecutor {} -> False
+  ExprExecutor {} -> False
   ExprConstructor {} -> False
   ExprRecord {} -> False
   ExprList {} -> False
@@ -1508,7 +1510,7 @@ evalValueToCorePureExpr = \case
     CorePureRecord <$> traverse fieldToCorePure (Map.toList fields)
   EvalQName {} -> Nothing
   EvalConstructor {} -> Nothing
-  EvalConfiguredExecutor {} -> Nothing
+  EvalExecutor {} -> Nothing
   where
     fieldToCorePure (path, value) =
       CorePureField path <$> evalValueToCorePureExpr value
@@ -1521,10 +1523,24 @@ lowerNamedNode compileEnv st nodeDecl = do
   loweredNode <- case nodeDecl.nodeDeclBody of
     NodeBodyExecutor whereExpr executorCallValue -> do
       validateWhereClause st nodeRef ports.lnpInputs whereExpr
-      loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue
+      loweredNodeFromExecutorCall
+        compileEnv
+        st
+        nodeRef
+        ports
+        nodeDecl.nodeDeclMetadata
+        whereExpr
+        executorCallValue
     NodeBodyPure pureBody -> do
       validateWhereClause st nodeRef ports.lnpInputs pureBody.nodePureBodyWhere
-      loweredPureNodeFromBody compileEnv st nodeRef ports st.lsPureBindings pureBody
+      loweredPureNodeFromBody
+        compileEnv
+        st
+        nodeRef
+        ports
+        nodeDecl.nodeDeclMetadata
+        st.lsPureBindings
+        pureBody
   Right (loweredNode {lnGeneratedOrigin = Map.lookup nodeDecl.nodeDeclName st.lsGeneratedNodes})
 
 lowerFileReturn
@@ -2156,6 +2172,7 @@ buildStarPhantomNode compileEnv st plan = do
     st
     nodeRef
     ports
+    Map.empty
     []
     Nothing
     outputConfig
@@ -2718,6 +2735,84 @@ buildBinarySelectConditionNode selectorVariants commonBoundary thenKeys thenFrag
       , lnGeneratedOrigin = Nothing
       }
 
+loweredPureNodeFromVariantConfig
+  :: WireCompileEnv
+  -> CircuitNodeRef
+  -> LoweredNodePorts
+  -> Map (NonEmpty Text) EvalValue
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> Either WireCore.WireError LoweredNode
+loweredPureNodeFromVariantConfig
+  compileEnv
+  nodeRef
+  ports
+  metadata
+  topLevelBindings
+  whereExpr
+  labels
+  bodyExpr = do
+    when (any (`Map.member` metadata) [("on" :| []), ("artifactKind" :| []), ("to" :| [])]) $
+      Left (WireCore.WireInvalidPorts nodeRef "signal and artifact metadata require an executor body")
+    tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) metadata)
+    memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) metadata)
+    let runtimePorts = taskWirePortsFromLowered ports
+        label = lookupMaybeTextField "label" metadata
+        instructionsText =
+          lookupMaybeTextField "instructions" metadata
+            <|> lookupMaybeTextField "prompt" metadata
+        normalForm =
+          pureSumNodeBoundaryNormalForm
+            nodeRef
+            runtimePorts
+            topLevelBindings
+            whereExpr
+            labels
+            bodyExpr
+        executor = WireCore.WireExecutorNative "pure"
+    mapLeft (WireCore.WireInvalidPorts nodeRef) $
+      validateNodeBoundaryNormalForm normalForm
+    mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
+      validatePureVariantTaskConfig
+        (normalFormPorts normalForm)
+        topLevelBindings
+        whereExpr
+        labels
+        bodyExpr
+    validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
+    pure
+      LoweredNode
+        { lnRef = nodeRef
+        , lnCompiledNode =
+            CompiledCircuitTask
+              CircuitTaskNode
+                { circuitTaskNodeRef = nodeRef
+                , circuitTaskNodeLabel = defaultNodeLabel nodeRef label
+                , circuitTaskNodeMetadata =
+                    actMetadata
+                      "config"
+                      nodeRef
+                      executor
+                      label
+                      instructionsText
+                      (Just (nativePureVariantTaskConfigValue topLevelBindings whereExpr labels bodyExpr))
+                      tools
+                      (normalFormPorts normalForm)
+                      (lookupMaybeInt32Field "timeout" metadata)
+                      (lookupMaybeInt32Field "retry" metadata)
+                      (lookupMaybeInt32Field "toolLoopMinSteps" metadata)
+                      (lookupMaybeInt32Field "maxOutputTokens" metadata)
+                      (lookupMaybeBoolField "reasoningEnabled" metadata)
+                      memoryStrategy
+                }
+        , lnPorts = runtimePorts
+        , lnInputs = ports.lnpInputs
+        , lnOutputs = ports.lnpOutputs
+        , lnGeneratedOrigin = Nothing
+        }
+
 nonIdentityFragment :: GraphFragment -> Maybe GraphFragment
 nonIdentityFragment fragment
   | isIdentityFragment fragment = Nothing
@@ -2990,24 +3085,28 @@ loweredNodeFromExecutorCall
   -> LoweringState
   -> CircuitNodeRef
   -> LoweredNodePorts
+  -> Maybe Record
   -> Maybe CorePureExpr
   -> ExecutorCall
   -> Either WireCore.WireError LoweredNode
-loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallValue = do
-  (configuredExecutor, inputExpr) <- resolveExecutorCall st executorCallValue
+loweredNodeFromExecutorCall compileEnv st nodeRef ports metadata whereExpr executorCallValue = do
+  (executorAuthority, inputExpr) <- resolveExecutorCall st executorCallValue
   validateCorePureNodeScopeWithLocals st nodeRef (inputPortLocalNames ports.lnpInputs) inputExpr
-  let exactFields = configuredExecutor.ceFields
-      label = lookupMaybeTextField "label" exactFields
-      genericFields = genericConfigFields exactFields knownSimpleFields
-      runtimePorts = taskWirePortsFromLowered ports
-      executorId = configuredExecutor.ceExecutorId
-      maybeSignal = lookupMaybeTextField "on" exactFields
-      -- `artifactKind` is the canonical field; `kind` stays accepted as a
-      -- deprecated alias because kinds are already a Wire language concept.
-      maybeArtifactKind =
-        lookupMaybeTextField "artifactKind" exactFields
-          <|> lookupMaybeTextField "kind" exactFields
-      maybeTarget = lookupMaybeQNameField "to" exactFields
+  -- The normalized argument gets the same structural validation as pure
+  -- bodies, so duplicate record field paths cannot reach the host boundary.
+  mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
+    validateCorePureExpr inputExpr
+  traverse_ (validateNodeMetadataStaticScope nodeRef ports.lnpInputs) metadata
+  exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
+  validateNodeMetadataFields nodeRef exactFields
+  validateNodeMetadataValues nodeRef exactFields
+  let
+    label = lookupMaybeTextField "label" exactFields
+    runtimePorts = taskWirePortsFromLowered ports
+    executorId = executorAuthority.ceExecutorId
+    maybeSignal = lookupMaybeTextField "on" exactFields
+    maybeArtifactKind = lookupMaybeTextField "artifactKind" exactFields
+    maybeTarget = lookupMaybeQNameField "to" exactFields
   validateStdIoExecutorShape nodeRef executorId runtimePorts
   compiledNode <- case () of
     _
@@ -3069,15 +3168,27 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
           let instructionsText =
                 lookupMaybeTextField "instructions" exactFields
                   <|> lookupMaybeTextField "prompt" exactFields
-              configValue = executorConfigValue genericFields whereExpr inputExpr
+          specializedArgument <-
+            specializeExecutorArgument
+              compileEnv
+              st
+              nodeRef
+              ports.lnpInputs
+              whereExpr
+              executor
+              inputExpr
+          let argumentExpr = specializedArgument.specializedExecutorResidualExpr
+              residualBindings = specializedArgument.specializedExecutorResidualBindings
+              residualWhere = specializedArgument.specializedExecutorResidualWhere
+              argumentValue = executorArgumentValue residualBindings residualWhere argumentExpr
               normalForm =
                 executorNodeBoundaryNormalForm
                   nodeRef
                   runtimePorts
-                  whereExpr
-                  inputExpr
+                  residualWhere
+                  argumentExpr
                   executor
-                  configValue
+                  argumentValue
           mapLeft (WireCore.WireInvalidPorts nodeRef) $
             validateNodeBoundaryNormalForm normalForm
           validateExecutorProjection compileEnv nodeRef executor (normalFormPorts normalForm)
@@ -3089,21 +3200,26 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
                 { circuitTaskNodeRef = nodeRef
                 , circuitTaskNodeLabel = defaultNodeLabel nodeRef label
                 , circuitTaskNodeMetadata =
-                    actMetadata
-                      nodeRef
-                      executor
-                      label
-                      instructionsText
-                      configValue
-                      tools
-                      (normalFormPorts normalForm)
-                      (lookupMaybeInt32Field "timeout" exactFields)
-                      (lookupMaybeInt32Field "retry" exactFields)
-                      (lookupMaybeInt32Field "stepBudget" exactFields)
-                      (lookupMaybeInt32Field "toolLoopMinSteps" exactFields)
-                      (lookupMaybeInt32Field "maxOutputTokens" exactFields)
-                      (lookupMaybeBoolField "reasoningEnabled" exactFields)
-                      memoryStrategy
+                    let runtimeMetadata =
+                          actMetadata
+                            "argument"
+                            nodeRef
+                            executor
+                            label
+                            instructionsText
+                            (Just argumentValue)
+                            tools
+                            (normalFormPorts normalForm)
+                            (lookupMaybeInt32Field "timeout" exactFields)
+                            (lookupMaybeInt32Field "retry" exactFields)
+                            (lookupMaybeInt32Field "toolLoopMinSteps" exactFields)
+                            (lookupMaybeInt32Field "maxOutputTokens" exactFields)
+                            (lookupMaybeBoolField "reasoningEnabled" exactFields)
+                            memoryStrategy
+                     in case specializedArgument.specializedExecutorStaticValue of
+                          Nothing -> runtimeMetadata
+                          Just staticValue ->
+                            insertMetadataValue "staticArgument" staticValue runtimeMetadata
                 }
   Right
     LoweredNode
@@ -3114,8 +3230,414 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       , lnOutputs = ports.lnpOutputs
       , lnGeneratedOrigin = Nothing
       }
+resolveExecutorCall
+  :: LoweringState -> ExecutorCall -> Either WireCore.WireError (ExecutorAuthority, CorePureExpr)
+resolveExecutorCall st = \case
+  ExecutorCallInline executorQName@(QName (name :| [])) inputExpr
+    | Just (EvalExecutor executorAuthority) <- Map.lookup name st.lsBindings ->
+        Right (executorAuthority, normalizeExecutorArgument inputExpr)
+    | otherwise -> do
+        executorId <- resolveExecutorQName st executorQName
+        Right (ExecutorAuthority executorId, normalizeExecutorArgument inputExpr)
+  ExecutorCallInline executorQName inputExpr -> do
+    executorId <- resolveExecutorQName st executorQName
+    Right (ExecutorAuthority executorId, normalizeExecutorArgument inputExpr)
+  ExecutorCallBound name inputExpr ->
+    case Map.lookup name st.lsBindings of
+      Just (EvalExecutor executorAuthority) ->
+        Right (executorAuthority, normalizeExecutorArgument inputExpr)
+      Just other ->
+        Left (WireCore.WireFieldTypeMismatch name "executor" (valueKind other))
+      Nothing ->
+        Left (WireCore.WireUnknownLetBinding name)
+
+normalizeExecutorArgument :: Maybe CorePureExpr -> CorePureExpr
+normalizeExecutorArgument = \case
+  Nothing -> CorePureRecord []
+  Just record@CorePureRecord {} -> record
+  Just value -> CorePureRecord [CorePureField ("payload" :| []) value]
+
+data SpecializedExecutorArgument = SpecializedExecutorArgument
+  { specializedExecutorStaticValue :: !(Maybe Aeson.Value)
+  , specializedExecutorResidualExpr :: !CorePureExpr
+  , specializedExecutorResidualBindings :: ![CorePureBinding]
+  , specializedExecutorResidualWhere :: !(Maybe CorePureExpr)
+  }
+  deriving stock (Eq, Show)
+
+{- | Partition one authored argument record according to the executor's
+consumer-declared binding-time obligations. Permissive projection mode cannot
+prove an executor signature, so it deliberately leaves the complete record at
+ingress. Strict mode evaluates admission fields in the same CorePure semantics,
+validates the derived static schema, and removes those fields from the residual
+runtime expression.
+-}
+specializeExecutorArgument
+  :: WireCompileEnv
+  -> LoweringState
+  -> CircuitNodeRef
+  -> [LoweredPort]
+  -> Maybe CorePureExpr
+  -> WireCore.WireExecutor
+  -> CorePureExpr
+  -> Either WireCore.WireError SpecializedExecutorArgument
+specializeExecutorArgument compileEnv st nodeRef inputPorts whereExpr executor argumentExpr = do
+  maybeShape <- executorArgumentShapeForSpecialization compileEnv nodeRef executor
+  case maybeShape of
+    Nothing -> unchanged
+    Just argumentShape -> do
+      staticFields <-
+        mapLeft invalid $ wireExecutorArgumentStaticFields argumentShape
+      if Set.null staticFields
+        then unchanged
+        else case argumentExpr of
+          CorePureRecord fields -> do
+            let (staticRecordFields, residualFields) =
+                  foldr
+                    ( \field (staticAcc, residualAcc) ->
+                        if NE.head field.corePureFieldPath `Set.member` staticFields
+                          then (field : staticAcc, residualAcc)
+                          else (staticAcc, field : residualAcc)
+                    )
+                    ([], [])
+                    fields
+                staticExpr = CorePureRecord staticRecordFields
+            whereFields <-
+              mapLeft invalid $
+                executorWhereFieldExpressions st.lsPureBindings whereExpr
+            traverse_
+              (rejectRuntimeDependency whereFields)
+              (groupRecordFieldsByHead staticRecordFields)
+            let neededWhere =
+                  Map.restrictKeys
+                    whereFields
+                    (corePureFreeNames Set.empty staticExpr)
+            staticValue <-
+              mapLeft (invalid . renderPureEvalError) $
+                evaluateCorePureStaticExpr st.lsPureBindings neededWhere staticExpr
+            staticShape <- mapLeft invalid (wireExecutorArgumentStaticShape argumentShape)
+            validatedStatic <- mapLeft invalid (validateWireExecutorArgument staticShape staticValue)
+            let residualExpr = CorePureRecord residualFields
+                residualWhereFields =
+                  Map.restrictKeys
+                    whereFields
+                    (corePureFreeNames Set.empty residualExpr)
+                residualWhere = recordExprFromBindings residualWhereFields
+                residualBindings =
+                  corePureBindingsForExpressions
+                    st.lsPureBindings
+                    (residualExpr : Map.elems residualWhereFields)
+            Right
+              SpecializedExecutorArgument
+                { specializedExecutorStaticValue = Just validatedStatic
+                , specializedExecutorResidualExpr = residualExpr
+                , specializedExecutorResidualBindings = residualBindings
+                , specializedExecutorResidualWhere = residualWhere
+                }
+          _ ->
+            Left
+              ( invalid
+                  "executor admission fields require a normalized top-level record argument"
+              )
   where
-    knownSimpleFields =
+    unchanged =
+      Right
+        SpecializedExecutorArgument
+          { specializedExecutorStaticValue = Nothing
+          , specializedExecutorResidualExpr = argumentExpr
+          , specializedExecutorResidualBindings = st.lsPureBindings
+          , specializedExecutorResidualWhere = whereExpr
+          }
+
+    invalid = WireCore.WireInvalidPorts nodeRef
+
+    rejectRuntimeDependency whereFields (fieldName, fieldExpr) =
+      case executorStaticRuntimeDependency
+        (inputPortLocalNames inputPorts)
+        st.lsPureBindings
+        whereFields
+        fieldName
+        fieldExpr of
+        Nothing -> Right ()
+        Just dependencyChain ->
+          Left
+            ( invalid
+                ( T.intercalate " <- " dependencyChain
+                    <> "; admission fields must be independent of runtime ports"
+                )
+            )
+
+executorArgumentShapeForSpecialization
+  :: WireCompileEnv
+  -> CircuitNodeRef
+  -> WireCore.WireExecutor
+  -> Either WireCore.WireError (Maybe WireExecutorArgumentShape)
+executorArgumentShapeForSpecialization compileEnv nodeRef executor =
+  case compileEnv.wireCompileEnvProjectionMode of
+    WireProjectionPermissive -> Right Nothing
+    WireProjectionStrict ->
+      let executorId = wireExecutorIdFromWireExecutor executor
+       in case lookupWireExecutorProjection executorId compileEnv.wireCompileEnvExecutorRegistry of
+            Nothing ->
+              Left (WireCore.WireUnknownExecutor nodeRef (wireExecutorIdToText executorId))
+            Just projection -> Right (Just (wireExecutorProjectionArgumentShape projection))
+
+groupRecordFieldsByHead :: [CorePureField] -> [(Text, CorePureExpr)]
+groupRecordFieldsByHead fields =
+  Map.toAscList (foldl insertField Map.empty fields)
+  where
+    insertField grouped field =
+      let fieldName = NE.head field.corePureFieldPath
+          fieldExpr =
+            case NE.tail field.corePureFieldPath of
+              [] -> field.corePureFieldValue
+              nestedHead : nestedTail ->
+                CorePureRecord
+                  [ CorePureField
+                      (nestedHead :| nestedTail)
+                      field.corePureFieldValue
+                  ]
+       in Map.insertWith mergeField fieldName fieldExpr grouped
+
+    mergeField newExpr priorExpr =
+      CorePureBinary CorePureMerge priorExpr newExpr
+
+{- | Recover the expressions that a @where@ record binds into the node scope.
+This mirrors the already accepted statically-determinable where forms. A local
+let is retained around each projected field so refactoring into a let does not
+change binding time or evaluation.
+-}
+executorWhereFieldExpressions
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> Either Text (Map Text CorePureExpr)
+executorWhereFieldExpressions topLevelBindings = \case
+  Nothing -> Right Map.empty
+  Just expr -> go Set.empty expr
+  where
+    bindingsByName =
+      Map.fromList
+        [ (binding.corePureBindingName, binding.corePureBindingExpr)
+        | binding <- topLevelBindings
+        ]
+
+    go visited = \case
+      CorePureRecord fields ->
+        Right (Map.fromListWith mergeField (groupRecordFieldsByHead fields))
+      CorePureLet bindings bodyExpr ->
+        fmap (CorePureLet bindings) <$> go visited bodyExpr
+      CorePureIdent name
+        | Set.member name visited ->
+            Left ("where-clause binding cycle through " <> name)
+        | Just bindingExpr <- Map.lookup name bindingsByName ->
+            go (Set.insert name visited) bindingExpr
+        | otherwise ->
+            Left ("where-clause field set is not statically determinable")
+      CorePureBinary CorePureMerge lhs rhs ->
+        Map.unionWith mergeField <$> go visited lhs <*> go visited rhs
+      _ -> Left "where-clause field set is not statically determinable"
+
+    mergeField = CorePureBinary CorePureMerge
+
+{- | Find the first runtime root reachable from a static field, retaining the
+lexical dependency chain for a source-directed diagnostic. Local lets, where
+fields, and module lets participate uniformly; only the consumer obligation on
+the field fixes the required stage.
+-}
+executorStaticRuntimeDependency
+  :: Set.Set Text
+  -> [CorePureBinding]
+  -> Map Text CorePureExpr
+  -> Text
+  -> CorePureExpr
+  -> Maybe [Text]
+executorStaticRuntimeDependency runtimePorts topLevelBindings whereFields fieldName =
+  go Set.empty Map.empty Set.empty ["static field " <> fieldName]
+  where
+    topLevel =
+      Map.fromList
+        [ (binding.corePureBindingName, binding.corePureBindingExpr)
+        | binding <- topLevelBindings
+        ]
+    builtinNames = Set.fromList (fmap fst corePureBuiltinSignature)
+
+    go visited locals shadowed path = \case
+      CorePureLit {} -> Nothing
+      CorePureIdent name
+        | Set.member name shadowed -> Nothing
+        | Just bindingExpr <- Map.lookup name locals ->
+            follow visited ("binding " <> name) name bindingExpr path locals shadowed
+        | Just bindingExpr <- Map.lookup name whereFields ->
+            follow visited ("where field " <> name) name bindingExpr path locals shadowed
+        | Just bindingExpr <- Map.lookup name topLevel ->
+            follow visited ("binding " <> name) name bindingExpr path locals shadowed
+        | Set.member name builtinNames -> Nothing
+        | Set.member name runtimePorts -> Just (path <> ["runtime port " <> name])
+        | otherwise -> Nothing
+      CorePureList items -> firstJust (fmap (go visited locals shadowed path) items)
+      CorePureRecord fields ->
+        firstJust
+          [ go visited locals shadowed path field.corePureFieldValue
+          | field <- fields
+          ]
+      CorePureFieldAccess baseExpr _ -> go visited locals shadowed path baseExpr
+      CorePureIndex baseExpr indexExpr ->
+        go visited locals shadowed path baseExpr
+          <|> go visited locals shadowed path indexExpr
+      CorePureLambda params bodyExpr ->
+        let paramNames = Set.fromList (NE.toList params)
+         in go visited (Map.withoutKeys locals paramNames) (shadowed <> paramNames) path bodyExpr
+      CorePureCall functionExpr argumentExprs ->
+        go visited locals shadowed path functionExpr
+          <|> firstJust (fmap (go visited locals shadowed path) argumentExprs)
+      CorePureUnary _ operandExpr -> go visited locals shadowed path operandExpr
+      CorePureBinary _ lhsExpr rhsExpr ->
+        go visited locals shadowed path lhsExpr
+          <|> go visited locals shadowed path rhsExpr
+      CorePureLet bindings bodyExpr ->
+        let localBindings =
+              Map.fromList
+                [ (binding.corePureBindingName, binding.corePureBindingExpr)
+                | binding <- NE.toList bindings
+                ]
+            locals' = Map.union localBindings locals
+            shadowed' = Set.difference shadowed (Map.keysSet localBindings)
+         in go visited locals' shadowed' path bodyExpr
+      CorePureIf conditionExpr thenExpr elseExpr ->
+        go visited locals shadowed path conditionExpr
+          <|> go visited locals shadowed path thenExpr
+          <|> go visited locals shadowed path elseExpr
+
+    follow visited label name bindingExpr path locals shadowed
+      | Set.member name visited = Nothing
+      | otherwise =
+          go
+            (Set.insert name visited)
+            locals
+            shadowed
+            (path <> [label])
+            bindingExpr
+
+    firstJust = foldr (<|>) Nothing
+
+recordExprFromBindings :: Map Text CorePureExpr -> Maybe CorePureExpr
+recordExprFromBindings fields
+  | Map.null fields = Nothing
+  | otherwise =
+      Just
+        ( CorePureRecord
+            [ CorePureField (name :| []) expr
+            | (name, expr) <- Map.toAscList fields
+            ]
+        )
+
+corePureBindingsForExpressions
+  :: [CorePureBinding]
+  -> [CorePureExpr]
+  -> [CorePureBinding]
+corePureBindingsForExpressions bindings expressions =
+  [ binding
+  | binding <- bindings
+  , Set.member binding.corePureBindingName needed
+  ]
+  where
+    bindingsByName =
+      Map.fromList
+        [ (binding.corePureBindingName, binding.corePureBindingExpr)
+        | binding <- bindings
+        ]
+    initial = foldMap (corePureFreeNames Set.empty) expressions
+    needed = grow initial (Set.toList initial)
+
+    grow seen [] = seen
+    grow seen (name : rest) =
+      case Map.lookup name bindingsByName of
+        Nothing -> grow seen rest
+        Just expr ->
+          let dependencies = corePureFreeNames Set.empty expr
+              unseen = Set.difference dependencies seen
+           in grow (seen <> unseen) (rest <> Set.toList unseen)
+
+{- | \`with\` metadata is admission-time (ADR 0097): a field must not depend on
+a value only available at node ingress. Scans the raw, unevaluated record so
+this runs before \`evalRecordFields\` would otherwise resolve (or silently
+accept, per 'evalValue's unbound-identifier handling) a bare reference to a
+runtime port name.
+-}
+validateNodeMetadataStaticScope
+  :: CircuitNodeRef
+  -> [LoweredPort]
+  -> Record
+  -> Either WireCore.WireError ()
+validateNodeMetadataStaticScope nodeRef inputPorts (Record fields) =
+  case [ (NE.head field.fieldPath, captured)
+       | field <- fields
+       , captured <- exprBareIdentifiers field.fieldValue
+       , Set.member captured runtimeNames
+       ] of
+    [] -> Right ()
+    (fieldName, captured) : _ ->
+      Left
+        ( WireCore.WireInvalidPorts
+            nodeRef
+            ( "node metadata field "
+                <> fieldName
+                <> " cannot depend on runtime port "
+                <> captured
+            )
+        )
+  where
+    runtimeNames = inputPortLocalNames inputPorts
+
+exprBareIdentifiers :: Expr -> [Text]
+exprBareIdentifiers = \case
+  ExprOverlay lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprConnect lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprStar lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprMerge lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprConcat lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprSelect base arms ->
+    exprBareIdentifiers base <> foldMap (exprBareIdentifiers . (.selectArmExpr)) arms
+  ExprFamilyProjection {} -> []
+  ExprExecutor {} -> []
+  ExprConstructor _ recordValue -> recordBareIdentifiers recordValue
+  ExprRecord recordValue -> recordBareIdentifiers recordValue
+  ExprList items -> foldMap exprBareIdentifiers items
+  ExprLit {} -> []
+  ExprIdent (QName (name :| [])) -> [name]
+  ExprIdent {} -> []
+
+recordBareIdentifiers :: Record -> [Text]
+recordBareIdentifiers (Record fields) = foldMap (exprBareIdentifiers . (.fieldValue)) fields
+
+validateNodeMetadataFields
+  :: CircuitNodeRef
+  -> Map (NonEmpty Text) EvalValue
+  -> Either WireCore.WireError ()
+validateNodeMetadataFields nodeRef fields =
+  case [ NE.head path
+       | path <- Map.keys fields
+       , NE.head path `notElem` allowed
+       ] of
+    unknown : _ ->
+      Left (WireCore.WireInvalidPorts nodeRef ("unknown node metadata field " <> unknown))
+    [] ->
+      -- Every allowed field is read back by an exact single-segment key
+      -- (Map.lookup ("label" :| []) fields, and so on); none is a nested
+      -- record authors can address by dotted path. A dotted path on a known
+      -- top-level name (e.g. `label.note = "x"`) would otherwise pass this
+      -- allowlist, pass value validation, and then silently fail to match
+      -- that exact-key lookup, so the field is accepted but has no effect.
+      case [NE.head path | path <- Map.keys fields, not (null (NE.tail path))] of
+        [] -> Right ()
+        dotted : _ ->
+          Left
+            ( WireCore.WireInvalidPorts
+                nodeRef
+                ("node metadata field " <> dotted <> " does not accept a dotted path")
+            )
+  where
+    allowed =
       [ "label"
       , "instructions"
       , "prompt"
@@ -3123,52 +3645,63 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports whereExpr executorCallVa
       , "memory"
       , "timeout"
       , "retry"
-      , "stepBudget"
       , "toolLoopMinSteps"
       , "maxOutputTokens"
       , "reasoningEnabled"
       , "on"
       , "artifactKind"
-      , "kind"
       , "to"
       ]
 
-resolveExecutorCall
-  :: LoweringState -> ExecutorCall -> Either WireCore.WireError (ConfiguredExecutor, CorePureExpr)
-resolveExecutorCall st = \case
-  ExecutorCallInline executorQName recordExpr inputExpr ->
-    do
-      executorId <- resolveExecutorQName st executorQName
-      fields <- evalRecordFields st recordExpr
-      Right (ConfiguredExecutor executorId fields, inputExpr)
-  ExecutorCallConfigured name inputExpr ->
-    case Map.lookup name st.lsBindings of
-      Just (EvalConfiguredExecutor configuredExecutor) -> Right (configuredExecutor, inputExpr)
-      Just other ->
-        Left (WireCore.WireFieldTypeMismatch name "configured executor" (valueKind other))
-      Nothing ->
-        Left (WireCore.WireUnknownLetBinding name)
+validateNodeMetadataValues
+  :: CircuitNodeRef
+  -> Map (NonEmpty Text) EvalValue
+  -> Either WireCore.WireError ()
+validateNodeMetadataValues _nodeRef fields = do
+  traverse_ validateEntry (Map.toList fields)
+  where
+    validateEntry (path, value) =
+      case NE.head path of
+        name
+          | name `elem` ["label", "instructions", "prompt", "on", "artifactKind"] ->
+              requireKind name "string" value
+          | name == "tools" -> void (evalTools value)
+          | name == "memory" -> void (evalMemoryStrategy value)
+          | name `elem` ["timeout", "retry", "toolLoopMinSteps", "maxOutputTokens"] ->
+              case value of
+                EvalNumber number ->
+                  case floatingOrInteger number :: Either Double Integer of
+                    Right integer
+                      | integer >= fromIntegral (minBound :: Int32)
+                          && integer <= fromIntegral (maxBound :: Int32) ->
+                          Right ()
+                    _ -> mismatch name "int32" value
+                _ -> mismatch name "int32" value
+          | name == "reasoningEnabled" -> requireKind name "boolean" value
+          | name == "to" -> requireKind name "qualified identifier" value
+          | otherwise -> Right ()
+    requireKind name expected value =
+      if valueKind value == expected then Right () else mismatch name expected value
+    mismatch name expected value =
+      Left (WireCore.WireFieldTypeMismatch name expected (valueKind value))
 
-executorConfigValue
-  :: Map (NonEmpty Text) EvalValue
+executorArgumentValue
+  :: [CorePureBinding]
   -> Maybe CorePureExpr
   -> CorePureExpr
-  -> Maybe Aeson.Value
-executorConfigValue fields whereExpr inputExpr =
-  Just (Aeson.Object (insertMaybeJson "where" whereExpr baseObject))
+  -> Aeson.Value
+executorArgumentValue topLevelBindings whereExpr inputExpr =
+  Aeson.Object (insertMaybeJson "where" whereExpr baseObject)
   where
-    inputValue = Aeson.toJSON inputExpr
+    -- Module-level CorePure bindings ride in the envelope like they do in pure
+    -- node config: the argument expression may reference them, and ingress
+    -- evaluation happens after compilation, from the metadata alone.
     baseObject =
-      case configValueFromFields fields of
-        Just (Aeson.Object obj) ->
-          KeyMap.insert (Key.fromText "input") inputValue obj
-        Just value ->
-          KeyMap.fromList
-            [ (Key.fromText "config", value)
-            , (Key.fromText "input", inputValue)
+      KeyMap.fromList $
+        (Key.fromText "value", Aeson.toJSON inputExpr)
+          : [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+            | not (null topLevelBindings)
             ]
-        Nothing ->
-          KeyMap.singleton (Key.fromText "input") inputValue
 
 insertMaybeJson
   :: Aeson.ToJSON a => Text -> Maybe a -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value
@@ -3182,32 +3715,60 @@ loweredPureNodeFromBody
   -> LoweringState
   -> CircuitNodeRef
   -> LoweredNodePorts
+  -> Maybe Record
   -> [CorePureBinding]
   -> NodePureBody
   -> Either WireCore.WireError LoweredNode
-loweredPureNodeFromBody compileEnv st nodeRef ports topLevelBindings pureBody = do
-  outputConfig <-
-    pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs pureBody.nodePureBodyOutputs
-  loweredPureNodeFromOutputConfig
-    compileEnv
-    st
-    nodeRef
-    ports
-    topLevelBindings
-    pureBody.nodePureBodyWhere
-    outputConfig
+loweredPureNodeFromBody compileEnv st nodeRef ports metadata topLevelBindings pureBody = do
+  traverse_ (validateNodeMetadataStaticScope nodeRef ports.lnpInputs) metadata
+  exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
+  validateNodeMetadataFields nodeRef exactFields
+  validateNodeMetadataValues nodeRef exactFields
+  case pureBody of
+    NodePureBody whereExpr (NodePureProduct outputEquations) -> do
+      outputConfig <-
+        pureOutputConfigMap st nodeRef ports.lnpInputs ports.lnpOutputs outputEquations
+      loweredPureNodeFromOutputConfig
+        compileEnv
+        st
+        nodeRef
+        ports
+        exactFields
+        topLevelBindings
+        whereExpr
+        outputConfig
+    NodePureBody whereExpr (NodePureSum variants bodyExpr) -> do
+      labels <- pureSumLabels st nodeRef ports.lnpInputs ports.lnpOutputs variants bodyExpr
+      loweredPureNodeFromVariantConfig
+        compileEnv
+        nodeRef
+        ports
+        exactFields
+        topLevelBindings
+        whereExpr
+        labels
+        bodyExpr
 
 loweredPureNodeFromOutputConfig
   :: WireCompileEnv
   -> LoweringState
   -> CircuitNodeRef
   -> LoweredNodePorts
+  -> Map (NonEmpty Text) EvalValue
   -> [CorePureBinding]
   -> Maybe CorePureExpr
   -> Map Text CorePureExpr
   -> Either WireCore.WireError LoweredNode
-loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports topLevelBindings whereExpr outputConfig = do
+loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports metadata topLevelBindings whereExpr outputConfig = do
+  when (any (`Map.member` metadata) [("on" :| []), ("artifactKind" :| []), ("to" :| [])]) $
+    Left (WireCore.WireInvalidPorts nodeRef "signal and artifact metadata require an executor body")
+  tools <- maybe (Right []) evalTools (Map.lookup ("tools" :| []) metadata)
+  memoryStrategy <- traverse evalMemoryStrategy (Map.lookup ("memory" :| []) metadata)
   let runtimePorts = taskWirePortsFromLowered ports
+      label = lookupMaybeTextField "label" metadata
+      instructionsText =
+        lookupMaybeTextField "instructions" metadata
+          <|> lookupMaybeTextField "prompt" metadata
       normalForm =
         pureNodeBoundaryNormalForm
           nodeRef
@@ -3232,23 +3793,23 @@ loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports topLevelBindings wh
           CompiledCircuitTask
             CircuitTaskNode
               { circuitTaskNodeRef = nodeRef
-              , circuitTaskNodeLabel = defaultNodeLabel nodeRef Nothing
+              , circuitTaskNodeLabel = defaultNodeLabel nodeRef label
               , circuitTaskNodeMetadata =
                   actMetadata
+                    "config"
                     nodeRef
                     executor
-                    Nothing
-                    Nothing
+                    label
+                    instructionsText
                     (Just (nativePureTaskConfigValue topLevelBindings whereExpr outputConfig))
-                    []
+                    tools
                     (normalFormPorts normalForm)
-                    Nothing
-                    Nothing
-                    Nothing
-                    Nothing
-                    Nothing
-                    Nothing
-                    Nothing
+                    (lookupMaybeInt32Field "timeout" metadata)
+                    (lookupMaybeInt32Field "retry" metadata)
+                    (lookupMaybeInt32Field "toolLoopMinSteps" metadata)
+                    (lookupMaybeInt32Field "maxOutputTokens" metadata)
+                    (lookupMaybeBoolField "reasoningEnabled" metadata)
+                    memoryStrategy
               }
       , lnPorts = runtimePorts
       , lnInputs = ports.lnpInputs
@@ -3269,6 +3830,29 @@ nativePureTaskConfigValue topLevelBindings whereExpr outputConfig =
       ( KeyMap.fromList
           [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
           , (Key.fromText "outputs", Aeson.toJSON outputConfig)
+          ]
+      )
+
+nativePureVariantTaskConfigValue
+  :: [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> Aeson.Value
+nativePureVariantTaskConfigValue topLevelBindings whereExpr labels bodyExpr =
+  Aeson.Object $
+    insertMaybeJson
+      "where"
+      whereExpr
+      ( KeyMap.fromList
+          [ (Key.fromText "bindings", Aeson.toJSON topLevelBindings)
+          ,
+            ( Key.fromText "variant"
+            , Aeson.object
+                [ "labels" Aeson..= labels
+                , "expression" Aeson..= bodyExpr
+                ]
+            )
           ]
       )
 
@@ -3312,6 +3896,34 @@ renderStaticWhereError = \case
     "where-clause local let binding shadows static binding " <> bindingName
   err ->
     renderPureEvalError err
+
+pureSumLabels
+  :: LoweringState
+  -> CircuitNodeRef
+  -> [LoweredPort]
+  -> [LoweredPort]
+  -> NonEmpty SumVariant
+  -> CorePureExpr
+  -> Either WireCore.WireError [Text]
+pureSumLabels st nodeRef inputPorts outputPorts variants bodyExpr = do
+  let variantList = NE.toList variants
+  when (length outputPorts /= length variantList) $
+    Left (WireCore.WireInvalidPorts nodeRef "pure sum variants do not match lowered output ports")
+  labels <- zipWithM matchVariant outputPorts variantList
+  let constructorNames = Set.fromList labels
+      localNames = inputPortLocalNames inputPorts <> constructorNames
+  validateCorePureNodeScopeWithLocals st nodeRef localNames bodyExpr
+  pure labels
+  where
+    matchVariant port variant = do
+      label <- case variant.svLabel of
+        Label value -> Right value
+        NoLabel -> Left (WireCore.WireInvalidPorts nodeRef "pure sum variants require labels")
+      let ContractId rawContractName = variant.svContract
+          contractName = resolveContractId st rawContractName
+      when (port.lpLabel /= variant.svLabel || port.lpContract /= contractName) $
+        Left (WireCore.WireInvalidPorts nodeRef "pure sum variant does not match its lowered output port")
+      pure label
 
 pureOutputConfigMap
   :: LoweringState
@@ -3639,9 +4251,8 @@ duplicatePortNames portNames =
 
 evalValue :: LoweringState -> Expr -> Either WireCore.WireError EvalValue
 evalValue st = \case
-  ExprConfiguredExecutor executorQName recordExpr ->
-    EvalConfiguredExecutor
-      <$> (ConfiguredExecutor <$> resolveExecutorQName st executorQName <*> evalRecordFields st recordExpr)
+  ExprExecutor executorQName ->
+    EvalExecutor . ExecutorAuthority <$> resolveExecutorQName st executorQName
   ExprConstructor constructorQName recordExpr ->
     EvalConstructor constructorQName <$> evalRecordFields st recordExpr
   ExprRecord recordExpr ->
@@ -3762,15 +4373,6 @@ requireQNameField nodeRef fieldName fields =
     Just other -> Left (WireCore.WireFieldTypeMismatch fieldName "qualified identifier" (valueKind other))
     Nothing -> Left (WireCore.WireMissingRequiredField nodeRef fieldName)
 
-genericConfigFields
-  :: Map (NonEmpty Text) EvalValue
-  -> [Text]
-  -> Map (NonEmpty Text) EvalValue
-genericConfigFields fields excludedTopLevel =
-  Map.filterWithKey
-    (\path _ -> NE.head path `notElem` excludedTopLevel)
-    fields
-
 valueKind :: EvalValue -> Text
 valueKind = \case
   EvalString _ -> "string"
@@ -3780,7 +4382,7 @@ valueKind = \case
   EvalQName _ -> "qualified identifier"
   EvalRecord _ -> "record"
   EvalConstructor _ _ -> "constructor"
-  EvalConfiguredExecutor _ -> "configured executor"
+  EvalExecutor _ -> "executor"
 
 numberToInt32 :: EvalValue -> Maybe Int32
 numberToInt32 = \case
@@ -3793,11 +4395,6 @@ numberToInt32 = \case
           else Nothing
       Left _ -> Nothing
   _ -> Nothing
-
-configValueFromFields :: Map (NonEmpty Text) EvalValue -> Maybe Aeson.Value
-configValueFromFields fields
-  | Map.null fields = Nothing
-  | otherwise = Just (fieldsObject fields)
 
 fieldsObject :: Map (NonEmpty Text) EvalValue -> Aeson.Value
 fieldsObject fields =
@@ -3846,8 +4443,8 @@ evalValueToAeson = \case
             Aeson.Object obj -> obj
             _ -> KeyMap.empty
         )
-  EvalConfiguredExecutor configuredExecutor ->
-    fieldsObject configuredExecutor.ceFields
+  EvalExecutor executorAuthority ->
+    Aeson.String executorAuthority.ceExecutorId
 
 fromListAeson :: [Aeson.Value] -> Vector.Vector Aeson.Value
 fromListAeson = Vector.fromList
@@ -3868,7 +4465,8 @@ defaultNodeLabel nodeRef =
   fromMaybe nodeRef.unCircuitNodeRef
 
 actMetadata
-  :: CircuitNodeRef
+  :: Text
+  -> CircuitNodeRef
   -> WireCore.WireExecutor
   -> Maybe Text
   -> Maybe Text
@@ -3879,28 +4477,31 @@ actMetadata
   -> Maybe Int32
   -> Maybe Int32
   -> Maybe Int32
-  -> Maybe Int32
   -> Maybe Bool
   -> Maybe MemoryStrategy
   -> Aeson.Value
-actMetadata nodeRef executor _label instructionsText configValue tools ports timeoutSeconds retryCount stepBudget toolLoopMinSteps maxOutputTokens reasoningEnabled memoryStrategy =
+actMetadata valueKey nodeRef executor _label instructionsText argumentValue tools ports timeoutSeconds retryCount toolLoopMinSteps maxOutputTokens reasoningEnabled memoryStrategy =
   Aeson.object $
     [ "slot" Aeson..= nodeRef.unCircuitNodeRef
     , "executor" Aeson..= renderExecutor executor
     , "ports" Aeson..= portsMetadataValue ports
     ]
       <> foldMap (\instructions -> ["instructions" Aeson..= instructions]) instructionsText
-      <> foldMap (\config -> ["config" Aeson..= config]) configValue
+      <> foldMap (\argument -> [Key.fromText valueKey Aeson..= argument]) argumentValue
       <> [ "tools" Aeson..= fmap WireCore.renderQualifiedRef tools
          | not (null tools)
          ]
       <> foldMap (\timeout -> ["timeoutSeconds" Aeson..= timeout]) timeoutSeconds
       <> foldMap (\retry -> ["retryCount" Aeson..= retry]) retryCount
-      <> foldMap (\budget -> ["stepBudget" Aeson..= budget]) stepBudget
       <> foldMap (\minSteps -> ["toolLoopMinSteps" Aeson..= minSteps]) toolLoopMinSteps
       <> foldMap (\tokens -> ["maxOutputTokens" Aeson..= tokens]) maxOutputTokens
       <> foldMap (\enabled -> ["reasoningEnabled" Aeson..= enabled]) reasoningEnabled
       <> foldMap (\memory -> ["memory" Aeson..= memory]) memoryStrategy
+
+insertMetadataValue :: Text -> Aeson.Value -> Aeson.Value -> Aeson.Value
+insertMetadataValue key value = \case
+  Aeson.Object object -> Aeson.Object (KeyMap.insert (Key.fromText key) value object)
+  other -> other
 
 awaitMetadata :: Maybe Text -> WireCore.WirePorts -> Maybe Int32 -> Aeson.Value
 awaitMetadata _label ports timeoutSeconds =

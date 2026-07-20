@@ -55,6 +55,26 @@
           mainProgram = "cortex-wire-diff";
         };
       });
+    cortexNativePureCFixture = pkgs.leanPackages.buildLakePackage (commonLakePackage
+      // {
+        pname = "cortex-native-pure-c-fixture";
+        buildTargets = ["cortex-native-pure-c-fixture"];
+
+        meta = {
+          description = "NativePure generated-C artifact and Lean reference fixture";
+          mainProgram = "cortex-native-pure-c-fixture";
+        };
+      });
+    cortexNativePureGeneratedFixture = pkgs.leanPackages.buildLakePackage (commonLakePackage
+      // {
+        pname = "cortex-native-pure-generated-fixture";
+        buildTargets = ["cortex-native-pure-generated-fixture"];
+
+        meta = {
+          description = "Checked NativePure plan-to-region-and-engine C artifact writer";
+          mainProgram = "cortex-native-pure-generated-fixture";
+        };
+      });
     wire = pkgs.symlinkJoin {
       name = "wire";
       paths = [config.packages.wire-unwrapped];
@@ -72,18 +92,35 @@
           pkgs.gcc
           pkgs.jq
           pkgs.llvmPackages_18.clang
+          pkgs.llvmPackages_18.lld
           pkgs.llvmPackages_18.llvm
         ];
       } ''
         generated="$TMPDIR/generated"
         cortex-wire-c ${../test/fixtures/wire/static-program-v1/two-node.json} "$generated"
         jq -e . "$generated/program.manifest.json" >/dev/null
+        cmp "$generated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/program.c.golden}
+        cmp "$generated/program.h" \
+          ${../test/fixtures/wire/static-program-v1/program.h.golden}
+        cmp "$generated/program.exports.txt" \
+          ${../test/fixtures/wire/static-program-v1/program.exports.txt.golden}
+        cmp "$generated/program.manifest.json" \
+          ${../test/fixtures/wire/static-program-v1/program.manifest.json.golden}
 
         emptyArtifact="$TMPDIR/empty.json"
         jq '.program_identity = "empty" | .nodes = [] | .edges = []' \
           ${../test/fixtures/wire/static-program-v1/two-node.json} > "$emptyArtifact"
         emptyGenerated="$TMPDIR/empty-generated"
         cortex-wire-c "$emptyArtifact" "$emptyGenerated"
+        cmp "$emptyGenerated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.c.golden}
+        cmp "$emptyGenerated/program.h" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.h.golden}
+        cmp "$emptyGenerated/program.exports.txt" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.exports.txt.golden}
+        cmp "$emptyGenerated/program.manifest.json" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.manifest.json.golden}
         clang -std=c11 -ffreestanding -fno-builtin -Wall -Wextra -Werror \
           -c "$emptyGenerated/program.c" -o "$TMPDIR/empty-host.o"
         clang -target aarch64-none-elf -std=c11 -ffreestanding -fno-builtin \
@@ -874,6 +911,227 @@
           "$corpus/gcc-traces.txt" "$corpus/differential-evidence.json" "$out/"
         echo "Haskell/Lean/clang-C/GCC-C agreement over $scenarios scenarios" > "$out/status.txt"
       '';
+    # NativePure closure matrix.  The Haskell reference corpus, executable Lean
+    # semantics, and C emitted through the shared structured renderer must
+    # agree byte-for-byte.  The same generated sources are compiled under
+    # sanitizers and for bare aarch64, then audited for forbidden imports and
+    # sections.  f64 coverage is bit-preserving identity with contraction and
+    # fast-math disabled; arithmetic remains explicitly outside the theorem.
+    cortexNativePureDifferential =
+      pkgs.runCommand "cortex-native-pure-differential" {
+        nativeBuildInputs = [
+          config.packages.wire
+          cortexNativePureCFixture
+          pkgs.gcc
+          pkgs.jq
+          pkgs.llvmPackages_18.clang
+          pkgs.llvmPackages_18.llvm
+        ];
+      } ''
+        corpus="$TMPDIR/corpus"
+        wire native-pure differential emit "$corpus"
+        cortex-native-pure-c-fixture "$corpus"
+
+        diff -u "$corpus/haskell-traces.txt" "$corpus/lean-traces.txt"
+
+        sources=""
+        for stem in increment classify make_product project_score f64_identity; do
+          jq -e '.schema == "cortex.wire.native-pure-c/v1"' \
+            "$corpus/$stem.manifest.json" >/dev/null
+          clang -std=c11 -ffreestanding -fno-builtin -fno-fast-math -ffp-contract=off \
+            -Wall -Wextra -Werror -I "$corpus" -c "$corpus/$stem.c" \
+            -o "$TMPDIR/$stem-host.o"
+          gcc -std=c11 -ffreestanding -fno-builtin -fno-fast-math -ffp-contract=off \
+            -pedantic-errors -Wall -Wextra -Werror -Wconversion -Wshadow \
+            -I "$corpus" -c "$corpus/$stem.c" -o "$TMPDIR/$stem-gcc.o"
+          clang -target aarch64-none-elf -std=c11 -ffreestanding -fno-builtin \
+            -fno-fast-math -ffp-contract=off -Wall -Wextra -Werror \
+            -Wno-unused-command-line-argument -I "$corpus" \
+            -c "$corpus/$stem.c" -o "$TMPDIR/$stem-aarch64.o"
+
+          llvm-nm --undefined-only "$TMPDIR/$stem-aarch64.o" > "$TMPDIR/$stem.undefined"
+          test ! -s "$TMPDIR/$stem.undefined"
+          llvm-readelf -S "$TMPDIR/$stem-aarch64.o" > "$TMPDIR/$stem.sections"
+          if grep -E '\.(tdata|tbss|init_array|fini_array|ctors|dtors)' \
+              "$TMPDIR/$stem.sections"; then
+            echo "NativePure object $stem contains a forbidden section" >&2
+            exit 1
+          fi
+          if grep -E '[[:space:]][A-Z]*W[A-Z]*X[A-Z]*[[:space:]]' \
+              "$TMPDIR/$stem.sections"; then
+            echo "NativePure object $stem contains a writable executable section" >&2
+            exit 1
+          fi
+          llvm-nm --defined-only --extern-only --format=posix \
+            "$TMPDIR/$stem-aarch64.o" | awk '{print $1}' | sort \
+            > "$TMPDIR/$stem.exports.actual"
+          sort "$corpus/$stem.exports.txt" > "$TMPDIR/$stem.exports.expected"
+          diff -u "$TMPDIR/$stem.exports.expected" "$TMPDIR/$stem.exports.actual"
+          sources="$sources $corpus/$stem.c"
+        done
+
+        clang -std=c11 -fno-fast-math -ffp-contract=off -Wall -Wextra -Werror \
+          -I "$corpus" $sources \
+          ${../test/fixtures/wire/native-pure-v1/differential-harness.c} \
+          -o "$TMPDIR/native-pure-clang"
+        gcc -std=c11 -fno-fast-math -ffp-contract=off -pedantic-errors \
+          -Wall -Wextra -Werror -Wconversion -Wshadow -I "$corpus" $sources \
+          ${../test/fixtures/wire/native-pure-v1/differential-harness.c} \
+          -o "$TMPDIR/native-pure-gcc"
+        clang -std=c11 -fno-fast-math -ffp-contract=off \
+          -fsanitize=address,undefined,bounds -fno-omit-frame-pointer \
+          -Wall -Wextra -Werror -I "$corpus" $sources \
+          ${../test/fixtures/wire/native-pure-v1/differential-harness.c} \
+          -o "$TMPDIR/native-pure-sanitized"
+
+        : > "$corpus/clang-traces.txt"
+        : > "$corpus/gcc-traces.txt"
+        while IFS= read -r caseLine; do
+          [ -z "$caseLine" ] && continue
+          "$TMPDIR/native-pure-clang" "$caseLine" >> "$corpus/clang-traces.txt"
+          "$TMPDIR/native-pure-gcc" "$caseLine" >> "$corpus/gcc-traces.txt"
+          ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/native-pure-sanitized" "$caseLine" >/dev/null
+        done < "$corpus/cases.txt"
+
+        diff -u "$corpus/haskell-traces.txt" "$corpus/clang-traces.txt"
+        diff -u "$corpus/haskell-traces.txt" "$corpus/gcc-traces.txt"
+        caseCount=$(wc -l < "$corpus/cases.txt")
+        test "$caseCount" -eq 18
+
+        jq -n \
+          --arg schema "cortex.native-pure-differential-evidence/v1" \
+          --argjson case_count "$caseCount" \
+          '{
+            schema: $schema,
+            case_count: $case_count,
+            coverage: [
+              "checked_i64", "deterministic_overflow", "exclusive_sum",
+              "record", "projection", "f64_bit_identity"
+            ],
+            gates: {
+              haskell_lean_equal: true,
+              haskell_clang_c_equal: true,
+              haskell_gcc_c_equal: true,
+              sanitizers: true,
+              strict_host_compilers: true,
+              bare_aarch64: true,
+              no_undefined_symbols: true,
+              no_heap_tls_pthread_lean_runtime: true,
+              no_forbidden_sections: true,
+              canonical_exports: true,
+              f64_fast_math_disabled: true,
+              f64_contraction_disabled: true
+            }
+          }' > "$corpus/evidence.json"
+
+        mkdir -p "$out"
+        cp "$corpus/cases.txt" "$corpus/haskell-traces.txt" \
+          "$corpus/lean-traces.txt" "$corpus/clang-traces.txt" \
+          "$corpus/gcc-traces.txt" "$corpus/evidence.json" "$out/"
+      '';
+    # Production bridge closure: Wire emits the normalized input, witnessed
+    # plan, and an intrinsically typed Lean module. Lean then owns both the
+    # authority-free region C and checkpoint-gated v2 dispatch engine.
+    cortexNativePureGenerated =
+      pkgs.runCommand "cortex-native-pure-generated" {
+        nativeBuildInputs = [
+          config.packages.wire
+          cortexNativePureGeneratedFixture
+          pkgs.gcc
+          pkgs.jq
+          pkgs.llvmPackages_18.clang
+          pkgs.llvmPackages_18.llvm
+        ];
+      } ''
+        generated="$TMPDIR/generated"
+        artifacts="$TMPDIR/artifacts"
+        wire --wire-package ${../test/fixtures/wire/native-pure-generated/cortex.toml} \
+          build --target native-pure-lean-v1 --output "$generated" \
+          ${../test/fixtures/wire/native-pure-generated/fused.wire}
+        diff -u ${../theory/Cortex/Wire/NativePure/Generated/Program.lean} \
+          "$generated/Program.lean"
+
+        jq -e '.schema == "cortex.wire.native-pure-input/v1"' \
+          "$generated/native-pure-input.json" >/dev/null
+        jq -e '.schema == "cortex.wire.native-pure-plan/v1"
+          and (.regions | length) == 1
+          and .regions[0].sources == ["first", "second"]
+          and .regions[0].bounds.steps == 19' \
+          "$generated/native-pure-plan.json" >/dev/null
+
+        cortex-native-pure-generated-fixture "$artifacts"
+        region="native_pure_region_0000"
+        engine="cortex_np_engine_b498f115caa07442"
+        jq -e '.schema == "cortex.wire.native-pure-c/v1"' \
+          "$artifacts/$region.manifest.json" >/dev/null
+        jq -e '.schema == "cortex.wire.native-pure-engine/v2"
+          and .resources.region_count == 1' \
+          "$artifacts/$engine.manifest.json" >/dev/null
+
+        strictFlags=(
+          -std=c11 -fno-fast-math -ffp-contract=off -Wall -Wextra -Werror
+          -Wconversion -Wshadow -I "$artifacts"
+        )
+        clang "''${strictFlags[@]}" \
+          "$artifacts/$region.c" "$artifacts/$engine.c" \
+          ${../test/fixtures/wire/native-pure-generated/engine-harness.c} \
+          -o "$TMPDIR/native-pure-generated-clang"
+        gcc "''${strictFlags[@]}" -pedantic-errors \
+          "$artifacts/$region.c" "$artifacts/$engine.c" \
+          ${../test/fixtures/wire/native-pure-generated/engine-harness.c} \
+          -o "$TMPDIR/native-pure-generated-gcc"
+        clang "''${strictFlags[@]}" -fsanitize=address,undefined,bounds \
+          -fno-omit-frame-pointer \
+          "$artifacts/$region.c" "$artifacts/$engine.c" \
+          ${../test/fixtures/wire/native-pure-generated/engine-harness.c} \
+          -o "$TMPDIR/native-pure-generated-sanitized"
+        "$TMPDIR/native-pure-generated-clang"
+        "$TMPDIR/native-pure-generated-gcc"
+        ASAN_OPTIONS=detect_leaks=0 "$TMPDIR/native-pure-generated-sanitized"
+
+        for stem in "$region" "$engine"; do
+          clang -target aarch64-none-elf -std=c11 -ffreestanding -fno-builtin \
+            -fno-fast-math -ffp-contract=off -Wall -Wextra -Werror \
+            -Wno-unused-command-line-argument -I "$artifacts" \
+            -c "$artifacts/$stem.c" -o "$TMPDIR/$stem-aarch64.o"
+          llvm-readelf -S "$TMPDIR/$stem-aarch64.o" > "$TMPDIR/$stem.sections"
+          if grep -E '\.(tdata|tbss|init_array|fini_array|ctors|dtors)' \
+              "$TMPDIR/$stem.sections"; then
+            echo "generated NativePure object $stem contains a forbidden section" >&2
+            exit 1
+          fi
+          if grep -E '[[:space:]][A-Z]*W[A-Z]*X[A-Z]*[[:space:]]' \
+              "$TMPDIR/$stem.sections"; then
+            echo "generated NativePure object $stem contains a writable executable section" >&2
+            exit 1
+          fi
+        done
+        llvm-nm --undefined-only "$TMPDIR/$region-aarch64.o" \
+          > "$TMPDIR/region.undefined"
+        test ! -s "$TMPDIR/region.undefined"
+        llvm-nm --undefined-only "$TMPDIR/$engine-aarch64.o" \
+          | awk '{print $2}' > "$TMPDIR/engine.undefined"
+        test "$(cat "$TMPDIR/engine.undefined")" = "native_pure_region_0000_dispatch"
+        ${pkgs.llvmPackages_18.lld}/bin/ld.lld -r \
+          "$TMPDIR/$region-aarch64.o" "$TMPDIR/$engine-aarch64.o" \
+          -o "$TMPDIR/native-pure-generated-aarch64.o"
+        llvm-nm --undefined-only "$TMPDIR/native-pure-generated-aarch64.o" \
+          > "$TMPDIR/bundle.undefined"
+        test ! -s "$TMPDIR/bundle.undefined"
+
+        cat "$artifacts/$region.exports.txt" "$artifacts/$engine.exports.txt" \
+          | sort > "$TMPDIR/exports.expected"
+        llvm-nm --defined-only --extern-only --format=posix \
+          "$TMPDIR/native-pure-generated-aarch64.o" | awk '{print $1}' | sort \
+          > "$TMPDIR/exports.actual"
+        diff -u "$TMPDIR/exports.expected" "$TMPDIR/exports.actual"
+
+        mkdir -p "$out"
+        cp "$generated/native-pure-input.json" "$generated/native-pure-plan.json" \
+          "$generated/Program.lean" "$artifacts"/*.manifest.json "$out/"
+        echo "Wire plan -> checked Lean -> region C + checkpoint-gated engine C" \
+          > "$out/status.txt"
+      '';
     cortexWireAssurance =
       pkgs.runCommand "cortex-wire-cfat-1-assurance" {
         nativeBuildInputs = [pkgs.jq];
@@ -923,6 +1181,8 @@
     packages.cortex-theory = cortexTheory;
     packages.cortex-wire-c = cortexWireC;
     packages.cortex-wire-diff = cortexWireDiff;
+    packages.cortex-native-pure-c-fixture = cortexNativePureCFixture;
+    packages.cortex-native-pure-generated-fixture = cortexNativePureGeneratedFixture;
     packages.wire = wire;
 
     checks.cortex-theory = cortexTheory;
@@ -931,6 +1191,8 @@
     checks.cortex-wire-hosted-linux-smoke = cortexWireHostedSmoke;
     checks.cortex-wire-hosted-pulse = cortexWireHostedPulse;
     checks.cortex-wire-differential = cortexWireDifferential;
+    checks.cortex-native-pure-differential = cortexNativePureDifferential;
+    checks.cortex-native-pure-generated = cortexNativePureGenerated;
     checks.cortex-wire-cfat-1-assurance = cortexWireAssurance;
   };
 }

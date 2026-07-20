@@ -1,0 +1,251 @@
+---
+title: "ADR 0096 - Certified NativePure Compilation"
+description:
+  "An opt-in v2 execution profile elaborates admitted PureWire nodes into a small intrinsically
+  typed Lean kernel, constructively lowers that kernel to typed C IR, and executes the resulting
+  bounded functions synchronously without host authority."
+sidebar:
+  label: "0096. Certified NativePure compilation"
+  order: 96
+status: proposed
+date: 2026-07-19
+superseded_by: null
+related:
+  - docs/ADRs/0062-typed-effect-variant-output-boundaries.md
+  - docs/ADRs/0078-lean-wire-elaboration-kernel.md
+  - docs/ADRs/0079-wire-admission-witness-schema.md
+  - docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md
+  - docs/ADRs/0092-circuit-engine-runtime-host-boundary.md
+  - docs/ADRs/0093-versioned-circuit-state-event-control-protocol.md
+  - docs/ADRs/0097-wire-static-intent-and-realization-inputs.md
+---
+
+# ADR 0096 - Certified NativePure Compilation
+
+## Status
+
+Proposed. This ADR fixes the intended artifact, proof, layout, and runtime boundaries for the
+NativePure epic. No NativePure execution profile is generally available yet. Each implementation
+slice must retain partial status until its executable checks, differential tests, and target gates
+land.
+
+**2026-07-19 implementation note.** The Haskell admission core derives a referent-bound candidate
+set for individually eligible pure nodes. The realization slice now serializes that evidence as a
+versioned normalized input, selects maximal connected eligible components, elaborates each region to
+typed ANF/SSA steps, and emits a versioned `RealizationArtifact` and `NativePurePlan` with stable
+content digests. Executable validators recompute exact crossings, the maximal partition, resource
+bounds, complete bidirectional source/runtime provenance, and the acyclic quotient. The shared Lean
+semantic C IR now supplies intrinsically typed expressions, statements, functions, storage, records,
+sums, bounded loops, calls, explicit failure, and fuelled operational semantics. NativePure lowering
+targets that shared IR, and StaticC exposes topology-specialized readiness functions in the same
+module representation. A separate validated C11 translation-unit model now derives deterministic
+source, header, export inventory, layout/resource manifest, and static assertions from one
+structured representation. The production StaticC v1 backend now constructs that representation
+directly; a whitespace-only compatibility layout preserves its published source and header bytes
+without admitting raw C tokens. The concrete NativePure slice now consumes that shared semantic IR,
+constructs fixed input/output/checkpoint frames, emits explicit aggregate padding and typed
+tagged-sum payload unions, propagates checked-i64 overflow through a status result, and derives C,
+headers, exports, layouts, resource manifests, and static assertions from the validated C11 unit.
+Executable construction checks cover scalar and exclusive-sum kernels, and strict local host
+compilation confirms the emitted functions have no unresolved host, heap, worker, or Lean-runtime
+symbols. The additive Haskell v2 scheduler policy now specializes witnessed quotient units, gates
+every effect behind the preceding checkpoint acknowledgement, executes pure regions synchronously,
+persists `select(...)` tags and skipped latent branches, rejoins the chosen branch, and restores the
+tag/value state without creating host work for pure units. Pure and effect failures become durable
+failed checkpoints. The closure slice adds an explicit unfused diagnostic realization mode and a
+hermetic 18-case Haskell/Lean/generated-C corpus now cover checked overflow, products, records,
+projections, exclusive sums, and bit-preserving binary64 identity. Clang and GCC strict builds,
+ASan/UBSan/bounds sanitizers, bare AArch64 compilation, export/undefined-symbol checks, and
+TLS/constructor/writable-executable section gates run from one Nix check. The structural and
+checked-i64 Lean traces are computed by the executable typed evaluator rather than copied expected
+strings. The production compiler bridge now validates the normalized plan, renders its typed ANF as
+intrinsically typed Lean kernel terms, and lets Lean derive both dispatchable region artifacts and a
+checkpoint-gated v2 engine translation unit. The generated engine has no host or worker authority;
+its state machine requires predecessor-checkpoint acknowledgement before pure dispatch and
+pure-result acknowledgement before a downstream effect. A hermetic fixture proves that the Wire CLI
+output is byte-identical to the checked Lean module, compiles the resulting region and engine C with
+strict host compilers, executes the checkpoint protocol under sanitizers, and audits the combined
+bare-AArch64 object. This is still not a generally available NativePure runtime profile:
+artifact-to-kernel correspondence beyond the executable construction gate and final hosted-v2
+product integration remain open.
+
+## Context
+
+CorePure is an ergonomic source language and the existing `pure` executor is a hosted reference
+implementation. Mirroring that implementation in a proof file would leave two compilers whose
+correspondence was assumed. Native execution also needs fixed layouts, global resource bounds,
+exclusive sums, checkpoint values, and a target language narrow enough to audit.
+
+The existing static C backend already establishes the useful division of responsibility: Haskell
+elaborates Wire and emits a normalized artifact; a host-side Lean executable validates that artifact
+and emits freestanding C; Lean is not linked into the target. NativePure applies this architecture
+to deterministic computation while preserving the admitted `CompiledCircuit` as the referent.
+
+## Decision
+
+### Additive profile and artifact boundary
+
+NativePure is opt-in. `static-program/v1`, `cortex_wire_program_v1_*`, `engine/v1`,
+`engine-state/v1`, `host-process/v1`, and existing target profiles remain byte-for-byte compatible.
+The new family is `cortex.wire.native-pure/v1`; its canonical exchange artifact is
+`cortex.wire.native-pure-plan/v1`. Runtime integration uses separately versioned v2 program, engine,
+state, process, and target interfaces.
+
+The admitted `CompiledCircuit` remains authoritative. A versioned realization witness binds every
+runtime unit to all source members and the referent identity, and maps every realized source member
+back to exactly one runtime unit. NativePure v1 selects maximal connected components of eligible
+pure nodes subject to exact typed crossings, acyclicity, disjointness, complete provenance, and
+explicit checkpoint/select boundaries. Authored or nested realization boundaries and buffer-reuse
+optimization remain deferred. A separately tagged `unfused` diagnostic mode emits one eligible
+source node per region from the same normalized input while retaining exact crossings and complete
+bidirectional provenance.
+
+### Strict representation contracts
+
+Native compilation is strict-registry-only. Every crossing contract must provide a `native_shape`:
+unit, bool, checked i64, u64, binary64, bounded UTF-8 text, bounded vectors, fixed records, or
+tagged sums. Option is a two-variant sum. Shapes are closed, non-recursive, bounded, and parsed
+strictly; unknown fields, zero capacities, invalid labels, missing projections, and layout overflow
+are rejections. The projection carries the schema identifier `cortex.wire.native-shape/v1`; value
+schema validation remains separate from this representation contract.
+
+Strictness includes the identity of the registry meaning, not only successful lookup. Compilation
+and admission must produce a content-addressed registry witness for every canonical executor,
+contract, and projection actually consulted while resolving the circuit. NativePure candidate
+evidence, normalized realization input, and the resulting realization artifact must cite the same
+witness identity. Validators recompute the consulted projection digest and reject missing, stale,
+conflicting, or substituted evidence before calculating regions, layouts, bounds, or generated code.
+Unrelated registry entries do not perturb the identity, while any change to a consulted
+`native_shape` does. Later stages may receive the witnessed registry view or an explicit equality
+witness; they may not reinterpret an admitted circuit against a free ambient registry.
+
+Projection values are valid by construction inside the process. `NativeShapeProjection` therefore
+has an opaque representation, a validating constructor, and read-only accessors. Decoders and
+artifact validators still revalidate at trust boundaries as defense in depth. Exporting a raw
+constructor and relying only on downstream revalidation is not part of the accepted public surface.
+
+Exclusive Wire output groups define boundary sums independently of literal enums inside a payload
+schema. Ordinary outputs remain products. Exactly one declared variant and its correctly typed
+payload crosses a sum boundary.
+
+### Lean is the compiler implementation
+
+The broad CorePure library will elaborate into a deliberately small intrinsically typed Lean
+calculus. Its executable evaluator will be the reference semantics. Lean will validate the
+normalized artifact, compute the region partition, layouts and bounds, and constructively lower the
+typed plan into the shared semantic C IR. The lowering function used by the theorem is the compiler
+implementation, not a parallel model. The structural and checked-i64 slice requires refinement;
+unsupported operations must be rejected before emission.
+
+Binary64 uses pinned IEEE-754 settings, finite-result checks, and bitwise differential tests; it is
+excluded from the certified admission basis rather than the lowering-equality theorem. The C printer
+and native C compiler remain outside the proof boundary and are controlled by static assertions,
+golden output, differential execution, symbol/section allowlists, sanitizers, and supported-target
+builds.
+
+### Bounds and storage
+
+Types carry static capacities. Lean defines the size and step models and returns witnessed stack,
+static, output, checkpoint, and step bounds, rejecting overflow or a worst-case hosted checkpoint
+above 2 MiB. CorePure values stay immutable SSA values. After semantic lowering, the first profile
+needs only read-only crossing inputs and fresh, disjoint output regions; it does not introduce
+source-level ownership or borrowing.
+
+Generated kernels are heap-free and authority-free. A pure kernel executes synchronously in the
+engine and must never register a host worker or acquire executor authority.
+
+### Runtime ordering and sums
+
+The v2 scheduler commits and acknowledges the predecessor checkpoint before pure execution,
+checkpoints an atomic pure-kernel result, and acknowledges that result before requesting a
+downstream effect. Product values and selected variant tags are included in checkpoint/restore.
+
+`select(...)` lowers to static guarded branch units. The chosen label is persisted, unselected units
+are marked skipped, only the chosen branch runs, and the declared common boundary rejoins. Existing
+worker registration, cancellation, deadline, and terminal-authority invariants remain unchanged.
+
+## Consequences
+
+- Wire remains the rich authoring and composition language; extending its helper library does not
+  necessarily extend the trusted kernel.
+- New semantic primitives require an evaluator case, typed lowering, bound rule, refinement proof or
+  explicit validation boundary, and differential corpus.
+- NativePure cannot silently fall back to permissive contracts, dynamic allocation, host calls, or
+  legacy untyped CorePure arithmetic.
+- An admitted candidate or realization cannot outlive or silently substitute the registered
+  projection meaning from which its types and bounds were derived.
+- The first implementation may reject valid hosted CorePure programs when their shape, operation, or
+  global bound is outside this profile.
+- Authored fusion boundaries and ownership-driven no-copy optimization require a later ADR because
+  they alter provenance, liveness, and checkpoint granularity beyond automatic maximal fusion.
+
+## Alternatives considered
+
+- **Treat Lean as a parallel validator for a Haskell C generator.** Rejected: it leaves the actual
+  compiler outside the constructive theorem and creates a correspondence obligation at every
+  lowering rule.
+- **Mirror the whole CorePure builtin catalogue in Lean.** Rejected: helpers such as `sum`, `any`,
+  `enumerate`, and Option utilities elaborate into a smaller bounded basis.
+- **Realize one source node per native kernel.** Rejected as the target profile: it preserves source
+  granularity but misses the static graph specialization this profile exists to certify. An unfused
+  diagnostic mode remains useful for differential testing.
+- **Add a source ownership calculus.** Deferred. Immutable values plus read inputs and fresh writes
+  are sufficient for the first correct target; buffer reuse is an optimization witness, not source
+  semantics.
+- **Modify the v1 ABI.** Rejected. NativePure is additive and independently versioned.
+
+## Traceability
+
+- Feature keys: `wire.native_pure_compilation`
+- Public surface: `Cortex.Wire.NativePure.Shape`, `Cortex.Wire.NativePure.Admission`,
+  `Cortex.Wire.NativePure.Artifact`, `Cortex.Wire.NativePure.Lean`,
+  `docs/Reference/Wire/contracts-ports-and-matching.md`
+- Implementation: `src/Cortex/Wire/NativePure/Shape.hs` (versioned bounded shape algebra and fixed
+  layout calculation), `src/Cortex/Wire/Contracts.hs` and `src/Cortex/Wire/Package/Manifest.hs`
+  (additive contract projection and manifest decoding), and
+  `src/Cortex/Wire/NativePure/Admission.hs` (strict candidate admission, typed expression checks,
+  storage regions, and resource bounds), and `src/Cortex/Wire/NativePure/Artifact.hs` (normalized
+  input, maximal and unfused diagnostic realization, typed ANF/SSA, witnessed quotient, validation,
+  and stable digests), `src/Cortex/Wire/NativePure/Lean.hs` (validated plan to intrinsically typed
+  Lean module bridge), and `src/Cortex/Wire/NativePure/Scheduler.hs` (additive v2 specialization,
+  checkpoint acknowledgement, synchronous pure execution, persisted selection/rejoin state, restore,
+  cancellation, and bounded hosted messages)
+- Tests: `test/Cortex/Wire/NativeShapeSpec.hs`, `test/Cortex/Wire/PackageSpec.hs`,
+  `test/Cortex/Wire/NativePureAdmissionSpec.hs`, `test/Cortex/Wire/NativePureSchedulerSpec.hs`,
+  `test/Cortex/Wire/NativePureDifferentialSpec.hs`, and the `cortex-native-pure-differential` and
+  `cortex-native-pure-generated` Nix checks
+- Theory/proof: `theory/Cortex/Wire/NativePure/Type.lean` owns the shared bounded value algebra;
+  `theory/Cortex/Wire/SemanticC.lean` defines the shared typed expression/statement/function IR,
+  storage model, bounded control flow, calls, failures, and executable semantics;
+  `theory/Cortex/Wire/C11.lean` defines the validated printable C11 translation unit and canonical
+  multi-artifact renderer; `theory/Cortex/Wire/StaticCEmitter.lean` and its `Unit` and `Layout`
+  modules construct the production StaticC v1 translation unit while preserving its artifact bytes;
+  `theory/Cortex/Wire/NativePure.lean` defines the source kernel, total lowering into that IR,
+  structural/checked-i64 refinement, canonical-label discipline, padding-aware layouts, resource
+  evidence, and read/write-region well-formedness; `theory/Cortex/Wire/NativePure/C.lean` lowers the
+  shared semantic IR into concrete authority-free frame functions and validated C11 artifacts, while
+  `theory/Cortex/Wire/NativePure/C/Engine.lean` constructs the additive checkpoint-gated v2 dispatch
+  engine without any host-authority parameter; `theory/Cortex/Wire/NativePure/C/Unit.lean` checks
+  scalar, overflow, layout, and tagged-sum construction; and `theory/Cortex/Wire/StaticC.lean`
+  lowers topology-specialized readiness functions into the same semantic module. Binary64 is
+  explicitly excluded from certified refinement evidence.
+
+## Tracking
+
+- Feature key: `wire.native_pure_compilation` (partial; bounded contract shapes, fixed layouts,
+  admission, normalized realization artifacts, maximal fusion, the plan-to-checked-Lean compiler
+  bridge, generated authority-free region/engine C, and the additive executable v2 scheduler policy
+  are implemented)
+- Current executable evidence: `test/Cortex/Wire/NativeShapeSpec.hs`, the `native_shape` manifest
+  cases in `test/Cortex/Wire/PackageSpec.hs`, `test/Cortex/Wire/NativePureAdmissionSpec.hs`, the
+  effect/pure/effect, n-way selection, checkpoint recovery, failure, and protocol-bound tests in
+  `test/Cortex/Wire/NativePureSchedulerSpec.hs`, the Lean construction checks in
+  `Cortex.Wire.NativePure.C.Unit`, executable Haskell and Lean reference traces, and the hermetic
+  generated-C strict/sanitizer/host/bare-AArch64/symbol/section matrix, plus the
+  `cortex-native-pure-generated` production-bridge and engine-protocol gate
+- Remaining public surface: final hosted-v2 product integration and broader accepted CorePure basis;
+  binary64 literals remain rejected until concrete canonical C literal emission lands
+- Registry witness and projection-construction closure:
+  [GitHub issue #402](https://github.com/Digimuoto/cortex/issues/402); this blocks closure of
+  realization-artifact review range `54ec95f-9a8dace`
+- Implementation tracker: GitHub issues #382 and #402 and the NativePure epic PR

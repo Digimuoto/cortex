@@ -50,7 +50,7 @@ compiler. The remaining compiler-authority decision is still open.
 
 The load-bearing property across these layers is **composition closure**. A wire value composed with
 another wire value under `<>` or `=>` is itself a wire value. The class is closed under its own
-operators. This is what makes source authoring, configured executor reuse, and rewriting tractable:
+operators. This is what makes source authoring, executor authority reuse, and rewriting tractable:
 authors and rewrites manipulate the same kind of object the compiler consumes.
 
 Composition closure is graph-theoretic, not the whole resource story. Wire also tracks **boundary
@@ -199,7 +199,7 @@ provenance — all delegated to Circuit, Pulse, or the contract registry.
 ## Extensibility
 
 The Mokhov alphabet is fixed at four constructors. Cortex does not extend it. New authoring
-convenience enters Wire as derived value operators (`//`, `++`, `let`, configured executor values)
+convenience enters Wire as derived value operators (`//`, `++`, `let`, executor authority values)
 that reduce to explicit graph vertices before the expression reaches the Graph layer. New semantic
 categories — payload kinds, boundary-resource modes, structural-authority classes, and latent
 structural control operators — attach as registry metadata, proof obligations, or runtime admission

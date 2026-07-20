@@ -342,15 +342,17 @@ routing-key filter, and top-N limit from `cfg`). Wire grammar:
 
 ```wire
 node reviewer
-  <- draft: AnalystDraft;
-  -> reviewed: ReviewerDraft | error: ExecutorError;
-  = @review.reviewer {
+  with {
     memory = topological {
       preset = "influence_biased";
       routingKey = "analyst";
       limit = 16;
     };
-  } (draft);
+  }
+  <- draft: AnalystDraft
+  -> reviewed: ReviewerDraft | error: ExecutorError  = @review.reviewer {
+    payload = draft;
+  };
 ```
 
 Short form `memory = classic;` is equivalent to omitting the field. Changing strategy does not

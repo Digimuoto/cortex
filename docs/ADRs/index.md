@@ -37,14 +37,14 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0019](0019-executor-registration-and-binding.md)                  | Executor Registration and Binding                                          | proposed   |
 | [0020](0020-wire-pure-output-equations.md)                         | Wire Pure Output Equations                                                 | accepted   |
 | [0021](0021-wire-source-elaborates-to-circuits.md)                 | Wire Source Elaborates to Circuits                                         | proposed   |
-| [0022](0022-wire-node-clause-grammar.md)                           | Wire Node Clause Grammar                                                   | proposed   |
+| [0022](0022-wire-node-clause-grammar.md)                           | Wire Node Clause Grammar                                                   | superseded |
 | [0023](0023-corepure-expression-surface.md)                        | CorePure Expression Surface                                                | proposed   |
-| [0024](0024-typed-executor-node-interface.md)                      | Typed Executor Node Interface                                              | proposed   |
-| [0025](0025-configured-executor-values.md)                         | Configured Executor Values                                                 | proposed   |
+| [0024](0024-typed-executor-node-interface.md)                      | Typed Executor Node Interface                                              | superseded |
+| [0025](0025-configured-executor-values.md)                         | Configured Executor Values                                                 | superseded |
 | [0026](0026-wire-failure-taxonomy.md)                              | Wire Failure Taxonomy                                                      | proposed   |
 | [0028](0028-wire-topology-composition-and-boundary-labels.md)      | Wire Topology Composition and Boundary Labels                              | proposed   |
 | [0029](0029-corepure-structured-serialization.md)                  | CorePure Structured Serialization                                          | proposed   |
-| [0030](0030-wire-node-implementation-forms.md)                     | Wire Node Implementation Forms                                             | proposed   |
+| [0030](0030-wire-node-implementation-forms.md)                     | Wire Node Implementation Forms                                             | superseded |
 | [0031](0031-wire-binding-forms-and-where-clauses.md)               | Wire Binding Forms and Node Where Clauses                                  | proposed   |
 | [0032](0032-wire-boundary-contract-resources.md)                   | Wire Boundary Contracts as Planning Resources                              | proposed   |
 | [0033](0033-wire-select-guarded-affine-collapse.md)                | Wire Select as Guarded Affine Collapse                                     | proposed   |
@@ -76,7 +76,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0059](0059-durable-external-call-frontiers-on-pulse.md)           | Durable External-Call Frontiers on Pulse                                   | proposed   |
 | [0060](0060-filesystem-package-and-binding-manifests.md)           | Filesystem Package and Binding Manifests                                   | proposed   |
 | [0061](0061-corepure-bounded-iteration-primitives.md)              | CorePure Bounded Iteration Primitives                                      | proposed   |
-| [0062](0062-typed-effect-variant-output-boundaries.md)             | Typed Effect Variant Output Boundaries                                     | proposed   |
+| [0062](0062-typed-effect-variant-output-boundaries.md)             | Typed Effect Variant Output Boundaries                                     | accepted   |
 | [0063](0063-adr-traceability-and-feature-status-canon.md)          | ADR Traceability and Feature Status Canon                                  | accepted   |
 | [0064](0064-pulse-graph-state-cas.md)                              | Pulse Graph-State Optimistic Concurrency and Single-Writer Ownership       | accepted   |
 | [0065](0065-pulse-frontier-concurrency.md)                         | Pulse Concurrent Frontier Execution and Cooperative Cancellation           | proposed   |
@@ -109,6 +109,10 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0092](0092-circuit-engine-runtime-host-boundary.md)               | Circuit Engine and Runtime-Host Boundary                                   | accepted   |
 | [0093](0093-versioned-circuit-state-event-control-protocol.md)     | Versioned Circuit State, Event, and Control Protocol                       | accepted   |
 | [0094](0094-hosted-x86-64-linux-executable-profile.md)             | Hosted x86_64 Linux Executable Profile                                     | accepted   |
+| [0095](0095-wire-single-record-executor-boundary.md)               | Wire Single-Record Executor Boundary                                       | accepted   |
+| [0096](0096-certified-native-pure-region-compilation.md)           | Certified NativePure Compilation                                           | proposed   |
+| [0097](0097-wire-static-intent-and-realization-inputs.md)          | Wire Static Intent and Realization Inputs                                  | proposed   |
+| [0098](0098-wire-node-policy-and-executor-field-ownership.md)      | Wire Node Policy and Executor Field Ownership                              | proposed   |
 
 ## By category
 
@@ -134,12 +138,13 @@ is shown here.
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
   [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
   [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
-- **Circuit engine & hosted targets** (5):
+- **Circuit engine & hosted targets** (6):
   [0090](0090-computable-pulse-kernel-and-extraction-boundary.md),
   [0091](0091-lean-hosted-freestanding-wire-c-backend.md),
   [0092](0092-circuit-engine-runtime-host-boundary.md),
   [0093](0093-versioned-circuit-state-event-control-protocol.md),
-  [0094](0094-hosted-x86-64-linux-executable-profile.md)
+  [0094](0094-hosted-x86-64-linux-executable-profile.md),
+  [0096](0096-certified-native-pure-region-compilation.md)
 - **Rewrite admission & budget** (8):
   [0005](0005-budgeted-rewrite-admission-and-materialization.md),
   [0009](0009-rewrite-provenance-and-topology-integrity.md),
@@ -157,15 +162,18 @@ is shown here.
   [0081](0081-wire-endpoint-closure-accounting.md),
   [0085](0085-wire-contract-schema-as-type-enforcement.md),
   [0087](0087-wire-edge-as-saturation-event.md)
-- **Wire language & grammar** (7): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
+- **Wire language & grammar** (8): [0010](0010-wire-closed-authority-and-three-layer-stack.md),
   [0022](0022-wire-node-clause-grammar.md), [0026](0026-wire-failure-taxonomy.md),
   [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),
-  [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md)
-- **Wire executor & node interface** (6): [0017](0017-wire-executor-and-port-catalog-boundary.md),
+  [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md),
+  [0097](0097-wire-static-intent-and-realization-inputs.md)
+- **Wire executor & node interface** (8): [0017](0017-wire-executor-and-port-catalog-boundary.md),
   [0024](0024-typed-executor-node-interface.md), [0025](0025-configured-executor-values.md),
   [0030](0030-wire-node-implementation-forms.md),
   [0039](0039-wire-node-boundary-transform-normal-form.md),
-  [0062](0062-typed-effect-variant-output-boundaries.md)
+  [0062](0062-typed-effect-variant-output-boundaries.md),
+  [0095](0095-wire-single-record-executor-boundary.md),
+  [0098](0098-wire-node-policy-and-executor-field-ownership.md)
 - **Wire elaboration & compile-time generation** (4):
   [0021](0021-wire-source-elaborates-to-circuits.md),
   [0045](0045-wire-compile-time-node-body-kinds.md), [0046](0046-wire-compile-time-graph-forms.md),

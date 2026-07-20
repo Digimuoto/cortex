@@ -77,8 +77,8 @@ graphFormSourceText :: Text
 graphFormSourceText =
   T.unlines
     [ "kind pass(label: PortLabel) ="
-    , "  <- label: T ;"
-    , "  -> label: T = @review.pass (label) ;"
+    , "  <- label: T "
+    , "  -> label: T = @review.pass label ;"
     , "form two_passes() = {"
     , "  node first = pass(value);"
     , "  node second = pass(value);"
@@ -109,6 +109,24 @@ spec = describe "Cortex.Wire.Parser" $ do
     it "parses the quantum Bell-state example" $
       parseWireFixture "examples/wire/quantum-bell-state.wire"
 
+  describe "pure sum bodies" $ do
+    it "parses constructors only after one declared exclusive output boundary" $ do
+      let WireFile forms _ =
+            parseOrFail
+              "node classify <- score: Score -> accepted: Decision | rejected: RejectReason = if score >= 0 then accepted score else rejected score;"
+      case forms of
+        [ TopNode
+            NodeDecl
+              { nodeDeclBody =
+                NodeBodyPure
+                  ( NodePureBody
+                      Nothing
+                      (NodePureSum variants (CorePureIf {}))
+                    )
+              }
+          ] -> fmap (.svLabel) variants `shouldBe` Label "accepted" :| [Label "rejected"]
+        other -> expectationFailure ("unexpected pure sum parse: " <> show other)
+
     it "parses the IBM REST quantum Bell-state example" $
       parseWireFixture "examples/wire/quantum-bell-state-ibm-rest.wire"
 
@@ -126,11 +144,11 @@ spec = describe "Cortex.Wire.Parser" $ do
 
   describe "guardrails" $ do
     it "rejects legacy colon node declarations" $
-      parseWireFile "test" "node n : -> out: T = @review.x ({});"
+      parseWireFile "test" "node n : -> out: T = @review.x ;"
         `shouldSatisfy` isParseFailure
 
     it "rejects legacy list input aggregation syntax" $
-      parseWireFile "test" "node sink\n  <- errors: [ExecutorError] ;\n  = @artifact.log (errors) ;"
+      parseWireFile "test" "node sink\n  <- errors: [ExecutorError] \n  = @artifact.log errors ;"
         `shouldSatisfy` isParseFailure
 
     it "rejects removed pure output wrappers" $
@@ -138,8 +156,36 @@ spec = describe "Cortex.Wire.Parser" $ do
         `shouldSatisfy` isParseFailureContaining "pure (...) output wrappers were removed"
 
     it "rejects authored @pure executor calls" $
-      parseWireFile "test" "node score\n  -> score: Score = @pure ({}) ;"
+      parseWireFile "test" "node score\n  -> score: Score = @pure ;"
         `shouldSatisfy` isParseFailure
+
+    it "rejects parenthesized executor calls with a targeted diagnostic" $
+      parseWireFile "test" "node n -> out: T = @review.x (value);"
+        `shouldSatisfy` isParseFailureContaining "parenthesized executor calls were removed"
+
+    it "rejects value-position configured-executor bindings with a targeted diagnostic" $
+      parseWireFile "test" "let x = @review.x { model = \"a\"; };"
+        `shouldSatisfy` isParseFailureContaining "@executor { config } bindings were removed"
+
+    it "rejects multiple executor arguments" $
+      parseWireFile "test" "node n -> out: T = @review.x first, second;"
+        `shouldSatisfy` isParseFailure
+
+    it "rejects semicolon-delimited input port clauses with a targeted diagnostic" $
+      parseWireFile "test" "node n <- value: T; = @review.x value;"
+        `shouldSatisfy` isParseFailureContaining "semicolon-delimited port declarations were removed"
+
+    it "rejects semicolon-delimited multiline input ports with a targeted diagnostic" $
+      parseWireFile "test" "node n\n  <- value: T;\n  -> out: U = @review.x value;"
+        `shouldSatisfy` isParseFailureContaining "semicolon-delimited port declarations were removed"
+
+    it "rejects semicolon-delimited output port clauses with a targeted diagnostic" $
+      parseWireFile "test" "node n\n  <- value: T\n  -> out: U;\n  = @review.x value;"
+        `shouldSatisfy` isParseFailureContaining "semicolon-delimited port declarations were removed"
+
+    it "rejects the obsolete ConfiguredExecutor parameter class" $
+      parseWireFile "test" "kind k(exec: ConfiguredExecutor) = -> out: T = @exec;"
+        `shouldSatisfy` isParseFailureContaining "ConfiguredExecutor was removed; use Executor"
 
     it "rejects wildcard registry namespace use imports" $
       parseWireFile "test" "use std.io.*;"
@@ -170,7 +216,7 @@ spec = describe "Cortex.Wire.Parser" $ do
         "test"
         ( T.unlines
             [ "node classify"
-            , "  <- evidence: EvidenceSet ;"
+            , "  <- evidence: EvidenceSet "
             , "  let"
             , "    items = evidence.items ;"
             , "  in"
@@ -184,8 +230,8 @@ spec = describe "Cortex.Wire.Parser" $ do
         "test"
         ( T.unlines
             [ "kind pass(label: PortLabel) ="
-            , "  <- label: T ;"
-            , "  -> label: T = @review.pass (label) ;"
+            , "  <- label: T "
+            , "  -> label: T = @review.pass label ;"
             , "pass(value);"
             ]
         )
@@ -197,7 +243,7 @@ spec = describe "Cortex.Wire.Parser" $ do
         ( T.unlines
             [ "form pass() = {"
             , "  node n"
-            , "    -> out: T = @review.pass ({}) ;"
+            , "    -> out: T = @review.pass ;"
             , "  n;"
             , "};"
             , "pass();"
@@ -210,7 +256,7 @@ spec = describe "Cortex.Wire.Parser" $ do
         "test"
         ( T.unlines
             [ "kind sample(label: PortLabel) ="
-            , "  -> label: Sample = @review.sample ({}) ;"
+            , "  -> label: Sample = @review.sample ;"
             , "let worker_names = [\"alpha\", \"alpha\"];"
             , "let workers = makeEach(worker_names, sample);"
             , "workers"
@@ -255,7 +301,7 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "kind sample(label: PortLabel) ="
-                , "  -> label: Sample = @review.sample ({}) ;"
+                , "  -> label: Sample = @review.sample ;"
                 , "let workers = make(2, sample);"
                 , "workers"
                 ]
@@ -277,7 +323,7 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "kind sample(label: PortLabel) ="
-                , "  -> label: Sample = @review.sample ({}) ;"
+                , "  -> label: Sample = @review.sample ;"
                 , "let workers[] = make(2, sample);"
                 , "workers[1]"
                 ]
@@ -290,7 +336,7 @@ spec = describe "Cortex.Wire.Parser" $ do
         "test"
         ( T.unlines
             [ "kind sample(label: PortLabel) ="
-            , "  -> label: Sample = @review.sample ({}) ;"
+            , "  -> label: Sample = @review.sample ;"
             , "let workers[] = make(2, sample);"
             , "workers[2]"
             ]
@@ -350,7 +396,7 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "kind sample(label: PortLabel) ="
-                , "  -> label: Sample = @review.sample ({}) ;"
+                , "  -> label: Sample = @review.sample ;"
                 , "let count = 2;"
                 , "let workers = make(count, sample);"
                 , "workers"
@@ -364,7 +410,7 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "kind sample(label: PortLabel) ="
-                , "  -> label: Sample = @review.sample ({}) ;"
+                , "  -> label: Sample = @review.sample ;"
                 , "form batch_form() = {"
                 , "  let count = 2;"
                 , "  let workers = make(count, sample);"
@@ -409,16 +455,15 @@ spec = describe "Cortex.Wire.Parser" $ do
         [TopLet LetPrivate "acceptedItem" (LetRhsCorePure CorePureLambda {})] -> pure ()
         other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses configured executor bindings" $ do
+    it "parses executor authority bindings" $ do
       let WireFile forms _ =
-            parseOrFail "let analyst = @review.analyst { temperature = 0.2 ; } ;"
+            parseOrFail "let analyst = @review.analyst;"
       case forms of
         [ TopLet
             LetPrivate
             "analyst"
-            (LetRhsWire (ExprConfiguredExecutor (QName ("review" :| ["analyst"])) (Record fields)))
-          ] ->
-            length fields `shouldBe` 1
+            (LetRhsWire (ExprExecutor (QName ("review" :| ["analyst"]))))
+          ] -> pure ()
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "parses bounded indexed product contracts in port positions" $ do
@@ -426,8 +471,8 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "node sink"
-                , "  <- samples: [Sample; 3] ;"
-                , "  -> done: Done = @review.sink (samples) ;"
+                , "  <- samples: [Sample; 3]"
+                , "  -> done: Done = @review.sink samples;"
                 ]
       case forms of
         [TopNode node] ->
@@ -441,11 +486,11 @@ spec = describe "Cortex.Wire.Parser" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "let h_gate = @quantum.h {} ;"
-                , "kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) ="
-                , "  <- label: Qubit ;"
-                , "  -> label: Qubit ;"
-                , "  = gate (label) ;"
+                [ "let h_gate = @quantum.h;"
+                , "kind one_qubit_gate(label: PortLabel, gate: Executor) ="
+                , "  <- label: Qubit"
+                , "  -> label: Qubit"
+                , "  = @gate label;"
                 , "node screen_h = one_qubit_gate(screen, h_gate);"
                 , "screen_h"
                 ]
@@ -457,9 +502,27 @@ spec = describe "Cortex.Wire.Parser" $ do
                        , PortOutputDecl (Label "screen") (ContractId "Qubit")
                        ]
           case nodeDeclBody node of
-            NodeBodyExecutor Nothing (ExecutorCallConfigured "h_gate" (CorePureIdent "screen")) ->
+            NodeBodyExecutor Nothing (ExecutorCallBound "h_gate" (Just (CorePureIdent "screen"))) ->
               pure ()
             other -> expectationFailure ("unexpected body: " <> show other)
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "accepts a bare Executor authority passed directly to a kind application" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "kind run(executor: Executor) ="
+                , "  <- value: T"
+                , "  -> value: T"
+                , "  = @executor value;"
+                , "node applied = run(@execute);"
+                ]
+      case forms of
+        [TopNode node] ->
+          nodeDeclBody node
+            `shouldBe` NodeBodyExecutor
+              Nothing
+              (ExecutorCallBound "execute" (Just (CorePureIdent "value")))
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "parses registry namespace use imports" $ do
@@ -477,12 +540,12 @@ spec = describe "Cortex.Wire.Parser" $ do
 
     it "desugars ordinary record inherit fields" $ do
       let WireFile forms _ =
-            parseOrFail "let analyst = @review.analyst { inherit temperature; } ;"
+            parseOrFail "let args = { inherit temperature; };"
       case forms of
         [ TopLet
             LetPrivate
-            "analyst"
-            (LetRhsWire (ExprConfiguredExecutor _ (Record fields)))
+            "args"
+            (LetRhsWire (ExprRecord (Record fields)))
           ] ->
             fields
               `shouldBe` [ Field
@@ -492,12 +555,26 @@ spec = describe "Cortex.Wire.Parser" $ do
         other -> expectationFailure ("unexpected forms: " <> show other)
 
   describe "node declarations" $ do
+    it "parses static node metadata and a zero-argument executor call" $ do
+      let WireFile forms _ =
+            parseOrFail "node fetch with { timeout = 30; } -> result: Result = @review.fetch;"
+      case forms of
+        [TopNode node] -> do
+          node.nodeDeclMetadata
+            `shouldBe` Just
+              (Record [Field ("timeout" :| []) (ExprLit (LitNumber 30))])
+          node.nodeDeclBody
+            `shouldBe` NodeBodyExecutor
+              Nothing
+              (ExecutorCallInline (QName ("review" :| ["fetch"])) Nothing)
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
     it "parses pure output equations with a where-clause" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
                 [ "node classify"
-                , "  <- evidence: EvidenceSet ;"
+                , "  <- evidence: EvidenceSet"
                 , "  -> accepted: AcceptedSet = evidence.items |> filter (x: x.score >= 0.7) ;"
                 , "  -> rejected: RejectedSet = evidence.items |> filter (x: x.score < 0.7) ;"
                 , "  where let"
@@ -517,24 +594,51 @@ spec = describe "Cortex.Wire.Parser" $ do
           case nodeDeclBody node of
             NodeBodyPure pureBody -> do
               nodePureBodyWhere pureBody `shouldSatisfy` isJust
-              length (nodePureBodyOutputs pureBody) `shouldBe` 2
+              case pureBody.nodePureBodyResult of
+                NodePureProduct outputs -> length outputs `shouldBe` 2
+                other -> expectationFailure ("expected product outputs, got: " <> show other)
             other -> expectationFailure ("expected pure body, got: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
+    it "parses the pure exclusive-sum fixture shared with the grammar diff" $
+      parseWireFixture "test/fixtures/wire/pure-sum-body.wire"
+
+    it "rejects mixing sum and product equations in one pure body" $ do
+      parseWireFile
+        "test"
+        "node classify <- score: Score -> accepted: Decision | rejected: RejectReason = accepted score; -> extra: Extra = score;"
+        `shouldSatisfy` isParseFailure
+      parseWireFile
+        "test"
+        "node classify <- score: Score -> extra: Extra = score; -> accepted: Decision | rejected: RejectReason = accepted score;"
+        `shouldSatisfy` isParseFailure
+
+    it "parses a pure exclusive-sum body with scoped constructors" $ do
+      let WireFile forms _ =
+            parseOrFail
+              "node classify <- score: Score -> accepted: Decision | rejected: RejectReason = if score >= 0 then accepted score else rejected score;"
+      case forms of
+        [ TopNode
+            NodeDecl
+              { nodeDeclBody =
+                NodeBodyPure (NodePureBody Nothing (NodePureSum variants (CorePureIf {})))
+              }
+          ] -> fmap (.svLabel) variants `shouldBe` Label "accepted" :| [Label "rejected"]
+        other -> expectationFailure ("unexpected pure sum parse: " <> show other)
     it "parses single-output external shorthand" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
                 [ "node analyze"
-                , "  <- evidence: EvidenceSet ;"
-                , "  -> analysis: AnalysisRecord = @review.analyze (evidence) ;"
+                , "  <- evidence: EvidenceSet"
+                , "  -> analysis: AnalysisRecord = @review.analyze evidence;"
                 ]
       case forms of
         [TopNode node] ->
           case nodeDeclBody node of
             NodeBodyExecutor
               Nothing
-              (ExecutorCallInline (QName ("review" :| ["analyze"])) (Record []) (CorePureIdent "evidence")) ->
+              (ExecutorCallInline (QName ("review" :| ["analyze"])) (Just (CorePureIdent "evidence"))) ->
                 nodeDeclPortSig node
                   `shouldBe` [ PortInputDecl (Label "evidence") (ContractId "EvidenceSet")
                              , PortOutputDecl (Label "analysis") (ContractId "AnalysisRecord")
@@ -547,15 +651,15 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "node analyze"
-                , "  <- evidence: EvidenceSet ;"
-                , "  -> analysis: AnalysisRecord ;"
-                , "  -> usage: UsageMetadata ;"
-                , "  = @review.analyzeWithUsage (evidence) ;"
+                , "  <- evidence: EvidenceSet"
+                , "  -> analysis: AnalysisRecord"
+                , "  -> usage: UsageMetadata"
+                , "  = @review.analyzeWithUsage evidence;"
                 ]
       case forms of
         [TopNode node] ->
           case nodeDeclBody node of
-            NodeBodyExecutor Nothing (ExecutorCallInline (QName ("review" :| ["analyzeWithUsage"])) _ _) ->
+            NodeBodyExecutor Nothing (ExecutorCallInline (QName ("review" :| ["analyzeWithUsage"])) _) ->
               length (nodeDeclPortSig node) `shouldBe` 3
             other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
@@ -565,8 +669,8 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "node logEvent"
-                , "  <- event: Event ;"
-                , "  = @artifact.log (event) ;"
+                , "  <- event: Event"
+                , "  = @artifact.log event;"
                 ]
       case forms of
         [TopNode node] ->
@@ -574,20 +678,22 @@ spec = describe "Cortex.Wire.Parser" $ do
             `shouldBe` [PortInputDecl (Label "event") (ContractId "Event")]
         other -> expectationFailure ("unexpected forms: " <> show other)
 
-    it "parses configured executor applications" $ do
+    it "parses bound executor applications" $ do
       let WireFile forms _ =
             parseOrFail $
               T.unlines
-                [ "let analyst = @review.analyst { temperature = 0.2 ; } ;"
+                [ "let analyst = @review.analyst;"
                 , "node analyze"
-                , "  <- evidence: EvidenceSet ;"
-                , "  -> analysis: AnalysisRecord ;"
-                , "  = analyst (evidence) ;"
+                , "  <- evidence: EvidenceSet"
+                , "  -> analysis: AnalysisRecord"
+                , "  = @analyst evidence;"
                 ]
       case forms of
         [_, TopNode node] ->
           case nodeDeclBody node of
-            NodeBodyExecutor Nothing (ExecutorCallConfigured "analyst" (CorePureIdent "evidence")) -> pure ()
+            NodeBodyExecutor
+              Nothing
+              (ExecutorCallInline (QName ("analyst" :| [])) (Just (CorePureIdent "evidence"))) -> pure ()
             other -> expectationFailure ("unexpected body: " <> show other)
         other -> expectationFailure ("unexpected forms: " <> show other)
 
@@ -596,9 +702,9 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "node analyze"
-                , "  <- evidence: EvidenceSet ;"
-                , "  -> analysis: AnalysisRecord ;"
-                , "  = @review.analyze (payload) ;"
+                , "  <- evidence: EvidenceSet"
+                , "  -> analysis: AnalysisRecord"
+                , "  = @review.analyze payload;"
                 , "  where { payload = { items = evidence.items ; } ; } ;"
                 ]
       case forms of
@@ -630,6 +736,13 @@ spec = describe "Cortex.Wire.Parser" $ do
         `shouldBe` CorePureRecord
           [ CorePureField ("accepted" :| []) (CorePureIdent "accepted")
           , CorePureField ("rejected" :| []) (CorePureIdent "rejected")
+          ]
+
+    it "desugars CorePure source inheritance" $
+      parseCorePureNodeOutput "{ inherit (x) payload cfg; }"
+        `shouldBe` CorePureRecord
+          [ CorePureField ("payload" :| []) (CorePureFieldAccess (CorePureIdent "x") "payload")
+          , CorePureField ("cfg" :| []) (CorePureFieldAccess (CorePureIdent "x") "cfg")
           ]
 
     it "parses if-then-else" $
@@ -673,10 +786,10 @@ spec = describe "Cortex.Wire.Parser" $ do
             parseOrFail $
               T.unlines
                 [ "node a"
-                , "  -> out: T = @review.x ({}) ;"
+                , "  -> out: T = @review.x ;"
                 , "node b"
-                , "  <- input: T ;"
-                , "  -> out: U = @review.y (input) ;"
+                , "  <- input: T "
+                , "  -> out: U = @review.y input ;"
                 , "(a) => b"
                 ]
       length forms `shouldBe` 2
@@ -689,8 +802,8 @@ parseCorePureNodeOutput source =
   case parseWireFile "test" program of
     Right (WireFile [TopNode node] _) ->
       case nodeDeclBody node of
-        NodeBodyPure pureBody ->
-          pureOutputEquationExpr (NE.head pureBody.nodePureBodyOutputs)
+        NodeBodyPure (NodePureBody _ (NodePureProduct outputs)) ->
+          pureOutputEquationExpr (NE.head outputs)
         other -> error ("unexpected node body: " <> show other)
     other -> error ("unexpected parse result: " <> show other)
   where

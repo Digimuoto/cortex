@@ -122,7 +122,7 @@ conflate them.
 **Surviving residue** (already canon, restated for clarity): each runnable graph target — the
 file-return or each `--return`-selectable graph-valued `export let` — is independently
 closure-checked at the existing evaluation boundary
-(`docs/Reference/Wire/configured-executors-and-execution-boundary.md:77-80`;
+(`docs/Reference/Wire/executor-authorities-and-execution-boundary.md:68-72`;
 `docs/Reference/Wire/contracts-ports-and-matching.md:91-93`). There is no implicit overlay across
 exports; a declaration-only file produces no graph target.
 

@@ -1,5 +1,6 @@
 import Cortex.Pulse.Classify
 import Cortex.Pulse.Fact
+import Cortex.Wire.SemanticC
 
 /-!
 ## Overview
@@ -42,6 +43,8 @@ inductive Status : Type where
 
 namespace Status
 
+open Cortex.Wire.NativePure
+
 /-- Embed a target status into the existing Track 2 status lattice. -/
 def toNodeStatus : Status → NodeStatus
   | pending => .pending
@@ -67,6 +70,14 @@ theorem unblocksSuccessors_iff (status : Status) :
 theorem toNodeStatus_eq_pending_iff (status : Status) :
     status.toNodeStatus = NodeStatus.pending ↔ status = Status.pending := by
   cases status <;> simp [toNodeStatus]
+
+/-- Stable target-internal status code used by shared semantic C lowering. -/
+def semanticCode : Status → U8
+  | pending => { value := 0, upper := by decide }
+  | running => { value := 1, upper := by decide }
+  | completed => { value := 2, upper := by decide }
+  | failed => { value := 3, upper := by decide }
+  | skipped => { value := 4, upper := by decide }
 
 end Status
 
@@ -139,6 +150,93 @@ theorem ready_iff_directReady
 /-- Dense node identifiers make every generated node-array access in bounds. -/
 theorem nodeIndex_lt_count (node : Fin n) : node.val < n :=
   node.isLt
+
+/-! ### Shared semantic C scheduler lowering -/
+
+open Cortex.Wire.NativePure
+
+/-- Dense node identifier represented in the target-internal uint64 basis. -/
+private def nodeCode
+    (nodeCountWithinU64 : n < 2 ^ 64)
+    (node : Fin n) : U64 :=
+  { value := node.val, upper := lt_trans node.isLt nodeCountWithinU64 }
+
+/-- Read one statically in-bounds status from the scheduler status vector. -/
+private def statusAt
+    (nodeCountWithinU64 : n < 2 ^ 64)
+    (node : Fin n) : SemanticC.Expr [.vector n .u8] .u8 :=
+  .index (.load .zero) (.u64 (nodeCode nodeCountWithinU64 node))
+
+/-- Semantic expression for the scheduler's successful-predecessor policy. -/
+private def statusUnblocks
+    (status : SemanticC.Expr context .u8) : SemanticC.Expr context .bool :=
+  .or
+    (.eqU8 status (.u8 Status.completed.semanticCode))
+    (.eqU8 status (.u8 Status.skipped.semanticCode))
+
+/-- Topology-specialized readiness expression for one dense node. The edge
+relation is partially evaluated: only actual predecessor checks remain. -/
+def semanticReadyExpr
+    (program : Program n)
+    (nodeCountWithinU64 : n < 2 ^ 64)
+    (node : Fin n) : SemanticC.Expr [.vector n .u8] .bool :=
+  let pending :=
+    SemanticC.Expr.eqU8
+      (statusAt nodeCountWithinU64 node)
+      (.u8 Status.pending.semanticCode)
+  (List.ofFn fun predecessor : Fin n => predecessor).foldl
+    (fun ready predecessor =>
+      if program.edge predecessor node = true then
+        .and ready (statusUnblocks (statusAt nodeCountWithinU64 predecessor))
+      else ready)
+    pending
+
+private def semanticReadySignature (n : Nat) : SemanticC.Signature :=
+  { params := [.vector n .u8], result := .bool }
+
+/-- One scheduler readiness function in the shared semantic IR. -/
+def semanticReadyFunction
+    (program : Program n)
+    (nodeCountWithinU64 : n < 2 ^ 64)
+    (node : Fin n) : SemanticC.Function (semanticReadySignature n) :=
+  { name := s!"cortex_static_ready_{node.val}"
+  , body := .ret (semanticReadyExpr program nodeCountWithinU64 node)
+  }
+
+/-- Semantic-module form of the readiness functions. No theorem yet relates
+this lowering to `Program.Ready`, and the shipped scheduler emitter lowers
+directly to the C11 AST without consuming it; the module is a stated target,
+checked only by a smoke example, until the correspondence lemma lands. -/
+def semanticModule
+    (program : Program n)
+    (nodeCountWithinU64 : n < 2 ^ 64) : SemanticC.Module :=
+  { functions :=
+      (List.ofFn fun node : Fin n => node).map fun node =>
+        .mk (semanticReadySignature n) (semanticReadyFunction program nodeCountWithinU64 node)
+  }
+
+private def singletonNoEdgeProgram : Program 1 where
+  edge := fun _ _ => false
+  acyclic := by
+    intro node path
+    have impossible : ∀ {source target : Fin 1},
+        EdgePath (fun _ _ => false) source target → False := by
+      intro source target candidate
+      induction candidate with
+      | direct hEdge => simp at hEdge
+      | trans _ _ leftImpossible _ => exact leftImpossible
+    exact impossible path
+
+example :
+    (SemanticC.evalClosed
+          (semanticReadyExpr singletonNoEdgeProgram (by decide) 0)
+          [.vector [.u8 Status.pending.semanticCode]]).bind
+        (fun
+          | .bool value => some value
+          | .unit | .u8 _ | .u32 _ | .i64 _ | .u64 _ | .f64 _ | .text _ |
+            .vector _ | .record _ | .sum _ _ => none) =
+      some true := by
+  native_decide
 
 end Program
 

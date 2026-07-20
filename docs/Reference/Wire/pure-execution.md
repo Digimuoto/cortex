@@ -32,7 +32,7 @@ The source form is:
 let acceptedItem = item: item.score >= 0.7;
 
 node classify
-  <- evidence: EvidenceSet;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = evidence.items |> filter acceptedItem;
   -> rejected: RejectedSet = evidence.items |> filter (item: !(acceptedItem item));
 ```
@@ -63,8 +63,9 @@ A pure node uses the clause form from the Wire grammar:
 
 ```text
 node <name>
-  (<- <input-name> : <Contract>;)*
-  (-> <output-name> : <Contract> = <corepure-expr>;)+
+  (<- <input-name> : <Contract>)*
+  ((-> <output-name> : <Contract> = <corepure-expr>;)+
+   | (-> <variant> : <Contract> (| <variant> : <Contract>)+ = <corepure-sum-expr>;))
   (where <corepure-record-expr>;)?
 ```
 
@@ -86,7 +87,8 @@ Rules:
   references to let-bound records, and `//` merges of those shapes are admitted. Dynamic record
   shapes are rejected at admission.
 - Each pure output equation declares exactly one output port.
-- Sum-grouped outputs are not pure equation syntax.
+- A sum body declares exactly one exclusive output group. Constructor scope is exactly its labels;
+  each constructor takes one payload and every control-flow path returns one constructor.
 - A pure node must declare at least one output equation.
 - The equation set must match the declared output ports exactly.
 - Dynamic loops, host scripts, JIT languages, model calls, tools, and IO belong behind `@`
@@ -102,8 +104,8 @@ let scoreThreshold = 0.7;
 
 Module `let` is phase-neutral syntax. `acceptedItem` is a delayed CorePure helper function.
 `scoreThreshold` is an ordinary compile-time scalar, but because it is authority-free pure data, the
-compiler captures it into later delayed CorePure evaluation as a constant. Configured executor
-values and graph values are not capturable into CorePure.
+compiler captures it into later delayed CorePure evaluation as a constant. Executor authority values
+and graph values are not capturable into CorePure.
 
 ## Lowering
 
@@ -137,8 +139,9 @@ Top-level `bindings` and the node-local `where` record are distinct scopes:
 The internal task metadata records the native pure evaluator, but Wire source never names it with
 `@`.
 
-The implemented config schema admits only `bindings`, `where`, and `outputs`. There is no
-source-authored CorePure budget field. `where` is omitted when the source node has no where-clause.
+The implemented config schema admits `bindings`, optional `where`, and exactly one of `outputs` or
+`variant`. A variant config stores its declared labels and single constructor-returning expression.
+There is no source-authored CorePure budget field.
 
 ## Input Binding
 
@@ -157,8 +160,8 @@ For example:
 
 ```wire
 node score
-  <- evidence: EvidenceSet;
-  <- weights: WeightSet;
+  <- evidence: EvidenceSet
+  <- weights: WeightSet
   -> score: ScoreSet = {
     total = sum (zipWith (s: w: s * w) evidence.scores weights.values);
   };
@@ -180,6 +183,18 @@ accepts JSON values.
 
 Evaluation is all-or-nothing for the node: either every declared output is produced, or the pure
 task fails with a typed evaluator error.
+
+An exclusive sum body instead produces exactly one `(label, payload)` pair:
+
+```wire
+node classify
+  <- score: Score
+  -> accepted: Decision | rejected: RejectReason =
+    if score >= 0 then accepted score else rejected score;
+```
+
+The runtime evaluates only the selected branch, validates its payload against that label's contract,
+and persists the label for downstream `select(...)`.
 
 In the node boundary normal form from
 [ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md), pure output equations are

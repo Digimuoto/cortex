@@ -22,8 +22,8 @@ import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.List (nub)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List (find, nub)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -43,7 +43,11 @@ import System.Info (arch, os)
 import System.Process (CreateProcess (cwd), proc, readCreateProcessWithExitCode)
 
 import Cortex.Algebra.Graph (Relation, predecessors, relVertices)
-import Cortex.Capability.Executor.Pure (PureTaskConfig (..), pureTaskConfigFromMetadata)
+import Cortex.Capability.Executor.Pure
+  ( PureTaskConfig (..)
+  , PureVariantConfig (..)
+  , pureTaskConfigFromMetadata
+  )
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
   ( CircuitNodeRef (..)
@@ -53,6 +57,7 @@ import Cortex.Wire
   , ContractId (..)
   , CorePureBinding (..)
   , CorePureExpr (..)
+  , CorePureField (..)
   , CorePureLiteral (..)
   , ExecutorCall (..)
   , Expr (..)
@@ -62,6 +67,7 @@ import Cortex.Wire
   , NodeBody (..)
   , NodeDecl (..)
   , NodePureBody (..)
+  , NodePureResult (..)
   , PortDecl (..)
   , PortLabel (..)
   , PureOutputEquation (..)
@@ -81,14 +87,20 @@ import Cortex.Wire
   , engineAbi
   , engineStateSchema
   , evaluatePureTaskOutputs
+  , evaluatePureTaskVariant
   , formatWireSourceWithExpanded
   , hostedLinuxTarget
   , hostedProcessProtocol
   , hostedProgramManifestSchema
   , loadHostedProgramArtifact
+  , normalizeNativePureInput
   , parseWireFile
+  , realizeNativePurePlan
   , renderHostedProgramError
   , renderHostedRunError
+  , renderNativePureArtifactError
+  , renderNativePureLeanError
+  , renderNativePurePlanModule
   , renderParseError
   , renderPureEvalError
   , renderWireError
@@ -136,6 +148,7 @@ import Cortex.Wire.LeanFixture
   , renderEmittedFixtureModule
   , renderEmittedUmbrellaModule
   )
+import Cortex.Wire.NativePure.Differential (emitNativePureDifferentialCorpus)
 import Cortex.Wire.Package
   ( NamespaceRegistry
   , renderPackageConflict
@@ -170,6 +183,7 @@ data Command
   | CommandParse !FilePath
   | CommandFrontier !FrontierCommand
   | CommandDifferential !FilePath
+  | CommandNativePureDifferential !FilePath
   | CommandHelp
   deriving stock (Eq, Show)
 
@@ -177,6 +191,7 @@ data BuildTarget
   = BuildCompiledCircuit
   | BuildStaticProgramV1
   | BuildX86_64LinuxV1
+  | BuildNativePureLeanV1
   deriving stock (Eq, Show)
 
 data BuildOptions = BuildOptions
@@ -262,6 +277,7 @@ main = do
     Right (CommandParse path) -> parseWireOnly path
     Right (CommandFrontier frontierCommand) -> frontierWire packagePaths frontierCommand
     Right (CommandDifferential outDir) -> differentialWire outDir
+    Right (CommandNativePureDifferential outDir) -> nativePureDifferentialWire outDir
 
 {- | Pull repeatable @--wire-package PATH@ options out of the raw argv, returning the
 collected manifest paths and the remaining command arguments. These flags select which
@@ -286,6 +302,8 @@ parseCommand = \case
   ["run", path] -> Right (CommandRun path)
   ["lean-fixtures", outDir] -> Right (CommandLeanFixtures outDir)
   ["differential", "emit", outDir] -> Right (CommandDifferential outDir)
+  ["native-pure", "differential", "emit", outDir] ->
+    Right (CommandNativePureDifferential outDir)
   ["parse", path] -> Right (CommandParse path)
   "frontier" : args -> CommandFrontier <$> parseFrontierCommand args
   [path] -> Right (CommandRun path)
@@ -293,6 +311,7 @@ parseCommand = \case
   "hosted-reference" : _ -> Left "usage: wire hosted-reference BUNDLE_DIR"
   "lean-fixtures" : _ -> Left "usage: wire lean-fixtures OUTDIR"
   "differential" : _ -> Left "usage: wire differential emit OUTDIR"
+  "native-pure" : _ -> Left "usage: wire native-pure differential emit OUTDIR"
   "parse" : _ -> Left "usage: wire parse FILE"
   _ -> Left usageText
 
@@ -303,10 +322,17 @@ parseBuildCommand = go BuildCompiledCircuit Nothing Nothing []
       [] ->
         case reverse files of
           [path]
-            | target == BuildX86_64LinuxV1 && isNothing output ->
-                Left "wire build --target x86_64-linux-v1 requires --output DIR."
-            | target /= BuildX86_64LinuxV1 && isJust output ->
-                Left "wire build --output is supported only by x86_64-linux-v1."
+            | target `elem` [BuildX86_64LinuxV1, BuildNativePureLeanV1]
+                && isNothing output ->
+                Left
+                  ( "wire build --target "
+                      <> renderBuildTarget target
+                      <> " requires --output DIR."
+                  )
+            | target `notElem` [BuildX86_64LinuxV1, BuildNativePureLeanV1]
+                && isJust output ->
+                Left
+                  "wire build --output is supported only by x86_64-linux-v1 and native-pure-lean-v1."
             | otherwise ->
                 Right
                   BuildOptions
@@ -332,11 +358,19 @@ parseBuildTarget = \case
   "compiled-circuit" -> Right BuildCompiledCircuit
   "static-program-v1" -> Right BuildStaticProgramV1
   "x86_64-linux-v1" -> Right BuildX86_64LinuxV1
+  "native-pure-lean-v1" -> Right BuildNativePureLeanV1
   target -> Left ("unsupported Wire build target: " <> T.pack target)
+
+renderBuildTarget :: BuildTarget -> Text
+renderBuildTarget = \case
+  BuildCompiledCircuit -> "compiled-circuit"
+  BuildStaticProgramV1 -> "static-program-v1"
+  BuildX86_64LinuxV1 -> "x86_64-linux-v1"
+  BuildNativePureLeanV1 -> "native-pure-lean-v1"
 
 buildUsageText :: Text
 buildUsageText =
-  "usage: wire build [--target compiled-circuit|static-program-v1|x86_64-linux-v1] "
+  "usage: wire build [--target compiled-circuit|static-program-v1|x86_64-linux-v1|native-pure-lean-v1] "
     <> "[--output DIR] [--return NAME] FILE"
 
 parseFmtCommand :: [String] -> Either Text Command
@@ -369,10 +403,13 @@ usageText =
     , "  wire run FILE"
     , "  wire build [--target compiled-circuit|static-program-v1] [--return NAME] FILE"
     , "  wire build --target x86_64-linux-v1 --output DIR [--return NAME] FILE"
+    , "  wire build --target native-pure-lean-v1 --output DIR [--return NAME] FILE"
     , "  wire hosted-reference BUNDLE_DIR"
     , "  wire fmt [--check | --stdout] FILE..."
     , "  wire lean-fixtures OUTDIR    (regenerate emitted Lean artifact fixtures)"
     , "  wire differential emit OUTDIR    (emit the static-C-backend differential corpus)"
+    , "  wire native-pure differential emit OUTDIR"
+    , "                                      (emit the NativePure differential corpus)"
     , "  wire parse FILE              (expand includes and parse; no compilation)"
     , "  wire frontier [--return NAME] [--closure | --open] [--node NODE] [--json] FILE"
     , "                              (inspect endpoint-use / closure accounting; no execution)"
@@ -417,6 +454,46 @@ buildWire packagePaths options = do
       case options.buildOutputDirectory of
         Nothing -> dieText "x86_64-linux-v1 requires an output directory"
         Just directory -> buildHostedLinux directory staticProgram
+    BuildNativePureLeanV1 ->
+      case options.buildOutputDirectory of
+        Nothing -> dieText "native-pure-lean-v1 requires an output directory"
+        Just directory -> buildNativePureLean directory compileEnv compiled
+
+buildNativePureLean :: FilePath -> WireCompileEnv -> CompiledCircuit -> IO ()
+buildNativePureLean outputDirectory compileEnv compiled = do
+  contractRegistry <-
+    maybe
+      (dieText "native-pure-lean-v1 requires a strict contract registry with native_shape projections")
+      pure
+      compileEnv.wireCompileEnvContractRegistry
+  normalized <-
+    either
+      (dieText . renderNativePureArtifactError)
+      pure
+      (normalizeNativePureInput contractRegistry compiled)
+  plan <-
+    either
+      (dieText . renderNativePureArtifactError)
+      pure
+      (realizeNativePurePlan normalized)
+  leanModule <-
+    either
+      (dieText . renderNativePureLeanError)
+      pure
+      ( renderNativePurePlanModule
+          "Cortex.Wire.NativePure.Generated.Program"
+          normalized
+          plan
+      )
+  createDirectoryIfMissing True outputDirectory
+  let normalizedPath = outputDirectory </> "native-pure-input.json"
+      planPath = outputDirectory </> "native-pure-plan.json"
+      leanPath = outputDirectory </> "Program.lean"
+  BS.writeFile normalizedPath (prettyJsonBytes normalized)
+  BS.writeFile planPath (prettyJsonBytes plan)
+  TIO.writeFile leanPath leanModule
+  forM_ [normalizedPath, planPath, leanPath] $ \path ->
+    TIO.putStrLn ("wrote " <> T.pack path)
 
 lowerStaticProgram :: CompiledCircuit -> IO StaticProgram
 lowerStaticProgram compiled =
@@ -699,6 +776,17 @@ differentialWire outDir = do
         <> " scenarios)"
     )
 
+nativePureDifferentialWire :: FilePath -> IO ()
+nativePureDifferentialWire outDir = do
+  cases <- emitNativePureDifferentialCorpus outDir
+  TIO.putStrLn
+    ( "emitted NativePure differential corpus to "
+        <> T.pack outDir
+        <> " ("
+        <> T.pack (show cases)
+        <> " cases)"
+    )
+
 -- | Parse-only acceptance check used by the grammar differential harness.
 parseWireOnly :: FilePath -> IO ()
 parseWireOnly path = do
@@ -911,23 +999,36 @@ runPureNode
   -> NodePureBody
   -> IO (Map Text WireValue)
 runPureNode outputLock useScope pureBindings nodeInputs ports loweredPorts pureBody = do
-  outputExprs <-
-    either
-      (dieTextLocked outputLock)
-      pure
-      (pureOutputConfigMap useScope loweredPorts.loweredOutputs pureBody.nodePureBodyOutputs)
   outputValues <-
-    either
-      (dieTextLocked outputLock . renderPureEvalError)
-      pure
-      ( evaluatePureTaskOutputs
-          ports
-          (wireInputBundleFromNodeInputs nodeInputs)
-          pureBindings
-          pureBody.nodePureBodyWhere
-          outputExprs
-      )
+    case pureBody.nodePureBodyResult of
+      NodePureProduct outputEquations -> do
+        outputExprs <-
+          either
+            (dieTextLocked outputLock)
+            pure
+            (pureOutputConfigMap useScope loweredPorts.loweredOutputs outputEquations)
+        evaluate
+          ( evaluatePureTaskOutputs
+              ports
+              inputBundle
+              pureBindings
+              pureBody.nodePureBodyWhere
+              outputExprs
+          )
+      NodePureSum _variants bodyExpr ->
+        evaluate
+          ( evaluatePureTaskVariant
+              ports
+              inputBundle
+              pureBindings
+              pureBody.nodePureBodyWhere
+              (Map.keys ports.wirePortsOutputs)
+              bodyExpr
+          )
   pure (wrapOutputs Nothing ports outputValues)
+  where
+    inputBundle = wireInputBundleFromNodeInputs nodeInputs
+    evaluate = either (dieTextLocked outputLock . renderPureEvalError) pure
 
 runCompiledPureNode
   :: MVar () -> NodeInputs -> PureTaskConfig -> IO (Map Text WireValue)
@@ -936,14 +1037,26 @@ runCompiledPureNode outputLock nodeInputs config = do
     either
       (dieTextLocked outputLock . renderPureEvalError)
       pure
-      ( evaluatePureTaskOutputs
-          config.pureTaskConfigPorts
-          (wireInputBundleFromNodeInputs nodeInputs)
-          config.pureTaskConfigBindings
-          config.pureTaskConfigWhere
-          config.pureTaskConfigOutputs
+      ( case config.pureTaskConfigVariant of
+          Nothing ->
+            evaluatePureTaskOutputs
+              config.pureTaskConfigPorts
+              inputBundle
+              config.pureTaskConfigBindings
+              config.pureTaskConfigWhere
+              config.pureTaskConfigOutputs
+          Just variant ->
+            evaluatePureTaskVariant
+              config.pureTaskConfigPorts
+              inputBundle
+              config.pureTaskConfigBindings
+              config.pureTaskConfigWhere
+              variant.pureVariantConfigLabels
+              variant.pureVariantConfigExpression
       )
   pure (wrapOutputs Nothing config.pureTaskConfigPorts outputValues)
+  where
+    inputBundle = wireInputBundleFromNodeInputs nodeInputs
 
 runExecutorNode
   :: MVar ()
@@ -954,27 +1067,64 @@ runExecutorNode
   -> ExecutorCall
   -> IO (Map Text WireValue)
 runExecutorNode outputLock useScope nodeName nodeInputs ports = \case
-  ExecutorCallInline executorName record inputExpr ->
-    case builtinExecutorFromQName useScope executorName of
-      Right BuiltinExecutorStdin ->
-        runStdinNode outputLock ports record
-      Right BuiltinExecutorStdout ->
-        runStdoutNode outputLock nodeInputs record inputExpr
-      Right BuiltinExecutorCommand ->
-        runCommandNode outputLock nodeInputs ports record inputExpr
-      Right BuiltinExecutorReadFile ->
-        runReadFileNode outputLock nodeInputs ports record inputExpr
-      Right BuiltinExecutorWriteFile ->
-        runWriteFileNode outputLock nodeInputs record inputExpr
-      Left errText ->
-        dieTextLocked outputLock (errText <> " Node: " <> nodeName <> ".")
-  ExecutorCallConfigured configuredName _inputExpr ->
-    dieTextLocked outputLock $
-      "wire run does not yet support configured executor "
-        <> configuredName
-        <> " in node "
-        <> nodeName
-        <> "."
+  ExecutorCallInline executorName argumentExpr -> do
+    (record, inputExpr) <-
+      either (dieTextLocked outputLock) pure (executorArgumentParts argumentExpr)
+    runInline executorName record inputExpr
+  ExecutorCallBound authorityName _argumentExpr ->
+    unsupportedBoundExecutor authorityName
+  where
+    runInline executorName record inputExpr =
+      case builtinExecutorFromQName useScope executorName of
+        Right BuiltinExecutorStdin ->
+          runStdinNode outputLock ports record
+        Right BuiltinExecutorStdout ->
+          runStdoutNode outputLock nodeInputs record inputExpr
+        Right BuiltinExecutorCommand ->
+          runCommandNode outputLock nodeInputs ports record inputExpr
+        Right BuiltinExecutorReadFile ->
+          runReadFileNode outputLock nodeInputs ports record inputExpr
+        Right BuiltinExecutorWriteFile ->
+          runWriteFileNode outputLock nodeInputs record inputExpr
+        Left errText ->
+          dieTextLocked outputLock (errText <> " Node: " <> nodeName <> ".")
+    unsupportedBoundExecutor authorityName =
+      dieTextLocked outputLock $
+        "wire run does not yet support bound executor authority "
+          <> authorityName
+          <> " in node "
+          <> nodeName
+          <> "."
+
+executorArgumentParts :: Maybe CorePureExpr -> Either Text (Record, CorePureExpr)
+executorArgumentParts = \case
+  Nothing -> Right (Record [], CorePureLit CorePureNull)
+  Just (CorePureRecord fields) -> do
+    let payload = fromMaybe (CorePureLit CorePureNull) (lookupCorePureField "payload" fields)
+    record <- Record <$> traverse corePureFieldToWireField fields
+    Right (record, payload)
+  Just scalar -> Right (Record [], scalar)
+  where
+    lookupCorePureField fieldName =
+      fmap (.corePureFieldValue)
+        . find ((== fieldName :| []) . (.corePureFieldPath))
+    corePureFieldToWireField field =
+      Field field.corePureFieldPath <$> corePureToWireExpr field.corePureFieldValue
+
+corePureToWireExpr :: CorePureExpr -> Either Text Expr
+corePureToWireExpr = \case
+  CorePureLit (CorePureString value) -> Right (ExprLit (LitString value))
+  CorePureLit (CorePureNumber value) -> Right (ExprLit (LitNumber value))
+  CorePureLit (CorePureBool value) -> Right (ExprLit (LitBool value))
+  CorePureLit CorePureNull -> Left "executor cfg cannot contain null in wire run"
+  CorePureIdent name -> Right (ExprIdent (QName (name :| [])))
+  CorePureList values -> ExprList <$> traverse corePureToWireExpr values
+  CorePureRecord fields ->
+    ExprRecord . Record
+      <$> traverse
+        (\field -> Field field.corePureFieldPath <$> corePureToWireExpr field.corePureFieldValue)
+        fields
+  other -> Left ("wire run requires statically evaluable executor cfg, got " <> tshow other <> ".")
 
 builtinExecutorFromQName :: WireUseScope -> QName -> Either Text BuiltinExecutor
 builtinExecutorFromQName useScope executorName = do

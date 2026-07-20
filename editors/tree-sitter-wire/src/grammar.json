@@ -623,10 +623,6 @@
               },
               {
                 "type": "SYMBOL",
-                "name": "executor_single_output_body"
-              },
-              {
-                "type": "SYMBOL",
                 "name": "executor_body"
               }
             ]
@@ -692,7 +688,7 @@
         },
         {
           "type": "STRING",
-          "value": "ConfiguredExecutor"
+          "value": "Executor"
         }
       ]
     },
@@ -918,7 +914,7 @@
         },
         {
           "type": "STRING",
-          "value": "ConfiguredExecutor"
+          "value": "Executor"
         }
       ]
     },
@@ -965,6 +961,31 @@
               "type": "SEQ",
               "members": [
                 {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "SEQ",
+                      "members": [
+                        {
+                          "type": "STRING",
+                          "value": "with"
+                        },
+                        {
+                          "type": "FIELD",
+                          "name": "metadata",
+                          "content": {
+                            "type": "SYMBOL",
+                            "name": "record"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
+                },
+                {
                   "type": "FIELD",
                   "name": "inputs",
                   "content": {
@@ -984,10 +1005,6 @@
                       {
                         "type": "SYMBOL",
                         "name": "pure_body"
-                      },
-                      {
-                        "type": "SYMBOL",
-                        "name": "executor_single_output_body"
                       },
                       {
                         "type": "SYMBOL",
@@ -1281,19 +1298,77 @@
             "type": "SYMBOL",
             "name": "contract_ref"
           }
+        }
+      ]
+    },
+    "pure_body": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pure_output_equation"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "pure_sum_body"
+        }
+      ]
+    },
+    "pure_sum_body": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "->"
+        },
+        {
+          "type": "FIELD",
+          "name": "variant",
+          "content": {
+            "type": "SYMBOL",
+            "name": "output_variant"
+          }
+        },
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "|"
+              },
+              {
+                "type": "FIELD",
+                "name": "variant",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "output_variant"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "="
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pure_output_expr"
+          }
         },
         {
           "type": "STRING",
           "value": ";"
         }
       ]
-    },
-    "pure_body": {
-      "type": "REPEAT1",
-      "content": {
-        "type": "SYMBOL",
-        "name": "pure_output_equation"
-      }
     },
     "pure_output_equation": {
       "type": "SEQ",
@@ -1335,39 +1410,6 @@
         "type": "SYMBOL",
         "name": "core_pure_expr"
       }
-    },
-    "executor_single_output_body": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "STRING",
-          "value": "->"
-        },
-        {
-          "type": "FIELD",
-          "name": "output",
-          "content": {
-            "type": "SYMBOL",
-            "name": "output_variant"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "="
-        },
-        {
-          "type": "FIELD",
-          "name": "call",
-          "content": {
-            "type": "SYMBOL",
-            "name": "inline_executor_call"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": ";"
-        }
-      ]
     },
     "executor_body": {
       "type": "SEQ",
@@ -1415,10 +1457,6 @@
             "type": "SYMBOL",
             "name": "output_body"
           }
-        },
-        {
-          "type": "STRING",
-          "value": ";"
         }
       ]
     },
@@ -1486,17 +1524,8 @@
       ]
     },
     "executor_call": {
-      "type": "CHOICE",
-      "members": [
-        {
-          "type": "SYMBOL",
-          "name": "inline_executor_call"
-        },
-        {
-          "type": "SYMBOL",
-          "name": "configured_executor_call"
-        }
-      ]
+      "type": "SYMBOL",
+      "name": "inline_executor_call"
     },
     "inline_executor_call": {
       "type": "SEQ",
@@ -1518,61 +1547,16 @@
           "members": [
             {
               "type": "FIELD",
-              "name": "config",
+              "name": "argument",
               "content": {
                 "type": "SYMBOL",
-                "name": "record"
+                "name": "core_pure_expr"
               }
             },
             {
               "type": "BLANK"
             }
           ]
-        },
-        {
-          "type": "STRING",
-          "value": "("
-        },
-        {
-          "type": "FIELD",
-          "name": "input",
-          "content": {
-            "type": "SYMBOL",
-            "name": "core_pure_expr"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": ")"
-        }
-      ]
-    },
-    "configured_executor_call": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "FIELD",
-          "name": "name",
-          "content": {
-            "type": "SYMBOL",
-            "name": "identifier"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "("
-        },
-        {
-          "type": "FIELD",
-          "name": "input",
-          "content": {
-            "type": "SYMBOL",
-            "name": "core_pure_expr"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": ")"
         }
       ]
     },
@@ -1997,7 +1981,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "configured_executor_value"
+          "name": "executor_value"
         },
         {
           "type": "SYMBOL",
@@ -2090,7 +2074,7 @@
         ]
       }
     },
-    "configured_executor_value": {
+    "executor_value": {
       "type": "SEQ",
       "members": [
         {
@@ -2103,14 +2087,6 @@
           "content": {
             "type": "SYMBOL",
             "name": "qualified_ident"
-          }
-        },
-        {
-          "type": "FIELD",
-          "name": "config",
-          "content": {
-            "type": "SYMBOL",
-            "name": "record"
           }
         }
       ]
@@ -3055,7 +3031,7 @@
                   },
                   {
                     "type": "SYMBOL",
-                    "name": "inherit_field"
+                    "name": "core_pure_inherit_field"
                   }
                 ]
               },
@@ -3093,6 +3069,55 @@
           "content": {
             "type": "SYMBOL",
             "name": "core_pure_expr"
+          }
+        }
+      ]
+    },
+    "core_pure_inherit_field": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "inherit"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "("
+                },
+                {
+                  "type": "FIELD",
+                  "name": "source",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "core_pure_expr"
+                  }
+                },
+                {
+                  "type": "STRING",
+                  "value": ")"
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "REPEAT1",
+          "content": {
+            "type": "FIELD",
+            "name": "name",
+            "content": {
+              "type": "SYMBOL",
+              "name": "identifier"
+            }
           }
         }
       ]
@@ -3459,6 +3484,18 @@
     [
       "_core_pure_atom",
       "qualified_ident"
+    ],
+    [
+      "inherit_field",
+      "core_pure_inherit_field"
+    ],
+    [
+      "pure_output_equation",
+      "output_body"
+    ],
+    [
+      "pure_sum_body",
+      "output_body"
     ]
   ],
   "precedences": [],

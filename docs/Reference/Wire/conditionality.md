@@ -134,9 +134,8 @@ Wire already has one crucial ingredient: **sum-grouped output ports**.
 
 ```wire
 node gate
-  <- evidence: EvidenceBundle;
-  -> fragment: AnalysisFragment | error: ExecutorError;
-  = @review.review (evidence);
+  <- evidence: EvidenceBundle
+  -> fragment: AnalysisFragment | error: ExecutorError  = @review.review evidence;
 ```
 
 The accepted grammar already says:
@@ -153,8 +152,19 @@ That means the language already knows how to say:
 
 But that is still **not** a full conditional.
 
-Sum groups define an **exclusive output boundary**. They do **not yet** define how continuation
-graphs should be attached to that boundary. That second step is what conditionality needs.
+Pure nodes can produce the same boundary without an executor:
+
+```wire
+node classify
+  <- score: Score
+  -> accepted: Decision | rejected: RejectReason =
+    if score >= 0 then accepted score else rejected score;
+```
+
+Here `accepted` and `rejected` are scoped constructors, not general functions. Every branch returns
+one constructor and the hosted pure evaluator commits only the selected tagged payload. Sum groups
+define an **exclusive output boundary**. They do **not yet** define how continuation graphs should
+be attached to that boundary. That second step is what conditionality needs.
 
 So the full model has two layers:
 
@@ -238,9 +248,8 @@ So with:
 
 ```wire
 node validate_plan
-  <- draft: DraftPlan;
-  -> valid: ResearchPlan | issue: PlanIssue;
-  = @review.validate_plan (draft);
+  <- draft: DraftPlan
+  -> valid: ResearchPlan | issue: PlanIssue  = @review.validate_plan draft;
 ```
 
 this is the natural conditional:
@@ -468,29 +477,24 @@ Keeping shared continuation outside `select(...)`:
 
 ```wire
 node validate_plan
-  <- draft: DraftPlan;
-  -> valid: ResearchPlan | issue: PlanIssue;
-  = @review.validate_plan (draft);
+  <- draft: DraftPlan
+  -> valid: ResearchPlan | issue: PlanIssue  = @review.validate_plan draft;
 
 node gather_missing_constraints
-  <- issue: PlanIssue;
-  -> missing: MissingConstraints;
-  = @artifact.gather_missing_constraints (issue);
+  <- issue: PlanIssue
+  -> missing: MissingConstraints  = @artifact.gather_missing_constraints issue;
 
 node repair_plan
-  <- missing: MissingConstraints;
-  -> valid: ResearchPlan;
-  = @review.repair_plan (missing);
+  <- missing: MissingConstraints
+  -> valid: ResearchPlan  = @review.repair_plan missing;
 
 node review_report
-  <- draft: DraftReport;
-  -> reviewed: ReviewedReport | issue: ReviewIssue;
-  = @review.review_report (draft);
+  <- draft: DraftReport
+  -> reviewed: ReviewedReport | issue: ReviewIssue  = @review.review_report draft;
 
 node revise_report
-  <- issue: ReviewIssue;
-  -> reviewed: ReviewedReport;
-  = @review.revise_report (issue);
+  <- issue: ReviewIssue
+  -> reviewed: ReviewedReport  = @review.revise_report issue;
 
 load_brief
   => draft_plan

@@ -15,6 +15,7 @@ module Cortex.Wire.PackageSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID qualified as UUID
@@ -22,10 +23,20 @@ import Test.Hspec
 
 import Cortex.Pulse.Node (NodeId (..))
 import Cortex.Wire
-  ( WireContractRegistry
+  ( NativeShape (..)
+  , NativeShapeProjection (..)
+  , WireContractRegistry
+  , WireContractSpec (..)
+  , WireExecutorArgumentShape (..)
   , WireOutputPort (..)
   , WirePorts (..)
+  , validateWireExecutorArgument
   , wireContractRegistryFromList
+  , wireExecutorArgumentIngressShape
+  , wireExecutorArgumentStaticFields
+  , wireExecutorArgumentStaticShape
+  , wireExecutorProjectionArgumentShape
+  , wireExecutorProjectionIngressShape
   , wrapWireStageOutput
   )
 import Cortex.Wire.Contract (WireCompileEnv (..), emptyWireCompileEnv)
@@ -210,6 +221,186 @@ spec = do
         Right package ->
           packageConflicts [package] `shouldContain` [DuplicateModulePath "example/helpers.wire"]
 
+  describe "executor argument manifests" $ do
+    let manifest shapeField =
+          "[package]\nid = \"shape-test\"\n[[executor]]\nid = \"review\"\neffect = \"model\"\n"
+            <> shapeField
+            <> "\n"
+        decodedShape shapeField = do
+          package <- decodeWirePackageManifest "cortex.toml" (manifest shapeField)
+          case package.wpExecutorProjections of
+            [projection] -> Right (wireExecutorProjectionArgumentShape projection)
+            _ -> Left (error "expected one executor projection")
+
+    it "rejects the obsolete config_shape key" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \config_shape = \"unchecked\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "decodes the argument_shape schema table form" $
+      case decodedShape "argument_shape = { schema = { type = \"object\" } }" of
+        Right (WireExecutorArgumentSchema _schema) -> pure ()
+        other -> expectationFailure ("expected a schema argument shape, got " <> show other)
+
+    it "rejects unknown argument_shape strings" $
+      case decodeWirePackageManifest "cortex.toml" (manifest "argument_shape = \"bogus\"") of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "unknown Wire executor argument shape"
+        Right _ -> expectationFailure "unknown argument shape unexpectedly decoded"
+
+    it "derives one total admission/ingress partition from argument_shape" $ do
+      let shapeField =
+            "argument_shape = { schema = { type = \"object\", required = [\"profile\", \"payload\"], additionalProperties = false, properties = { profile = { type = \"string\", x-cortex-binding-time = \"admission\" }, payload = { type = \"string\" } } } }"
+      shape <- requireRight (decodedShape shapeField)
+      wireExecutorArgumentStaticFields shape `shouldBe` Right (Set.singleton "profile")
+      staticShape <- requireRight (wireExecutorArgumentStaticShape shape)
+      ingressShape <- requireRight (wireExecutorArgumentIngressShape shape)
+      validateWireExecutorArgument
+        staticShape
+        (Aeson.object ["profile" Aeson..= ("reasoner" :: Text)])
+        `shouldBe` Right (Aeson.object ["profile" Aeson..= ("reasoner" :: Text)])
+      validateWireExecutorArgument
+        ingressShape
+        (Aeson.object ["payload" Aeson..= ("hello" :: Text)])
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= ("hello" :: Text)])
+      package <- requireRight (decodeWirePackageManifest "cortex.toml" (manifest shapeField))
+      case package.wpExecutorProjections of
+        [projection] -> wireExecutorProjectionIngressShape projection `shouldBe` Right ingressShape
+        _ -> expectationFailure "expected one executor projection"
+
+    it "rejects malformed field binding-time obligations" $
+      case decodeWirePackageManifest
+        "cortex.toml"
+        ( manifest
+            "argument_shape = { schema = { type = \"object\", properties = { profile = { type = \"string\", x-cortex-binding-time = \"sometimes\" } } } }"
+        ) of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "unknown x-cortex-binding-time sometimes"
+        Right _ -> expectationFailure "invalid executor binding-time unexpectedly decoded"
+
+    it "rejects the obsolete config_shape key in table-header spelling" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \[executor.config_shape]\n\
+            \schema = \"legacy.schema\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "rejects the obsolete config_shape key in dotted-key spelling" $ do
+      let source =
+            "[package]\n\
+            \id = \"legacy\"\n\
+            \[[executor]]\n\
+            \id = \"legacy.run\"\n\
+            \effect = \"host_effect\"\n\
+            \config_shape.schema = \"legacy.schema\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "config_shape was removed; use argument_shape"
+        Right _ -> expectationFailure "obsolete config_shape unexpectedly decoded"
+
+    it "accepts config_shape text inside a multi-line string value" $ do
+      let source =
+            "[package]\n\
+            \id = \"docs\"\n\
+            \[[executor]]\n\
+            \id = \"docs.run\"\n\
+            \effect = \"pure\"\n\
+            \[[module]]\n\
+            \path = \"example/notes.wire\"\n\
+            \source = \"\"\"\n\
+            \-- migration note, not a key:\n\
+            \config_shape = \"unchecked\"\n\
+            \export let value = 1;\n\
+            \\"\"\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          Map.lookup "example/notes.wire" package.wpModuleSources
+            `shouldSatisfy` maybe False (T.isInfixOf "config_shape = \"unchecked\"")
+
+  describe "native contract shape manifests" $ do
+    it "decodes scalar and bounded native_shape projections" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = \"i64\" }\n\
+            \[[contract]]\n\
+            \id = \"Name\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"text\", capacity = 64 } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err -> expectationFailure (T.unpack (renderWirePackageManifestError err))
+        Right package ->
+          fmap wireContractSpecNativeShape package.wpContractSpecs
+            `shouldBe` [ Just (NativeShapeProjection NativeI64)
+                       , Just (NativeShapeProjection (NativeText 64))
+                       ]
+
+    it "rejects unknown native_shape fields instead of silently weakening the representation" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Name\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v1\", shape = { kind = \"text\", capacity = 64, encoding = \"utf16\" } }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "fields must be exactly: capacity, kind"
+        Right _ -> expectationFailure "unknown native_shape field unexpectedly decoded"
+
+    it "rejects unversioned native_shape projections" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = \"i64\"\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "expected Object"
+        Right _ -> expectationFailure "unversioned native_shape unexpectedly decoded"
+
+    it "rejects an unknown native_shape projection version" $ do
+      let source =
+            "[package]\n\
+            \id = \"native\"\n\
+            \[[contract]]\n\
+            \id = \"Score\"\n\
+            \payload_kind = \"json\"\n\
+            \native_shape = { schema = \"cortex.wire.native-shape/v2\", shape = \"i64\" }\n"
+      case decodeWirePackageManifest "cortex.toml" source of
+        Left err ->
+          renderWirePackageManifestError err
+            `shouldSatisfy` T.isInfixOf "unsupported native_shape schema"
+        Right _ -> expectationFailure "unknown native_shape schema unexpectedly decoded"
+
   describe "ADR 0085 manifest schema end-to-end" $ do
     it "enforces a manifest-declared contract schema at runtime egress" $ do
       registry' <- schemaManifestRegistry
@@ -261,3 +452,8 @@ schemaManifestRegistry =
       \payload_kind = \"json\"\n\
       \description = \"Report payload\"\n\
       \schema = { type = \"object\", required = [\"title\"], properties = { title = { type = \"string\" } } }\n"
+
+requireRight :: Show e => Either e a -> IO a
+requireRight = \case
+  Left err -> expectationFailure (show err) >> fail "unreachable"
+  Right value -> pure value

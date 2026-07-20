@@ -54,7 +54,8 @@ orientation.
   [terminology.md](Reference/terminology.md).
 - **Sum group** — an output-port mutual-exclusion form. See
   [terminology.md](Reference/terminology.md).
-- **Configured executor value** — executor authority plus inert config, reusable in node bodies. See
+- **Executor authority value** — a bare `@executor` authority that takes one record argument at the
+  call inside a node body; compiler controls live in the node's `with` record. See
   [terminology.md](Reference/terminology.md).
 - **Wire value** — any graph-kind value usable in graph position. See
   [terminology.md](Reference/terminology.md).
@@ -110,8 +111,8 @@ orientation.
   [terminology.md](Reference/terminology.md#value-operators).
 - **`|` sum constructor** — output-port mutual-exclusion constructor. See
   [terminology.md](Reference/terminology.md#value-operators).
-- **`@` application** — stages registered executor authority with config. See
-  [terminology.md](Reference/terminology.md#value-operators).
+- **`@` application** — bare executor authority, optionally followed by one argument expression
+  normalized to one record. See [terminology.md](Reference/terminology.md#value-operators).
 - **Mokhov algebra** — the four-constructor algebraic basis for Wire's graph expressions. See
   [terminology.md](Reference/terminology.md#composition-algebra).
 

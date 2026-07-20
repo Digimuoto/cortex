@@ -1,8 +1,8 @@
 ---
 title: "Wire Reference — Executors and the Alphabet"
 description:
-  Scoped reference for executor registration, configured executor values, `@` authority, and ambient
-  identifiers in config values.
+  Scoped reference for executor registration, bare authority values, the one-record argument ABI,
+  and strict registry projections.
 sidebar:
   label: Executors
   order: 5
@@ -11,7 +11,7 @@ date: 2026-04-29
 related:
   - docs/Reference/Wire/grammar.md
   - docs/Reference/Wire/pure-execution.md
-  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
+  - docs/Reference/Wire/executor-authorities-and-execution-boundary.md
   - docs/Architecture/05-wire-language.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0014-executor-taxonomy-model-vs-external-call.md
@@ -23,19 +23,15 @@ related:
 # Wire Reference — Executors and the Alphabet
 
 `@` is Wire's executor-authority marker. In a strict compile environment it references a projected
-executor from the closed alphabet and pairs it with inert config data. The ordinary permissive
-compiler also supports consumer-owned qualified executor IDs as described below:
+executor from the closed alphabet. The ordinary permissive compiler also supports consumer-owned
+qualified executor IDs as described below:
 
 ```wire
-let analyst = @review.analyst {
-  model = "gpt-5.4";
-  temperature = 0.2;
-  memory = topological { preset = "causal"; };
-};
+let analyst = @review.analyst;
 ```
 
-This does not run the executor and does not create a graph vertex. It creates a configured executor
-value that can be reused in explicit node implementation bodies.
+This does not run the executor and does not create a graph vertex. It creates a bare authority value
+that can be reused in explicit node implementation bodies.
 
 Standard-pack executors are source-scoped through `use`:
 
@@ -43,7 +39,7 @@ Standard-pack executors are source-scoped through `use`:
 use std.io.{@stdin, @stdout, @command, @readFile, @writeFile};
 
 node read_mode
-  -> answer: UserInput = @stdin { prompt = "Planning mode (high/safe): "; } (null);
+  -> answer: UserInput = @stdin { cfg = { prompt = "Planning mode (high/safe): "; }; };
 ```
 
 The `use` form brings names into source scope; it does not bind host authority by itself. The host
@@ -63,25 +59,24 @@ The local `wire run` interpreter recognizes these standard IO executor leaves:
 
 | Layer              | Owned by                                          | Contains                                                                                  |
 | ------------------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Pure config data   | Wire source language                              | Records, strings, lists, numbers, booleans, tool names, tagged config constructors        |
-| Registry authority | Executor/Capability registries plus host bindings | Executor identity, config schema, port projections, contract vocabulary, effect class     |
+| Pure argument data | Wire source language                              | Records, strings, lists, numbers, booleans, tool names, tagged constructors               |
+| Registry authority | Executor/Capability registries plus host bindings | Executor identity, argument shape, port projections, contract vocabulary, effect class    |
 | Runtime evaluation | Pulse plus host interpreters                      | Durable scheduling, input snapshots, executor invocation, output validation, failure data |
 
 Wire stages authority. Pulse evaluates only after the compiler has materialized a node with a
 concrete typed port boundary.
 
-## Configured Executor Values
+## Executor Authority Values
 
 The application form is:
 
 ```wire
-@qualified.name { field = value; }
+@qualified.name
 ```
 
 The result has:
 
 - an executor identity;
-- config data;
 - no node identity;
 - no graph position;
 - no ability to communicate with other nodes.
@@ -89,25 +84,38 @@ The result has:
 It becomes executable only through a node body:
 
 ```wire
-node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  = analyst (evidence);
+node analyze <- evidence: EvidenceSet -> analysis: AnalysisRecord = @analyst evidence;
 ```
 
 Inline calls are equivalent when no reuse is needed:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  = @review.analyst { temperature = 0.2; } (evidence);
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord
+  = @review.analyst { payload = evidence; cfg = { temperature = 0.2; }; };
 ```
 
 In [ADR 0039](../../ADRs/0039-wire-node-boundary-transform-normal-form.md)'s normal form, the
 executor-call argument is the node's ingress adapter: it translates typed input ports and local
 CorePure helpers into the one value presented to the registered body. Output projection, validation,
 and wrapping are the egress obligation before edges consume output ports.
+
+## Consumer-declared binding time
+
+The authored boundary remains one record. In strict registry mode, a top-level property in the
+executor's `argument_shape` may declare `x-cortex-binding-time = "admission"`. The compiler proves
+that field independent of runtime ports, evaluates and validates it during admission, records it as
+compiled `staticArgument`, and removes it from the ingress expression. Unannotated properties
+default to ingress.
+
+`let ... in`, module `let`, and node `where` are ordinary lexical bindings, not phase declarations.
+Their dependency flow determines whether they can satisfy an admission field. Refactoring through a
+binding therefore does not change phase. Permissive registry mode has no signature proof and leaves
+the complete record at ingress.
+
+Executor admission fields configure or select that executor binding. They are distinct from
+Cortex-owned node `with` metadata and executor-independent static-intent attachments.
 
 ## Consumer-owned executor IDs in permissive compilation
 
@@ -120,7 +128,7 @@ contract WireosUartLine;
 
 node uartin
   -> line: WireosUartLine
-  = @wireos.kernel.uart.uartin {} (null);
+  = @wireos.kernel.uart.uartin;
 ```
 
 This path has precise limits:
@@ -128,7 +136,7 @@ This path has precise limits:
 - the name should be fully qualified to provide a collision-resistant downstream ID;
 - the source must declare or otherwise provide every contract used by the node boundary;
 - compilation preserves the executor ID and authored ports, but does **not** prove that an executor,
-  config schema, effect classification, or runtime binding exists;
+  argument shape, effect classification, or runtime binding exists;
 - the consuming host must bind the exact admitted executor ID and validate its own effect boundary;
 - `use consumer.namespace.{...}` still requires that namespace in the composed registry; a direct
   qualified reference does not perform that namespace lookup;
@@ -149,31 +157,31 @@ establish:
 | Obligation              | Meaning                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
 | Executor exists         | The qualified name is present in the loaded executor alphabet (strict/projected mode).           |
-| Config validates        | The config record conforms to the executor schema.                                               |
+| Argument validates      | The normalized record conforms to the executor's runtime `argument_shape`.                       |
 | Ports are concrete      | The authored node boundary is checked against the executor projection or structural constraints. |
 | Contracts are known     | Every input/output contract is declared by the program or registry.                              |
 | Effect class is known   | The binding classifies the executor as model-mediated, host-effecting, pure, etc.                |
 | Output validation known | The runtime knows how to validate every declared output contract.                                |
 | Authority is explicit   | Tools, model providers, memory policies, artifact writes, and host APIs come from the registry.  |
 
-Configured executor values are reusable configuration, not a second graph-authoring path. There is
-no port-determined shortcut and no context inference from graph position.
+Executor authority values are reusable references, not a second graph-authoring path. There is no
+port-determined shortcut and no context inference from graph position.
 
-## Config Purity
+## Argument Purity
 
-Config expressions are inert. They can name instructions, memory policies, provider choices, numeric
-parameters, tools, and nested tagged records, but they cannot run executors.
+Argument expressions are inert. They can name provider choices, numeric parameters, tools, and
+nested tagged records, but they cannot run executors. Compiler controls belong to `node ... with`.
 
 ```wire
-let reviewer = @review.review {
-  tools = [webSearch, readArtifact];
-  memory = topological { preset = "influence_biased"; };
-};
+let reviewer = @review.review;
+
+node audit with { tools = [webSearch, readArtifact]; memory = topological { preset = "influence_biased"; }; }
+  <- report: Report
+  -> review: Review = @reviewer report;
 ```
 
-`topological { ... }` is a config constructor. It may grant the executor a memory/retrieval policy
-through the binding layer, but it is not hidden node-to-node communication and it is not part of
-Wire's proven core.
+`topological { ... }` is node metadata. It may select a memory/retrieval policy through the binding
+layer, but it is not hidden node-to-node communication and it is not part of Wire's proven core.
 
 ## Native Pure Evaluator
 
@@ -181,8 +189,8 @@ CorePure is authored without `@`:
 
 ```wire
 node score
-  <- evidence: EvidenceSet;
-  <- weights: WeightSet;
+  <- evidence: EvidenceSet
+  <- weights: WeightSet
   -> total: Score = evidence.scores |> zipWith (score: weight: score * weight) weights.values |> sum;
 ```
 
@@ -195,7 +203,7 @@ At runtime a materialized node carries:
 
 - a stable node identity;
 - an executor reference;
-- validated config;
+- a validated one-record argument;
 - concrete typed input and output ports;
 - contract metadata;
 - effect/purity metadata for the host interpreter.
@@ -209,13 +217,13 @@ consuming host's obligation.
 
 ## Summary
 
-- `@qualified.name { ... }` creates a configured executor value.
+- `@qualified.name` creates a bare executor authority value.
 - Permissive compilation preserves consumer-owned qualified IDs without registry lookup; strict
   compilation requires a registered projection.
-- Configured executors are not graph vertices.
+- Executor authority values are not graph vertices.
 - Executors run only through explicit typed node bodies.
-- Executor-call input expressions are ingress adapters from input ports to one body argument.
+- Executor calls accept zero or one expression, normalized to one record at ingress.
 - Output projection, validation, and wrapping are egress obligations, not edge-local behavior.
 - Every executor node has the same external shape: typed inputs, typed outputs, and deterministic
-  failure on contract/config/output violations.
+  failure on contract/argument/output violations.
 - CorePure output equations are not executor-authority boundaries and are never spelled `@pure`.

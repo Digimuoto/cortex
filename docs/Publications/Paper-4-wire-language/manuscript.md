@@ -159,15 +159,15 @@ For example, a simple typed path can remain visually close to the graph it denot
 
 ```wire
 node planner
-  -> plan: ReportPlan = @review.planner {} (null);
+  -> plan: ReportPlan = @review.planner;
 
 node analyst
-  <- plan: ReportPlan;
-  -> analysis: AnalysisFragment = @review.analyst {} (plan);
+  <- plan: ReportPlan
+  -> analysis: AnalysisFragment = @review.analyst plan;
 
 node report
-  <- analysis: AnalysisFragment;
-  -> artifact: ReportArtifact = @review.report_writer {} (analysis);
+  <- analysis: AnalysisFragment
+  -> artifact: ReportArtifact = @review.report_writer analysis;
 
 let deep_report = planner => analyst => report;
 ```
@@ -181,14 +181,14 @@ matching.
 
 ```wire
 node splitter
-  <- report: Report;
-  -> primary: Claim;
-  -> fallback: Claim;
-  = @review.splitter {} (report);
+  <- report: Report
+  -> primary: Claim
+  -> fallback: Claim
+  = @review.splitter report;
 
 node consumer
-  <- primary: Claim;
-  -> decision: Decision = @review.consumer {} (primary);
+  <- primary: Claim
+  -> decision: Decision = @review.consumer primary;
 
 let decide = splitter => consumer;
 ```
@@ -200,19 +200,18 @@ available but is not the default: unlabeled composition suffices for the common 
 ## 5. Reuse Without a Second Language
 
 Wire reuses execution configuration through the same value layer it uses for ordinary compile-time
-data. The key mechanism is the **configured executor value**: reusable executor authority plus inert
-configuration, applied behind an explicit node boundary.
+data. The key mechanism is the bare **executor authority value**, applied with one inert record
+argument behind an explicit node boundary.
 
 ```wire
-let critic_executor = @review.analyst {
-  memory = topological { preset = "causal"; };
-  instructions = "Critique the draft and call out weak claims.";
-};
+let critic_executor = @review.analyst;
 
-node critic
-  <- analysis: AnalysisFragment;
-  -> review: ReviewFragment;
-  = critic_executor (analysis);
+node critic with {
+  memory = topological { preset = "causal"; };
+}
+  <- analysis: AnalysisFragment
+  -> review: ReviewFragment
+  = @critic_executor { payload = analysis; instructions = "Critique the draft and call out weak claims."; };
 ```
 
 This matters because it avoids a common DSL failure mode: one language for graphs, another for
@@ -251,8 +250,15 @@ allowed to propose such change.
 A minimal append-style proposal can therefore look like:
 
 ```wire
-let c = @review.foo_to_fizz { instructions = "Bridge foo to fizz."; };
-let d = @review.fizz_to_bar { instructions = "Bridge fizz to bar."; };
+node c
+  <- input: Foo
+  -> output: Fizz
+  = @review.foo_to_fizz { payload = input; instructions = "Bridge foo to fizz."; };
+
+node d
+  <- input: Fizz
+  -> output: Bar
+  = @review.fizz_to_bar { payload = input; instructions = "Bridge fizz to bar."; };
 
 c => d
 ```

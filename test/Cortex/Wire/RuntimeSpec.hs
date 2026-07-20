@@ -12,17 +12,241 @@ node-boundary normal-form module, but these tests intentionally assert only publ
 module Cortex.Wire.RuntimeSpec (spec) where
 
 import Data.Aeson qualified as Aeson
+import Data.IORef (modifyIORef', newIORef, readIORef)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID qualified as UUID
 import Test.Hspec
 
+import Cortex.Pulse.Memory (defaultMemoryStrategy, discardMemoryHandle)
 import Cortex.Pulse.Node (NodeId (..))
+import Cortex.Pulse.Plan
+  ( StageActionId (..)
+  , StageContext (..)
+  , StageDefinition (..)
+  , StageReplaySafety (..)
+  , StageResult (..)
+  , stageTemplateId
+  )
+import Cortex.Pulse.Rewrite (BudgetContext (..))
+import Cortex.Pulse.Types (defaultRewriteBudget)
 import Cortex.Wire
 
 spec :: Spec
 spec = describe "Cortex.Wire runtime egress" $ do
+  describe "exclusive variant egress boundary" $ do
+    it "rejects committing zero variants" $
+      wrapWireStageOutputs (Just scoreRegistry) producer runId variantPorts Map.empty
+        `shouldBeLeftContaining` "must commit exactly one variant"
+
+    it "rejects committing more than one variant" $
+      wrapWireStageOutputs
+        (Just scoreRegistry)
+        producer
+        runId
+        variantPorts
+        (Map.fromList [("accepted", Aeson.Number 1), ("rejected", Aeson.Number 2)])
+        `shouldBeLeftContaining` "must commit exactly one variant"
+
+    it "rejects an undeclared variant label" $
+      wrapWireStageOutputs
+        (Just scoreRegistry)
+        producer
+        runId
+        variantPorts
+        (Map.singleton "unknown" (Aeson.Number 1))
+        `shouldBeLeftContaining` "is not a declared variant"
+
+  describe "one-record executor argument boundary" $ do
+    let schema =
+          WireExecutorArgumentSchema $
+            Aeson.object
+              [ "type" Aeson..= ("object" :: Text)
+              , "required" Aeson..= ["payload" :: Text]
+              , "additionalProperties" Aeson..= False
+              , "properties"
+                  Aeson..= Aeson.object
+                    [ "payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]
+                    ]
+              ]
+
+    it "returns the evaluated record unchanged after schema validation" $ do
+      let argument = Aeson.object ["payload" Aeson..= ("hello" :: Text)]
+      validateWireExecutorArgument schema argument `shouldBe` Right argument
+
+    it "rejects invalid arguments before a host binding can be invoked" $
+      validateWireExecutorArgument schema (Aeson.object ["payload" Aeson..= (7 :: Int)])
+        `shouldBeLeftContaining` "expected string at $.payload"
+
+    it "rejects non-record values even for unchecked executor projections" $
+      validateWireExecutorArgument WireExecutorArgumentUnchecked (Aeson.String "raw")
+        `shouldBeLeftContaining` "must be a normalized JSON object"
+
+  describe "ADR 0095 ingress argument evaluation" $ do
+    it "evaluates a port-referencing argument from the typed input bundle" $ do
+      let bundle = wireInputBundleFromStageInputs topicStageInputs
+      evaluateWireExecutorArgument topicPorts topicArgumentSpec bundle
+        `shouldBe` Right
+          ( Aeson.object
+              [ "payload" Aeson..= ("hello" :: Text)
+              , "cfg" Aeson..= Aeson.object ["mode" Aeson..= ("safe" :: Text)]
+              , "tag" Aeson..= ("r-1" :: Text)
+              ]
+          )
+
+    it "reports a typed error when a referenced input port value is missing" $ do
+      let bundle = wireInputBundleFromStageInputs Map.empty
+      case evaluateWireExecutorArgument topicPorts topicArgumentSpec bundle of
+        Left evalError -> renderPureEvalError evalError `shouldSatisfy` T.isInfixOf "topic"
+        Right value -> expectationFailure ("expected Left, got " <> show value)
+
+    -- Executor ingress is not the pure-node JSON-only boundary: every payload
+    -- kind the egress boundary validated crosses into the argument unchanged.
+    it "passes text payloads through ingress evaluation unchanged" $ do
+      let bundle = wireInputBundleFromStageInputs textStageInputs
+      evaluateWireExecutorArgument textNodePorts textArgumentSpec bundle
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= ("plain body" :: Text)])
+
+    it "passes artifact_ref payloads through ingress evaluation unchanged" $ do
+      let refValue =
+            Aeson.object
+              [ "artifact_id" Aeson..= ("art-1" :: Text)
+              , "digest" Aeson..= ("sha256:abc" :: Text)
+              ]
+          bundle =
+            wireInputBundleFromStageInputs $
+              Map.singleton
+                (NodeId "source")
+                ( Aeson.toJSON $
+                    (mkWireValue "Ref" WirePayloadArtifactRef (Just "source") refValue)
+                      { wireValuePort = Just "ref"
+                      }
+                )
+      evaluateWireExecutorArgument refNodePorts refArgumentSpec bundle
+        `shouldBe` Right (Aeson.object ["payload" Aeson..= refValue])
+
+    it "round-trips the compiled argument envelope through metadata decoding" $ do
+      let metadata =
+            Aeson.object
+              [ "argument"
+                  Aeson..= Aeson.object
+                    [ "value" Aeson..= topicArgumentSpec.wireExecutorArgumentExpr
+                    , "bindings" Aeson..= topicArgumentSpec.wireExecutorArgumentBindings
+                    , "where" Aeson..= topicArgumentSpec.wireExecutorArgumentWhere
+                    ]
+              ]
+      wireExecutorArgumentSpecFromMetadata metadata `shouldBe` Right topicArgumentSpec
+
+    it "rejects unknown executor argument envelope fields" $ do
+      let metadata =
+            Aeson.object
+              [ "argument"
+                  Aeson..= Aeson.object
+                    [ "value" Aeson..= topicArgumentSpec.wireExecutorArgumentExpr
+                    , "config" Aeson..= Aeson.object []
+                    ]
+              ]
+      wireExecutorArgumentSpecFromMetadata metadata
+        `shouldBeLeftContaining` "unsupported executor argument envelope fields: config"
+
+    it "delivers the validated ingress argument to the binding unchanged" $ do
+      received <- newIORef ([] :: [Aeson.Value])
+      let stageDef =
+            wrapWireStageDefinition
+              (Just topicRegistry)
+              topicArgumentSchema
+              topicArgumentEvaluator
+              topicNodePorts
+              ( \argument _ctx -> do
+                  modifyIORef' received (argument :)
+                  pure (StageComplete (Aeson.object ["score" Aeson..= (1 :: Int)]))
+              )
+              baseTopicStageDefinition
+      result <- stageDef.sdAction topicStageContext
+      case result of
+        StageComplete value -> do
+          wireValue <- requireAesonSuccess (Aeson.fromJSON value :: Aeson.Result WireValue)
+          wireValue.wireValueContract `shouldBe` "Score"
+        other -> expectationFailure ("expected StageComplete, got " <> showStageResult other)
+      seen <- readIORef received
+      seen
+        `shouldBe` [ Aeson.object
+                       [ "payload" Aeson..= ("hello" :: Text)
+                       , "cfg" Aeson..= Aeson.object ["mode" Aeson..= ("safe" :: Text)]
+                       , "tag" Aeson..= ("r-1" :: Text)
+                       ]
+                   ]
+
+    it "fails the stage before host invocation when the evaluated argument violates the schema" $ do
+      invoked <- newIORef (0 :: Int)
+      let rejectingSchema =
+            WireExecutorArgumentSchema $
+              Aeson.object
+                [ "type" Aeson..= ("object" :: Text)
+                , "required" Aeson..= ["payload" :: Text]
+                , "properties"
+                    Aeson..= Aeson.object
+                      ["payload" Aeson..= Aeson.object ["type" Aeson..= ("integer" :: Text)]]
+                ]
+          stageDef =
+            wrapWireStageDefinition
+              (Just topicRegistry)
+              rejectingSchema
+              topicArgumentEvaluator
+              topicNodePorts
+              ( \_argument _ctx -> do
+                  modifyIORef' invoked (+ 1)
+                  pure (StageComplete (Aeson.object ["score" Aeson..= (1 :: Int)]))
+              )
+              baseTopicStageDefinition
+      result <- stageDef.sdAction topicStageContext
+      case result of
+        StageFail errType message -> do
+          errType `shouldBe` "executor_argument_validation_failure"
+          message `shouldSatisfy` T.isInfixOf "expected integer at $.payload"
+        other -> expectationFailure ("expected StageFail, got " <> showStageResult other)
+      invocations <- readIORef invoked
+      invocations `shouldBe` 0
+
+    it "fails the stage without invoking the host when argument evaluation fails" $ do
+      invoked <- newIORef (0 :: Int)
+      let stageDef =
+            wrapWireStageDefinition
+              (Just topicRegistry)
+              topicArgumentSchema
+              (const (Left "input port topic produced no value"))
+              topicNodePorts
+              ( \_argument _ctx -> do
+                  modifyIORef' invoked (+ 1)
+                  pure (StageComplete (Aeson.object ["score" Aeson..= (1 :: Int)]))
+              )
+              baseTopicStageDefinition
+      result <- stageDef.sdAction topicStageContext
+      case result of
+        StageFail errType message -> do
+          errType `shouldBe` "executor_argument_validation_failure"
+          message `shouldSatisfy` T.isInfixOf "produced no value"
+        other -> expectationFailure ("expected StageFail, got " <> showStageResult other)
+      readIORef invoked `shouldReturn` 0
+
+    it "rejects malformed argument envelopes with named causes" $ do
+      wireExecutorArgumentSpecFromMetadata (Aeson.object [])
+        `shouldBeLeftContaining` "missing the argument envelope"
+      wireExecutorArgumentSpecFromMetadata (Aeson.object ["argument" Aeson..= ("raw" :: Text)])
+        `shouldBeLeftContaining` "must be a JSON object"
+      wireExecutorArgumentSpecFromMetadata
+        ( Aeson.object
+            [ "argument"
+                Aeson..= Aeson.object ["value" Aeson..= True, "extra" Aeson..= True]
+            ]
+        )
+        `shouldBeLeftContaining` "unsupported executor argument envelope fields: extra"
+      wireExecutorArgumentSpecFromMetadata
+        (Aeson.object ["argument" Aeson..= Aeson.object []])
+        `shouldBeLeftContaining` "missing the value field"
+
   it "wraps raw single-output JSON through the declared output port" $ do
     result <-
       requireRight $
@@ -242,11 +466,217 @@ producer = NodeId "classifier"
 runId :: UUID.UUID
 runId = UUID.fromWords 0 0 0 0
 
+{- | One consumed input port plus one output port, mirroring
+@node score <- topic: Topic -> score: Score = \@review.score { ... };@.
+-}
+topicNodePorts :: WirePorts
+topicNodePorts =
+  WirePorts
+    { wirePortsInputs = Map.singleton "topic" topicInputPort
+    , wirePortsOutputs = Map.singleton "score" (WireOutputPort "Score" Nothing)
+    }
+
+-- | Input-only ports for direct evaluator tests.
+topicPorts :: WirePorts
+topicPorts =
+  WirePorts
+    { wirePortsInputs = Map.singleton "topic" topicInputPort
+    , wirePortsOutputs = Map.empty
+    }
+
+topicInputPort :: WireInputPort
+topicInputPort =
+  WireInputPort
+    { wireInputPortAccepts = ["Topic"]
+    , wireInputPortCardinality = WireInputCardinalityOne
+    , wireInputPortRequired = True
+    }
+
+{- | Argument envelope exercising all three scopes at ingress: the @topic@
+input port, a module-level binding (@base@), and a node @where@ field (@tag@).
+-}
+topicArgumentSpec :: WireExecutorArgumentSpec
+topicArgumentSpec =
+  WireExecutorArgumentSpec
+    { wireExecutorArgumentExpr =
+        CorePureRecord
+          [ CorePureField ("payload" :| []) (CorePureIdent "topic")
+          , CorePureField ("cfg" :| []) (CorePureIdent "base")
+          , CorePureField ("tag" :| []) (CorePureIdent "run_tag")
+          ]
+    , wireExecutorArgumentBindings =
+        [ CorePureBinding
+            "base"
+            (CorePureRecord [CorePureField ("mode" :| []) (CorePureLit (CorePureString "safe"))])
+        ]
+    , wireExecutorArgumentWhere =
+        Just
+          (CorePureRecord [CorePureField ("run_tag" :| []) (CorePureLit (CorePureString "r-1"))])
+    }
+
+textNodePorts :: WirePorts
+textNodePorts =
+  WirePorts
+    { wirePortsInputs =
+        Map.singleton
+          "message"
+          WireInputPort
+            { wireInputPortAccepts = ["Message"]
+            , wireInputPortCardinality = WireInputCardinalityOne
+            , wireInputPortRequired = True
+            }
+    , wirePortsOutputs = Map.empty
+    }
+
+textArgumentSpec :: WireExecutorArgumentSpec
+textArgumentSpec =
+  WireExecutorArgumentSpec
+    { wireExecutorArgumentExpr =
+        CorePureRecord [CorePureField ("payload" :| []) (CorePureIdent "message")]
+    , wireExecutorArgumentBindings = []
+    , wireExecutorArgumentWhere = Nothing
+    }
+
+textStageInputs :: Map.Map NodeId Aeson.Value
+textStageInputs =
+  Map.singleton
+    (NodeId "source")
+    ( Aeson.toJSON $
+        (mkWireValue "Message" WirePayloadText (Just "source") (Aeson.String "plain body"))
+          { wireValuePort = Just "message"
+          }
+    )
+
+refNodePorts :: WirePorts
+refNodePorts =
+  WirePorts
+    { wirePortsInputs =
+        Map.singleton
+          "ref"
+          WireInputPort
+            { wireInputPortAccepts = ["Ref"]
+            , wireInputPortCardinality = WireInputCardinalityOne
+            , wireInputPortRequired = True
+            }
+    , wirePortsOutputs = Map.empty
+    }
+
+refArgumentSpec :: WireExecutorArgumentSpec
+refArgumentSpec =
+  WireExecutorArgumentSpec
+    { wireExecutorArgumentExpr =
+        CorePureRecord [CorePureField ("payload" :| []) (CorePureIdent "ref")]
+    , wireExecutorArgumentBindings = []
+    , wireExecutorArgumentWhere = Nothing
+    }
+
+topicArgumentEvaluator :: WireInputBundle -> Either Text Aeson.Value
+topicArgumentEvaluator bundle =
+  case evaluateWireExecutorArgument topicNodePorts topicArgumentSpec bundle of
+    Left evalError -> Left (renderPureEvalError evalError)
+    Right value -> Right value
+
+topicArgumentSchema :: WireExecutorArgumentShape
+topicArgumentSchema =
+  WireExecutorArgumentSchema $
+    Aeson.object
+      [ "type" Aeson..= ("object" :: Text)
+      , "required" Aeson..= ["payload" :: Text]
+      , "properties"
+          Aeson..= Aeson.object
+            ["payload" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]]
+      ]
+
+topicStageInputs :: Map.Map NodeId Aeson.Value
+topicStageInputs =
+  Map.singleton
+    (NodeId "source")
+    ( Aeson.toJSON $
+        (mkWireValue "Topic" WirePayloadJson (Just "source") (Aeson.String "hello"))
+          { wireValuePort = Just "topic"
+          }
+    )
+
+topicStageContext :: StageContext
+topicStageContext =
+  StageContext
+    { scRunId = UUID.fromWords 0 0 0 0
+    , scNodeId = NodeId "score"
+    , scInputs = topicStageInputs
+    , scAttempt = 1
+    , scBudgetContext =
+        BudgetContext
+          { bcInitialBudget = defaultRewriteBudget
+          , bcRemainingBudget = defaultRewriteBudget
+          }
+    , scRewriteRejection = Nothing
+    , scRetryFailure = Nothing
+    , scMemory = discardMemoryHandle
+    , scMemoryStrategy = defaultMemoryStrategy
+    }
+
+baseTopicStageDefinition :: StageDefinition NodeId
+baseTopicStageDefinition =
+  StageDefinition
+    { sdStageId = NodeId "score"
+    , sdTemplateId = stageTemplateId (NodeId "score")
+    , sdActionId = StageActionId "wire.test.topic-score"
+    , sdReplaySafety = SafeToReplay
+    , sdReplayPolicyOverride = Nothing
+    , sdTimeoutSeconds = Nothing
+    , sdRetryPolicy = Nothing
+    , sdAction = \_ctx -> pure (StageFail "unbound" "base action must be superseded by the wrapper")
+    , sdMemoryStrategy = defaultMemoryStrategy
+    }
+
+topicRegistry :: WireContractRegistry
+topicRegistry =
+  wireContractRegistryFromList
+    [ WireContractSpec
+        { wireContractSpecId = "Topic"
+        , wireContractSpecPayloadKind = WirePayloadJson
+        , wireContractSpecDescription = "Topic payload."
+        , wireContractSpecRecordFields = Nothing
+        , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
+        , wireContractSpecExamples = []
+        }
+    , WireContractSpec
+        { wireContractSpecId = "Score"
+        , wireContractSpecPayloadKind = WirePayloadJson
+        , wireContractSpecDescription = "Score payload."
+        , wireContractSpecRecordFields = Nothing
+        , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
+        , wireContractSpecExamples = []
+        }
+    ]
+
+showStageResult :: StageResult NodeId -> String
+showStageResult = \case
+  StageComplete {} -> "StageComplete"
+  StageSuspend {} -> "StageSuspend"
+  StageRewrite {} -> "StageRewrite"
+  StageLoopStep {} -> "StageLoopStep"
+  StageRejectRewrite {} -> "StageRejectRewrite"
+  StageFail {} -> "StageFail"
+
 scorePorts :: WirePorts
 scorePorts =
   WirePorts
     { wirePortsInputs = Map.empty
     , wirePortsOutputs = Map.singleton "score" (WireOutputPort "Score" Nothing)
+    }
+
+variantPorts :: WirePorts
+variantPorts =
+  WirePorts
+    { wirePortsInputs = Map.empty
+    , wirePortsOutputs =
+        Map.fromList
+          [ ("accepted", WireOutputPort "Score" (Just 0))
+          , ("rejected", WireOutputPort "Score" (Just 0))
+          ]
     }
 
 dualScorePorts :: WirePorts
@@ -310,6 +740,7 @@ scoreRegistry =
         , wireContractSpecDescription = "Score payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     , WireContractSpec
@@ -318,6 +749,7 @@ scoreRegistry =
         , wireContractSpecDescription = "Other payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]
@@ -331,6 +763,7 @@ textRegistry =
         , wireContractSpecDescription = "Text payload."
         , wireContractSpecRecordFields = Nothing
         , wireContractSpecSchema = Nothing
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]
@@ -367,6 +800,7 @@ schemaRegistry =
                         ["title" Aeson..= Aeson.object ["type" Aeson..= ("string" :: Text)]]
                   ]
               )
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     , WireContractSpec
@@ -381,6 +815,7 @@ schemaRegistry =
                   , "required" Aeson..= ["artifact_id" :: Text]
                   ]
               )
+        , wireContractSpecNativeShape = Nothing
         , wireContractSpecExamples = []
         }
     ]

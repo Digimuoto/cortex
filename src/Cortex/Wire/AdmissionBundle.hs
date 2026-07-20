@@ -22,10 +22,12 @@ module Cortex.Wire.AdmissionBundle
   ( AdmissionBundleError (..)
   , WireAdmissionBundle (..)
   , admitWireAdmissionBundle
+  , renderAdmissionBundleError
   )
 where
 
 import Data.Aeson (FromJSON, ToJSON)
+import Data.Text (Text)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
 
@@ -37,6 +39,7 @@ import Cortex.Wire.AdmissionArtifact
 import Cortex.Wire.AdmissionBinding
   ( AdmissionBindingError
   , admissionArtifactBindsCompiledCircuit
+  , renderAdmissionBindingError
   )
 import Cortex.Wire.Circuit.Compiled (CompiledCircuit)
 
@@ -48,6 +51,13 @@ data AdmissionBundleError
   = AdmissionBundleArtifactNotValidatorReady
   | AdmissionBundleCircuitBindingFailed !AdmissionBindingError
   deriving stock (Eq, Show)
+
+renderAdmissionBundleError :: AdmissionBundleError -> Text
+renderAdmissionBundleError = \case
+  AdmissionBundleArtifactNotValidatorReady ->
+    "artifact failed validator-ready checks"
+  AdmissionBundleCircuitBindingFailed bindingError ->
+    "artifact does not bind to the compiled circuit: " <> renderAdmissionBindingError bindingError
 
 {- | A proof-witness artifact that has passed the current Haskell-side unified
 admission gate for the compiled circuit it travels with.

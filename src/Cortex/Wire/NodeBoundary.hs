@@ -27,6 +27,7 @@ module Cortex.Wire.NodeBoundary
   , NodeBoundaryEgress (..)
   , BoundaryEgressContext (..)
   , pureNodeBoundaryNormalForm
+  , pureSumNodeBoundaryNormalForm
   , executorNodeBoundaryNormalForm
   , signalNodeBoundaryNormalForm
   , artifactNodeBoundaryNormalForm
@@ -85,7 +86,7 @@ data CorePureIngress = CorePureIngress
 
 data ExecutorIngress = ExecutorIngress
   { executorIngressWhere :: !(Maybe CorePureExpr)
-  , executorIngressInput :: !CorePureExpr
+  , executorIngressArgument :: !CorePureExpr
   }
   deriving stock (Eq, Show)
 
@@ -96,14 +97,14 @@ data NodeBoundaryBody
   | NodeBoundaryArtifactBody !ArtifactBody
   deriving stock (Eq, Show)
 
-newtype CorePureBody = CorePureBody
-  { corePureBodyOutputs :: Map Text CorePureExpr
-  }
+data CorePureBody
+  = CorePureProductBody !(Map Text CorePureExpr)
+  | CorePureSumBody ![Text] !CorePureExpr
   deriving stock (Eq, Show)
 
 data ExecutorBody = ExecutorBody
   { executorBodyExecutor :: !WireExecutor
-  , executorBodyConfig :: !(Maybe Aeson.Value)
+  , executorBodyArgument :: !Aeson.Value
   }
   deriving stock (Eq, Show)
 
@@ -157,10 +158,33 @@ pureNodeBoundaryNormalForm nodeRef ports bindings whereExpr outputExprs =
             , corePureIngressWhere = whereExpr
             }
     , nodeBoundaryBody =
-        NodeBoundaryCorePureBody
-          CorePureBody
-            { corePureBodyOutputs = outputExprs
+        NodeBoundaryCorePureBody (CorePureProductBody outputExprs)
+    , nodeBoundaryEgress =
+        NodeBoundaryEgress
+          { nodeBoundaryOutputPorts = ports.wirePortsOutputs
+          }
+    }
+
+pureSumNodeBoundaryNormalForm
+  :: CircuitNodeRef
+  -> WirePorts
+  -> [CorePureBinding]
+  -> Maybe CorePureExpr
+  -> [Text]
+  -> CorePureExpr
+  -> NodeBoundaryNormalForm
+pureSumNodeBoundaryNormalForm nodeRef ports bindings whereExpr variants bodyExpr =
+  NodeBoundaryNormalForm
+    { nodeBoundaryRef = nodeRef
+    , nodeBoundaryPorts = ports
+    , nodeBoundaryIngress =
+        NodeBoundaryCorePureIngress
+          CorePureIngress
+            { corePureIngressBindings = bindings
+            , corePureIngressWhere = whereExpr
             }
+    , nodeBoundaryBody =
+        NodeBoundaryCorePureBody (CorePureSumBody variants bodyExpr)
     , nodeBoundaryEgress =
         NodeBoundaryEgress
           { nodeBoundaryOutputPorts = ports.wirePortsOutputs
@@ -173,9 +197,9 @@ executorNodeBoundaryNormalForm
   -> Maybe CorePureExpr
   -> CorePureExpr
   -> WireExecutor
-  -> Maybe Aeson.Value
+  -> Aeson.Value
   -> NodeBoundaryNormalForm
-executorNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr executor configValue =
+executorNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr executor argumentValue =
   NodeBoundaryNormalForm
     { nodeBoundaryRef = nodeRef
     , nodeBoundaryPorts = ports
@@ -183,13 +207,13 @@ executorNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr executor config
         NodeBoundaryExecutorIngress
           ExecutorIngress
             { executorIngressWhere = whereExpr
-            , executorIngressInput = inputExpr
+            , executorIngressArgument = inputExpr
             }
     , nodeBoundaryBody =
         NodeBoundaryExecutorBody
           ExecutorBody
             { executorBodyExecutor = executor
-            , executorBodyConfig = configValue
+            , executorBodyArgument = argumentValue
             }
     , nodeBoundaryEgress =
         NodeBoundaryEgress
@@ -212,7 +236,7 @@ signalNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr signalName =
         NodeBoundaryExecutorIngress
           ExecutorIngress
             { executorIngressWhere = whereExpr
-            , executorIngressInput = inputExpr
+            , executorIngressArgument = inputExpr
             }
     , nodeBoundaryBody =
         NodeBoundarySignalBody
@@ -241,7 +265,7 @@ artifactNodeBoundaryNormalForm nodeRef ports whereExpr inputExpr artifactKind ta
         NodeBoundaryExecutorIngress
           ExecutorIngress
             { executorIngressWhere = whereExpr
-            , executorIngressInput = inputExpr
+            , executorIngressArgument = inputExpr
             }
     , nodeBoundaryBody =
         NodeBoundaryArtifactBody

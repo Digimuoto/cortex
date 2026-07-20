@@ -13,7 +13,7 @@ related:
   - docs/Architecture/05-wire-language.md
   - docs/Architecture/06-pulse-runtime.md
   - docs/Reference/Wire/executors-and-alphabet.md
-  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
+  - docs/Reference/Wire/executor-authorities-and-execution-boundary.md
   - docs/Reference/Pulse/host-actions.md
   - docs/Reference/Pulse/types.md
   - docs/ADRs/0003-pulse-service-and-host-action-boundary.md
@@ -429,9 +429,9 @@ The Wire program is unchanged:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  = @review.analyze { model = "gpt-5.4"; tools = ["web_search"]; } (evidence);
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord
+  = @review.analyze { payload = evidence; model = "gpt-5.4"; tools = ["web_search"]; };
 ```
 
 The fact that `review.analyze` is implemented in Rust, Haskell, WASM, a model provider adapter, or a

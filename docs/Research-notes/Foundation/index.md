@@ -12,12 +12,16 @@ Substrate-layer research synthesis: formalism, algebraic structure, and coordina
 
 ## Notes
 
-| Date       | Title                                                                                                                |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- |
-| 2026-04-11 | [Formalism stack synthesis](2026-04-11-formalism-stack-synthesis.md)                                                 |
-| 2026-04-24 | [CALM and coordination boundaries on evolving graphs](2026-04-24-calm-coordination-boundaries-on-evolving-graphs.md) |
-| 2026-05-05 | [Linear port graph layer](2026-05-05-linear-port-graph-layer.md)                                                     |
-| 2026-05-09 | [Stage-structured causal pipelines](2026-05-09-stage-structured-causal-pipelines.md)                                 |
+| Date       | Title                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-04-11 | [Formalism stack synthesis](2026-04-11-formalism-stack-synthesis.md)                                                               |
+| 2026-04-24 | [CALM and coordination boundaries on evolving graphs](2026-04-24-calm-coordination-boundaries-on-evolving-graphs.md)               |
+| 2026-05-05 | [Linear port graph layer](2026-05-05-linear-port-graph-layer.md)                                                                   |
+| 2026-05-09 | [Stage-structured causal pipelines](2026-05-09-stage-structured-causal-pipelines.md)                                               |
+| 2026-07-15 | [Realization as typed graph staging](2026-07-15-realization-as-typed-graph-staging.md)                                             |
+| 2026-07-19 | [Binding time splits executor configuration](2026-07-19-executor-static-binding-time.md)                                           |
+| 2026-07-19 | [Circuit, realization, and bound execution](2026-07-19-circuit-realization-and-bound-execution.md)                                 |
+| 2026-07-20 | [Executor configuration is an ownership and binding-time product](2026-07-20-executor-configuration-ownership-and-binding-time.md) |
 
 ## Related
 

@@ -5,8 +5,8 @@ registry namespace use
 use std.io.{@command as @shell, CommandSpec as Spec};
 
 node run
-  <- spec: Spec;
-  -> result: CommandResult = @shell {} (spec);
+  <- spec: Spec
+  -> result: CommandResult = @shell spec;
 run
 
 ---
@@ -29,18 +29,20 @@ run
       contract: (contract_ref
         (contract_name
           (contract))))
-    body: (executor_single_output_body
-      output: (output_variant
-        label: (identifier)
-        contract: (contract_ref
-          (contract_name
-            (contract))))
-      call: (inline_executor_call
-        name: (qualified_ident
-          (identifier))
-        config: (record)
-        input: (core_pure_expr
-          (core_pure_ident)))))
+    body: (executor_body
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
+      call: (executor_call
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier))
+          argument: (core_pure_expr
+            (core_pure_ident))))))
   file_return: (expression
     (ident_ref
       (identifier))))
@@ -49,10 +51,10 @@ run
 node-body kind application
 ==================
 
-kind one_qubit_gate(label: PortLabel, gate: ConfiguredExecutor) =
-  <- label: Qubit;
-  -> label: Qubit;
-  = gate (label);
+kind one_qubit_gate(label: PortLabel, gate: Executor) =
+  <- label: Qubit
+  -> label: Qubit
+  = @gate label;
 
 node screen_h = one_qubit_gate(screen, h_gate);
 screen_h
@@ -82,9 +84,10 @@ screen_h
               (contract_name
                 (contract))))))
       call: (executor_call
-        (configured_executor_call
-          name: (identifier)
-          input: (core_pure_expr
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier))
+          argument: (core_pure_expr
             (core_pure_ident))))))
   (node_decl
     name: (identifier)
@@ -106,8 +109,8 @@ node with sum output and file return
 
 contract EvidenceBundle;
 node planner
-  -> plan: PlannerOutput | error: ExecutorError ;
-  = @llm.planner ({}) ;
+  -> plan: PlannerOutput | error: ExecutorError
+  = @llm.planner;
 planner
 
 ---
@@ -135,9 +138,7 @@ planner
         (inline_executor_call
           name: (qualified_ident
             (identifier)
-            (identifier))
-          input: (core_pure_expr
-            (core_pure_record))))))
+            (identifier))))))
   file_return: (expression
     (ident_ref
       (identifier))))
@@ -147,8 +148,8 @@ graph forms, nested form lets, and inherit
 ==================
 
 kind rz_gate(label: PortLabel, angle: Value) =
-  <- label: Qubit;
-  -> label: Qubit = @quantum.rz { inherit angle; } (label);
+  <- label: Qubit
+  -> label: Qubit = @quantum.rz { payload = label; cfg = { inherit angle; }; };
 
 form turn(label: PortLabel) = {
   node rz = rz_gate(label, 1.5707963267948966);
@@ -185,21 +186,33 @@ run
       contract: (contract_ref
         (contract_name
           (contract))))
-    body: (executor_single_output_body
-      output: (output_variant
-        label: (identifier)
-        contract: (contract_ref
-          (contract_name
-            (contract))))
-      call: (inline_executor_call
-        name: (qualified_ident
-          (identifier)
-          (identifier))
-        config: (record
-          (inherit_field
-            name: (identifier)))
-        input: (core_pure_expr
-          (core_pure_ident)))))
+    body: (executor_body
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
+      call: (executor_call
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier)
+            (identifier))
+          argument: (core_pure_expr
+            (core_pure_record
+              (core_pure_field
+                path: (field_path
+                  (identifier))
+                value: (core_pure_expr
+                  (core_pure_ident)))
+              (core_pure_field
+                path: (field_path
+                  (identifier))
+                value: (core_pure_expr
+                  (core_pure_record
+                    (core_pure_inherit_field
+                      name: (identifier)))))))))))
   (form_decl
     name: (identifier)
     params: (form_param
@@ -304,14 +317,14 @@ make and star topology
 ==================
 
 kind sample(label: PortLabel) =
-  -> label: Sample = @review.sample ({});
+  -> label: Sample = @review.sample;
 
 let count = 2;
 let workers = make(count, sample);
 
 node sink
-  <- pair: WorkerPair;
-  -> done: Done = @review.sink (pair);
+  <- pair: WorkerPair
+  -> done: Done = @review.sink pair;
 
 workers * sink
 
@@ -323,18 +336,19 @@ workers * sink
     params: (kind_param
       name: (identifier)
       class: (kind_param_class))
-    body: (executor_single_output_body
-      output: (output_variant
-        label: (identifier)
-        contract: (contract_ref
-          (contract_name
-            (contract))))
-      call: (inline_executor_call
-        name: (qualified_ident
-          (identifier)
-          (identifier))
-        input: (core_pure_expr
-          (core_pure_record)))))
+    body: (executor_body
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
+      call: (executor_call
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier)
+            (identifier))))))
   (let_binding
     target: (let_target
       name: (identifier))
@@ -353,24 +367,77 @@ workers * sink
       contract: (contract_ref
         (contract_name
           (contract))))
-    body: (executor_single_output_body
-      output: (output_variant
-        label: (identifier)
-        contract: (contract_ref
-          (contract_name
-            (contract))))
-      call: (inline_executor_call
-        name: (qualified_ident
-          (identifier)
-          (identifier))
-        input: (core_pure_expr
-          (core_pure_ident)))))
+    body: (executor_body
+      outputs: (executor_output_clause
+        output: (output_body
+          (output_variant
+            label: (identifier)
+            contract: (contract_ref
+              (contract_name
+                (contract))))))
+      call: (executor_call
+        (inline_executor_call
+          name: (qualified_ident
+            (identifier)
+            (identifier))
+          argument: (core_pure_expr
+            (core_pure_ident))))))
   file_return: (expression
     (topology_expression
       left: (ident_ref
         (identifier))
       right: (ident_ref
         (identifier)))))
+
+==================
+node metadata, source inherit, and bare executor arguments
+==================
+
+node action with { timeout = 30; }
+  <- x: Payload
+  -> out: Result
+  = @executor { inherit (x) payload cfg; };
+
+action
+
+---
+
+(source_file
+  (node_decl
+    (identifier)
+    (record
+      (field
+        (field_path
+          (identifier))
+        (expression
+          (number))))
+    (input_clause
+      (identifier)
+      (contract_ref
+        (contract_name
+          (contract))))
+    (executor_body
+      (executor_output_clause
+        (output_body
+          (output_variant
+            (identifier)
+            (contract_ref
+              (contract_name
+                (contract))))))
+      (executor_call
+        (inline_executor_call
+          (qualified_ident
+            (identifier))
+          (core_pure_expr
+            (core_pure_record
+              (core_pure_inherit_field
+                (core_pure_expr
+                  (core_pure_ident))
+                (identifier)
+                (identifier))))))))
+  (expression
+    (ident_ref
+      (identifier))))
 
 ==================
 pure output equations
@@ -383,7 +450,7 @@ contract RejectedSet;
 let acceptedItem = item: item.score >= 0.7;
 
 node classify
-  <- evidence: EvidenceSet ;
+  <- evidence: EvidenceSet
   -> accepted: AcceptedSet = acceptedItems ;
   -> rejected: RejectedSet = filter (item: !(acceptedItem item)) items;
   where let
@@ -583,8 +650,8 @@ render
 paper boundary-only nodes and ellipsis placeholders
 ==================
 
-node source -> src: Sources;
-node build <- src: Sources; -> bin: Binary; -> log: BuildLog;
+node source -> src: Sources
+node build <- src: Sources -> bin: Binary -> log: BuildLog
 node placeholder
   -> out: Value = ...;
 
@@ -645,3 +712,52 @@ source => build => placeholder
         (identifier))
       right: (ident_ref
         (identifier)))))
+
+==================
+pure exclusive sum body
+==================
+
+node classify
+  <- score: Score
+  -> accepted: Decision | rejected: RejectReason =
+    if score >= 0 then accepted score else rejected score;
+
+classify
+
+---
+
+(source_file
+  (node_decl
+    name: (identifier)
+    inputs: (input_clause
+      label: (identifier)
+      contract: (contract_ref
+        (contract_name
+          (contract))))
+    body: (pure_body
+      (pure_sum_body
+        variant: (output_variant
+          label: (identifier)
+          contract: (contract_ref
+            (contract_name
+              (contract))))
+        variant: (output_variant
+          label: (identifier)
+          contract: (contract_ref
+            (contract_name
+              (contract))))
+        body: (pure_output_expr
+          expr: (core_pure_expr
+            (core_pure_if
+              condition: (core_pure_expr
+                left: (core_pure_ident)
+                right: (number))
+              then: (core_pure_expr
+                function: (core_pure_ident)
+                argument: (core_pure_ident))
+              else: (core_pure_expr
+                function: (core_pure_ident)
+                argument: (core_pure_ident))))))))
+  file_return: (expression
+    (ident_ref
+      (identifier))))

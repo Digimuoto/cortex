@@ -360,3 +360,14 @@ does not exist on disk and matches a package module path in the compile environm
 reads the package-owned source and gives it a package-module identity in the dependency closure.
 Missing package-style paths produce package-module diagnostics rather than pretending to be missing
 local files.
+
+## Amendment - Argument-shape manifest key compatibility (2026-07-19)
+
+_Proposed amendment. Append-only clarification of the accepted decision above; the original decision
+text is unchanged._
+
+ADR 0095 introduces `argument_shape` as the canonical one-record ingress schema key. During the epic
+migration the loader accepts either the existing `config_shape` key or `argument_shape`, maps both
+to the same projection, and rejects a manifest that supplies both. The manifest example in the
+decision above intentionally remains a valid legacy manifest until the final breaking Wire
+migration.

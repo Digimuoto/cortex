@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/review-commits <from-sha>-<to-sha> [options]
+
+Build a deterministic, self-contained review bundle for an inclusive linear
+commit range. The bundle contains the review plan, commit provenance summary,
+changed paths, diff, repository agent context, and current repo-local skills.
+
+Options:
+  --path PATHSPEC   Restrict stats and diff to a Git pathspec (repeatable).
+  --no-diff         Omit the full patch from the bundle.
+  --output FILE     Write to FILE instead of .review/review-FROM-TO.txt.
+  --print           Print the completed bundle to stdout as well.
+  -h, --help        Show this help.
+
+Example:
+  just review-commits 0542a4d-2da32a7
+  just review-commits 54ec95f-9a8dace --path theory --path src/Cortex/Wire
+EOF
+}
+
+die() {
+  printf 'review-commits: %s\n' "$1" >&2
+  exit 1
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+range_spec="${1:-}"
+[[ -n "$range_spec" ]] || die "missing inclusive <from-sha>-<to-sha> range"
+shift
+
+if [[ ! "$range_spec" =~ ^([0-9a-fA-F]{7,40})-([0-9a-fA-F]{7,40})$ ]]; then
+  die "range must have the form <from-sha>-<to-sha>"
+fi
+
+from_input="${BASH_REMATCH[1]}"
+to_input="${BASH_REMATCH[2]}"
+include_diff=1
+print_bundle=0
+output=""
+pathspecs=()
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --path)
+      [[ "$#" -ge 2 ]] || die "--path requires a Git pathspec"
+      pathspecs+=("$2")
+      shift 2
+      ;;
+    --no-diff)
+      include_diff=0
+      shift
+      ;;
+    --output)
+      [[ "$#" -ge 2 ]] || die "--output requires a file"
+      output="$2"
+      shift 2
+      ;;
+    --print)
+      print_bundle=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "unknown option: $1"
+      ;;
+  esac
+done
+
+export LC_ALL=C
+export TZ=UTC
+
+repository_root="$(git rev-parse --show-toplevel)"
+cd "$repository_root"
+
+from="$(git rev-parse --verify "${from_input}^{commit}")" || die "unknown from commit: $from_input"
+to="$(git rev-parse --verify "${to_input}^{commit}")" || die "unknown to commit: $to_input"
+context="$(git rev-parse --verify HEAD)"
+git merge-base --is-ancestor "$from" "$to" || die "$from_input is not an ancestor of $to_input"
+git merge-base --is-ancestor "$to" "$context" || die "$to_input is not an ancestor of HEAD"
+
+parent_count="$(git rev-list --parents -n 1 "$from" | awk '{print NF - 1}')"
+[[ "$parent_count" -eq 1 ]] || die "the first commit must have exactly one parent"
+base="$(git rev-parse "${from}^")"
+
+expected_count="$(git rev-list --count "${base}..${to}")"
+first_in_range="$(git rev-list --reverse "${base}..${to}" | sed -n '1p')"
+[[ "$first_in_range" == "$from" ]] ||
+  die "range is not a single inclusive first-parent slice; use the first commit after the selected base"
+
+merge_count="$(git rev-list --merges --count "${base}..${to}")"
+[[ "$merge_count" -eq 0 ]] || die "range contains merge commits"
+
+while IFS= read -r commit; do
+  commit_object="$(git cat-file commit "$commit")"
+  grep -q '^gpgsig ' <<<"$commit_object" || die "$commit has no commit signature object"
+done < <(git rev-list --reverse "${base}..${to}")
+
+from_short="$(git rev-parse --short=7 "$from")"
+to_short="$(git rev-parse --short=7 "$to")"
+context_short="$(git rev-parse --short=7 "$context")"
+
+if [[ -z "$output" ]]; then
+  output=".review/review-${from_short}-${to_short}.txt"
+fi
+mkdir -p "$(dirname "$output")"
+
+temporary="${output}.tmp"
+trap 'rm -f "$temporary"' EXIT
+
+git_args=()
+if [[ "${#pathspecs[@]}" -gt 0 ]]; then
+  git_args+=(-- "${pathspecs[@]}")
+fi
+
+append_revision_file() {
+  local path="$1"
+  if git cat-file -e "${context}:${path}" 2>/dev/null; then
+    printf '\n===== %s @ context %s =====\n\n' "$path" "$context_short"
+    git show "${context}:${path}"
+  fi
+}
+
+{
+  cat <<EOF
+CORTEX DETERMINISTIC COMMIT REVIEW BUNDLE
+=========================================
+
+Review range (inclusive): ${from_short}-${to_short}
+From: ${from}
+To:   ${to}
+Base: ${base}
+Context HEAD: ${context}
+Commit count: ${expected_count}
+Path filters: ${pathspecs[*]:-(none)}
+
+Review contract
+---------------
+
+1. Review only the selected range and its effects against the base.
+2. Treat the original focused PRs as historical review context, not proof of correctness.
+3. Check semantics, compatibility claims, authority boundaries, schemas/ABI, resource bounds,
+   diagnostics, tests, docs, and proof-status claims relevant to the touched paths.
+4. Report actionable findings with severity, exact file/line, violated invariant, and a minimal
+   repair direction. Separate defects from optional improvements.
+5. Do not rewrite reviewed commits. Stack fixes on the epic head as signed, signed-off conventional
+   commits and add these trailers:
+
+   Review-Range: ${from_short}-${to_short}
+   Review-PRs: <linked PR numbers from the review plan>
+
+6. Rebuild this bundle after any fix that changes the reviewed conclusion. The bundle is derived
+   only from committed objects; working-tree changes cannot silently alter its contents.
+
+Suggested reviewer prompt
+-------------------------
+
+Audit this inclusive Cortex commit range as a focused correctness and design review. Read the
+embedded project context, review plan, and skills before the patch. Follow the range's linked PR
+intent, but verify the implementation independently. Prioritize soundness, phase separation,
+authority confinement, compatibility/ABI preservation, deterministic artifacts, resource bounds,
+and missing negative tests. Return findings first, ordered by severity, with exact evidence.
+
+Commit provenance summary
+-------------------------
+EOF
+
+  git log --reverse --format='commit %H%nparents %P%nauthor %an <%ae>%ncommitter %cn <%ce>%nsignature-object present%nsubject %s%ntrailers %(trailers:only,unfold)%n' "${base}..${to}"
+
+  cat <<'EOF'
+
+Changed-path summary
+--------------------
+EOF
+  git diff --stat "$base" "$to" "${git_args[@]}"
+
+  cat <<'EOF'
+
+Changed paths
+-------------
+EOF
+  git diff --name-status "$base" "$to" "${git_args[@]}"
+
+  append_revision_file ".github/review-plans/native-pure-epic.md"
+  append_revision_file "nix/agent-root.nix"
+  append_revision_file "nix/agent-overlays.nix"
+  while IFS= read -r skill_path; do
+    append_revision_file "$skill_path"
+  done < <(git ls-tree -r --name-only "$context" nix/agents/skills | grep '/SKILL\.md$')
+  append_revision_file "CONTRIBUTING.md"
+  append_revision_file "docs/ADRs/0095-wire-single-record-executor-boundary.md"
+  append_revision_file "docs/ADRs/0096-certified-native-pure-region-compilation.md"
+  append_revision_file "docs/Reference/feature-status.md"
+  append_revision_file "docs/Reference/Wire/grammar.md"
+  append_revision_file "docs/Reference/Wire/style.md"
+  append_revision_file "docs/Reference/Wire/hosted-execution.md"
+
+  if [[ "$include_diff" -eq 1 ]]; then
+    cat <<'EOF'
+
+===== PATCH =====
+
+EOF
+    git diff --no-ext-diff --full-index --find-renames "$base" "$to" "${git_args[@]}"
+  fi
+} >"$temporary"
+
+mv "$temporary" "$output"
+trap - EXIT
+
+digest="$(sha256sum "$output" | awk '{print $1}')"
+printf 'Review bundle: %s\n' "$output"
+printf 'SHA-256: %s\n' "$digest"
+
+if [[ "$print_bundle" -eq 1 ]]; then
+  printf '\n'
+  cat "$output"
+fi

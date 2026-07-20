@@ -47,7 +47,7 @@ closed once this cleanup lands:
 - #317 — governed by ADR 0082 and the Pulse signals reference.
 - #318 — governed by ADR 0083 and the Pulse schema/migrations references.
 - #319 — governed by ADR 0084 and the tree-sitter/editor docs.
-- #320 — folded into ADR 0025 and the configured-executor/runtime-options references.
+- #320 — folded into ADR 0025 and the executor-authority/runtime-options references.
 - #325 — folded into ADR 0064's durable graph-state write seam and ADR 0058's run-terminal writer
   set.
 - #350 — covered by the refreshed Pulse consumer/operations docs.

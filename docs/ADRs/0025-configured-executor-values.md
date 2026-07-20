@@ -6,13 +6,13 @@ description:
 sidebar:
   label: "0025. Configured executors"
   order: 25
-status: proposed
+status: superseded
 date: 2026-04-29
-superseded_by: null
+superseded_by: docs/ADRs/0095-wire-single-record-executor-boundary.md
 related:
   - docs/Architecture/05-wire-language.md
   - docs/Reference/Wire/executors-and-alphabet.md
-  - docs/Reference/Wire/configured-executors-and-execution-boundary.md
+  - docs/Reference/Wire/executor-authorities-and-execution-boundary.md
   - docs/ADRs/0010-wire-closed-authority-and-three-layer-stack.md
   - docs/ADRs/0017-wire-executor-and-port-catalog-boundary.md
   - docs/ADRs/0019-executor-registration-and-binding.md
@@ -28,9 +28,8 @@ related:
 
 ## Status
 
-Proposed - fills the reusable-config gap left by ADR 0024 after configured executors stopped being
-graph vertices. ADR 0030 defines the node implementation positions where configured executor values
-may be applied.
+Superseded by ADR 0095, which removes configured-executor values in favor of bare executor authority
+references and one explicit argument record.
 
 ## Context
 
@@ -218,7 +217,7 @@ calls use node-level executor bodies.
 
 - Feature keys: `wire.configured_executor_values`
 - Public surface: `Cortex.Wire`,
-  [Wire Configured Executors and Execution Boundary](../Reference/Wire/configured-executors-and-execution-boundary.md)
+  [Wire Executor Authorities and Execution Boundary](../Reference/Wire/executor-authorities-and-execution-boundary.md)
 - Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprConfiguredExecutor`, `ExecutorCallConfigured`),
   `src/Cortex/Wire/Parser.hs` (`configuredExecutorCall`, `ksConfiguredExecutors`),
   `src/Cortex/Wire/Compile.hs` (`ConfiguredExecutor`, `resolveExecutorCall`, CorePure rejection of
