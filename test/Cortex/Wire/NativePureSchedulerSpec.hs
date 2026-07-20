@@ -45,6 +45,7 @@ import Cortex.Wire
   , RealizationRuntimeKind (..)
   , RealizationRuntimeUnit (..)
   , acknowledgeNativePureCheckpointV2
+  , cancelNativePureV2
   , completeNativePureEffectV2
   , decodeNativePureV2EngineEvent
   , decodeNativePureV2HostCommand
@@ -217,6 +218,222 @@ spec = describe "NativePure v2 scheduler" $ do
       _ -> False
     validateNativePureProgramV2 disconnected `shouldSatisfy` \case
       Left NativePureProgramV2InvalidSelect {} -> True
+      _ -> False
+
+  it "rejects a select branch whose internal fan-in leaves two predecessors of rejoin" $ do
+    let fanInProgram =
+          mkProgram
+            [ unit 0 "guard" NativePureV2SelectGuard
+            , unit 1 "a" NativePureV2PureRegion
+            , unit 2 "b" NativePureV2PureRegion
+            , unit 3 "rejoin" NativePureV2Rejoin
+            ]
+            [ NativePureProgramV2Edge 0 1
+            , NativePureProgramV2Edge 0 2
+            , NativePureProgramV2Edge 1 3
+            , NativePureProgramV2Edge 2 3
+            ]
+            [NativePureSelectPlanV2 0 (Map.fromList [("only", [1, 2]), ("other", [])]) 3]
+    validateNativePureProgramV2 fanInProgram `shouldSatisfy` \case
+      Left (NativePureProgramV2InvalidSelect reason) ->
+        "more than one branch unit has a direct edge into rejoin" `T.isInfixOf` reason
+      _ -> False
+
+  it "rejects a select branch with no direct predecessor of rejoin" $ do
+    let noTailProgram =
+          mkProgram
+            [ unit 0 "guard" NativePureV2SelectGuard
+            , unit 1 "a" NativePureV2PureRegion
+            , unit 2 "b" NativePureV2PureRegion
+            , unit 3 "rejoin" NativePureV2Rejoin
+            ]
+            [ NativePureProgramV2Edge 0 1
+            , NativePureProgramV2Edge 1 2
+            , NativePureProgramV2Edge 0 3
+            ]
+            [NativePureSelectPlanV2 0 (Map.fromList [("only", [1, 2]), ("other", [])]) 3]
+    validateNativePureProgramV2 noTailProgram `shouldSatisfy` \case
+      Left (NativePureProgramV2InvalidSelect reason) ->
+        "every branch unit must reach its declared rejoin within that branch" `T.isInfixOf` reason
+          || "no branch unit has a direct edge into rejoin" `T.isInfixOf` reason
+      _ -> False
+
+  it "rejects a select whose guard or rejoin also appears inside a branch" $ do
+    let selfMemberProgram =
+          mkProgram
+            [ unit 0 "guard" NativePureV2SelectGuard
+            , unit 1 "a" NativePureV2PureRegion
+            , unit 2 "rejoin" NativePureV2Rejoin
+            ]
+            [NativePureProgramV2Edge 0 1, NativePureProgramV2Edge 1 2, NativePureProgramV2Edge 0 2]
+            [NativePureSelectPlanV2 0 (Map.fromList [("branch", [0]), ("other", [])]) 2]
+    validateNativePureProgramV2 selfMemberProgram `shouldSatisfy` \case
+      Left (NativePureProgramV2InvalidSelect reason) ->
+        "guard or rejoin occurs inside a branch" `T.isInfixOf` reason
+      _ -> False
+
+  it "reads the rejoin value from a linear multi-unit branch's unique tail" $ do
+    let chainProgram =
+          mkProgram
+            [ unit 0 "guard" NativePureV2SelectGuard
+            , unit 1 "first" NativePureV2PureRegion
+            , unit 2 "second" NativePureV2PureRegion
+            , unit 3 "identity-arm" NativePureV2PureRegion
+            , unit 4 "rejoin" NativePureV2Rejoin
+            ]
+            [ NativePureProgramV2Edge 0 1
+            , NativePureProgramV2Edge 1 2
+            , NativePureProgramV2Edge 2 4
+            , NativePureProgramV2Edge 0 3
+            , NativePureProgramV2Edge 3 4
+            ]
+            [NativePureSelectPlanV2 0 (Map.fromList [("chain", [1, 2]), ("other", [3])]) 4]
+        chainRunner unitValue _inputs = case unitValue.nativePureProgramV2UnitRef of
+          "guard" -> Right (NativePureV2Result Aeson.Null (Just "chain"))
+          "first" -> Right (NativePureV2Result (Aeson.String "first-value") Nothing)
+          "second" -> Right (NativePureV2Result (Aeson.String "second-value") Nothing)
+          ref -> Left ("unexpected pure runner call for " <> ref)
+        initial = initialNativePureEngineStateV2 chainProgram
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 chainProgram 1 initial)
+    afterGuard <- requireRight (driveNativePureV2 chainRunner chainProgram admitted)
+    afterGuardAck <-
+      requireRight
+        (acknowledgeNativePureCheckpointV2 chainProgram 2 afterGuard.nativePureV2TransitionState)
+    afterFirst <- requireRight (driveNativePureV2 chainRunner chainProgram afterGuardAck)
+    afterFirstAck <-
+      requireRight
+        (acknowledgeNativePureCheckpointV2 chainProgram 3 afterFirst.nativePureV2TransitionState)
+    afterSecond <- requireRight (driveNativePureV2 chainRunner chainProgram afterFirstAck)
+    afterSecondAck <-
+      requireRight
+        (acknowledgeNativePureCheckpointV2 chainProgram 4 afterSecond.nativePureV2TransitionState)
+    rejoined <- requireRight (driveNativePureV2 chainRunner chainProgram afterSecondAck)
+    rejoined.nativePureV2TransitionState.nativePureEngineStateV2Values List.!? 4
+      `shouldBe` Just (Just (Aeson.String "second-value"))
+
+  it "cancels pending and running units, leaves settled units unchanged, and rejects a re-cancel" $ do
+    let program = effectPureEffectProgram
+        initial = initialNativePureEngineStateV2 program
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 program 1 initial)
+    running <- requireRight (driveNativePureV2 pureRunner program admitted)
+    let runningState = running.nativePureV2TransitionState
+    runningState.nativePureEngineStateV2Statuses
+      `shouldBe` [NativePureV2RunningEffect, NativePureV2Pending, NativePureV2Pending]
+    cancelled <- requireRight (cancelNativePureV2 program runningState)
+    cancelled.nativePureEngineStateV2Statuses
+      `shouldBe` [NativePureV2Skipped, NativePureV2Skipped, NativePureV2Skipped]
+    cancelled.nativePureEngineStateV2Terminal `shouldBe` EngineCancelled
+    cancelled.nativePureEngineStateV2AwaitingCheckpoint `shouldBe` True
+    cancelNativePureV2 program cancelled `shouldSatisfy` \case
+      Left (NativePureProgramV2Protocol _) -> True
+      _ -> False
+
+  it "rejects a late effect completion racing a cancellation" $ do
+    let program = effectPureEffectProgram
+        initial = initialNativePureEngineStateV2 program
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 program 1 initial)
+    running <- requireRight (driveNativePureV2 pureRunner program admitted)
+    cancelled <- requireRight (cancelNativePureV2 program running.nativePureV2TransitionState)
+    ackCancel <- requireRight (acknowledgeNativePureCheckpointV2 program 2 cancelled)
+    completeNativePureEffectV2
+      program
+      1
+      0
+      (NativePureV2EffectSucceeded (Aeson.Number 7))
+      ackCancel
+      `shouldSatisfy` \case
+        Left (NativePureProgramV2Protocol reason) ->
+          "not running" `T.isInfixOf` reason
+        _ -> False
+
+  it "rejects cancelling an already-terminal (succeeded) engine" $ do
+    let program = mkProgram [unit 0 "only" NativePureV2PureRegion] [] []
+        onlyRunner _unitValue _inputs = Right (NativePureV2Result Aeson.Null Nothing)
+        initial = initialNativePureEngineStateV2 program
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 program 1 initial)
+    completed <- requireRight (driveNativePureV2 onlyRunner program admitted)
+    ackCompleted <-
+      requireRight
+        (acknowledgeNativePureCheckpointV2 program 2 completed.nativePureV2TransitionState)
+    settled <- requireRight (driveNativePureV2 onlyRunner program ackCompleted)
+    settled.nativePureV2TransitionState.nativePureEngineStateV2Terminal `shouldBe` EngineSucceeded
+    cancelNativePureV2 program settled.nativePureV2TransitionState `shouldSatisfy` \case
+      Left (NativePureProgramV2Protocol _) -> True
+      _ -> False
+
+  it "restores a running effect to pending with a cleared sequence number" $ do
+    let program = effectPureEffectProgram
+        initial = initialNativePureEngineStateV2 program
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 program 1 initial)
+    running <- requireRight (driveNativePureV2 pureRunner program admitted)
+    let runningState = running.nativePureV2TransitionState
+    runningState.nativePureEngineStateV2EffectSequences List.!? 0 `shouldBe` Just (Just 1)
+    restored <- requireRight (restoreNativePureEngineStateV2 program runningState)
+    restored.nativePureEngineStateV2Statuses List.!? 0 `shouldBe` Just NativePureV2Pending
+    restored.nativePureEngineStateV2EffectSequences `shouldBe` [Nothing, Nothing, Nothing]
+    restored.nativePureEngineStateV2AwaitingCheckpoint `shouldBe` True
+    ackRestored <-
+      requireRight
+        ( acknowledgeNativePureCheckpointV2
+            program
+            restored.nativePureEngineStateV2CheckpointSequence
+            restored
+        )
+    -- A completion carrying the pre-restore sequence number must not be
+    -- honored: the unit is Pending (not RunningEffect) after restore.
+    completeNativePureEffectV2
+      program
+      1
+      0
+      (NativePureV2EffectSucceeded (Aeson.Number 7))
+      ackRestored
+      `shouldSatisfy` \case
+        Left (NativePureProgramV2Protocol reason) ->
+          "not running" `T.isInfixOf` reason
+        _ -> False
+
+  it "rejects an effect completion that arrives before checkpoint acknowledgement" $ do
+    let program = effectPureEffectProgram
+        initial = initialNativePureEngineStateV2 program
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 program 1 initial)
+    running <- requireRight (driveNativePureV2 pureRunner program admitted)
+    -- A successful completion requests a fresh checkpoint; a second
+    -- completion delivered before that checkpoint is acknowledged must be
+    -- rejected, not silently applied.
+    firstCompletion <-
+      requireRight
+        ( completeNativePureEffectV2
+            program
+            1
+            0
+            (NativePureV2EffectSucceeded (Aeson.Number 7))
+            running.nativePureV2TransitionState
+        )
+    firstCompletion.nativePureEngineStateV2AwaitingCheckpoint `shouldBe` True
+    completeNativePureEffectV2
+      program
+      1
+      0
+      (NativePureV2EffectSucceeded (Aeson.Number 7))
+      firstCompletion
+      `shouldSatisfy` \case
+        Left (NativePureProgramV2Protocol reason) ->
+          "checkpoint acknowledgement" `T.isInfixOf` reason
+        _ -> False
+
+  it "rejects checkpoint acknowledgement with a mismatched sequence number" $ do
+    let program = effectPureEffectProgram
+        initial = initialNativePureEngineStateV2 program
+    acknowledgeNativePureCheckpointV2 program 99 initial `shouldSatisfy` \case
+      Left (NativePureProgramV2Protocol reason) -> "sequence mismatch" `T.isInfixOf` reason
+      _ -> False
+
+  it "rejects checkpoint acknowledgement when no checkpoint is awaiting" $ do
+    let program = effectPureEffectProgram
+        initial = initialNativePureEngineStateV2 program
+    admitted <- requireRight (acknowledgeNativePureCheckpointV2 program 1 initial)
+    acknowledgeNativePureCheckpointV2 program 1 admitted `shouldSatisfy` \case
+      Left (NativePureProgramV2Protocol reason) -> "no checkpoint is awaiting" `T.isInfixOf` reason
       _ -> False
 
   it "round-trips v2 hosted messages and enforces the 2 MiB ceiling" $ do
