@@ -3568,9 +3568,23 @@ validateNodeMetadataFields nodeRef fields =
        | path <- Map.keys fields
        , NE.head path `notElem` allowed
        ] of
-    [] -> Right ()
     unknown : _ ->
       Left (WireCore.WireInvalidPorts nodeRef ("unknown node metadata field " <> unknown))
+    [] ->
+      -- Every allowed field is read back by an exact single-segment key
+      -- (Map.lookup ("label" :| []) fields, and so on); none is a nested
+      -- record authors can address by dotted path. A dotted path on a known
+      -- top-level name (e.g. `label.note = "x"`) would otherwise pass this
+      -- allowlist, pass value validation, and then silently fail to match
+      -- that exact-key lookup, so the field is accepted but has no effect.
+      case [NE.head path | path <- Map.keys fields, not (null (NE.tail path))] of
+        [] -> Right ()
+        dotted : _ ->
+          Left
+            ( WireCore.WireInvalidPorts
+                nodeRef
+                ("node metadata field " <> dotted <> " does not accept a dotted path")
+            )
   where
     allowed =
       [ "label"

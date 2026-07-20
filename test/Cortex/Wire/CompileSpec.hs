@@ -3457,6 +3457,14 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Left
         (WireInvalidPorts (CircuitNodeRef "fetch") "unknown node metadata field mystery")
 
+  it "rejects a dotted path on a known compiler-owned node metadata field" $
+    -- `label` is only ever read back by the exact key ("label" :| []); a
+    -- dotted path on it must fail loudly rather than being silently
+    -- accepted and silently having no effect on the compiled label.
+    compileWireText "node fetch with { label.note = \"x\"; } -> result: Result = @review.fetch;"
+      `shouldBe` Left
+        (WireInvalidPorts (CircuitNodeRef "fetch") "node metadata field label does not accept a dotted path")
+
   -- The source carries a file return so this cannot pass by failing the
   -- unrelated file-return check; the assertion pins the metadata rejection.
   it "rejects dynamically evaluated compiler-owned node metadata" $
