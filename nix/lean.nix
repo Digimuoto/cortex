@@ -1056,12 +1056,12 @@
         jq -e '.schema == "cortex.wire.native-pure-plan/v1"
           and (.regions | length) == 1
           and .regions[0].sources == ["first", "second"]
-          and .regions[0].bounds.steps == 17' \
+          and .regions[0].bounds.steps == 19' \
           "$generated/native-pure-plan.json" >/dev/null
 
         cortex-native-pure-generated-fixture "$artifacts"
         region="native_pure_region_0000"
-        engine="cortex_np_engine_dd728d0ed625b900"
+        engine="cortex_np_engine_b498f115caa07442"
         jq -e '.schema == "cortex.wire.native-pure-c/v1"' \
           "$artifacts/$region.manifest.json" >/dev/null
         jq -e '.schema == "cortex.wire.native-pure-engine/v2"

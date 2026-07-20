@@ -431,12 +431,26 @@ renderOperation env expected = \case
       (invalid ("unsupported binary operator " <> T.pack (show operator)))
     leftExpr <- renderVar env left operandShape
     rightExpr <- renderVar env right operandShape
-    pure (constructor <> " (" <> leftExpr <> ") (" <> rightExpr <> ")")
+    -- Always multi-line (not conditioned on rendered length): a deeply
+    -- nested De Bruijn index can push even a two-operand application past
+    -- the line-length limit, and a fixed layout keeps the checked-in
+    -- Generated/Program.lean byte-identical to what a fresh regeneration
+    -- produces regardless of how long any one operand happens to render.
+    pure . T.intercalate "\n" $
+      [ constructor
+      , indent 2 ("(" <> leftExpr <> ")")
+      , indent 2 ("(" <> rightExpr <> ")")
+      ]
   NativePureAnfIf condition thenBlock elseBlock -> do
     conditionExpr <- renderVar env condition NativeBool
     thenExpr <- renderBlock env thenBlock expected
     elseExpr <- renderBlock env elseBlock expected
-    pure (".ifE (" <> conditionExpr <> ") (" <> thenExpr <> ") (" <> elseExpr <> ")")
+    pure . T.intercalate "\n" $
+      [ ".ifE"
+      , indent 2 ("(" <> conditionExpr <> ")")
+      , indent 2 ("(" <> thenExpr <> ")")
+      , indent 2 ("(" <> elseExpr <> ")")
+      ]
   NativePureAnfInject label payload ->
     case expected of
       NativeSum variants -> do

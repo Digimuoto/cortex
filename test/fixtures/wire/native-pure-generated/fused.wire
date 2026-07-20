@@ -2,11 +2,16 @@ contract Score;
 
 contract Mid;
 
+contract Extra;
+
 contract Result;
 
 node first <- score: Score -> mid: Mid = (score + 1);
 
-node second <- mid: Mid -> result: Result = (mid + 1);
+node second
+  <- mid: Mid
+  <- extra: Extra
+  -> result: Result = if mid < extra then mid else extra;
 
 first
   => second

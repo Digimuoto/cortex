@@ -12,6 +12,11 @@ payload_kind = "json"
 native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
 
 [[contract]]
+id = "Extra"
+payload_kind = "json"
+native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
+
+[[contract]]
 id = "Result"
 payload_kind = "json"
 native_shape = { schema = "cortex.wire.native-shape/v1", shape = "i64" }
