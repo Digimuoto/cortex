@@ -61,7 +61,7 @@ Signed-off-by: ...
       decoding, generated engine bounds, and checkpoint protocol. Command:
       `just review-commits 4143a07-de2f825`
 
-- [ ] `10c2a0b-26cc507` — compatible Wire authoring surface and compliant epic integration policy.
+- [x] `10c2a0b-26cc507` — compatible Wire authoring surface and compliant epic integration policy.
       Historical PR: [#398](https://github.com/Digimuoto/cortex/pull/398). Replacement epic:
       [#400](https://github.com/Digimuoto/cortex/pull/400). Focus: dual grammar normalization,
       formatter/tree-sitter parity, metadata allowlisting, inheritance, unchanged v1 artifacts,
