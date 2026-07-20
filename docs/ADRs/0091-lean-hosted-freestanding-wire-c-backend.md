@@ -35,7 +35,7 @@ scheduler, ABI declarations, globals, and functions as a validated structured C1
 Source, header, and export inventory are rendered from that one representation. A validated
 whitespace-only compatibility layout preserves the published v1 artifact bytes exactly; it cannot
 inject, remove, or replace C tokens. The existing schemas, symbols, lifecycle behavior, target
-outputs, and four pinned artifact hashes remain unchanged.
+outputs, and four pinned artifact byte images remain unchanged.
 
 **2026-07-19 NativePure amendment.** NativePure adds a separately versioned executable scheduler
 policy under `static-program/v2`, `engine/v2`, `engine-state/v2`, `host-process/v2`, and

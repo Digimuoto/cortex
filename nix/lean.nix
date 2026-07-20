@@ -113,6 +113,14 @@
           ${../test/fixtures/wire/static-program-v1/two-node.json} > "$emptyArtifact"
         emptyGenerated="$TMPDIR/empty-generated"
         cortex-wire-c "$emptyArtifact" "$emptyGenerated"
+        cmp "$emptyGenerated/program.c" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.c.golden}
+        cmp "$emptyGenerated/program.h" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.h.golden}
+        cmp "$emptyGenerated/program.exports.txt" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.exports.txt.golden}
+        cmp "$emptyGenerated/program.manifest.json" \
+          ${../test/fixtures/wire/static-program-v1/empty/program.manifest.json.golden}
         clang -std=c11 -ffreestanding -fno-builtin -Wall -Wextra -Werror \
           -c "$emptyGenerated/program.c" -o "$TMPDIR/empty-host.o"
         clang -target aarch64-none-elf -std=c11 -ffreestanding -fno-builtin \
