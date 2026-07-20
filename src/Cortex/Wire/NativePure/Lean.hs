@@ -407,6 +407,11 @@ renderOperation env expected = \case
       _ -> invalid "projection base is not a record"
   NativePureAnfNot valueRef -> unary ".not" valueRef NativeBool
   NativePureAnfBinary operator left right -> do
+    -- Admission (Admission.hs) rejects every operator not covered by the
+    -- certified kernel basis before a plan can reach this decoder, so the
+    -- six excluded constructors are unreachable here; they are named
+    -- explicitly rather than wildcarded so a newly admitted operator forces
+    -- a decision at this call site too.
     let (constructor, operandShape) = case operator of
           CorePureAdd -> (".add", NativeI64)
           CorePureSubtract -> (".sub", NativeI64)
@@ -415,7 +420,12 @@ renderOperation env expected = \case
           CorePureLessThan -> (".ltI64", NativeI64)
           CorePureAnd -> (".and", NativeBool)
           CorePureOr -> (".or", NativeBool)
-          _ -> ("", NativeUnit)
+          CorePureDivide -> ("", NativeUnit)
+          CorePureMerge -> ("", NativeUnit)
+          CorePureNotEqual -> ("", NativeUnit)
+          CorePureLessThanOrEqual -> ("", NativeUnit)
+          CorePureGreaterThan -> ("", NativeUnit)
+          CorePureGreaterThanOrEqual -> ("", NativeUnit)
     when
       (T.null constructor)
       (invalid ("unsupported binary operator " <> T.pack (show operator)))
@@ -493,8 +503,12 @@ lookupShape env valueRef =
     (pure . snd)
     (List.find ((== valueRef) . fst) env)
 
+-- `.succ` nests right-associatively (`Var.succ : Var context ty -> Var (bound
+-- :: context) ty`), so index >= 2 needs explicit parens around each level; a
+-- flat `.succ .succ .zero` parses as left-associative application instead.
 renderVarIndex :: Int -> Text
-renderVarIndex index = T.replicate index ".succ " <> ".zero"
+renderVarIndex 0 = ".zero"
+renderVarIndex index = ".succ (" <> renderVarIndex (index - 1) <> ")"
 
 renderMember :: Text -> [Text] -> Either NativePureLeanError Text
 renderMember target labels =
