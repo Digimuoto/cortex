@@ -299,9 +299,11 @@ ADR remains a proposed-ADR cleanup question.
   `src/Cortex/Wire/Circuit/Lowering.hs` (`committedVariantConditionBinding`,
   `bindCircuitConditionNode`), `src/Cortex/Pulse/Circuit.hs` (`runCompiledCircuit`,
   `resumeCompiledCircuit`, managed fresh/resume entrypoints), `src/Cortex/Wire/Compile.hs`
-  (`resolveExclusiveBoundary`)
+  (`resolveExclusiveBoundary`, pure sum lowering), `src/Cortex/Wire/Pure.hs` (constructor-path
+  validation and tagged evaluation)
 - Tests: `test/Cortex/Pulse/ExecutorSpec.hs`, `test/Cortex/Wire/Circuit/CompilerSpec.hs`,
-  `test/Cortex/Wire/RuntimeSpec.hs`
+  `test/Cortex/Wire/RuntimeSpec.hs`, `test/Cortex/Capability/Executor/PureSpec.hs`,
+  `test/Cortex/Wire/ParserSpec.hs`, `test/Cortex/Wire/FormatSpec.hs`
 - Theory/proof:
   [the "Select source admission" and "Select actualization" rows](../Reference/proof-status.md)
 
@@ -324,3 +326,14 @@ ADR remains a proposed-ADR cleanup question.
 - [0079 - Wire Admission Artifact as Haskell-to-Lean Proof-Witness Exchange Schema](0079-wire-admission-witness-schema.md)
   - the proof-side counterpart: the admission witness retains the select-variant exclusive-group
     provenance (`selectVariantsShareExclusiveGroup`) this ADR drops before runtime.
+
+## Amendment - Tracking correction on proposed-to-accepted transition (2026-07-19)
+
+**Status: accepted. Append-only correction; the decision above is unchanged.** The commit that moved
+this ADR from `proposed` to `accepted` also dropped its former `## Tracking` section in full. Most
+of its items were legitimately closed by that point, but at least two named a still-open follow-up
+(the select-runtime/materialization proof correspondence, and the ADR 0017 codec-registry follow-up)
+and were dropped along with the resolved ones, without a record of which was which. Accepted-ADR
+policy does not permit this document to carry a temporary tracking list with transient issue
+references, so the specific items are not restored here; outstanding follow-up work from this ADR is
+tracked through ordinary GitHub issues outside this document rather than inline.

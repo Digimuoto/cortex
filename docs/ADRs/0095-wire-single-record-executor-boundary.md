@@ -7,7 +7,7 @@ sidebar:
   label: "0095. Wire executor boundary"
   order: 95
 status: accepted
-date: 2026-07-18
+date: 2026-07-19
 superseded_by: null
 related:
   - docs/Reference/Wire/grammar.md

@@ -137,7 +137,7 @@ is shown here.
   [0065](0065-pulse-frontier-concurrency.md), [0066](0066-pulse-resume-recovery.md),
   [0067](0067-pulse-stage-retry-policy.md), [0068](0068-pulse-scheduler-leasing.md),
   [0082](0082-pulse-durable-signals.md), [0083](0083-pulse-schema-lifecycle.md)
-- **Circuit engine & hosted targets** (7):
+- **Circuit engine & hosted targets** (6):
   [0090](0090-computable-pulse-kernel-and-extraction-boundary.md),
   [0091](0091-lean-hosted-freestanding-wire-c-backend.md),
   [0092](0092-circuit-engine-runtime-host-boundary.md),
@@ -166,11 +166,12 @@ is shown here.
   [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),
   [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md),
   [0097](0097-wire-static-intent-and-realization-inputs.md)
-- **Wire executor & node interface** (6): [0017](0017-wire-executor-and-port-catalog-boundary.md),
+- **Wire executor & node interface** (7): [0017](0017-wire-executor-and-port-catalog-boundary.md),
   [0024](0024-typed-executor-node-interface.md), [0025](0025-configured-executor-values.md),
   [0030](0030-wire-node-implementation-forms.md),
   [0039](0039-wire-node-boundary-transform-normal-form.md),
-  [0062](0062-typed-effect-variant-output-boundaries.md)
+  [0062](0062-typed-effect-variant-output-boundaries.md),
+  [0095](0095-wire-single-record-executor-boundary.md)
 - **Wire elaboration & compile-time generation** (4):
   [0021](0021-wire-source-elaborates-to-circuits.md),
   [0045](0045-wire-compile-time-node-body-kinds.md), [0046](0046-wire-compile-time-graph-forms.md),

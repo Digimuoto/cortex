@@ -347,4 +347,4 @@ workflows instead of a clean idealization where LLM nodes silently violate typed
 - [ADR 0021 - Wire Source Elaborates to Circuits](./0021-wire-source-elaborates-to-circuits.md)
 - [ADR 0022 - Wire Node Clause Grammar](./0022-wire-node-clause-grammar.md)
 - [ADR 0023 - CorePure Expression Surface](./0023-corepure-expression-surface.md)
-- [Wire Executor Arguments and Execution Boundary Reference](../Reference/Wire/executor-authorities-and-execution-boundary.md)
+- [Wire Executor Authorities and Execution Boundary Reference](../Reference/Wire/executor-authorities-and-execution-boundary.md)

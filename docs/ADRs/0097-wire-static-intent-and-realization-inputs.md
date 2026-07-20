@@ -30,6 +30,22 @@ registry, or intent-bound admitted-program artifact exists yet. The final remova
 configuration must not land until the static-intent path exists and downstream consumers that use
 legacy configuration as admission input have migrated.
 
+### Sequencing note
+
+Legacy `config_shape`/v1 admission projection removal already landed, in commit `801c837` of the
+NativePure epic, ahead of the static-intent path described above and ahead of this ADR's acceptance.
+This is a deliberate, tracked exception to the sequencing this ADR states, not a silent violation of
+it: the epic's integration pull request makes "ADR 0097 review and downstream release migration
+complete" an explicit required gate before the epic branch may fast-forward onto `main` (see
+Tracking below). The gate is enforced at the pull-request level today because the static-intent
+implementation and the wireOS migration it depends on do not exist yet; this note is the durable,
+repo-native record of that decision so the constraint does not depend on the pull request's body
+remaining available. The Tracking item "Block the final legacy-configuration removal on those
+downstream migrations and conformance tests" below is superseded by this already-landed removal and
+is retained only as a record of the original intended order; the gate that now actually governs
+`main` integration is the accepted status of this ADR together with completed downstream migration,
+verified before merge rather than before this commit.
+
 ## Context
 
 ADR 0095 makes an important phase distinction:
@@ -562,3 +578,7 @@ later grant but can never manufacture the grant.
       end.
 - [ ] Block the final legacy-configuration removal on those downstream migrations and conformance
       tests.
+- [ ] Verify this ADR is accepted and the wireOS migration above is complete before
+      [PR #400](https://github.com/Digimuoto/cortex/pull/400) (NativePure epic) fast-forwards onto
+      `main`; see the Sequencing note under Status for why commit `801c837` was allowed to remove
+      legacy `config_shape` ahead of that gate.

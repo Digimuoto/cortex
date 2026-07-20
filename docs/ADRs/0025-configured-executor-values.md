@@ -217,7 +217,7 @@ calls use node-level executor bodies.
 
 - Feature keys: `wire.configured_executor_values`
 - Public surface: `Cortex.Wire`,
-  [Wire Executor Arguments and Execution Boundary](../Reference/Wire/executor-authorities-and-execution-boundary.md)
+  [Wire Executor Authorities and Execution Boundary](../Reference/Wire/executor-authorities-and-execution-boundary.md)
 - Implementation: `src/Cortex/Wire/Syntax.hs` (`ExprConfiguredExecutor`, `ExecutorCallConfigured`),
   `src/Cortex/Wire/Parser.hs` (`configuredExecutorCall`, `ksConfiguredExecutors`),
   `src/Cortex/Wire/Compile.hs` (`ConfiguredExecutor`, `resolveExecutorCall`, CorePure rejection of

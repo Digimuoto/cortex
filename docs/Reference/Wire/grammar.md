@@ -27,6 +27,7 @@ related:
   - docs/ADRs/0047-wire-frontier-linearity-and-precedence.md
   - docs/ADRs/0048-wire-make-bounded-node-generation.md
   - docs/ADRs/0052-wire-bounded-indexed-boundary-products.md
+  - docs/ADRs/0095-wire-single-record-executor-boundary.md
 ---
 
 # The Wire Language — Specification
@@ -73,6 +74,13 @@ Literal forms:
 - records: `{ key = value; nested.key = value; inherit key; }`;
 - lists: `[a, b, c]`;
 - unit/empty wire: `()`.
+
+The EBNF productions below use `record`, `qname`, and `corepure_expr` as nonterminals without a
+matching `record ::= ...`, `qname ::= ...`, or `corepure_expr ::= ...` production. `record` and
+`qname` are the record-literal and dotted-qualified-identifier forms given in prose above;
+`corepure_expr` is the CorePure expression language given in prose in §8. All three are deliberately
+specified by prose rather than EBNF because they are shared, independently meaningful sublanguages
+rather than Wire-specific syntax.
 
 ## 2. File Shape
 

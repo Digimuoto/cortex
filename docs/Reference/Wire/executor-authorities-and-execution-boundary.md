@@ -1,5 +1,5 @@
 ---
-title: "Wire Reference — Executor Arguments and Execution Boundary"
+title: "Wire Reference — Executor Authorities and Execution Boundary"
 description:
   The one-record executor argument ABI, node metadata, registry projections, and host invocation
   boundary.
@@ -15,7 +15,7 @@ related:
   - docs/ADRs/0095-wire-single-record-executor-boundary.md
 ---
 
-# Wire Reference — Executor Arguments and Execution Boundary
+# Wire Reference — Executor Authorities and Execution Boundary
 
 Executor authority is a bare registry reference. It carries identity and the registry-owned
 projection, but no embedded configuration:
