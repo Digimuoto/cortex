@@ -397,6 +397,18 @@ formatPortLabel = \case
   NoLabel -> "_"
   Label label -> label
 
+{- | 'ExecutorCallBound' is only produced by @form@/@kind@ argument
+specialization, and its bare 'Text' conflates two different source
+provenances: a substituted executor authority (needs a leading @\@@) and a
+substituted local let-binding (must not have one). The two are no longer
+distinguishable at this point, so this branch cannot be corrected by adding
+a sigil unconditionally without silently mis-rendering the other case.
+'sourceNeedsSurfacePreservation' routes every source that can produce an
+'ExecutorCallBound' value (any file using @kind@/@form@) through byte-for-byte
+preservation instead, so this branch is unreachable from 'formatWire' today;
+resolving the ambiguity for real needs a typed distinction upstream, not a
+formatter patch.
+-}
 formatExecutorCall :: ExecutorCall -> Text
 formatExecutorCall = \case
   ExecutorCallInline executor inputExpr ->

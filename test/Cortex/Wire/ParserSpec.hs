@@ -163,6 +163,10 @@ spec = describe "Cortex.Wire.Parser" $ do
       parseWireFile "test" "node n -> out: T = @review.x (value);"
         `shouldSatisfy` isParseFailureContaining "parenthesized executor calls were removed"
 
+    it "rejects value-position configured-executor bindings with a targeted diagnostic" $
+      parseWireFile "test" "let x = @review.x { model = \"a\"; };"
+        `shouldSatisfy` isParseFailureContaining "@executor { config } bindings were removed"
+
     it "rejects multiple executor arguments" $
       parseWireFile "test" "node n -> out: T = @review.x first, second;"
         `shouldSatisfy` isParseFailure
@@ -501,6 +505,24 @@ spec = describe "Cortex.Wire.Parser" $ do
             NodeBodyExecutor Nothing (ExecutorCallBound "h_gate" (Just (CorePureIdent "screen"))) ->
               pure ()
             other -> expectationFailure ("unexpected body: " <> show other)
+        other -> expectationFailure ("unexpected forms: " <> show other)
+
+    it "accepts a bare Executor authority passed directly to a kind application" $ do
+      let WireFile forms _ =
+            parseOrFail $
+              T.unlines
+                [ "kind run(executor: Executor) ="
+                , "  <- value: T"
+                , "  -> value: T"
+                , "  = @executor value;"
+                , "node applied = run(@execute);"
+                ]
+      case forms of
+        [TopNode node] ->
+          nodeDeclBody node
+            `shouldBe` NodeBodyExecutor
+              Nothing
+              (ExecutorCallBound "execute" (Just (CorePureIdent "value")))
         other -> expectationFailure ("unexpected forms: " <> show other)
 
     it "parses registry namespace use imports" $ do

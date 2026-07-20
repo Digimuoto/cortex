@@ -525,7 +525,7 @@ identifier, or parenthesized group.
 exprAtom :: Parser Expr
 exprAtom =
   choice
-    [ ExprExecutor <$> executorRef
+    [ executorExpr
     , -- Immediate @name[index]@ is graph-family projection; spaced @name [index]@ is CorePure.
       familyProjectionExpr
     , try constructorExpr
@@ -537,6 +537,13 @@ exprAtom =
     , parenOrUnit
     , ExprIdent <$> qualifiedIdent
     ]
+  where
+    executorExpr = do
+      executor <- executorRef
+      legacyConfig <- optional (MP.lookAhead (symbol "{"))
+      when (isJust legacyConfig) $
+        fail "@executor { config } bindings were removed; bind the executor with @executor alone"
+      pure (ExprExecutor executor)
 
 familyProjectionExpr :: Parser Expr
 familyProjectionExpr = lexeme $ do
@@ -2417,7 +2424,7 @@ formSubstitutionForApplication formDeclValue application = do
                     }
               }
         FormParamExecutor -> do
-          actual <- expectSimpleFormIdentifier formDeclValue param "Executor" arg
+          actual <- expectSimpleFormExecutor formDeclValue param arg
           Right
             subst
               { fsKindSubstitution =
@@ -2456,6 +2463,20 @@ expectSimpleFormIdentifier formDeclValue param expectedClass = \case
           <> " expects "
           <> expectedClass
           <> " argument, got "
+          <> show other
+      )
+
+expectSimpleFormExecutor :: FormDecl -> FormParam -> Expr -> Either String Text
+expectSimpleFormExecutor formDeclValue param = \case
+  ExprExecutor (QName (name :| [])) -> Right name
+  ExprIdent (QName (name :| [])) -> Right name
+  other ->
+    Left
+      ( "form "
+          <> T.unpack formDeclValue.formDeclName
+          <> " parameter "
+          <> T.unpack param.formParamName
+          <> " expects Executor argument, got "
           <> show other
       )
 
@@ -2758,7 +2779,7 @@ kindSubstitutionForApplication kindDeclValue application = do
           actual <- expectSimpleIdentifier kindDeclValue param "Contract" arg
           Right subst {ksContracts = Map.insert param.kindParamName actual subst.ksContracts}
         KindParamExecutor -> do
-          actual <- expectSimpleIdentifier kindDeclValue param "Executor" arg
+          actual <- expectSimpleExecutor kindDeclValue param arg
           Right
             subst
               { ksExecutors =
@@ -2785,6 +2806,20 @@ expectSimpleIdentifier kindDeclValue param expectedClass = \case
           <> " expects "
           <> expectedClass
           <> " argument, got "
+          <> show other
+      )
+
+expectSimpleExecutor :: KindDecl -> KindParam -> Expr -> Either String Text
+expectSimpleExecutor kindDeclValue param = \case
+  ExprExecutor (QName (name :| [])) -> Right name
+  ExprIdent (QName (name :| [])) -> Right name
+  other ->
+    Left
+      ( "kind "
+          <> T.unpack kindDeclValue.kindDeclName
+          <> " parameter "
+          <> T.unpack param.kindParamName
+          <> " expects Executor argument, got "
           <> show other
       )
 
