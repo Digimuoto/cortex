@@ -268,8 +268,11 @@ applyCompletionEvent
   -> Machine
   -> (Int, Machine)
 applyCompletionEvent sc event machine
-  | mTerminal machine = (completionStale, machine)
+  -- An out-of-range node id is diagnosed before the terminal latch: such a
+  -- completion could never have been issued by this program, so it is
+  -- invalid input rather than stale timing. Matches the emitted C guards.
   | ceNode event < 0 || ceNode event >= scNodeCount sc = (completionInvalid, machine)
+  | mTerminal machine = (completionStale, machine)
   | currentStatus /= NodeRunning = (completionStale, machine)
   | ceOutcome event == effectSuccess =
       (completionApplied, machine {mState = markCompleted nid (cePayload event) state})
@@ -667,6 +670,13 @@ topologyScenarios topoId n es =
               ( CompletionEvent 0 effectFailure 0
                   : [CompletionEvent i effectSuccess (fromIntegral (1100 + i)) | i <- allNodes, i /= 0]
               )
+          , -- Post-terminal out-of-range: after the run latches failed, an
+            -- out-of-range completion is invalid input, not stale timing.
+            scenario
+              "adversarial-post-terminal-invalid-node"
+              (replicate n effectAsync)
+              (replicate n 0)
+              [CompletionEvent 0 effectFailure 0, CompletionEvent n effectSuccess 0]
           ]
 
 -- | The full differential corpus: every topology's lifecycle scenarios.

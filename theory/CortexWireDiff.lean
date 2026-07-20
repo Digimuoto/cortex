@@ -215,8 +215,10 @@ private def driveOnce (sc : Scenario) (state : MState) : Nat × MState :=
 /-- Apply one completion to a running node, including post-terminal rejection. -/
 private def applyCompletion
     (sc : Scenario) (node outcome payload : Nat) (state : MState) : Nat × MState :=
-  if state.terminal then (completionStale, state)
-  else if node ≥ sc.nodeCount then (completionInvalid, state)
+  -- Out-of-range node ids are invalid input even after the terminal latch;
+  -- range is diagnosed first, matching the emitted C and Haskell drivers.
+  if node ≥ sc.nodeCount then (completionInvalid, state)
+  else if state.terminal then (completionStale, state)
   else if state.status.getD node statusPending != statusRunning then (completionStale, state)
   else if outcome == effectSuccess then
     (completionApplied,
