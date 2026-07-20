@@ -60,9 +60,9 @@ node plan
   };
 
 node run
+  with { retry = { max_attempts = 2; }; }
   <- outline: Outline
   -> result: Result = @workflow.execute {
-    retry = { max_attempts = 2; };
     payload = outline;
   };
 

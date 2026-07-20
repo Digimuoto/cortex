@@ -429,9 +429,9 @@ The Wire program is unchanged:
 
 ```wire
 node analyze
-  <- evidence: EvidenceSet;
-  -> analysis: AnalysisRecord;
-  = @review.analyze { model = "gpt-5.4"; tools = ["web_search"]; } (evidence);
+  <- evidence: EvidenceSet
+  -> analysis: AnalysisRecord
+  = @review.analyze { payload = evidence; model = "gpt-5.4"; tools = ["web_search"]; };
 ```
 
 The fact that `review.analyze` is implemented in Rust, Haskell, WASM, a model provider adapter, or a

@@ -208,10 +208,10 @@ let critic_executor = @review.analyst;
 
 node critic with {
   memory = topological { preset = "causal"; };
-  instructions = "Critique the draft and call out weak claims.";
 }
   <- analysis: AnalysisFragment
-  -> review: ReviewFragment = @critic_executor analysis;
+  -> review: ReviewFragment
+  = @critic_executor { payload = analysis; instructions = "Critique the draft and call out weak claims."; };
 ```
 
 This matters because it avoids a common DSL failure mode: one language for graphs, another for
@@ -250,8 +250,15 @@ allowed to propose such change.
 A minimal append-style proposal can therefore look like:
 
 ```wire
-let c = @review.foo_to_fizz { instructions = "Bridge foo to fizz."; };
-let d = @review.fizz_to_bar { instructions = "Bridge fizz to bar."; };
+node c
+  <- input: Foo
+  -> output: Fizz
+  = @review.foo_to_fizz { payload = input; instructions = "Bridge foo to fizz."; };
+
+node d
+  <- input: Fizz
+  -> output: Bar
+  = @review.fizz_to_bar { payload = input; instructions = "Bridge fizz to bar."; };
 
 c => d
 ```

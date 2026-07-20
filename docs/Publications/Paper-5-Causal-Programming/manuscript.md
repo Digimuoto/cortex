@@ -1691,7 +1691,7 @@ kind rz_gate(label: PortLabel, angle: Value) =
   <- label: Qubit -> label: Qubit = @quantum.rz { payload = label; cfg = { inherit angle; }; };
 
 kind qubit_measure(input: PortLabel, output: PortLabel) =
-  <- input: Qubit -> output: Bit = @quantum_measure_z input;
+  <- input: Qubit -> output: Bit = @quantum.measure_z input;
 ```
 
 These are not values that the language passes by reference; they are graph fragments that compose
