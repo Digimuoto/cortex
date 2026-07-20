@@ -128,23 +128,9 @@ private def headerParamsFor (function : CFunction) : Option (List Param) :=
 private def functionLayout (name : Name) : Option ConcreteLayout :=
   (staticFunctionLayouts.find? fun pair => pair.1 == name).map Prod.snd
 
-private def withImportComment (function : CFunction) : CFunction :=
-  if function.name == "cortex_wire_engine_v1_import_state" then
-    { function with body := function.body.map fun statements =>
-        statements.take 13 ++
-          [ .comment
-              [ "The cancel latch is session state, not exported state: a deferred"
-              , "cancel does not survive export/import. The host re-issues the cancel"
-              , "after a restore because the cancellation request itself is durable"
-              , "on the host side."
-              ]
-          ] ++ statements.drop 13 }
-  else function
-
 def staticFunctionsWithHeaderComments : List CFunction :=
   staticFunctions.map fun function =>
-    let withComment := withImportComment function
-    { withComment with
+    { function with
       headerParams := headerParamsFor function
       concreteLayout := functionLayout function.name
       headerComments :=
@@ -201,5 +187,16 @@ def translationUnit
       programIdentity
   , functions := staticFunctionsWithHeaderComments
   }
+
+
+/-- The production translation unit validates, which (with the ConcreteLayout
+contract checks in `C11.validate`) witnesses that every static layout applies
+to its function without altering the token stream. -/
+example :
+    (match Cortex.Wire.C11.validate
+        (translationUnit 2 2 [0, 0, 1] [0] [0, 1] "layout-witness") with
+      | .ok _ => true
+      | .error _ => false) = true := by
+  native_decide
 
 end Cortex.Wire.StaticCEmitter

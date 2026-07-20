@@ -2848,6 +2848,12 @@ def staticFunctions : List CFunction := [
       ) (
         .unsigned 1
       ),
+      .comment
+        [ "The cancel latch is session state, not exported state: a deferred"
+        , "cancel does not survive export/import. The host re-issues the cancel"
+        , "after a restore because the cancellation request itself is durable"
+        , "on the host side."
+        ],
       .assign (
         .ident "engine_cancel_requested"
       ) (

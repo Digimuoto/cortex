@@ -470,91 +470,6 @@ private def layoutValid (layout : Layout) : Bool :=
       validIdentifier field.name && field.offset + field.size ≤ layout.size) &&
     unique (layout.fields.map LayoutField.name)
 
-def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit := do
-  if unit.schema.isEmpty then throw "translation-unit schema must not be empty"
-  if unit.identity.isEmpty then throw "translation-unit identity must not be empty"
-  if !validIdentifier unit.headerGuard then throw "invalid header guard"
-  if !unit.includes.all safeInclude then throw "invalid system include"
-  if !unit.headerIncludes.all safeInclude then throw "invalid header include"
-  if unit.localHeader.isEmpty || !safeInclude unit.localHeader then throw "invalid local header"
-  if !unique (unit.defines.map Prod.fst ++ declaredNames unit) then
-    throw "duplicate top-level C identifier"
-  if !(declaredNames unit).all declarableIdentifier then throw "invalid top-level C identifier"
-  if !unit.defines.all (declarableIdentifier ·.1) then throw "invalid preprocessor identifier"
-  if !unique (unit.defines.map (·.1)) then throw "duplicate preprocessor identifier"
-  if !unit.defines.all (exprValid ·.2) then throw "invalid preprocessor expression"
-  if !unit.structs.all (fieldNamesValid ·.fields) then throw "invalid or duplicate struct field"
-  if !unit.structs.all (fun declaration => declaration.fields.all (typeValid ·.ty)) then
-    throw "invalid struct field type"
-  if !unit.unions.all (fieldNamesValid ·.fields) then throw "invalid or duplicate union field"
-  if !unit.unions.all (fun declaration =>
-      !declaration.fields.isEmpty && declaration.fields.all (typeValid ·.ty)) then
-    throw "invalid union field type"
-  if !unit.enums.all (fun declaration =>
-      !declaration.members.isEmpty &&
-        declaration.members.all (validIdentifier ·.name) &&
-        unique (declaration.members.map (·.name))) then
-    throw "invalid enum declaration"
-  if !unit.functions.all (fun function : CFunction => paramsValid function.params) then
-    throw "invalid or duplicate function parameter"
-  if !unit.functionTypedefs.all (fun function : FunctionTypedef => paramsValid function.params) then
-    throw "invalid or duplicate function-typedef parameter"
-  if !unit.typedefs.all (typeValid ·.target) then throw "invalid typedef target"
-  if !unit.functionTypedefs.all (fun function =>
-      typeValid function.result && function.params.all (typeValid ·.ty)) then
-    throw "invalid function-typedef type"
-  if !unit.globals.all (fun global =>
-      typeValid global.ty && global.initial.all fun
-        | .expression value => exprValid value
-        | .list values => values.all exprValid) then
-    throw "invalid global declaration"
-  -- An exported global with internal linkage (or an internal extern
-  -- declaration with no definition) has no coherent linkage in C11 6.2.2.
-  if !unit.globals.all (fun global =>
-      (global.visibility != Visibility.exported || global.storage != Storage.static) &&
-        (global.visibility != Visibility.internal || global.storage != Storage.extern)) then
-    throw "global storage contradicts its visibility"
-  if !unit.functions.all (fun function : CFunction =>
-      typeValid function.result && function.params.all (typeValid ·.ty) &&
-        function.body.all statementsValid && function.comments.all safeComment) then
-    throw "invalid function declaration"
-  if !unit.functions.all (fun function : CFunction =>
-      function.headerComments.all safeComment) then
-    throw "invalid function header comment"
-  if !unit.functions.all (fun function : CFunction =>
-      function.headerParams.all paramsValid &&
-        function.concreteLayout.all concreteLayoutValid) then
-    throw "invalid concrete function layout"
-  if !unit.headerLayout.all concreteLayoutValid then throw "invalid concrete header layout"
-  if !unit.assertions.all (exprValid ·.condition) then throw "invalid static assertion"
-  for declaration in unit.orderedTypes do
-    match declaration with
-    | .define name value =>
-        if !validIdentifier name || !exprValid value then throw "invalid ordered header define"
-    | .alias alias =>
-        if !typeValid alias.target then throw "invalid ordered typedef target"
-    | .functionAlias function =>
-        if !paramsValid function.params || !typeValid function.result ||
-            !function.params.all (typeValid ·.ty) then
-          throw "invalid ordered function typedef"
-    | .enumeration enumeration =>
-        if enumeration.members.isEmpty ||
-            !enumeration.members.all (validIdentifier ·.name) ||
-            !unique (enumeration.members.map (·.name)) then
-          throw "invalid ordered enum declaration"
-    | .structure declaration =>
-        if !fieldNamesValid declaration.fields || !declaration.fields.all (typeValid ·.ty) then
-          throw "invalid ordered struct declaration"
-    | .union declaration =>
-        if declaration.fields.isEmpty || !fieldNamesValid declaration.fields ||
-            !declaration.fields.all (typeValid ·.ty) then
-          throw "invalid ordered union declaration"
-  if !unique (exportedNames unit) then throw "duplicate exported symbol"
-  if !unit.layouts.all layoutValid then
-    throw "invalid layout metadata"
-  if !unit.resources.all (validIdentifier ·.name) || !unique (unit.resources.map (·.name)) then
-    throw "invalid resource metadata"
-  pure (.mk unit)
 
 private def octalDigit (value : Nat) : Char :=
   Char.ofNat ('0'.toNat + value % 8)
@@ -684,6 +599,60 @@ private def applyConcreteLayout (layout : Option ConcreteLayout) (rendered : Str
   | some concrete, some (tokens, _) =>
       (interleaveConcrete concrete.gaps tokens).getD rendered
   | none, _ | _, none => rendered
+
+/-- Inclusive token-index spans of preprocessor directive lines in a canonical
+rendering. The renderer never emits a newline inside a token, so per-line
+scanning concatenates to the full scan. -/
+private def directiveSpans (canonical : String) : List (Nat × Nat) :=
+  let step (state : Nat × List (Nat × Nat)) (line : String) : Nat × List (Nat × Nat) :=
+    let (index, spans) := state
+    match scanConcrete line with
+    | some (tokens, _) =>
+        let count := tokens.length
+        let startsDirective :=
+          (line.toList.dropWhile fun char =>
+            char == ' ' || char == '	' || char == '
+').head? == some '#'
+        if 0 < count && startsDirective then
+          (index + count, (index, index + count - 1) :: spans)
+        else (index + count, spans)
+    | none => (index, spans)
+  ((canonical.splitOn "
+").foldl step (0, [])).2.reverse
+
+/-- Enforce the ConcreteLayout contract mechanically: gap arity must match the
+token stream, the interleaved output must re-scan to the identical token list
+(no fusion, no comment formation), and no gap interior to a preprocessor
+directive line may contain a newline. -/
+private def checkConcreteLayout
+    (layout : Option ConcreteLayout) (canonical : String) : Except String Unit := do
+  match layout with
+  | none => pure ()
+  | some concrete =>
+      match scanConcrete canonical with
+      | none => throw "concrete layout target failed token scanning"
+      | some (tokens, _) =>
+          match interleaveConcrete concrete.gaps tokens with
+          | none => throw "concrete layout gap count does not match the token stream"
+          | some applied =>
+              match scanConcrete applied with
+              | none => throw "concrete layout produces an unscannable rendering"
+              | some (appliedTokens, _) =>
+                  if appliedTokens != tokens then
+                    throw "concrete layout alters the C token stream"
+                  let gapHasNewline (gap : String) : Bool :=
+                    gap.toList.any fun char => char == '
+' || char == '
+'
+                  let splitsDirective :=
+                    (directiveSpans canonical).any fun span =>
+                      (List.range (span.2 - span.1)).any fun offset =>
+                        match concrete.gaps[span.1 + 1 + offset]? with
+                        | some gap => gapHasNewline gap
+                        | none => false
+                  if splitsDirective then
+                    throw "concrete layout splits a preprocessor directive"
+                  pure ()
 
 private def renderBaseType : CType → String
   | .void => "void"
@@ -987,8 +956,7 @@ private def renderTypeDecls (unit : TranslationUnit) (publicOnly : Bool) : Strin
     String.join ((unit.orderedTypes.filter fun declaration =>
       visible (typeDeclVisibility declaration)).map renderTypeDecl)
 
-private def renderHeaderCanonical (validated : ValidatedTranslationUnit) : String :=
-  let unit := validated.unit
+private def renderHeaderCanonicalUnit (unit : TranslationUnit) : String :=
   "#ifndef " ++ unit.headerGuard ++ "\n#define " ++ unit.headerGuard ++ "\n\n" ++
     String.join (unit.headerIncludes.map fun header => "#include <" ++ header ++ ">\n") ++ "\n" ++
     "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n" ++
@@ -999,8 +967,103 @@ private def renderHeaderCanonical (validated : ValidatedTranslationUnit) : Strin
       function.visibility == Visibility.exported).map renderPrototype) ++
     "\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n"
 
+def validate (unit : TranslationUnit) : Except String ValidatedTranslationUnit := do
+  if unit.schema.isEmpty then throw "translation-unit schema must not be empty"
+  if unit.identity.isEmpty then throw "translation-unit identity must not be empty"
+  if !validIdentifier unit.headerGuard then throw "invalid header guard"
+  if !unit.includes.all safeInclude then throw "invalid system include"
+  if !unit.headerIncludes.all safeInclude then throw "invalid header include"
+  if unit.localHeader.isEmpty || !safeInclude unit.localHeader then throw "invalid local header"
+  if !unique (unit.defines.map Prod.fst ++ declaredNames unit) then
+    throw "duplicate top-level C identifier"
+  if !(declaredNames unit).all declarableIdentifier then throw "invalid top-level C identifier"
+  if !unit.defines.all (declarableIdentifier ·.1) then throw "invalid preprocessor identifier"
+  if !unique (unit.defines.map (·.1)) then throw "duplicate preprocessor identifier"
+  if !unit.defines.all (exprValid ·.2) then throw "invalid preprocessor expression"
+  if !unit.structs.all (fieldNamesValid ·.fields) then throw "invalid or duplicate struct field"
+  if !unit.structs.all (fun declaration => declaration.fields.all (typeValid ·.ty)) then
+    throw "invalid struct field type"
+  if !unit.unions.all (fieldNamesValid ·.fields) then throw "invalid or duplicate union field"
+  if !unit.unions.all (fun declaration =>
+      !declaration.fields.isEmpty && declaration.fields.all (typeValid ·.ty)) then
+    throw "invalid union field type"
+  if !unit.enums.all (fun declaration =>
+      !declaration.members.isEmpty &&
+        declaration.members.all (validIdentifier ·.name) &&
+        unique (declaration.members.map (·.name))) then
+    throw "invalid enum declaration"
+  if !unit.functions.all (fun function : CFunction => paramsValid function.params) then
+    throw "invalid or duplicate function parameter"
+  if !unit.functionTypedefs.all (fun function : FunctionTypedef => paramsValid function.params) then
+    throw "invalid or duplicate function-typedef parameter"
+  if !unit.typedefs.all (typeValid ·.target) then throw "invalid typedef target"
+  if !unit.functionTypedefs.all (fun function =>
+      typeValid function.result && function.params.all (typeValid ·.ty)) then
+    throw "invalid function-typedef type"
+  if !unit.globals.all (fun global =>
+      typeValid global.ty && global.initial.all fun
+        | .expression value => exprValid value
+        | .list values => values.all exprValid) then
+    throw "invalid global declaration"
+  -- An exported global with internal linkage (or an internal extern
+  -- declaration with no definition) has no coherent linkage in C11 6.2.2.
+  if !unit.globals.all (fun global =>
+      (global.visibility != Visibility.exported || global.storage != Storage.static) &&
+        (global.visibility != Visibility.internal || global.storage != Storage.extern)) then
+    throw "global storage contradicts its visibility"
+  if !unit.functions.all (fun function : CFunction =>
+      typeValid function.result && function.params.all (typeValid ·.ty) &&
+        function.body.all statementsValid && function.comments.all safeComment) then
+    throw "invalid function declaration"
+  if !unit.functions.all (fun function : CFunction =>
+      function.headerComments.all safeComment) then
+    throw "invalid function header comment"
+  if !unit.functions.all (fun function : CFunction =>
+      function.headerParams.all paramsValid &&
+        function.concreteLayout.all concreteLayoutValid) then
+    throw "invalid concrete function layout"
+  if !unit.headerLayout.all concreteLayoutValid then throw "invalid concrete header layout"
+  if !unit.assertions.all (exprValid ·.condition) then throw "invalid static assertion"
+  for declaration in unit.orderedTypes do
+    match declaration with
+    | .define name value =>
+        if !validIdentifier name || !exprValid value then throw "invalid ordered header define"
+    | .alias alias =>
+        if !typeValid alias.target then throw "invalid ordered typedef target"
+    | .functionAlias function =>
+        if !paramsValid function.params || !typeValid function.result ||
+            !function.params.all (typeValid ·.ty) then
+          throw "invalid ordered function typedef"
+    | .enumeration enumeration =>
+        if enumeration.members.isEmpty ||
+            !enumeration.members.all (validIdentifier ·.name) ||
+            !unique (enumeration.members.map (·.name)) then
+          throw "invalid ordered enum declaration"
+    | .structure declaration =>
+        if !fieldNamesValid declaration.fields || !declaration.fields.all (typeValid ·.ty) then
+          throw "invalid ordered struct declaration"
+    | .union declaration =>
+        if declaration.fields.isEmpty || !fieldNamesValid declaration.fields ||
+            !declaration.fields.all (typeValid ·.ty) then
+          throw "invalid ordered union declaration"
+  if !unique (exportedNames unit) then throw "duplicate exported symbol"
+  if !unit.layouts.all layoutValid then
+    throw "invalid layout metadata"
+  if !unit.resources.all (validIdentifier ·.name) || !unique (unit.resources.map (·.name)) then
+    throw "invalid resource metadata"
+  -- ConcreteLayout contract enforcement: every layout must reproduce the
+  -- canonical token stream exactly and keep directives intact.
+  for function in unit.functions do
+    match checkConcreteLayout function.concreteLayout (renderFunctionCanonical function) with
+    | .ok _ => pure ()
+    | .error message => throw (message ++ " (function " ++ function.name ++ ")")
+  match checkConcreteLayout unit.headerLayout (renderHeaderCanonicalUnit unit) with
+  | .ok _ => pure ()
+  | .error message => throw (message ++ " (header)")
+  pure (.mk unit)
+
 def renderHeader (validated : ValidatedTranslationUnit) : String :=
-  applyConcreteLayout validated.unit.headerLayout (renderHeaderCanonical validated)
+  applyConcreteLayout validated.unit.headerLayout (renderHeaderCanonicalUnit validated.unit)
 
 def renderSource (validated : ValidatedTranslationUnit) : String :=
   let unit := validated.unit
@@ -1154,6 +1217,40 @@ private def injectedIncludeRejected : Bool :=
   | .error _ => true
 
 example : injectedIncludeRejected = true := by
+  native_decide
+
+private def layoutArityRejected : Bool :=
+  match
+    validate
+      { smokeUnit with
+        functions :=
+          [ { name := "cortex_smoke_gap"
+            , result := .void
+            , params := []
+            , body := some [.returnVoid]
+            , concreteLayout := some { gaps := [" ", " "] } } ] }
+  with
+  | .ok _ => false
+  | .error message => message.startsWith "concrete layout gap count does not match"
+
+example : layoutArityRejected = true := by
+  native_decide
+
+private def layoutFusionRejected : Bool :=
+  match
+    validate
+      { smokeUnit with
+        functions :=
+          [ { name := "cortex_smoke_fuse"
+            , result := .void
+            , params := []
+            , body := some [.returnVoid]
+            , concreteLayout := some { gaps := List.replicate 11 "" } } ] }
+  with
+  | .ok _ => false
+  | .error message => message.startsWith "concrete layout alters the C token stream"
+
+example : layoutFusionRejected = true := by
   native_decide
 
 /-! ### Token-level and validation regression checks (epic review batch 3) -/
