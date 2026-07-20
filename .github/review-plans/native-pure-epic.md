@@ -68,7 +68,7 @@ Signed-off-by: ...
       linear provenance, and branch-policy enforcement. Command:
       `just review-commits 10c2a0b-26cc507`
 
-- [ ] `801c837-801c837` — final breaking Wire grammar and executor-ABI migration. Historical PR:
+- [x] `801c837-801c837` — final breaking Wire grammar and executor-ABI migration. Historical PR:
       [#404](https://github.com/Digimuoto/cortex/pull/404). Focus: removal diagnostics, canonical
       compact clauses, zero/one bare executor arguments, configured-executor removal, manifest and
       binding migration, downstream corpus completeness, and preservation of the admission/ingress
