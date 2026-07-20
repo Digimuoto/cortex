@@ -374,4 +374,79 @@ example :
       "native-pure-bounds-unit" undersizedCheckpointRegion).toOption.isNone = true := by
   native_decide
 
+
+/-! ### Union payload size rounding (epic review batch 5)
+
+A sum whose largest-size variant is not already a multiple of the payload
+alignment (here: a 9-byte packed all-`bool` record vs. an 8-byte-aligned
+`i64`) is the adversarial shape that a real C11 compiler rounds up when it
+computes `sizeof` for the payload union — the union's declared size must
+match, or the emitted `_Static_assert` fails to compile. -/
+
+private abbrev WidePayload : Ty :=
+  Ty.record
+    [ ("f0", .bool), ("f1", .bool), ("f2", .bool), ("f3", .bool), ("f4", .bool)
+    , ("f5", .bool), ("f6", .bool), ("f7", .bool), ("f8", .bool)
+    ]
+
+private abbrev MixedAlignmentSum : Ty :=
+  Ty.sum [("big", WidePayload), ("small", .i64)]
+
+private def mixedSmallMember :
+    Member "small" .i64 [("big", WidePayload), ("small", .i64)] := .tail .head
+
+private def mixedAlignmentBody : Expr [.i64] MixedAlignmentSum :=
+  .inject mixedSmallMember (.var .zero)
+
+private def mixedAlignmentKernel : CertifiedKernel :=
+  { sourceNode := "mixed_alignment"
+  , inputs := [.i64]
+  , output := MixedAlignmentSum
+  , body := mixedAlignmentBody
+  , bounds :=
+      { stackBytes := 56
+      , staticBytes := 0
+      , outputBytes := 24
+      , checkpointBytes := 32
+      , maxSteps := 10
+      , checkpointWithinHostedCeiling := by decide
+      }
+  , regions :=
+      [ { name := "input.score", access := .read, capacity := 8, alignment := 8 }
+      , { name := "output.variant", access := .write, capacity := 24, alignment := 8 }
+      ]
+  , regionsWellFormed := by simp [RegionsWellFormed]
+  , inputsWellFormed := by simp [WellFormedTy]
+  , outputWellFormed := by
+      simp [WellFormedTy, WellFormedFields, LabelsCanonical]
+      native_decide
+  , stepsSound := by native_decide
+  , outputSound := by native_decide
+  }
+
+private def mixedAlignmentRegion : Region :=
+  { name := "mixed_alignment", inputLabels := ["score"], kernel := mixedAlignmentKernel }
+
+private def mixedAlignmentRenderedResult :=
+  render "native-pure-mixed-alignment-unit" mixedAlignmentRegion
+
+example : mixedAlignmentRenderedResult.toOption.isSome = true := by native_decide
+
+def mixedAlignmentRendered : Cortex.Wire.C11.RenderedArtifacts :=
+  mixedAlignmentRenderedResult.toOption.get (by native_decide)
+
+-- The raw (unrounded) variant-size maximum is 9 bytes; a real compiler rounds
+-- a union's own sizeof up to its alignment (8), giving 16, not 9. (A
+-- `== 9u` assertion legitimately appears elsewhere, on the align-1 record
+-- type's own struct size — only the union's declared size is at stake here.)
+example :
+    mixedAlignmentRendered.source.contains "_payload) == 16u" = true := by
+  native_decide
+example :
+    mixedAlignmentRendered.source.contains "_payload) == 9u" = false := by
+  native_decide
+example :
+    mixedAlignmentRendered.source.contains "cortex_np_type_1) == 24u" = true := by
+  native_decide
+
 end Cortex.Wire.NativePure.C.Unit

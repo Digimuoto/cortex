@@ -232,7 +232,15 @@ private def sumAggregates
   let unionName := payloadName index
   let unionFields := variants.zipIdx.map fun entry : (Name × Ty) × Nat =>
     { name := variantName entry.2, ty := ctype types entry.1.2 : Field }
-  let (payloadSize, payloadAlignment) := sumLayout variants
+  let (rawPayloadSize, payloadAlignment) := sumLayout variants
+  -- A real C compiler rounds a union's own sizeof up to its alignment (C11
+  -- 6.2.6.1). Rounding here — not just in the outer sum's total-size formula
+  -- — keeps the union's own _Static_assert true and the outer struct's
+  -- padding_1 computation consistent with the real, compiler-computed field
+  -- layout (the outer total in `layout (.sum ...)` is unaffected: payloadOffset
+  -- is always a multiple of the rounding alignment for the {1,4,8} alignments
+  -- this ABI uses, so alignUp(payloadOffset + n, _) = payloadOffset + alignUp(n, _)).
+  let payloadSize := alignUp rawPayloadSize payloadAlignment
   let payloadAggregate : ConcreteAggregate :=
     { name := unionName, size := payloadSize, alignment := payloadAlignment, fields := []
     , declaration := .union
