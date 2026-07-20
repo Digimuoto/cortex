@@ -3457,6 +3457,13 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Left
         (WireInvalidPorts (CircuitNodeRef "fetch") "unknown node metadata field mystery")
 
+  it "rejects node metadata that depends on a runtime port" $
+    -- with{} is admission-time (ADR 0097): a field authored there must not
+    -- reference a value only available at node ingress.
+    compileWireText
+      "contract T; node bad with { label = value; } <- value: T -> out: T = @test.sink value;\nbad"
+      `shouldSatisfy` isWireInvalidPortsContaining "cannot depend on runtime port value"
+
   it "rejects a dotted path on a known compiler-owned node metadata field" $
     -- `label` is only ever read back by the exact key ("label" :| []); a
     -- dotted path on it must fail loudly rather than being silently

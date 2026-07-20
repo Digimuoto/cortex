@@ -3097,6 +3097,7 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports metadata whereExpr execu
   -- bodies, so duplicate record field paths cannot reach the host boundary.
   mapLeft (WireCore.WireInvalidPorts nodeRef . renderPureEvalError) $
     validateCorePureExpr inputExpr
+  traverse_ (validateNodeMetadataStaticScope nodeRef ports.lnpInputs) metadata
   exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
   validateNodeMetadataFields nodeRef exactFields
   validateNodeMetadataValues nodeRef exactFields
@@ -3559,6 +3560,58 @@ corePureBindingsForExpressions bindings expressions =
               unseen = Set.difference dependencies seen
            in grow (seen <> unseen) (rest <> Set.toList unseen)
 
+{- | \`with\` metadata is admission-time (ADR 0097): a field must not depend on
+a value only available at node ingress. Scans the raw, unevaluated record so
+this runs before \`evalRecordFields\` would otherwise resolve (or silently
+accept, per 'evalValue's unbound-identifier handling) a bare reference to a
+runtime port name.
+-}
+validateNodeMetadataStaticScope
+  :: CircuitNodeRef
+  -> [LoweredPort]
+  -> Record
+  -> Either WireCore.WireError ()
+validateNodeMetadataStaticScope nodeRef inputPorts (Record fields) =
+  case [ (NE.head field.fieldPath, captured)
+       | field <- fields
+       , captured <- exprBareIdentifiers field.fieldValue
+       , Set.member captured runtimeNames
+       ] of
+    [] -> Right ()
+    (fieldName, captured) : _ ->
+      Left
+        ( WireCore.WireInvalidPorts
+            nodeRef
+            ( "node metadata field "
+                <> fieldName
+                <> " cannot depend on runtime port "
+                <> captured
+            )
+        )
+  where
+    runtimeNames = inputPortLocalNames inputPorts
+
+exprBareIdentifiers :: Expr -> [Text]
+exprBareIdentifiers = \case
+  ExprOverlay lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprConnect lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprStar lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprMerge lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprConcat lhs rhs -> exprBareIdentifiers lhs <> exprBareIdentifiers rhs
+  ExprSelect base arms ->
+    exprBareIdentifiers base <> foldMap (exprBareIdentifiers . (.selectArmExpr)) arms
+  ExprFamilyProjection {} -> []
+  ExprExecutor {} -> []
+  ExprConstructor _ recordValue -> recordBareIdentifiers recordValue
+  ExprRecord recordValue -> recordBareIdentifiers recordValue
+  ExprList items -> foldMap exprBareIdentifiers items
+  ExprLit {} -> []
+  ExprIdent (QName (name :| [])) -> [name]
+  ExprIdent {} -> []
+
+recordBareIdentifiers :: Record -> [Text]
+recordBareIdentifiers (Record fields) = foldMap (exprBareIdentifiers . (.fieldValue)) fields
+
 validateNodeMetadataFields
   :: CircuitNodeRef
   -> Map (NonEmpty Text) EvalValue
@@ -3670,6 +3723,7 @@ loweredPureNodeFromBody
   -> NodePureBody
   -> Either WireCore.WireError LoweredNode
 loweredPureNodeFromBody compileEnv st nodeRef ports metadata topLevelBindings pureBody = do
+  traverse_ (validateNodeMetadataStaticScope nodeRef ports.lnpInputs) metadata
   exactFields <- maybe (Right Map.empty) (evalRecordFields st) metadata
   validateNodeMetadataFields nodeRef exactFields
   validateNodeMetadataValues nodeRef exactFields
