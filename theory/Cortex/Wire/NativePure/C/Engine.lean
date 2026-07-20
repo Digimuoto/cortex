@@ -103,6 +103,12 @@ private def initFunction (program : Program) : CFunction :=
   , visibility := .exported
   , comments := ["Require acknowledgement of the initial predecessor checkpoint."] }
 
+/-- Deliberately omits the `failed` guard every other entry point applies
+(`rejectInvalid`): the checkpoint produced by a failed dispatch must still be
+durably acknowledged so the failure record itself survives a restart, even
+though every subsequent entry point (`dispatch`, `effect_completed`,
+`can_request_effect`) keeps rejecting once `failed` is set. Acknowledging a
+failed run's checkpoint does not resume it. -/
 private def checkpointCommittedFunction (program : Program) : CFunction :=
   { name := functionName program "checkpoint_committed"
   , result := .u32
@@ -199,7 +205,12 @@ private def engineStatus (program : Program) : EnumDecl :=
   { name := statusName program
   , visibility := .exported
   , members :=
-      [ { name := symbolPrefix program ++ "_OK", value := 0 }
+      -- Every region's own dispatch function returns Status.code, and
+      -- dispatchCase compares that raw uint32_t against this engine-owned
+      -- `_OK`; deriving the value from Status.ok.code (rather than a second
+      -- hardcoded 0) keeps the two encodings tied together at the Lean
+      -- source level instead of by C-level numeric coincidence.
+      [ { name := symbolPrefix program ++ "_OK", value := Status.code .ok }
       , { name := symbolPrefix program ++ "_INVALID_UNIT", value := 6 }
       , { name := symbolPrefix program ++ "_PROTOCOL", value := 7 }
       ] }
