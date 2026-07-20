@@ -62,7 +62,7 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -307,6 +307,8 @@ validateNativePureProgramV2 program = do
         invalidSelect "select branch contains an unknown runtime unit"
       unless (length branchMembers == Set.size (Set.fromList branchMembers)) $
         invalidSelect "select branch units must be pairwise disjoint"
+      when (guardId `elem` branchMembers || rejoinId `elem` branchMembers) $
+        invalidSelect "guard or rejoin occurs inside a branch"
       unless (Set.null (Set.intersection owned selectionMembers)) $
         invalidSelect "runtime units cannot be owned by multiple select plans"
       mapM_ (validateBranch guardId rejoinId) (Map.toAscList variants)
@@ -323,6 +325,14 @@ validateNativePureProgramV2 program = do
         invalidSelect "every branch unit must be reachable from its guard within that branch"
       unless (memberSet `Set.isSubsetOf` backward) $
         invalidSelect "every branch unit must reach its declared rejoin within that branch"
+      -- Rejoin reads exactly one branch member's value (its unique direct
+      -- predecessor); an internal fan-in that leaves two members both
+      -- feeding rejoin would let the runtime value silently pick one and
+      -- discard the other, so it is rejected here instead.
+      case filter (\member -> (member, rejoinId) `elem` edgePairs) members of
+        [_singleTail] -> pure ()
+        [] -> invalidSelect "no branch unit has a direct edge into rejoin"
+        _multipleTails -> invalidSelect "more than one branch unit has a direct edge into rejoin"
 
     unitKindIs unitId kind =
       maybe False ((== kind) . (.nativePureProgramV2UnitKind)) (unitById program unitId)
@@ -538,8 +548,12 @@ restoreNativePureEngineStateV2 program state = do
   validateNativePureEngineStateV2 program restored
   pure restored
   where
-    restoreStatus NativePureV2RunningEffect = NativePureV2Pending
-    restoreStatus status = status
+    restoreStatus = \case
+      NativePureV2RunningEffect -> NativePureV2Pending
+      NativePureV2Pending -> NativePureV2Pending
+      NativePureV2Completed -> NativePureV2Completed
+      NativePureV2Failed -> NativePureV2Failed
+      NativePureV2Skipped -> NativePureV2Skipped
 
 driveNativePureV2
   :: (NativePureProgramV2Unit -> Map Text Aeson.Value -> Either Text NativePureV2Result)
@@ -626,7 +640,9 @@ cancelNativePureV2 program state = do
   let cancelStatus = \case
         NativePureV2Pending -> NativePureV2Skipped
         NativePureV2RunningEffect -> NativePureV2Skipped
-        status -> status
+        NativePureV2Completed -> NativePureV2Completed
+        NativePureV2Failed -> NativePureV2Failed
+        NativePureV2Skipped -> NativePureV2Skipped
       cancelled =
         state
           { nativePureEngineStateV2Statuses = fmap cancelStatus state.nativePureEngineStateV2Statuses
@@ -717,10 +733,21 @@ runUnit runPure program state unit = do
           (Left (NativePureProgramV2InvalidSelect "persisted selected tag is undeclared"))
           Right
           (Map.lookup label selection.nativePureSelectPlanV2Variants)
-      let value =
-            fromMaybe Aeson.Null $
-              lastJust (fmap (valueAt state) (reverse branch))
-                <|> valueAt state selection.nativePureSelectPlanV2Guard
+      -- validateSelect guarantees exactly one branch member has a direct
+      -- edge into this rejoin (or, for an identity arm, the branch is empty
+      -- and the guard's own value is used); rejoin reads exactly that unit's
+      -- value rather than scanning the declared member list, so an internal
+      -- fan-in can never silently pick one predecessor and drop another.
+      let directPredecessor edge =
+            edge.nativePureProgramV2EdgeTo == unit.nativePureProgramV2UnitId
+              && edge.nativePureProgramV2EdgeFrom `elem` branch
+          tail_ = (.nativePureProgramV2EdgeFrom) <$> List.find directPredecessor program.nativePureProgramV2Edges
+          source = tail_ <|> if null branch then Just selection.nativePureSelectPlanV2Guard else Nothing
+      value <-
+        maybe
+          (Left (NativePureProgramV2InvalidSelect "rejoin branch has no unique direct predecessor"))
+          (Right . fromMaybe Aeson.Null . valueAt state)
+          source
       checkpointTransition (completeUnit index value state)
 
 failUnitTransition
@@ -873,9 +900,6 @@ setAt index value values =
    in case suffix of
         [] -> values
         _old : rest -> prefix <> (value : rest)
-
-lastJust :: [Maybe value] -> Maybe value
-lastJust = listToMaybe . catMaybes
 
 infixr 3 <|>
 (<|>) :: Maybe value -> Maybe value -> Maybe value
