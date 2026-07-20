@@ -42,7 +42,7 @@ Signed-off-by: ...
       precedence/escaping, and single-representation derivation. Command:
       `just review-commits 54ec95f-9a8dace`
 
-- [ ] `e47de5a-7c71ed3` — StaticC v1 golden pinning and migration to the shared emitter. Historical
+- [x] `e47de5a-7c71ed3` — StaticC v1 golden pinning and migration to the shared emitter. Historical
       PR: [#393](https://github.com/Digimuoto/cortex/pull/393). Focus: byte stability, ABI
       inventory, lifecycle behavior, scheduler semantics, and removal of whole-function string
       assembly without v1 drift. Command: `just review-commits e47de5a-7c71ed3`
