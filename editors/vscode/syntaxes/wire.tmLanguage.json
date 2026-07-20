@@ -44,7 +44,7 @@
         },
         {
           "name": "entity.other.attribute-name.wire",
-          "match": "\\b(prompt|config|tools|ports|timeout|retry|stepBudget|maxOutputTokens|model|memory|preset|routingKey|limit|temperature)\\s*(?==)"
+          "match": "\\b(prompt|config|tools|ports|timeout|retry|maxOutputTokens|model|memory|preset|routingKey|limit|temperature)\\s*(?==)"
         }
       ]
     },

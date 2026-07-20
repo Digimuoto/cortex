@@ -3457,6 +3457,14 @@ spec = describe "Cortex.Wire.Compile" $ do
       `shouldBe` Left
         (WireInvalidPorts (CircuitNodeRef "fetch") "unknown node metadata field mystery")
 
+  it "rejects the removed stepBudget node metadata field" $
+    -- ADR 0098: stepBudget was serialized but never enforced by any component,
+    -- so it was removed from the with{} vocabulary rather than kept as a
+    -- misleading substrate contract.
+    compileWireText "node fetch with { stepBudget = 5; } -> result: Result = @review.fetch;"
+      `shouldBe` Left
+        (WireInvalidPorts (CircuitNodeRef "fetch") "unknown node metadata field stepBudget")
+
   it "rejects node metadata that depends on a runtime port" $
     -- with{} is admission-time (ADR 0097): a field authored there must not
     -- reference a value only available at node ingress.

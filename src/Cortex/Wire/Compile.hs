@@ -2802,7 +2802,6 @@ loweredPureNodeFromVariantConfig
                       (normalFormPorts normalForm)
                       (lookupMaybeInt32Field "timeout" metadata)
                       (lookupMaybeInt32Field "retry" metadata)
-                      (lookupMaybeInt32Field "stepBudget" metadata)
                       (lookupMaybeInt32Field "toolLoopMinSteps" metadata)
                       (lookupMaybeInt32Field "maxOutputTokens" metadata)
                       (lookupMaybeBoolField "reasoningEnabled" metadata)
@@ -3213,7 +3212,6 @@ loweredNodeFromExecutorCall compileEnv st nodeRef ports metadata whereExpr execu
                             (normalFormPorts normalForm)
                             (lookupMaybeInt32Field "timeout" exactFields)
                             (lookupMaybeInt32Field "retry" exactFields)
-                            (lookupMaybeInt32Field "stepBudget" exactFields)
                             (lookupMaybeInt32Field "toolLoopMinSteps" exactFields)
                             (lookupMaybeInt32Field "maxOutputTokens" exactFields)
                             (lookupMaybeBoolField "reasoningEnabled" exactFields)
@@ -3647,7 +3645,6 @@ validateNodeMetadataFields nodeRef fields =
       , "memory"
       , "timeout"
       , "retry"
-      , "stepBudget"
       , "toolLoopMinSteps"
       , "maxOutputTokens"
       , "reasoningEnabled"
@@ -3670,7 +3667,7 @@ validateNodeMetadataValues _nodeRef fields = do
               requireKind name "string" value
           | name == "tools" -> void (evalTools value)
           | name == "memory" -> void (evalMemoryStrategy value)
-          | name `elem` ["timeout", "retry", "stepBudget", "toolLoopMinSteps", "maxOutputTokens"] ->
+          | name `elem` ["timeout", "retry", "toolLoopMinSteps", "maxOutputTokens"] ->
               case value of
                 EvalNumber number ->
                   case floatingOrInteger number :: Either Double Integer of
@@ -3809,7 +3806,6 @@ loweredPureNodeFromOutputConfig compileEnv _st nodeRef ports metadata topLevelBi
                     (normalFormPorts normalForm)
                     (lookupMaybeInt32Field "timeout" metadata)
                     (lookupMaybeInt32Field "retry" metadata)
-                    (lookupMaybeInt32Field "stepBudget" metadata)
                     (lookupMaybeInt32Field "toolLoopMinSteps" metadata)
                     (lookupMaybeInt32Field "maxOutputTokens" metadata)
                     (lookupMaybeBoolField "reasoningEnabled" metadata)
@@ -4481,11 +4477,10 @@ actMetadata
   -> Maybe Int32
   -> Maybe Int32
   -> Maybe Int32
-  -> Maybe Int32
   -> Maybe Bool
   -> Maybe MemoryStrategy
   -> Aeson.Value
-actMetadata valueKey nodeRef executor _label instructionsText argumentValue tools ports timeoutSeconds retryCount stepBudget toolLoopMinSteps maxOutputTokens reasoningEnabled memoryStrategy =
+actMetadata valueKey nodeRef executor _label instructionsText argumentValue tools ports timeoutSeconds retryCount toolLoopMinSteps maxOutputTokens reasoningEnabled memoryStrategy =
   Aeson.object $
     [ "slot" Aeson..= nodeRef.unCircuitNodeRef
     , "executor" Aeson..= renderExecutor executor
@@ -4498,7 +4493,6 @@ actMetadata valueKey nodeRef executor _label instructionsText argumentValue tool
          ]
       <> foldMap (\timeout -> ["timeoutSeconds" Aeson..= timeout]) timeoutSeconds
       <> foldMap (\retry -> ["retryCount" Aeson..= retry]) retryCount
-      <> foldMap (\budget -> ["stepBudget" Aeson..= budget]) stepBudget
       <> foldMap (\minSteps -> ["toolLoopMinSteps" Aeson..= minSteps]) toolLoopMinSteps
       <> foldMap (\tokens -> ["maxOutputTokens" Aeson..= tokens]) maxOutputTokens
       <> foldMap (\enabled -> ["reasoningEnabled" Aeson..= enabled]) reasoningEnabled

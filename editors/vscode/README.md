@@ -43,7 +43,7 @@ code --install-extension cortex-wire-0.1.0.vsix
 - **Keywords**: `contract`, `node`, `let`, `export`, `import`, `from`, `pure`, `if`, `then`, `else`,
   `select`, `true`, `false`, `null`
 - **Record fields**: common config fields such as `prompt`, `tools`, `memory`, `model`, `timeout`,
-  `retry`, `stepBudget`, and `maxOutputTokens`
+  `retry`, and `maxOutputTokens`
 - **Graph and CorePure operators**: `=>`, `<>`, `<-`, `->`, `|>`, `//`, `++`, comparisons,
   arithmetic, and boolean operators
 - **Strings** (including escape sequences), integers, `true`/`false`/`null`
