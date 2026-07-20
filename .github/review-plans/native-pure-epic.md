@@ -47,7 +47,7 @@ Signed-off-by: ...
       inventory, lifecycle behavior, scheduler semantics, and removal of whole-function string
       assembly without v1 drift. Command: `just review-commits e47de5a-7c71ed3`
 
-- [ ] `33d002e-cfe4e79` — NativePure region C lowering and v2 checkpoint/select scheduler.
+- [x] `33d002e-cfe4e79` — NativePure region C lowering and v2 checkpoint/select scheduler.
       Historical PRs: [#394](https://github.com/Digimuoto/cortex/pull/394) and
       [#395](https://github.com/Digimuoto/cortex/pull/395). Focus: layouts/padding, typed frames and
       tags, heap/authority exclusion, checked failure paths, checkpoint acknowledgement order,
