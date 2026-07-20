@@ -112,6 +112,7 @@ documentation lifecycle; ADR 0063 governs feature traceability and feature-statu
 | [0095](0095-wire-single-record-executor-boundary.md)               | Wire Single-Record Executor Boundary                                       | accepted   |
 | [0096](0096-certified-native-pure-region-compilation.md)           | Certified NativePure Compilation                                           | proposed   |
 | [0097](0097-wire-static-intent-and-realization-inputs.md)          | Wire Static Intent and Realization Inputs                                  | proposed   |
+| [0098](0098-wire-node-policy-and-executor-field-ownership.md)      | Wire Node Policy and Executor Field Ownership                              | proposed   |
 
 ## By category
 
@@ -166,12 +167,13 @@ is shown here.
   [0031](0031-wire-binding-forms-and-where-clauses.md), [0044](0044-wire-namespace-use-imports.md),
   [0070](0070-wire-file-imports.md), [0086](0086-wire-scoped-graph-construction-rejection.md),
   [0097](0097-wire-static-intent-and-realization-inputs.md)
-- **Wire executor & node interface** (7): [0017](0017-wire-executor-and-port-catalog-boundary.md),
+- **Wire executor & node interface** (8): [0017](0017-wire-executor-and-port-catalog-boundary.md),
   [0024](0024-typed-executor-node-interface.md), [0025](0025-configured-executor-values.md),
   [0030](0030-wire-node-implementation-forms.md),
   [0039](0039-wire-node-boundary-transform-normal-form.md),
   [0062](0062-typed-effect-variant-output-boundaries.md),
-  [0095](0095-wire-single-record-executor-boundary.md)
+  [0095](0095-wire-single-record-executor-boundary.md),
+  [0098](0098-wire-node-policy-and-executor-field-ownership.md)
 - **Wire elaboration & compile-time generation** (4):
   [0021](0021-wire-source-elaborates-to-circuits.md),
   [0045](0045-wire-compile-time-node-body-kinds.md), [0046](0046-wire-compile-time-graph-forms.md),

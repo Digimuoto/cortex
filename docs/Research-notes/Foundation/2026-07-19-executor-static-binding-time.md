@@ -13,6 +13,7 @@ related:
   - docs/ADRs/0095-wire-single-record-executor-boundary.md
   - docs/ADRs/0097-wire-static-intent-and-realization-inputs.md
   - docs/Reference/Wire/executors-and-alphabet.md
+  - docs/Research-notes/Foundation/2026-07-20-executor-configuration-ownership-and-binding-time.md
 ---
 
 # Research Memo: Binding Time, Not Syntax, Splits Executor Configuration

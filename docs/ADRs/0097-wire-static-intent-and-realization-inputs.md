@@ -18,6 +18,7 @@ related:
   - docs/ADRs/0079-wire-admission-witness-schema.md
   - docs/ADRs/0095-wire-single-record-executor-boundary.md
   - docs/ADRs/0096-certified-native-pure-region-compilation.md
+  - docs/Research-notes/Foundation/2026-07-20-executor-configuration-ownership-and-binding-time.md
 ---
 
 # ADR 0097 - Wire Static Intent and Realization Inputs
