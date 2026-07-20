@@ -54,7 +54,7 @@ Signed-off-by: ...
       select skipping/rejoin, cancellation, and restoration. Command:
       `just review-commits 33d002e-cfe4e79`
 
-- [ ] `4143a07-de2f825` — differential/target assurance and generated NativePure engine integration.
+- [x] `4143a07-de2f825` — differential/target assurance and generated NativePure engine integration.
       Historical PRs: [#396](https://github.com/Digimuoto/cortex/pull/396) and
       [#397](https://github.com/Digimuoto/cortex/pull/397). Focus: three-way oracle independence,
       f64 scope, sanitizer and cross-target coverage, symbol/section gates, normalized-plan
