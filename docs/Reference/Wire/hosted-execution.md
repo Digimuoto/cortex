@@ -7,7 +7,7 @@ sidebar:
   label: "Hosted execution"
   order: 9
 status: accepted
-date: 2026-07-18
+date: 2026-07-19
 related:
   - docs/ADRs/0091-lean-hosted-freestanding-wire-c-backend.md
   - docs/ADRs/0092-circuit-engine-runtime-host-boundary.md
